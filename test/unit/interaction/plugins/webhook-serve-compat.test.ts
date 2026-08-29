@@ -75,6 +75,36 @@ describe("installServePortZeroCompat (SEC-06)", () => {
     firstRestore();
     expect(Bun.serve).toBe(originalServe);
   });
+
+  test("concurrent installs are reference-counted: the patch survives until the last restore", async () => {
+    // A single fresh module shared by both installs, so they share the same
+    // refcount and originals — the real concurrent-webhook-server scenario.
+    // This is the regression guard for the review finding: a re-entrant install
+    // must not leave the first server's restore able to tear down a shim a
+    // second, still-active server depends on.
+    const mod = (await import(`@/interaction/plugins/webhook-serve-compat?concurrent=${Date.now()}`)) as {
+      installServePortZeroCompat: () => () => void;
+    };
+    const install = mod.installServePortZeroCompat;
+
+    const firstRestore = install();
+    const patchedServe = Bun.serve;
+    const patchedFetch = globalThis.fetch;
+    const secondRestore = install();
+    expect(Bun.serve).toBe(patchedServe);
+    expect(globalThis.fetch).toBe(patchedFetch);
+
+    // The first server is destroyed first — its restore must NOT tear down the
+    // shim the still-active second server depends on.
+    firstRestore();
+    expect(Bun.serve).toBe(patchedServe);
+    expect(globalThis.fetch).toBe(patchedFetch);
+
+    // Only the last active caller's restore reinstates the originals.
+    secondRestore();
+    expect(Bun.serve).toBe(originalServe);
+    expect(globalThis.fetch).toBe(originalFetch);
+  });
 });
 
 describe("the in-memory fallback server", () => {

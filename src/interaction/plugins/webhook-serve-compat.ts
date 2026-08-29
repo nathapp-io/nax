@@ -26,8 +26,18 @@ const PORT_ZERO_COMPAT_SPAN = 20_000;
 const CALLBACK_PATH_PREFIX = "/nax/interact/";
 
 let servePortZeroCompatInstalled = false;
+let servePortZeroCompatRefCount = 0;
 let servePortZeroCounter = 0;
 const inMemoryServers = new Map<number, { fetch: (request: Request) => Response | Promise<Response> }>();
+
+/**
+ * The exact global objects present before any install patches them. Captured at
+ * module load — the shim only patches via installServePortZeroCompat(), so at
+ * load time Bun.serve/globalThis.fetch are pristine. Every restore reinstates
+ * these same objects, which is what AC3/AC4 assert (identity, not port equality).
+ */
+const servePortZeroOriginalServe = Bun.serve;
+const servePortZeroOriginalFetch = globalThis.fetch;
 
 /**
  * SEC-06(b): the counter previously wrapped unconditionally after
@@ -93,61 +103,68 @@ function createInMemoryServer(options: ServeCompatOptions, port: number): ServeC
 
 export function installServePortZeroCompat(): () => void {
   if (servePortZeroCompatInstalled) {
-    // Re-entrant call: the patch is already installed by a prior caller. Return
-    // a no-op restore so the second caller cannot uninstall the first caller's
-    // patch — its stopServer() would otherwise tear down a shim it never owned.
-    return () => {};
+    // Re-entrant call: the patch is already installed by a prior caller. Reference-
+    // count it so this caller's restore only undoes its own share — the globals stay
+    // patched until the LAST active caller restores. This keeps the patch alive for
+    // concurrent webhook servers: the first server's restore must not tear down a
+    // shim a second, still-active server depends on.
+    servePortZeroCompatRefCount += 1;
+  } else {
+    const boundOriginalServe = Bun.serve.bind(Bun);
+    const boundOriginalFetch = globalThis.fetch.bind(globalThis);
+    const patchedServe = ((options: ServeCompatOptions): ServeCompatReturn => {
+      const requestedPort = typeof options.port === "number" ? options.port : 0;
+      // Route port 0 through the real Bun.serve too — the OS assigns a real available
+      // port for it same as any other bind, so there is nothing to compat-shim there.
+      // Only fall back to the in-memory server when Bun.serve genuinely fails (e.g. no
+      // network permission in a sandboxed environment) — previously port 0 was routed
+      // to the in-memory server unconditionally, so a real webhook responder posting to
+      // the advertised callback URL could never reach it: ECONNREFUSED every time (BUG-24).
+      if (!inMemoryServers.has(requestedPort)) {
+        try {
+          return boundOriginalServe(options);
+        } catch {
+          return createInMemoryServer(options, requestedPort === 0 ? nextCompatPort() : requestedPort);
+        }
+      }
+
+      return createInMemoryServer(options, nextCompatPort());
+    }) as typeof Bun.serve;
+
+    (Bun as { serve: typeof Bun.serve }).serve = patchedServe;
+    globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
+      const request =
+        input instanceof Request ? input : new Request(input instanceof URL ? input.toString() : input, init);
+      const url = new URL(request.url);
+      const port = Number.parseInt(url.port, 10);
+      if (
+        (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
+        url.pathname.startsWith(CALLBACK_PATH_PREFIX) &&
+        inMemoryServers.has(port)
+      ) {
+        const server = inMemoryServers.get(port);
+        if (!server) {
+          return new Response("Not Found", { status: 404 });
+        }
+        return await server.fetch(request);
+      }
+      return boundOriginalFetch(input instanceof URL ? input.toString() : input, init);
+    }) as typeof globalThis.fetch;
+    servePortZeroCompatInstalled = true;
+    servePortZeroCompatRefCount = 1;
   }
 
-  const originalServe = Bun.serve;
-  const originalFetch = globalThis.fetch;
-  const boundOriginalServe = Bun.serve.bind(Bun);
-  const boundOriginalFetch = globalThis.fetch.bind(globalThis);
-  const patchedServe = ((options: ServeCompatOptions): ServeCompatReturn => {
-    const requestedPort = typeof options.port === "number" ? options.port : 0;
-    // Route port 0 through the real Bun.serve too — the OS assigns a real available
-    // port for it same as any other bind, so there is nothing to compat-shim there.
-    // Only fall back to the in-memory server when Bun.serve genuinely fails (e.g. no
-    // network permission in a sandboxed environment) — previously port 0 was routed
-    // to the in-memory server unconditionally, so a real webhook responder posting to
-    // the advertised callback URL could never reach it: ECONNREFUSED every time (BUG-24).
-    if (!inMemoryServers.has(requestedPort)) {
-      try {
-        return boundOriginalServe(options);
-      } catch {
-        return createInMemoryServer(options, requestedPort === 0 ? nextCompatPort() : requestedPort);
-      }
-    }
-
-    return createInMemoryServer(options, nextCompatPort());
-  }) as typeof Bun.serve;
-
-  (Bun as { serve: typeof Bun.serve }).serve = patchedServe;
-  globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
-    const request =
-      input instanceof Request ? input : new Request(input instanceof URL ? input.toString() : input, init);
-    const url = new URL(request.url);
-    const port = Number.parseInt(url.port, 10);
-    if (
-      (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
-      url.pathname.startsWith(CALLBACK_PATH_PREFIX) &&
-      inMemoryServers.has(port)
-    ) {
-      const server = inMemoryServers.get(port);
-      if (!server) {
-        return new Response("Not Found", { status: 404 });
-      }
-      return await server.fetch(request);
-    }
-    return boundOriginalFetch(input instanceof URL ? input.toString() : input, init);
-  }) as typeof globalThis.fetch;
-  servePortZeroCompatInstalled = true;
-
-  // Restore the exact function objects captured before the patch, and clear the
-  // installation flag so the shim can be reinstalled on the next server start.
+  let released = false;
   return () => {
-    (Bun as { serve: typeof Bun.serve }).serve = originalServe;
-    globalThis.fetch = originalFetch;
+    if (released) return;
+    released = true;
+    servePortZeroCompatRefCount -= 1;
+    // A concurrent caller still holds the shim — leave the globals patched.
+    if (servePortZeroCompatRefCount > 0) return;
     servePortZeroCompatInstalled = false;
+    // Restore the exact function objects captured before the patch, and clear the
+    // installation flag so the shim can be reinstalled on the next server start.
+    (Bun as { serve: typeof Bun.serve }).serve = servePortZeroOriginalServe;
+    globalThis.fetch = servePortZeroOriginalFetch;
   };
 }
