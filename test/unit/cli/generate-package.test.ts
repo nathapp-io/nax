@@ -68,4 +68,22 @@ describe("generateCommand — US-002 package option validation", () => {
     expect(caught).not.toBeNull();
     expect(caught).toMatchObject({ name: "NaxError", code: "INVALID_PACKAGE_PATH" });
   });
+
+  test("rejects explicit empty --package rather than silently falling through to root generation", async () => {
+    // Adversarial review finding: `if (options.package)` is falsy for an empty
+    // string, so an explicit --package "" bypassed validation and ran the
+    // root-package code path. The guard must distinguish "flag supplied"
+    // (any value, including "") from "flag not supplied".
+    mockProcessExit();
+
+    let caught: unknown = null;
+    try {
+      await generateCommand({ dir: tmpDir, package: "" });
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).not.toBeNull();
+    expect(caught).toMatchObject({ name: "NaxError", code: "INVALID_PACKAGE_PATH" });
+  });
 });

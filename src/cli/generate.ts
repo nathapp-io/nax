@@ -94,8 +94,10 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
     return;
   }
 
-  // --package: generate for a specific package
-  if (options.package) {
+  // --package: generate for a specific package. Guard on `!== undefined` rather
+  // than truthiness so an explicit "--package \"\"" flows into validation
+  // instead of silently falling through to root-package generation.
+  if (options.package !== undefined) {
     if (!isRelativeAndSafe(options.package)) {
       throw new NaxError(
         `generateCommand: package "${options.package}" is not a safe relative path (must be non-empty, relative, and free of ".." segments)`,
