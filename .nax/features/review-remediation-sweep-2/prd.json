@@ -3,7 +3,7 @@
   "feature": "review-remediation-sweep-2",
   "branchName": "feat/review-remediation-sweep-2",
   "createdAt": "2026-08-29T00:00:00.000Z",
-  "updatedAt": "2026-08-29T16:27:23.214Z",
+  "updatedAt": "2026-08-29T16:45:47.782Z",
   "userStories": [
     {
       "id": "US-001",
@@ -128,8 +128,8 @@
         "context"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -191,7 +191,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/interaction/plugins/telegram.ts",
@@ -211,7 +213,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9ea36631bfb7c441a3bc9e4e2234d53c5cd7bc63"
     },
     {
       "id": "US-005",
