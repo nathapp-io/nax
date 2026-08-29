@@ -142,6 +142,9 @@ New exported symbols this sweep introduces:
   different. Choosing a softer disposition needs data on how often numstat actually fails.
 - No import-cycle, `check:nax-error` or `check:file-sizes` baseline is lowered by this sweep; the
   existing baselines stand.
+- The project scan's fail-open when a directory cannot be listed is preserved, not pinned: it
+  still yields an empty file tree rather than raising. Only the API doing the listing changes, and
+  no criterion here asserts that disposition.
 
 ## Stories
 
@@ -151,8 +154,10 @@ Five stories, no dependency chain — each may run in any order or in parallel.
 
 Covers MEM-20 and BUG-34.
 
-- Introduce `_worktreeManagerDeps = { gitWithTimeout }` in `src/worktree/manager.ts` and route all
-  four `gitWithTimeout` calls in that file through it.
+- Introduce `_worktreeManagerDeps = { gitWithTimeout }` in `src/worktree/manager.ts` and route
+  **all seven** `gitWithTimeout` calls in that file through it — lines 85, 131, 152, 160, 229, 264
+  and 286. Leaving any of them direct breaks this story's own criteria, which stub the seam and
+  drive `create()` and `remove()` end to end.
 - Give `WorktreeManager.remove` a distinct `WORKTREE_NOT_FOUND` code for the not-found stderr
   shapes it already enumerates, keeping `WORKTREE_ERROR` for genuine failures.
 - Make `create()`'s Step-2 catch discriminate: silent for `WORKTREE_NOT_FOUND`, a structured
@@ -200,12 +205,13 @@ Covers BUG-21 and MEM-22.
 
 Covers ENH-24 and BUG-41.
 
-- `src/cli/init-context.ts`: replace the `mkdir -p` spawn with `mkdir(path, { recursive: true })`
-  from `node:fs/promises`, and surface a failure as a `NaxError` with code `"INIT_ERROR"` instead
-  of ignoring the exit code.
-- `src/cli/init-context.ts`: replace the `find` spawn in `findFiles` with a `Bun.Glob` scan,
-  preserving the existing contract — repo-relative paths, `node_modules` / `.git` / `dist`
-  excluded, capped at `maxFiles`.
+- `src/cli/init-context.ts`: replace the `mkdir -p` spawn with an in-process recursive create
+  (`mkdir(path, { recursive: true })` from `node:fs/promises` is what the rest of `src/` uses),
+  and surface a failure as a `NaxError` with code `"INIT_ERROR"` instead of ignoring the exit code.
+- `src/cli/init-context.ts`: replace the `find` spawn in `findFiles` with an in-process directory
+  walk — `Bun.Glob` is the natural fit, but the choice is not normative. What is normative is the
+  contract it must preserve: repo-relative paths, `node_modules` / `.git` / `dist` excluded, capped
+  at `maxFiles`.
 - `src/context/test-scanner.ts`: introduce `_testScannerDeps = { stat }` and replace both
   `Bun.spawn(["test", "-d", …])` probes with it. `stat` is already imported in that file.
 - A path that exists but is not a directory must still be treated as "no test directory", exactly
@@ -255,7 +261,7 @@ Covers BUG-47, widened by a third divergent site found while grounding this spec
   every absent field from `DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG` and converting the seconds-valued
   fields to milliseconds.
 - `attachAgentIdleWatchdog` reads its five settings from that resolver instead of the five inline
-  `??` defaults at `idle-watchdog.ts:210-216`, three of which contradict the SSOT: `30` against
+  `??` defaults at `idle-watchdog.ts:209-216`, three of which contradict the SSOT: `30` against
   `900`, `0` against `1800`, and `5` against `10`.
 - `src/agents/manager.ts:462` and `src/agents/retry/hop-retry-policy.ts:85` read
   `maxRetryAttempts` from the resolver instead of re-defaulting `?? 3` inline.
@@ -292,9 +298,10 @@ Covers BUG-47, widened by a third divergent site found while grounding this spec
   assertion no inline re-default can satisfy differently, but which does prove the consumer
   reaches the same number the resolver returns.
 - **`installServePortZeroCompat`'s new return value has one production consumer**, the webhook
-  plugin. US-004 AC-6 triggers the outermost entry point that reaches it — `stopServer()`, via the
-  plugin's public `destroy()` method, which awaits the private `stopServer()` at `webhook.ts:240` — and
-  asserts `globalThis.fetch` is the pre-install function afterwards.
+  plugin. `destroy()` (`webhook.ts:233`) reaches the private `stopServer()` only when `this.server`
+  is set (the guard at 239), so US-004 AC-6 first starts the server through the public
+  `receive()`, which calls `startServer()` at `webhook.ts:311`, and only then asserts that
+  `destroy()` has put `globalThis.fetch` back.
 - **`CLEANUP_GRACE_POLL_INTERVAL_MS` and `DEFAULT_ACP_TIMEOUT_SECONDS` are constants**, each
   consumed only inside its declaring module and asserted directly by its story's ACs.
 
@@ -367,24 +374,22 @@ Covers BUG-47, widened by a third divergent site found while grounding this spec
 
 ### US-003
 
-1. `[unit]` For a temporary directory containing `a.ts`, `node_modules/x/b.ts`, `.git/c` and
-   `dist/d.js`, `scanProject(root)` resolves to a scan whose `fileTree` contains `a.ts` and
-   contains no entry beginning with `node_modules/`, `.git/` or `dist/`.
-2. `[unit]` For a temporary directory containing 250 files, `scanProject(root)` resolves to a scan
-   whose `fileTree` has exactly 200 entries.
-3. `[unit]` For a temporary directory containing `nested/deep/a.ts`, `scanProject(root)` resolves
-   to a scan whose `fileTree` contains the entry `nested/deep/a.ts` — repo-relative, with no
-   leading separator and no copy of the root path.
-4. `[unit]` For a temporary directory in which a regular file (not a directory) already exists at
+1. `[unit]` For a temporary directory containing `nested/deep/a.ts`, `scanProject(root)` resolves
+   to a scan whose `fileTree` contains the exact entry `nested/deep/a.ts` — repo-relative, with no
+   leading separator and no copy of the root path. The existing suite only asserts a substring
+   match (`init-context.test.ts:30`), which a root-prefixed path also satisfies; the exclusion and
+   200-entry contracts are already pinned at `init-context.test.ts:34-56` and must keep passing,
+   so no criterion here restates them.
+2. `[unit]` For a temporary directory in which a regular file (not a directory) already exists at
    `.nax`, `initContext(root)` rejects with a `NaxError` whose `code` is `"INIT_ERROR"`, rather
    than resolving.
-5. `[unit]` With `_testScannerDeps.stat` stubbed to reject for every path, `scanTestFiles` for a
+3. `[unit]` With `_testScannerDeps.stat` stubbed to reject for every path, `scanTestFiles` for a
    temporary directory that really does contain `test/foo.test.ts` resolves to an empty array.
-6. `[unit]` With `_testScannerDeps.stat` stubbed to record each path it receives and otherwise
+4. `[unit]` With `_testScannerDeps.stat` stubbed to record each path it receives and otherwise
    delegate to the real implementation, `scanTestFiles` for a temporary directory containing
    `test/foo.test.ts` resolves to a result that includes that file, and the recorded paths include
    the temporary directory's `test` subdirectory.
-7. `[unit]` For a temporary directory in which `test` is a regular file rather than a directory,
+5. `[unit]` For a temporary directory in which `test` is a regular file rather than a directory,
    `scanTestFiles` resolves to an empty array.
 
 ### US-004
@@ -402,9 +407,10 @@ Covers BUG-47, widened by a third divergent site found while grounding this spec
 5. `[unit]` When `installServePortZeroCompat()` is called a second time while already installed,
    invoking the restore it returns leaves `globalThis.fetch` equal to the patched function the
    first call installed — the second restore is a no-op.
-6. `[integration]` After a `WebhookInteractionPlugin` has started its callback server, awaiting the
-   plugin's `destroy()` leaves `globalThis.fetch` equal to the exact function object it was before
-   the server started.
+6. `[integration]` For a `WebhookInteractionPlugin` initialised with a loopback callback URL,
+   awaiting `receive("req-1", 1)` — which starts the callback server at `webhook.ts:311` — and then
+   awaiting `destroy()` leaves `globalThis.fetch` equal to the exact function object it was before
+   `receive` was called.
 
 ### US-005
 
