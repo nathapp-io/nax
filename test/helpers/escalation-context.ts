@@ -21,7 +21,7 @@ export function makeEscalationContext(overrides: Partial<EscalationHandlerContex
     story,
     storiesToExecute: [story],
     isBatchExecution: false,
-    routing: { modelTier: "fast", testStrategy: "test-after" },
+    routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test-fixture" },
     pipelineResult: { context: {} },
     config: makeNaxConfig(),
     prd: makePRD({ userStories: [story] }),

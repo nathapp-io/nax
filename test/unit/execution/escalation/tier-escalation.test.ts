@@ -114,7 +114,7 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
         agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
+        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Tests failed", context: {} },
         config: makeNaxConfig({
           autoMode: {
@@ -190,7 +190,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
+        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Tests failed", context: {} },
         config: makeNaxConfig({
           autoMode: {
@@ -261,7 +261,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "balanced", testStrategy: "test-after" },
+        routing: { modelTier: "balanced", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Tests failed", context: {} },
         config: makeNaxConfig({
           autoMode: {
@@ -327,7 +327,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
+        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Tests failed", context: {} },
         config: makeNaxConfig({
           autoMode: {
@@ -557,7 +557,7 @@ describe("handleTierEscalation — story:escalated event emission", () => {
         agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
+        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Tests failed", context: {} },
         config: makeNaxConfig({
           autoMode: {
@@ -817,7 +817,7 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
         agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "balanced", testStrategy: "test-after" },
+        routing: { modelTier: "balanced", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Tests failed", context: {} },
         config: makeNaxConfig({
           autoMode: {
@@ -911,7 +911,7 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
         agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
+        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Bun runtime crash", context: { tddFailureCategory: "runtime-crash" } },
         config: makeNaxConfig({
           autoMode: {
@@ -984,7 +984,7 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
         agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "balanced", testStrategy: "test-after" },
+        routing: { modelTier: "balanced", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Runtime crash", context: {} },
         config: makeNaxConfig({
           autoMode: {

@@ -7,7 +7,7 @@
  * - Max attempts outcome resolution (pause vs fail)
  */
 
-import type { NaxConfig, TestStrategy } from "@/config";
+import type { NaxConfig } from "@/config";
 import { isThreeSessionStrategy } from "@/config";
 import type { Finding } from "@/findings";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -15,6 +15,7 @@ import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
 import { markStoryFailed, savePRD } from "@/prd";
+import type { RoutingDecision } from "@/routing";
 import type { FailureCategory } from "@/tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { appendProgress } from "../progress";
@@ -201,6 +202,12 @@ export async function preIterationTierCheck(
     const preIterationError = `Attempt ${story.attempts} exhausted budget on tier: ${currentTier}`;
 
     // Update story routing in PRD and reset attempts for new tier
+    //
+    // #1762: the `as PRD[...]` / `as PRD` casts below ARE load-bearing, unlike the
+    // ones #1761 removed from handleTierEscalation. The routing else-branch spreads
+    // this function's narrow `routing` param, and batch-pre-check.ts passes a literal
+    // `{ modelTier }` — so a routing-less story persists a partial StoryRouting here.
+    // Do not delete those casts without fixing that first.
     const updatedPrd = {
       ...prd,
       userStories: prd.userStories.map((s) =>
@@ -296,7 +303,7 @@ export interface EscalationHandlerContext {
   story: UserStory;
   storiesToExecute: UserStory[];
   isBatchExecution: boolean;
-  routing: { modelTier: string; testStrategy: string };
+  routing: RoutingDecision;
   pipelineResult: {
     reason?: string;
     context: {
@@ -465,8 +472,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     // STRAT-001: no-test stories must NOT be escalated to a test strategy. Only
     // three-session strategies need switching — single-session strategies (tdd-simple /
     // test-after) already let the implementer own its tests on greenfield.
-    const shouldSwitchToTddSimple =
-      escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy as TestStrategy);
+    const shouldSwitchToTddSimple = escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy);
 
     if (shouldSwitchToTddSimple) {
       logger?.warn("escalation", "Switching strategy to tdd-simple (greenfield-no-tests fallback)", {
@@ -503,8 +509,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       // S5: Check if this is a one-time switch to tdd-simple (single-session, test-first)
       // STRAT-001: no-test stories are exempt; single-session strategies need no switch
       const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
-      const shouldSwitchToTddSimple =
-        escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy as TestStrategy);
+      const shouldSwitchToTddSimple = escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy);
 
       const baseRouting = s.routing ?? { ...ctx.routing };
       const updatedRouting = {
@@ -552,9 +557,9 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
         // Cap at 3 entries — only the most recent failures are useful for the next tier.
         // Prevents unbounded growth with stack traces across many escalations. See #253.
         priorFailures: [...(s.priorFailures || []), escalationFailure].slice(-3),
-      } as UserStory;
-    }) as PRD["userStories"],
-  } as PRD;
+      };
+    }),
+  };
 
   await _tierEscalationDeps.savePRD(updatedPrd, ctx.prdPath);
 
