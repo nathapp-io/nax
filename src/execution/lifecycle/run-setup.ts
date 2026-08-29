@@ -270,7 +270,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // pidRegistry.killAll(), process.exit(130) — on a later signal. This replaces the old
   // EXEC-2 site-specific cleanupCrashHandlers() call at the lock-acquisition-failure
   // branch below, which covered only that one throw site.
-  let cleanupCrashHandlers!: () => void;
+  // Not definite-assignment-asserted: installCrashHandlers() itself can throw, so the
+  // catch below genuinely may run before this is assigned. The optional type is what
+  // makes the `cleanupCrashHandlers?.()` call there honest rather than defensive.
+  let cleanupCrashHandlers: (() => void) | undefined;
   try {
     // Install crash handlers for signal recovery (US-007, BUG-1+MEM-1 fix: pass getters, cleanup in finally)
     cleanupCrashHandlers = _runSetupDeps.installCrashHandlers({

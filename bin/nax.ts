@@ -84,7 +84,7 @@ import { unlockCommand } from "../src/commands/unlock";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
-import { initLogger, type LogLevel, resetLogger } from "../src/logger";
+import { getSafeLogger, initLogger, type LogLevel, resetLogger } from "../src/logger";
 import type { PlanResult } from "../src/plan/strategies";
 import { countStories, loadPRD } from "../src/prd";
 import { AgentStreamEventBus, projectOutputDir } from "../src/runtime";
@@ -475,7 +475,13 @@ program
       process.exit(1);
     }
 
-    // Reset plan logger (if plan phase ran) so the run logger can be initialized fresh
+    // Reset plan logger (if plan phase ran) so the run logger can be initialized fresh.
+    // Await the async write queue first: resetLogger() -> close() -> flushSync() is a
+    // synchronous appendFileSync, so anything still in an in-flight batched appendFile
+    // would race it and land out of order. flushSync() stays the exit-path fallback
+    // (a process.on("exit") listener may only do synchronous work); here we can await,
+    // and flushSync() itself documents that awaiting callers should prefer flush().
+    await getSafeLogger()?.flush();
     resetLogger();
 
     // Resolve output directory: ~/.nax/<projectKey>/ or config.outputDir override

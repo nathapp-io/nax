@@ -81,8 +81,12 @@ async function provisionDependencies(
     timedOut = true;
     // MEM-4: proc.kill() reached only the direct child, orphaning postinstall
     // grandchildren. killProcessGroup(pid, "SIGKILL") kills the whole group
-    // (negative pid), falling back to the single process on ESRCH — same
-    // contract as verification/executor.ts's timeout path.
+    // (negative pid), falling back to the single process on ESRCH.
+    // Borrows verification/executor.ts's group-kill MECHANISM only, not its
+    // shutdown SEQUENCE: that path sends SIGTERM, waits a grace period, then
+    // escalates. Provisioning has already burned its full configured timeout by
+    // the time we get here and the worktree is about to be deleted either way,
+    // so there is nothing for a partially-installed tree to clean up gracefully.
     _worktreeDependencyDeps.killProcessGroup(proc.pid, "SIGKILL");
   }, timeoutMs);
 
