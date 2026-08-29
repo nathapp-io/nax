@@ -271,6 +271,38 @@ describe("runHardeningPass()", () => {
     expect(_hardeningDeps.savePRD).not.toHaveBeenCalled();
   });
 
+  // Adversarial review: when refine returns no criteria, the previous
+  // behaviour set story.suggestedCriteria = undefined in memory but skipped
+  // persistence, leaving the on-disk PRD out of sync with the in-memory
+  // state. Verify the fix: suggestedCriteria is left intact when there is
+  // no verdict (no promotion, no discard), so the in-memory and on-disk
+  // states stay consistent without requiring persistence.
+  test("does not clear suggestedCriteria when refine returns no criteria — adversarial review", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC"],
+      suggestedCriteria: ["edge case A", "edge case B"],
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp([], { testCode: "test('placeholder', () => {})" });
+    _hardeningDeps.writeFile = mock(async () => {});
+    _hardeningDeps.savePRD = mock(async () => {});
+    _hardeningDeps.spawn = passingSpawn();
+
+    const result = await runHardeningPass(ctx);
+
+    expect(result.promoted).toEqual([]);
+    expect(result.discarded).toEqual([]);
+    // The fix: suggestedCriteria stays intact when refine returns no
+    // criteria. The in-memory PRD matches the on-disk PRD, so savePRD is
+    // not required to keep them in sync.
+    expect(story.suggestedCriteria).toEqual(["edge case A", "edge case B"]);
+    expect(_hardeningDeps.savePRD).not.toHaveBeenCalled();
+  });
+
   // US-006 AC-3: a pass with one promoted criterion must persist and the
   // persisted story's acceptanceCriteria must include the promoted text.
   test("persists PRD on a single promotion and the saved PRD includes the promoted text", async () => {

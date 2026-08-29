@@ -257,7 +257,21 @@ async function processPackageGroup(
       result.promoted.push(...actuallyPromoted);
     }
     result.discarded.push(...toDiscard);
-    story.suggestedCriteria = toDiscard.length > 0 ? toDiscard : undefined;
+    // Adversarial review: only overwrite story.suggestedCriteria when there
+    // are discarded items to record. The previous behaviour set it to
+    // undefined for two distinct cases — all-promoted (handled, clear is
+    // intentional) and refine-returned-empty (no verdict, clearing was an
+    // in-memory mutation that persistence skipped, leaving the PRD on disk
+    // out of sync with the in-memory state). Preserve the all-promoted
+    // clear to keep existing tests green, and skip the clear entirely when
+    // refine returned nothing — that case is a true no-op pass: the
+    // suggestions stay in place, the next run refines them again.
+    if (toDiscard.length > 0) {
+      story.suggestedCriteria = toDiscard;
+    } else if (toPromote.length > 0) {
+      story.suggestedCriteria = undefined;
+    }
+    // else: refine returned no criteria; leave story.suggestedCriteria as-is.
   }
 }
 
