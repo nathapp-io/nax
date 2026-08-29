@@ -115,11 +115,17 @@ export function generateSkeletonTests(
       // literal — JSON.stringify produces a `"…"` literal whose internal
       // characters (quotes, backslashes, newlines) are properly escaped so the
       // resulting literal round-trips back to ac.text.
-      // US-006 AC-5: collapse any raw newlines in the comment context to a
-      // visible escape sequence so the criterion text cannot break out of the
-      // comment block onto a non-comment line.
+      // US-006 AC-5: collapse every JavaScript line terminator (LF, CR, U+2028
+      // LS, U+2029 PS) to a visible escape sequence in the comment context so
+      // the criterion text cannot break out of the `//` comment block onto a
+      // non-comment source line. U+2028 / U+2029 are valid JS line terminators
+      // per ECMA-262 §11.3 even though they aren't stripped by .split("\n").
       const titleLiteral = JSON.stringify(`${ac.id}: ${ac.text}`);
-      const commentText = ac.text.replaceAll("\n", "\\n").replaceAll("\r", "\\r");
+      const commentText = ac.text
+        .replaceAll("\n", "\\n")
+        .replaceAll("\r", "\\r")
+        .replaceAll("\u2028", "\\u2028")
+        .replaceAll("\u2029", "\\u2029");
       return `  test(${titleLiteral}, async () => {
     // TODO: Implement acceptance test for ${ac.id}
     // ${commentText}

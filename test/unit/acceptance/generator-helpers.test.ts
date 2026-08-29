@@ -140,6 +140,33 @@ describe("generateSkeletonTests", () => {
     expect(result).toContain("test(");
     expect(result).toContain("describe(");
   });
+
+  // Adversarial review: U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH
+  // SEPARATOR) are JavaScript line terminators per ECMA-262 §11.3. A
+  // criterion containing either character used to escape the `//` comment
+  // block — the replaceAll only handled LF and CR. Verify all four
+  // line-terminator characters are now neutralized in the comment context.
+  test.each([
+    ["U+2028 LINE SEPARATOR", " "],
+    ["U+2029 PARAGRAPH SEPARATOR", " "],
+  ])("does not let %s escape the comment block (US-006 AC-5)", (_label, sep) => {
+    const original = `line one${sep}line two`;
+    const result = generateSkeletonTests("feat", [{ id: "AC-1", text: original, lineNumber: 1 }]);
+
+    // The criterion text in the comment must appear as a visible escape
+    // sequence (\u2028 / \u2029) — otherwise the JavaScript parser would
+    // terminate the // comment and "line two" would land on a non-comment
+    // line. The title literal (a string literal, where U+2028/U+2029 are
+    // data) may still contain the raw character; only the comment context
+    // must be neutralized.
+    expect(result).toContain(`\\u${sep.charCodeAt(0).toString(16)}`);
+    // Strongest single check: the transpiler must parse the generated
+    // source without throwing. If the criterion's U+2028/U+2029 escaped
+    // the // comment block, "line two" would land on a non-comment line
+    // as bare identifier code and the parse would fail.
+    const t = new Bun.Transpiler({});
+    expect(() => t.transform(result)).not.toThrow();
+  });
 });
 
 describe("extractTestCode", () => {
