@@ -227,7 +227,11 @@ export const STAGE_CONTEXT_MAP = {
   },
 
   // Single-session strategy — main single-session implementation path (no TDD split)
-  // planDigestBoost: compensates for absent cross-session digest (Amendment B AC-51)
+  // No planDigestBoost here: both call sites resolve the boost by keying
+  // getStageContextConfig off ctx.routing.testStrategy (a TestStrategy value),
+  // never off the assembled stage key — "single-session" is a STAGE_CONTEXT_MAP
+  // key, not a TestStrategy value, so a boost declared here would never be read
+  // (nax#1759). See ADR-010 Amendment B.
   "single-session": {
     role: "implementer",
     budgetTokens: 12_000,
@@ -236,11 +240,12 @@ export const STAGE_CONTEXT_MAP = {
     // verify-result / tool-diagnostics record on retry without flooding
     // push context. Shared query_neighbor for cross-package import lookups.
     pullToolNames: ["query_neighbor", "query_scratch"],
-    planDigestBoost: 1.5,
   },
 
   // TDD-simple strategy — same as single-session (simplified TDD with merged roles)
-  // planDigestBoost: compensates for absent cross-session digest (Amendment B AC-51)
+  // planDigestBoost: "tdd-simple" IS a TestStrategy value, so both call sites'
+  // ctx.routing.testStrategy-keyed lookup reads this field — compensates for
+  // absent cross-session digest (Amendment B AC-51). See ADR-010 Amendment B.
   "tdd-simple": {
     role: "implementer",
     budgetTokens: 12_000,
@@ -251,7 +256,8 @@ export const STAGE_CONTEXT_MAP = {
   },
 
   // No-test strategy — implementer role, moderate budget
-  // planDigestBoost: compensates for absent cross-session digest (Amendment B AC-51)
+  // planDigestBoost: "no-test" IS a TestStrategy value — see the "tdd-simple"
+  // comment above (nax#1759 / ADR-010 Amendment B).
   // No pull tools: out of scope for nax#1743 (there is no verify/tool-diagnostics
   // record for a no-test story to re-read).
   "no-test": {
@@ -262,14 +268,15 @@ export const STAGE_CONTEXT_MAP = {
   },
 
   // Batch strategy — implementer role, full budget (parallel stories)
-  // planDigestBoost: compensates for absent cross-session digest (Amendment B AC-51)
+  // No planDigestBoost here: "batch" is a STAGE_CONTEXT_MAP key, not a
+  // TestStrategy value — same dead-field reasoning as "single-session" above
+  // (nax#1759 / ADR-010 Amendment B).
   batch: {
     role: "implementer",
     budgetTokens: 12_000,
     providerIds: PHASE_3_IMPLEMENTATION,
     // query_scratch: see the US-005 AC12 rationale on "single-session" above.
     pullToolNames: ["query_neighbor", "query_scratch"],
-    planDigestBoost: 1.5,
   },
 
   // Route — lightweight context for routing/classification; static rules only
