@@ -266,7 +266,7 @@ describe("US-001: escalation log entries from both emitters round-trip to collec
 
     const result = await preIterationTierCheck(
       story,
-      { modelTier: "fast" },
+      { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
       makeNaxConfig({
         autoMode: {
           escalation: {

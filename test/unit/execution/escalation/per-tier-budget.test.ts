@@ -77,7 +77,12 @@ function buildConfig(tierOrder: TierConfig[], enabled = true) {
 async function runPreIter(story: UserStory, config: NaxConfig, prd: PRD, prdPath: string) {
   return await preIterationTierCheck(
     story,
-    { modelTier: story.routing?.modelTier ?? "fast" },
+    {
+      complexity: "medium",
+      modelTier: story.routing?.modelTier ?? "fast",
+      testStrategy: "test-after",
+      reasoning: "test",
+    },
     config,
     prd,
     prdPath,

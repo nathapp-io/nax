@@ -91,7 +91,12 @@ afterEach(() => {
 async function runPreIter(story: UserStory, tierOrder: TierConfig[], previewTier = "balanced") {
   return await preIterationTierCheck(
     story,
-    { modelTier: previewTier },
+    {
+      complexity: "medium",
+      modelTier: previewTier as "fast" | "balanced" | "powerful",
+      testStrategy: "test-after",
+      reasoning: "test",
+    },
     buildConfig(tierOrder),
     makePRD({ userStories: [story] }),
     "/tmp/test-prd-1575.json",

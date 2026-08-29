@@ -14,16 +14,15 @@ import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
 import { countStories, isComplete, isStalled, loadPRD, markStoryFailed, markStoryPassed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
+import { resolveRouting } from "../routing";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
 import { precomputeBatchPlan } from "./batching";
 import { maybeSendCostWarning } from "./cost-warning";
 import { startHeartbeat } from "./crash-recovery";
-import type { DeferredReviewResult } from "./deferred-review";
-import { captureRunStartRef, runDeferredReview } from "./deferred-review";
-import { runBatchPreChecks } from "./escalation";
-import { preIterationTierCheck } from "./escalation/tier-escalation";
+import { captureRunStartRef, type DeferredReviewResult, runDeferredReview } from "./deferred-review";
+import { preIterationTierCheck, runBatchPreChecks } from "./escalation";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 import { agentFor, buildPreviewRouting } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
@@ -40,9 +39,7 @@ export type { SequentialExecutionContext, SequentialExecutionResult } from "./ex
 
 const TERMINAL_ACTIONS = new Set(["fail", "skip", "pause"]);
 
-// Tracks internal run-scoped unsubscribers so we can tear them down without
-// calling pipelineEventBus.clear(), which would also wipe external subscribers
-// like the TUI's usePipelineBusEvents hook.
+// Internal run-scoped unsubscribers; do not clear the bus because it has external subscribers.
 let _prevRunUnsubscribers: Array<() => void> = [];
 async function closeStoryIfTerminal(
   ctx: SequentialExecutionContext,
@@ -298,6 +295,7 @@ export async function executeUnified(
             workdir: ctx.workdir,
             preIterationTierCheckFn: _unifiedExecutorDeps.preIterationTierCheck,
             loadPRDFn: loadPRD,
+            resolveRoutingFn: (story) => resolveRouting(story, ctx.config, ctx.pluginRegistry, ctx),
           });
           prd = batchPreCheck.prd;
           if (batchPreCheck.prdDirty) prdDirty = true;
@@ -515,6 +513,7 @@ export async function executeUnified(
             totalCost,
             ctx.workdir,
             ctx.runtime,
+            (story) => resolveRouting(story, ctx.config, ctx.pluginRegistry, ctx),
           );
           if (singlePre.shouldSkipIteration) {
             if (singlePre.prd.userStories.find((s) => s.id === singleStory.id)?.status === "failed") lastStoryId = null; // BUG-39

@@ -10,7 +10,7 @@
  * repo-scoped fix records) are silently lost.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import { runBatchPreChecks } from "@/execution/escalation";
 import type { PreIterationCheckResult } from "@/execution/escalation/tier-escalation";
@@ -41,6 +41,46 @@ function baseOptions(overrides: Partial<Parameters<typeof runBatchPreChecks>[0]>
 }
 
 describe("runBatchPreChecks — BUG-8 identity re-resolution", () => {
+  test("forwards a complete preview and lazy canonical resolver to the tier check", async () => {
+    const story = makeStory({ id: "US-1762-batch", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    const resolvedRouting = {
+      complexity: "complex" as const,
+      modelTier: "fast" as const,
+      testStrategy: "three-session-tdd" as const,
+      reasoning: "canonical decision",
+    };
+    const resolveRoutingFn = mock(async () => resolvedRouting);
+
+    await runBatchPreChecks(
+      baseOptions({
+        batch: [story],
+        prd,
+        resolveRoutingFn,
+        preIterationTierCheckFn: async (
+          _story,
+          routing,
+          _config,
+          _prd,
+          _prdPath,
+          _featureDir,
+          _hooks,
+          _feature,
+          _totalCost,
+          _workdir,
+          _runtime,
+          resolver,
+        ) => {
+          expect(routing).toMatchObject({ complexity: "medium", testStrategy: "test-after" });
+          expect(await resolver?.(story)).toEqual(resolvedRouting);
+          return { shouldSkipIteration: false, prdDirty: false, prd };
+        },
+      }),
+    );
+
+    expect(resolveRoutingFn).toHaveBeenCalledWith(story);
+  });
+
   test("no sibling skip: dispatchable objects are the same references as batch (no reload happened)", async () => {
     const kept = makeStory({ id: "US-001", status: "pending" });
     const prd = makePRD({ userStories: [kept] });

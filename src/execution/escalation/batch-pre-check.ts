@@ -12,6 +12,8 @@
 import type { NaxConfig } from "@/config";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd";
+import type { RoutingDecision } from "@/routing";
+import { buildPreviewRouting } from "../executor-types";
 import type { preIterationTierCheck } from "./tier-escalation";
 
 export interface BatchPreCheckOptions {
@@ -28,6 +30,8 @@ export interface BatchPreCheckOptions {
   preIterationTierCheckFn: typeof preIterationTierCheck;
   /** Injected seam — pass `loadPRD` from `../../prd`. */
   loadPRDFn: (prdPath: string) => Promise<PRD>;
+  /** Resolves complete routing only if an unrouted story must be escalated. */
+  resolveRoutingFn?: (story: UserStory) => Promise<RoutingDecision>;
 }
 
 export interface BatchPreCheckResult {
@@ -38,8 +42,19 @@ export interface BatchPreCheckResult {
 }
 
 export async function runBatchPreChecks(options: BatchPreCheckOptions): Promise<BatchPreCheckResult> {
-  const { batch, config, prdPath, featureDir, hooks, feature, totalCost, workdir, preIterationTierCheckFn, loadPRDFn } =
-    options;
+  const {
+    batch,
+    config,
+    prdPath,
+    featureDir,
+    hooks,
+    feature,
+    totalCost,
+    workdir,
+    preIterationTierCheckFn,
+    loadPRDFn,
+    resolveRoutingFn,
+  } = options;
   let prd = options.prd;
   let prdDirty = false;
   const skipped = new Set<string>();
@@ -47,7 +62,7 @@ export async function runBatchPreChecks(options: BatchPreCheckOptions): Promise<
   for (const batchStory of batch) {
     const batchPre = await preIterationTierCheckFn(
       batchStory,
-      { modelTier: batchStory.routing?.modelTier ?? "balanced" },
+      buildPreviewRouting(batchStory, config),
       config,
       prd,
       prdPath,
@@ -56,6 +71,8 @@ export async function runBatchPreChecks(options: BatchPreCheckOptions): Promise<
       feature,
       totalCost,
       workdir,
+      undefined,
+      resolveRoutingFn,
     );
     if (batchPre.prdDirty) prdDirty = true;
     if (batchPre.shouldSkipIteration) {
