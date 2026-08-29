@@ -424,7 +424,7 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
     expect(conflictMetric?.firstPassSuccess).toBe(false);
   });
 
-  test("AC-3: un-rectified merge conflict does NOT appear in allStoryMetrics", async () => {
+  test("BUG-3: un-rectified merge conflict DOES appear in allStoryMetrics, marked failed", async () => {
     const story1 = makePendingStory("US-001");
     const conflictStory = makePendingStory("US-002");
 
@@ -450,8 +450,12 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
     const result = await mod.executeUnified(makeCtx(), makePrd([story1, conflictStory]));
 
     const conflictMetric = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
-    // Un-rectified conflicts are not pushed into allStoryMetrics
-    expect(conflictMetric).toBeUndefined();
+    // BUG-3 (nax review 20260829): a non-rectified conflict is a real failure — it must
+    // be visible to per-agent cost attribution and the run rollup, same as any other
+    // failed story. Previously this metric was silently dropped.
+    expect(conflictMetric).toBeDefined();
+    expect(conflictMetric?.success).toBe(false);
+    expect(conflictMetric?.source).toBe("rectification");
   });
 });
 

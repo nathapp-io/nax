@@ -27,6 +27,7 @@ import type { SequentialExecutionContext, SequentialExecutionResult } from "./ex
 import { agentFor, buildPreviewRouting } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
 import { runIteration } from "./iteration-runner";
+import { recordMergeConflictOutcomes } from "./merge-conflict-outcomes";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
 import { synthesizeParallelStoryMetric } from "./parallel-story-metrics";
 import { handlePipelineFailure } from "./pipeline-result-handler";
@@ -426,31 +427,19 @@ export async function executeUnified(
             );
           }
 
-          // Build metrics for rectified merge-conflict stories (AC-3)
-          for (const conflict of batchResult.mergeConflicts) {
-            if (conflict.rectified) {
-              const storyStartTime = storyStartMs.get(conflict.story.id) ?? Date.now();
-              const storyDuration = batchResult.storyDurations?.get(conflict.story.id) ?? Date.now() - storyStartTime;
-              const conflictId = conflict.story.id;
-              allStoryMetrics.push(
-                synthesizeParallelStoryMetric({
-                  story: conflict.story,
-                  modelUsed: agentFor(conflict.story, ctx),
-                  // cost = total per-story cost incl. rectification (BUG-37: storyCosts alone is
-                  // only the pre-conflict first pass); rectificationCost = conflict.cost alone.
-                  cost: (batchResult.storyCosts.get(conflictId) ?? 0) + conflict.cost,
-                  durationMs: storyDuration,
-                  startedAt: batchStartedAt,
-                  completedAt: batchCompletedAt,
-                  source: "rectification",
-                  firstPassSuccess: false,
-                  rectificationCost: conflict.cost,
-                  fallbackHops: toFallbackHops(ctx.runtime.agentFallbacks.get(conflictId), conflictId),
-                  runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(conflictId) ?? 0,
-                }),
-              );
-            }
-          }
+          // Build metrics for merge-conflict stories, rectified or not (AC-3, BUG-3);
+          // also corrects the bus + progress log for the non-rectified case.
+          await recordMergeConflictOutcomes({
+            ctx,
+            prd,
+            mergeConflicts: batchResult.mergeConflicts,
+            storyCosts: batchResult.storyCosts,
+            storyDurations: batchResult.storyDurations,
+            storyStartMs,
+            batchStartedAt,
+            batchCompletedAt,
+            allStoryMetrics,
+          });
 
           // BUG-13: mirror sequential/single-story dispatch below (statusWriter update).
           ctx.statusWriter.setPrd(prd);
@@ -734,6 +723,15 @@ export async function executeUnified(
  * FAILED stories are intentionally NOT handled here — handlePipelineFailure
  * (pipeline-result-handler.ts) already marks + saves them; touching them again
  * double-increments attempts.
+ *
+ * PRD state ONLY (BUG-3, nax review 20260829). This function is deliberately a pure
+ * `(prd, batchResult) => void` with no access to `ctx`, `featureDir`, or the cost
+ * aggregator, so it cannot also correct the event bus or per-agent cost attribution for
+ * a non-rectified merge conflict. That correction — emitting `story:failed`, appending
+ * progress, and synthesizing a StoryMetric — is `recordMergeConflictOutcomes`
+ * (merge-conflict-outcomes.ts), called from the batch loop right after this function.
+ * Do not read this function's return (`void`) as proof a non-rectified conflict is
+ * fully handled — check the caller too.
  */
 export function reconcileBatchOutcome(
   prd: PRD,

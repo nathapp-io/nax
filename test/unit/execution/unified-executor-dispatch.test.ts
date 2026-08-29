@@ -11,6 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { precomputeBatchPlan } from "@/execution/batching";
@@ -614,5 +617,87 @@ describe("useBatch scheduling refresh", () => {
     await executeUnified(ctx, initialPrd);
 
     expect(selectedStoryIds).toEqual(["US-000", "US-000", "US-001"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-3 — non-rectified merge conflict emits story:failed, appends progress,
+// and yields a StoryMetric (the worktree pipeline already emitted
+// story:completed before the conflict was detected — see unified-executor.ts).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BUG-3 — non-rectified merge conflict corrects the bus and metrics", () => {
+  let deps: typeof import("@/execution/unified-executor")._unifiedExecutorDeps;
+  let origRunParallelBatch: typeof deps.runParallelBatch;
+  let origSelectIndependentBatch: typeof deps.selectIndependentBatch;
+  let featureDir: string;
+
+  beforeEach(async () => {
+    const mod = await import("@/execution/unified-executor");
+    deps = mod._unifiedExecutorDeps;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
+    featureDir = await mkdtemp(join(tmpdir(), "nax-bug3-progress-"));
+  });
+
+  afterEach(async () => {
+    if (deps) {
+      deps.runParallelBatch = origRunParallelBatch;
+      deps.selectIndependentBatch = origSelectIndependentBatch;
+    }
+    mock.restore();
+    await rm(featureDir, { recursive: true, force: true });
+  });
+
+  test("emits story:failed, appends progress, and adds a failed StoryMetric", async () => {
+    const story = makePendingStory("US-CONFLICT");
+    const sibling = makePendingStory("US-SIBLING");
+
+    // Batch dispatch only engages when the batch has more than one story
+    // (unified-executor.ts: `if (batch.length > 1)`) — a lone story falls
+    // through to the single-story path instead. Keep a second story in the
+    // batch so runParallelBatch is actually exercised.
+    deps.selectIndependentBatch = mock(() => [story, sibling]);
+    deps.runParallelBatch = mock(async () => ({
+      completed: [sibling],
+      failed: [],
+      mergeConflicts: [{ story, rectified: false, cost: 0.5 }],
+      storyCosts: new Map([
+        [story.id, 1.5],
+        [sibling.id, 0.5],
+      ]),
+      totalCost: 2.5,
+    }));
+
+    const { pipelineEventBus } = await import("@/pipeline/event-bus");
+    const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
+    const emitted: PipelineEvent[] = [];
+    pipelineEventBus.emit = mock((event: PipelineEvent) => {
+      emitted.push(event);
+      return origEmit(event);
+    });
+
+    const { executeUnified } = await import("@/execution/unified-executor");
+    const prd = makePrd([story, sibling]);
+    const ctx = { ...makeCtx({ parallelCount: 2 }), featureDir };
+
+    const result = await executeUnified(ctx, prd);
+
+    pipelineEventBus.emit = origEmit;
+
+    const failedEvent = emitted.find((e) => e.type === "story:failed" && e.storyId === story.id);
+    expect(failedEvent).toBeDefined();
+    if (failedEvent?.type === "story:failed") {
+      expect(failedEvent.reason).toMatch(/merge conflict/i);
+      expect(failedEvent.countsTowardEscalation).toBe(false);
+    }
+
+    const metric = result.allStoryMetrics.find((m) => m.storyId === story.id);
+    expect(metric).toBeDefined();
+    expect(metric?.success).toBe(false);
+
+    const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
+    expect(progress).toContain(story.id);
+    expect(progress).toContain("FAILED");
   });
 });
