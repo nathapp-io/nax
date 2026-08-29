@@ -18,11 +18,14 @@ describe("stage-config — tool-diagnostics provider registration (US-002)", () 
     });
   });
 
-  describe("US-002 AC13: execution stage lists 'tool-diagnostics'", () => {
-    test("execution stage includes 'tool-diagnostics' in providerIds", () => {
-      const config = getStageContextConfig("execution");
-      expect(config.providerIds).toContain("tool-diagnostics");
-    });
+  describe("US-002 AC13: the strategy stages list 'tool-diagnostics' (nax#1743: moved off the unassembled 'execution' key)", () => {
+    test.each(["single-session", "tdd-simple", "no-test", "batch"])(
+      "%s stage includes 'tool-diagnostics' in providerIds",
+      (stage) => {
+        const config = getStageContextConfig(stage);
+        expect(config.providerIds).toContain("tool-diagnostics");
+      },
+    );
   });
 });
 
@@ -38,17 +41,20 @@ describe("stage-config — query_scratch pull tool registration (US-005)", () =>
     });
   });
 
-  describe("AC12: execution stage includes 'query_scratch' in pullToolNames", () => {
-    test("execution stage includes 'query_scratch' in pullToolNames", () => {
-      const config = getStageContextConfig("execution");
-      expect(config.pullToolNames).toContain("query_scratch");
-    });
+  describe("AC12: single-session/tdd-simple/batch stages include 'query_scratch' in pullToolNames (nax#1743: moved off the unassembled 'execution' key)", () => {
+    test.each(["single-session", "tdd-simple", "batch"])(
+      "%s stage includes 'query_scratch' in pullToolNames",
+      (stage) => {
+        const config = getStageContextConfig(stage);
+        expect(config.pullToolNames).toContain("query_scratch");
+      },
+    );
   });
 });
 
 describe("stage-config — test-coverage provider registration (AC3, AC4, AC5, AC6)", () => {
   describe("AC3: implementer stage lists 'test-coverage'", () => {
-    const IMPLEMENTER_STAGES = ["execution", "tdd-implementer", "single-session", "tdd-simple", "no-test", "batch"];
+    const IMPLEMENTER_STAGES = ["tdd-implementer", "single-session", "tdd-simple", "no-test", "batch"];
 
     test.each(IMPLEMENTER_STAGES)("%s stage includes 'test-coverage' in providerIds", (stage) => {
       const config = getStageContextConfig(stage);

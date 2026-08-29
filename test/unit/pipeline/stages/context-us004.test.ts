@@ -234,7 +234,7 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
       fetch: async () => ({ chunks: [chunkRecord], pullTools: [] }),
     };
 
-    // The "context" stage's provider allowlist (PHASE_3_EXECUTION in
+    // The "context" stage's provider allowlist (PHASE_3_IMPLEMENTATION in
     // stage-config.ts) includes several other provider IDs; the orchestrator
     // throws CONTEXT_UNKNOWN_PROVIDER_IDS for any allowlisted ID that has no
     // registered provider. Register empty stubs for the rest so only
@@ -245,7 +245,7 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
       "session-scratch",
       "git-history",
       "test-coverage",
-      "tool-diagnostics", // US-002: registered in PHASE_3_EXECUTION
+      "tool-diagnostics", // US-002: registered in PHASE_3_IMPLEMENTATION
     ];
     const emptyProviders: IContextProvider[] = emptyProviderIds.map((id) => ({
       id,

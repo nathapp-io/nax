@@ -168,7 +168,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     featureId: ctx.featureDir?.replace(/\/$/, "").split("/").pop(),
     repoRoot: ctx.projectDir,
     packageDir: ctx.workdir,
-    stage: "context", // initial assembly; execution stage overrides to "execution"
+    stage: "context", // initial assembly; promptStage overrides to the strategy stage (single-session / tdd-simple / no-test / batch)
     role: "implementer",
     budgetTokens: stageOverrides?.budgetTokens ?? ctx.config.context.featureEngine?.budgetTokens ?? 8_000,
     extraProviderIds: stageOverrides?.extraProviderIds ?? [],
