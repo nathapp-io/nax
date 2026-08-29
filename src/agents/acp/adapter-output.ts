@@ -116,9 +116,17 @@ ${toolList}
 After you receive a <nax_tool_result ...> block, continue the task normally.`;
 }
 
+function escapeAttributeValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function escapeResultBody(body: string): string {
+  return body.replace(/<\//g, "<\\/");
+}
+
 function buildContextToolResult(name: string, result: string, status: "ok" | "error" = "ok"): string {
-  return `<nax_tool_result name="${name}" status="${status}">
-${result.trim()}
+  return `<nax_tool_result name="${escapeAttributeValue(name)}" status="${status}">
+${escapeResultBody(result.trim())}
 </nax_tool_result>
 
 Continue the task.`;

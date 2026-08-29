@@ -64,7 +64,11 @@ function parseRelative(input: string, now: Date): ScheduleParseResult | null {
     totalMs += Number(n) * UNIT_MS[unit];
   }
   if (totalMs <= 0) return { ok: false, error: `Duration must be positive. ${ACCEPTED}` };
-  return { ok: true, target: new Date(now.getTime() + totalMs) };
+  const target = new Date(now.getTime() + totalMs);
+  if (!Number.isFinite(target.getTime())) {
+    return { ok: false, error: `Duration "${input}" is not representable as a date. ${ACCEPTED}` };
+  }
+  return { ok: true, target };
 }
 
 export type ScheduleGateResult = { ok: true; target: Date | null } | { ok: false; error: string };

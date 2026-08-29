@@ -140,7 +140,16 @@ export class UnresolvedEnvVarError extends Error {
   }
 }
 
-const DOUBLE_DOLLAR_PLACEHOLDER = "__DOLLAR_ESCAPE__";
+const DOUBLE_DOLLAR_PLACEHOLDER = "`__DOLLAR_ESCAPE__`";
+// Matches the placeholder sentinel followed by an identifier (bare or brace
+// form). The backtick wraps the marker so a user-authored literal that
+// happens to spell the marker without backticks (e.g. `__DOLLAR_ESCAPE__HOME`)
+// is not confused with a protected escape in the restoration pass — the bare
+// text lacks the backtick delimiters and so does not match this regex.
+const DOUBLE_DOLLAR_PLACEHOLDER_RE = new RegExp(
+  `${DOUBLE_DOLLAR_PLACEHOLDER}(\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z_][A-Za-z0-9_]*)`,
+  "g",
+);
 
 function resolveString(str: string, env: Record<string, string>, path: string[]): string {
   const resolveOne = (varName: string): string => {
@@ -156,8 +165,5 @@ function resolveString(str: string, env: Record<string, string>, path: string[])
     .replace(/\$\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g, `${DOUBLE_DOLLAR_PLACEHOLDER}$1`)
     .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, varName: string) => resolveOne(varName))
     .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => resolveOne(varName))
-    .replace(
-      new RegExp(`${DOUBLE_DOLLAR_PLACEHOLDER}(\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z_][A-Za-z0-9_]*)`, "g"),
-      "$$$1",
-    );
+    .replace(DOUBLE_DOLLAR_PLACEHOLDER_RE, "$$$1");
 }
