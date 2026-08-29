@@ -45,7 +45,7 @@ describe("StageContextConfig.planDigestBoost", () => {
     expect(cfg.planDigestBoost).toBeGreaterThanOrEqual(1.5);
   });
 
-  test.each(["execution", "verify", "review-semantic", "plan", "tdd-test-writer", "tdd-implementer"])(
+  test.each(["verify", "review-semantic", "plan", "tdd-test-writer", "tdd-implementer"])(
     "%s has planDigestBoost absent or <= 1",
     (stage) => {
       const cfg = getStageContextConfig(stage);

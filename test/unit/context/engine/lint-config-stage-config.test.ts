@@ -2,7 +2,9 @@
  * stage-config.ts — US-004 LintConfigProvider provider-list tests
  *
  * AC15: rectify stage context config is resolved → providerIds includes 'lint-config'.
- * AC16: execution stage context config is resolved → providerIds does not include 'lint-config'.
+ * AC16: single-session stage context config is resolved → providerIds does not include 'lint-config'.
+ * (nax#1743: the unassembled 'execution' key was retired; single-session is the live
+ * stage that carries the execution-path behaviour AC16 originally exercised.)
  */
 
 import { describe, expect, test } from "bun:test";
@@ -14,8 +16,8 @@ describe("stage-config — lint-config provider registration (US-004 AC15, AC16)
     expect(config.providerIds).toContain("lint-config");
   });
 
-  test("AC16: execution stage does NOT include 'lint-config' in providerIds", () => {
-    const config = getStageContextConfig("execution");
+  test("AC16: single-session stage does NOT include 'lint-config' in providerIds", () => {
+    const config = getStageContextConfig("single-session");
     expect(config.providerIds).not.toContain("lint-config");
   });
 
@@ -26,7 +28,6 @@ describe("stage-config — lint-config provider registration (US-004 AC15, AC16)
 
     // Per the spec scope, only the rectify stage activates this provider.
     expect(stagesWithLintConfig).toContain("rectify");
-    expect(stagesWithLintConfig).not.toContain("execution");
     expect(stagesWithLintConfig).not.toContain("context");
     expect(stagesWithLintConfig).not.toContain("plan");
     expect(stagesWithLintConfig).not.toContain("tdd-implementer");

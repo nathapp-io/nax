@@ -77,7 +77,10 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
     featureId: "test-feature",
     repoRoot: "/repo",
     packageDir: "/repo/packages/pkg-a",
-    stage: "execution",
+    // nax#1743: "execution" was retired from STAGE_CONTEXT_MAP (never assembled by
+    // any site); "single-session" carries the equivalent provider set (code-neighbor
+    // included), which this factory test relies on via the stage->providerIds fallback.
+    stage: "single-session",
     role: "implementer",
     budgetTokens: 10000,
     touchedFiles: ["src/auth.ts"],

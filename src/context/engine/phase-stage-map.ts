@@ -11,15 +11,18 @@
  * "run" / "review" / "verify" / "rectification" — a different namespace).
  */
 
+import type { TestStrategy } from "@/config";
+import type { StageKey } from "./stage-config";
+
 /** Op names that only map to a TDD context-engine stage under three-session strategies. */
-const THREE_SESSION_STAGE_MAP: Readonly<Record<string, string>> = {
+const THREE_SESSION_STAGE_MAP: Readonly<Record<string, StageKey>> = {
   "test-writer": "tdd-test-writer",
   implementer: "tdd-implementer",
   verifier: "tdd-verifier",
 };
 
 /** Op names that map to a context-engine stage regardless of session model. */
-const UNCONDITIONAL_STAGE_MAP: Readonly<Record<string, string>> = {
+const UNCONDITIONAL_STAGE_MAP: Readonly<Record<string, StageKey>> = {
   "semantic-review": "review-semantic",
   "adversarial-review": "review-adversarial",
   // rectifyOp (src/operations/rectify.ts) has no production dispatcher today
@@ -49,7 +52,7 @@ const UNCONDITIONAL_STAGE_MAP: Readonly<Record<string, string>> = {
  *     implementer-audience chunks. Giving it a correct stage is a separate,
  *     deferred decision.
  */
-const RECTIFICATION_STAGE_MAP: Readonly<Record<string, string>> = {
+const RECTIFICATION_STAGE_MAP: Readonly<Record<string, StageKey>> = {
   "autofix-implementer": "rectify",
   "full-suite-rectify": "rectify",
   "repo-scoped-test-fix": "rectify",
@@ -74,7 +77,7 @@ export interface ContextStageForOpOptions {
  * also run under CANONICAL_ORDER, but inside the cycle they are doing
  * rectification work, not TDD-session work.
  */
-export function contextStageForOp(opName: string, opts: ContextStageForOpOptions = {}): string | undefined {
+export function contextStageForOp(opName: string, opts: ContextStageForOpOptions = {}): StageKey | undefined {
   const { isThreeSession = false, inRectification = false } = opts;
   if (inRectification) {
     const rectificationStage = RECTIFICATION_STAGE_MAP[opName];
@@ -85,4 +88,30 @@ export function contextStageForOp(opName: string, opts: ContextStageForOpOptions
     if (threeSessionStage) return threeSessionStage;
   }
   return UNCONDITIONAL_STAGE_MAP[opName];
+}
+
+/** Options for {@link executionContextStage}. */
+export interface ExecutionContextStageOptions {
+  /** True when the pipeline is assembling a batch (multi-story) prompt. */
+  isBatch: boolean;
+  /** The story's resolved test strategy, if known. */
+  testStrategy?: TestStrategy;
+}
+
+/**
+ * Resolve the context-engine stage key for the single-session execution
+ * seam (promptStage, src/pipeline/stages/prompt.ts) — the execution-side
+ * sibling of {@link contextStageForOp}, which covers the story-phase
+ * (run-phase.ts) dispatch seam instead.
+ *
+ * `test-after` and any unrecognized `testStrategy` value fall back to
+ * `single-session` — there is no dedicated stage-config entry for
+ * `test-after`, and it behaves identically to the plain single-session path.
+ */
+export function executionContextStage(opts: ExecutionContextStageOptions): StageKey {
+  const { isBatch, testStrategy } = opts;
+  if (isBatch) return "batch";
+  if (testStrategy === "no-test") return "no-test";
+  if (testStrategy === "tdd-simple") return "tdd-simple";
+  return "single-session";
 }

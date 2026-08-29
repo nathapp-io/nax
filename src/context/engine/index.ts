@@ -53,7 +53,12 @@ export { _orchestratorDeps, ContextOrchestrator } from "./orchestrator";
 export { createDefaultOrchestrator } from "./orchestrator-factory";
 export type { PackedChunk, PackResult } from "./packing";
 export { FLOOR_KINDS, packChunks } from "./packing";
-export { contextStageForOp } from "./phase-stage-map";
+export {
+  type ContextStageForOpOptions,
+  contextStageForOp,
+  type ExecutionContextStageOptions,
+  executionContextStage,
+} from "./phase-stage-map";
 export { deriveProviderWeights } from "./provider-weights";
 export { _providerWeightsCacheDeps, ProviderWeightsCache } from "./provider-weights-cache";
 export type { ContentCacheState } from "./providers/code-neighbor";
@@ -99,7 +104,7 @@ export type { ScoredChunk } from "./scoring";
 export { MIN_SCORE, scoreChunk, scoreChunks } from "./scoring";
 export type { StageAssembleOptions } from "./stage-assembler";
 export { _stageAssemblerDeps, assembleForStage, getBundleMarkdown } from "./stage-assembler";
-export type { StageContextConfig } from "./stage-config";
+export type { StageContextConfig, StageKey } from "./stage-config";
 export { DEFAULT_STAGE_CONFIG, getStageContextConfig, STAGE_CONTEXT_MAP } from "./stage-config";
 export type { ContextToolRuntime, SessionToolBudgets } from "./tool-runtime";
 export { createContextToolRuntime, createSessionToolBudgets } from "./tool-runtime";

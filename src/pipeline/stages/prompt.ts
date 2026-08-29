@@ -21,7 +21,7 @@
  * ```
  */
 
-import { assembleForStage } from "@/context/engine";
+import { assembleForStage, executionContextStage } from "@/context/engine";
 import { getLogger } from "@/logger";
 import { PromptBuilder } from "@/prompts";
 import type { AcceptanceEntry } from "@/prompts/sections/acceptance";
@@ -76,7 +76,7 @@ export const promptStage: PipelineStage = {
     // Assemble a stage-specific v2 bundle for the execution stage so the agent receives
     // the correct role/provider/budget context (Finding 1 fix).  Falls back to null when
     // v2 is disabled; getBundleMarkdown() then returns ctx.featureContextMarkdown.
-    const execStage = isBatch ? "batch" : ctx.routing.testStrategy === "no-test" ? "no-test" : "single-session";
+    const execStage = executionContextStage({ isBatch, testStrategy: ctx.routing.testStrategy });
     const scopeFiles = ctx.scopeFiles ?? (await resolveScopeFiles(ctx));
     const execBundle = await assembleForStage(ctx, execStage, {
       ...(scopeFiles.length > 0 && { scopeFiles }),
