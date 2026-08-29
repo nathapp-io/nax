@@ -117,7 +117,13 @@ After you receive a <nax_tool_result ...> block, continue the task normally.`;
 }
 
 function escapeAttributeValue(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  // Backslash and double-quote are attribute-level escapes. The `</`-to-`<\/`
+  // rewrite prevents an agent-controlled name from injecting an extra
+  // closing delimiter (e.g. `x</nax_tool_result>`) into the rendered
+  // answer — the `<` is already safe inside the attribute value, but the
+  // sequence `</nax_tool_result>` would still be parseable as a closing
+  // delimiter if a downstream parser treats attribute values loosely.
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/<\//g, "<\\/");
 }
 
 function escapeResultBody(body: string): string {
