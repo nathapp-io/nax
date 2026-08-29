@@ -2,3 +2,4 @@
 [2026-08-29T09:09:25.699Z] US-002 — PASSED — Validate unsafe paths and malformed test-pattern config — Cost: $2.8138
 [2026-08-29T09:44:24.243Z] US-003 — PASSED — Reject overflowed durations and escape forgeable text — Cost: $9.0192
 [2026-08-29T09:52:00.286Z] US-004 — PASSED — Standardize loader failures as coded NaxErrors — Cost: $0.9478
+[2026-08-29T10:11:52.138Z] US-005 — PASSED — Correct reported costs, escalations, diagnostics, failures, and agents — Cost: $5.5614

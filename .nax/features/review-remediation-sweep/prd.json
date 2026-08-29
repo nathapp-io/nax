@@ -3,7 +3,7 @@
   "feature": "review-remediation-sweep",
   "branchName": "feat/review-remediation-sweep",
   "createdAt": "2026-08-29T07:37:12.333Z",
-  "updatedAt": "2026-08-29T09:52:03.814Z",
+  "updatedAt": "2026-08-29T10:41:30.583Z",
   "userStories": [
     {
       "id": "US-001",
@@ -219,8 +219,8 @@
         "metrics"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -275,7 +275,16 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "fromAgent": "opencode",
+          "toAgent": "opencode",
+          "reason": "Rectification exhausted with unfixed findings",
+          "timestamp": "2026-08-29T10:41:28.556Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
@@ -285,7 +294,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/acceptance/hardening.ts",
@@ -297,9 +308,23 @@
           "reason": "the test named \"discards failing suggested criteria\" asserts `expect(_hardeningDeps.savePRD).not.toHaveBeenCalled()` for a pass in which one criterion was discarded and none promoted. That is precisely the case AC-1 inverts, so a correct implementation necessarily fails this assertion and, without this authorisation, would have to revert AC-1 to get the suite green. Replace that one assertion with one that `savePRD` was called exactly once. Keep every other assertion in the test unchanged — the discard bookkeeping it pins (`result.discarded`, `story.acceptanceCriteria`, `story.suggestedCriteria`) is still correct and must continue to pass."
         }
       ],
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted with unfixed findings"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted with unfixed findings",
+          "cost": 4.323904080000002,
+          "timestamp": "2026-08-29T10:41:28.557Z",
+          "agent": "opencode",
+          "agentProfileId": "opencode-medium"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "50079c2d475c2bfdae0ee1d47909cd39678c1f83"
     }
   ],
   "analysis": "Existing Bun/TypeScript CLI remediation; no greenfield architecture or migration is needed. The six stories are independent local behavioral corrections that must reuse established conventions rather than introduce abstractions. US-001 spans `detectFromFileScan` (`src/test-runners/detect/file-scan.ts:89`), `detectFromDirectoryScan` (`src/test-runners/detect/directory-scan.ts:77`), `rollbackToRef`/`captureSnapshotRef` (`src/tdd/rollback.ts:30,91`), and `rectifyConflictedStory` (`src/execution/merge-conflict-rectify.ts:154`). Existing bounded-process helpers are `gitWithTimeout` (`src/utils/git.ts:71`), `raceWithDeadline` (`src/verification/executor.ts:23`), and `killProcessGroup` (`src/utils/process-kill.ts:28`). Preserve each caller contract: advisory scans return their established null/fallback result, rollback rejects when it cannot complete, and stale ACP-session eviction remains best effort. `rectifyConflictedStory` is used by parallel execution (`src/execution/parallel-batch.ts:109`), so its public signature stays unchanged; the only new exports are the requested US-001 injectable dependency object and exported eviction seam for unit tests.\n\nUS-002 affects `resolveTestFilePatterns` (`src/test-runners/resolver.ts:134`), `initPackage` (`src/cli/init-context.ts:305`), generate command handling (`src/cli/generate.ts:47`), and `curatorCommit` (`src/commands/curator.ts:305`). Reuse `isRelativeAndSafe` (`src/utils/path-security.ts:60`) and `NaxError` (`src/errors.ts:11`) before any join, read, or directory creation; reject empty package paths without attempting filesystem work. This is lexical validation only: do not add symlink containment or mutate shared path-helper semantics.\n\nUS-003 retains `parseSchedule` (`src/schedule/parse.ts:79`) and `buildRunInteractionHandler` (`src/agents/acp/adapter-output.ts:127`) interfaces. The config escape sentinel lives in `src/config/dotenv.ts:143`; context result construction is `buildContextToolResult` (`src/agents/acp/adapter-output.ts:119`). Protect serialized delimiter payloads and attributes without changing the existing runtime/tool-list gate, and preserve ordinary duration parsing while rejecting `Invalid Date` overflow.\n\nUS-004 normalizes error contracts at `loadPRD` (`src/prd/index.ts:55`), `validateStoryId` (`src/prd/validate.ts:24`), and root-config loading/validation (`src/config/loader.ts:293`, `src/config/validate.ts:29`). Retain useful messages and every field-path diagnostic while replacing raw errors with coded `NaxError` instances and required path context. Do not lower the NaxError ratchet baseline.\n\nUS-005 is a set of presentation/projection fixes: cost aggregation (`src/runtime/cost-aggregator.ts`, especially `CostErrorEvent` and `accumulateError`), bakeoff totals (`src/bakeoff/contestant.ts:71`), disk diagnostics (`src/precheck/checks-warnings.ts:43`), Jest output identity (`src/test-runners/parser.ts:189`), and ACP listing (`src/cli/agents.ts:26`). The list must consume `ACP_ADAPTER_NAMES` (`src/agents/acp/agent-entries.ts:61`) rather than modify `KNOWN_AGENT_NAMES`, because `aider` remains intentionally supported in context-generation/config/precheck paths. Update the stale bakeoff test name and its loose assertion as explicitly authorized.\n\nUS-006 changes `runHardeningPass` (`src/acceptance/hardening.ts:260`) and `generateSkeletonTests` (`src/acceptance/generator-helpers.ts:92`): persist every actual PRD mutation (promotion or discard), retain no-write behavior for an unchanged pass, and safely serialize criterion text into TypeScript titles/comments. Update only the specified stale discard assertion. All affected source files have current graph coverage with no recorded indexing issue; relevant tests mirror source directories, including `test/unit/bakeoff/contestant.test.ts`, `test/unit/acceptance/hardening.test.ts`, `test/unit/acceptance/generator-helpers.test.ts`, and tests for the listed modules. Primary risks are changing timeout failure semantics, normalizing traversal before inspection, losing error context/field paths, narrowing the broader agent registry, and escaping text in a way that does not round-trip. APIs and config formats remain compatible; no files are created, no configuration format changes occur, and the only added exports are US-001 test seams.",
