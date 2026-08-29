@@ -138,8 +138,7 @@ Error counts, escalation counts, disk space, failure counts and the agent list a
 
 - Context Files: `src/agents/acp/agent-entries.ts`, `src/runtime/cost-aggregator.ts`
 - Creates: none
-- Modifies:
-  - **US-005** `test/unit/bakeoff/contestant.test.ts` — the test named "maps total cost -> costUsd, total durationMs -> wallTimeMs, attempts -> tierEscalations" pins the old mapping in its name. Its assertion is a loose `toBeGreaterThanOrEqual(0)` that survives the change, which is exactly why the name must be corrected rather than left to pass silently: rename it to state the escalations-derived-from-attempts-beyond-the-first mapping, and tighten the assertion to the exact expected count.
+- Modifies: see the `### Modifies` section below.
 
 ### US-006 — Persist discard-only hardening passes and escape generated test titles
 
@@ -147,12 +146,21 @@ Two defects in the acceptance pipeline: one re-pays an LLM round trip every run 
 
 - Context Files: none beyond the two files changed
 - Creates: none
-- Modifies:
-  - **US-006** `test/unit/acceptance/hardening.test.ts` — the test named "discards failing suggested criteria" asserts `expect(_hardeningDeps.savePRD).not.toHaveBeenCalled()` for a pass in which one criterion was discarded and none promoted. That is precisely the case AC-1 inverts, so a correct implementation fails this assertion. Replace it with an assertion that `savePRD` was called once, keeping every other assertion in that test unchanged — the discard bookkeeping it pins (`result.discarded`, `story.acceptanceCriteria`, `story.suggestedCriteria`) is still correct and must keep passing.
+- Modifies: see the `### Modifies` section below.
 
 ### Seams
 
 No story consumes a symbol another story creates, so there are no cross-story seam invariants. US-001 introduces two module-level exports in `merge-conflict-rectify.ts` (an injectable deps object and the stale-session eviction step), but both are test seams consumed only by US-001's own acceptance criteria and by no other story or production caller, so neither needs a cross-story seam invariant. Every other acceptance criterion exercises an entry point that already exists at the shape stated in Integration.
+
+### Modifies
+
+**US-005**
+
+- `test/unit/bakeoff/contestant.test.ts` — the test named "maps total cost -> costUsd, total durationMs -> wallTimeMs, attempts -> tierEscalations" pins the old mapping in its name. Its assertion is a loose `toBeGreaterThanOrEqual(0)` that survives the change, which is exactly why the name must be corrected rather than left to pass silently: rename it to state that escalations are derived from attempts beyond the first, and tighten the assertion to the exact expected count. Every other assertion in that test is unaffected and must continue to pass.
+
+**US-006**
+
+- `test/unit/acceptance/hardening.test.ts` — the test named "discards failing suggested criteria" asserts `expect(_hardeningDeps.savePRD).not.toHaveBeenCalled()` for a pass in which one criterion was discarded and none promoted. That is precisely the case AC-1 inverts, so a correct implementation necessarily fails this assertion and, without this authorisation, would have to revert AC-1 to get the suite green. Replace that one assertion with one that `savePRD` was called exactly once. Keep every other assertion in the test unchanged — the discard bookkeeping it pins (`result.discarded`, `story.acceptanceCriteria`, `story.suggestedCriteria`) is still correct and must continue to pass.
 
 ## Acceptance Criteria
 
