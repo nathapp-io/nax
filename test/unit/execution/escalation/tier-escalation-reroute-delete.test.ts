@@ -88,7 +88,7 @@ describe("#1710 — handleTierEscalation does not LLM-re-route", () => {
         story: lead,
         storiesToExecute: [lead, nonLead],
         isBatchExecution: true,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
+        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
         pipelineResult: { reason: "Tests failed", context: {} },
         config,
         prd: makePRD({ userStories: [lead, nonLead] }),
@@ -147,7 +147,7 @@ describe("#1710 — escalation writes the escalated tier to the result PRD", () 
       story,
       storiesToExecute: [story],
       isBatchExecution: false,
-      routing: { modelTier: "fast", testStrategy: "test-after" },
+      routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
       pipelineResult: { reason: "Tests failed", context: {} },
       config,
       prd: makePRD({ userStories: [story] }),
@@ -190,20 +190,25 @@ function makeDispatchContext(runtime: NaxRuntime): DispatchContext {
 }
 
 // ---------------------------------------------------------------------------
-// #1745 — INJECT-ed non-lead story latches with no complexity after batch escalation
+// #1745 / #1761 — INJECT-ed non-lead story inherits complexity from the lead
 //
-// Characterization of the related defect #1745: an INJECT-ed non-lead batch
+// Characterization of the former defect #1745: an INJECT-ed non-lead batch
 // member (routing: undefined) reaches escalation with no routing, and the
 // `baseRouting = s.routing ?? { ...ctx.routing }` fallback inside
-// `handleTierEscalation` writes a `StoryRouting` permanently missing the
-// type-required `complexity`. After #1710's deletion, escalation still does
-// NOT fix this — it persists. When #1745 lands and routing is defaulted at
-// inject time (or `EscalationHandlerContext.routing` gains `complexity`),
-// this test will fail and should be updated rather than deleted.
+// `handleTierEscalation` used to write a `StoryRouting` permanently missing
+// the type-required `complexity` — reachable only because
+// `EscalationHandlerContext.routing` was declared narrower than what it was
+// actually given. #1761 widened `EscalationHandlerContext.routing` to
+// `RoutingDecision` (`complexity` required), so `ctx.routing` can no longer
+// be constructed without `complexity`, and the fallback now always carries
+// it through. Per this test's own prior comment: "When #1745 lands and
+// routing is defaulted at inject time (or `EscalationHandlerContext.routing`
+// gains `complexity`), this test will fail and should be updated rather than
+// deleted."
 // ---------------------------------------------------------------------------
 
-describe("#1745 — INJECT-ed non-lead story latches with no complexity after batch escalation", () => {
-  test("non-lead routing-less story still has no routing.complexity after batch escalation", async () => {
+describe("#1745 / #1761 — INJECT-ed non-lead story inherits complexity from the lead", () => {
+  test("non-lead routing-less story inherits routing.complexity from ctx.routing after batch escalation", async () => {
     const lead = makeStory({
       id: "US-lead-reroute",
       title: "Lead",
@@ -223,7 +228,7 @@ describe("#1745 — INJECT-ed non-lead story latches with no complexity after ba
       story: lead,
       storiesToExecute: [lead, nonLead],
       isBatchExecution: true,
-      routing: { modelTier: "fast", testStrategy: "test-after" },
+      routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
       pipelineResult: { reason: "Tests failed", context: {} },
       config: makeNaxConfig({
         autoMode: {
@@ -249,8 +254,9 @@ describe("#1745 — INJECT-ed non-lead story latches with no complexity after ba
     // reference — handleTierEscalation constructs a new PRD rather than
     // mutating the input stories. Same shape used by Test 2 above.
     const resultNonLead = result.prd.userStories.find((s) => s.id === nonLead.id);
-    // The non-lead story should still have no routing.complexity — the
-    // #1745 latch. Update rather than delete when #1745 is fixed.
-    expect(resultNonLead?.routing?.complexity).toBeUndefined();
+    // #1761: the non-lead story now inherits complexity from ctx.routing
+    // (the batch lead's RoutingDecision) via the `s.routing ?? { ...ctx.routing }`
+    // fallback — no longer latched at undefined.
+    expect(resultNonLead?.routing?.complexity).toBe("medium");
   });
 });

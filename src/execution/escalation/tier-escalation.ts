@@ -15,6 +15,7 @@ import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
 import { markStoryFailed, savePRD } from "@/prd";
+import type { RoutingDecision } from "@/routing";
 import type { FailureCategory } from "@/tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { appendProgress } from "../progress";
@@ -296,7 +297,7 @@ export interface EscalationHandlerContext {
   story: UserStory;
   storiesToExecute: UserStory[];
   isBatchExecution: boolean;
-  routing: { modelTier: string; testStrategy: string };
+  routing: RoutingDecision;
   pipelineResult: {
     reason?: string;
     context: {
@@ -552,7 +553,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
         // Cap at 3 entries — only the most recent failures are useful for the next tier.
         // Prevents unbounded growth with stack traces across many escalations. See #253.
         priorFailures: [...(s.priorFailures || []), escalationFailure].slice(-3),
-      } as UserStory;
+      };
     }) as PRD["userStories"],
   } as PRD;
 
