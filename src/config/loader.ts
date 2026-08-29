@@ -255,7 +255,10 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
       const path = String(err.path.join("."));
       return path ? `${path}: ${err.message}` : err.message;
     });
-    throw new Error(`Invalid configuration:\n${errors.join("\n")}`);
+    throw new NaxError(`Invalid configuration:\n${errors.join("\n")}`, "CONFIG_SCHEMA_INVALID", {
+      stage: "config",
+      paths: result.error.issues.map((err) => String(err.path.join("."))),
+    });
   }
 
   return result.data as NaxConfig;

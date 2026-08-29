@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 import { assertPrdCommitted, validateStoryId } from "@/prd";
 import { _gitDeps } from "@/utils/git";
 
@@ -58,6 +58,44 @@ describe("validateStoryId", () => {
   test("accepts IDs exactly 64 characters", () => {
     const id64 = `a${"b".repeat(63)}`; // 64 characters
     expect(() => validateStoryId(id64)).not.toThrow();
+  });
+});
+
+// ── US-004 AC-3, AC-4: validateStoryId throws coded NaxErrors ───────────────
+//
+// Sibling test block to the message-matching tests above — same call sites,
+// but checks the *type* of the thrown error so a future regression that swaps
+// the coded NaxError back to a bare `Error` (the original failure) fails the
+// suite. Path-traversal names the reason explicitly so callers can log the
+// failure kind without parsing the message.
+
+describe("validateStoryId — coded NaxError (US-004 AC-3, AC-4)", () => {
+  // AC-3: empty id throws a coded NaxError rather than a bare Error.
+  test("AC-3: empty id throws NaxError with a non-empty code", () => {
+    let caught: unknown;
+    try {
+      validateStoryId("");
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught, "validateStoryId('') rejection");
+    expect(typeof caught.code).toBe("string");
+    expect(caught.code.length).toBeGreaterThan(0);
+  });
+
+  // AC-4: path-traversal rejection names path traversal as the reason in the
+  // message AND carries a coded NaxError.
+  test("AC-4: path traversal rejection names path traversal in the message and carries a coded NaxError", () => {
+    let caught: unknown;
+    try {
+      validateStoryId("../escape");
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught, "validateStoryId('../escape') rejection");
+    expect(typeof caught.code).toBe("string");
+    expect(caught.code.length).toBeGreaterThan(0);
+    expect(caught.message.toLowerCase()).toContain("path traversal");
   });
 });
 

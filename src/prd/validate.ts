@@ -23,23 +23,34 @@ import { gitWithTimeout } from "../utils/git";
  */
 export function validateStoryId(id: string): void {
   if (!id || id.length === 0) {
-    throw new Error("Story ID cannot be empty");
+    throw new NaxError("Story ID cannot be empty", "STORY_ID_INVALID", { stage: "prd", id });
   }
 
   // Reject path traversal
   if (id.includes("..")) {
-    throw new Error("Story ID cannot contain path traversal (..)");
+    throw new NaxError(`Story ID cannot contain path traversal (..): ${id}`, "STORY_ID_INVALID", {
+      stage: "prd",
+      id,
+      reason: "path-traversal",
+    });
   }
 
   // Reject git flags
   if (id.startsWith("--")) {
-    throw new Error("Story ID cannot start with git flags (--)");
+    throw new NaxError(`Story ID cannot start with git flags (--): ${id}`, "STORY_ID_INVALID", {
+      stage: "prd",
+      id,
+      reason: "git-flag",
+    });
   }
 
   // Reject invalid characters - must match pattern
   const validPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
   if (!validPattern.test(id)) {
-    throw new Error(`Story ID must match pattern [a-zA-Z0-9][a-zA-Z0-9._-]{0,63}. Got: ${id}`);
+    throw new NaxError(`Story ID must match pattern [a-zA-Z0-9][a-zA-Z0-9._-]{0,63}. Got: ${id}`, "STORY_ID_INVALID", {
+      stage: "prd",
+      id,
+    });
   }
 }
 
