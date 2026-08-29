@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-08-29T07-57-51-812Z",
+    "feature": "review-remediation-sweep",
+    "startedAt": "2026-08-29T07:57:51.812Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 30076
+  },
+  "progress": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 46.75921085300002,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 8,
+  "updatedAt": "2026-08-29T11:50:40.533Z",
+  "durationMs": 13968721,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-08-29T11:50:13.210Z"
+    },
+    "regression": {
+      "status": "failed",
+      "failedTests": [
+        "test/unit/config/dotenv.test.ts",
+        "test/unit/acceptance/hardening.test.ts"
+      ],
+      "affectedStories": [],
+      "lastRunAt": "2026-08-29T11:50:39.291Z"
+    }
+  }
+}

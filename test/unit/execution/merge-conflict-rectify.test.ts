@@ -21,7 +21,7 @@ import {
 } from "@test/helpers";
 import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-rectify";
 import {
-  _rectifyDeps,
+  _mergeRectifyDeps,
   buildRectificationPipelineContext,
   closeStaleAcpSession,
   rectifyConflictedStory,
@@ -261,40 +261,40 @@ describe("buildRectificationPipelineContext: the rectification re-run inherits t
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("closeStaleAcpSession — bounded `acpx sessions close` (hang-path)", () => {
-  let origTypedSpawn: typeof _rectifyDeps.typedSpawn;
-  let origTimeoutMs: typeof _rectifyDeps.timeoutMs;
-  let origKillProcessGroup: typeof _rectifyDeps.killProcessGroup;
+  let origTypedSpawn: typeof _mergeRectifyDeps.typedSpawn;
+  let origTimeoutMs: typeof _mergeRectifyDeps.timeoutMs;
+  let origKillProcessGroup: typeof _mergeRectifyDeps.killProcessGroup;
   let killedPid: number | undefined;
 
   beforeEach(() => {
-    origTypedSpawn = _rectifyDeps.typedSpawn;
-    origTimeoutMs = _rectifyDeps.timeoutMs;
-    origKillProcessGroup = _rectifyDeps.killProcessGroup;
+    origTypedSpawn = _mergeRectifyDeps.typedSpawn;
+    origTimeoutMs = _mergeRectifyDeps.timeoutMs;
+    origKillProcessGroup = _mergeRectifyDeps.killProcessGroup;
     killedPid = undefined;
   });
 
   afterEach(() => {
-    _rectifyDeps.typedSpawn = origTypedSpawn;
-    _rectifyDeps.timeoutMs = origTimeoutMs;
-    _rectifyDeps.killProcessGroup = origKillProcessGroup;
+    _mergeRectifyDeps.typedSpawn = origTypedSpawn;
+    _mergeRectifyDeps.timeoutMs = origTimeoutMs;
+    _mergeRectifyDeps.killProcessGroup = origKillProcessGroup;
   });
 
   test("settles without raising when the `acpx sessions close` child never exits (AC-5)", async () => {
-    _rectifyDeps.timeoutMs = 50;
+    _mergeRectifyDeps.timeoutMs = 50;
     // Adversarial: SIGKILL is sent but `proc.exited` stays pending — the
     // implementation MUST settle from the deadline itself, not from the SIGKILL
     // side-effect. `killResolvesExited` is intentionally FALSE so the timer,
     // not the kill, drives the race resolution.
     const proc = makeSpawnResult({ hang: true, pid: 3333 });
-    _rectifyDeps.typedSpawn = makeSpawn(() => proc).spawn as typeof _rectifyDeps.typedSpawn;
-    _rectifyDeps.killProcessGroup = ((pid) => {
+    _mergeRectifyDeps.typedSpawn = makeSpawn(() => proc).spawn as typeof _mergeRectifyDeps.typedSpawn;
+    _mergeRectifyDeps.killProcessGroup = ((pid) => {
       killedPid = pid;
       // Intentionally NOT calling proc.kill() — the AC requires the eviction
       // to settle (without raising) regardless of what the SIGKILL signal does
       // to `proc.exited`. An implementation that awaits `proc.exited` after
       // the kill would hang here.
       return true;
-    }) as typeof _rectifyDeps.killProcessGroup;
+    }) as typeof _mergeRectifyDeps.killProcessGroup;
 
     // Best-effort contract preserved: even on a wedged acpx the helper settles
     // (never rejects) so the rectification pipeline can continue.

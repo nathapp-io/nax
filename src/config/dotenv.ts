@@ -170,5 +170,5 @@ function resolveString(str: string, env: Record<string, string>, path: string[])
     .replace(DOUBLE_DOLLAR_PROTECT_RE, `$$$${DOUBLE_DOLLAR_PLACEHOLDER}$1`)
     .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, varName: string) => resolveOne(varName))
     .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => resolveOne(varName))
-    .replace(DOUBLE_DOLLAR_RESTORE_RE, "$$$1");
+    .replace(DOUBLE_DOLLAR_RESTORE_RE, "$$$$$1");
 }

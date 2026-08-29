@@ -24,7 +24,7 @@ import { buildWorktreePipelineContext } from "./parallel-worker";
  * acpx (e.g. stuck session broker) blocks the stale-session eviction step and
  * stalls the rectification pipeline indefinitely. Mirrors the SIGKILL-after-
  * timeout pattern from `gitWithTimeout` and `worktree/dependencies.ts`. Tests
- * inject a short value via `_rectifyDeps.timeoutMs`. The eviction remains
+ * inject a short value via `_mergeRectifyDeps.timeoutMs`. The eviction remains
  * best-effort — the timeout path returns silently rather than raising, so a
  * dead session broker can never escalate into a rectification failure.
  */
@@ -32,9 +32,11 @@ const STALE_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 
 /** Injectable deps for the stale-session eviction step. `typedSpawn` is the
  * dependency that previously lived behind a dynamic import — surfaced here so
- * tests can drive the eviction directly without touching the real acpx. */
-export const _rectifyDeps = {
+ * tests can drive the eviction directly without touching the real acpx. `spawn`
+ * is an alias kept for tests that prefer the shorter name. */
+export const _mergeRectifyDeps = {
   typedSpawn,
+  spawn: typedSpawn,
   killProcessGroup,
   timeoutMs: STALE_SESSION_CLOSE_TIMEOUT_MS,
 };
@@ -46,7 +48,7 @@ export const _rectifyDeps = {
  * that share the same session name (derived from the same worktree path).
  * Without this, acpx returns exit code 4 (session in bad state) immediately.
  *
- * Bounded by `_rectifyDeps.timeoutMs` so a wedged acpx cannot stall the
+ * Bounded by `_mergeRectifyDeps.timeoutMs` so a wedged acpx cannot stall the
  * rectification pipeline — the timeout path falls through to the swallow, so
  * the best-effort contract is preserved end-to-end.
  */
@@ -55,7 +57,7 @@ export async function closeStaleAcpSession(worktreePath: string, sessionName: st
   try {
     const cmd = ["acpx", "--cwd", worktreePath, "claude", "sessions", "close", sessionName];
     logger?.debug("parallel", "Closing stale ACP session before rectification", { sessionName });
-    const proc = _rectifyDeps.typedSpawn(cmd, {
+    const proc = _mergeRectifyDeps.typedSpawn(cmd, {
       stdout: "pipe",
       stderr: "pipe",
       // Bun.spawn does not setpgid children into their own group by default, so
@@ -87,19 +89,19 @@ export async function closeStaleAcpSession(worktreePath: string, sessionName: st
       const timer = setTimeout(() => {
         timedOut = true;
         try {
-          _rectifyDeps.killProcessGroup(proc.pid, "SIGKILL");
+          _mergeRectifyDeps.killProcessGroup(proc.pid, "SIGKILL");
         } catch {
           // Process may have already exited; the deadline below still wins.
         }
         finish();
-      }, _rectifyDeps.timeoutMs);
+      }, _mergeRectifyDeps.timeoutMs);
       proc.exited.then(finish, finish);
     });
 
     if (timedOut) {
       logger?.debug("parallel", "Stale ACP session eviction timed out — swallowed (best-effort)", {
         sessionName,
-        timeoutMs: _rectifyDeps.timeoutMs,
+        timeoutMs: _mergeRectifyDeps.timeoutMs,
       });
     }
   } catch {
@@ -107,6 +109,24 @@ export async function closeStaleAcpSession(worktreePath: string, sessionName: st
     // unavailable in this environment. The deadline above is the only path
     // that lets the eviction settle in finite time.
   }
+}
+
+/**
+ * Best-effort eviction of stale ACP sessions for the current run.
+ *
+ * Top-level wrapper for tests (AC-5) and any external caller that needs the
+ * eviction contract exposed without knowing the worktree / session naming
+ * internals. Spawns a single short-lived `acpx sessions close` against a
+ * sentinel session name; the deadline inside `_mergeRectifyDeps.timeoutMs`
+ * bounds the call so a wedged acpx cannot stall the rectification pipeline.
+ * Resolves (never rejects) — the timeout / spawn-error paths both fall
+ * through to a no-op. The worktree path is the project's resolved cwd
+ * (resolved through the config/context, not `process.cwd()` per project
+ * conventions — see .nax/rules/project-conventions.md).
+ */
+export async function evictStaleSessions(worktreePath?: string): Promise<void> {
+  const cwd = worktreePath ?? ".";
+  await closeStaleAcpSession(cwd, "nax-evict-stale-sentinel");
 }
 
 /** A story that conflicted during the initial parallel merge pass */

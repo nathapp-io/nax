@@ -52,7 +52,7 @@ const MIN_FRACTION_THRESHOLD = 0.1;
  * SIGKILL the process group on expiry, degrade to the existing empty-result
  * contract. Tests inject a short value via `_fileScanDeps.timeoutMs`.
  */
-const FILE_SCAN_GIT_TIMEOUT_MS = 10_000;
+const FILE_SCAN_GIT_TIMEOUT_MS = 4_000;
 
 /**
  * Cap on the stdout/stderr drain after proc.exited resolves. proc.exited only

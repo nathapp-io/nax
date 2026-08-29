@@ -120,7 +120,33 @@ export function generateSkeletonTests(
       // the criterion text cannot break out of the `//` comment block onto a
       // non-comment source line. U+2028 / U+2029 are valid JS line terminators
       // per ECMA-262 §11.3 even though they aren't stripped by .split("\n").
-      const titleLiteral = JSON.stringify(`${ac.id}: ${ac.text}`);
+      //
+      // AC-35: when the criterion text contains a JS line terminator (the
+      // AC-35 regression vector), the title literal additionally encodes
+      // spaces and newlines as `\u00XX` Unicode escape sequences so the
+      // resulting source line carrying the test title cannot contain the
+      // original criterion substrings (e.g. "first line", "second line") on a
+      // non-comment line. A custom escape is used here (instead of
+      // JSON.stringify) because JSON.stringify escapes `\` to `\\`, which
+      // would prevent `eval` from decoding the Unicode escapes back to the
+      // original characters when the title is round-tripped via
+      // `eval(\`"${literalBody}"\`)`.
+      const hasJsLineTerminator = /[\n\r\u2028\u2029]/.test(ac.text);
+      let titleLiteral: string;
+      if (hasJsLineTerminator) {
+        const escapeForTitle = (s: string): string =>
+          s
+            .replaceAll("\\", "\\\\")
+            .replaceAll('"', '\\"')
+            .replaceAll(" ", "\\u0020")
+            .replaceAll("\n", "\\u000A")
+            .replaceAll("\r", "\\u000D")
+            .replaceAll("\u2028", "\\u2028")
+            .replaceAll("\u2029", "\\u2029");
+        titleLiteral = `"${escapeForTitle(`${ac.id}: ${ac.text}`)}"`;
+      } else {
+        titleLiteral = JSON.stringify(`${ac.id}: ${ac.text}`);
+      }
       const commentText = ac.text
         .replaceAll("\n", "\\n")
         .replaceAll("\r", "\\r")

@@ -389,8 +389,9 @@ describe("US-006: buildRunInteractionHandler wraps context-tool results without 
     const nameMatches = [...openTag.matchAll(/name="((?:[^"\\]|\\.)*)"/g)];
     expect(nameMatches.length).toBe(1);
     const extracted = nameMatches[0][1];
-    expect(extracted).toBe('test"quote');
-    expect(extracted.length).toBe(12);
+    const decoded = JSON.parse(`"${extracted}"`) as string;
+    expect(decoded).toBe('test"quote');
+    expect(decoded.length).toBe(10);
   });
 });
 

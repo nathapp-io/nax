@@ -64,6 +64,9 @@ export const _checkDiskSpaceDeps = {
  * The available-space column sits at index 3. When the data line has
  * fewer columns, the column is missing — the check must fail with a
  * parse-failure message that contains no "NaN" text (BUG review fix).
+ *
+ * Also exported as `parseDiskSpaceWarning` for tests/callers that prefer
+ * the "warning" framing — both names refer to the same SSOT.
  */
 export function parseDiskSpaceOutput(output: string): Check {
   const lines = output.trim().split("\n");
@@ -72,7 +75,7 @@ export function parseDiskSpaceOutput(output: string): Check {
       name: "disk-space-sufficient",
       tier: "warning",
       passed: false,
-      message: "Unable to parse disk space output",
+      message: "df output could not be parsed",
     };
   }
 
@@ -85,7 +88,7 @@ export function parseDiskSpaceOutput(output: string): Check {
       name: "disk-space-sufficient",
       tier: "warning",
       passed: false,
-      message: "Unable to parse disk space output",
+      message: "df output could not be parsed",
     };
   }
 
@@ -97,7 +100,7 @@ export function parseDiskSpaceOutput(output: string): Check {
       name: "disk-space-sufficient",
       tier: "warning",
       passed: false,
-      message: "Unable to parse disk space output",
+      message: "df output could not be parsed",
     };
   }
 
@@ -107,7 +110,7 @@ export function parseDiskSpaceOutput(output: string): Check {
       name: "disk-space-sufficient",
       tier: "warning",
       passed: false,
-      message: "Unable to parse disk space output",
+      message: "df output could not be parsed",
     };
   }
 
@@ -123,6 +126,9 @@ export function parseDiskSpaceOutput(output: string): Check {
       : `Low disk space: ${availableGB.toFixed(2)}GB available`,
   };
 }
+
+/** Alias of {@link parseDiskSpaceOutput} — same SSOT, alternate name. */
+export const parseDiskSpaceWarning = parseDiskSpaceOutput;
 
 /**
  * Check if disk space is above 1GB.

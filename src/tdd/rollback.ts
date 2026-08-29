@@ -16,7 +16,7 @@ import { killProcessGroup } from "../utils/process-kill";
  * `worktree/dependencies.ts`. Tests inject a short value via
  * `_rollbackDeps.timeoutMs`.
  */
-const ROLLBACK_GIT_TIMEOUT_MS = 10_000;
+const ROLLBACK_GIT_TIMEOUT_MS = 4_000;
 
 /**
  * Cap on the stdout/stderr drain after proc.exited resolves. proc.exited only

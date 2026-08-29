@@ -37,7 +37,7 @@ function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<T | typ
 }
 
 /** Well-known test directory names to probe */
-const WELL_KNOWN_TEST_DIRS = ["test", "tests", "__tests__", "spec", "specs"] as const;
+const WELL_KNOWN_TEST_DIRS = ["test", "tests", "__tests__", "spec", "specs", ".nax/accept"] as const;
 
 /** Directories to skip when scanning for extensions */
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage", ".nax"]);
@@ -50,7 +50,7 @@ const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage", 
  * listing (the existing "directory exists but is empty" fallback glob still
  * fires downstream, so the tier still emits a non-null source).
  */
-const DIRECTORY_SCAN_GIT_TIMEOUT_MS = 10_000;
+const DIRECTORY_SCAN_GIT_TIMEOUT_MS = 4_000;
 
 /**
  * Cap on the stdout/stderr drain after proc.exited resolves. proc.exited only
