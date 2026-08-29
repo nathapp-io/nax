@@ -2,11 +2,13 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { spawn } from "../utils/bun-deps";
 import { parseCommandToArgv } from "../utils/command-argv";
+import { killProcessGroup } from "../utils/process-kill";
 import type { PrepareWorktreeDependenciesOptions, WorktreeDependencyContext } from "./types";
 import { WorktreeDependencyPreparationError } from "./types";
 
 export const _worktreeDependencyDeps = {
   spawn,
+  killProcessGroup,
 };
 
 /**
@@ -63,6 +65,13 @@ async function provisionDependencies(
     cwd: worktreeRoot,
     stdout: "pipe",
     stderr: "pipe",
+    // MEM-4: without this, `proc.kill()` (or killProcessGroup below) reaches only
+    // this direct child — a pnpm/npm postinstall grandchild survives the timeout
+    // and keeps running against a worktree nax is about to delete. `detached`
+    // makes this process a session/group leader via setsid(), so its own pid IS
+    // the real process-group id killProcessGroup(-pid) targets. Matches the
+    // established pattern in verification/executor.ts (ORPHAN-1, bun-deps.ts).
+    detached: true,
   });
 
   // BUG-13: unlike every git call (routed through gitWithTimeout), this spawn had
@@ -70,11 +79,11 @@ async function provisionDependencies(
   let timedOut = false;
   const timerId = setTimeout(() => {
     timedOut = true;
-    try {
-      proc.kill("SIGKILL");
-    } catch {
-      // Process may have already exited
-    }
+    // MEM-4: proc.kill() reached only the direct child, orphaning postinstall
+    // grandchildren. killProcessGroup(pid, "SIGKILL") kills the whole group
+    // (negative pid), falling back to the single process on ESRCH — same
+    // contract as verification/executor.ts's timeout path.
+    _worktreeDependencyDeps.killProcessGroup(proc.pid, "SIGKILL");
   }, timeoutMs);
 
   // Drain concurrently with the exit wait — a process that fills a pipe's OS
