@@ -9,10 +9,12 @@
  * `tier-escalation.ts` to launder a story whose inherited routing was
  * statically missing `complexity`.
  *
- * These are characterization tests for the fix: the mapper's returned
- * `UserStory` typechecks with no cast, and a story with no `routing` of its
- * own inherits `complexity` from the batch lead's routing (`ctx.routing`) at
- * runtime — the behaviour the widened type now describes accurately.
+ * The cast-free mapper is a compile-time property, enforced by `bun run
+ * typecheck` rather than by an assertion here: a runtime test cannot observe
+ * whether a cast was applied, so no test in this file guards it. What IS
+ * testable, and is what this file covers, is the runtime behaviour the widened
+ * type now describes accurately — a story with no `routing` of its own
+ * inherits `complexity` from the batch lead's routing (`ctx.routing`).
  *
  * Test naming convention follows the sibling files in
  * `test/unit/execution/escalation/` (split by describe-block concern per the
@@ -22,7 +24,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { assertDefined, makeEscalationContext, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import { _tierEscalationDeps, handleTierEscalation } from "@/execution/escalation/tier-escalation";
-import type { UserStory } from "@/prd";
 
 let origSavePRD: typeof _tierEscalationDeps.savePRD;
 
@@ -33,39 +34,6 @@ beforeEach(() => {
 
 afterEach(() => {
   _tierEscalationDeps.savePRD = origSavePRD;
-});
-
-describe("#1761 — escalation mapper returns UserStory with no cast", () => {
-  test("the escalated story assigns to UserStory with no cast", async () => {
-    const story = makeStory({
-      id: "US-no-cast",
-      title: "Story",
-      status: "in-progress",
-      attempts: 1,
-      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    });
-
-    const result = await handleTierEscalation(
-      makeEscalationContext({
-        story,
-        storiesToExecute: [story],
-        isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
-        pipelineResult: { reason: "Tests failed", context: {} },
-        prd: makePRD({ userStories: [story] }),
-      }),
-    );
-
-    const updated = result.prd.userStories.find((s) => s.id === "US-no-cast");
-    assertDefined(updated, "escalated story missing from PRD");
-
-    // Compile-time proof: no cast to `UserStory` (or any other type) is
-    // needed here. Before #1761 this required a cast at the mapper's return site
-    // because a routing-less story's inherited routing was statically a
-    // partial StoryRouting (missing `complexity`).
-    const typedStory: UserStory = updated;
-    expect(typedStory.id).toBe("US-no-cast");
-  });
 });
 
 describe("#1761 — routing-less story inherits complexity from the batch lead", () => {

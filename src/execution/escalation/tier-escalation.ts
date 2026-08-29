@@ -554,8 +554,8 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
         // Prevents unbounded growth with stack traces across many escalations. See #253.
         priorFailures: [...(s.priorFailures || []), escalationFailure].slice(-3),
       };
-    }) as PRD["userStories"],
-  } as PRD;
+    }),
+  };
 
   await _tierEscalationDeps.savePRD(updatedPrd, ctx.prdPath);
 
