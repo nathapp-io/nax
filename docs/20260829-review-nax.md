@@ -34,7 +34,70 @@ duplicates of each other.
 | Claim narrowed | BUG-13, BUG-14, MEM-1, MEM-22 | Verifiable core kept; unverified or inaccurate framing dropped (details in each entry). |
 | Claim widened | BUG-3 | Non-rectified merge conflicts also produce no `StoryMetric` at all — a second gap the original missed. |
 
-Finding count: 47 → **44** (2 retracted-and-merged, 2 duplicate pairs collapsed).
+Finding count: 47 → **45** (BUG-1 and BUG-2 retracted and merged into one residual LOW, two duplicate pairs collapsed). Note `MEM-1` and `BUG-1r` are distinct findings that happen to share the number 1.
+
+---
+
+## Status — as of 2026-08-29, before `nax run`
+
+All 45 findings are accounted for below. Nothing is silently dropped: a finding is
+either shipped, queued in a spec, or deferred with a stated reason.
+
+| | Count | Where it stands |
+|:---|---:|:---|
+| **Shipped** | 5 | PR [#1766](https://github.com/nathapp-io/nax/pull/1766), merged as `b78c75d28` |
+| **Queued** | 19 | `.nax/features/review-remediation-sweep/` — spec + PRD committed, 6 stories `pending`, run not started |
+| **Deferred** | 21 | Recorded here with reasons; see `## Out of Scope` in the sweep spec for the machine-readable form |
+
+### Shipped — PR #1766
+
+| ID | Fix |
+|:---|:---|
+| BUG-3 | Non-rectified parallel merge conflicts now emit `story:failed`, append progress, and get a `StoryMetric`. The missing metric was found while fixing the event gap and was not in the original finding. |
+| MEM-1 | `setupRun` wrapped from `installCrashHandlers` onward; the catch calls `cleanupCrashHandlers()` and `await runtime.close()`. The redundant EXEC-2 site-specific call was removed. |
+| MEM-4 | Worktree dependency provisioning spawns `detached: true` and kills the process group. |
+| BUG-10 | `Logger.close()` calls `flushSync()`; `bin/nax.ts` awaits `flush()` before `resetLogger()` so the sync flush cannot race an in-flight batched append. |
+| BUG-13 | `classifyMutant`'s `SUCCESS` arm requires test evidence; a zero-test success is `errored`, not `survived`. |
+
+A post-implementation quality review of those five produced five more findings. Two did not
+survive verification — a claimed exception-propagation path through `appendProgress` and
+`pipelineEventBus.emit`, both of which swallow internally — and are recorded as rejected rather
+than fixed. The three real ones shipped in the same PR.
+
+### Queued — `review-remediation-sweep`
+
+Six independent stories, 35 acceptance criteria, no dependency chain. Selection rule: a finding
+is in only if it changes a behaviour a runtime test can observe.
+
+| Story | Findings |
+|:---|:---|
+| US-001 — bounded subprocess deadlines | BUG-1r, BUG-5, BUG-16 |
+| US-002 — path and shape validation at boundaries | TYPE-18, SEC-11, SEC-26 |
+| US-003 — unrepresentable and forgeable values | BUG-9, BUG-35, SEC-33 |
+| US-004 — NaxError contract in the loaders | BUG-8, TYPE-32, STYLE-46 |
+| US-005 — truthful reporting | BUG-29, BUG-30, BUG-28, BUG-23, BUG-14 |
+| US-006 — acceptance pipeline | BUG-6, BUG-7 |
+
+Two rounds of auditing preceded the plan. A contradiction pass found three blockers — two
+acceptance criteria that were unsatisfiable or vacuous as written, and a three-way disagreement
+between the Design, an AC and the Seams section — plus two claims that were false against the
+code and were settled by running them. A `nax plan` fidelity check then found that both
+`### Modifies` entries had been silently dropped, which would have deadlocked US-006: its AC-1
+inverts an assertion in `test/unit/acceptance/hardening.test.ts` that the implementer would not
+have been authorised to touch. `bun run spec:lint` now catches that class before a plan is paid for.
+
+### Deferred
+
+| ID | Reason |
+|:---|:---|
+| BUG-15 | The correct rates are facts about the outside world no test here can establish; a model supplying them from recollection replaces a known-wrong number with an unknown-wrong one. Needs a human with a current price list. |
+| SEC-12 | Every candidate fix changes the permission-resolution contract — architecture, not remediation. |
+| TYPE-17, TYPE-38, BUG-36 | Type-annotation and cosmetic corrections with no observable runtime behaviour, so none can be expressed as a runtime acceptance criterion. Handing them to an autonomous run produces prose contracts no AC pins, which is the shape that deadlocks stories in adversarial review. |
+| BUG-37 | Exercising the uncaughtException/unhandledRejection deadline requires driving real process teardown, which cannot be asserted safely from inside the suite that would host the test. |
+| PERF-19, PERF-31 | Performance work whose only honest acceptance criterion is a timing threshold; timing assertions are flaky in CI. |
+| STYLE-42, STYLE-43 | A deletion and a consolidation whose blast radius needs a human decision about what the code was for. |
+| STYLE-44 | 16 grandfathered oversized files — a standing ratchet, not a discrete fix. |
+| BUG-21, BUG-25, BUG-34, BUG-41, BUG-47, MEM-20, MEM-22, ENH-24, ENH-27, ENH-45 | Each individually valid and individually small. Excluded to hold the sweep spec at six stories, since story count drives run cost roughly linearly. They remain fully described in the LOW table below and are the natural content of a second sweep. |
 
 ---
 
@@ -101,7 +164,7 @@ Every entry below carries a verification verdict:
 **CONFIRMED** = re-read at the cited lines this pass · **CONFIRMED (narrowed)** = core holds, some
 framing corrected · **PARTIAL** = one half proven, one half not checked.
 
-### 🟠 HIGH
+### HIGH
 
 #### MEM-1: Setup-phase throw leaks installed crash handlers and never closes the runtime
 **Severity:** HIGH | **Category:** Memory/Resource leak | **Verdict:** CONFIRMED (narrowed)
@@ -181,7 +244,7 @@ documented as ORPHAN-1 in `bun-deps.ts:27-35` with exactly this failure mode.
 
 ---
 
-### 🟡 MEDIUM
+### MEDIUM
 
 #### BUG-5: TDD rollback git spawns have no timeout
 **Severity:** MEDIUM *(was HIGH)* | **Category:** Bug | **Verdict:** CONFIRMED (narrowed)
@@ -387,7 +450,7 @@ JSON off disk, and the project's own config rule requires Zod at the boundary.
 
 ---
 
-### 🟢 LOW (condensed)
+### LOW (condensed)
 
 | ID | Category | Location | Issue | Verdict |
 |:---|:---|:---|:---|:---|
@@ -440,18 +503,16 @@ JSON off disk, and the project's own config rule requires Zod at the boundary.
 
 ## Priority Fix Order
 
-| Priority | ID | Effort | Description |
-|:---|:---|:---|:---|
-| P0 | BUG-3 | S | Emit `story:failed` + `appendProgress` + a `StoryMetric` for non-rectified parallel merge conflicts |
-| P1 | MEM-1 | M | try/catch around the whole of `setupRun` → `cleanupCrashHandlers()` + `await runtime.close()`; delete the now-redundant EXEC-2 call |
-| P1 | MEM-4 | S | `detached: true` + process-group kill in worktree dependency provisioning |
-| P1 | BUG-10 | S | `flushSync()` in `resetLogger()` |
-| P1 | BUG-13 | S | Zero-test guard in `classifyMutant` — `SUCCESS` with no tests run is `errored`, not `survived` |
-| P2 | BUG-6, BUG-9 | S | Hardening persists on discard-only; schedule overflow guard |
-| P2 | BUG-7, TYPE-18 | M | `JSON.stringify` the AC literal; validate `testFilePatterns` shape before `validateGlobs` |
-| P2 | BUG-5, BUG-16, BUG-1r | S | Close out the three remaining unbounded spawns (TDD rollback, `acpx sessions close`, `git ls-files`) as one commit |
-| P3 | BUG-14, BUG-15, BUG-8, SEC-12 | M | `ACP_ADAPTER_NAMES` in `nax agents`; rate-card refresh; `loadPRD` NaxError; permission constant |
-| P3 | All LOW | M | Batched: crash-signal deadline (BUG-37), casts (TYPE-17/38), path validation (SEC-11, SEC-26), dedupes and style |
+The original priority ordering has been resolved into the status ledger above: P0 and P1
+shipped in #1766, and P2/P3 were triaged into the `review-remediation-sweep` spec or deferred
+with a reason. What remains open, in the order it will be worked:
+
+| Order | Where | Contents |
+|:---|:---|:---|
+| Next | `nax run -f review-remediation-sweep` | The 19 queued findings, as six independent stories |
+| After | A second sweep spec | The ten small deferrals (BUG-21, BUG-25, BUG-34, BUG-41, BUG-47, MEM-20, MEM-22, ENH-24, ENH-27, ENH-45) |
+| Human input needed | — | BUG-15 (a current price list) and SEC-12 (a permission-contract decision) |
+| Standing | — | STYLE-44's oversized-file ratchet; the type-only and timing-bound findings, which want a different verification approach than a runtime AC |
 
 ---
 
