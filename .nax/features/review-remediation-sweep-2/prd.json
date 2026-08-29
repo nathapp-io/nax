@@ -3,7 +3,7 @@
   "feature": "review-remediation-sweep-2",
   "branchName": "feat/review-remediation-sweep-2",
   "createdAt": "2026-08-29T00:00:00.000Z",
-  "updatedAt": "2026-08-29T16:13:21.110Z",
+  "updatedAt": "2026-08-29T16:27:23.214Z",
   "userStories": [
     {
       "id": "US-001",
@@ -79,8 +79,8 @@
         "process-lifecycle"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -141,7 +141,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/init-context.ts",
@@ -155,7 +157,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b11448a25d0f6be26ab179b5015e63b202a26115"
     },
     {
       "id": "US-004",

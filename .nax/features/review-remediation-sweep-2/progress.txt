@@ -1,1 +1,2 @@
 [2026-08-29T16:13:17.567Z] US-001 — PASSED — Surface worktree and changed-file git failures — Cost: $5.9026
+[2026-08-29T16:27:19.658Z] US-002 — PASSED — Make TDD git failures loud and cleanup grace waits bounded — Cost: $1.5672
