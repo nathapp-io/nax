@@ -286,7 +286,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       await processPackageGroup(ctx, packageDir, groupStories, detectedLang ?? ctx.config.project?.language, result);
     }
 
-    if (result.promoted.length > 0) {
+    if (result.promoted.length > 0 || result.discarded.length > 0) {
       await _hardeningDeps.savePRD(ctx.prd, ctx.prdPath);
     }
 

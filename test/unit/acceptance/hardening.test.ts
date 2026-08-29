@@ -169,6 +169,11 @@ describe("runHardeningPass()", () => {
     expect(_hardeningDeps.savePRD).toHaveBeenCalledTimes(1);
   });
 
+  // US-006 AC-1: discard-only pass persists the PRD so the next run does not
+  // re-pay the LLM refine/generate/test spawn. Updated under story
+  // authorization: the previous assertion `savePRD` was not called is exactly
+  // what AC-1 inverts. The discard bookkeeping it pinned (result.discarded,
+  // story.acceptanceCriteria, story.suggestedCriteria) is still correct.
   test("discards failing suggested criteria", async () => {
     const story = makeStory({
       acceptanceCriteria: ["spec AC"],
@@ -193,7 +198,73 @@ describe("runHardeningPass()", () => {
     expect(result.discarded).toEqual(["failing edge case"]);
     expect(story.acceptanceCriteria).toEqual(["spec AC"]);
     expect(story.suggestedCriteria).toEqual(["failing edge case"]);
+    expect(_hardeningDeps.savePRD).toHaveBeenCalledTimes(1);
+  });
+
+  // US-006 AC-2: when the pass is a no-op (no promotion AND no discard —
+  // e.g. refine returns an empty list so no criterion is processed), do NOT
+  // persist. The previous condition fired whenever `promoted.length > 0`; we
+  // are replacing it with "did the PRD change?".
+  test("does not persist PRD when no criterion is promoted and no criterion is discarded", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC"],
+      suggestedCriteria: ["edge case"],
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    // Refine returns an empty list — no criteria get processed, so neither
+    // promotion nor discard happens. generate still runs and the test command
+    // exits 0; nothing about the PRD changed.
+    _hardeningDeps.callOp = mockCallOp([], { testCode: "test('placeholder', () => {})" });
+    _hardeningDeps.writeFile = mock(async () => {});
+    _hardeningDeps.savePRD = mock(async () => {});
+    _hardeningDeps.spawn = passingSpawn();
+
+    const result = await runHardeningPass(ctx);
+
+    expect(result.promoted).toEqual([]);
+    expect(result.discarded).toEqual([]);
+    // No-op: PRD was not changed, do NOT persist.
     expect(_hardeningDeps.savePRD).not.toHaveBeenCalled();
+  });
+
+  // US-006 AC-3: a pass with one promoted criterion must persist and the
+  // persisted story's acceptanceCriteria must include the promoted text.
+  test("persists PRD on a single promotion and the saved PRD includes the promoted text", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC"],
+      suggestedCriteria: ["promoted edge case"],
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const prd = makePRD({ userStories: [story] });
+    const ctx = makeCtx({ prd, prdPath: "/tmp/persist-on-promote.json" });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "promoted edge case", refined: "promoted edge case", testable: true, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => {})' },
+    );
+    _hardeningDeps.writeFile = mock(async () => {});
+    let savedPrdArg: unknown;
+    _hardeningDeps.savePRD = mock(async (p: unknown) => {
+      savedPrdArg = p;
+    });
+    _hardeningDeps.spawn = passingSpawn();
+
+    const result = await runHardeningPass(ctx);
+
+    expect(result.promoted).toEqual(["promoted edge case"]);
+    expect(result.discarded).toEqual([]);
+    expect(_hardeningDeps.savePRD).toHaveBeenCalledTimes(1);
+    // savePRD received the same PRD instance, so its stories are mutated
+    // in place — that is the persistence path.
+    expect(savedPrdArg).toBe(prd);
+    const persistedStory = prd.userStories[0];
+    expect(persistedStory?.acceptanceCriteria).toContain("promoted edge case");
   });
 
   // BUG-14: an acceptance-test command that fails opaquely (timeout kill, missing
@@ -259,7 +330,10 @@ describe("runHardeningPass()", () => {
     expect(result.promoted).toEqual([]);
     expect(result.discarded).toEqual(["cli.ts contains an import of writeFileSync"]);
     expect(story.acceptanceCriteria).toEqual(["spec AC"]);
-    expect(_hardeningDeps.savePRD).not.toHaveBeenCalled();
+    // US-006 AC-1: a discard-only pass must persist the PRD so the next run
+    // does not re-pay the LLM refine/generate/test spawn. Previously this
+    // test asserted savePRD was not called; that was the bug AC-1 inverts.
+    expect(_hardeningDeps.savePRD).toHaveBeenCalledTimes(1);
   });
 
   test("promotes testable:true criterion while discarding testable:false in same story", async () => {

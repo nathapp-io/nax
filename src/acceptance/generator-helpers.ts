@@ -111,9 +111,18 @@ export function generateSkeletonTests(
 
   const tests = criteria
     .map((ac) => {
-      return `  test("${ac.id}: ${ac.text}", async () => {
+      // US-006 AC-4: escape the criterion text into a single, well-formed string
+      // literal — JSON.stringify produces a `"…"` literal whose internal
+      // characters (quotes, backslashes, newlines) are properly escaped so the
+      // resulting literal round-trips back to ac.text.
+      // US-006 AC-5: collapse any raw newlines in the comment context to a
+      // visible escape sequence so the criterion text cannot break out of the
+      // comment block onto a non-comment line.
+      const titleLiteral = JSON.stringify(`${ac.id}: ${ac.text}`);
+      const commentText = ac.text.replaceAll("\n", "\\n").replaceAll("\r", "\\r");
+      return `  test(${titleLiteral}, async () => {
     // TODO: Implement acceptance test for ${ac.id}
-    // ${ac.text}
+    // ${commentText}
     expect(true).toBe(false); // Replace with actual test
   });`;
     })
