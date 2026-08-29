@@ -78,7 +78,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
 
       const result = await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         "/tmp/test-prd-terminal-fail.json",
@@ -136,7 +136,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
 
       const result = await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         "/tmp/test-prd-terminal-fail-2.json",
@@ -176,7 +176,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
 
       await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         "/tmp/x.json",
@@ -232,7 +232,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
       // per-story cost) must NOT leak onto the event when a runtime is present.
       await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         "/tmp/x2.json",
@@ -309,7 +309,7 @@ describe("preIterationTierCheck — on-story-fail hook fires exactly once (regre
 
       const result = await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         join(workdir, "prd.json"),

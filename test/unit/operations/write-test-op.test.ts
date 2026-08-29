@@ -163,7 +163,7 @@ describe("testWriterOp.verify — isolation", () => {
   }
 
   test("attaches isolation result when beforeRef provided and only test files changed", async () => {
-    const { testWriterOp } = await import("@/operations");
+    const { testWriterOp: _testWriterOp } = await import("@/operations");
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
@@ -193,7 +193,7 @@ describe("testWriterOp.verify — isolation", () => {
   });
 
   test("attaches isolation result with violations when source files changed", async () => {
-    const { testWriterOp } = await import("@/operations");
+    const { testWriterOp: _testWriterOp } = await import("@/operations");
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
@@ -223,7 +223,7 @@ describe("testWriterOp.verify — isolation", () => {
   });
 
   test("returns parsed unchanged when beforeRef absent (skip isolation)", async () => {
-    const { testWriterOp } = await import("@/operations");
+    const { testWriterOp: _testWriterOp } = await import("@/operations");
 
     const parsed: TestWriterOutput = {
       success: true,

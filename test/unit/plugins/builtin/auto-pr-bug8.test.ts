@@ -94,7 +94,7 @@ describe("BUG-8 — execute() re-checks hasOpenPr after push", () => {
     // execute recheck) returns true — simulating a concurrent run that opened
     // a PR between the two checks.
     let hasOpenPrCalls = 0;
-    _autoPrDeps.run = (async (cmd: string[]) => {
+    _autoPrDeps.run = (async (_cmd: string[]) => {
       // git push succeeds
       return { exitCode: 0, stdout: "", stderr: "" };
     }) as typeof _autoPrDeps.run;
@@ -121,7 +121,7 @@ describe("BUG-8 — execute() re-checks hasOpenPr after push", () => {
   });
 
   test("AC3: recheck returns false → openDraft proceeds normally", async () => {
-    _autoPrDeps.run = (async (cmd: string[]) => {
+    _autoPrDeps.run = (async (_cmd: string[]) => {
       return { exitCode: 0, stdout: "", stderr: "" };
     }) as typeof _autoPrDeps.run;
     _autoPrDeps.hasOpenPr = (async () => false) as typeof _autoPrDeps.hasOpenPr;

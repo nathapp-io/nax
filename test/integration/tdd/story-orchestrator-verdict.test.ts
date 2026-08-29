@@ -39,7 +39,7 @@ const story: UserStory = {
   attempts: 0,
 };
 
-function defaultPatterns(): ResolvedTestPatterns {
+function _defaultPatterns(): ResolvedTestPatterns {
   return {
     globs: ["**/*.test.ts"],
     regex: [/\.test\.ts$/],

@@ -117,7 +117,7 @@ describe("CLI precheck command", () => {
         dir: projectDir,
         json: false,
       });
-    } catch (err) {
+    } catch (_err) {
       // Expected - command calls process.exit
     } finally {
       process.exit = originalExit;
@@ -148,7 +148,7 @@ describe("CLI precheck command", () => {
         dir: projectDir,
         json: false,
       });
-    } catch (err) {
+    } catch (_err) {
       // Expected
     } finally {
       process.exit = originalExit;
@@ -171,10 +171,10 @@ describe("CLI precheck command", () => {
       logs.push(msg);
     };
 
-    let exitCode: number | undefined;
+    let _exitCode: number | undefined;
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
-      exitCode = code;
+      _exitCode = code;
     }) as typeof process.exit;
 
     try {
@@ -183,7 +183,7 @@ describe("CLI precheck command", () => {
         dir: projectDir,
         json: true,
       });
-    } catch (err) {
+    } catch (_err) {
       // Expected
     } finally {
       console.log = originalLog;
@@ -235,7 +235,7 @@ describe("CLI precheck command", () => {
         dir: projectDir,
         json: false,
       });
-    } catch (err) {
+    } catch (_err) {
       // Expected
     } finally {
       process.exit = originalExit;
@@ -264,7 +264,7 @@ describe("CLI precheck command", () => {
         dir: projectDir,
         json: false,
       });
-    } catch (err) {
+    } catch (_err) {
       // Expected
     } finally {
       process.exit = originalExit;
@@ -308,7 +308,7 @@ describe("CLI precheck command", () => {
         dir: projectDir,
         json: false,
       });
-    } catch (err) {
+    } catch (_err) {
       // Expected
     } finally {
       process.exit = originalExit;
@@ -338,7 +338,7 @@ describe("CLI precheck command", () => {
         dir: projectDir,
         json: false,
       });
-    } catch (err) {
+    } catch (_err) {
       // Expected
     } finally {
       process.exit = originalExit;

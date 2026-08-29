@@ -136,13 +136,7 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
 
   test("BUG-15: resets the retry cap map when a story succeeds after a retry-same", async () => {
     const mod = await import("@/execution/escalation");
-    const {
-      handleTierEscalation,
-      _tierEscalationDeps,
-      _runtimeCrashRetryCounts,
-      RUNTIME_CRASH_RETRY_CAP,
-      resetRuntimeCrashRetryCounts,
-    } = mod;
+    const { _tierEscalationDeps, _runtimeCrashRetryCounts, resetRuntimeCrashRetryCounts } = mod;
 
     const storyId = "US-002-retry-cap-succeed";
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -159,7 +153,7 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
 
       const prd = makePRD({ feature: "f", userStories: [story] });
 
-      const buildCtx = () => ({
+      const _buildCtx = () => ({
         story,
         storiesToExecute: [story],
         isBatchExecution: false,

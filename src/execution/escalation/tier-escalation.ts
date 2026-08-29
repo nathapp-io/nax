@@ -126,17 +126,19 @@ export interface PreIterationCheckResult {
  */
 export async function preIterationTierCheck(
   story: UserStory,
-  routing: { modelTier: string },
+  routing: RoutingDecision,
   config: NaxConfig,
   prd: PRD,
   prdPath: string,
   featureDir: string | undefined,
-  hooks: LoadedHooksConfig,
+  _hooks: LoadedHooksConfig,
   feature: string,
   totalCost: number,
-  workdir: string,
+  _workdir: string,
   /** Per-run NaxRuntime — used to look up per-story cost via costAggregator.byStory() (BUG: story:failed cost field). */
   runtime?: import("@/runtime").NaxRuntime,
+  /** Resolves authoritative routing only when a routing-less story must be persisted during escalation. */
+  resolveRoutingFn?: (story: UserStory) => Promise<RoutingDecision>,
 ): Promise<PreIterationCheckResult> {
   const logger = _tierEscalationDeps.getSafeLogger();
 
@@ -200,6 +202,10 @@ export async function preIterationTierCheck(
       undefined, // no TDD failure category — pre-iteration
     );
     const preIterationError = `Attempt ${story.attempts} exhausted budget on tier: ${currentTier}`;
+    // A queued INJECT story has no persisted routing yet. Resolve its real decision
+    // before serialising the escalated tier; the executor preview is display-only
+    // and must never become authoritative PRD routing.
+    const routingToPersist = story.routing ?? (await resolveRoutingFn?.(story)) ?? routing;
 
     // Update story routing in PRD and reset attempts for new tier
     //
@@ -229,7 +235,7 @@ export async function preIterationTierCheck(
                     ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
                   }
                 : {
-                    ...routing,
+                    ...routingToPersist,
                     modelTier: escalatedTier,
                     ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
                   },
@@ -237,8 +243,8 @@ export async function preIterationTierCheck(
               priorFailures: [...(s.priorFailures || []), preIterationFailure].slice(-3),
             }
           : s,
-      ) as PRD["userStories"],
-    } as PRD;
+      ),
+    };
     await _tierEscalationDeps.savePRD(updatedPrd, prdPath);
 
     pipelineEventBus.emit({

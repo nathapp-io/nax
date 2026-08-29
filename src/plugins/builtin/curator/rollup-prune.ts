@@ -96,7 +96,7 @@ export async function pruneRollup(input: PruneRollupInput): Promise<PruneResult>
   // Without it, an observation appended between our read pass and our
   // rename(tmpPath, rollupPath) lands in the old inode and is silently
   // destroyed — the curator's whole purpose is preserving observations.
-  const { rollupPath, projectKey, keepRunIds, dropUnattributed = false } = input;
+  const { rollupPath } = input;
   return withPathFileLock(rollupPath, () => pruneRollupUnlocked(input));
 }
 

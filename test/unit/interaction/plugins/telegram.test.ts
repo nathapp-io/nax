@@ -168,7 +168,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   });
 
   test("receive() parses callback_query correctly", async () => {
-    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, _init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -847,8 +847,7 @@ describe("TelegramInteractionPlugin - sendMessage timeout (BUG-7)", () => {
     const plugin = new TelegramInteractionPlugin();
     // Bypass init (which would start the getUpdates poller) — sanctioned
     // element-access route for private fields, per test-debt drain §8.9.
-    plugin["botToken"] = "bot-abc123";
-    plugin["chatId"] = "99999";
+    Object.assign(plugin, { botToken: "bot-abc123", chatId: "99999" });
 
     const start = Date.now();
     await expect(

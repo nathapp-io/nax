@@ -8,7 +8,7 @@
  *   bun scripts/concurrency-check.ts --baseline=/tmp/nax-baseline.xml --concurrent=/tmp/nax-concurrent.xml
  */
 
-import { readFileSync } from "fs";
+import { readFileSync } from "node:fs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {

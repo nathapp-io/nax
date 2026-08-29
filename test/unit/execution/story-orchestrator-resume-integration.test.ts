@@ -71,7 +71,7 @@ function makePassOp(
   };
 }
 
-function makeFailOp(
+function _makeFailOp(
   name: string,
   output: unknown = { success: false },
 ): DeterministicOperation<unknown, unknown, TestOpConfig> {
@@ -111,7 +111,7 @@ function makeRunOp<I, O>(name: string, sessionRole: SessionRole, output: O): Run
 // ===========================================================================
 
 let runtime: NaxRuntime | undefined;
-const TREE: TreeState = { headSha: "abc123", dirtyDigest: "dirty" };
+const _TREE: TreeState = { headSha: "abc123", dirtyDigest: "dirty" };
 
 afterEach(async () => {
   await runtime?.close();

@@ -14,7 +14,7 @@ import { runPrecheck } from "@/precheck";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const describeWithClaude = fullDescribe;
-const skipInCI = fullTest;
+const _skipInCI = fullTest;
 
 async function setupValidGitEnv(testDir: string): Promise<void> {
   await Bun.spawn(["git", "init"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;

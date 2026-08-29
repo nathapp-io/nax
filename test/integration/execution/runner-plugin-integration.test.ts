@@ -121,7 +121,7 @@ describe("Runner Plugin Integration (US-001)", () => {
       extensions: {
         reporter: {
           name: "test-reporter",
-          async onRunStart(event) {
+          async onRunStart(_event) {
             // This proves the plugin was loaded before the run started
           },
         },
@@ -173,7 +173,7 @@ describe("Runner Plugin Integration (US-001)", () => {
       extensions: {
         reporter: {
           name: "test",
-          async onRunStart(event) {},
+          async onRunStart(_event) {},
         },
       },
     };
@@ -294,7 +294,7 @@ export default {
         dryRun: true,
         skipPrecheck: true,
       });
-    } catch (error) {
+    } catch (_error) {
       // May throw or return early
     }
 
@@ -308,8 +308,8 @@ export default {
     const config = await createMinimalConfig();
 
     // Ensure no plugins exist
-    const globalPluginsDir = path.join(tempDir, ".nax", "plugins");
-    const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
+    const _globalPluginsDir = path.join(tempDir, ".nax", "plugins");
+    const _projectPluginsDir = path.join(tempDir, ".nax", "plugins");
 
     // Don't create these directories - test with non-existent plugin dirs
 
@@ -361,7 +361,7 @@ export default {
       extensions: {
         reporter: {
           name: "valid",
-          async onRunStart(event) {},
+          async onRunStart(_event) {},
         },
       },
     };
@@ -400,7 +400,7 @@ export default {
       extensions: {
         reporter: {
           name: "global",
-          async onRunStart(event) {},
+          async onRunStart(_event) {},
         },
       },
     };
@@ -412,7 +412,7 @@ export default {
       extensions: {
         reporter: {
           name: "project",
-          async onRunStart(event) {},
+          async onRunStart(_event) {},
         },
       },
     };
@@ -458,7 +458,7 @@ export default {
       extensions: {
         reporter: {
           name: "config",
-          async onRunStart(event) {},
+          async onRunStart(_event) {},
         },
       },
     };

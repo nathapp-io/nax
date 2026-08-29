@@ -375,7 +375,7 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
         from: specPath,
         feature: "authentication",
       });
-    } catch (err) {
+    } catch (_err) {
       // Expected to fail with invalid mock setup
     }
 

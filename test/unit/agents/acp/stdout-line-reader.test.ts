@@ -169,7 +169,7 @@ describe("readStreamTail (MEM-1)", () => {
       start(c) {
         controllerRef.current = c;
       },
-      cancel(reason) {
+      cancel(_reason) {
         streamCancelled = true;
         resolveStart();
         return Promise.resolve();

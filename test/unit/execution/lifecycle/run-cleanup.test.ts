@@ -550,7 +550,7 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
   test("RunCleanupOptions interface requires feature, prdPath, branch, version fields", async () => {
     // Compile-time + runtime check: all four new fields must be present and typed as strings.
     // This fails until RunCleanupOptions is extended with these fields in run-cleanup.ts.
-    const mod = await import("@/execution/lifecycle/run-cleanup");
+    const _mod = await import("@/execution/lifecycle/run-cleanup");
 
     // Build a full RunCleanupOptions — TypeScript will reject this if fields are missing
     const opts: RunCleanupOptions = {
@@ -664,7 +664,6 @@ function makePluginLogger(): import("@/plugins/types").PluginLogger {
 
 describe("cleanupRun — resets runtime-crash retry budget (BUG-15)", () => {
   test("calls resetRuntimeCrashRetryCounts during teardown", async () => {
-    const { resetRuntimeCrashRetryCounts } = await import("@/execution/escalation");
     const resetMock = mock(() => {});
     const originalReset = _runCleanupDeps.resetRuntimeCrashRetryCounts;
     _runCleanupDeps.resetRuntimeCrashRetryCounts = resetMock;

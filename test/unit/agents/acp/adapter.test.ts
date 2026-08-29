@@ -522,7 +522,7 @@ describe("complete() — modelDef primitive consumption", () => {
 
   test("uses resolvedPermissions.mode for the session permissionMode", async () => {
     let capturedPermissionMode = "";
-    const session = makeSession();
+    const _session = makeSession();
     const client = makePassClient();
     _acpAdapterDeps.createClient = mock((_cmd: string) => {
       const origCreate = client.createSession.bind(client);

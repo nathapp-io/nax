@@ -256,7 +256,7 @@ describe("deriveProviderWeights — bounded above by 1.0 (AC10)", () => {
     }
 
     const weights = deriveProviderWeights([ignoredManifest(verdicts)]);
-    for (const [providerId, w] of Object.entries(weights)) {
+    for (const [_providerId, w] of Object.entries(weights)) {
       expect(w).toBeLessThanOrEqual(1.0);
     }
     // And specifically the providers above

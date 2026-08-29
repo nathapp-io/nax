@@ -268,7 +268,7 @@ describe("Plugin router error handling", () => {
 
 describe("Plugin routing integration scenarios", () => {
   test("premium plugin forces security stories to expert tier", async () => {
-    const premiumRouter = createPluginRouter("premium-security-router", (story, context) => {
+    const premiumRouter = createPluginRouter("premium-security-router", (story, _context) => {
       if (story.tags.includes("security") || story.tags.includes("auth")) {
         return {
           complexity: "expert",
@@ -301,7 +301,7 @@ describe("Plugin routing integration scenarios", () => {
   });
 
   test("cost-optimization plugin downgrades simple docs to fast tier", async () => {
-    const costOptimizationRouter = createPluginRouter("cost-optimization-router", (story, context) => {
+    const costOptimizationRouter = createPluginRouter("cost-optimization-router", (story, _context) => {
       if (story.tags.includes("docs") && story.acceptanceCriteria.length <= 2) {
         return {
           complexity: "simple",
@@ -331,7 +331,7 @@ describe("Plugin routing integration scenarios", () => {
   });
 
   test("domain-specific plugin routes database migrations to expert tier", async () => {
-    const domainRouter = createPluginRouter("domain-router", (story, context) => {
+    const domainRouter = createPluginRouter("domain-router", (story, _context) => {
       const text = [story.title, story.description, ...story.tags].join(" ").toLowerCase();
       if (text.includes("migration") || text.includes("database") || text.includes("schema")) {
         return {
@@ -408,7 +408,7 @@ describe("Plugin routing integration scenarios", () => {
   });
 
   test("plugin router can delegate based on conditional logic", async () => {
-    const conditionalRouter = createPluginRouter("conditional-router", (story, context) => {
+    const conditionalRouter = createPluginRouter("conditional-router", (story, _context) => {
       // Only handle stories with "critical" tag
       if (story.tags.includes("critical")) {
         return {

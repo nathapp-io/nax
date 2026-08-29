@@ -78,12 +78,12 @@ describe("wireInteraction", () => {
 describe("wireInteraction - max-retries trigger", () => {
   let bus: PipelineEventBus;
   let mockChain: InteractionChain;
-  let loggedWarnings: Array<{ context: string; message: string; data: unknown }> = [];
+  let _loggedWarnings: Array<{ context: string; message: string; data: unknown }> = [];
 
   beforeEach(() => {
     bus = new PipelineEventBus();
     mockChain = makeMockChain(async () => promptResponse("skip"));
-    loggedWarnings = [];
+    _loggedWarnings = [];
   });
 
   afterEach(() => {
@@ -184,11 +184,11 @@ describe("wireInteraction - max-retries trigger", () => {
   test("handles abort response with warning", async () => {
     const config = makeConfigWithTrigger("max-retries", true);
 
-    let loggedAbort = false;
+    let _loggedAbort = false;
     const originalLogger = console.warn;
     console.warn = (message: string) => {
       if (message === "max-retries abort requested") {
-        loggedAbort = true;
+        _loggedAbort = true;
       }
     };
 

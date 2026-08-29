@@ -63,12 +63,12 @@ function makeObservation(kind: "verdict", runId = "run-001", projectKey = "test-
   };
 }
 
-function writeObservations(runDir: string, observations: Observation[]): void {
+function _writeObservations(runDir: string, observations: Observation[]): void {
   const content = `${observations.map((o) => JSON.stringify(o)).join("\n")}\n`;
   writeFileSync(join(runDir, "observations.jsonl"), content);
 }
 
-function writeProposalsMd(runDir: string, content: string): void {
+function _writeProposalsMd(runDir: string, content: string): void {
   writeFileSync(join(runDir, "curator-proposals.md"), content);
 }
 

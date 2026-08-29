@@ -39,7 +39,6 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeMockAgentManager, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
-import type { NaxConfig } from "@/config";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { InternalBuildState } from "@/execution";
 import { _storyOrchestratorDeps, runRectification, StoryOrchestratorBuilder } from "@/execution";

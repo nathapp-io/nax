@@ -11,7 +11,6 @@
 import { loadSourceFilesForDiagnosis } from "@/acceptance";
 import type { DiagnosisResult, SemanticVerdict } from "@/acceptance/types";
 import { NaxError } from "@/errors";
-import type { FixTarget } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceDiagnoseOp } from "@/operations";
 import type { AcceptanceDiagnoseInput, AcceptanceDiagnoseOutput } from "@/operations/acceptance-diagnose";
@@ -140,23 +139,3 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Build diagnosisReasoning string for a fix op.
- *
- * When structured findings are present, appends findings relevant to the
- * given fixTarget so the fix agent has structured context. Falls back to
- * plain reasoning when no findings match.
- */
-function buildDiagnosisReasoning(diagnosis: DiagnosisResult, fixTarget: FixTarget): string {
-  if (!diagnosis.findings || diagnosis.findings.length === 0) {
-    return diagnosis.reasoning;
-  }
-  const relevant = diagnosis.findings.filter((f) => f.fixTarget === fixTarget);
-  if (relevant.length === 0) return diagnosis.reasoning;
-  const lines = relevant.map((f) => {
-    const loc = f.file ? ` [${f.file}${f.line != null ? `:${f.line}` : ""}]` : "";
-    return `- ${f.message}${loc}${f.suggestion ? ` → ${f.suggestion}` : ""}`;
-  });
-  return `${diagnosis.reasoning}\n\nFindings:\n${lines.join("\n")}`;
-}

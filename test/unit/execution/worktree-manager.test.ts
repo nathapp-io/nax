@@ -36,6 +36,7 @@ branch refs/heads/nax/US-002
 describe("WorktreeManager.parseWorktreeList", () => {
   it("parses git worktree list --porcelain output", () => {
     const manager = new WorktreeManager();
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const worktrees = manager["parseWorktreeList"](mockWorktreeListOutput);
 
     expect(worktrees.length).toBe(3);
@@ -52,6 +53,7 @@ describe("WorktreeManager.parseWorktreeList", () => {
 
   it("handles empty output", () => {
     const manager = new WorktreeManager();
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const worktrees = manager["parseWorktreeList"]("");
 
     expect(worktrees.length).toBe(0);
@@ -65,6 +67,7 @@ branch refs/heads/master
 `;
 
     const manager = new WorktreeManager();
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const worktrees = manager["parseWorktreeList"](singleOutput);
 
     expect(worktrees.length).toBe(1);
@@ -78,6 +81,7 @@ HEAD abc123def456
 branch refs/heads/master`;
 
     const manager = new WorktreeManager();
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const worktrees = manager["parseWorktreeList"](noTrailingNewline);
 
     expect(worktrees.length).toBe(1);
@@ -92,6 +96,7 @@ branch refs/heads/feature/my-feature
 `;
 
     const manager = new WorktreeManager();
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const worktrees = manager["parseWorktreeList"](output);
 
     expect(worktrees[0].branch).toBe("feature/my-feature");
@@ -108,6 +113,7 @@ branch refs/heads/nax/US-001
 `;
 
     const manager = new WorktreeManager();
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const worktrees = manager["parseWorktreeList"](output);
 
     // BUG-24 (D-17): detached-HEAD worktrees are kept with branch: null
@@ -128,6 +134,7 @@ branch refs/heads/feature
 `;
 
     const manager = new WorktreeManager();
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const worktrees = manager["parseWorktreeList"](output);
 
     expect(worktrees.length).toBe(1);
@@ -146,6 +153,7 @@ branch refs/heads/nax/US-001
 `;
 
     const manager = new WorktreeManager();
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const worktrees = manager["parseWorktreeList"](output);
 
     expect(worktrees.length).toBe(2);

@@ -5,7 +5,7 @@
  * Covers: MergeEngine topological sort and merge logic
  */
 
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { makeSpawn, makeWorktreeManager } from "@test/helpers";
 import { _gitDeps } from "@/utils/git";
 import type { StoryDependencies } from "@/worktree";
@@ -27,6 +27,7 @@ describe("MergeEngine.topologicalSort", () => {
     const storyIds = ["US-001", "US-002", "US-003"];
     const dependencies: StoryDependencies = {};
 
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(3);
@@ -43,6 +44,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-003": ["US-002"],
     };
 
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted).toEqual(["US-001", "US-002", "US-003"]);
@@ -56,6 +58,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-004": ["US-002"],
     };
 
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(4);
@@ -81,6 +84,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-004": ["US-002", "US-003"],
     };
 
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(4);
@@ -106,6 +110,7 @@ describe("MergeEngine.topologicalSort", () => {
     };
 
     expect(() => {
+      // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
       engine["topologicalSort"](storyIds, dependencies);
     }).toThrow("Circular dependency detected");
   });
@@ -118,6 +123,7 @@ describe("MergeEngine.topologicalSort", () => {
     };
 
     expect(() => {
+      // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
       engine["topologicalSort"](storyIds, dependencies);
     }).toThrow("Circular dependency detected");
   });
@@ -130,6 +136,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-003": ["US-002"],
     };
 
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     // Should sort US-002 before US-003, ignoring missing US-001
@@ -146,6 +153,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-005": ["US-003"],
     };
 
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(5);
@@ -168,6 +176,7 @@ describe("MergeEngine.topologicalSort", () => {
     const storyIds: string[] = [];
     const dependencies: StoryDependencies = {};
 
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(0);
@@ -178,6 +187,7 @@ describe("MergeEngine.topologicalSort", () => {
     const storyIds = ["US-001"];
     const dependencies: StoryDependencies = {};
 
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted).toEqual(["US-001"]);

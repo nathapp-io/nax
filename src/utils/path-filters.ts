@@ -117,7 +117,7 @@ function globToRegex(pattern: string): RegExp {
       i++;
       continue;
     }
-    if (".+^${}()|[]\\".includes(c)) {
+    if (`.+^\${}()|[]\\`.includes(c)) {
       regex += `\\${c}`;
     } else {
       regex += c;

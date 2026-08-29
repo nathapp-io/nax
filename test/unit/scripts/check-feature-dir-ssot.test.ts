@@ -38,10 +38,10 @@ describe("findFeatureDirViolations", () => {
     expect(violations[0]?.line).toBe(2);
   });
 
-  test("flags the template form: `${root}/.nax/features/…`", () => {
+  test(`flags the template form: \`\${root}/.nax/features/…\``, () => {
     writeFileSync(
       join(tempDir, "src", "template.ts"),
-      "const prd = `${workdir}/.nax/features/${featureId}/prd.json`;\n",
+      `const prd = \`\${workdir}/.nax/features/\${featureId}/prd.json\`;\n`,
     );
 
     expect(findFeatureDirViolations(tempDir)).toHaveLength(1);
@@ -89,7 +89,7 @@ describe("findFeatureDirViolations", () => {
   test("exempts src/prompts/, whose literals are LLM instruction text", () => {
     writeFileSync(
       join(tempDir, "src", "prompts", "builders", "acceptance-builder.ts"),
-      "const p = `Write the test under <repo-root>/.nax/features/${name}/`;\n",
+      `const p = \`Write the test under <repo-root>/.nax/features/\${name}/\`;\n`,
     );
 
     expect(findFeatureDirViolations(tempDir)).toEqual([]);

@@ -96,7 +96,7 @@ function makeDecomposedStory(overrides: Partial<DecomposedStory> = {}): Decompos
   };
 }
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: {},

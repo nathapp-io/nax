@@ -75,7 +75,7 @@ const origSpawnSync = _planDeps.spawnSync;
 const origMkdirp = _planDeps.mkdirp;
 const origExistsSync = _planDeps.existsSync;
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: { express: "^4.18.0" },

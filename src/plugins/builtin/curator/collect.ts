@@ -233,7 +233,7 @@ async function collectFromReviewAudit(context: CuratorPostRunContext): Promise<O
 async function collectFromContextManifests(context: CuratorPostRunContext): Promise<Observation[]> {
   const observations: Observation[] = [];
   const featuresRoot = featuresDir(context.workdir);
-  let skippedManifests = 0;
+  let _skippedManifests = 0;
   try {
     const glob = new Bun.Glob("*/stories/*/context-manifest-*.json");
     for await (const file of glob.scan({ cwd: featuresRoot, absolute: false })) {
@@ -245,7 +245,7 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
         // Stat before parsing: a manifest from an earlier run should cost a stat,
         // not a full JSON read.
         if (!(await writtenThisRun(fullPath, context.runStartedAt))) {
-          skippedManifests += 1;
+          _skippedManifests += 1;
           continue;
         }
         const manifest = asRecord(await readJsonFile(fullPath));

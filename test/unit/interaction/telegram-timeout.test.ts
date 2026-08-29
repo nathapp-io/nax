@@ -24,8 +24,8 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
   });
 
   test("receive() returns respondedBy: 'timeout' on timeout", async () => {
-    let editCalled = false;
-    let editBody: Record<string, unknown> | null = null;
+    let _editCalled = false;
+    let _editBody: Record<string, unknown> | null = null;
 
     _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
@@ -45,9 +45,9 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
       }
 
       if (urlStr.includes("editMessageText")) {
-        editCalled = true;
+        _editCalled = true;
         if (init?.body) {
-          editBody = JSON.parse(init.body as string) as Record<string, unknown>;
+          _editBody = JSON.parse(init.body as string) as Record<string, unknown>;
         }
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }

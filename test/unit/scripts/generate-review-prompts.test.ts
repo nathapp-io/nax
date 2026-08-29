@@ -16,7 +16,7 @@ describe("escapeForTemplateLiteral", () => {
   test("escapes a single backslash, backtick, and interpolation marker", () => {
     expect(escapeForTemplateLiteral("\\")).toBe("\\\\");
     expect(escapeForTemplateLiteral("`")).toBe("\\`");
-    expect(escapeForTemplateLiteral("${x}")).toBe("\\${x}");
+    expect(escapeForTemplateLiteral(`\${x}`)).toBe(`\\\${x}`);
   });
 
   test("round-trips consecutive backslashes without double-escaping", () => {
@@ -26,12 +26,12 @@ describe("escapeForTemplateLiteral", () => {
   });
 
   test("round-trips a backtick immediately followed by an interpolation marker", () => {
-    const source = "inline `${code}` block";
+    const source = `inline \`\${code}\` block`;
     const escaped = escapeForTemplateLiteral(source);
     expect(unescapeTemplateLiteral(escaped)).toBe(source);
     // Confirms the single left-to-right pass doesn't let the backtick's own
     // escape re-trigger on the `${` it produces, or vice versa.
-    expect(escaped).toBe("inline \\`\\${code}\\` block");
+    expect(escaped).toBe(String.raw`inline \`\${code}\` block`);
   });
 
   test("round-trips a backslash immediately preceding a backtick", () => {

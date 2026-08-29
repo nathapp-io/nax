@@ -7,7 +7,7 @@
 
 import type { UserStory } from "@/prd/types";
 
-export function buildVerdictSection(story: UserStory): string {
+export function buildVerdictSection(_story: UserStory): string {
   return `# Verdict Instructions
 
 ## Write Verdict File and Emit JSON in Final Reply

@@ -7,7 +7,7 @@ import type { PhaseCompleteEvent, PhaseStartEvent } from "@/plugins/extensions";
 const baseCfg: WebhookReporterConfig = {
   enabled: true,
   url: "https://hook.example.com",
-  headers: { "X-Token": "${WH_TOKEN}" },
+  headers: { "X-Token": `\${WH_TOKEN}` },
   timeoutMs: 1000,
 };
 

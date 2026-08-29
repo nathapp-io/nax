@@ -14,7 +14,7 @@ const PID_FILE = `${TEST_WORKDIR}/.nax-pids`;
 
 withDepsRestore(_pidRegistryDeps, ["spawn", "sleep"]);
 
-function makeStream(text = ""): ReadableStream<Uint8Array> {
+function _makeStream(text = ""): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
       if (text) controller.enqueue(new TextEncoder().encode(text));

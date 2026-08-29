@@ -451,7 +451,7 @@ describe("US-003 — rebuild AC5: floorOverageItems reflects the rebuild's own p
   });
 
   test("floor overage list contains exactly the floor ids whose tokens push past the conservative ceiling", async () => {
-    const floorBig = chunk({ id: "p1:feat-big", kind: "feature", tokens: 6_000 });
+    const _floorBig = chunk({ id: "p1:feat-big", kind: "feature", tokens: 6_000 });
     const floorSmall = chunk({ id: "p1:feat-small", kind: "feature", tokens: 100 });
     // Conservative ceiling 8_000. floorBig (6_000) alone does not overflow.
     // floorBig + floorSmall = 6_100, still under 8_000. To force overflow,

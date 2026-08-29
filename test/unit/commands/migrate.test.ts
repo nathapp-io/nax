@@ -3,7 +3,6 @@ import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { assertNaxError, withTempDir } from "@test/helpers";
 import { detectGeneratedContent, migrateCommand } from "@/commands/migrate";
-import { NaxError } from "@/errors";
 
 describe("detectGeneratedContent", () => {
   it("detects runs/ directory", async () => {

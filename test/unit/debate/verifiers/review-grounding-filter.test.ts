@@ -14,7 +14,7 @@ import type { DebateStageConfig } from "@/debate/types";
 import type { PostDebateVerifierContext, PostDebateVerifierResult } from "@/debate/verifiers/types";
 
 // Stub implementation placeholder
-const reviewGroundingFilterVerifier = async (_ctx: PostDebateVerifierContext): Promise<PostDebateVerifierResult> => {
+const _reviewGroundingFilterVerifier = async (_ctx: PostDebateVerifierContext): Promise<PostDebateVerifierResult> => {
   throw new Error("not implemented");
 };
 
@@ -72,7 +72,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
         outcome: "passed",
       };
 
-      const ctx = makeVerifierContext({
+      const _ctx = makeVerifierContext({
         selectorResult: {
           ...selectorResult,
           // Would contain findings in real implementation
@@ -109,7 +109,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
         },
       ];
 
-      const ctx = makeVerifierContext();
+      const _ctx = makeVerifierContext();
 
       // First finding should be dropped, second should be kept
       expect(findings).toHaveLength(2);
@@ -143,7 +143,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
         acIndex: 0,
       };
 
-      const ctx = makeVerifierContext({
+      const _ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
         } as SelectorResult,
@@ -164,7 +164,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
         },
       ];
 
-      const ctx = makeVerifierContext();
+      const _ctx = makeVerifierContext();
 
       // Expected result: { outcome: "passed", ... }
       expect(advisoryFindings[0].severity).toBe("info");

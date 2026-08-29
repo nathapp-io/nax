@@ -88,7 +88,7 @@ describe("buildDiagnosisPrompt — partial semantic verdicts section (AC-3)", ()
     // (it was confirmed by semantic review — the test is the problem)
     expect(prompt).toContain("US-001");
     // Prompt must not mark the confirmed story as "source bug"
-    const sourceContext = prompt.indexOf("source_bug") > -1 || prompt.includes("source bug");
+    const _sourceContext = prompt.indexOf("source_bug") > -1 || prompt.includes("source bug");
     // The confirmed story context must not be "source bug" — it's test level
     // (This is a soft check; the key is the "likely test bug" framing above)
     expect(prompt.toLowerCase()).not.toMatch(/us-001.*source.?bug/);

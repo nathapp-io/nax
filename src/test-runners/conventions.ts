@@ -80,7 +80,7 @@ function globToRegex(pattern: string): RegExp | null {
       i++;
       continue;
     }
-    if (".+^${}()|[]\\".includes(c)) {
+    if (`.+^\${}()|[]\\`.includes(c)) {
       regex += `\\${c}`;
     } else {
       regex += c;

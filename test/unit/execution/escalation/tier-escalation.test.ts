@@ -432,7 +432,7 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
 
       const result = await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         "/tmp/test-prd-pre-iter.json",
@@ -497,7 +497,7 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
 
       const result = await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         "/tmp/test-prd-pre-iter-2.json",
@@ -657,7 +657,7 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
 
       const result = await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         "/tmp/test-prd-unmatched.json",
@@ -740,7 +740,7 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
 
       const result = await preIterationTierCheck(
         story,
-        { modelTier: "fast" },
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         config,
         prd,
         "/tmp/test-prd-prior.json",

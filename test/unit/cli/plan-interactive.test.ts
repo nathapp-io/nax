@@ -115,7 +115,7 @@ function makeMockBridge(autoAnswer = "Yes") {
   };
 }
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: { express: "^4.18.0" },

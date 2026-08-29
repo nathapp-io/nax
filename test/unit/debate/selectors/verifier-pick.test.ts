@@ -213,7 +213,7 @@ describe("verifierPickSelector", () => {
       });
 
       try {
-        const result = await verifierPickSelector(ctx);
+        const _result = await verifierPickSelector(ctx);
         // After implementation, should return unpatched winner output
         // The highest-scoring proposal should be returned
       } catch {
@@ -224,10 +224,10 @@ describe("verifierPickSelector", () => {
 
   describe("AC 5: invokes patch step when patch enabled and overlap low", () => {
     test("invokes patch exactly once when enabled and overlap below threshold", async () => {
-      let patchInvocationCount = 0;
+      let _patchInvocationCount = 0;
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async () => {
-          patchInvocationCount++;
+          _patchInvocationCount++;
           return {
             output: "Patched proposal output",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
@@ -255,7 +255,7 @@ describe("verifierPickSelector", () => {
       });
 
       try {
-        const result = await verifierPickSelector(ctx);
+        const _result = await verifierPickSelector(ctx);
         // After implementation, should invoke patch once when overlap < threshold
       } catch {
         // Expected to fail
@@ -300,7 +300,7 @@ describe("verifierPickSelector", () => {
     });
 
     test("passes maxDeltas to patch step", async () => {
-      let capturedMaxDeltas: number | undefined;
+      let _capturedMaxDeltas: number | undefined;
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async () => ({
           output: "Patched output",
@@ -491,7 +491,7 @@ describe("verifierPickSelector", () => {
     });
 
     test("logs warning when patch throws and onFailure='use-unpatched'", async () => {
-      const loggedWarning = false;
+      const _loggedWarning = false;
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async () => {
           throw new Error("Patch operation timed out");

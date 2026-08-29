@@ -336,7 +336,7 @@ describe("Plugin router context", () => {
   test("plugin router receives routing context with config", async () => {
     const receivedContext: { value: RoutingContext | null } = { value: null };
 
-    const pluginRouter = createPluginRouter("plugin-router", (story, context) => {
+    const pluginRouter = createPluginRouter("plugin-router", (_story, context) => {
       receivedContext.value = context;
       return null;
     });
@@ -357,12 +357,12 @@ describe("Plugin router context", () => {
   test("multiple plugin routers receive same config in context", async () => {
     const contexts: RoutingContext[] = [];
 
-    const router1 = createPluginRouter("plugin-router-1", (story, context) => {
+    const router1 = createPluginRouter("plugin-router-1", (_story, context) => {
       contexts.push(context);
       return null;
     });
 
-    const router2 = createPluginRouter("plugin-router-2", (story, context) => {
+    const router2 = createPluginRouter("plugin-router-2", (_story, context) => {
       contexts.push(context);
       return null;
     });

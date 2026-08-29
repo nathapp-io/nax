@@ -14,7 +14,7 @@ import type { PlanConfig } from "@/config/selectors";
 import type { PlanRefineInput, VerifyContext } from "@/operations";
 import { _planRefineDeps, callOp, normalizeCreatedContextFiles, planInteractiveOp, planRefineOp } from "@/operations";
 import type { HopBodyContext } from "@/operations/types";
-import type { PRD, UserStory } from "@/prd/types";
+import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
 

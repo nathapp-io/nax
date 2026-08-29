@@ -23,15 +23,7 @@ import {
 } from "./call-resolvers";
 import { makeVerifyCtx, runPostParse } from "./post-parse";
 import { classifyEmptyOutputFailure, classifyProviderRefusalFailure } from "./turn-failure-classification";
-import type {
-  BuildContext,
-  CallContext,
-  CompleteOperation,
-  DeterministicOperation,
-  Operation,
-  RunOperation,
-  VerifyContext,
-} from "./types";
+import type { CallContext, CompleteOperation, DeterministicOperation, Operation, RunOperation } from "./types";
 
 /** Injectable deps for testability — mirrors _agentManagerDeps pattern. */
 export const _callOpDeps = {

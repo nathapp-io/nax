@@ -252,7 +252,7 @@ function makeStageConfig(): DebateStageConfig {
 function makeAgentManager(llmResponse: string, cost = 0) {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    runFn: async (_agent, opts) => ({
+    runFn: async (_agent, _opts) => ({
       success: true,
       exitCode: 0,
       output: llmResponse,
@@ -286,7 +286,7 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       },
       fallbacks: [],
     }),
-    runAsFn: async (_agent, opts) => ({
+    runAsFn: async (_agent, _opts) => ({
       success: true,
       exitCode: 0,
       output: llmResponse,

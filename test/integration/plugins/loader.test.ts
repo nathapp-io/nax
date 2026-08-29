@@ -386,7 +386,7 @@ describe("loadPlugins", () => {
       const pluginDir = path.join(tempDir, "custom-plugin");
       await fs.mkdir(pluginDir, { recursive: true });
 
-      let setupConfig: Record<string, unknown> | undefined;
+      let _setupConfig: Record<string, unknown> | undefined;
 
       const pluginCode = `
 export default {

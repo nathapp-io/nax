@@ -85,7 +85,7 @@ function toDecomposedStory(story: UserStory): DecomposedStory {
   };
 }
 
-function makeDecomposeResponse(stories: UserStory[]): string {
+function _makeDecomposeResponse(stories: UserStory[]): string {
   return JSON.stringify(stories.map(toDecomposedStory));
 }
 
@@ -106,7 +106,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: { zod: "^3.0.0" },

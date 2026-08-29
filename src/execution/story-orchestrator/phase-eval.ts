@@ -1,7 +1,7 @@
 import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { QuarantineMemo } from "@/verification";
-import type { InternalPhase, PhaseKind } from "./types";
+import type { PhaseKind } from "./types";
 import { STRATEGY_TO_REVALIDATION_PHASES, STRICT_VERDICT_PHASE_NAMES } from "./types";
 
 /**

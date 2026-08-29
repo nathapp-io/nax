@@ -173,7 +173,7 @@ describe("otel-reporter heartbeat", () => {
       delete process.env.OTLP_TOKEN;
       const { deps } = capturing();
       const plugin = createOtelReporterPlugin(
-        { ...baseCfg, heartbeatIntervalMs: 40, headers: { Authorization: "Bearer ${OTLP_TOKEN}" } },
+        { ...baseCfg, heartbeatIntervalMs: 40, headers: { Authorization: `Bearer \${OTLP_TOKEN}` } },
         deps,
       );
       const r = reporterOf(plugin);
@@ -389,7 +389,10 @@ describe("otel-reporter log redaction", () => {
     try {
       process.env.OTLP_TOKEN = "super-secret-token-value";
       const { posts, deps } = capturing();
-      const plugin = createOtelReporterPlugin({ ...baseCfg, headers: { Authorization: "Bearer ${OTLP_TOKEN}" } }, deps);
+      const plugin = createOtelReporterPlugin(
+        { ...baseCfg, headers: { Authorization: `Bearer \${OTLP_TOKEN}` } },
+        deps,
+      );
       const r = reporterOf(plugin);
 
       await r.onRunStart?.({

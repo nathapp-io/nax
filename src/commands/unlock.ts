@@ -52,7 +52,7 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
   try {
     const lockContent = await lockFile.text();
     lockData = JSON.parse(lockContent);
-  } catch (error) {
+  } catch {
     console.error(chalk.red("Failed to parse lock file"));
     process.exit(1);
   }

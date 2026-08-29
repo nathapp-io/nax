@@ -49,7 +49,7 @@ function defaultPatterns(): ResolvedTestPatterns {
   };
 }
 
-function makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
+function _makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
   return {
     story: storyArg,
     config: DEFAULT_CONFIG,

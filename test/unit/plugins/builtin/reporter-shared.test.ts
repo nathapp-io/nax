@@ -4,19 +4,19 @@ import { interpolateHeaders, type PostJsonDeps, postJson } from "@/plugins";
 
 describe("interpolateHeaders", () => {
   test("resolves a single env placeholder", () => {
-    const { resolved, missing } = interpolateHeaders({ Authorization: "Bearer ${TOK}" }, { TOK: "abc" });
+    const { resolved, missing } = interpolateHeaders({ Authorization: `Bearer \${TOK}` }, { TOK: "abc" });
     expect(resolved.Authorization).toBe("Bearer abc");
     expect(missing).toEqual([]);
   });
 
   test("resolves multiple placeholders across headers", () => {
-    const { resolved, missing } = interpolateHeaders({ A: "${X}", B: "p-${Y}-q" }, { X: "1", Y: "2" });
+    const { resolved, missing } = interpolateHeaders({ A: `\${X}`, B: `p-\${Y}-q` }, { X: "1", Y: "2" });
     expect(resolved).toEqual({ A: "1", B: "p-2-q" });
     expect(missing).toEqual([]);
   });
 
   test("reports missing env vars without throwing", () => {
-    const { missing } = interpolateHeaders({ A: "${GONE}" }, {});
+    const { missing } = interpolateHeaders({ A: `\${GONE}` }, {});
     expect(missing).toEqual(["GONE"]);
   });
 

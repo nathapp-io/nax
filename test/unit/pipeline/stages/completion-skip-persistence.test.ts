@@ -192,7 +192,7 @@ describe("completionStage bounded stream reading", () => {
     // The cap must not chop shorter diffs — the fragment capture (and the
     // effectiveness annotation) rely on every byte of a small diff being
     // preserved verbatim.
-    const encoder = new TextEncoder();
+    const _encoder = new TextEncoder();
     const diff = "diff --git a/src/foo.ts b/src/foo.ts\n--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1 +1 @@\n-x\n+y\n";
     _completionDeps.spawn = makeSpawn(() => diff).spawn;
 

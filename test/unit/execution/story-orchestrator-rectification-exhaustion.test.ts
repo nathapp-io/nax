@@ -301,7 +301,7 @@ const mockFullSuiteGateOp: RunOperation<{ story: string }, { success: boolean; f
   parse: () => ({ success: true, findings: [] }),
 };
 
-const SEMANTIC_FINDING: Finding = {
+const _SEMANTIC_FINDING: Finding = {
   source: "semantic-review",
   severity: "error",
   category: "",

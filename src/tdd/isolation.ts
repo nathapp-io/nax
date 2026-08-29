@@ -156,7 +156,7 @@ export async function getAddedLinesPerFile(workdir: string, fromRef = "HEAD"): P
 }
 
 /** Regex metacharacters that must be matched literally inside an allow pattern. */
-const REGEX_METACHARACTERS = ".+?^${}()|[]\\/";
+const REGEX_METACHARACTERS = `.+?^\${}()|[]\\/`;
 
 /**
  * Translate a glob-style allow pattern into a fully-anchored RegExp.

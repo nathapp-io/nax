@@ -6,7 +6,7 @@
  * and truncation detection through the RetryContext.lastOutput path.
  */
 
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { makeLogger as makeSharedLogger, makeTestRuntime, opSelector } from "@test/helpers";
 import { ParseValidationError, type RetryStrategy } from "@/agents/retry/types";
 import type { ReviewConfig } from "@/config/selectors";
@@ -55,7 +55,7 @@ const UNFINISHED_JSON = `{"passed": false, "findings": [${'{"severity": "error",
 
 // ─── Logger mock ─────────────────────────────────────────────────────────────
 
-function makeLogger(): ReturnType<typeof makeSharedLogger> {
+function _makeLogger(): ReturnType<typeof makeSharedLogger> {
   return makeSharedLogger();
 }
 
