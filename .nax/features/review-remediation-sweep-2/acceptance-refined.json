@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `_worktreeManagerDeps.gitWithTimeout` resolves `{ exitCode: 1, stdout: \"\", stderr: \"fatal: 'x' is not a working tree\" }`, then `WorktreeManager.remove(projectRoot, \"US-001\")` rejects with a `NaxError` whose `code` is `\"WORKTREE_NOT_FOUND\"`.",
+    "refined": "When `_worktreeManagerDeps.gitWithTimeout` resolves `{ exitCode: 1, stdout: \"\", stderr: \"fatal: 'x' is not a working tree\" }`, then `WorktreeManager.remove(projectRoot, \"US-001\")` rejects with a `NaxError` whose `code` is `\"WORKTREE_NOT_FOUND\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When the worktree git seam resolves `{ exitCode: 1, stdout: \"\", stderr: \"fatal: could not lock ref\" }`, then `WorktreeManager.remove(projectRoot, \"US-001\")` rejects with a `NaxError` whose `code` is `\"WORKTREE_ERROR\"` and message contains `could not lock ref`.",
+    "refined": "When the worktree git seam resolves `{ exitCode: 1, stdout: \"\", stderr: \"fatal: could not lock ref\" }`, then `WorktreeManager.remove(projectRoot, \"US-001\")` rejects with a `NaxError` whose `code` is `\"WORKTREE_ERROR\"` and message contains `could not lock ref`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When prune and add exit 0 and remove exits 1 with `fatal: could not lock ref`, then `WorktreeManager.create(projectRoot, \"US-001\")` resolves and `withWarnSpy` records a `logger.warn` with stage `\"worktree\"` whose data carries `\"US-001\"` and `could not lock ref`.",
+    "refined": "When prune and add exit 0 and remove exits 1 with `fatal: could not lock ref`, then `WorktreeManager.create(projectRoot, \"US-001\")` resolves and `withWarnSpy` records a `logger.warn` with stage `\"worktree\"` whose data carries `\"US-001\"` and `could not lock ref`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When prune and add exit 0 and remove exits 1 with `fatal: 'x' is not a working tree`, then `WorktreeManager.create(projectRoot, \"US-001\")` resolves and `withWarnSpy` records no `logger.warn` with stage `\"worktree\"`.",
+    "refined": "When prune and add exit 0 and remove exits 1 with `fatal: 'x' is not a working tree`, then `WorktreeManager.create(projectRoot, \"US-001\")` resolves and `withWarnSpy` records no `logger.warn` with stage `\"worktree\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `_gitUtilDeps.gitWithTimeout` resolves exit 128 with stderr `fatal: bad revision 'HEAD~1'`, then `getChangedNonTestFiles` returns an empty array and `withWarnSpy` records a `logger.warn` with stage `\"verification\"` whose data carries `bad revision`.",
+    "refined": "When `_gitUtilDeps.gitWithTimeout` resolves exit 128 with stderr `fatal: bad revision 'HEAD~1'`, then `getChangedNonTestFiles` returns an empty array and `withWarnSpy` records a `logger.warn` with stage `\"verification\"` whose data carries `bad revision`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `_gitUtilDeps.gitWithTimeout` resolves exit 128 with stderr `fatal: bad revision 'HEAD~1'`, then `getChangedTestFiles` returns an empty array and `withWarnSpy` records a `logger.warn` with stage `\"verification\"`.",
+    "refined": "When `_gitUtilDeps.gitWithTimeout` resolves exit 128 with stderr `fatal: bad revision 'HEAD~1'`, then `getChangedTestFiles` returns an empty array and `withWarnSpy` records a `logger.warn` with stage `\"verification\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `_gitUtilDeps.gitWithTimeout` rejects with message `spawn EACCES`, then `getChangedNonTestFiles` returns an empty array and `withWarnSpy` records a `logger.warn` with stage `\"verification\"` whose data carries `spawn EACCES`.",
+    "refined": "When `_gitUtilDeps.gitWithTimeout` rejects with message `spawn EACCES`, then `getChangedNonTestFiles` returns an empty array and `withWarnSpy` records a `logger.warn` with stage `\"verification\"` whose data carries `spawn EACCES`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `_gitUtilDeps.gitWithTimeout` resolves exit 0 with `src/a.ts\\nsrc/b.ts\\n`, then `getChangedNonTestFiles` returns an array containing `src/a.ts` and `src/b.ts` and records no `logger.warn` with stage `\"verification\"`.",
+    "refined": "When `_gitUtilDeps.gitWithTimeout` resolves exit 0 with `src/a.ts\\nsrc/b.ts\\n`, then `getChangedNonTestFiles` returns an array containing `src/a.ts` and `src/b.ts` and records no `logger.warn` with stage `\"verification\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `_isolationDeps.spawn` makes `git diff --numstat` exit 1 with stderr `fatal: bad revision 'HEAD'`, then `getAddedLinesPerFile(workdir, \"HEAD\")` rejects with `NaxError` code `\"GIT_ERROR\"` and a message containing `bad revision`.",
+    "refined": "When `_isolationDeps.spawn` makes `git diff --numstat` exit 1 with stderr `fatal: bad revision 'HEAD'`, then `getAddedLinesPerFile(workdir, \"HEAD\")` rejects with `NaxError` code `\"GIT_ERROR\"` and a message containing `bad revision`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `_isolationDeps.spawn` makes `git diff --numstat` exit 0 with stdout `3\\t0\\tsrc/a.ts\\n`, then `getAddedLinesPerFile(workdir, \"HEAD\")` returns a map with `src/a.ts` mapped to `3`.",
+    "refined": "When `_isolationDeps.spawn` makes `git diff --numstat` exit 0 with stdout `3\\t0\\tsrc/a.ts\\n`, then `getAddedLinesPerFile(workdir, \"HEAD\")` returns a map with `src/a.ts` mapped to `3`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `--name-only` returns `src/a.ts` and `--numstat` exits 1, then `verifyTestWriterIsolation(workdir, \"HEAD\", [], [], \"lite\")` resolves and its violations contain `src/a.ts`.",
+    "refined": "When `--name-only` returns `src/a.ts` and `--numstat` exits 1, then `verifyTestWriterIsolation(workdir, \"HEAD\", [], [], \"lite\")` resolves and its violations contain `src/a.ts`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When lite isolation encounters that numstat failure, then `withWarnSpy` records a `logger.warn` with stage `\"tdd-isolation\"`.",
+    "refined": "When lite isolation encounters that numstat failure, then `withWarnSpy` records a `logger.warn` with stage `\"tdd-isolation\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When strict isolation runs under the same git stub, then `verifyTestWriterIsolation(workdir, \"HEAD\", [], [], \"strict\")` resolves and records no `logger.warn` with stage `\"tdd-isolation\"`, because strict mode never requests numstat.",
+    "refined": "When strict isolation runs under the same git stub, then `verifyTestWriterIsolation(workdir, \"HEAD\", [], [], \"strict\")` resolves and records no `logger.warn` with stage `\"tdd-isolation\"`, because strict mode never requests numstat.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When imported from `tdd/cleanup`, then `CLEANUP_GRACE_POLL_INTERVAL_MS` is a number greater than zero and strictly less than `3000`.",
+    "refined": "When imported from `tdd/cleanup`, then `CLEANUP_GRACE_POLL_INTERVAL_MS` is a number greater than zero and strictly less than `3000`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When the initial `ps` reports pgid `12345` and later probes report an empty group, then `cleanupProcessTree(12345, 3000)` sends exactly one `SIGTERM` and injected sleep arguments sum to no more than `CLEANUP_GRACE_POLL_INTERVAL_MS`.",
+    "refined": "When the initial `ps` reports pgid `12345` and later probes report an empty group, then `cleanupProcessTree(12345, 3000)` sends exactly one `SIGTERM` and injected sleep arguments sum to no more than `CLEANUP_GRACE_POLL_INTERVAL_MS`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When every group-membership probe reports pgid `12345` populated, then `cleanupProcessTree(12345, 3000)` sends exactly `SIGTERM` then `SIGKILL` and calls injected sleep no more than `Math.ceil(3000 / CLEANUP_GRACE_POLL_INTERVAL_MS)` times.",
+    "refined": "When every group-membership probe reports pgid `12345` populated, then `cleanupProcessTree(12345, 3000)` sends exactly `SIGTERM` then `SIGKILL` and calls injected sleep no more than `Math.ceil(3000 / CLEANUP_GRACE_POLL_INTERVAL_MS)` times.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When a temporary root contains `nested/deep/a.ts`, then `scanProject(root).fileTree` contains the exact repo-relative entry `nested/deep/a.ts` with no leading separator or root-path prefix.",
+    "refined": "Assert that `scanProject(root).fileTree` returns an array containing exactly the string `nested/deep/a.ts`. The array element must not start with `/`, `./`, or any root-path component. Path separators between segments must be forward slashes `/`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When a regular file already exists at `.nax` in the temporary root, then `initContext(root)` rejects with `NaxError` code `\"INIT_ERROR\"`.",
+    "refined": "Assert that calling `initContext(root)` throws a `NaxError` instance where `error.code === 'INIT_ERROR'`. The error must be thrown (not returned) and must be an instance of `NaxError`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `_testScannerDeps.stat` rejects for every path, then `scanTestFiles` for a temporary root containing `test/foo.test.ts` returns an empty array.",
+    "refined": "Given a temporary root with file `test/foo.test.ts` on disk, and `_testScannerDeps.stat` mocked to always reject with any error, assert that `scanTestFiles(root, _testScannerDeps)` returns an array with `length === 0`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `_testScannerDeps.stat` records paths and delegates to the real stat implementation, then `scanTestFiles` for a temporary root containing `test/foo.test.ts` returns that file and records the root's `test` subdirectory.",
+    "refined": "Given a temporary root with file `test/foo.test.ts` on disk, and `_testScannerDeps.stat` mocked to record each path argument and delegate to `Bun.stat` (real filesystem), assert that: (1) `scanTestFiles(root, _testScannerDeps)` returns an array containing exactly `test/foo.test.ts`, and (2) `_testScannerDeps.stat` was called with a path string ending with `/test` (the subdirectory check).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When `test` is a regular file rather than a directory, then `scanTestFiles` returns an empty array.",
+    "refined": "Given a temporary root where `test` exists as a regular file (not a directory), assert that `scanTestFiles(root, _testScannerDeps)` returns an array with `length === 0`. This holds regardless of what `_testScannerDeps.stat` returns for `test` itself — only a directory entry should yield files.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `TelegramInteractionPlugin` is constructed after logger reset, then logger initialization followed by `init({ botToken: \"t\", chatId: \"@channelname\" })` records a `logger.warn` with stage `\"interaction\"` reporting the chat id is not numeric.",
+    "refined": "1. Reset logger to a test instance. 2. Construct TelegramInteractionPlugin (its private readonly logger field captures the reset logger). 3. Re-initialize logger to a fresh test instance. 4. Call plugin.init({ botToken: \"t\", chatId: \"@channelname\" }). 5. Assert: the fresh logger instance received exactly one call to warn with stage \"interaction\" and a message containing \"chat id\" and \"not numeric\" (or equivalent validation message).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When the same construction and logger initialization order uses `init({ botToken: \"t\", chatId: \"12345\" })`, then no `logger.warn` with stage `\"interaction\"` is recorded.",
+    "refined": "1. Reset logger to a test instance. 2. Construct TelegramInteractionPlugin (its private readonly logger field captures the reset logger). 3. Re-initialize logger to a fresh test instance. 4. Call plugin.init({ botToken: \"t\", chatId: \"12345\" }). 5. Assert: the fresh logger instance received zero calls to warn with stage \"interaction\".",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When `installServePortZeroCompat()` is called, then it returns a function whose invocation restores `globalThis.fetch` to the exact pre-install function object.",
+    "refined": "1. Capture const preInstallFetch = globalThis.fetch. 2. Call const restore = installServePortZeroCompat(). 3. Assert typeof restore === \"function\". 4. Call restore(). 5. Assert globalThis.fetch === preInstallFetch (strict reference equality, not structural equivalence).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When the restore returned by `installServePortZeroCompat()` is invoked, then `Bun.serve` is restored to the exact pre-install function object.",
+    "refined": "1. Capture const preInstallBunServe = Bun.serve. 2. Call const restore = installServePortZeroCompat(). 3. Call restore(). 4. Assert Bun.serve === preInstallBunServe (strict reference equality).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When `installServePortZeroCompat()` is called while already installed, then invoking its returned restore leaves `globalThis.fetch` equal to the patched function installed by the first call.",
+    "refined": "1. Call const restore1 = installServePortZeroCompat(); const patchedFetch = globalThis.fetch. 2. Call const restore2 = installServePortZeroCompat(); 3. Assert restore2 !== restore1 (restore2 is a no-op distinct from restore1). 4. Call restore2(). 5. Assert globalThis.fetch === patchedFetch (fetch still points to the first install's patch, not reverted to original).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When a `WebhookInteractionPlugin` initialized with a loopback callback URL receives `receive(\"req-1\", 1)` and is then destroyed, then `globalThis.fetch` equals the exact function object present before `receive`.",
+    "refined": "1. Call installServePortZeroCompat() to establish baseline patched fetch; capture const baselineFetch = globalThis.fetch. 2. Construct WebhookInteractionPlugin with loopback callback URL and startServer(). 3. Call plugin.receive(\"req-1\", 1). 4. Call plugin.destroy() (which invokes stopServer() and its restore). 5. Assert globalThis.fetch === baselineFetch (strict reference equality).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When `resolveIdleWatchdogSettings` is imported from `runtime/middleware/idle-watchdog` and receives enabled warn-then-cancel watchdog config with all timing fields absent, then it returns `idleTimeoutMs` of `900000`.",
+    "refined": "Calling `resolveIdleWatchdogSettings({ enabled: true, mode: 'warn-then-cancel' })` returns an object where `idleTimeoutMs === 900000`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When `resolveIdleWatchdogSettings` receives that config, then it returns `toolCallOnlyTimeoutMs` of `1800000`.",
+    "refined": "Calling `resolveIdleWatchdogSettings({ enabled: true, mode: 'warn-then-cancel' })` returns an object where `toolCallOnlyTimeoutMs === 1800000`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When `resolveIdleWatchdogSettings` receives that config, then it returns `graceMs` of `10000`.",
+    "refined": "Calling `resolveIdleWatchdogSettings({ enabled: true, mode: 'warn-then-cancel' })` returns an object where `graceMs === 10000`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When `resolveIdleWatchdogSettings` receives that config, then it returns `maxRetryAttempts` of `3`.",
+    "refined": "Calling `resolveIdleWatchdogSettings({ enabled: true, mode: 'warn-then-cancel' })` returns an object where `maxRetryAttempts === 3`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When `resolveIdleWatchdogSettings` receives `cancelGraceSeconds: 0`, then it returns `graceMs` of `0` without replacing the explicit zero.",
+    "refined": "Calling `resolveIdleWatchdogSettings({ enabled: true, mode: 'warn-then-cancel', cancelGraceSeconds: 0 })` returns an object where `graceMs === 0`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When `trySameAgentRetry` receives no `agent.idleWatchdog` block, a retriable `fail-stale` failure, and `staleRetryAttempts` of `2`, then it returns outcome `\"stale-retry\"`.",
+    "refined": "Calling `trySameAgentRetry({ failure: { type: 'fail-stale', retriable: true }, staleRetryAttempts: 2 })` returns `\"stale-retry\"`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When `trySameAgentRetry` receives the same config and failure with `staleRetryAttempts` of `3`, then it returns `null` because the shared default cap is three and no other retry arm matches `fail-stale`.",
+    "refined": "Calling `trySameAgentRetry({ failure: { type: 'fail-stale', retriable: true }, staleRetryAttempts: 3 })` returns `null`.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When `SpawnAcpClient` is constructed with `timeoutSeconds` of `0`, then its `timeoutSeconds` is `0`; when constructed without the argument, then its `timeoutSeconds` equals `DEFAULT_ACP_TIMEOUT_SECONDS`.",
+    "refined": "Constructing `new SpawnAcpClient({ timeoutSeconds: 0 })` yields instance with `timeoutSeconds === 0`. Constructing `new SpawnAcpClient({})` yields instance with `timeoutSeconds === DEFAULT_ACP_TIMEOUT_SECONDS`.",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]
