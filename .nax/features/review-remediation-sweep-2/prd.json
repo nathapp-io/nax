@@ -182,6 +182,12 @@
         "src/interaction/plugins/telegram-config.ts",
         "test/helpers/warn-spy.ts"
       ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/interaction/plugins/webhook-serve-compat.test.ts",
+          "reason": "the test named \"installing is idempotent and only patches globals once\" calls `installServePortZeroCompat()` for its side effect and ignores the return value. No assertion in it is inverted by this story, so it is not a deadlock: it stays green exactly as written. What it is missing is the other half of the new contract. Extend that one test so it also asserts the restore returned by the *second* call is a no-op — invoking it must leave `Bun.serve` and `globalThis.fetch` still equal to the patched functions the first call installed. Keep both existing identity assertions unchanged; they remain correct and must continue to pass."
+        }
+      ],
       "suggestedCriteria": [
         "When `installServePortZeroCompat()` is called twice, then the second call leaves `Bun.serve` and `globalThis.fetch` equal to the first patched values and its restore is a no-op."
       ]
@@ -226,6 +232,8 @@
         "src/runtime/middleware/idle-watchdog.ts",
         "src/config/schemas-infra.ts",
         "src/agents/acp/spawn-client.ts",
+        "src/agents/manager.ts",
+        "src/agents/retry/hop-retry-policy.ts",
         "test/helpers/mock-nax-config.ts",
         "test/unit/runtime/middleware/_idle-watchdog-harness.ts"
       ],
