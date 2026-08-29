@@ -254,8 +254,11 @@ describe("#1745 / #1761 — INJECT-ed non-lead story inherits complexity from th
     // reference — handleTierEscalation constructs a new PRD rather than
     // mutating the input stories. Same shape used by Test 2 above.
     const resultNonLead = result.prd.userStories.find((s) => s.id === nonLead.id);
-    // #1761: the non-lead story now inherits complexity from ctx.routing
-    // (the batch lead's RoutingDecision) via the `s.routing ?? { ...ctx.routing }`
+    // #1761: the non-lead story now inherits complexity from ctx.routing —
+    // the escalation context's own routing decision, which is deliberately
+    // "medium" here while the lead story's persisted routing is "simple", so
+    // this assertion discriminates the two sources — via the
+    // `s.routing ?? { ...ctx.routing }`
     // fallback — no longer latched at undefined.
     expect(resultNonLead?.routing?.complexity).toBe("medium");
   });
