@@ -99,3 +99,138 @@ describe("cleanupProcessTree — bounded grace poll (US-002)", () => {
     expect(sleepCalls).toBeLessThanOrEqual(Math.ceil(3000 / CLEANUP_GRACE_POLL_INTERVAL_MS));
   });
 });
+
+// Adversarial-review follow-up: the bounded poll must not OVERSHOOT the
+// requested grace window. A caller asking for 250 ms must not actually sleep
+// 300 ms; a caller asking for less than the 100 ms interval must not wait
+// beyond that interval. Non-finite or negative grace values must not
+// infinite-loop or silently skip the grace either.
+describe("cleanupProcessTree — grace overshoot / non-finite defense", () => {
+  function stubPs(opts: { pgidForLeader: string | null; groupMembers: string[] }): void {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
+      if (cmd[1] === "-o" && cmd[2] === "pgid=") {
+        return opts.pgidForLeader === null
+          ? { stdout: "", stderr: "No such process\n", exitCode: 1 }
+          : { stdout: `  ${opts.pgidForLeader}\n` };
+      }
+      if (cmd[1] === "-o" && cmd[2] === "pid=") {
+        return { stdout: opts.groupMembers.join("\n") };
+      }
+      return { stdout: "" };
+    }).spawn;
+  }
+
+  // Overshoot: a grace of 50 ms (less than the 100 ms interval) must not
+  // actually sleep 100 ms — every sleep argument must be ≤ gracePeriodMs.
+  test("grace shorter than poll interval: sleeps ≤ gracePeriodMs, not a full interval", async () => {
+    stubPs({ pgidForLeader: "12345", groupMembers: ["12345"] });
+
+    _cleanupDeps.killProcessGroupFn = mock(() => true);
+
+    const sleepArgs: number[] = [];
+    _cleanupDeps.sleep = mock(async (ms: number) => {
+      sleepArgs.push(ms);
+    });
+
+    await cleanupProcessTree(12345, 50);
+
+    for (const ms of sleepArgs) {
+      expect(ms).toBeLessThanOrEqual(50);
+    }
+    expect(sleepArgs.length).toBeGreaterThan(0);
+  });
+
+  // Overshoot: a non-multiple grace (250 ms) must not actually sleep 300 ms
+  // — the final iteration must use the remaining budget.
+  test("non-multiple grace 250ms: total sleep argument sum is ≤ 250ms", async () => {
+    stubPs({ pgidForLeader: "12345", groupMembers: ["12345"] });
+
+    _cleanupDeps.killProcessGroupFn = mock(() => true);
+
+    const sleepArgs: number[] = [];
+    _cleanupDeps.sleep = mock(async (ms: number) => {
+      sleepArgs.push(ms);
+    });
+
+    await cleanupProcessTree(12345, 250);
+
+    expect(sleepArgs.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(250);
+  });
+
+  // Non-finite defense: Infinity must not infinite-loop the poll. The call
+  // must terminate. We bound the assertion via a deadline race so a real
+  // hang fails the test instead of hanging the suite, and we count sleep
+  // calls: under the bug (maxIterations = Math.ceil(Infinity/100) =
+  // Infinity), the loop runs until the test's own rescue flips the stub to
+  // empty — well beyond the ceil(3000/100) = 30 calls a clamped-default
+  // graceful cleanup would make.
+  test("gracePeriodMs=Infinity does not infinite-loop the poll", async () => {
+    stubPs({ pgidForLeader: "12345", groupMembers: ["12345"] });
+
+    _cleanupDeps.killProcessGroupFn = mock(() => true);
+
+    let sleepCalls = 0;
+    _cleanupDeps.sleep = mock(async () => {
+      sleepCalls += 1;
+      if (sleepCalls > 200) {
+        // After 200 sleep calls, force the group to look empty so the poll
+        // can break out. This protects the suite from an infinite loop if
+        // the fix regresses.
+        stubPs({ pgidForLeader: "12345", groupMembers: [] });
+      }
+    });
+
+    await Promise.race([
+      cleanupProcessTree(12345, Number.POSITIVE_INFINITY),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("timeout: cleanupProcessTree did not terminate")), 2000),
+      ),
+    ]);
+
+    // Under the bug the rescue fires at call #201, so sleepCalls >= 201.
+    // Under the fix the grace is clamped to a finite value and the loop
+    // completes in at most ceil(grace/interval) calls — well under 100.
+    expect(sleepCalls).toBeLessThan(200);
+  });
+
+  // Negative defense: a negative grace must not silently skip the bounded
+  // wait and go straight to the kill probe (current bug — Math.ceil(-5/100)
+  // = -0 and 0 < -0 is false, so the loop is skipped and the group is never
+  // re-probed).
+  test("negative gracePeriodMs does not silently skip the bounded wait", async () => {
+    stubPs({ pgidForLeader: "12345", groupMembers: ["12345"] });
+
+    _cleanupDeps.killProcessGroupFn = mock(() => true);
+
+    let sleepCalls = 0;
+    _cleanupDeps.sleep = mock(async () => {
+      sleepCalls += 1;
+    });
+
+    await cleanupProcessTree(12345, -5);
+
+    // Either the call falls back to the default grace (so it sleeps at
+    // least once) OR it errors — it must NOT be a no-op that bypasses the
+    // poll. The conservative assertion is that the poll was attempted
+    // (sleep was called at least once) before the final SIGKILL probe.
+    expect(sleepCalls).toBeGreaterThan(0);
+  });
+
+  // NaN defense: NaN currently produces maxIterations = Math.ceil(NaN) = NaN,
+  // the loop is skipped, and the bounded wait is bypassed entirely. The
+  // function must not silently skip the grace either.
+  test("gracePeriodMs=NaN does not silently skip the bounded wait", async () => {
+    stubPs({ pgidForLeader: "12345", groupMembers: ["12345"] });
+
+    _cleanupDeps.killProcessGroupFn = mock(() => true);
+
+    let sleepCalls = 0;
+    _cleanupDeps.sleep = mock(async () => {
+      sleepCalls += 1;
+    });
+
+    await cleanupProcessTree(12345, Number.NaN);
+
+    expect(sleepCalls).toBeGreaterThan(0);
+  });
+});

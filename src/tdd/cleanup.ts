@@ -104,7 +104,12 @@ export async function hasLiveGroupMembers(pgid: number): Promise<boolean> {
  * Handles the case where the process is already dead gracefully.
  *
  * @param pid - Root process ID whose process group should be cleaned up
- * @param gracePeriodMs - Time to wait between SIGTERM and SIGKILL (default: 3000ms)
+ * @param gracePeriodMs - Time to wait between SIGTERM and SIGKILL (default: 3000ms).
+ *                        Non-finite or negative values are clamped to the default — a
+ *                        caller-supplied `Infinity` would otherwise turn the bounded
+ *                        poll into a true infinite loop, and a negative value would
+ *                        make `Math.ceil(grace / interval)` evaluate to `-0` and
+ *                        silently skip the poll entirely.
  *
  * @example
  * ```ts
@@ -132,18 +137,30 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
       return;
     }
 
+    // Clamp non-finite / negative grace values to the documented default so
+    // an adversarial caller cannot turn the bounded poll into an infinite
+    // loop (`Infinity` → maxIterations = Infinity) or silently skip it
+    // (`Math.ceil(-5 / 100)` = `-0`, and `0 < -0` is false).
+    const safeGracePeriodMs = Number.isFinite(gracePeriodMs) && gracePeriodMs > 0 ? gracePeriodMs : 3000;
+
     // Wait for graceful shutdown via a bounded poll. Each iteration sleeps
     // CLEANUP_GRACE_POLL_INTERVAL_MS and re-checks the GROUP (not just the
     // original leader pid) — SIGTERM commonly kills the leader while a
     // SIGTERM-trapping child survives in the same group, and re-checking only
     // the leader's own PGID would see it gone and skip the SIGKILL escalation,
     // orphaning that survivor (BUG-23). The iteration count is capped at
-    // ceil(gracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS) so the wait
+    // ceil(safeGracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS) so the wait
     // terminates under an injected instant sleep (tests) and under the full
     // grace window in production.
-    const maxIterations = Math.ceil(gracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS);
+    //
+    // The final iteration sleeps only the REMAINING grace budget rather
+    // than a full interval, so a caller asking for 250 ms does not actually
+    // wait 300 ms (or, equivalently, a caller asking for less than the
+    // 100 ms interval does not wait the full interval).
+    const maxIterations = Math.ceil(safeGracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS);
     for (let i = 0; i < maxIterations; i++) {
-      await _cleanupDeps.sleep(CLEANUP_GRACE_POLL_INTERVAL_MS);
+      const remaining = safeGracePeriodMs - i * CLEANUP_GRACE_POLL_INTERVAL_MS;
+      await _cleanupDeps.sleep(Math.min(CLEANUP_GRACE_POLL_INTERVAL_MS, Math.max(0, remaining)));
       if (!(await hasLiveGroupMembers(pgid))) break;
     }
 
