@@ -180,7 +180,7 @@ describe("AC-2: runParallelBatch — failed stories", () => {
     const prd = makePrd([story]);
     const ctx = makeCtx(tmpDir);
 
-    const pipelineResult = makePipelineRunResult(false, "tests failed");
+    const _pipelineResult = makePipelineRunResult(false, "tests failed");
     const workerResult = makeWorkerBatchResult({
       pipelinePassed: [],
       merged: [],

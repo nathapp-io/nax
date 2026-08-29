@@ -47,7 +47,7 @@ describe("killProcessGroup", () => {
   });
 
   test("returns false when both group and process kill fail with ESRCH", () => {
-    process.kill = ((pid, signal) => {
+    process.kill = ((_pid, _signal) => {
       const err = new Error("No such process");
       (err as NodeJS.ErrnoException).code = "ESRCH";
       throw err;
@@ -59,7 +59,7 @@ describe("killProcessGroup", () => {
   });
 
   test("returns true when group kill succeeds", () => {
-    process.kill = ((pid, signal) => {
+    process.kill = ((_pid, _signal) => {
       // Group kill succeeds
     }) as typeof process.kill;
 
@@ -71,7 +71,7 @@ describe("killProcessGroup", () => {
   test("returns true when single process kill succeeds after group kill fails with ESRCH", () => {
     let callCount = 0;
 
-    process.kill = ((pid, signal) => {
+    process.kill = ((_pid, _signal) => {
       callCount++;
       if (callCount === 1) {
         // Group kill fails
@@ -88,7 +88,7 @@ describe("killProcessGroup", () => {
   });
 
   test("returns true for non-ESRCH errors in group kill", () => {
-    process.kill = ((pid, signal) => {
+    process.kill = ((pid, _signal) => {
       if (pid === -1234) {
         // Group kill fails with different error (EPERM, etc.)
         const err = new Error("Operation not permitted");

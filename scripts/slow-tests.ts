@@ -14,7 +14,7 @@
  *   --tsv       Output TSV instead of table (for further processing)
  */
 
-import { readFileSync } from "fs";
+import { readFileSync } from "node:fs";
 
 // ── Parse flags ────────────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ function classnameToFile(classname: string): string {
     if (m) return m[1];
   }
   // Fallback: truncate to last 60 chars if too long
-  return classname.length > 60 ? "…" + classname.slice(-59) : classname;
+  return classname.length > 60 ? `…${classname.slice(-59)}` : classname;
 }
 
 // ── Format output ─────────────────────────────────────────────────────────────
@@ -139,7 +139,6 @@ function printTable(tests: TestCase[]): void {
   // Column widths
   const rankW = 4;
   const durW = 9;
-  const statusW = 2;
   const fileW = Math.min(50, Math.max(20, ...tests.map((t) => t.file.length)));
   const nameW = Math.min(60, Math.max(20, ...tests.map((t) => t.name.length)));
 
@@ -156,8 +155,8 @@ function printTable(tests: TestCase[]): void {
     const rank = `#${i + 1}`.padEnd(rankW);
     const dur = formatDuration(t.durationMs).padEnd(durW);
     const st = statusIcon(t.status);
-    const file = t.file.length > fileW ? "…" + t.file.slice(-(fileW - 1)) : t.file.padEnd(fileW);
-    const name = t.name.length > nameW ? t.name.slice(0, nameW - 1) + "…" : t.name;
+    const file = t.file.length > fileW ? `…${t.file.slice(-(fileW - 1))}` : t.file.padEnd(fileW);
+    const name = t.name.length > nameW ? `${t.name.slice(0, nameW - 1)}…` : t.name;
     console.log(`${rank}  ${dur}  ${st}  ${file}  ${name}`);
   }
 

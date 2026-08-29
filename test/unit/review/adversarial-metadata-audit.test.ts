@@ -42,7 +42,7 @@ const STAT_OUTPUT = "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    runFn: async (_agentName: string, opts: unknown) => ({
+    runFn: async (_agentName: string, _opts: unknown) => ({
       success: true as const,
       exitCode: 0,
       output: llmResponse,

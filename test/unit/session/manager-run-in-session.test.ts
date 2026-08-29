@@ -194,7 +194,7 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
 
     const agentMgr = makeMockAgentManager({
       getDefaultAgent: "claude",
-      runFn: async (agent, opts) => {
+      runFn: async (_agent, opts) => {
         opts.onSessionEstablished?.({ recordId: "r1", sessionId: "s1" }, "nax-test");
         return { ...makeResult(), agentFallbacks: [] };
       },

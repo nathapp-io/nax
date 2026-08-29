@@ -280,7 +280,7 @@ const violations: Violation[] = [];
 
 for (const file of files) {
   const text = await Bun.file(file).text();
-  const rel = file.replace(ROOT + "/", "");
+  const rel = file.replace(`${ROOT}/`, "");
 
   if (SKIP_FILES.has(rel)) continue;
 
@@ -320,7 +320,7 @@ for (const [kind, arr] of byKind) {
   const hint = PATTERNS.find((p) => p.kind === kind)?.hint ?? "";
   console.log(`━━ [${arr.length}] ${kind} — ${hint} ━━`);
   for (const v of arr.slice(0, 5)) {
-    const rel = v.file.replace(ROOT + "/", "");
+    const rel = v.file.replace(`${ROOT}/`, "");
     console.log(`  ${rel}:${v.line}  ${v.snippet}`);
   }
   if (arr.length > 5) console.log(`  … +${arr.length - 5} more`);

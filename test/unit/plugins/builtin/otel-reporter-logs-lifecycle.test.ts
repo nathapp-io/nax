@@ -386,7 +386,7 @@ describe("AC13: a configured header referencing an unset env var skips the logs 
     delete process.env.OTLP_TOKEN;
     const { posts, deps } = capturingDeps();
     const plugin = createOtelReporterPlugin(
-      makeHeadersLogsOn({ Authorization: "Bearer ${OTLP_TOKEN}" }, { enabled: true, level: "info" }),
+      makeHeadersLogsOn({ Authorization: `Bearer \${OTLP_TOKEN}` }, { enabled: true, level: "info" }),
       deps,
     );
     const r = await startRun(plugin, { runId: "ac13" });
@@ -400,7 +400,7 @@ describe("AC13: a configured header referencing an unset env var skips the logs 
     process.env.OTLP_TOKEN = "secret-token";
     const { posts, deps } = capturingDeps();
     const plugin = createOtelReporterPlugin(
-      makeHeadersLogsOn({ Authorization: "Bearer ${OTLP_TOKEN}" }, { enabled: true, level: "info" }),
+      makeHeadersLogsOn({ Authorization: `Bearer \${OTLP_TOKEN}` }, { enabled: true, level: "info" }),
       deps,
     );
     const r = await startRun(plugin, { runId: "ac13b" });
@@ -419,7 +419,7 @@ describe("AC14: when logs headers reference unset env vars, the reporter warns (
       const { posts, deps } = capturingDeps();
       const plugin = createOtelReporterPlugin(
         makeHeadersLogsOn(
-          { Authorization: "Bearer ${OTLP_TOKEN}", "X-Other": "${OTLP_OTHER}" },
+          { Authorization: `Bearer \${OTLP_TOKEN}`, "X-Other": `\${OTLP_OTHER}` },
           { enabled: true, level: "info" },
         ),
         deps,
@@ -442,7 +442,7 @@ describe("AC14: when logs headers reference unset env vars, the reporter warns (
     await withWarnSpy(async (warnSpy) => {
       const { posts, deps } = capturingDeps();
       const plugin = createOtelReporterPlugin(
-        makeHeadersLogsOn({ Authorization: "Bearer ${OTLP_TOKEN}" }, { enabled: true, level: "info" }),
+        makeHeadersLogsOn({ Authorization: `Bearer \${OTLP_TOKEN}` }, { enabled: true, level: "info" }),
         deps,
       );
       const r = await startRun(plugin, { runId: "ac14b" });

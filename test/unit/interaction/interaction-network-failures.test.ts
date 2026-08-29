@@ -129,10 +129,10 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await plugin.init({ botToken: "test-token", chatId: "12345" });
 
     const originalFetch = _telegramPluginDeps.fetch;
-    let fetchCallCount = 0;
+    let _fetchCallCount = 0;
 
     _telegramPluginDeps.fetch = mockFetch(async () => {
-      fetchCallCount++;
+      _fetchCallCount++;
       throw new Error("Network error");
     });
 

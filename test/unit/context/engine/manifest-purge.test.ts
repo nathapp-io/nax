@@ -194,7 +194,7 @@ describe("purgeStaleManifests", () => {
       ".nax/features/feat-a/stories/US-002/context-manifest-context.json",
     ];
     let callCount = 0;
-    _manifestPurgeDeps.statMtime = async (absPath: string) => {
+    _manifestPurgeDeps.statMtime = async (_absPath: string) => {
       callCount++;
       if (callCount === 1) throw new Error("EACCES");
       return NOW_MS - 31 * DAY_MS;

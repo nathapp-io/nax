@@ -30,7 +30,7 @@ const mockAgentAdapter = makeAgentAdapter({
 // Shared setup helpers
 // ============================================================================
 
-function makeConfig(tmpDir: string, pluginDir: string): NaxConfig {
+function makeConfig(_tmpDir: string, pluginDir: string): NaxConfig {
   return makeNaxConfig({
     agent: { protocol: "acp", default: "mock" },
     routing: {

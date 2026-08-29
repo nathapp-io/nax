@@ -46,7 +46,7 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
 function makeAgentManager(llmResponse: string, cost = 0) {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    runFn: async (_agent, opts) => ({
+    runFn: async (_agent, _opts) => ({
       success: true,
       exitCode: 0,
       output: llmResponse,
@@ -80,7 +80,7 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       },
       fallbacks: [],
     }),
-    runAsFn: async (_agent, opts) => ({
+    runAsFn: async (_agent, _opts) => ({
       success: true,
       exitCode: 0,
       output: llmResponse,
@@ -364,7 +364,7 @@ describe("runSemanticReview — diff truncation", () => {
     _diffUtilsDeps.spawn = makeSpawnMock(smallDiff, 0);
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
-    (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async (req) => {
+    (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async (_req) => {
       return {
         result: {
           success: true,

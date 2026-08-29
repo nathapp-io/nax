@@ -108,7 +108,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return { ...makeNaxConfig(), ...overrides };
 }
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: {},

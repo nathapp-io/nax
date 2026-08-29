@@ -36,7 +36,7 @@ async function setupGitRepo(dir: string): Promise<void> {
   await Bun.spawn(["git", "commit", "-m", "init"], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
 }
 
-const createConfig = (workdir: string): NaxConfig =>
+const createConfig = (_workdir: string): NaxConfig =>
   makeNaxConfig({
     execution: {
       maxIterations: 10,
@@ -256,7 +256,7 @@ describe("Precheck Integration with nax run", () => {
 
     try {
       rmSync(testDir, { recursive: true, force: true });
-    } catch (error) {
+    } catch (_error) {
       // Ignore cleanup errors
     }
   });
@@ -632,7 +632,7 @@ describe("Precheck Integration with nax run", () => {
           dryRun: true,
           statusFile: statusFilePath,
         });
-      } catch (error) {
+      } catch (_error) {
         // Expected failure
       }
 

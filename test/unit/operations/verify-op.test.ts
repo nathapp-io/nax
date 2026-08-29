@@ -95,7 +95,7 @@ describe("verifierOp.parse — error handling (strict: throws ParseValidationErr
 
 describe("verifierOp input type", () => {
   test("verifierOp input includes only story (limited context)", async () => {
-    const { verifierOp } = await import("@/operations");
+    const { verifierOp: _verifierOp } = await import("@/operations");
     const mockInput = {
       story: makeStory({ id: "US-001" }),
     };
@@ -104,7 +104,7 @@ describe("verifierOp input type", () => {
 
   test("verifierOp input does not include contextMarkdown, featureContextMarkdown, or constitution fields", async () => {
     // Verifier uses limited context — no feature context, no constitution
-    const { verifierOp } = await import("@/operations");
+    const { verifierOp: _verifierOp } = await import("@/operations");
     // Type verification: the input type should only have 'story' property
     const mockInput = {
       story: makeStory({ id: "US-001" }),

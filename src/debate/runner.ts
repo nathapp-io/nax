@@ -279,7 +279,7 @@ export class DebateRunner {
       if (config.rounds > 1) {
         const proposals: Proposal[] = successful.map((p) => ({ debater: p.debater, output: p.output }));
         const critiqueSettled = await allSettledBounded(
-          successful.map(({ debater, agentName }, i) => () => {
+          successful.map(({ agentName }, i) => () => {
             const debaterCtx: CallContext = { ...this.ctx, agentName, scopeId: debaterScope.scopeId };
             return callOp(debaterCtx, debateRebutOp, {
               taskContext: prompt,

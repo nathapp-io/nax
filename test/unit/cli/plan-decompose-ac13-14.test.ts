@@ -112,7 +112,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return { ...makeNaxConfig(), ...overrides };
 }
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: { zod: "^3.0.0" },
@@ -347,7 +347,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    let capturedPromptContext: string | undefined;
+    let _capturedPromptContext: string | undefined;
 
     const origScanSourceRoots = _planDeps.scanSourceRoots;
     _planDeps.scanSourceRoots = mock(

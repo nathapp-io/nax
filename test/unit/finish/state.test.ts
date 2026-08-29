@@ -79,7 +79,7 @@ describe("serializeFinishState / deserializeFinishState", () => {
         return;
       }
       if (value !== null && typeof value === "object") {
-        for (const [key, v] of Object.entries(value)) {
+        for (const [_key, v] of Object.entries(value)) {
           expect(v).not.toBeUndefined();
           walk(v);
         }

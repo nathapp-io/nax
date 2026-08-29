@@ -21,7 +21,7 @@ describe("Curator Plugin Integration", () => {
         const rollupPath = path.join(dir, "rollup.jsonl");
 
         // Simulate having observations from a run
-        const obs: Observation[] = [
+        const _obs: Observation[] = [
           {
             schemaVersion: 1,
             projectKey: "test-proj",

@@ -51,7 +51,7 @@ import {
 
 const TREE: TreeState = { headSha: "abc123def", dirtyDigest: "deadbeef01" };
 
-function cp(greenPhases: PhaseKind[], tree: TreeState = TREE): StoryCheckpoint {
+function _cp(greenPhases: PhaseKind[], tree: TreeState = TREE): StoryCheckpoint {
   return { storyId: "US-001", greenPhases, tree };
 }
 

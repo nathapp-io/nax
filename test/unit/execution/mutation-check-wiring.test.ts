@@ -22,7 +22,7 @@ import {
   makeTestPRD,
   makeTestRuntime,
 } from "@test/helpers";
-import { DEFAULT_CONFIG, mutationCheckConfigSelector } from "@/config";
+import { mutationCheckConfigSelector } from "@/config";
 import type { MutationCheckConfig } from "@/config/selectors";
 import {
   _storyOrchestratorDeps,

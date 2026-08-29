@@ -20,7 +20,7 @@ async function readBinNaxSource(): Promise<string> {
   return await Bun.file(join(import.meta.dir, "../../../bin/nax.ts")).text();
 }
 
-function assertWrapped(src: string, needle: string, at: number): void {
+function assertWrapped(src: string, _needle: string, at: number): void {
   const tryIdx = src.lastIndexOf("try {", at);
   expect(tryIdx).toBeGreaterThan(0);
   expect(at - tryIdx).toBeLessThan(200);

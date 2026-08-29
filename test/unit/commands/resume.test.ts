@@ -39,7 +39,7 @@ function writeCheckpoint(featureDir: string, records: Array<{ storyId: string; p
 }
 
 function makeBaseDeps(
-  featureDir: string,
+  _featureDir: string,
   stdoutWrites: string[],
   stderrWrites: string[],
   overrides: Partial<ResumeCommandDeps> = {},

@@ -130,9 +130,9 @@ describe("US-002 AC2 — two prior dispatches consume two of three cap slots", (
     // The first live validate returns the same finding (no progress) so the
     // cycle loops again; the third attempt then exhausts the cap. We expect
     // exactly one live dispatch before that next cap check fires.
-    let validateCallCount = 0;
+    let _validateCallCount = 0;
     const cycle = makeCycle([lintA], [strategy], async () => {
-      validateCallCount++;
+      _validateCallCount++;
       return [lintA];
     });
     cycle.priorIterations = priorIterations;

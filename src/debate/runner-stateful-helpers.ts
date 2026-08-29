@@ -165,10 +165,6 @@ export async function runZeroSuccessFallback(
 ): Promise<SuccessfulProposal | null> {
   if (!firstDebater) return null;
 
-  const proposalBuilder = new DebatePromptBuilder(
-    { taskContext: prompt, outputFormat: "", stage: ctx.stage },
-    { debaters: [firstDebater.debater], sessionMode: "stateful" },
-  );
   const barrierState = createProposalBarrier();
   const signal = resolveStatefulSignal(ctx);
 

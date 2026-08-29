@@ -165,7 +165,7 @@ describe("CLI --profile flag", () => {
     test("CLI --profile takes priority over env NAX_PROFILE", () => {
       // When --profile is provided, it should override NAX_PROFILE env var
       const cliProfile = "fast";
-      const envProfile = process.env.NAX_PROFILE ?? "default";
+      const _envProfile = process.env.NAX_PROFILE ?? "default";
 
       // CLI profile takes priority
       const resolvedProfile = cliProfile;

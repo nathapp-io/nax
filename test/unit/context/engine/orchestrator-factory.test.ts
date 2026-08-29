@@ -365,7 +365,7 @@ describe("createDefaultOrchestrator — ToolDiagnosticsProvider registration (US
   });
 
   test("US-002 sanity: ToolDiagnosticsProvider class is the one wired into the orchestrator (smoke)", async () => {
-    const orchestrator = createDefaultOrchestrator(makeStory(), makeConfig());
+    const _orchestrator = createDefaultOrchestrator(makeStory(), makeConfig());
     // Type-level check that the class itself is constructed without args (AC1).
     expect(new ToolDiagnosticsProvider().id).toBe("tool-diagnostics");
   });

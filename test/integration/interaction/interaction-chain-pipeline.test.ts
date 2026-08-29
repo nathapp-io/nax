@@ -394,9 +394,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     chain.register(plugin, 10);
 
     // When human-review returns 'skip', the story outcome should be 'skipped'
-    const { executeUnified } = await import("@/execution/unified-executor");
-
-    const exhaustedStory: UserStory = {
+    const _exhaustedStory: UserStory = {
       ...baseStory,
       id: "US-EXHAUST",
       attempts: 3, // exceeds maxAttemptsTotal=12

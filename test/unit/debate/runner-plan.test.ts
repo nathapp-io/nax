@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager } from "@test/helpers";
 import type { ConfigSelector, NaxConfig } from "@/config";
 import { DEFAULT_CONFIG, reshapeSelector } from "@/config";
@@ -71,7 +71,7 @@ function makePlanStageConfig(overrides: Partial<DebateStageConfig> = {}): Debate
   };
 }
 
-const TEST_CONFIG: NaxConfig = makeNaxConfig({});
+const _TEST_CONFIG: NaxConfig = makeNaxConfig({});
 
 function makePlanDebateConfig(agents = 2): NaxConfig {
   return makeNaxConfig({

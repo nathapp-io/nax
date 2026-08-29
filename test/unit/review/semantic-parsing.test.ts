@@ -38,7 +38,7 @@ const CONFIG: SemanticReviewConfig = {
 function makeAgentManager(response: string, cost = 0) {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    runFn: async (_agent, opts) => ({
+    runFn: async (_agent, _opts) => ({
       success: true,
       exitCode: 0,
       output: response,

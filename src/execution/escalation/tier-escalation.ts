@@ -131,10 +131,10 @@ export async function preIterationTierCheck(
   prd: PRD,
   prdPath: string,
   featureDir: string | undefined,
-  hooks: LoadedHooksConfig,
+  _hooks: LoadedHooksConfig,
   feature: string,
   totalCost: number,
-  workdir: string,
+  _workdir: string,
   /** Per-run NaxRuntime — used to look up per-story cost via costAggregator.byStory() (BUG: story:failed cost field). */
   runtime?: import("@/runtime").NaxRuntime,
   /** Resolves authoritative routing only when a routing-less story must be persisted during escalation. */

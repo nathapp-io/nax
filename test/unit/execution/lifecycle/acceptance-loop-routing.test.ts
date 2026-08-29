@@ -103,7 +103,7 @@ function makePrd(): PRD {
   };
 }
 
-function makeAcceptanceContext() {
+function _makeAcceptanceContext() {
   return {
     failedACs: ["AC-1", "AC-2"],
     testOutput: "FAIL: expected 3 but got 4",
@@ -169,7 +169,7 @@ describe("AC-1: runAcceptanceLoop obtains agent via (ctx.agentGetFn ?? _acceptan
 describe("AC-2: When strategy is 'diagnose-first' and diagnosis verdict is 'source_bug', calls executeSourceFix()", () => {
   test("calls executeSourceFix when diagnosis returns source_bug verdict", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const agentGetFn: AgentGetFn = mock((_name: string) => mockAgent);
+    const _agentGetFn: AgentGetFn = mock((_name: string) => mockAgent);
     const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
 
     const diagnosis: DiagnosisResult = {
@@ -185,8 +185,8 @@ describe("AC-2: When strategy is 'diagnose-first' and diagnosis verdict is 'sour
   });
 
   test("executeSourceFix uses agent.run() with sessionRole 'source-fix'", async () => {
-    const mockAgent = makeMockAgentAdapter();
-    const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
+    const _mockAgent = makeMockAgentAdapter();
+    const _config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
     const diagnosis: DiagnosisResult = {
       verdict: "source_bug",
       reasoning: "null pointer in add()",
@@ -219,7 +219,7 @@ describe("AC-3: When strategy is 'diagnose-first' and diagnosis verdict is 'test
   });
 
   test("regenerateAcceptanceTest re-runs acceptance validation after regeneration", async () => {
-    const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
+    const _config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
 
     const diagnosis: DiagnosisResult = {
       verdict: "test_bug",
@@ -252,7 +252,7 @@ describe("AC-4: When strategy is 'diagnose-first' and diagnosis verdict is 'both
   });
 
   test("calls regenerateAcceptanceTest if acceptance still fails after source fix", async () => {
-    const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
+    const _config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
 
     const diagnosis: DiagnosisResult = {
       verdict: "both",

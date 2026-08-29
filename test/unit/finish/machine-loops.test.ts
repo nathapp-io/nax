@@ -31,7 +31,7 @@ afterEach(() => {
   _qualityGateDeps.loadPackageOverride = originalQuality.loadPackageOverride;
 });
 
-const FINDING: Finding = { severity: "HIGH", title: "fix me", problem: "p", fix: "f" };
+const _FINDING: Finding = { severity: "HIGH", title: "fix me", problem: "p", fix: "f" };
 
 function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConfig {
   return { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands } };

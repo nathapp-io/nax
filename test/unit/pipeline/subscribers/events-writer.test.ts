@@ -197,12 +197,12 @@ describe("wireEventsWriter", () => {
   });
 
   test("write failure does not throw or crash", async () => {
-    const bus = new PipelineEventBus();
+    const _bus = new PipelineEventBus();
     // Use a workdir whose project name would conflict with a file (simulate write error)
     // by pointing to an invalid path — we patch mkdir to throw
-    const originalMkdir = (await import("node:fs/promises")).mkdir;
+    const _originalMkdir = (await import("node:fs/promises")).mkdir;
 
-    const callCount = 0;
+    const _callCount = 0;
     const _fsMod = await import("node:fs/promises");
     // Inject a failing write by pointing to a path that won't be writable
     // We rely on the subscriber catching the error gracefully

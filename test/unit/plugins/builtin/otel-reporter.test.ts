@@ -223,7 +223,7 @@ describe("otel-reporter", () => {
   test("skips both POSTs when a required env var is missing", async () => {
     const { posts, deps } = capturing();
     delete process.env.OTLP_TOKEN;
-    const plugin = createOtelReporterPlugin({ ...cfg, headers: { Authorization: "Bearer ${OTLP_TOKEN}" } }, deps);
+    const plugin = createOtelReporterPlugin({ ...cfg, headers: { Authorization: `Bearer \${OTLP_TOKEN}` } }, deps);
     await runOnce(plugin);
     expect(posts).toHaveLength(0);
   });

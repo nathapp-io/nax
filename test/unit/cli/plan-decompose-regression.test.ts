@@ -103,7 +103,7 @@ function makeConfig(): NaxConfig {
   return makeNaxConfig({ agent: { default: "claude" } });
 }
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: { zod: "^3.0.0" },

@@ -372,7 +372,7 @@ export default {
     await fs.mkdir(projectPluginsDir, { recursive: true });
 
     const initTracker = path.join(projectRoot, "precedence-tracker.json");
-    const initOrder: string[] = [];
+    const _initOrder: string[] = [];
 
     const autoDiscoveredPluginCode = `
 export default {

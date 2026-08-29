@@ -106,7 +106,7 @@ function makeDecomposeResponse(stories: UserStory[]): string {
   return JSON.stringify(stories.map(toDecomposedStory));
 }
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: { zod: "^3.0.0" },

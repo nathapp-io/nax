@@ -178,9 +178,9 @@ describe("stale-then-swap — full runWithFallback loop", () => {
     const openSession = mock(async (name: string) => (name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE));
     const sessionMgr = makeSessionManager({ closeSession, getLiveHandle, openSession });
 
-    let sendCallCount = 0;
+    let _sendCallCount = 0;
     const runAsSessionFn = mock(async (agentName: string) => {
-      sendCallCount++;
+      _sendCallCount++;
       if (agentName === "claude") throw new SessionFailureError("idle timeout", STALE_FAILURE);
       return STUB_TURN;
     });

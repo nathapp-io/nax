@@ -77,7 +77,7 @@ function writeProposalsMd(runDir: string, content: string): void {
   writeFileSync(join(runDir, "curator-proposals.md"), content);
 }
 
-function writeRollup(rollupPath: string, observations: Observation[]): void {
+function _writeRollup(rollupPath: string, observations: Observation[]): void {
   const content = `${observations.map((o) => JSON.stringify(o)).join("\n")}\n`;
   mkdirSync(join(rollupPath, ".."), { recursive: true });
   writeFileSync(rollupPath, content);

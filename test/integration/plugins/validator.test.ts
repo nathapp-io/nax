@@ -60,7 +60,7 @@ describe("validatePlugin", () => {
           },
           router: {
             name: "test-router",
-            route(story: UserStory, context: RoutingContext) {
+            route(_story: UserStory, _context: RoutingContext) {
               return null;
             },
           },
@@ -77,7 +77,7 @@ describe("validatePlugin", () => {
         name: "full-plugin",
         version: "1.0.0",
         provides: ["reviewer"],
-        async setup(config: Record<string, unknown>) {
+        async setup(_config: Record<string, unknown>) {
           // Setup logic
         },
         async teardown() {
@@ -87,7 +87,7 @@ describe("validatePlugin", () => {
           reviewer: {
             name: "test-reviewer",
             description: "Test reviewer",
-            async check(workdir: string, changedFiles: string[]) {
+            async check(_workdir: string, _changedFiles: string[]) {
               return { passed: true, output: "OK" };
             },
           },
@@ -108,7 +108,7 @@ describe("validatePlugin", () => {
         extensions: {
           contextProvider: {
             name: "jira",
-            async getContext(story: UserStory) {
+            async getContext(_story: UserStory) {
               return {
                 content: "# Jira ticket",
                 estimatedTokens: 100,
@@ -131,13 +131,13 @@ describe("validatePlugin", () => {
         extensions: {
           reporter: {
             name: "slack",
-            async onRunStart(event: RunStartEvent) {
+            async onRunStart(_event: RunStartEvent) {
               // Send to Slack
             },
-            async onStoryComplete(event: StoryCompleteEvent) {
+            async onStoryComplete(_event: StoryCompleteEvent) {
               // Send to Slack
             },
-            async onRunEnd(event: RunEndEvent) {
+            async onRunEnd(_event: RunEndEvent) {
               // Send to Slack
             },
           },

@@ -95,7 +95,7 @@ describe("effectivenessEvalCommand (AC11)", () => {
         const phantom = join(dir, "does-not-exist.json");
         try {
           await effectivenessEvalCommand({ labels: phantom, dir });
-        } catch (err) {
+        } catch (_err) {
           // The command calls process.exit(2) on missing-path; let the mock catch it.
         }
         expect(exitCode).toBe(2);

@@ -17,7 +17,7 @@ describe("findControlByteViolations", () => {
   });
 
   test("returns empty array for a file with only escaped control sequences", () => {
-    writeFileSync(join(tempDir, "src", "safe.ts"), 'const key = `${a}\\u0000${b}`;\nconst nl = "line1\\nline2";\n');
+    writeFileSync(join(tempDir, "src", "safe.ts"), `const key = \`\${a}\\u0000\${b}\`;\nconst nl = "line1\\nline2";\n`);
 
     expect(findControlByteViolations(tempDir)).toEqual([]);
   });
@@ -29,7 +29,7 @@ describe("findControlByteViolations", () => {
   });
 
   test("flags a raw embedded NUL byte used as a key separator", () => {
-    writeFileSync(join(tempDir, "src", "unsafe.ts"), Buffer.from("const key = `${a}\x00${b}`;\n", "utf8"));
+    writeFileSync(join(tempDir, "src", "unsafe.ts"), Buffer.from(`const key = \`\${a}\x00\${b}\`;\n`, "utf8"));
 
     const violations = findControlByteViolations(tempDir);
     expect(violations).toHaveLength(1);

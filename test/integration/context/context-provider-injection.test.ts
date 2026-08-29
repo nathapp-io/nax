@@ -76,7 +76,7 @@ function createMockProvider(
 ): IContextProvider {
   return {
     name,
-    async getContext(story: UserStory) {
+    async getContext(_story: UserStory) {
       if (shouldThrow) {
         throw new Error(`Provider ${name} failed`);
       }

@@ -129,13 +129,13 @@ describe("runWithFallback — HopKind routing", () => {
     const manager = new AgentManager(config);
 
     const hopKinds: HopKind[] = [];
-    let calls = 0;
+    let _calls = 0;
     await manager.runWithFallback({
       runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind, _opts) => {
         hopKinds.push(hopKind);
-        calls++;
+        _calls++;
         // All three calls fail stale; third exhausts maxRetryAttempts
         return { result: makeFailResult(STALE_FAILURE), bundle: _bundle };
       },

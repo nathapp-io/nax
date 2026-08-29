@@ -152,6 +152,7 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
     const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, undefined, undefined, undefined, {
       env: { ANTHROPIC_BASE_URL: "https://custom.example.com", ANTHROPIC_API_KEY: "from-model-def" },
     });
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const internals = { env: client["env"] };
     expect(internals.env.ANTHROPIC_BASE_URL).toBe("https://custom.example.com");
     expect(internals.env.ANTHROPIC_API_KEY).toBe("from-model-def");
@@ -159,6 +160,7 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
 
   test("subprocess env is unaffected when no env override is passed", () => {
     const client = new SpawnAcpClient("acpx claude", "/tmp");
+    // biome-ignore lint/complexity/useLiteralKeys: private member access requires bracket notation
     const internals = { env: client["env"] };
     expect(internals.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
@@ -362,15 +364,6 @@ describe("SpawnAcpSession — success-path response fidelity (BUG-1/BUG-2)", () 
     let callCount = 0;
     // acpx can exit 0 while still emitting a JSON-RPC error envelope on stdout
     // (finalizeParseState captures it as `error`/`retryable`).
-    const errorLine = `${JSON.stringify({
-      jsonrpc: "2.0",
-      method: "session/update",
-      params: {
-        update: {
-          sessionUpdate: "message_end",
-        },
-      },
-    })}\n`;
     const rpcError = JSON.stringify({
       jsonrpc: "2.0",
       id: 1,

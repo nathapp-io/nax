@@ -12,7 +12,6 @@ import { join } from "node:path";
 import {
   makeDispatchContext,
   makeMockRuntime,
-  makeNaxConfig,
   makePluginRegistry,
   makePRD,
   makeStatusWriter,

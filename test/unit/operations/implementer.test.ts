@@ -70,7 +70,7 @@ describe("implementerOp — RunOperation shape", () => {
 describe("implementerOp.parse — error handling", () => {
   test("returns ImplementerOutput with success=false when output is empty", async () => {
     const { implementerOp } = await import("@/operations");
-    const { DEFAULT_CONFIG, pickSelector } = await import("@/config");
+    const { DEFAULT_CONFIG } = await import("@/config");
 
     const ctx = {
       packageView: testPackageView,
@@ -190,7 +190,7 @@ describe("implementerOp.recover — disk artifact recovery", () => {
 describe("implementerOp input/output types", () => {
   test("implementerOp input includes story", async () => {
     // Verifying the input type carries story field
-    const { implementerOp } = await import("@/operations");
+    const { implementerOp: _implementerOp } = await import("@/operations");
     const mockInput = {
       story: makeStory({ id: "US-001" }),
     };
@@ -223,7 +223,7 @@ describe("implementerOp input/output types", () => {
 
 describe("implementerOp.verify — isolation", () => {
   test("attaches isolation with warnings when implementer touched test files", async () => {
-    const { implementerOp } = await import("@/operations");
+    const { implementerOp: _implementerOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
     const { _isolationDeps } = await import("@/tdd");
 
@@ -258,7 +258,7 @@ describe("implementerOp.verify — isolation", () => {
   });
 
   test("attaches passing isolation when implementer touched only source files", async () => {
-    const { implementerOp } = await import("@/operations");
+    const { implementerOp: _implementerOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
     const { _isolationDeps } = await import("@/tdd");
 
@@ -293,7 +293,7 @@ describe("implementerOp.verify — isolation", () => {
   });
 
   test("returns parsed unchanged when beforeRef absent", async () => {
-    const { implementerOp } = await import("@/operations");
+    const { implementerOp: _implementerOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
 
     const parsed = {

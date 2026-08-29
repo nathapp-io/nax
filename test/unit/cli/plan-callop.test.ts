@@ -63,7 +63,7 @@ const SAMPLE_PRD: PRD = {
   ],
 };
 
-function makeFakeScan() {
+function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
     dependencies: { express: "^4.18.0" },
@@ -345,7 +345,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
         from: specPath,
         feature: "url-shortener",
       });
-    } catch (err) {
+    } catch (_err) {
       errorWasThrown = true;
     }
 

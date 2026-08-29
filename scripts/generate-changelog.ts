@@ -22,7 +22,6 @@ import { $ } from "bun";
 // Config
 // ---------------------------------------------------------------------------
 
-const CONVENTIONAL_TYPES = ["feat", "fix", "perf", "refactor"];
 const SKIP_PREFIXES = ["chore", "test", "docs", "ci", "style", "build", "release"];
 const DEFAULT_MODEL = "google/gemini-3-flash-preview";
 const BATCH_SIZE = 8; // versions per LLM call
@@ -43,7 +42,7 @@ const batchIdx = args.indexOf("--batch-size");
 const fromTag = fromIdx >= 0 ? args[fromIdx + 1] : undefined;
 const toTag = toIdx >= 0 ? args[toIdx + 1] : undefined;
 const model = modelIdx >= 0 ? args[modelIdx + 1] : DEFAULT_MODEL;
-const batchSize = batchIdx >= 0 ? parseInt(args[batchIdx + 1]) : BATCH_SIZE;
+const batchSize = batchIdx >= 0 ? parseInt(args[batchIdx + 1], 10) : BATCH_SIZE;
 
 // ---------------------------------------------------------------------------
 // Helpers

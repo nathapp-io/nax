@@ -55,7 +55,7 @@ function makeDroppedFinding(overrides: Record<string, unknown> = {}): Record<str
   };
 }
 
-function makeAcceptedFinding(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function _makeAcceptedFinding(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     severity: "error",
     category: "security",
@@ -76,7 +76,7 @@ function makeSpawnMock(stdout: string, exitCode = 0) {
   return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
-function makeAgentManager(llmResponse: string): IAgentManager {
+function _makeAgentManager(llmResponse: string): IAgentManager {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
     getAgentFn: () => makeAgentAdapter(),

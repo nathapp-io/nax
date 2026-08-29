@@ -5,8 +5,7 @@
  * Usage: bun scripts/run-concurrency-test.ts [--only=baseline|concurrent]
  */
 
-import { spawnSync } from "bun";
-import { existsSync, statSync } from "fs";
+import { existsSync, statSync } from "node:fs";
 
 const nax = new URL("..", import.meta.url).pathname.replace(/\/$/, ""); // repo root
 const args = process.argv.slice(2);

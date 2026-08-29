@@ -173,7 +173,7 @@ function rank(results: Result[]): Result[] {
 async function writeCsv(results: Result[], outPath: string): Promise<void> {
   const header = "file,exit_code,duration_ms,peak_rss_mb,verdict\n";
   const rows = results.map((r) => `${r.file},${r.exitCode},${r.durationMs},${r.peakRssMb},${r.verdict}`).join("\n");
-  await writeFile(outPath, header + rows + "\n", "utf8");
+  await writeFile(outPath, `${header}${rows}\n`, "utf8");
 }
 
 function printSummary(results: Result[], opts: Options): void {

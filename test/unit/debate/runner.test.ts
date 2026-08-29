@@ -5,7 +5,7 @@ import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
-import type { CallContext, Operation } from "@/operations/types";
+import type { CallContext } from "@/operations/types";
 import type { ICostAggregator } from "@/runtime";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
@@ -81,7 +81,7 @@ describe("DebateRunner — one-shot panel mode", () => {
   test("run() returns passed with single debater when second fails", async () => {
     let callCount = 0;
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (name: string, _p: string, _o: unknown) => {
+      completeAsFn: async (_name: string, _p: string, _o: unknown) => {
         callCount++;
         if (callCount === 2) throw new Error("second debater failed");
         return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };

@@ -524,7 +524,7 @@ describe("LintConfigProvider — AC13 detectProjectProfile called with packageDi
   test("AC13: invokes detectProjectProfile with the existing profile when passed via constructor", async () => {
     await withTempDir(async (dir) => {
       let capturedExisting: ProjectProfile | undefined;
-      _lintConfigProviderDeps.detectProjectProfile = async (workdir, existing) => {
+      _lintConfigProviderDeps.detectProjectProfile = async (_workdir, existing) => {
         capturedExisting = existing as ProjectProfile;
         return { lintTool: "biome", ...(existing as ProjectProfile) };
       };

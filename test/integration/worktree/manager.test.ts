@@ -368,7 +368,7 @@ describe("WorktreeManager", () => {
 
       await manager.ensureGitExcludes(projectRoot);
 
-      const excludePath = join(infoDir, "exclude");
+      const _excludePath = join(infoDir, "exclude");
       // No `.lock.*` candidate file should remain — the path-file-lock
       // is released in its `finally` block on the success path.
       const entries = await Array.fromAsync(new Bun.Glob(`${"exclude"}.lock.*`).scan({ cwd: infoDir }));

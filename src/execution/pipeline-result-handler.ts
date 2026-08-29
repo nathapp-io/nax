@@ -67,7 +67,7 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
     // stderr]` aliased the second tuple element (stdout) to `stderr` and
     // silently dropped the real stderr, so genuine git errors were invisible
     // while stdout (usually empty) got logged as "stderr".
-    const [exitCode, stdout, stderr] = await Promise.all([
+    const [exitCode, _stdout, stderr] = await Promise.all([
       proc.exited,
       new Response(proc.stdout).text().catch(() => ""),
       new Response(proc.stderr).text().catch(() => ""),

@@ -18,7 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeTestContext, makeTestRuntime, makeTestStory } from "@test/helpers";
-import { type DEFAULT_CONFIG, type NaxConfig, pickSelector } from "@/config";
+import { type NaxConfig, pickSelector } from "@/config";
 import {
   _postRunDeps,
   _storyOrchestratorDeps,

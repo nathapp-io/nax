@@ -42,7 +42,7 @@ function makeCallCtx(
   sessionManager: ReturnType<typeof makeSessionManager>,
   storyId = "US-test",
 ): CallContext {
-  const config = makeNaxConfig({
+  const _config = makeNaxConfig({
     debate: {
       maxConcurrentDebaters: 3,
     },

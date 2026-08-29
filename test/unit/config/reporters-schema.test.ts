@@ -17,7 +17,7 @@ describe("ReportersConfigSchema", () => {
       webhook: {
         enabled: true,
         url: "https://example.com/hook",
-        headers: { Authorization: "Bearer ${TOKEN}" },
+        headers: { Authorization: `Bearer \${TOKEN}` },
         events: ["onRunEnd"],
       },
     });

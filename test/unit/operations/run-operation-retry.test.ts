@@ -597,10 +597,10 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     const sessionManager = makeSessionManager();
     runtime = makeTestRuntime({ agentManager, sessionManager, parentSignal: abortController.signal });
 
-    let retryCount = 0;
+    let _retryCount = 0;
     const alwaysRetry = {
       shouldRetry: () => {
-        retryCount++;
+        _retryCount++;
         return { retry: true, delayMs: 50 } as const;
       },
     };

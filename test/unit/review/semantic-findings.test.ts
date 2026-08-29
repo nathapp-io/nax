@@ -43,7 +43,7 @@ const CFG: SemanticReviewConfig = {
 function makeAgentManager(llmResponse: string, cost = 0) {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    runFn: async (_agent, opts) => ({
+    runFn: async (_agent, _opts) => ({
       success: true,
       exitCode: 0,
       output: llmResponse,
@@ -101,7 +101,7 @@ function makeRuntime(agentManager: ReturnType<typeof makeAgentManager>) {
 
 async function callRunSemanticReview(
   llmResponse: string,
-  overrides?: Partial<import("@/review/types").ReviewCheckResult>,
+  _overrides?: Partial<import("@/review/types").ReviewCheckResult>,
 ): Promise<import("@/review/types").ReviewCheckResult> {
   const agentManager = makeAgentManager(llmResponse);
   return runSemanticReview({
@@ -156,7 +156,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
         },
       ],
     });
-    const result = await callRunSemanticReview(llmResponse);
+    const _result = await callRunSemanticReview(llmResponse);
   });
 
   test("maps finding.issue to ReviewFinding.message", async () => {

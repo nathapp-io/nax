@@ -44,14 +44,6 @@ interface LogCall {
   data?: Record<string, unknown>;
 }
 
-interface MockLogger {
-  info: ReturnType<typeof mock>;
-  warn: ReturnType<typeof mock>;
-  debug: ReturnType<typeof mock>;
-  infoCalls: LogCall[];
-  warnCalls: LogCall[];
-}
-
 function makeLogger(): Logger & MockLoggerExtras {
   const infoCalls: LogCall[] = [];
   const warnCalls: LogCall[] = [];

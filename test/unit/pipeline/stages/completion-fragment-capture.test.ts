@@ -439,7 +439,7 @@ describe("completionStage — fragment capture on re-run (AC8)", () => {
 
 describe("completionStage — getDiffFilePaths reads --name-only output in full (AC6)", () => {
   test("retains every path when --name-only output exceeds MAX_DIFF_TEXT_CHARS (1 MiB)", async () => {
-    const encoder = new TextEncoder();
+    const _encoder = new TextEncoder();
     // 60,000 paths × 18 chars ≈ 1.08 MiB — past the 1 MiB diff-text cap. A
     // capped read would drop every path after ~58,250 lines; the full read
     // keeps all 60,000.

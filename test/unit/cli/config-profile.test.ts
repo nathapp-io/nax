@@ -21,7 +21,7 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function writeJson(path: string, data: unknown): void {
+function _writeJson(path: string, data: unknown): void {
   mkdirSync(join(path, ".."), { recursive: true });
   Bun.write(path, JSON.stringify(data, null, 2));
 }

@@ -42,7 +42,7 @@ function makeBaseResult(): AgentResult {
 function makeAgentManager(runFn: (req: AgentRunRequest) => Promise<AgentResult>): IAgentManager {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    runFn: async (agent, opts) => {
+    runFn: async (_agent, opts) => {
       const result = await runFn({ runOptions: opts } as AgentRunRequest);
       return { ...result, agentFallbacks: [] };
     },

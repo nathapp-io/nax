@@ -153,7 +153,7 @@ describe("contextStage — deriveProviderWeights invocation (AC7)", () => {
     _contextStageDeps.loadFeatureManifests = (async () => {
       return [];
     }) as typeof _contextStageDeps.loadFeatureManifests;
-    _contextStageDeps.deriveProviderWeights = ((manifests: ContextManifest[]) => {
+    _contextStageDeps.deriveProviderWeights = ((_manifests: ContextManifest[]) => {
       callCount++;
       return { "static-rules": 1.0, "code-neighbor": 0.9 };
     }) as typeof _contextStageDeps.deriveProviderWeights;

@@ -266,18 +266,7 @@ export interface ISessionManager {
    */
   resume(storyId: string, role: SessionRole): SessionDescriptor | null;
   /**
-   * Run a tracked session through a caller-provided run client.
-   * Preserves the pre-ADR-019 bookkeeping behavior without importing AgentManager.
-   */
-  runInSession(
-    id: string,
-    runner: SessionRunClient,
-    request: SessionManagedRunRequest,
-    options?: SessionRunOptions,
-  ): Promise<import("../agents/types").AgentResult>;
-
-  /**
-   * Force-close all non-terminal sessions for a story (Phase 3).
+   * Close all non-terminal sessions for a story (Phase 3).
    * Transitions each matching session to COMPLETED regardless of current state.
    * Returns the descriptors of sessions that were closed.
    * Physical session close must be handled by the caller (via adapter.closePhysicalSession).
@@ -328,6 +317,17 @@ export interface ISessionManager {
    * Most ops use this via callOp.
    */
   runInSession(name: string, prompt: string, opts: RunInSessionOpts): Promise<import("../agents/types").TurnResult>;
+
+  /**
+   * Run a tracked session through a caller-provided run client.
+   * Preserves the pre-ADR-019 bookkeeping behavior without importing AgentManager.
+   */
+  runInSession(
+    id: string,
+    runner: SessionRunClient,
+    request: SessionManagedRunRequest,
+    options?: SessionRunOptions,
+  ): Promise<import("../agents/types").AgentResult>;
 
   /**
    * Transactional multi-prompt form — open, run callback against live handle, close (try/finally).

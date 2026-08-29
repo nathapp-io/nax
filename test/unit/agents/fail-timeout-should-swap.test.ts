@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
-import type { AdapterFailure, ContextBundle } from "@/context/engine";
+import type { AdapterFailure } from "@/context/engine";
 
 // Shared run options used by runWithFallback tests.
 const RUN_OPTIONS = {

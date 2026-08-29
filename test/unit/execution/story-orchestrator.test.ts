@@ -159,7 +159,7 @@ const mockVerifierOp: RunOperation<TestVerifierInput, TestVerifierOutput, TestOp
   },
 };
 
-const mockSemanticReviewOp: RunOperation<TestSemanticReviewInput, TestSemanticReviewOutput, TestOpConfig> = {
+const _mockSemanticReviewOp: RunOperation<TestSemanticReviewInput, TestSemanticReviewOutput, TestOpConfig> = {
   kind: "run",
   name: "mock-semantic-review",
   stage: "review",
@@ -178,7 +178,7 @@ const mockSemanticReviewOp: RunOperation<TestSemanticReviewInput, TestSemanticRe
   },
 };
 
-const mockAdversarialReviewOp: RunOperation<TestAdversarialReviewInput, TestAdversarialReviewOutput, TestOpConfig> = {
+const _mockAdversarialReviewOp: RunOperation<TestAdversarialReviewInput, TestAdversarialReviewOutput, TestOpConfig> = {
   kind: "run",
   name: "mock-adversarial-review",
   stage: "review",
@@ -618,7 +618,7 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
     };
 
     const plan = builder.build(ctx);
-    const result = await plan.run();
+    const _result = await plan.run();
 
     // Initial verify + 1 rectification attempt = 2 verifier calls max
     expect(attemptCount).toBeLessThanOrEqual(2);
@@ -791,7 +791,7 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
     };
 
     const plan = builder.build(ctx);
-    const result = await plan.run();
+    const _result = await plan.run();
 
     // All implementer calls should reuse the same session (SessionKeeper)
     expect(sessionIds.length).toBeLessThanOrEqual(2);
