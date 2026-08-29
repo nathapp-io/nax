@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `_fileScanDeps.spawn` returns a child whose `exited` promise never settles, `detectFromFileScan(workdir)` settles and resolves to `null`.",
+    "refined": "Call `detectFromFileScan('/some/workdir')` after stubbing `_fileScanDeps.spawn` to return `{ exited: new Promise(() => {}) }`. Assert the returned promise resolves to `null` within 5000ms and does not reject.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given a fixture workdir containing a well-known test directory, when `_directoryScanDeps.spawn` returns a child whose `exited` promise never settles, `detectFromDirectoryScan(workdir)` settles and returns a non-null source whose `path` names that directory and whose `patterns` is non-empty.",
+    "refined": "Setup a workdir fixture containing a directory `'.nax/accept'`. Call `detectFromDirectoryScan(workdir)` after stubbing `_directoryScanDeps.spawn` to return `{ exited: new Promise(() => {}) }`. Assert: (1) the promise resolves within 5000ms, (2) result is not `null`, (3) `result.path` ends with `'.nax/accept'`, (4) `Array.isArray(result.patterns)` is `true` and `result.patterns.length > 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `_rollbackDeps.spawn` returns a child whose `exited` promise never settles, `rollbackToRef(workdir, ref, null)` settles by rejecting rather than remaining pending, with an `Error` whose message names the rollback failure.",
+    "refined": "Call `rollbackToRef('/some/workdir', 'HEAD~1', null)` after stubbing `_rollbackDeps.spawn` to return `{ exited: new Promise(() => {}) }`. Assert: (1) the promise rejects within 5000ms, (2) the rejection reason is an `Error` instance, (3) `error.message` includes `'rollback'` (case-insensitive).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `_rollbackDeps.spawn` returns a child whose `exited` promise never settles, `captureSnapshotRef(workdir, storyId)` settles by rejecting rather than remaining pending, with a `NaxError` whose `code` is `SNAPSHOT_REF_FAILED`.",
+    "refined": "Call `captureSnapshotRef('/some/workdir', 'story-123')` after stubbing `_rollbackDeps.spawn` to return `{ exited: new Promise(() => {}) }`. Assert: (1) the promise rejects within 5000ms, (2) the rejection reason has a `code` property equal to `'SNAPSHOT_REF_FAILED'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When the merge-conflict-rectify module's exported spawn seam returns a child whose `exited` promise never settles, invoking its exported stale-ACP-session eviction settles and resolves without raising, preserving its best-effort contract.",
+    "refined": "Stub the module-level spawn seam (exported as `_mergeRectifyDeps` or equivalent injectable deps) to return `{ exited: new Promise(() => {}) }`. Call the exported stale-session eviction function (e.g., `evictStaleSessions()`). Assert: (1) the promise resolves within 5000ms, (2) the promise does not reject.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `resolveTestFilePatterns` reads a per-package config whose `execution.smartTestRunner.testFilePatterns` is the string `test/**/*.ts`, it rejects with a `NaxError` whose `code` is `INVALID_TEST_GLOB`.",
+    "refined": "When `resolveTestFilePatterns` reads a per-package config whose `execution.smartTestRunner.testFilePatterns` is the string `test/**/*.ts`, it rejects with a `NaxError` whose `code` is `INVALID_TEST_GLOB`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `resolveTestFilePatterns` reads a per-package config whose `execution.smartTestRunner.testFilePatterns` is `[\"test/**/*.ts\"]`, it resolves with that single pattern.",
+    "refined": "When `resolveTestFilePatterns` reads a per-package config whose `execution.smartTestRunner.testFilePatterns` is `[\"test/**/*.ts\"]`, it resolves with that single pattern.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `initPackage(repoRoot, \"../../evil\")` is called, it rejects with a `NaxError` naming the package argument before creating any directory.",
+    "refined": "When `initPackage(repoRoot, \"../../evil\")` is called, it rejects with a `NaxError` naming the package argument before creating any directory.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When the generate command is invoked with a `package` option of `/etc`, it rejects with a `NaxError` rather than reinterpreting it as the repo-relative directory `etc`.",
+    "refined": "When the generate command is invoked with a `package` option of `/etc`, it rejects with a `NaxError` rather than reinterpreting it as the repo-relative directory `etc`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `curatorCommit` is called with a `runId` of `../../etc`, it rejects with a `NaxError` before any file under the run directory is read.",
+    "refined": "When `curatorCommit` is called with a `runId` of `../../etc`, it rejects with a `NaxError` before any file under the run directory is read.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `initPackage(repoRoot, \"\")` is called, it rejects with a `NaxError` rather than resolving to the repo root itself.",
+    "refined": "When `initPackage(repoRoot, \"\")` is called, it rejects with a `NaxError` rather than resolving to the repo root itself.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `parseSchedule(\"999999999999d\", now)` is called, it returns `ok: false` with an error naming the accepted duration forms.",
+    "refined": "Calling `parseSchedule(\"999999999999d\", now)` returns an object where `ok` is `false` and `error` is a non-empty string containing at least one of the words \"day\", \"hour\", \"minute\", \"second\", or \"valid\" (case-insensitive match on root forms).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `parseSchedule(\"2h\", now)` is called, it returns `ok: true` with a `target` two hours after `now`.",
+    "refined": "Calling `parseSchedule(\"2h\", now)` returns an object where `ok` is `true`, `target` is a Date, and `target.getTime() - now.getTime()` equals `2 * 60 * 60 * 1000` (within 1ms tolerance).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When config resolution receives the literal text of the module's double-dollar escape placeholder followed by `HOME`, it returns that same literal text unchanged rather than `$HOME`.",
+    "refined": "Given a config resolver that processes string values, when passed the 6-character string `\"$$HOME\"` (literal double-dollar followed by HOME), it returns the same 6-character string `\"$$HOME\"` unchanged. The resolved value's length is 6 and it is not equal to \"$HOME\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a handler from `buildRunInteractionHandler` with non-empty `contextPullTools` and a `contextToolRuntime.callTool` result containing a `nax_tool_result` closing delimiter, when it handles the context-tool request, its `answer` contains exactly one `nax_tool_result` closing delimiter.",
+    "refined": "When `buildRunInteractionHandler` produces a handler with a `contextToolRuntime` object and non-empty `contextPullTools` array, and `contextToolRuntime.callTool` returns a result whose `content` array contains a text element with the substring `</nax_tool_result>`, then processing a `context-tool` request through `handler.onInteraction` produces an `answer` string where the count of `</nax_tool_result>` substrings equals exactly 1.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given the same handler, when a context-tool request has a `name` containing a double quote, its `answer` opening `nax_tool_result` delimiter parses to one `name` attribute whose value equals the request name exactly.",
+    "refined": "When the handler processes a `context-tool` request with `{ name: \"test\\\"quote\" }` (name containing a literal double-quote character), the returned `answer` string contains a `<nax_tool_result` substring, and extracting the `name=\"…\"` attribute from the first such opening tag yields the exact 12-character value `test\"quote` (including the embedded double-quote). No other `name` attribute appears in the opening delimiter.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `loadPRD` reads a file containing invalid JSON, it rejects with a `NaxError` whose `code` is `PRD_INVALID` and whose `context` carries the file path.",
+    "refined": "Calling `loadPRD('/path/to/corrupt.json')` on a file containing invalid JSON: (1) the returned promise rejects (not resolves), (2) `await loadPRD(...).catch(e => e)` yields an instance where `e instanceof NaxError` is true, (3) `e.code === 'PRD_INVALID'` is true, (4) `e.context.path === '/path/to/corrupt.json'` is true.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `loadPRD` reads a file larger than the PRD size limit, it rejects with a coded `NaxError` whose message states the observed size and the limit.",
+    "refined": "Calling `loadPRD('/path/to/oversize.json')` on a file exceeding the size limit: (1) the returned promise rejects, (2) `e instanceof NaxError` is true, (3) `e.code` is a non-empty string, (4) `e.message` matches the regex `/\\d+/` (contains observed size) and matches the regex `/\\d+/` (contains limit), (5) `e.message` contains both observed byte count and configured limit.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `validateStoryId(\"\")` is called, it throws a coded `NaxError` rather than a bare `Error`.",
+    "refined": "Calling `validateStoryId('')` (empty string): (1) it throws (does not return normally), (2) `e instanceof NaxError` is true, (3) `typeof e.code === 'string' && e.code.length > 0` is true (a code is assigned; exact value verified against the constant name used in sibling throws in the same file).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `validateStoryId(\"../escape\")` is called, it throws a `NaxError` whose message names path traversal as the reason.",
+    "refined": "Calling `validateStoryId('../escape')`: (1) it throws, (2) `e instanceof NaxError` is true, (3) `e.message.toLowerCase()` includes the substring 'path traversal' (or 'traversal' if case-insensitive matching).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When a root config fails schema validation, loading it rejects with a coded `NaxError` whose message still lists every failing field path.",
+    "refined": "Calling the root config loader on an invalid config: (1) the returned promise rejects, (2) `e instanceof NaxError` is true, (3) `typeof e.code === 'string' && e.code.length > 0` is true, (4) for each field path `foo.bar.baz` reported by the Zod error, `e.message.includes('foo.bar.baz')` is true — verified by parsing `e.context?.issues` or matching against the error message string.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given one cost event and one error event sharing an `agentName`, when `byAgent()` is read, that agent entry has `errorCount` equal to `1`.",
+    "refined": "Given a CostSnapshot containing one CostEvent with agentName='test-agent' and one CostErrorEvent with agentName='test-agent', when byAgent() is called, the returned map's entry for 'test-agent' has errorCount === 1.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given one cost event and one error event sharing a `stage`, when `byStage()` is read, that stage entry has `errorCount` equal to `1`.",
+    "refined": "Given a CostSnapshot containing one CostEvent with stage='run' and one CostErrorEvent with stage='run', when byStage() is called, the returned map's entry for 'run' has errorCount === 1.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given one cost event and one error event sharing a `storyId`, when `byStory()` is read, that story entry has `errorCount` equal to `1`.",
+    "refined": "Given a CostSnapshot containing one CostEvent with storyId='story-1' and one CostErrorEvent with storyId='story-1', when byStory() is called, the returned map's entry for 'story-1' has errorCount === 1.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When two contestant story metrics with `attempts` of `1` and `1` are aggregated, `tierEscalations` equals `0`.",
+    "refined": "When aggregateTotals is called with an array containing two ContestantStoryMetric objects where both have attempts: 1, the returned object has tierEscalations === 0.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When two contestant story metrics with `attempts` of `1` and `3` are aggregated, `tierEscalations` equals `2`.",
+    "refined": "When aggregateTotals is called with an array containing two ContestantStoryMetric objects where one has attempts: 1 and the other has attempts: 3, the returned object has tierEscalations === 2.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When the disk-space warning check receives command output whose second line has fewer columns than the available-space column, it returns `passed: false` with a message stating the output could not be parsed and containing no `NaN` text.",
+    "refined": "When parseDiskSpaceWarning is called with a string where the second line has fewer tab-separated columns than the available-space column index, it returns an object where passed === false, the message includes the substring 'could not be parsed', and the message contains no substring 'NaN'.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When Jest output reports a failure named `renders` in two different spec files, parsing produces two `failures` entries, one per file.",
+    "refined": "When parseJestOutput is called with Jest JSON input containing a test failure named 'renders' in file '/path/a.test.ts' and a test failure named 'renders' in file '/path/b.test.ts', the returned failures array has length === 2, with entries having file paths '/path/a.test.ts' and '/path/b.test.ts' respectively.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given an environment where the `claude` binary resolves, when the agents list command runs, its output has no row for `aider` and no row whose display name is `ACP Agent`.",
+    "refined": "When agentsListCommand(config, workdir) is called in an environment where the 'claude' binary is resolvable via PATH, the returned stdout string contains no line with the label 'aider' and no line where the display name column equals 'ACP Agent'.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When `KNOWN_AGENT_NAMES` is read, it still includes `aider`, confirming the listing was narrowed at the presentation layer rather than by shrinking the registry.",
+    "refined": "When the constant KNOWN_AGENT_NAMES is accessed, Array.isArray(KNOWN_AGENT_NAMES) && KNOWN_AGENT_NAMES.includes('aider') evaluates to true.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When `runHardeningPass` processes a PRD whose only suggested criterion is discarded, it persists the PRD and the persisted story's `suggestedCriteria` reflects the discard.",
+    "refined": "Given runHardeningPass receives a HardeningContext with story S containing suggestedCriteria = [X] and result.promoted = [], result.discarded = [X]; after runHardeningPass returns: the PRD file is written to disk and the persisted S.suggestedCriteria is [].",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When `runHardeningPass` processes a PRD in which nothing is promoted and nothing is discarded, it does not persist the PRD.",
+    "refined": "Given runHardeningPass receives a HardeningContext and returns result.promoted = [] and result.discarded = []; after runHardeningPass returns: the PRD file is not written to disk (no file write operation occurs).",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When `runHardeningPass` processes a PRD with one promoted criterion, it persists the PRD and the persisted story's `acceptanceCriteria` includes the promoted text, preserving the promotion path.",
+    "refined": "Given runHardeningPass receives a HardeningContext with story S and returns result.promoted = [X] (X is the criterion text), result.discarded = []; after runHardeningPass returns: the PRD file is written to disk and the persisted S.acceptanceCriteria contains X.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When TypeScript skeleton acceptance tests are generated for a criterion containing a double quote, the criterion's test title is one well-formed string literal that round-trips to the original text.",
+    "refined": "Given a criterion string C containing a double-quote character; when generateTypeScriptSkeletonTests(C) is called; then the returned test title is a single string literal with properly escaped double-quotes (e.g., `\\\"`) such that parsing the literal yields C.",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When TypeScript skeleton acceptance tests are generated for a criterion containing a newline, no generated comment line carries part of the criterion text onto a line outside a comment.",
+    "refined": "Given a criterion string C containing a newline character; when generateTypeScriptSkeletonTests(C) is called; then for every generated line L that contains a substring of C, L is a valid TypeScript comment line (starts with // or is within /* */).",
+    "testable": true,
+    "storyId": "US-006"
+  }
+]
