@@ -18,10 +18,7 @@ import { installServePortZeroCompat } from "./webhook-serve-compat";
 /** Injectable sleep — kept for backward compat with tests; unused by receive() (event-driven delivery). @internal */
 export const _webhookPluginDeps = {
   sleep,
-  /**
-   * Injectable clock for the rate limiter (SEC-8). Tests advance this to
-   * exercise fixed-window rollover without real wall-clock sleeps.
-   */
+  /** Injectable clock for the rate limiter (SEC-8); tests advance it to exercise fixed-window rollover. */
   now: () => Date.now(),
 };
 
@@ -119,6 +116,8 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     auth: { windowStart: 0, count: 0 },
   };
   private serverStartPromise: Promise<void> | null = null;
+  /** Restore fn from installServePortZeroCompat(); stopServer() invokes it so the patch lives as long as the server. */
+  private compatRestore: (() => void) | null = null;
   private isDestroyed = false;
   /** IDs for which send() has been called but no response has been consumed yet */
   private registeredRequestIds = new Set<string>();
@@ -450,7 +449,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     // SEC-06: install the compat shim lazily on first actual server start,
     // not as a module-import side effect (previously patched two
     // process-wide globals merely by importing webhook.ts).
-    installServePortZeroCompat();
+    this.compatRestore = installServePortZeroCompat();
     this.serverStartPromise = (async () => {
       const port = this.config.callbackPort ?? 0;
       this.server = Bun.serve({
@@ -484,6 +483,9 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     bunServer.stop();
     this.server = null;
     this.serverStartPromise = null;
+    // Reinstate the globals the compat shim patched, exactly when the server stops.
+    this.compatRestore?.();
+    this.compatRestore = null;
   }
 
   /**

@@ -91,13 +91,18 @@ function createInMemoryServer(options: ServeCompatOptions, port: number): ServeC
   return server;
 }
 
-export function installServePortZeroCompat(): void {
+export function installServePortZeroCompat(): () => void {
   if (servePortZeroCompatInstalled) {
-    return;
+    // Re-entrant call: the patch is already installed by a prior caller. Return
+    // a no-op restore so the second caller cannot uninstall the first caller's
+    // patch — its stopServer() would otherwise tear down a shim it never owned.
+    return () => {};
   }
 
-  const originalServe = Bun.serve.bind(Bun);
-  const originalFetch = globalThis.fetch.bind(globalThis);
+  const originalServe = Bun.serve;
+  const originalFetch = globalThis.fetch;
+  const boundOriginalServe = Bun.serve.bind(Bun);
+  const boundOriginalFetch = globalThis.fetch.bind(globalThis);
   const patchedServe = ((options: ServeCompatOptions): ServeCompatReturn => {
     const requestedPort = typeof options.port === "number" ? options.port : 0;
     // Route port 0 through the real Bun.serve too — the OS assigns a real available
@@ -108,7 +113,7 @@ export function installServePortZeroCompat(): void {
     // the advertised callback URL could never reach it: ECONNREFUSED every time (BUG-24).
     if (!inMemoryServers.has(requestedPort)) {
       try {
-        return originalServe(options);
+        return boundOriginalServe(options);
       } catch {
         return createInMemoryServer(options, requestedPort === 0 ? nextCompatPort() : requestedPort);
       }
@@ -134,7 +139,15 @@ export function installServePortZeroCompat(): void {
       }
       return await server.fetch(request);
     }
-    return originalFetch(input instanceof URL ? input.toString() : input, init);
+    return boundOriginalFetch(input instanceof URL ? input.toString() : input, init);
   }) as typeof globalThis.fetch;
   servePortZeroCompatInstalled = true;
+
+  // Restore the exact function objects captured before the patch, and clear the
+  // installation flag so the shim can be reinstalled on the next server start.
+  return () => {
+    (Bun as { serve: typeof Bun.serve }).serve = originalServe;
+    globalThis.fetch = originalFetch;
+    servePortZeroCompatInstalled = false;
+  };
 }

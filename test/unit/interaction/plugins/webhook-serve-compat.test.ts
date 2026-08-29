@@ -18,14 +18,62 @@ describe("installServePortZeroCompat (SEC-06)", () => {
     globalThis.fetch = originalFetch;
   });
 
+  /**
+   * A fresh module instance per call, so `servePortZeroCompatInstalled` starts
+   * false regardless of what earlier tests in this file or sibling files left
+   * behind (the flag is module-level and sticky). Without this, AC3/AC4 would
+   * silently no-op — and not patch — whenever the shared module's flag is
+   * already set by an earlier install that was never restored.
+   */
+  async function freshInstall(tag: string): Promise<() => void> {
+    const mod = (await import(`@/interaction/plugins/webhook-serve-compat?sec06=${tag}`)) as {
+      installServePortZeroCompat: () => () => void;
+    };
+    return mod.installServePortZeroCompat();
+  }
+
   test("installing is idempotent and only patches globals once", () => {
-    installServePortZeroCompat();
+    const firstRestore = installServePortZeroCompat();
     const patchedServe = Bun.serve;
     const patchedFetch = globalThis.fetch;
 
-    installServePortZeroCompat();
+    // The contract added by US-004: installServePortZeroCompat() returns a
+    // restore function. The first call's restore reinstates the originals;
+    // a re-entrant call must return a no-op so it cannot uninstall the
+    // first caller's patch.
+    const secondRestore = installServePortZeroCompat() as unknown;
+    expect(typeof secondRestore).toBe("function");
     expect(Bun.serve).toBe(patchedServe);
     expect(globalThis.fetch).toBe(patchedFetch);
+    // AC5 (US-004): the second call's restore is a no-op. Invoking it must
+    // leave Bun.serve and globalThis.fetch still equal to the patched functions
+    // the first call installed — the second caller cannot uninstall the first
+    // caller's patch.
+    (secondRestore as () => void)();
+    expect(Bun.serve).toBe(patchedServe);
+    expect(globalThis.fetch).toBe(patchedFetch);
+    // Clean up: the first call's restore reinstates the originals. Without it the
+    // module-level installation flag stays set, making every later install in this
+    // file a no-op (the AC3/AC4 tests below assert a genuine first install).
+    (firstRestore as () => void)();
+  });
+
+  test("AC3: the first install returns a restore whose invocation reinstates the pre-install globalThis.fetch", async () => {
+    const firstRestore = await freshInstall("ac3");
+    expect(typeof firstRestore).toBe("function");
+    expect(globalThis.fetch).not.toBe(originalFetch);
+
+    firstRestore();
+    expect(globalThis.fetch).toBe(originalFetch);
+  });
+
+  test("AC4: the first install returns a restore whose invocation reinstates the pre-install Bun.serve", async () => {
+    const firstRestore = await freshInstall("ac4");
+    expect(typeof firstRestore).toBe("function");
+    expect(Bun.serve).not.toBe(originalServe);
+
+    firstRestore();
+    expect(Bun.serve).toBe(originalServe);
   });
 });
 

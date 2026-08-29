@@ -10,6 +10,7 @@ import { mockFetch, telegramInternals, webhookInternals } from "@test/helpers";
 import type { InteractionRequest } from "@/interaction";
 import { _telegramPluginDeps, TelegramInteractionPlugin } from "@/interaction/plugins/telegram";
 import { _webhookPluginDeps, WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
+import { installServePortZeroCompat } from "@/interaction/plugins/webhook-serve-compat";
 
 function timeoutResult<T>(value: T, delayMs = 0): Promise<T> {
   return new Promise((resolve) => {
@@ -443,6 +444,14 @@ describe("WebhookInteractionPlugin - Capacity & Startup Recovery", () => {
   test("BUG-50: serverStartPromise is reset after a Bun.serve failure so a retry can succeed", async () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
+
+    // US-004 changed the compat-shim lifecycle: startServer() now installs the
+    // shim and stopServer() uninstalls it, so by the time this test runs the
+    // shim is no longer installed by leaked state. Install it explicitly so the
+    // startServer() install below is a no-op — leaving `Bun.serve` as the raw
+    // throwing stub below — otherwise the shim's in-memory fallback would
+    // swallow the simulated startup failure and startServer() would resolve.
+    installServePortZeroCompat();
 
     const originalServe = Bun.serve;
     (Bun as { serve: typeof Bun.serve }).serve = (() => {
