@@ -34,6 +34,8 @@ export {
 } from "./out-of-scope-extract";
 export type { SpecDriftViolation } from "./spec-drift";
 export { findSpecDriftViolations } from "./spec-drift";
+export type { SpecLintFinding, SpecLintOptions } from "./spec-lint";
+export { lintSpecContent } from "./spec-lint";
 export type {
   EscalationAttempt,
   PersistedRepoScopedFix,
