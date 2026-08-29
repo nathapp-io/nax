@@ -245,13 +245,7 @@ Covers BUG-25 and ENH-27.
 - `src/interaction/plugins/telegram-config.ts`
 - `test/helpers/warn-spy.ts`
 
-**Modifies**
-- **US-004** `test/unit/interaction/plugins/webhook-serve-compat.test.ts` — the
-  `"installing is idempotent and only patches globals once"` test calls
-  `installServePortZeroCompat()` for its side effect and ignores the return value. The invariant
-  that replaces it: the second call still leaves `Bun.serve` and `globalThis.fetch` identical to
-  the values the first call installed, **and** the restore it returns is a no-op — invoking that
-  second restore must leave the globals patched.
+**Modifies**: see the `### Modifies` section below.
 
 ### US-005 — One source of truth for the idle-watchdog defaults
 
@@ -276,6 +270,8 @@ Covers BUG-47, widened by a third divergent site found while grounding this spec
 
 **Context Files**
 - `src/config/schemas-infra.ts`
+- `src/agents/manager.ts`
+- `src/agents/retry/hop-retry-policy.ts`
 - `test/helpers/mock-nax-config.ts`
 - `test/unit/runtime/middleware/_idle-watchdog-harness.ts`
 
@@ -304,6 +300,12 @@ Covers BUG-47, widened by a third divergent site found while grounding this spec
   `destroy()` has put `globalThis.fetch` back.
 - **`CLEANUP_GRACE_POLL_INTERVAL_MS` and `DEFAULT_ACP_TIMEOUT_SECONDS` are constants**, each
   consumed only inside its declaring module and asserted directly by its story's ACs.
+
+### Modifies
+
+**US-004**
+
+- `test/unit/interaction/plugins/webhook-serve-compat.test.ts` — the test named "installing is idempotent and only patches globals once" calls `installServePortZeroCompat()` for its side effect and ignores the return value. No assertion in it is inverted by this story, so it is not a deadlock: it stays green exactly as written. What it is missing is the other half of the new contract. Extend that one test so it also asserts the restore returned by the *second* call is a no-op — invoking it must leave `Bun.serve` and `globalThis.fetch` still equal to the patched functions the first call installed. Keep both existing identity assertions unchanged; they remain correct and must continue to pass.
 
 ## Acceptance Criteria
 
