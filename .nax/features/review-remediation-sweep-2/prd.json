@@ -3,7 +3,7 @@
   "feature": "review-remediation-sweep-2",
   "branchName": "feat/review-remediation-sweep-2",
   "createdAt": "2026-08-29T00:00:00.000Z",
-  "updatedAt": "2026-08-29T16:45:47.782Z",
+  "updatedAt": "2026-08-29T17:55:18.366Z",
   "userStories": [
     {
       "id": "US-001",
@@ -170,7 +170,8 @@
         "When `installServePortZeroCompat()` is called, then it returns a function whose invocation restores `globalThis.fetch` to the exact pre-install function object.",
         "When the restore returned by `installServePortZeroCompat()` is invoked, then `Bun.serve` is restored to the exact pre-install function object.",
         "When `installServePortZeroCompat()` is called while already installed, then invoking its returned restore leaves `globalThis.fetch` equal to the patched function installed by the first call.",
-        "When a `WebhookInteractionPlugin` initialized with a loopback callback URL receives `receive(\"req-1\", 1)` and is then destroyed, then `globalThis.fetch` equals the exact function object present before `receive`."
+        "When a `WebhookInteractionPlugin` initialized with a loopback callback URL receives `receive(\"req-1\", 1)` and is then destroyed, then `globalThis.fetch` equals the exact function object present before `receive`.",
+        "When `installServePortZeroCompat()` is called twice, then the second call leaves `Bun.serve` and `globalThis.fetch` equal to the first patched values and its restore is a no-op."
       ],
       "tags": [
         "fix",
@@ -178,8 +179,8 @@
         "lifecycle"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -208,9 +209,6 @@
           "reason": "the test named \"installing is idempotent and only patches globals once\" calls `installServePortZeroCompat()` for its side effect and ignores the return value. No assertion in it is inverted by this story, so it is not a deadlock: it stays green exactly as written. What it is missing is the other half of the new contract. Extend that one test so it also asserts the restore returned by the *second* call is a no-op — invoking it must leave `Bun.serve` and `globalThis.fetch` still equal to the patched functions the first call installed. Keep both existing identity assertions unchanged; they remain correct and must continue to pass."
         }
       ],
-      "suggestedCriteria": [
-        "When `installServePortZeroCompat()` is called twice, then the second call leaves `Bun.serve` and `globalThis.fetch` equal to the first patched values and its restore is a no-op."
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -237,8 +235,8 @@
         "acp"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -250,7 +248,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/runtime/middleware/idle-watchdog.ts",
@@ -266,7 +266,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b467b2bb311fc3c4cf23318e3174ffdf1da25688"
     }
   ],
   "analysis": "This is a five-story remediation of existing Bun/TypeScript subsystems, with no dependency chain and no overlapping implementation files. Worktree creation/removal is centralized in src/worktree/manager.ts:12-340; create() currently swallows every Step-2 remove() failure at :144-151 and remove() maps listed not-found stderr shapes to WORKTREE_ERROR at :229-258. Its 13 callers include pipeline/worktree consumers and integration tests, so preserving create()'s clean-slate continuation is critical. src/verification/smart-runner.ts:41-43 already exposes _gitUtilDeps but only contains getGitRoot, providing the established seam for gitWithTimeout; its changed-file helpers must keep their existing fail-open arrays while logging. TDD isolation already has the injectable _isolationDeps seam at src/tdd/isolation.ts:25-26 and a bounded git runner; getAddedLinesPerFile() at :146-156 currently discards exitCode, while verifyTestWriterIsolation() at :229-268 directly awaits it in lite mode. The migration is local: make numstat failure explicit, catch only at the lite policy boundary, and retain strict mode’s no-numstat behavior. Cleanup uses _cleanupDeps at src/tdd/cleanup.ts:7-19 and cleanupProcessTree() at :102-138 does SIGTERM, unconditional sleep, then a group-member probe; replace only the wait mechanism while preserving group semantics and best-effort outer catch.\n\nCLI context generation shells out in src/cli/init-context.ts:18-65: bunMkdirp ignores mkdir failure and findFiles shells out then strips the root prefix; scanProject() at :174-192 and initContext() are existing consumers covered by test/unit/cli/init-context.test.ts. The native walk must preserve relative paths, exclusions, 200-file cap, and the existing fail-open scan result. src/context/test-scanner.ts imports stat at :9, yet scanTestFiles() at :257-359 probes the directory with Bun.spawn([test, -d]); add the same exported mutable @internal seam convention as isolation without changing downstream glob/read behavior.\n\nInteraction changes span Telegram, webhook, and compat code. TelegramInteractionPlugin caches getSafeLogger() in its class field (src/interaction/plugins/telegram.ts:54-613), whereas webhook call-time resolution is the sibling pattern. installServePortZeroCompat() at src/interaction/plugins/webhook-serve-compat.ts:94-140 globally patches Bun.serve/fetch behind a flag and currently returns void; startServer is its production caller, so webhook’s server lifecycle must own and invoke the new restore. Existing webhook compat and Telegram unit tests provide regression homes. Re-entrant restores must not unpatch an owner’s active global shim.\n\nIdle-watchdog configuration is cross-module but remains a contained shared resolver. DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG is defined in src/config/schemas-infra.ts:213-229. attachAgentIdleWatchdog() at src/runtime/middleware/idle-watchdog.ts:199-350 independently defaults 30/0/5 seconds and must use a structurally typed resolver because retry policy holds an AgentManagerConfig slice. trySameAgentRetry() at src/agents/retry/hop-retry-policy.ts:75-152 separately defaults stale retries to 3; src/agents/manager.ts is the third consumer noted in the spec. SpawnAcpClient at src/agents/acp/spawn-client.ts:44-297 assigns timeoutSeconds || 1800 and has a private field, so changing to ?? plus exported DEFAULT_ACP_TIMEOUT_SECONDS is backward-compatible except that explicit zero now intentionally survives and the value becomes observable. Tests should extend existing focused suites and create only the story-named new test files. No config migration is required: omitted values resolve from the existing schema SSOT; explicit configured values, including zero, continue to win.",

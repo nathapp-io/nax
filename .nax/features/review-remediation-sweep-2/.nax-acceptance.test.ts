@@ -549,7 +549,9 @@ describe("US-005: resolveIdleWatchdogSettings", () => {
   test("AC-32: an explicit cancelGraceSeconds of 0 is preserved, not replaced by the default", () => {
     const { resolveIdleWatchdogSettings } = require("../../../src/runtime/middleware/idle-watchdog");
     const settings = resolveIdleWatchdogSettings({
-      agent: { idleWatchdog: { enabled: true, mode: "warn-then-cancel", cancelGraceSeconds: 0 } },
+      enabled: true,
+      mode: "warn-then-cancel",
+      cancelGraceSeconds: 0,
     });
     expect(settings.graceMs).toBe(0);
   });
