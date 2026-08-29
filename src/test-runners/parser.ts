@@ -247,10 +247,13 @@ function parseJestOutput(output: string): TestSummary {
 
   // Jest output repeats FAIL <file> headers in multiple sections (run-summary and
   // per-file detail), sometimes with different path forms (e.g. "src/foo.spec.ts"
-  // vs "foo.spec.ts"). Deduplicate by testName to prevent inflated failure counts.
+  // vs "foo.spec.ts"). Deduplicate by (file, testName) so the same test seen twice
+  // in one file is collapsed to a single entry, but a test with the same name in
+  // a DIFFERENT file is preserved as a distinct entry (US-005 AC7 — same-named
+  // failures from different spec files must NOT collapse into one).
   const seen = new Set<string>();
   const dedupedFailures = failures.filter((f) => {
-    const key = f.testName;
+    const key = `${f.file}\u0000${f.testName}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

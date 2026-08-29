@@ -4,8 +4,8 @@
  * Lists available agents with their binary paths, versions, and health status.
  */
 
-import { KNOWN_AGENT_NAMES, resolveDefaultAgent } from "../agents";
-import { AcpAgentAdapter } from "../agents/acp/adapter";
+import { resolveDefaultAgent } from "../agents";
+import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "../agents/acp";
 import { getAgentVersion } from "../agents/shared/version-detection";
 import type { NaxConfig } from "../config/schema";
 
@@ -20,12 +20,19 @@ export const _cliAgentsDeps = { getAgentVersion };
 /**
  * List all agents with status, version, and capabilities.
  *
+ * The listing is driven by `ACP_ADAPTER_NAMES` (the names that have a real ACP
+ * adapter entry) rather than the broader `KNOWN_AGENT_NAMES` registry, which
+ * intentionally also serves context generation and config/precheck loops —
+ * adapterless names like `aider` must not appear here, and names without an
+ * ACP entry would otherwise fall back to `DEFAULT_ENTRY`'s "ACP Agent"
+ * display name (US-005 AC8).
+ *
  * @param config - nax configuration
  * @param _workdir - Working directory (for consistency with other commands)
  */
 export async function agentsListCommand(config: NaxConfig, _workdir: string): Promise<void> {
-  // Create ACP adapters for all known agents and collect version info
-  const adapters = KNOWN_AGENT_NAMES.map((name) => new AcpAgentAdapter(name));
+  // Create ACP adapters only for names that have a real ACP entry.
+  const adapters = Array.from(ACP_ADAPTER_NAMES).map((name) => new AcpAgentAdapter(name));
   const agentVersions = await Promise.all(
     adapters.map(async (agent) => ({
       name: agent.name,

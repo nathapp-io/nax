@@ -270,6 +270,8 @@ export class CostAggregator implements ICostAggregator {
     const m: Record<string, CostSnapshot> = {};
     for (const e of this._events) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
     for (const e of this._inFlightEvents) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
+    for (const e of this._errors) m[e.agentName] = accumulateError(m[e.agentName] ?? emptySnap());
+    for (const e of this._inFlightErrors) m[e.agentName] = accumulateError(m[e.agentName] ?? emptySnap());
     return m;
   }
 
@@ -283,6 +285,14 @@ export class CostAggregator implements ICostAggregator {
       const k = e.stage ?? "unknown";
       m[k] = accumulate(m[k] ?? emptySnap(), e);
     }
+    for (const e of this._errors) {
+      const k = e.stage ?? "unknown";
+      m[k] = accumulateError(m[k] ?? emptySnap());
+    }
+    for (const e of this._inFlightErrors) {
+      const k = e.stage ?? "unknown";
+      m[k] = accumulateError(m[k] ?? emptySnap());
+    }
     return m;
   }
 
@@ -295,6 +305,14 @@ export class CostAggregator implements ICostAggregator {
     for (const e of this._inFlightEvents) {
       const k = e.storyId ?? "unknown";
       m[k] = accumulate(m[k] ?? emptySnap(), e);
+    }
+    for (const e of this._errors) {
+      const k = e.storyId ?? "unknown";
+      m[k] = accumulateError(m[k] ?? emptySnap());
+    }
+    for (const e of this._inFlightErrors) {
+      const k = e.storyId ?? "unknown";
+      m[k] = accumulateError(m[k] ?? emptySnap());
     }
     return m;
   }

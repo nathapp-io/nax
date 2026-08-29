@@ -358,7 +358,7 @@ describe("runContestant (status classification + metrics aggregation)", () => {
     expect(result.status).toBe("timeout");
   });
 
-  it("maps total cost -> costUsd, total durationMs -> wallTimeMs, attempts -> tierEscalations", async () => {
+  it("maps total cost -> costUsd, total durationMs -> wallTimeMs, attempts-beyond-first -> tierEscalations", async () => {
     const pipeline = mock(
       async (): Promise<ContestantPipelineResult> => ({
         results: [{ status: "passed" }, { status: "passed" }],
@@ -373,6 +373,43 @@ describe("runContestant (status classification + metrics aggregation)", () => {
 
     expect(result.costUsd).toBe(300);
     expect(result.wallTimeMs).toBe(8000);
-    expect(result.tierEscalations).toBeGreaterThanOrEqual(0);
+    expect(result.tierEscalations).toBe(2);
+  });
+
+  // US-005 AC4: two contestant story metrics with attempts of 1 and 1 must
+  // yield tierEscalations === 0 (no story needed more than its first attempt).
+  it("US-005 AC4: aggregateTotals: tierEscalations is 0 when attempts are [1, 1]", async () => {
+    const pipeline = mock(
+      async (): Promise<ContestantPipelineResult> => ({
+        results: [{ status: "passed" }, { status: "passed" }],
+        metrics: [
+          { cost: 0, durationMs: 0, attempts: 1 },
+          { cost: 0, durationMs: 0, attempts: 1 },
+        ],
+      }),
+    );
+
+    const result = await runContestant("claude", baseOptions({ storiesTotal: 2 }), makeDeps({ pipeline }));
+
+    expect(result.tierEscalations).toBe(0);
+  });
+
+  // US-005 AC5: two contestant story metrics with attempts of 1 and 3 must
+  // yield tierEscalations === 2 (the first story needed 0 escalations, the
+  // second needed 2 beyond its first attempt).
+  it("US-005 AC5: aggregateTotals: tierEscalations is 2 when attempts are [1, 3]", async () => {
+    const pipeline = mock(
+      async (): Promise<ContestantPipelineResult> => ({
+        results: [{ status: "passed" }, { status: "passed" }],
+        metrics: [
+          { cost: 0, durationMs: 0, attempts: 1 },
+          { cost: 0, durationMs: 0, attempts: 3 },
+        ],
+      }),
+    );
+
+    const result = await runContestant("claude", baseOptions({ storiesTotal: 2 }), makeDeps({ pipeline }));
+
+    expect(result.tierEscalations).toBe(2);
   });
 });

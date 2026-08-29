@@ -416,3 +416,30 @@ describe("parseBunTestOutput — file attribution and (fail) name parsing", () =
     expect(r.failures[0]?.testName).toBe("simple case");
   });
 });
+
+// US-005 AC7: jest parser must keep two failures named "renders" from distinct
+// spec files as two entries, rather than collapsing them via testName dedup.
+describe("parseJestOutput — distinct-file failures are not collapsed (US-005 AC7)", () => {
+  test("US-005 AC7: two failures named 'renders' from different spec files are retained as two entries", () => {
+    const output = [
+      "FAIL components/Button.spec.tsx",
+      "  ● renders",
+      "    Expected 1 to equal 2",
+      "",
+      "FAIL pages/Home.spec.tsx",
+      "  ● renders",
+      "    Expected 3 to equal 4",
+      "",
+      "Tests: 2 failed, 0 passed, 2 total",
+    ].join("\n");
+
+    const r = parseTestOutput(output);
+
+    expect(r.failures).toHaveLength(2);
+    const files = r.failures.map((f) => f.file).sort(byCodePoint);
+    expect(files).toEqual(["components/Button.spec.tsx", "pages/Home.spec.tsx"]);
+    for (const failure of r.failures) {
+      expect(failure.testName).toBe("renders");
+    }
+  });
+});

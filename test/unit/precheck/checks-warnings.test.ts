@@ -5,12 +5,19 @@
  * override file path does not exist. Non-blocking: run continues regardless.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
-import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "@/precheck";
+import {
+  _checkDiskSpaceDeps,
+  checkBuildCommandInReviewChecks,
+  checkDiskSpace,
+  checkGitignoreCoversNax,
+  checkPromptOverrideFiles,
+  parseDiskSpaceOutput,
+} from "@/precheck";
 
 function makeTmpDir(): string {
   return makeTempDir("nax-test-");
@@ -164,8 +171,6 @@ describe("checkGitignoreCoversNax", () => {
 // BUG-092: build command configured but not in review.checks
 // ---------------------------------------------------------------------------
 
-import { checkBuildCommandInReviewChecks } from "@/precheck";
-
 function makeBugConfig(overrides: DeepPartial<NaxConfig> = {}): NaxConfig {
   return makeNaxConfig({
     review: {
@@ -219,5 +224,76 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
       }),
     );
     expect(result.passed).toBe(true);
+  });
+});
+
+// US-005 AC6: disk-space warning check must surface a parse failure (no NaN)
+// when the df output's data line has fewer columns than the available-space column.
+// ---------------------------------------------------------------------------
+
+describe("parseDiskSpaceOutput (US-005 AC6)", () => {
+  test("returns passed:false with a parse-failure message and no NaN text when the data line has fewer columns than the available-space column", () => {
+    // Real `df -k .` output: header + one data line with 6 columns
+    //   Filesystem 1024-blocks Used Available Capacity iused ifree %iused  Mounted
+    // The available-space column is at index 3; this data line only has 3 columns,
+    // so the parse must fail cleanly rather than rendering "NaN" in the message.
+    const output = [
+      "Filesystem 1024-blocks Used Available Capacity iused ifree %iused Mounted",
+      "/dev/disk1s1 short",
+    ].join("\n");
+
+    const result = parseDiskSpaceOutput(output);
+
+    expect(result.passed).toBe(false);
+    expect(result.message).not.toContain("NaN");
+    // The message must state that the output could not be parsed.
+    expect(result.message.toLowerCase()).toMatch(/parse|unable|could not/);
+  });
+
+  test("returns passed:true with an available-space message when the data line has all six columns and plenty of available KB", () => {
+    const output = [
+      "Filesystem 1024-blocks Used Available Capacity iused iffree %iused Mounted",
+      "/dev/disk1s1 1000000000 500000000 500000000 50% 1234 5678 10% /",
+    ].join("\n");
+
+    const result = parseDiskSpaceOutput(output);
+
+    expect(result.passed).toBe(true);
+    expect(result.message).toContain("Disk space");
+    expect(result.message).not.toContain("NaN");
+  });
+
+  test("returns passed:false with a parse-failure message when the output has no data line", () => {
+    const result = parseDiskSpaceOutput("Filesystem 1024-blocks Used Available Capacity iused ifree %iused Mounted");
+    expect(result.passed).toBe(false);
+    expect(result.message).not.toContain("NaN");
+  });
+});
+
+describe("checkDiskSpace (US-005 AC6 — spawn seam)", () => {
+  test("delegates parsing of the spawned df output to parseDiskSpaceOutput", async () => {
+    const origSpawn = _checkDiskSpaceDeps.spawn;
+    const origGetStdout = _checkDiskSpaceDeps.getStdout;
+    const origGetExitCode = _checkDiskSpaceDeps.getExitCode;
+
+    _checkDiskSpaceDeps.spawn = mock(() => ({
+      stdout: new ReadableStream<Uint8Array>(),
+      exited: Promise.resolve(0),
+    })) as typeof _checkDiskSpaceDeps.spawn;
+    _checkDiskSpaceDeps.getExitCode = mock(async () => 0) as typeof _checkDiskSpaceDeps.getExitCode;
+    _checkDiskSpaceDeps.getStdout = mock(async () =>
+      ["Filesystem 1024-blocks Used Available Capacity iused ifree %iused Mounted", "/dev/disk1s1 short"].join("\n"),
+    ) as typeof _checkDiskSpaceDeps.getStdout;
+
+    try {
+      const result = await checkDiskSpace();
+      expect(result.passed).toBe(false);
+      expect(result.message).not.toContain("NaN");
+      expect(result.message.toLowerCase()).toMatch(/parse|unable|could not/);
+    } finally {
+      _checkDiskSpaceDeps.spawn = origSpawn;
+      _checkDiskSpaceDeps.getStdout = origGetStdout;
+      _checkDiskSpaceDeps.getExitCode = origGetExitCode;
+    }
   });
 });

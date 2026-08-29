@@ -1,3 +1,4 @@
 [2026-08-29T08:47:35.300Z] US-001 — PASSED — Bound unbounded subprocesses across three findings — Cost: $19.3585
 [2026-08-29T09:09:25.699Z] US-002 — PASSED — Validate unsafe paths and malformed test-pattern config — Cost: $2.8138
 [2026-08-29T09:44:24.243Z] US-003 — PASSED — Reject overflowed durations and escape forgeable text — Cost: $9.0192
+[2026-08-29T09:52:00.286Z] US-004 — PASSED — Standardize loader failures as coded NaxErrors — Cost: $0.9478
