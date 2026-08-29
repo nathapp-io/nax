@@ -106,6 +106,13 @@ export function buildResolved(
 }
 
 function validateGlobs(patterns: readonly string[], stage: string): void {
+  if (!Array.isArray(patterns)) {
+    throw new NaxError(
+      `Invalid test glob pattern: expected array of strings, got ${typeof patterns}`,
+      "INVALID_TEST_GLOB",
+      { stage },
+    );
+  }
   for (const p of patterns) {
     if (typeof p !== "string" || p.trim().length === 0) {
       throw new NaxError(`Invalid test glob pattern: "${p}"`, "INVALID_TEST_GLOB", { pattern: p, stage });

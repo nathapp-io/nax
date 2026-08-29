@@ -89,3 +89,19 @@ describe("parseSchedule — ISO datetime", () => {
     expect(parseSchedule("not-a-date", now).ok).toBe(false);
   });
 });
+
+describe("parseSchedule — overflowed relative duration (US-003)", () => {
+  test("AC1: rejects an overflowed duration that becomes Invalid Date and names accepted duration forms", () => {
+    const r = parseSchedule("999999999999d", NOW);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("expected rejection");
+    expect(r.error.toLowerCase()).toMatch(/relative|30m|2h|hour|minute/);
+  });
+
+  test("AC2: ordinary 2h duration still resolves exactly two hours after now", () => {
+    const r = parseSchedule("2h", NOW);
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(`expected ok, got ${r.error}`);
+    expect(r.target.getTime() - NOW.getTime()).toBe(2 * 3_600_000);
+  });
+});

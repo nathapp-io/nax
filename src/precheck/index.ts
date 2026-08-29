@@ -14,6 +14,7 @@ import type { PrecheckConfig } from "../config/selectors";
 import type { PRD } from "../prd/types";
 
 export {
+  _checkDiskSpaceDeps,
   checkAgentCLI,
   checkBuildCommandInReviewChecks,
   checkCanonicalRulesLint,
@@ -36,6 +37,7 @@ export {
   checkTestCommand,
   checkTypecheckCommand,
   checkWorkingTreeClean,
+  parseDiskSpaceOutput,
 } from "./checks";
 
 import {

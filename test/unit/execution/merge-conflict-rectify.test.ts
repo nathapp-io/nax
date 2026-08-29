@@ -7,19 +7,23 @@
  *              returned as a failure result (not propagated to the caller)
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   makeMockAgentManager,
   makeNaxConfig,
   makePluginRegistry,
   makePRD,
   makeSessionManager,
+  makeSpawn,
+  makeSpawnResult,
   makeStory,
   makeTestContext,
 } from "@test/helpers";
 import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-rectify";
 import {
+  _mergeRectifyDeps,
   buildRectificationPipelineContext,
+  closeStaleAcpSession,
   rectifyConflictedStory,
   rectifyMergeFailure,
 } from "@/execution/merge-conflict-rectify";
@@ -247,5 +251,60 @@ describe("buildRectificationPipelineContext: the rectification re-run inherits t
     expect(ctx.stories).toEqual([story]);
     expect(ctx.projectDir).toBe("/tmp/nax-rect-ctx");
     expect(ctx.workdir).toBe("/tmp/nax-rect-ctx/.nax-wt/US-002");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bounded `acpx sessions close` (hang-path) — a wedged acpx must not leave
+// rectification pending. The eviction is best-effort (already swallows
+// errors); with a SIGKILL-after-timeout bound, a hung acpx still resolves.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("closeStaleAcpSession — bounded `acpx sessions close` (hang-path)", () => {
+  let origTypedSpawn: typeof _mergeRectifyDeps.typedSpawn;
+  let origTimeoutMs: typeof _mergeRectifyDeps.timeoutMs;
+  let origKillProcessGroup: typeof _mergeRectifyDeps.killProcessGroup;
+  let killedPid: number | undefined;
+
+  beforeEach(() => {
+    origTypedSpawn = _mergeRectifyDeps.typedSpawn;
+    origTimeoutMs = _mergeRectifyDeps.timeoutMs;
+    origKillProcessGroup = _mergeRectifyDeps.killProcessGroup;
+    killedPid = undefined;
+  });
+
+  afterEach(() => {
+    _mergeRectifyDeps.typedSpawn = origTypedSpawn;
+    _mergeRectifyDeps.timeoutMs = origTimeoutMs;
+    _mergeRectifyDeps.killProcessGroup = origKillProcessGroup;
+  });
+
+  test("settles without raising when the `acpx sessions close` child never exits (AC-5)", async () => {
+    _mergeRectifyDeps.timeoutMs = 50;
+    // Adversarial: SIGKILL is sent but `proc.exited` stays pending — the
+    // implementation MUST settle from the deadline itself, not from the SIGKILL
+    // side-effect. `killResolvesExited` is intentionally FALSE so the timer,
+    // not the kill, drives the race resolution.
+    const proc = makeSpawnResult({ hang: true, pid: 3333 });
+    _mergeRectifyDeps.typedSpawn = makeSpawn(() => proc).spawn as typeof _mergeRectifyDeps.typedSpawn;
+    _mergeRectifyDeps.killProcessGroup = ((pid) => {
+      killedPid = pid;
+      // Intentionally NOT calling proc.kill() — the AC requires the eviction
+      // to settle (without raising) regardless of what the SIGKILL signal does
+      // to `proc.exited`. An implementation that awaits `proc.exited` after
+      // the kill would hang here.
+      return true;
+    }) as typeof _mergeRectifyDeps.killProcessGroup;
+
+    // Best-effort contract preserved: even on a wedged acpx the helper settles
+    // (never rejects) so the rectification pipeline can continue.
+    let threw = false;
+    try {
+      await closeStaleAcpSession("/tmp/worktree", "nax-deadbeef-feat-US-001-main");
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
+    expect(killedPid).toBe(3333);
   });
 });

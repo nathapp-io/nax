@@ -79,7 +79,11 @@ function aggregateTotals(metrics: ContestantStoryMetric[]): {
   for (const m of metrics) {
     costUsd += m.cost;
     wallTimeMs += m.durationMs;
-    tierEscalations += m.attempts;
+    // Escalations are derived from attempts BEYOND the first — the first
+    // attempt is the entry tier, every subsequent attempt is an escalation.
+    // ContestantStoryMetric carries no separate escalation field, so the
+    // mapping `attempts - 1` is the only way to recover the count.
+    tierEscalations += Math.max(0, m.attempts - 1);
   }
   return { costUsd, wallTimeMs, tierEscalations };
 }

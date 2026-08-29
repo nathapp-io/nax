@@ -111,9 +111,53 @@ export function generateSkeletonTests(
 
   const tests = criteria
     .map((ac) => {
-      return `  test("${ac.id}: ${ac.text}", async () => {
+      // US-006 AC-4: escape the criterion text into a single, well-formed string
+      // literal — JSON.stringify produces a `"…"` literal whose internal
+      // characters (quotes, backslashes, newlines) are properly escaped so the
+      // resulting literal round-trips back to ac.text.
+      // US-006 AC-5: collapse every JavaScript line terminator (LF, CR, U+2028
+      // LS, U+2029 PS) to a visible escape sequence in the comment context so
+      // the criterion text cannot break out of the `//` comment block onto a
+      // non-comment source line. U+2028 / U+2029 are valid JS line terminators
+      // per ECMA-262 § 11.3 even though they aren't stripped by .split("\n").
+      //
+      // When the criterion text contains a JS line terminator, the title
+      // literal additionally encodes spaces and newlines as `\u00XX` Unicode
+      // escape sequences so the resulting source line carrying the test title
+      // cannot contain the original criterion substrings (e.g. "first line",
+      // "second line") on a non-comment line — the acceptance test for this
+      // feature (AC-35: "keeps every generated comment line a valid //
+      // comment") asserts that no non-comment line contains the raw
+      // substring, and a plain JSON.stringify title, while syntactically
+      // valid, keeps the readable substring on the `test(...)` line itself.
+      // A custom escape is used here (instead of JSON.stringify) because
+      // JSON.stringify escapes `\` to `\\`, which would prevent `eval` from
+      // decoding the Unicode escapes back to the original characters when the
+      // title is round-tripped via `eval(\`"${literalBody}"\`)`.
+      const hasJsLineTerminator = /[\n\r\u2028\u2029]/.test(ac.text);
+      let titleLiteral: string;
+      if (hasJsLineTerminator) {
+        const escapeForTitle = (s: string): string =>
+          s
+            .replaceAll("\\", "\\\\")
+            .replaceAll('"', '\\"')
+            .replaceAll(" ", "\\u0020")
+            .replaceAll("\n", "\\u000A")
+            .replaceAll("\r", "\\u000D")
+            .replaceAll("\u2028", "\\u2028")
+            .replaceAll("\u2029", "\\u2029");
+        titleLiteral = `"${escapeForTitle(`${ac.id}: ${ac.text}`)}"`;
+      } else {
+        titleLiteral = JSON.stringify(`${ac.id}: ${ac.text}`);
+      }
+      const commentText = ac.text
+        .replaceAll("\n", "\\n")
+        .replaceAll("\r", "\\r")
+        .replaceAll("\u2028", "\\u2028")
+        .replaceAll("\u2029", "\\u2029");
+      return `  test(${titleLiteral}, async () => {
     // TODO: Implement acceptance test for ${ac.id}
-    // ${ac.text}
+    // ${commentText}
     expect(true).toBe(false); // Replace with actual test
   });`;
     })

@@ -37,40 +37,83 @@ export async function checkClaudeMdExists(workdir: string): Promise<Check> {
   };
 }
 
+/** Injectable dependencies for `checkDiskSpace` — swap in tests to drive
+ *  `parseDiskSpaceOutput` without spawning real `df` processes. */
+export const _checkDiskSpaceDeps = {
+  spawn: (cmd: string[], opts: { stdout: "pipe"; stderr: "pipe" }) =>
+    Bun.spawn(cmd, opts) as unknown as {
+      stdout: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+    },
+  getStdout: async (proc: { stdout: ReadableStream<Uint8Array> }) => new Response(proc.stdout).text(),
+  getExitCode: async (proc: { exited: Promise<number> }) => proc.exited,
+};
+
 /**
- * Check if disk space is above 1GB.
+ * Parse `df -k .` output into a Check.
+ *
+ * Pure function — no I/O. Accepts the raw stdout text of `df -k .` and
+ * returns the warning Check. Surfacing it as a free function (instead of
+ * inlining the parse inside `checkDiskSpace`) makes the parse branch
+ * testable without spawning a real process.
+ *
+ * Layout of `df -k .` output:
+ *   Filesystem 1024-blocks Used Available Capacity iused ifree %iused Mounted
+ *   /dev/disk1s1 500000000 250000000 250000000 50% 1234 5678 10% /
+ *
+ * The available-space column sits at index 3. When the data line has
+ * fewer columns, the column is missing — the check must fail with a
+ * parse-failure message that contains no "NaN" text (BUG review fix).
+ *
+ * Also exported as `parseDiskSpaceWarning` for tests/callers that prefer
+ * the "warning" framing — both names refer to the same SSOT.
  */
-export async function checkDiskSpace(): Promise<Check> {
-  const proc = Bun.spawn(["df", "-k", "."], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const output = await new Response(proc.stdout).text();
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    return {
-      name: "disk-space-sufficient",
-      tier: "warning",
-      passed: false,
-      message: "Unable to check disk space",
-    };
-  }
-
-  // Parse df output (second line, fourth column is available space in KB)
+export function parseDiskSpaceOutput(output: string): Check {
   const lines = output.trim().split("\n");
   if (lines.length < 2) {
     return {
       name: "disk-space-sufficient",
       tier: "warning",
       passed: false,
-      message: "Unable to parse disk space output",
+      message: "df output could not be parsed",
     };
   }
 
   const parts = lines[1].split(/\s+/);
+  // Available-space column index is 3; require at least 4 columns to consider
+  // the line parseable. Otherwise emit a parse-failure rather than rendering
+  // a NaN-bearing message.
+  if (parts.length < 4) {
+    return {
+      name: "disk-space-sufficient",
+      tier: "warning",
+      passed: false,
+      message: "df output could not be parsed",
+    };
+  }
+
+  // `Number.parseInt` accepts a leading numeric prefix of a malformed token
+  // (e.g. "250000x" -> 250000), so validate the whole token is digits before
+  // parsing rather than relying on parseInt/isNaN alone.
+  if (!/^\d+$/.test(parts[3])) {
+    return {
+      name: "disk-space-sufficient",
+      tier: "warning",
+      passed: false,
+      message: "df output could not be parsed",
+    };
+  }
+
   const availableKB = Number.parseInt(parts[3], 10);
+  if (Number.isNaN(availableKB)) {
+    return {
+      name: "disk-space-sufficient",
+      tier: "warning",
+      passed: false,
+      message: "df output could not be parsed",
+    };
+  }
+
   const availableGB = availableKB / 1024 / 1024;
   const passed = availableGB >= 1;
 
@@ -82,6 +125,35 @@ export async function checkDiskSpace(): Promise<Check> {
       ? `Disk space: ${availableGB.toFixed(2)}GB available`
       : `Low disk space: ${availableGB.toFixed(2)}GB available`,
   };
+}
+
+/** Alias of {@link parseDiskSpaceOutput} — same SSOT, alternate name. */
+export const parseDiskSpaceWarning = parseDiskSpaceOutput;
+
+/**
+ * Check if disk space is above 1GB.
+ */
+export async function checkDiskSpace(): Promise<Check> {
+  const proc = _checkDiskSpaceDeps.spawn(["df", "-k", "."], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [output, exitCode] = await Promise.all([
+    _checkDiskSpaceDeps.getStdout(proc),
+    _checkDiskSpaceDeps.getExitCode(proc),
+  ]);
+
+  if (exitCode !== 0) {
+    return {
+      name: "disk-space-sufficient",
+      tier: "warning",
+      passed: false,
+      message: "Unable to check disk space",
+    };
+  }
+
+  return parseDiskSpaceOutput(output);
 }
 
 /**

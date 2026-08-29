@@ -59,7 +59,8 @@
     "check:gate-reachability": "bun run scripts/check-gate-reachability.ts",
     "check:all": "bun run lint && bun run check:test-mocks && bun run check:dispatch-context && bun run check:naxconfig-cast && bun run check:runtime-cleanup && bun run check:adapter-no-config-import && bun run check:test-as-unknown-as && bun run check:test-escape-hatches && bun run check:rules-drift && bun run check:gate-reachability",
     "prepublishOnly": "bun run build",
-    "test:full": "FULL=1 NAX_PRECHECK=1 bun test test/ --timeout=60000"
+    "test:full": "FULL=1 NAX_PRECHECK=1 bun test test/ --timeout=60000",
+    "spec:lint": "bun run scripts/spec-lint.ts"
   },
   "dependencies": {
     "@types/react": "^19.2.14",

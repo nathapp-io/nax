@@ -404,6 +404,64 @@ describe("CostAggregator", () => {
     _costAggDeps.write = origWrite;
   });
 
+  // --- US-005 AC1: byAgent() reflects errorCount when one cost event and one
+  // error event share an agentName. byAgent() currently aggregates cost events
+  // only, so an error event that matches an existing agent key must still
+  // increment errorCount on that agent's snapshot.
+  test("US-005 AC1: byAgent() increments errorCount when an error event shares an existing agentName", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    agg.record(makeEvent({ agentName: "claude", costUsd: 0.01 }));
+    agg.recordError({
+      kind: "error",
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
+    const by = agg.byAgent();
+    expect(by.claude.callCount).toBe(1);
+    expect(by.claude.errorCount).toBe(1);
+  });
+
+  // --- US-005 AC2: byStage() reflects errorCount when one cost event and one
+  // error event share a stage.
+  test("US-005 AC2: byStage() increments errorCount when an error event shares an existing stage", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    agg.record(makeEvent({ stage: "run", costUsd: 0.01 }));
+    agg.recordError({
+      kind: "error",
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      stage: "run",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
+    const by = agg.byStage();
+    expect(by.run.callCount).toBe(1);
+    expect(by.run.errorCount).toBe(1);
+  });
+
+  // --- US-005 AC3: byStory() reflects errorCount when one cost event and one
+  // error event share a storyId.
+  test("US-005 AC3: byStory() increments errorCount when an error event shares an existing storyId", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    agg.record(makeEvent({ storyId: "s-1", costUsd: 0.01 }));
+    agg.recordError({
+      kind: "error",
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      storyId: "s-1",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
+    const by = agg.byStory();
+    expect(by["s-1"].callCount).toBe(1);
+    expect(by["s-1"].errorCount).toBe(1);
+  });
+
   // --- AC10: createNoOpCostAggregator ---
   test("createNoOpCostAggregator() returns zero snapshots and empty byScope/byCall records", () => {
     const noOp = createNoOpCostAggregator();

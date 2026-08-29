@@ -34,6 +34,8 @@ export {
 } from "./out-of-scope-extract";
 export type { SpecDriftViolation } from "./spec-drift";
 export { findSpecDriftViolations } from "./spec-drift";
+export type { SpecLintFinding, SpecLintOptions } from "./spec-lint";
+export { lintSpecContent } from "./spec-lint";
 export type {
   EscalationAttempt,
   PersistedRepoScopedFix,
@@ -54,7 +56,7 @@ export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;
 /** Load PRD from file */
 export async function loadPRD(path: string): Promise<PRD> {
   if (!existsSync(path)) {
-    throw new Error(`PRD file not found: ${path}`);
+    throw new NaxError(`PRD file not found: ${path}`, "PRD_NOT_FOUND", { stage: "prd", path });
   }
 
   // Check file size to prevent loading oversized PRDs
@@ -62,14 +64,25 @@ export async function loadPRD(path: string): Promise<PRD> {
   if (stats.size > PRD_MAX_FILE_SIZE) {
     const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
     const limitMB = (PRD_MAX_FILE_SIZE / (1024 * 1024)).toFixed(2);
-    throw new Error(
-      `PRD file is too large (${sizeMB} MB exceeds ${limitMB} MB limit). Split this feature into smaller features or reduce story count.`,
+    throw new NaxError(
+      `PRD file is too large (${sizeMB} MB exceeds ${limitMB} MB limit; observed ${stats.size} bytes, limit ${PRD_MAX_FILE_SIZE} bytes). Split this feature into smaller features or reduce story count.`,
+      "PRD_TOO_LARGE",
+      { stage: "prd", path, sizeBytes: stats.size, limitBytes: PRD_MAX_FILE_SIZE },
     );
   }
 
-  const prd: PRD = await Bun.file(path).json();
+  let prd: PRD;
+  try {
+    prd = await Bun.file(path).json();
+  } catch (err) {
+    throw new NaxError(`PRD file is corrupt: ${path}`, "PRD_INVALID", { stage: "prd", path, cause: err });
+  }
 
-  if (!Array.isArray(prd.userStories)) {
+  // `null` and non-object JSON values parse successfully but have no
+  // `.userStories` — accessing it would raise a native TypeError and bypass
+  // the coded rejection. Guard the top-level shape explicitly so every
+  // malformed-PRD failure surfaces as PRD_INVALID.
+  if (prd === null || typeof prd !== "object" || !Array.isArray(prd.userStories)) {
     throw new NaxError(`PRD file is missing or has a corrupt "userStories" array: ${path}`, "PRD_INVALID", {
       stage: "prd",
       path,

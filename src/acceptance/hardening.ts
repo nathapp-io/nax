@@ -245,13 +245,30 @@ async function processPackageGroup(
       }
     }
 
+    let actuallyPromoted: string[] = [];
     if (toPromote.length > 0) {
       const existingACs = new Set(story.acceptanceCriteria);
-      story.acceptanceCriteria = [...story.acceptanceCriteria, ...toPromote.filter((ac) => !existingACs.has(ac))];
-      result.promoted.push(...toPromote);
+      actuallyPromoted = toPromote.filter((ac) => !existingACs.has(ac));
+      story.acceptanceCriteria = [...story.acceptanceCriteria, ...actuallyPromoted];
+      // Only count promotions that actually mutated the PRD; a criterion
+      // already present in acceptanceCriteria is filtered out before mutation
+      // and so does not represent a change. result.promoted feeds the
+      // persistence condition — counting unchanged items there caused
+      // savePRD to fire on a no-op pass (semantic review finding).
+      result.promoted.push(...actuallyPromoted);
     }
     result.discarded.push(...toDiscard);
-    story.suggestedCriteria = toDiscard.length > 0 ? toDiscard : undefined;
+    // On an all-promoted pass, clear suggestedCriteria entirely. When any
+    // discards occurred (discard-only or mixed with promotions), trim
+    // suggestedCriteria down to just the still-discarded items — a
+    // promoted item must not linger and get re-refined/re-tested on every
+    // future pass. A refine-returned-nothing pass is a true no-op — the
+    // suggestions stay in place, the next run refines them again.
+    if (actuallyPromoted.length > 0 && toDiscard.length === 0) {
+      story.suggestedCriteria = undefined;
+    } else if (toDiscard.length > 0) {
+      story.suggestedCriteria = toDiscard;
+    }
   }
 }
 
@@ -286,7 +303,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       await processPackageGroup(ctx, packageDir, groupStories, detectedLang ?? ctx.config.project?.language, result);
     }
 
-    if (result.promoted.length > 0) {
+    if (result.promoted.length > 0 || result.discarded.length > 0) {
       await _hardeningDeps.savePRD(ctx.prd, ctx.prdPath);
     }
 

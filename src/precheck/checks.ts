@@ -25,6 +25,7 @@ export {
 } from "./checks-blockers";
 // Tier 2 Warnings
 export {
+  _checkDiskSpaceDeps,
   checkBuildCommandInReviewChecks,
   checkClaudeMdExists,
   checkDiskSpace,
@@ -34,4 +35,5 @@ export {
   checkOptionalCommands,
   checkPendingStories,
   checkPromptOverrideFiles,
+  parseDiskSpaceOutput,
 } from "./checks-warnings";

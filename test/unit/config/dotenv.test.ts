@@ -56,4 +56,13 @@ describe("resolveEnvVars", () => {
   test("supports inline substitution within a string (prefix-$VAR-suffix)", () => {
     expect(resolveEnvVars({ a: "prefix-$FOO-suffix" }, { FOO: "mid" })).toEqual({ a: "prefix-mid-suffix" });
   });
+
+  test("US-003 AC3: literal text of the module's double-dollar escape placeholder followed by HOME is preserved verbatim rather than restored to $HOME", () => {
+    const placeholder = "\x00__DOLLAR_ESCAPE__\x00";
+    const literal = `${placeholder}HOME`;
+    const result = resolveEnvVars(literal, { HOME: "/Users/example" });
+    expect(result).toBe(literal);
+    expect(result).not.toBe("$HOME");
+    expect(result).toContain("\x00");
+  });
 });

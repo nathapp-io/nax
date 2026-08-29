@@ -236,6 +236,35 @@ describe("resolveTestFilePatterns — field consistency", () => {
   });
 });
 
+// ─── US-002 per-package shape validation ──────────────────────────────────────
+
+describe("resolveTestFilePatterns — US-002 per-package shape validation", () => {
+  test("rejects per-package testFilePatterns that is a string instead of an array (AC #1)", async () => {
+    const monoConfigPath = `${WORKDIR}/.nax/mono/packages/api/config.json`;
+    _resolverDeps.fileExists = async (p) => p === monoConfigPath;
+    _resolverDeps.readJson = async () => ({
+      execution: { smartTestRunner: { testFilePatterns: "test/**/*.ts" } },
+    });
+
+    await expect(resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "packages/api")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_TEST_GLOB",
+    });
+  });
+
+  test("accepts per-package testFilePatterns as a valid array of non-empty strings (AC #2)", async () => {
+    const monoConfigPath = `${WORKDIR}/.nax/mono/packages/api/config.json`;
+    _resolverDeps.fileExists = async (p) => p === monoConfigPath;
+    _resolverDeps.readJson = async () => ({
+      execution: { smartTestRunner: { testFilePatterns: ["test/**/*.ts"] } },
+    });
+
+    const resolved = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "packages/api");
+    expect(resolved.resolution).toBe("per-package");
+    expect(resolved.globs).toEqual(["test/**/*.ts"]);
+  });
+});
+
 // ─── resolveReviewExcludePatterns ─────────────────────────────────────────────
 
 describe("resolveReviewExcludePatterns", () => {

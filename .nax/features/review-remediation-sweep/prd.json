@@ -1,0 +1,345 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "review-remediation-sweep",
+  "branchName": "feat/review-remediation-sweep",
+  "createdAt": "2026-08-29T07:37:12.333Z",
+  "updatedAt": "2026-08-29T10:48:46.098Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Bound unbounded subprocesses across three findings",
+      "description": "**Goal** — Bound the five remaining unbounded subprocess spawns across three findings so a wedged child cannot block a run indefinitely.\n\n**Motivation** — Five subprocess spawns across three findings have no deadline — two `git ls-files` scans, the two git calls in TDD rollback, and the `acpx sessions close` eviction — while every other spawn in the tree is bounded.\n\n**Approach** — The unifying rule: **each fix mirrors the pattern the codebase already applies elsewhere.** No new abstractions and no new files.\n\n**Scope** — In: the file and directory scans, TDD rollback snapshot/reset calls, and stale ACP-session eviction. Out: adding a hard exit deadline to the uncaughtException and unhandledRejection teardown path (review BUG-37). Exercising it requires driving real process teardown, which cannot be asserted safely from inside the suite that would host the test.\n\n**Interface** — `detectFromFileScan(workdir: string): Promise<DetectionSource | null>`, `detectFromDirectoryScan(workdir: string): Promise<DetectionSource | null>`, `rollbackToRef(workdir: string, ref: string, untrackedBefore: string[] | null): Promise<void>`, `captureSnapshotRef(workdir: string, storyId: string): Promise<SnapshotRef>`, and `rectifyConflictedStory(options: RectifyConflictedStoryOptions): Promise<RectificationResult>` retain their signatures. Add only the two exported module-level test seams in `merge-conflict-rectify.ts`: an injectable deps object following the `_<module>Deps` convention and the stale-session eviction step itself; neither is production API surface. When a bounded subprocess exceeds its deadline, kill the whole process group and settle the caller. Detection scans degrade to their existing empty/`null` result; rollback raises; stale ACP-session eviction swallows and continues.",
+      "acceptanceCriteria": [
+        "When `_fileScanDeps.spawn` returns a child whose `exited` promise never settles, `detectFromFileScan(workdir)` settles and resolves to `null`.",
+        "Given a fixture workdir containing a well-known test directory, when `_directoryScanDeps.spawn` returns a child whose `exited` promise never settles, `detectFromDirectoryScan(workdir)` settles and returns a non-null source whose `path` names that directory and whose `patterns` is non-empty.",
+        "When `_rollbackDeps.spawn` returns a child whose `exited` promise never settles, `rollbackToRef(workdir, ref, null)` settles by rejecting rather than remaining pending, with an `Error` whose message names the rollback failure.",
+        "When `_rollbackDeps.spawn` returns a child whose `exited` promise never settles, `captureSnapshotRef(workdir, storyId)` settles by rejecting rather than remaining pending, with a `NaxError` whose `code` is `SNAPSHOT_REF_FAILED`.",
+        "When the merge-conflict-rectify module's exported spawn seam returns a child whose `exited` promise never settles, invoking its exported stale-ACP-session eviction settles and resolves without raising, preserving its best-effort contract."
+      ],
+      "tags": [
+        "fix",
+        "subprocess",
+        "reliability"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Five local spawn calls adopt existing timeout and injectable-dependency patterns; the only interface additions are narrowly scoped test seams.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/utils/git.ts",
+        "src/verification/executor.ts",
+        "src/utils/process-kill.ts",
+        "src/tdd/rollback.ts",
+        "src/execution/merge-conflict-rectify.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bb29436897fd1b49404a8fda0099b12c7d3e62a1"
+    },
+    {
+      "id": "US-002",
+      "title": "Validate unsafe paths and malformed test-pattern config",
+      "description": "**Goal** — Reject unsafe package/run paths and malformed per-package test-file-pattern shapes at their boundaries.\n\n**Motivation** — Four boundaries accept values they should reject: a `testFilePatterns` string is iterated character-by-character into per-character globs, and `--package` and `curator commit --run-id` are joined into paths unvalidated.\n\n**Approach** — `resolveTestFilePatterns` baseline casts raw per-package JSON to `MonoConfigShape` and passes `testFilePatterns` straight to `validateGlobs`, which iterates it; a string iterates as characters, each passing the per-element check. Target: a non-array `testFilePatterns` is rejected as a configuration error rather than silently degraded. Validate `--package` and `--run-id` before any path is built, reuse `isRelativeAndSafe(filePath: string): boolean`, and reject an empty package path.\n\n**Scope** — In: resolver shape validation and the init, generate, and curator command boundaries. Out: US-002 only: symlink-based path escape is not rejected — a validated relative path that is itself a symlink out of the repo still resolves. Segment-wise validation is deliberately filesystem-blind; symlink containment lives in a different helper whose semantics this spec does not change.\n\n**Interface** — `resolveTestFilePatterns`, `initPackage(repoRoot: string, packagePath: string, force?: boolean)`, `generateCommand(options: GenerateCommandOptions): Promise<void>`, and `curatorCommit(options: CuratorCommitOptions): Promise<void>` keep their existing entry-point shapes. A per-package `testFilePatterns` that is not an array of non-empty strings raises a `NaxError`; an absolute path or a path escaping the repo is rejected before a path is built.",
+      "acceptanceCriteria": [
+        "When `resolveTestFilePatterns` reads a per-package config whose `execution.smartTestRunner.testFilePatterns` is the string `test/**/*.ts`, it rejects with a `NaxError` whose `code` is `INVALID_TEST_GLOB`.",
+        "When `resolveTestFilePatterns` reads a per-package config whose `execution.smartTestRunner.testFilePatterns` is `[\"test/**/*.ts\"]`, it resolves with that single pattern.",
+        "When `initPackage(repoRoot, \"../../evil\")` is called, it rejects with a `NaxError` naming the package argument before creating any directory.",
+        "When the generate command is invoked with a `package` option of `/etc`, it rejects with a `NaxError` rather than reinterpreting it as the repo-relative directory `etc`.",
+        "When `curatorCommit` is called with a `runId` of `../../etc`, it rejects with a `NaxError` before any file under the run directory is read.",
+        "When `initPackage(repoRoot, \"\")` is called, it rejects with a `NaxError` rather than resolving to the repo root itself."
+      ],
+      "tags": [
+        "fix",
+        "validation",
+        "cli",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Four boundary checks reuse an established lexical path validator and NaxError contract without changing public APIs.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/test-runners/resolver.ts",
+        "src/cli/init-context.ts",
+        "src/commands/curator.ts",
+        "src/utils/path-security.ts",
+        "src/errors.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "abaf56b1d791c02cb2768b1b70d7e897507cda64",
+      "outOfScope": [
+        "*Symlink-based escape.* A `--package` or `--run-id` value naming a real relative path that is itself a symlink pointing outside the repo is not rejected. `isRelativeAndSafe` deliberately inspects raw path segments without resolving the filesystem — normalising first would collapse `src/../etc/passwd` and hide the `..` segment, which is the documented reason for the segment-wise check. Symlink containment is a distinct check (`safeRealpathForComparison`, used by `validateModulePath`) and applying it here would change the behaviour of every caller of the shared helper.",
+        "*Percent-encoded and Unicode-normalised traversal.* These values arrive as process argv and are never URL-decoded or re-normalised on the way to `join`, so an encoded `..` reaches the check as literal text and fails the segment comparison as a non-matching directory name rather than as traversal.",
+        "*Windows drive-relative and UNC paths* (`C:..\\evil`, `\\\\server\\share`). The absolute-path gate is POSIX-shaped; Windows is not a supported nax platform today."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Reject overflowed durations and escape forgeable text",
+      "description": "**Goal** — Reject unrepresentable schedule durations and prevent config or agent text from forging escape sentinels and context-tool delimiters.\n\n**Motivation** — A schedule duration overflows to `Invalid Date` and either starts the run immediately or throws an unhandled `RangeError`, while agent-controlled text can close a delimiter it does not own.\n\n**Approach** — A schedule duration that is not representable as a date is rejected at parse time with a message naming the accepted forms. Preserve ordinary duration parsing. Ensure a literal double-dollar placeholder cannot be restored as an environment reference, and escape both context-tool result payloads and delimiter attribute values so returned text contains exactly the handler-owned closing delimiter and a request name round-trips exactly.\n\n**Scope** — In: schedule parsing, dotenv escape restoration, and context-tool result serialization. Out: no change to the handler entry point or its `contextToolRuntime`/`contextPullTools` gating.\n\n**Interface** — `parseSchedule(input: string, now: Date)` retains its result interface. `buildRunInteractionHandler(options: AgentRunOptions): InteractionHandler` retains its signature; its `onInteraction` reaches `buildContextToolResult` for a `context-tool` request only when `contextToolRuntime` is present and `contextPullTools` is non-empty.",
+      "acceptanceCriteria": [
+        "When `parseSchedule(\"999999999999d\", now)` is called, it returns `ok: false` with an error naming the accepted duration forms.",
+        "When `parseSchedule(\"2h\", now)` is called, it returns `ok: true` with a `target` two hours after `now`.",
+        "When config resolution receives the literal text of the module's double-dollar escape placeholder followed by `HOME`, it returns that same literal text unchanged rather than `$HOME`.",
+        "Given a handler from `buildRunInteractionHandler` with non-empty `contextPullTools` and a `contextToolRuntime.callTool` result containing a `nax_tool_result` closing delimiter, when it handles the context-tool request, its `answer` contains exactly one `nax_tool_result` closing delimiter.",
+        "Given the same handler, when a context-tool request has a `name` containing a double quote, its `answer` opening `nax_tool_result` delimiter parses to one `name` attribute whose value equals the request name exactly."
+      ],
+      "tags": [
+        "fix",
+        "validation",
+        "escaping",
+        "interaction"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing parsing and serialization sites need local guards and escaping with explicit valid-input regression checks.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/schedule/parse.ts",
+        "src/config/dotenv.ts",
+        "src/agents/acp/adapter-output.ts",
+        "src/errors.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0d68224f4eb90e9dd90ac79ddb265117c6188c26"
+    },
+    {
+      "id": "US-004",
+      "title": "Standardize loader failures as coded NaxErrors",
+      "description": "**Goal** — Give every PRD and config-loader rejection a stable `NaxError` code and useful context.\n\n**Motivation** — Six error sites throw bare `Error` while siblings in the same files throw `NaxError` with codes, leaving callers unable to branch on failure kind.\n\n**Approach** — `loadPRD(path: string): Promise<PRD>` baseline has a bare oversize guard and leaves `Bun.file(path).json()` uncaught; target keeps its signature and gives both failures a `NaxError` code, as the missing-`userStories` case already does. `validateStoryId(id: string): void` baseline has four bare `Error` throws while three siblings throw `NaxError` with codes; target keeps its signature and gives every rejection a code. Apply the same contract to root-config schema validation without losing its existing field-path reporting.\n\n**Scope** — In: corrupt/oversize PRDs, invalid story IDs, and root-config schema failures. Out: changing schema validity rules or re-baselining the NaxError ratchet.\n\n**Interface** — `NaxError` constructor is `(message: string, code: string, context?: Record<string, unknown>)`.",
+      "acceptanceCriteria": [
+        "When `loadPRD` reads a file containing invalid JSON, it rejects with a `NaxError` whose `code` is `PRD_INVALID` and whose `context` carries the file path.",
+        "When `loadPRD` reads a file larger than the PRD size limit, it rejects with a coded `NaxError` whose message states the observed size and the limit.",
+        "When `validateStoryId(\"\")` is called, it throws a coded `NaxError` rather than a bare `Error`.",
+        "When `validateStoryId(\"../escape\")` is called, it throws a `NaxError` whose message names path traversal as the reason.",
+        "When a root config fails schema validation, loading it rejects with a coded `NaxError` whose message still lists every failing field path."
+      ],
+      "tags": [
+        "fix",
+        "errors",
+        "config",
+        "prd"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Local error-contract normalization across three established loaders preserves interfaces and messages while adding codes/context.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prd/index.ts",
+        "src/prd/validate.ts",
+        "src/config/loader.ts",
+        "src/utils/json-file.ts",
+        "src/errors.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "38db783e70f2a62117f5bdeb45157ab8280078ee"
+    },
+    {
+      "id": "US-005",
+      "title": "Correct reported costs, escalations, diagnostics, failures, and agents",
+      "description": "**Goal** — Make five user-facing numeric/failure reports and the ACP agent list truthful.\n\n**Motivation** — Error counts are always zero in three cost breakdowns, escalations are inflated by one per story, disk space renders as `NaNGB`, same-named tests in different suites collapse into one failure, and `nax agents` reports an adapterless agent using another binary's state.\n\n**Approach** — `CostErrorEvent` carries `agentName`, optional `stage`, and optional `storyId`, and `accumulateError(snap: CostSnapshot): CostSnapshot` increments `errorCount` only; use that established aggregation for all three breakdowns. `aggregateTotals` must derive escalations from attempts beyond the first because `ContestantStoryMetric` is `{ cost: number; durationMs: number; attempts: number }` and carries no escalation field. The agents list must be driven by `ACP_ADAPTER_NAMES: ReadonlySet<string>` rather than `KNOWN_AGENT_NAMES`; `KNOWN_AGENT_NAMES` itself must not change because it intentionally also serves context generation and config/precheck loops. Make malformed disk output a parse failure, retain failures from same-named tests in distinct files, and update the named contestant test to state and exactly assert the attempts-beyond-first mapping.\n\n**Scope** — In: cost projections, contestant totals, disk warning parsing, test-output identity, and presentation-layer ACP listing. Out: Making `resolveRegistryEntry` fail loudly for an agent name that has no ACP entry, instead of silently returning `DEFAULT_ENTRY` (the second half of review BUG-14). That changes what `nax run --agent aider` does, not just what `nax agents` prints, and its blast radius reaches the agent precheck and the `generate.agents` config enum — a behaviour change needing its own decision rather than a reporting fix.\n\n**Interface** — `agentsListCommand(config: NaxConfig, workdir: string): Promise<void>` retains its signature; `ACP_ADAPTER_NAMES` is the existing roster of names with a real ACP adapter entry.",
+      "acceptanceCriteria": [
+        "Given one cost event and one error event sharing an `agentName`, when `byAgent()` is read, that agent entry has `errorCount` equal to `1`.",
+        "Given one cost event and one error event sharing a `stage`, when `byStage()` is read, that stage entry has `errorCount` equal to `1`.",
+        "Given one cost event and one error event sharing a `storyId`, when `byStory()` is read, that story entry has `errorCount` equal to `1`.",
+        "When two contestant story metrics with `attempts` of `1` and `1` are aggregated, `tierEscalations` equals `0`.",
+        "When two contestant story metrics with `attempts` of `1` and `3` are aggregated, `tierEscalations` equals `2`.",
+        "When the disk-space warning check receives command output whose second line has fewer columns than the available-space column, it returns `passed: false` with a message stating the output could not be parsed and containing no `NaN` text.",
+        "When Jest output reports a failure named `renders` in two different spec files, parsing produces two `failures` entries, one per file.",
+        "Given an environment where the `claude` binary resolves, when the agents list command runs, its output has no row for `aider` and no row whose display name is `ACP Agent`.",
+        "When `KNOWN_AGENT_NAMES` is read, it still includes `aider`, confirming the listing was narrowed at the presentation layer rather than by shrinking the registry."
+      ],
+      "tags": [
+        "fix",
+        "reporting",
+        "cli",
+        "metrics"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a bundle of isolated, established projection and parsing corrections with concrete exact-value regression assertions and no shared API redesign.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/agents/acp/agent-entries.ts",
+        "src/runtime/cost-aggregator.ts",
+        "src/bakeoff/contestant.ts",
+        "src/precheck/checks-warnings.ts",
+        "src/test-runners/parser.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/bakeoff/contestant.test.ts",
+          "reason": "the test named \"maps total cost -> costUsd, total durationMs -> wallTimeMs, attempts -> tierEscalations\" pins the old mapping in its name. Its assertion is a loose `toBeGreaterThanOrEqual(0)` that survives the change, which is exactly why the name must be corrected rather than left to pass silently: rename it to state that escalations are derived from attempts beyond the first, and tighten the assertion to the exact expected count. Every other assertion in that test is unaffected and must continue to pass."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "992b65012aaa434d5c93193455515da88bdd6df8"
+    },
+    {
+      "id": "US-006",
+      "title": "Persist hardening discards and safely generate acceptance tests",
+      "description": "**Goal** — Persist discard-only hardening changes and escape criterion text in generated TypeScript acceptance tests.\n\n**Motivation** — A discard-only hardening pass never persists, so the next run re-pays the same LLM refine, generate and test spawn every run, while LLM-refined acceptance-criteria text interpolated unescaped into generated test source can produce a syntactically invalid test.\n\n**Approach** — `runHardeningPass(ctx: HardeningContext): Promise<HardeningResult>` currently persists only when `result.promoted.length > 0`, though `processPackageGroup` mutates `story.suggestedCriteria` on discards too. Keep its signature unchanged and persist whenever the pass changed the PRD, whether a promotion or a discard; do not write an unchanged PRD. Generate TypeScript skeleton tests by escaping criterion text in titles so it round-trips through one well-formed literal, and prevent newline-containing criterion text from escaping generated comment lines.\n\n**Scope** — In: hardening persistence condition and skeleton-test title/comment serialization. Out: Incremental snapshots in `CostAggregator` and the O(n^2) Python fallback regex in the acceptance generator (review PERF-19, PERF-31). Both are performance work whose only honest acceptance criterion is a timing threshold, and timing assertions are flaky in CI.\n\n**Interface** — `runHardeningPass(ctx: HardeningContext): Promise<HardeningResult>` retains its signature.",
+      "acceptanceCriteria": [
+        "When `runHardeningPass` processes a PRD whose only suggested criterion is discarded, it persists the PRD and the persisted story's `suggestedCriteria` reflects the discard.",
+        "When `runHardeningPass` processes a PRD in which nothing is promoted and nothing is discarded, it does not persist the PRD.",
+        "When `runHardeningPass` processes a PRD with one promoted criterion, it persists the PRD and the persisted story's `acceptanceCriteria` includes the promoted text, preserving the promotion path.",
+        "When TypeScript skeleton acceptance tests are generated for a criterion containing a double quote, the criterion's test title is one well-formed string literal that round-trips to the original text.",
+        "When TypeScript skeleton acceptance tests are generated for a criterion containing a newline, no generated comment line carries part of the criterion text onto a line outside a comment."
+      ],
+      "tags": [
+        "fix",
+        "acceptance",
+        "generation",
+        "persistence"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "fromAgent": "opencode",
+          "toAgent": "opencode",
+          "reason": "Rectification exhausted with unfixed findings",
+          "timestamp": "2026-08-29T10:41:28.556Z"
+        }
+      ],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two tightly scoped acceptance-pipeline corrections change persistence and source serialization without new APIs.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/acceptance/hardening.ts",
+        "src/acceptance/generator-helpers.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/acceptance/hardening.test.ts",
+          "reason": "the test named \"discards failing suggested criteria\" asserts `expect(_hardeningDeps.savePRD).not.toHaveBeenCalled()` for a pass in which one criterion was discarded and none promoted. That is precisely the case AC-1 inverts, so a correct implementation necessarily fails this assertion and, without this authorisation, would have to revert AC-1 to get the suite green. Replace that one assertion with one that `savePRD` was called exactly once. Keep every other assertion in the test unchanged — the discard bookkeeping it pins (`result.discarded`, `story.acceptanceCriteria`, `story.suggestedCriteria`) is still correct and must continue to pass."
+        }
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted with unfixed findings"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted with unfixed findings",
+          "cost": 4.323904080000002,
+          "timestamp": "2026-08-29T10:41:28.557Z",
+          "agent": "opencode",
+          "agentProfileId": "opencode-medium"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "50079c2d475c2bfdae0ee1d47909cd39678c1f83"
+    }
+  ],
+  "analysis": "Existing Bun/TypeScript CLI remediation; no greenfield architecture or migration is needed. The six stories are independent local behavioral corrections that must reuse established conventions rather than introduce abstractions. US-001 spans `detectFromFileScan` (`src/test-runners/detect/file-scan.ts:89`), `detectFromDirectoryScan` (`src/test-runners/detect/directory-scan.ts:77`), `rollbackToRef`/`captureSnapshotRef` (`src/tdd/rollback.ts:30,91`), and `rectifyConflictedStory` (`src/execution/merge-conflict-rectify.ts:154`). Existing bounded-process helpers are `gitWithTimeout` (`src/utils/git.ts:71`), `raceWithDeadline` (`src/verification/executor.ts:23`), and `killProcessGroup` (`src/utils/process-kill.ts:28`). Preserve each caller contract: advisory scans return their established null/fallback result, rollback rejects when it cannot complete, and stale ACP-session eviction remains best effort. `rectifyConflictedStory` is used by parallel execution (`src/execution/parallel-batch.ts:109`), so its public signature stays unchanged; the only new exports are the requested US-001 injectable dependency object and exported eviction seam for unit tests.\n\nUS-002 affects `resolveTestFilePatterns` (`src/test-runners/resolver.ts:134`), `initPackage` (`src/cli/init-context.ts:305`), generate command handling (`src/cli/generate.ts:47`), and `curatorCommit` (`src/commands/curator.ts:305`). Reuse `isRelativeAndSafe` (`src/utils/path-security.ts:60`) and `NaxError` (`src/errors.ts:11`) before any join, read, or directory creation; reject empty package paths without attempting filesystem work. This is lexical validation only: do not add symlink containment or mutate shared path-helper semantics.\n\nUS-003 retains `parseSchedule` (`src/schedule/parse.ts:79`) and `buildRunInteractionHandler` (`src/agents/acp/adapter-output.ts:127`) interfaces. The config escape sentinel lives in `src/config/dotenv.ts:143`; context result construction is `buildContextToolResult` (`src/agents/acp/adapter-output.ts:119`). Protect serialized delimiter payloads and attributes without changing the existing runtime/tool-list gate, and preserve ordinary duration parsing while rejecting `Invalid Date` overflow.\n\nUS-004 normalizes error contracts at `loadPRD` (`src/prd/index.ts:55`), `validateStoryId` (`src/prd/validate.ts:24`), and root-config loading/validation (`src/config/loader.ts:293`, `src/config/validate.ts:29`). Retain useful messages and every field-path diagnostic while replacing raw errors with coded `NaxError` instances and required path context. Do not lower the NaxError ratchet baseline.\n\nUS-005 is a set of presentation/projection fixes: cost aggregation (`src/runtime/cost-aggregator.ts`, especially `CostErrorEvent` and `accumulateError`), bakeoff totals (`src/bakeoff/contestant.ts:71`), disk diagnostics (`src/precheck/checks-warnings.ts:43`), Jest output identity (`src/test-runners/parser.ts:189`), and ACP listing (`src/cli/agents.ts:26`). The list must consume `ACP_ADAPTER_NAMES` (`src/agents/acp/agent-entries.ts:61`) rather than modify `KNOWN_AGENT_NAMES`, because `aider` remains intentionally supported in context-generation/config/precheck paths. Update the stale bakeoff test name and its loose assertion as explicitly authorized.\n\nUS-006 changes `runHardeningPass` (`src/acceptance/hardening.ts:260`) and `generateSkeletonTests` (`src/acceptance/generator-helpers.ts:92`): persist every actual PRD mutation (promotion or discard), retain no-write behavior for an unchanged pass, and safely serialize criterion text into TypeScript titles/comments. Update only the specified stale discard assertion. All affected source files have current graph coverage with no recorded indexing issue; relevant tests mirror source directories, including `test/unit/bakeoff/contestant.test.ts`, `test/unit/acceptance/hardening.test.ts`, `test/unit/acceptance/generator-helpers.test.ts`, and tests for the listed modules. Primary risks are changing timeout failure semantics, normalizing traversal before inspection, losing error context/field paths, narrowing the broader agent registry, and escaping text in a way that does not round-trip. APIs and config formats remain compatible; no files are created, no configuration format changes occur, and the only added exports are US-001 test seams.",
+  "outOfScope": [
+    "Refreshing the `MODEL_PRICING` rate card (review BUG-15). The Gemini and Codex rows are wrong by 16-33x, but the correct values are facts about the outside world that no test in this repo can establish; supplying them from a model's recollection would replace a known-wrong number with an unknown-wrong one. This needs a human with a current price list.",
+    "Threading resolved permissions into `closePhysicalSession` (review SEC-12). The hardcoded `\"approve-reads\"` literal violates the permission SSOT rule, but every candidate fix changes the permission-resolution contract, which is architecture requiring human sign-off rather than remediation.",
+    "Restoring the `routing` field to the synthesized failure contexts in `parallel-batch.ts` (review TYPE-17) and replacing `statusWriter: any` with the concrete `StatusWriter` type (review TYPE-38). Both are type-annotation corrections with no observable runtime behaviour, so neither can be expressed as a runtime acceptance criterion.",
+    "Replacing the cosmetic shallow `{ ...prd }` copy in `tier-escalation.ts` (review BUG-36). The copy misleads a reader but changes no behaviour.",
+    "Adding a hard exit deadline to the uncaughtException and unhandledRejection teardown path (review BUG-37). Exercising it requires driving real process teardown, which cannot be asserted safely from inside the suite that would host the test.",
+    "Incremental snapshots in `CostAggregator` and the O(n^2) Python fallback regex in the acceptance generator (review PERF-19, PERF-31). Both are performance work whose only honest acceptance criterion is a timing threshold, and timing assertions are flaky in CI.",
+    "Deleting the dead `QueueManager` (review STYLE-42) and de-duplicating the drifted `routeTask` against `keywordRoute` (review STYLE-43). Both are removals or consolidations whose blast radius needs a human decision about what the code was for.",
+    "The remaining small findings BUG-21, BUG-25, BUG-34, BUG-41, BUG-47, MEM-20, MEM-22, ENH-24, ENH-27 and ENH-45. Each is individually valid; they are excluded to keep this spec at six stories, and remain recorded in the review document.",
+    "Making `resolveRegistryEntry` fail loudly for an agent name that has no ACP entry, instead of silently returning `DEFAULT_ENTRY` (the second half of review BUG-14). That changes what `nax run --agent aider` does, not just what `nax agents` prints, and its blast radius reaches the agent precheck and the `generate.agents` config enum — a behaviour change needing its own decision rather than a reporting fix.",
+    "US-002 only: symlink-based path escape is not rejected — a validated relative path that is itself a symlink out of the repo still resolves. Segment-wise validation is deliberately filesystem-blind; symlink containment lives in a different helper whose semantics this spec does not change.",
+    "Lowering any ratchet baseline. Several stories reduce the `check:nax-error` violation count, which the gate accepts because it fails only on growth. No baseline file may be re-baselined as part of this work."
+  ],
+  "routingProfile": "cross-agent"
+}
