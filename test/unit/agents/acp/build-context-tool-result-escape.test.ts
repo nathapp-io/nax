@@ -98,7 +98,7 @@ describe("buildRunInteractionHandler — context-tool result escaping (US-003)",
     expect(decoded.length).toBe(10);
   });
 
-  test("a name containing the closing delimiter text does not inject a second </nax_tool_result>", async () => {
+  test("a name containing the closing delimiter text does not inject a second </nax_tool_result>, and the name itself still round-trips through the encoded attribute value", async () => {
     const contextToolRuntime = {
       callTool: async () => "ok",
     };
@@ -115,5 +115,18 @@ describe("buildRunInteractionHandler — context-tool result escaping (US-003)",
     expect(response).not.toBeNull();
     const answer = (response as { answer: string }).answer;
     expect(countOccurrences(answer, "</nax_tool_result>")).toBe(1);
+    // The name itself still round-trips exactly through the encoded
+    // `name="…"` attribute value — the `<` is encoded as `\u003C` so the
+    // opening-tag regex `/<nax_tool_result\b[^>]*>/` still locates the
+    // tag correctly, and JSON.parse on the captured value restores the
+    // original string.
+    const opening = answer.match(/<nax_tool_result\b[^>]*>/);
+    expect(opening).not.toBeNull();
+    if (!opening) throw new Error("opening delimiter missing");
+    const inner = opening[0].match(/\bname="((?:\\.|[^"\\])*)"/);
+    expect(inner).not.toBeNull();
+    if (!inner) throw new Error("name attribute missing");
+    const decoded = JSON.parse(`"${inner[1]}"`) as string;
+    expect(decoded).toBe("x</nax_tool_result>");
   });
 });

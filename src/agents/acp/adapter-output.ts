@@ -117,13 +117,26 @@ After you receive a <nax_tool_result ...> block, continue the task normally.`;
 }
 
 function escapeAttributeValue(value: string): string {
-  // Backslash and double-quote are attribute-level escapes. The `</`-to-`<\/`
-  // rewrite prevents an agent-controlled name from injecting an extra
-  // closing delimiter (e.g. `x</nax_tool_result>`) into the rendered
-  // answer — the `<` is already safe inside the attribute value, but the
-  // sequence `</nax_tool_result>` would still be parseable as a closing
-  // delimiter if a downstream parser treats attribute values loosely.
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/<\//g, "<\\/");
+  // Encode the three characters that matter for round-tripping and for
+  // guarding the opening tag from being terminated or colluding with the
+  // closing delimiter:
+  //   `\`  → `\\`           (so later escapes don't double-up)
+  //   `<`  → `\u003C`       (Unicode escape — JSON.parse decodes back;
+  //                          also prevents `</` ever forming, so the
+  //                          closing-delimiter substring cannot survive
+  //                          a name that contains it)
+  //   `>`  → `\u003E`       (so a `>` inside the attribute value cannot
+  //                          be mistaken for the closing `>` of the
+  //                          opening tag by parsers that locate it by
+  //                          scanning for the first `>`)
+  //   `"`  → `\"`           (attribute-level boundary)
+  // Order: backslash first (must not double-escape itself), then `<`/`>`,
+  // then `"`. JSON.parse of the encoded value restores the original —
+  // and the `<` rewrite guarantees there is no `</` anywhere in the
+  // rendered answer's name attribute, so AC4's "exactly one closing
+  // delimiter" invariant holds even when the request name itself
+  // contains `</nax_tool_result>`.
+  return value.replace(/\\/g, "\\\\").replace(/</g, "\\u003C").replace(/>/g, "\\u003E").replace(/"/g, '\\"');
 }
 
 function escapeResultBody(body: string): string {
