@@ -9,7 +9,9 @@
  * Storage: <scratchDir>/scratch.jsonl
  * Format: one JSON object per line (JSONL / newline-delimited JSON)
  *
- * Phase 1: write-only from verify and rectify.
+ * Phase 1: write-only from verify (verify-scoped) and execution (post-run).
+ * `rectify-attempt` was declared but never had a producer and was removed
+ * (nax#1757) — rectification telemetry lives elsewhere.
  * Phase 2+: additional stages (review, autofix) contribute entries.
  *
  * See: docs/specs/SPEC-context-engine-v2.md §Session model
@@ -38,18 +40,6 @@ export interface VerifyScratchEntry {
   failCount: number;
   /** Last 500 chars of raw test output — enough for a rectifier to see what failed */
   rawOutputTail: string;
-  /** Agent id that produced this entry. For cross-agent scratch neutralization (AC-42). */
-  writtenByAgent?: string;
-}
-
-/** Entry written after each rectification attempt */
-export interface RectifyScratchEntry {
-  kind: "rectify-attempt";
-  timestamp: string;
-  storyId: string;
-  stage: string;
-  attempt: number;
-  succeeded: boolean;
   /** Agent id that produced this entry. For cross-agent scratch neutralization (AC-42). */
   writtenByAgent?: string;
 }
@@ -99,7 +89,6 @@ export interface ToolDiagnosticsScratchEntry {
 
 export type ScratchEntry =
   | VerifyScratchEntry
-  | RectifyScratchEntry
   | TddSessionScratchEntry
   | SelfVerificationScratchEntry
   | ToolDiagnosticsScratchEntry;

@@ -30,6 +30,7 @@ import type { PullToolBudget } from "../pull-tools";
 // imported from its true home (`@/session`) for symmetry with
 // `tool-diagnostics.ts` (which already imports it that way).
 import { _pullToolsDeps, DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools";
+import { fitScratchBlocks } from "../render-utils";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 
 /**
@@ -97,8 +98,6 @@ function renderScratchEntry(entry: ScratchEntry, targetAgent: string): string {
       }
       return lines.join("\n");
     }
-    case "rectify-attempt":
-      return `**Rectify** attempt ${entry.attempt} at ${entry.timestamp}: ${entry.succeeded ? "succeeded" : "failed"}`;
     case "tdd-session": {
       const lines = [
         `**TDD ${entry.role}** at ${entry.timestamp}: ${entry.success ? "succeeded" : "failed"}${
@@ -170,10 +169,10 @@ export async function handleQueryScratch(
   // Apply limit (AC7). Most-recent-first: sort by timestamp descending, then
   // cap. JSONL appends write entries oldest-first at the tail, so the latest
   // entry is the last parsed line — reversing gives "most-recent first".
-  const limited =
-    typeof input.limit === "number" && input.limit > 0
-      ? [...filtered].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, input.limit)
-      : filtered;
+  const sortedNewestFirst = typeof input.limit === "number" && input.limit > 0;
+  const limited = sortedNewestFirst
+    ? [...filtered].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, input.limit)
+    : filtered;
 
   // Render defensively: a malformed entry (e.g. a known kind missing a required
   // field) must not abort the whole query — skip it and continue.
@@ -186,9 +185,13 @@ export async function handleQueryScratch(
     }
   }
 
-  const content = rendered.join("\n\n");
+  // nax#1757: fit by dropping whole entries from the oldest end. `limited` is
+  // most-recent-FIRST only when a `limit` was supplied and sorted above; with
+  // no limit — the default call — it is JSONL order, oldest-first, where the
+  // previous `slice(0, maxChars)` kept the oldest entries and dropped the
+  // newest. Display order is unchanged in both branches.
   const maxChars = maxTokensPerCall * 4;
-  const finalContent = content.length > maxChars ? content.slice(0, maxChars) : content;
+  const finalContent = fitScratchBlocks(rendered, maxChars, sortedNewestFirst);
 
   budget.record({
     tool: "query_scratch",

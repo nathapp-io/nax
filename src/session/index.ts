@@ -8,7 +8,6 @@ export { formatSessionName } from "./naming";
 export { recordAgentHandoff } from "./reopen-handoff";
 export { purgeStaleScratch } from "./scratch-purge";
 export type {
-  RectifyScratchEntry,
   ScratchEntry,
   SelfVerificationScratchEntry,
   TddSessionScratchEntry,

@@ -31,15 +31,6 @@ const VERIFY_ENTRY = JSON.stringify({
   rawOutputTail: "Expected true but got false",
 });
 
-const RECTIFY_ENTRY = JSON.stringify({
-  kind: "rectify-attempt",
-  timestamp: "2026-01-01T00:01:00.000Z",
-  storyId: "US-001",
-  stage: "rectify",
-  attempt: 1,
-  succeeded: false,
-});
-
 const TDD_ENTRY = JSON.stringify({
   kind: "tdd-session",
   timestamp: "2026-01-01T00:02:00.000Z",
@@ -147,13 +138,13 @@ describe("SessionScratchProvider", () => {
   });
 
   test("includes content from multiple entries", async () => {
-    mockScratchFile(`${VERIFY_ENTRY}\n${RECTIFY_ENTRY}\n`);
+    mockScratchFile(`${VERIFY_ENTRY}\n${TDD_ENTRY}\n`);
     const provider = new SessionScratchProvider();
     const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
 
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0].content).toContain("Verify");
-    expect(result.chunks[0].content).toContain("Rectify");
+    expect(result.chunks[0].content).toContain("TDD implementer");
   });
 
   test("renders TDD session entries with changed files and output", async () => {
@@ -192,7 +183,7 @@ describe("SessionScratchProvider", () => {
   });
 
   test("skips malformed JSONL lines without throwing", async () => {
-    mockScratchFile(`${VERIFY_ENTRY}\nnot-valid-json\n${RECTIFY_ENTRY}\n`);
+    mockScratchFile(`${VERIFY_ENTRY}\nnot-valid-json\n${TDD_ENTRY}\n`);
     const provider = new SessionScratchProvider();
     const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
 
@@ -367,5 +358,87 @@ describe("SessionScratchProvider — #508-M1 verify-result rawOutputTail neutral
     const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"], agentId: "claude" }));
 
     expect(result.chunks[0].content).toContain("the Read tool");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// nax#1757: budget fitting keeps the NEWEST entries
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionScratchProvider — content budget drops the oldest entries, not the newest", () => {
+  /** A failing verify-result carrying the full 500-char output tail the writer emits. */
+  function bigVerifyEntry(minute: number, marker: string): string {
+    return JSON.stringify({
+      kind: "verify-result",
+      timestamp: `2026-01-01T00:0${minute}:00.000Z`,
+      storyId: "US-001",
+      stage: "verify",
+      success: false,
+      status: "TEST_FAILURE",
+      passCount: 10,
+      failCount: 3,
+      rawOutputTail: `${marker}${"x".repeat(490)}`,
+    });
+  }
+
+  const NEWEST_SELF_VERIFY = JSON.stringify({
+    kind: "self-verification",
+    timestamp: "2026-01-01T00:09:00.000Z",
+    storyId: "US-001",
+    stage: "execution",
+    selfVerification: { lint: "pass", typecheck: "pass", preExistingFailures: [] },
+  });
+
+  test("keeps the newest entries when several 500-char verify tails exceed the ceiling", async () => {
+    mockNoIgnoreFile();
+    // Five oversized entries plus a newest self-verification: well past the
+    // 2000-char ceiling, so something must be dropped.
+    mockScratchFile(
+      [
+        bigVerifyEntry(1, "OLDEST-"),
+        bigVerifyEntry(2, "SECOND-"),
+        bigVerifyEntry(3, "THIRD-"),
+        bigVerifyEntry(4, "FOURTH-"),
+        bigVerifyEntry(5, "NEWEST-VERIFY-"),
+        NEWEST_SELF_VERIFY,
+      ].join("\n"),
+    );
+
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+    const content = result.chunks[0]?.content ?? "";
+
+    // The newest entries are the ones a retrying implementer needs.
+    expect(content).toContain("Self-verify");
+    expect(content).toContain("NEWEST-VERIFY-");
+    // The oldest are what the ceiling should evict.
+    expect(content).not.toContain("OLDEST-");
+    expect(content.length).toBeLessThanOrEqual(500 * 4);
+  });
+
+  test("cuts on entry boundaries, leaving no half-rendered entry", async () => {
+    mockNoIgnoreFile();
+    // Five entries: comfortably past the 2000-char ceiling, so the fit loop
+    // must actually drop some. Three would fit whole and pin nothing.
+    mockScratchFile(
+      [
+        bigVerifyEntry(1, "OLDEST-"),
+        bigVerifyEntry(2, "SECOND-"),
+        bigVerifyEntry(3, "THIRD-"),
+        bigVerifyEntry(4, "FOURTH-"),
+        bigVerifyEntry(5, "NEWEST-"),
+      ].join("\n"),
+    );
+
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+    const content = result.chunks[0]?.content ?? "";
+
+    // Every rendered verify entry opens a fenced block and must also close it.
+    const fences = content.split("```").length - 1;
+    expect(fences % 2).toBe(0);
+    // Guard the guard: the fixture must actually have overflowed, or a
+    // balanced-fence assertion proves nothing about the fit loop.
+    expect(content).not.toContain("OLDEST-");
   });
 });

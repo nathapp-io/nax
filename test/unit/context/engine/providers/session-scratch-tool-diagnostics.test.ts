@@ -5,8 +5,8 @@
  * lint/typecheck provenance that the `ToolDiagnosticsProvider` and
  * `query_scratch` consume. The push-style `SessionScratchProvider` must
  * filter it OUT before its 20-entry recency cap so a flood of
- * tool-diagnostics entries can't crowd out verify-result / rectify-attempt
- * context for a rectifier.
+ * tool-diagnostics entries can't crowd out verify-result context for a
+ * rectifier.
  *
  * AC9 — chunk includes verify text and excludes the literal "tool-diagnostics"
  * AC10 — 25 tool-diagnostics entries + 1 verify-result entry → verify text

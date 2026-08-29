@@ -7,7 +7,7 @@
  * The provider is stateless: scratch dirs are passed via ContextRequest.storyScratchDirs.
  * Each dir is expected to contain a scratch.jsonl file; missing files return empty.
  *
- * Phase 1: reads verify-result and rectify-attempt entries.
+ * Phase 1: reads verify-result entries.
  * Phase 2+: additional entry kinds (review findings, tool call results).
  * AC-42: neutralizes agent-specific tool references when entry.writtenByAgent
  *        differs from the target agent (request.agentId).
@@ -20,6 +20,7 @@ import type { ScratchEntry } from "@/session";
 import { scratchFilePath } from "@/session";
 import { readJsonlTail } from "@/utils/jsonl-tail";
 import { filterNaxInternalPaths, type NaxIgnoreMatcher, resolveNaxIgnorePatterns } from "@/utils/path-filters";
+import { fitScratchBlocks } from "../render-utils";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -89,8 +90,6 @@ function renderEntry(
       }
       return lines.join("\n");
     }
-    case "rectify-attempt":
-      return `**Rectify** attempt ${entry.attempt} at ${entry.timestamp}: ${entry.succeeded ? "succeeded" : "failed"}`;
     case "tdd-session": {
       // #542: drop .nax/ bookkeeping noise so the prompt only surfaces real code changes.
       const userChanged = filterNaxInternalPaths(entry.filesChanged, ignoreMatchers);
@@ -133,21 +132,27 @@ async function readScratchDir(
   if (allEntries.length === 0) return null;
 
   // US-001: filter tool-diagnostics entries BEFORE the recency cap so a flood of
-  // diagnostic entries can't evict the verify-result / rectify-attempt entries a
-  // rectifier actually needs. Diagnostics are surfaced via the dedicated
+  // diagnostic entries can't evict the verify-result entries a rectifier
+  // actually needs. Diagnostics are surfaced via the dedicated
   // ToolDiagnosticsProvider / query_scratch, not this push-style session chunk.
   const renderableEntries = allEntries.filter((e) => e.kind !== "tool-diagnostics");
   if (renderableEntries.length === 0) return null;
 
   // Take most recent N entries (tail of the JSONL)
   const entries = renderableEntries.slice(-MAX_ENTRIES_PER_DIR);
-  const content = entries.map((e) => renderEntry(e, targetAgentId, ignoreMatchers)).join("\n\n");
 
-  // Truncate content to the token ceiling so the reported token count
-  // matches the actual content length. Without truncation the packing stage
-  // would trust the capped number and silently overrun the context budget.
+  // Fit the rendered entries to the token ceiling so the reported token count
+  // matches the actual content length. Without a cap the packing stage would
+  // trust the capped number and silently overrun the context budget.
+  //
+  // nax#1757: fitScratchBlocks drops whole entries from the OLDEST end so the
+  // newest survive, matching the recency selection above. See its doc comment
+  // for what the previous `slice(0, MAX)` did instead.
   const MAX_CONTENT_CHARS = MAX_CHUNK_TOKENS * 4;
-  const truncated = content.length > MAX_CONTENT_CHARS ? content.slice(0, MAX_CONTENT_CHARS) : content;
+  const truncated = fitScratchBlocks(
+    entries.map((e) => renderEntry(e, targetAgentId, ignoreMatchers)),
+    MAX_CONTENT_CHARS,
+  );
 
   const hash = contentHash8(truncated);
   const tokens = Math.ceil(truncated.length / 4);

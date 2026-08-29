@@ -170,7 +170,11 @@ Spec: [SPEC-context-engine-v2-amendments.md](../specs/SPEC-context-engine-v2-ame
 
 ### Amendment B — Execution-mode stage sequences (AC-50–53, Accepted 2026-04-17)
 
-Adds `planDigestBoost: 1.5` to `STAGE_CONTEXT_MAP` for single-session, tdd-simple, no-test, and batch modes. The prior-stage plan digest's `rawScore` is multiplied by the boost when the stage opts in, giving it competitive footing against fresh provider chunks in scoring/packing. Does not change the digest content or threading mechanism (D4 preserved).
+Adds `planDigestBoost: 1.5` to `STAGE_CONTEXT_MAP` for `tdd-simple` and `no-test`. The boost is resolved from the story's **test strategy** (`ctx.routing.testStrategy`), not from the assembled stage — both call sites (`stage-assembler.ts`, `pipeline/stages/context.ts`) key `getStageContextConfig` off `ctx.routing?.testStrategy`, deliberately (AC-51: propagate the boost from the routing test strategy so it applies in every stage `assembleForStage()` serves — execution, rectify, tdd-*, review-*, etc., not just the one initial stage). Because of that, the boost applies across every stage assembled for a `tdd-simple` or `no-test` story, not only "when the stage opts in".
+
+`single-session` and `batch` are `STAGE_CONTEXT_MAP` keys, not `TestStrategy` values, so a `planDigestBoost` declared on them is never read by either call site — dead configuration (nax#1759).
+
+**Known gap:** `test-after` — `TestStrategy`'s fallback for any unset/unrecognised value, and a single-session mode — has no `STAGE_CONTEXT_MAP` entry at all, so it receives no boost. Adding a `test-after` key *would* work, precisely because the lookup is strategy-keyed. It is declined for a different reason: no assembly site ever selects `test-after` (`executionContextStage` maps it to `single-session`), so the entry would exist solely to be read by this one lookup — live for the boost, dead for assembly. Every other key in the map is either assembled or documented as aspirational; introducing a third category immediately after nax#1743 cleaned up the first two trades a rare missing boost for a durable ambiguity about what a key in this map means. Revisit if `test-after` stops being rare — it is 0 of 353 stories across this repo's PRDs at time of writing. Tracked in nax#1759.
 
 Spec: [SPEC-context-engine-v2-amendments.md](../specs/SPEC-context-engine-v2-amendments.md) §Amendment B.
 

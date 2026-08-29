@@ -156,7 +156,7 @@ export const QUERY_SCRATCH_DESCRIPTOR: ToolDescriptor = {
   name: "query_scratch",
   description:
     "Fetch on-demand records of what actually broke for this story — verify-result, " +
-    "tool-diagnostics, rectify-attempt entries from the session scratch JSONL. " +
+    "tool-diagnostics entries from the session scratch JSONL. " +
     "Use to read the record of a prior failure without forcing every entry into " +
     "the push context. Optional: filter by `kind` (e.g. 'tool-diagnostics'), cap " +
     "the response with `limit` (most-recent N entries).",
