@@ -81,4 +81,31 @@ describe("initPackage (MW-005)", () => {
     const contextPath = join(tmpDir, ".nax/mono/apps/backend/service/context.md");
     expect(await Bun.file(contextPath).exists()).toBe(true);
   });
+
+  test("rejects a packagePath that escapes the repo via '..' before creating any directory (US-002 AC #3)", async () => {
+    await expect(initPackage(tmpDir, "../../evil")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_PACKAGE_PATH",
+    });
+    // The directory must NOT be created when validation rejects.
+    expect(await Bun.file(join(tmpDir, ".nax/mono/evil/context.md")).exists()).toBe(false);
+  });
+
+  test("rejects an empty packagePath rather than resolving to the repo root (US-002 AC #6)", async () => {
+    await expect(initPackage(tmpDir, "")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_PACKAGE_PATH",
+    });
+    const rootContext = join(tmpDir, ".nax", "context.md");
+    // The pre-existing initContext file at <repoRoot>/.nax/context.md must NOT
+    // be created by a stray empty packagePath.
+    expect(await Bun.file(rootContext).exists()).toBe(false);
+  });
+
+  test("rejects an absolute packagePath before creating any directory", async () => {
+    await expect(initPackage(tmpDir, "/etc")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_PACKAGE_PATH",
+    });
+  });
 });

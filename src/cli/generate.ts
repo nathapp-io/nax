@@ -11,6 +11,8 @@ import chalk from "chalk";
 import { findProjectDir, loadConfig } from "../config/loader";
 import { discoverPackages, generateAll, generateFor, generateForPackage } from "../context/generator";
 import type { AgentType } from "../context/types";
+import { NaxError } from "../errors";
+import { isRelativeAndSafe } from "../utils/path-security";
 
 /** Options for `nax generate` */
 export interface GenerateCommandOptions {
@@ -94,6 +96,13 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
 
   // --package: generate for a specific package
   if (options.package) {
+    if (!isRelativeAndSafe(options.package)) {
+      throw new NaxError(
+        `generateCommand: package "${options.package}" is not a safe relative path (must be non-empty, relative, and free of ".." segments)`,
+        "INVALID_PACKAGE_PATH",
+        { stage: "generate", package: options.package },
+      );
+    }
     const packageDir = join(workdir, options.package);
     if (dryRun) {
       console.log(chalk.yellow("⚠ Dry run — no files will be written"));

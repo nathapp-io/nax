@@ -11,6 +11,7 @@ import { join, resolve, sep } from "node:path";
 import type { NaxConfig } from "../config";
 import { getProjectKey, loadConfig } from "../config";
 import { CANONICAL_RULES_DIR, lintForNeutrality } from "../context/rules/canonical-loader";
+import { NaxError } from "../errors";
 import type { CuratorThresholds } from "../plugins/builtin/curator/heuristics";
 import { runHeuristics } from "../plugins/builtin/curator/heuristics";
 import { renderProposals } from "../plugins/builtin/curator/render";
@@ -18,6 +19,7 @@ import type { PruneResult, PruneRollupInput } from "../plugins/builtin/curator/r
 import { pruneRollup, scanProjectRunIds } from "../plugins/builtin/curator/rollup-prune";
 import type { Observation } from "../plugins/builtin/curator/types";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "../runtime/paths";
+import { isRelativeAndSafe } from "../utils/path-security";
 import type { ResolvedProject, ResolveProjectOptions } from "./common";
 import { resolveProjectAsync } from "./common";
 
@@ -303,6 +305,14 @@ function isWithinCanonicalRulesDir(projectDir: string, targetPath: string): bool
 }
 
 export async function curatorCommit(options: CuratorCommitOptions): Promise<void> {
+  if (!isRelativeAndSafe(options.runId)) {
+    throw new NaxError(
+      `curatorCommit: runId "${options.runId}" is not a safe relative path (must be non-empty, relative, and free of ".." segments)`,
+      "INVALID_RUN_ID",
+      { stage: "curator", runId: options.runId },
+    );
+  }
+
   const resolved = await _curatorCmdDeps.resolveProject({ dir: options.project });
   const config = await _curatorCmdDeps.loadConfig(resolved.projectDir);
   const projectKey = getProjectKey(config, resolved.projectDir);

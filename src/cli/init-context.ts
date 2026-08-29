@@ -7,7 +7,9 @@
  */
 
 import { basename, join } from "node:path";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { isRelativeAndSafe } from "../utils/path-security";
 
 async function bunFileExists(path: string): Promise<boolean> {
   return Bun.file(path).exists();
@@ -303,6 +305,14 @@ export function generatePackageContextTemplate(packagePath: string): string {
  * @param force - Overwrite existing file
  */
 export async function initPackage(repoRoot: string, packagePath: string, force = false): Promise<void> {
+  if (!isRelativeAndSafe(packagePath)) {
+    throw new NaxError(
+      `initPackage: packagePath "${packagePath}" is not a safe relative path (must be non-empty, relative, and free of ".." segments)`,
+      "INVALID_PACKAGE_PATH",
+      { stage: "init-context", packagePath },
+    );
+  }
+
   const logger = getLogger();
   const naxDir = join(repoRoot, ".nax", "mono", packagePath);
   const contextPath = join(naxDir, "context.md");
