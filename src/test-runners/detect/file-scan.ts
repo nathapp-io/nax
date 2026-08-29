@@ -8,6 +8,7 @@
  * Excluded: node_modules/, dist/, build/, .nax/, coverage/, .git/
  */
 
+import { killProcessGroup } from "@/utils/process-kill";
 import type { DetectionSource } from "./types";
 
 /** Directories excluded from file scan */
@@ -17,6 +18,15 @@ const EXCLUDED_DIR_PREFIXES = ["node_modules/", "dist/", "build/", ".nax/", "cov
 const MIN_COUNT_THRESHOLD = 5;
 /** Min fraction of all files to consider a suffix as a test-file indicator */
 const MIN_FRACTION_THRESHOLD = 0.1;
+
+/**
+ * Hard deadline on `git ls-files` so a wedged git (NFS / lock contention) does
+ * not stall Tier 3 detection indefinitely. Mirrors `gitWithTimeout` in
+ * `src/utils/git.ts` and `_isolationDeps.timeoutMs` in `src/tdd/isolation.ts`:
+ * SIGKILL the process group on expiry, degrade to the existing empty-result
+ * contract. Tests inject a short value via `_fileScanDeps.timeoutMs`.
+ */
+const FILE_SCAN_GIT_TIMEOUT_MS = 10_000;
 
 /** Common test-file suffix patterns to look for */
 const CANDIDATE_SUFFIXES = [
@@ -55,11 +65,15 @@ const SUFFIX_TO_GLOB: Record<string, string> = {
 /** Injectable deps for testability */
 export const _fileScanDeps = {
   spawn: Bun.spawn as typeof Bun.spawn,
+  killProcessGroup,
+  timeoutMs: FILE_SCAN_GIT_TIMEOUT_MS,
 };
 
 /**
  * Run `git ls-files` and return the output lines.
- * Returns empty array when git is unavailable or workdir is not a repo.
+ * Returns empty array when git is unavailable, workdir is not a repo, or
+ * `git ls-files` exceeds its hard deadline (the SIGKILL-on-expiry contract
+ * degrades to the same empty result a non-zero exit produces).
  */
 async function gitLsFiles(workdir: string): Promise<string[]> {
   try {
@@ -68,10 +82,28 @@ async function gitLsFiles(workdir: string): Promise<string[]> {
       stdout: "pipe",
       stderr: "pipe",
     });
+
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      _fileScanDeps.killProcessGroup(proc.pid, "SIGKILL");
+    }, _fileScanDeps.timeoutMs);
+
+    // Drain concurrently with the exit wait — a child that fills its pipe's OS
+    // buffer before being read would otherwise block on the write and never
+    // reach `exited`, defeating the SIGKILL the timeout relies on.
+    const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+    const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+
     const exitCode = await proc.exited;
+    clearTimeout(timer);
+
+    if (timedOut) return [];
     if (exitCode !== 0) return [];
-    const output = await new Response(proc.stdout).text();
-    return output.split("\n").filter(Boolean);
+
+    const stdout = await stdoutPromise;
+    void (await stderrPromise);
+    return stdout.split("\n").filter(Boolean);
   } catch {
     return [];
   }

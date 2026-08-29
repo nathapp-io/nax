@@ -9,10 +9,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeSpawn } from "@test/helpers";
+import { join } from "node:path";
+import { makeSpawn, makeSpawnResult, withTempDir } from "@test/helpers";
 import { _cacheDeps } from "@/test-runners/detect/cache";
-import { _directoryScanDeps } from "@/test-runners/detect/directory-scan";
-import { _fileScanDeps } from "@/test-runners/detect/file-scan";
+import { _directoryScanDeps, detectFromDirectoryScan } from "@/test-runners/detect/directory-scan";
+import { _fileScanDeps, detectFromFileScan } from "@/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
 import { detectTestFilePatterns, detectTestFilePatternsForWorkspace } from "@/test-runners/detect/index";
@@ -26,11 +27,15 @@ type Orig = {
   defaultsReadText: typeof _frameworkDefaultsDeps.readText;
   defaultsFileExists: typeof _frameworkDefaultsDeps.fileExists;
   fileScanSpawn: typeof _fileScanDeps.spawn;
+  fileScanTimeoutMs: typeof _fileScanDeps.timeoutMs;
+  fileScanKillProcessGroup: typeof _fileScanDeps.killProcessGroup;
   cacheReadJson: typeof _cacheDeps.readJson;
   cacheWriteJson: typeof _cacheDeps.writeJson;
   cacheFileMtime: typeof _cacheDeps.fileMtime;
   dirExists: typeof _directoryScanDeps.dirExists;
   dirSpawn: typeof _directoryScanDeps.spawn;
+  dirTimeoutMs: typeof _directoryScanDeps.timeoutMs;
+  dirKillProcessGroup: typeof _directoryScanDeps.killProcessGroup;
 };
 
 let orig: Orig;
@@ -43,11 +48,15 @@ beforeEach(() => {
     defaultsReadText: _frameworkDefaultsDeps.readText,
     defaultsFileExists: _frameworkDefaultsDeps.fileExists,
     fileScanSpawn: _fileScanDeps.spawn,
+    fileScanTimeoutMs: _fileScanDeps.timeoutMs,
+    fileScanKillProcessGroup: _fileScanDeps.killProcessGroup,
     cacheReadJson: _cacheDeps.readJson,
     cacheWriteJson: _cacheDeps.writeJson,
     cacheFileMtime: _cacheDeps.fileMtime,
     dirExists: _directoryScanDeps.dirExists,
     dirSpawn: _directoryScanDeps.spawn,
+    dirTimeoutMs: _directoryScanDeps.timeoutMs,
+    dirKillProcessGroup: _directoryScanDeps.killProcessGroup,
   };
   // Default: cache miss, write is no-op
   _cacheDeps.readJson = mock(async () => {
@@ -68,11 +77,15 @@ afterEach(() => {
   _frameworkDefaultsDeps.readText = orig.defaultsReadText;
   _frameworkDefaultsDeps.fileExists = orig.defaultsFileExists;
   _fileScanDeps.spawn = orig.fileScanSpawn;
+  _fileScanDeps.timeoutMs = orig.fileScanTimeoutMs;
+  _fileScanDeps.killProcessGroup = orig.fileScanKillProcessGroup;
   _cacheDeps.readJson = orig.cacheReadJson;
   _cacheDeps.writeJson = orig.cacheWriteJson;
   _cacheDeps.fileMtime = orig.cacheFileMtime;
   _directoryScanDeps.dirExists = orig.dirExists;
   _directoryScanDeps.spawn = orig.dirSpawn;
+  _directoryScanDeps.timeoutMs = orig.dirTimeoutMs;
+  _directoryScanDeps.killProcessGroup = orig.dirKillProcessGroup;
 });
 
 // ─── Tier 1: vitest config ────────────────────────────────────────────────────
@@ -466,5 +479,99 @@ describe("monorepo workspace", () => {
 
     // packages/ui has no signals
     expect(result["packages/ui"]?.confidence).toBe("empty");
+  });
+});
+
+// ─── Bounded subprocess scans (hang-path) ─────────────────────────────────────
+//
+// A wedged `git ls-files` must not leave the detector pending. Mirrors the
+// SIGKILL-after-timeout pattern from gitWithTimeout / _isolationDeps: armed
+// timer → killProcessGroup(proc.pid, "SIGKILL") on expiry → caller settles
+// with the existing degraded result (empty list / fallback glob).
+
+describe("detectFromFileScan — bounded `git ls-files` (hang-path)", () => {
+  let origSpawn: typeof _fileScanDeps.spawn;
+  let origTimeoutMs: typeof _fileScanDeps.timeoutMs;
+  let origKillProcessGroup: typeof _fileScanDeps.killProcessGroup;
+  let killedPid: number | undefined;
+
+  beforeEach(() => {
+    origSpawn = _fileScanDeps.spawn;
+    origTimeoutMs = _fileScanDeps.timeoutMs;
+    origKillProcessGroup = _fileScanDeps.killProcessGroup;
+    killedPid = undefined;
+  });
+
+  afterEach(() => {
+    _fileScanDeps.spawn = origSpawn;
+    _fileScanDeps.timeoutMs = origTimeoutMs;
+    _fileScanDeps.killProcessGroup = origKillProcessGroup;
+  });
+
+  test("settles to null when `git ls-files` never exits (AC-1)", async () => {
+    _fileScanDeps.timeoutMs = 50;
+    const proc = makeSpawnResult({ hang: true, pid: 5555, killResolvesExited: true });
+    _fileScanDeps.spawn = makeSpawn(() => proc).spawn;
+    _fileScanDeps.killProcessGroup = ((pid) => {
+      killedPid = pid;
+      // Simulate OS reaping the process once the group is killed —
+      // `killResolvesExited` resolves the `proc.exited` promise.
+      proc.kill();
+      return true;
+    }) as typeof _fileScanDeps.killProcessGroup;
+
+    // The detector must settle to its existing empty-input null — never hang.
+    const result = await detectFromFileScan("/fake/workdir");
+
+    expect(result).toBeNull();
+    expect(killedPid).toBe(5555);
+  });
+});
+
+describe("detectFromDirectoryScan — bounded `git ls-files` (hang-path)", () => {
+  let origSpawn: typeof _directoryScanDeps.spawn;
+  let origTimeoutMs: typeof _directoryScanDeps.timeoutMs;
+  let origKillProcessGroup: typeof _directoryScanDeps.killProcessGroup;
+  let origDirExists: typeof _directoryScanDeps.dirExists;
+  let killedPid: number | undefined;
+
+  beforeEach(() => {
+    origSpawn = _directoryScanDeps.spawn;
+    origTimeoutMs = _directoryScanDeps.timeoutMs;
+    origKillProcessGroup = _directoryScanDeps.killProcessGroup;
+    origDirExists = _directoryScanDeps.dirExists;
+    killedPid = undefined;
+  });
+
+  afterEach(() => {
+    _directoryScanDeps.spawn = origSpawn;
+    _directoryScanDeps.timeoutMs = origTimeoutMs;
+    _directoryScanDeps.killProcessGroup = origKillProcessGroup;
+    _directoryScanDeps.dirExists = origDirExists;
+  });
+
+  test("settles with a non-null source naming the test dir when `git ls-files` never exits (AC-2)", async () => {
+    _directoryScanDeps.timeoutMs = 50;
+    // Fixture workdir containing a `test/` directory — the AC requires a real
+    // directory so the post-timeout glob fallback can walk it without ENOENT.
+    await withTempDir(async (workdir) => {
+      await Bun.write(join(workdir, "test", ".keep"), "");
+      // Pretend `test/` exists — the detector must still settle, not hang.
+      _directoryScanDeps.dirExists = mock(async (path: string) => path.endsWith("/test"));
+      const proc = makeSpawnResult({ hang: true, pid: 6666, killResolvesExited: true });
+      _directoryScanDeps.spawn = makeSpawn(() => proc).spawn;
+      _directoryScanDeps.killProcessGroup = ((pid) => {
+        killedPid = pid;
+        proc.kill();
+        return true;
+      }) as typeof _directoryScanDeps.killProcessGroup;
+
+      const result = await detectFromDirectoryScan(workdir);
+
+      expect(result).not.toBeNull();
+      expect(result?.path).toBe(`${workdir}/test`);
+      expect(result?.patterns.length).toBeGreaterThan(0);
+      expect(killedPid).toBe(6666);
+    });
   });
 });

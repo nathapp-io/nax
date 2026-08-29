@@ -13,9 +13,31 @@ import type { PipelineEventEmitter } from "../pipeline/events";
 import type { AgentGetFn, PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd";
+import { typedSpawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
+import { killProcessGroup } from "../utils/process-kill";
 import type { MergeResult } from "../worktree";
 import { buildWorktreePipelineContext } from "./parallel-worker";
+
+/**
+ * Hard deadline on the `acpx sessions close` subprocess. Without this, a wedged
+ * acpx (e.g. stuck session broker) blocks the stale-session eviction step and
+ * stalls the rectification pipeline indefinitely. Mirrors the SIGKILL-after-
+ * timeout pattern from `gitWithTimeout` and `worktree/dependencies.ts`. Tests
+ * inject a short value via `_rectifyDeps.timeoutMs`. The eviction remains
+ * best-effort — the timeout path returns silently rather than raising, so a
+ * dead session broker can never escalate into a rectification failure.
+ */
+const STALE_SESSION_CLOSE_TIMEOUT_MS = 3_000;
+
+/** Injectable deps for the stale-session eviction step. `typedSpawn` is the
+ * dependency that previously lived behind a dynamic import — surfaced here so
+ * tests can drive the eviction directly without touching the real acpx. */
+export const _rectifyDeps = {
+  typedSpawn,
+  killProcessGroup,
+  timeoutMs: STALE_SESSION_CLOSE_TIMEOUT_MS,
+};
 
 /**
  * Close a stale ACP session by name — best-effort, swallows all errors.
@@ -23,17 +45,37 @@ import { buildWorktreePipelineContext } from "./parallel-worker";
  * Called before rectification to evict sessions from the previous failed run
  * that share the same session name (derived from the same worktree path).
  * Without this, acpx returns exit code 4 (session in bad state) immediately.
+ *
+ * Bounded by `_rectifyDeps.timeoutMs` so a wedged acpx cannot stall the
+ * rectification pipeline — the timeout path falls through to the swallow, so
+ * the best-effort contract is preserved end-to-end.
  */
-async function closeStaleAcpSession(worktreePath: string, sessionName: string): Promise<void> {
+export async function closeStaleAcpSession(worktreePath: string, sessionName: string): Promise<void> {
   const logger = getSafeLogger();
   try {
-    const { typedSpawn } = await import("../utils/bun-deps");
     const cmd = ["acpx", "--cwd", worktreePath, "claude", "sessions", "close", sessionName];
     logger?.debug("parallel", "Closing stale ACP session before rectification", { sessionName });
-    const proc = typedSpawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const proc = _rectifyDeps.typedSpawn(cmd, { stdout: "pipe", stderr: "pipe" });
+
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      _rectifyDeps.killProcessGroup(proc.pid, "SIGKILL");
+    }, _rectifyDeps.timeoutMs);
+
     await proc.exited;
+    clearTimeout(timer);
+
+    if (timedOut) {
+      logger?.debug("parallel", "Stale ACP session eviction timed out — swallowed (best-effort)", {
+        sessionName,
+        timeoutMs: _rectifyDeps.timeoutMs,
+      });
+    }
   } catch {
-    // Best-effort — session may already be gone
+    // Best-effort — session may already be gone, or acpx itself may be
+    // unavailable in this environment. The deadline above is the only path
+    // that lets the eviction settle in finite time.
   }
 }
 

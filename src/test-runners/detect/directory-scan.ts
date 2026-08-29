@@ -7,6 +7,7 @@
  * This tier runs last — only when Tiers 1–3 produce no results.
  */
 
+import { killProcessGroup } from "@/utils/process-kill";
 import type { DetectionSource } from "./types";
 
 /** Well-known test directory names to probe */
@@ -14,6 +15,16 @@ const WELL_KNOWN_TEST_DIRS = ["test", "tests", "__tests__", "spec", "specs"] as 
 
 /** Directories to skip when scanning for extensions */
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage", ".nax"]);
+
+/**
+ * Hard deadline on the per-directory `git ls-files` so a wedged git (NFS /
+ * lock contention) does not stall Tier 4 detection indefinitely. Mirrors
+ * `gitWithTimeout` in `src/utils/git.ts` and `_fileScanDeps.timeoutMs` in
+ * `file-scan.ts`: SIGKILL the process group on expiry, degrade to the empty
+ * listing (the existing "directory exists but is empty" fallback glob still
+ * fires downstream, so the tier still emits a non-null source).
+ */
+const DIRECTORY_SCAN_GIT_TIMEOUT_MS = 10_000;
 
 /** Injectable deps for testability */
 export const _directoryScanDeps = {
@@ -29,11 +40,15 @@ export const _directoryScanDeps = {
     }
   },
   spawn: Bun.spawn as typeof Bun.spawn,
+  killProcessGroup,
+  timeoutMs: DIRECTORY_SCAN_GIT_TIMEOUT_MS,
 };
 
 /**
  * List files in a directory recursively using git ls-files scoped to the dir.
- * Falls back to Bun.glob when not a git repo.
+ * Falls back to Bun.glob when not a git repo, when `git ls-files` exits
+ * non-zero, or when it exceeds its hard deadline (the SIGKILL-on-expiry
+ * contract degrades to the same empty listing the non-zero exit produces).
  */
 async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
   try {
@@ -42,16 +57,34 @@ async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
       stdout: "pipe",
       stderr: "pipe",
     });
+
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      _directoryScanDeps.killProcessGroup(proc.pid, "SIGKILL");
+    }, _directoryScanDeps.timeoutMs);
+
+    // Drain concurrently with the exit wait — a child that fills its pipe's OS
+    // buffer before being read would otherwise block on the write and never
+    // reach `exited`, defeating the SIGKILL the timeout relies on.
+    const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+    const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+
     const exitCode = await proc.exited;
-    if (exitCode === 0) {
-      const output = await new Response(proc.stdout).text();
-      return output.split("\n").filter(Boolean);
+    clearTimeout(timer);
+
+    if (!timedOut && exitCode === 0) {
+      const stdout = await stdoutPromise;
+      void (await stderrPromise);
+      return stdout.split("\n").filter(Boolean);
     }
   } catch {
     // fall through to glob
   }
 
-  // Glob fallback (non-git workdir, e.g. test fixtures)
+  // Glob fallback (non-git workdir, e.g. test fixtures) — also reached when
+  // git ls-files times out or fails, since the empty listing here lets the
+  // caller's `${dir}/**/*` fallback glob still fire.
   const glob = new Bun.Glob(`${dir}/**/*`);
   const files: string[] = [];
   for await (const f of glob.scan({ cwd: workdir, onlyFiles: true })) {

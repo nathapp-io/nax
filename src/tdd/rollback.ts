@@ -3,14 +3,72 @@ import { join } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { autoCommitIfDirty, getGitRoot, getUntrackedPaths } from "../utils/git";
+import { killProcessGroup } from "../utils/process-kill";
+
+/**
+ * Hard deadline on the bare git subprocesses in this module (`git reset --hard`
+ * and `git rev-parse HEAD`). Every other git call in this file already routes
+ * through `gitWithTimeout` in `src/utils/git.ts`; these two were the last
+ * unbounded git spawns in the TDD rollback path (a wedged git could stall a
+ * story's rollback / snapshot indefinitely). Mirrors the SIGKILL-after-timeout
+ * pattern from `gitWithTimeout`, `_isolationDeps.timeoutMs`, and
+ * `worktree/dependencies.ts`. Tests inject a short value via
+ * `_rollbackDeps.timeoutMs`.
+ */
+const ROLLBACK_GIT_TIMEOUT_MS = 10_000;
 
 export const _rollbackDeps = {
   spawn: Bun.spawn as typeof Bun.spawn,
+  killProcessGroup,
   autoCommitIfDirty,
   getUntrackedPaths,
   getGitRoot,
   rm,
+  timeoutMs: ROLLBACK_GIT_TIMEOUT_MS,
 };
+
+/**
+ * Run a single git argv with a hard SIGKILL-after-timeout deadline so a wedged
+ * git cannot stall the caller indefinitely. On timeout, the whole process group
+ * is killed and the helper resolves with `{ timedOut: true, exitCode: -1, stderr: "", stdout: "" }`
+ * — the caller treats that as a rollback / snapshot failure and surfaces the
+ * appropriate error. Mirrors `gitWithTimeout`'s mechanism but returns a
+ * sentinel `timedOut` flag rather than degrading silently, since both
+ * `rollbackToRef` and `captureSnapshotRef` are required to surface a real
+ * failure to the verdict path (BUG-07 / ADR-024).
+ */
+async function runGitBounded(
+  args: string[],
+  workdir: string,
+): Promise<{ exitCode: number; stderr: string; stdout: string; timedOut: boolean }> {
+  const proc = _rollbackDeps.spawn(["git", ...args], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    _rollbackDeps.killProcessGroup(proc.pid, "SIGKILL");
+  }, _rollbackDeps.timeoutMs);
+
+  // Drain concurrently with the exit wait — a child that fills its pipe's OS
+  // buffer before being read would otherwise block on the write and never
+  // reach `exited`, defeating the SIGKILL the timeout relies on.
+  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+
+  const exitCode = await proc.exited;
+  clearTimeout(timer);
+
+  if (timedOut) {
+    return { exitCode: -1, stderr: "", stdout: "", timedOut: true };
+  }
+
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+  return { exitCode, stderr, stdout, timedOut: false };
+}
 
 /**
  * Rollback git changes to a specific ref.
@@ -31,16 +89,20 @@ export async function rollbackToRef(workdir: string, ref: string, untrackedBefor
   const logger = getLogger();
   logger.warn("tdd", "Rolling back git changes", { ref });
 
-  const resetProc = _rollbackDeps.spawn(["git", "reset", "--hard", ref], {
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [exitCode, resetStderr] = await Promise.all([resetProc.exited, new Response(resetProc.stderr).text()]);
+  const { exitCode, stderr, timedOut } = await runGitBounded(["reset", "--hard", ref], workdir);
+  if (timedOut) {
+    logger.error("tdd", "Git rollback timed out — wedged git killed", {
+      ref,
+      timeoutMs: _rollbackDeps.timeoutMs,
+    });
+    // AC-3: the rollback surface must reject with a plain Error (not NaxError),
+    // and its message must name the rollback failure so the verdict path's
+    // existing error-classification logic sees what it expects.
+    throw new Error(`Git rollback failed: timed out after ${_rollbackDeps.timeoutMs}ms`); // nax-lint-allow: plain-error
+  }
   if (exitCode !== 0) {
-    logger.error("tdd", "Failed to rollback git changes", { ref, stderr: resetStderr });
-    throw new Error(`Git rollback failed: ${resetStderr}`);
+    logger.error("tdd", "Failed to rollback git changes", { ref, stderr });
+    throw new Error(`Git rollback failed: ${stderr}`);
   }
 
   if (untrackedBefore === null) {
@@ -90,9 +152,14 @@ export interface SnapshotRef {
  */
 export async function captureSnapshotRef(workdir: string, storyId: string): Promise<SnapshotRef> {
   await _rollbackDeps.autoCommitIfDirty(workdir, "non-blocking-fix-snapshot", "snapshot", storyId);
-  const proc = _rollbackDeps.spawn(["git", "rev-parse", "HEAD"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, shaRaw] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-  const sha = shaRaw.trim();
+  const { exitCode, stdout, timedOut } = await runGitBounded(["rev-parse", "HEAD"], workdir);
+  if (timedOut) {
+    throw new NaxError(
+      `git rev-parse HEAD timed out after ${_rollbackDeps.timeoutMs}ms in non-blocking-fix snapshot`,
+      "SNAPSHOT_REF_FAILED",
+      { storyId, workdir, stage: "non-blocking-fix-snapshot", timeoutMs: _rollbackDeps.timeoutMs },
+    );
+  }
   if (exitCode !== 0) {
     throw new NaxError("git rev-parse HEAD failed in non-blocking-fix snapshot", "SNAPSHOT_REF_FAILED", {
       storyId,
@@ -101,5 +168,5 @@ export async function captureSnapshotRef(workdir: string, storyId: string): Prom
     });
   }
   const untrackedBefore = await _rollbackDeps.getUntrackedPaths(workdir);
-  return { sha, untrackedBefore };
+  return { sha: stdout.trim(), untrackedBefore };
 }

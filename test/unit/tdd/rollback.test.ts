@@ -8,8 +8,8 @@
  * calls instead of shelling out to `git clean`.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { assertCaughtInstanceOf, makeSpawn } from "@test/helpers";
-import { _rollbackDeps, rollbackToRef } from "@/tdd/rollback";
+import { assertCaughtInstanceOf, assertNaxError, makeSpawn, makeSpawnResult } from "@test/helpers";
+import { _rollbackDeps, captureSnapshotRef, rollbackToRef } from "@/tdd/rollback";
 import { byCodePoint } from "@/utils/sort";
 
 function makeResetSpawn(exitCode = 0) {
@@ -175,5 +175,131 @@ describe("rollbackToRef", () => {
     await rollbackToRef("/repo", "HEAD~1", []);
 
     expect(removed).toEqual(["/repo/stray.ts"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Subprocess-deadline tests — a wedged `git reset --hard` or `git rev-parse
+// HEAD` must not leave rollbackToRef / captureSnapshotRef pending. They mirror
+// the established SIGKILL-after-timeout pattern from gitWithTimeout /
+// _isolationDeps: armed timer → killProcessGroup(proc.pid, "SIGKILL") on
+// expiry → caller settles.
+// ---------------------------------------------------------------------------
+
+describe("rollbackToRef — bounded `git reset --hard` (hang-path)", () => {
+  let origSpawn: typeof _rollbackDeps.spawn;
+  let origGetUntrackedPaths: typeof _rollbackDeps.getUntrackedPaths;
+  let origTimeoutMs: typeof _rollbackDeps.timeoutMs;
+  let origKillProcessGroup: typeof _rollbackDeps.killProcessGroup;
+  let killedPid: number | undefined;
+  let killedSignal: NodeJS.Signals | number | undefined;
+
+  beforeEach(() => {
+    origSpawn = _rollbackDeps.spawn;
+    origGetUntrackedPaths = _rollbackDeps.getUntrackedPaths;
+    origTimeoutMs = _rollbackDeps.timeoutMs;
+    origKillProcessGroup = _rollbackDeps.killProcessGroup;
+    killedPid = undefined;
+    killedSignal = undefined;
+  });
+
+  afterEach(() => {
+    _rollbackDeps.spawn = origSpawn;
+    _rollbackDeps.getUntrackedPaths = origGetUntrackedPaths;
+    _rollbackDeps.timeoutMs = origTimeoutMs;
+    _rollbackDeps.killProcessGroup = origKillProcessGroup;
+  });
+
+  test("rejects rather than remaining pending when `git reset --hard` never exits", async () => {
+    _rollbackDeps.timeoutMs = 50;
+    const proc = makeSpawnResult({ hang: true, pid: 7777, killResolvesExited: true });
+    _rollbackDeps.spawn = makeSpawn(() => proc).spawn;
+    _rollbackDeps.killProcessGroup = ((pid, signal) => {
+      killedPid = pid;
+      killedSignal = signal;
+      // Simulate the OS reaping the process once its group is killed —
+      // `proc.exited` resolves via `killResolvesExited`, mirroring
+      // worktree/dependencies.test.ts.
+      proc.kill();
+      return true;
+    }) as typeof _rollbackDeps.killProcessGroup;
+
+    let thrown: unknown;
+    try {
+      await rollbackToRef("/repo", "HEAD~1", null);
+    } catch (err) {
+      thrown = err;
+    }
+    assertCaughtInstanceOf(thrown, Error, "rollbackToRef rejection on hang");
+    // Message must name the rollback failure — caller-facing diagnostic.
+    expect((thrown as Error).message).toMatch(/rollback/i);
+    // The hung child must be killed via the process group (matches
+    // verification/executor.ts and worktree/dependencies.ts).
+    expect(killedPid).toBe(7777);
+    expect(killedSignal).toBe("SIGKILL");
+  });
+
+  test("does not invoke untracked cleanup when the reset hung (the reset already failed)", async () => {
+    _rollbackDeps.timeoutMs = 50;
+    let getUntrackedCalled = false;
+    const proc = makeSpawnResult({ hang: true, pid: 7778, killResolvesExited: true });
+    _rollbackDeps.spawn = makeSpawn(() => proc).spawn;
+    _rollbackDeps.killProcessGroup = (() => {
+      proc.kill();
+      return true;
+    }) as typeof _rollbackDeps.killProcessGroup;
+    _rollbackDeps.getUntrackedPaths = async () => {
+      getUntrackedCalled = true;
+      return [];
+    };
+
+    try {
+      await rollbackToRef("/repo", "HEAD~1", []);
+    } catch {
+      // Expected — the rejection itself is what the test above asserts on.
+    }
+
+    expect(getUntrackedCalled).toBe(false);
+  });
+});
+
+describe("captureSnapshotRef — bounded `git rev-parse HEAD` (hang-path)", () => {
+  let origSpawn: typeof _rollbackDeps.spawn;
+  let origTimeoutMs: typeof _rollbackDeps.timeoutMs;
+  let origKillProcessGroup: typeof _rollbackDeps.killProcessGroup;
+  let killedPid: number | undefined;
+
+  beforeEach(() => {
+    origSpawn = _rollbackDeps.spawn;
+    origTimeoutMs = _rollbackDeps.timeoutMs;
+    origKillProcessGroup = _rollbackDeps.killProcessGroup;
+    killedPid = undefined;
+  });
+
+  afterEach(() => {
+    _rollbackDeps.spawn = origSpawn;
+    _rollbackDeps.timeoutMs = origTimeoutMs;
+    _rollbackDeps.killProcessGroup = origKillProcessGroup;
+  });
+
+  test("rejects with NaxError code SNAPSHOT_REF_FAILED when `git rev-parse HEAD` never exits", async () => {
+    _rollbackDeps.timeoutMs = 50;
+    const proc = makeSpawnResult({ hang: true, pid: 8888, killResolvesExited: true });
+    _rollbackDeps.spawn = makeSpawn(() => proc).spawn;
+    _rollbackDeps.killProcessGroup = ((pid) => {
+      killedPid = pid;
+      proc.kill();
+      return true;
+    }) as typeof _rollbackDeps.killProcessGroup;
+
+    let thrown: unknown;
+    try {
+      await captureSnapshotRef("/repo", "US-001");
+    } catch (err) {
+      thrown = err;
+    }
+    assertNaxError(thrown, "captureSnapshotRef rejection on hang");
+    expect((thrown as { code: string }).code).toBe("SNAPSHOT_REF_FAILED");
+    expect(killedPid).toBe(8888);
   });
 });
