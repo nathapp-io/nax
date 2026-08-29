@@ -57,14 +57,33 @@ export async function closeStaleAcpSession(worktreePath: string, sessionName: st
     logger?.debug("parallel", "Closing stale ACP session before rectification", { sessionName });
     const proc = _rectifyDeps.typedSpawn(cmd, { stdout: "pipe", stderr: "pipe" });
 
+    // Race `proc.exited` against the deadline with a `settled` flag the timer
+    // resolves directly — we do NOT rely on SIGKILL causing `proc.exited` to
+    // settle, because that side-effect is an implementation detail of the
+    // child and not part of the contract this helper guarantees. Mirrors the
+    // defensive `awaitProcExit` shape from `src/execution/pid-registry.ts` so
+    // AC-5 holds even when the child does not reap its own exited promise
+    // after the OS sends SIGKILL.
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      _rectifyDeps.killProcessGroup(proc.pid, "SIGKILL");
-    }, _rectifyDeps.timeoutMs);
-
-    await proc.exited;
-    clearTimeout(timer);
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          _rectifyDeps.killProcessGroup(proc.pid, "SIGKILL");
+        } catch {
+          // Process may have already exited; the deadline below still wins.
+        }
+        finish();
+      }, _rectifyDeps.timeoutMs);
+      proc.exited.then(finish, finish);
+    });
 
     if (timedOut) {
       logger?.debug("parallel", "Stale ACP session eviction timed out — swallowed (best-effort)", {

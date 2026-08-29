@@ -212,15 +212,19 @@ describe("rollbackToRef — bounded `git reset --hard` (hang-path)", () => {
 
   test("rejects rather than remaining pending when `git reset --hard` never exits", async () => {
     _rollbackDeps.timeoutMs = 50;
-    const proc = makeSpawnResult({ hang: true, pid: 7777, killResolvesExited: true });
+    // Adversarial: SIGKILL is sent but `proc.exited` stays pending — the
+    // implementation MUST settle from the deadline itself, not from the SIGKILL
+    // side-effect. `killResolvesExited` is intentionally FALSE so the timer,
+    // not the kill, drives the race resolution.
+    const proc = makeSpawnResult({ hang: true, pid: 7777 });
     _rollbackDeps.spawn = makeSpawn(() => proc).spawn;
     _rollbackDeps.killProcessGroup = ((pid, signal) => {
       killedPid = pid;
       killedSignal = signal;
-      // Simulate the OS reaping the process once its group is killed —
-      // `proc.exited` resolves via `killResolvesExited`, mirroring
-      // worktree/dependencies.test.ts.
-      proc.kill();
+      // Intentionally NOT calling proc.kill() — the AC requires the rollback
+      // to settle (reject) regardless of what the SIGKILL signal does to
+      // `proc.exited`. An implementation that awaits `proc.exited` after the
+      // kill would hang here.
       return true;
     }) as typeof _rollbackDeps.killProcessGroup;
 
@@ -232,7 +236,7 @@ describe("rollbackToRef — bounded `git reset --hard` (hang-path)", () => {
     }
     assertCaughtInstanceOf(thrown, Error, "rollbackToRef rejection on hang");
     // Message must name the rollback failure — caller-facing diagnostic.
-    expect((thrown as Error).message).toMatch(/rollback/i);
+    expect(thrown.message).toMatch(/rollback/i);
     // The hung child must be killed via the process group (matches
     // verification/executor.ts and worktree/dependencies.ts).
     expect(killedPid).toBe(7777);
@@ -242,12 +246,12 @@ describe("rollbackToRef — bounded `git reset --hard` (hang-path)", () => {
   test("does not invoke untracked cleanup when the reset hung (the reset already failed)", async () => {
     _rollbackDeps.timeoutMs = 50;
     let getUntrackedCalled = false;
-    const proc = makeSpawnResult({ hang: true, pid: 7778, killResolvesExited: true });
+    // Adversarial: SIGKILL is sent but `proc.exited` stays pending — see
+    // the AC-3 test above for the rationale. `killResolvesExited` is
+    // intentionally FALSE.
+    const proc = makeSpawnResult({ hang: true, pid: 7778 });
     _rollbackDeps.spawn = makeSpawn(() => proc).spawn;
-    _rollbackDeps.killProcessGroup = (() => {
-      proc.kill();
-      return true;
-    }) as typeof _rollbackDeps.killProcessGroup;
+    _rollbackDeps.killProcessGroup = (() => true) as typeof _rollbackDeps.killProcessGroup;
     _rollbackDeps.getUntrackedPaths = async () => {
       getUntrackedCalled = true;
       return [];
@@ -284,11 +288,18 @@ describe("captureSnapshotRef — bounded `git rev-parse HEAD` (hang-path)", () =
 
   test("rejects with NaxError code SNAPSHOT_REF_FAILED when `git rev-parse HEAD` never exits", async () => {
     _rollbackDeps.timeoutMs = 50;
-    const proc = makeSpawnResult({ hang: true, pid: 8888, killResolvesExited: true });
+    // Adversarial: SIGKILL is sent but `proc.exited` stays pending — the
+    // implementation MUST settle from the deadline itself, not from the SIGKILL
+    // side-effect. `killResolvesExited` is intentionally FALSE so the timer,
+    // not the kill, drives the race resolution.
+    const proc = makeSpawnResult({ hang: true, pid: 8888 });
     _rollbackDeps.spawn = makeSpawn(() => proc).spawn;
     _rollbackDeps.killProcessGroup = ((pid) => {
       killedPid = pid;
-      proc.kill();
+      // Intentionally NOT calling proc.kill() — the AC requires the snapshot
+      // to settle (reject) regardless of what the SIGKILL signal does to
+      // `proc.exited`. An implementation that awaits `proc.exited` after the
+      // kill would hang here.
       return true;
     }) as typeof _rollbackDeps.killProcessGroup;
 
@@ -299,7 +310,7 @@ describe("captureSnapshotRef — bounded `git rev-parse HEAD` (hang-path)", () =
       thrown = err;
     }
     assertNaxError(thrown, "captureSnapshotRef rejection on hang");
-    expect((thrown as { code: string }).code).toBe("SNAPSHOT_REF_FAILED");
+    expect(thrown.code).toBe("SNAPSHOT_REF_FAILED");
     expect(killedPid).toBe(8888);
   });
 });

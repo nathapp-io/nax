@@ -510,13 +510,18 @@ describe("detectFromFileScan — bounded `git ls-files` (hang-path)", () => {
 
   test("settles to null when `git ls-files` never exits (AC-1)", async () => {
     _fileScanDeps.timeoutMs = 50;
-    const proc = makeSpawnResult({ hang: true, pid: 5555, killResolvesExited: true });
+    // Adversarial: SIGKILL is sent but `proc.exited` stays pending — the
+    // implementation MUST settle from the deadline itself, not from the SIGKILL
+    // side-effect. `killResolvesExited` is intentionally FALSE so the timer,
+    // not the kill, drives the race resolution.
+    const proc = makeSpawnResult({ hang: true, pid: 5555 });
     _fileScanDeps.spawn = makeSpawn(() => proc).spawn;
     _fileScanDeps.killProcessGroup = ((pid) => {
       killedPid = pid;
-      // Simulate OS reaping the process once the group is killed —
-      // `killResolvesExited` resolves the `proc.exited` promise.
-      proc.kill();
+      // Intentionally NOT calling proc.kill() — this exercises the AC's
+      // "settles regardless of what the SIGKILL signal does to exited"
+      // contract. If the implementation relies on SIGKILL resolving
+      // proc.exited, this test would hang and timeout.
       return true;
     }) as typeof _fileScanDeps.killProcessGroup;
 
@@ -558,11 +563,17 @@ describe("detectFromDirectoryScan — bounded `git ls-files` (hang-path)", () =>
       await Bun.write(join(workdir, "test", ".keep"), "");
       // Pretend `test/` exists — the detector must still settle, not hang.
       _directoryScanDeps.dirExists = mock(async (path: string) => path.endsWith("/test"));
-      const proc = makeSpawnResult({ hang: true, pid: 6666, killResolvesExited: true });
+      // Adversarial: SIGKILL is sent but `proc.exited` stays pending — the
+      // implementation MUST settle from the deadline itself, not from the
+      // SIGKILL side-effect. `killResolvesExited` is intentionally FALSE so
+      // the timer, not the kill, drives the race resolution.
+      const proc = makeSpawnResult({ hang: true, pid: 6666 });
       _directoryScanDeps.spawn = makeSpawn(() => proc).spawn;
       _directoryScanDeps.killProcessGroup = ((pid) => {
         killedPid = pid;
-        proc.kill();
+        // Intentionally NOT calling proc.kill() — see the AC-1 test for the
+        // rationale. This exercises the AC's "settles regardless of what the
+        // SIGKILL signal does to exited" contract.
         return true;
       }) as typeof _directoryScanDeps.killProcessGroup;
 

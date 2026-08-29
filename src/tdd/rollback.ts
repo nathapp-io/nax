@@ -32,10 +32,15 @@ export const _rollbackDeps = {
  * git cannot stall the caller indefinitely. On timeout, the whole process group
  * is killed and the helper resolves with `{ timedOut: true, exitCode: -1, stderr: "", stdout: "" }`
  * — the caller treats that as a rollback / snapshot failure and surfaces the
- * appropriate error. Mirrors `gitWithTimeout`'s mechanism but returns a
- * sentinel `timedOut` flag rather than degrading silently, since both
- * `rollbackToRef` and `captureSnapshotRef` are required to surface a real
- * failure to the verdict path (BUG-07 / ADR-024).
+ * appropriate error.
+ *
+ * The deadline is enforced by a `settled` flag the timer resolves directly —
+ * we do NOT rely on SIGKILL causing `proc.exited` to settle, because that
+ * side-effect is an implementation detail of the child and not part of the
+ * contract this helper guarantees. Mirrors the defensive `awaitProcExit` shape
+ * from `src/execution/pid-registry.ts` rather than `gitWithTimeout`'s
+ * weaker "trust the kill signal" form, so AC-3 / AC-4 hold even when the child
+ * does not reap its own exited promise after the OS sends SIGKILL.
  */
 async function runGitBounded(
   args: string[],
@@ -47,20 +52,34 @@ async function runGitBounded(
     stderr: "pipe",
   });
 
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    _rollbackDeps.killProcessGroup(proc.pid, "SIGKILL");
-  }, _rollbackDeps.timeoutMs);
-
   // Drain concurrently with the exit wait — a child that fills its pipe's OS
   // buffer before being read would otherwise block on the write and never
   // reach `exited`, defeating the SIGKILL the timeout relies on.
   const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
   const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
-  const exitCode = await proc.exited;
-  clearTimeout(timer);
+  let timedOut = false;
+  let exitCode = -1;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (code: number): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      exitCode = code;
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        _rollbackDeps.killProcessGroup(proc.pid, "SIGKILL");
+      } catch {
+        // Process may have already exited; the deadline below still wins.
+      }
+      finish(-1);
+    }, _rollbackDeps.timeoutMs);
+    proc.exited.then(finish, () => finish(-1));
+  });
 
   if (timedOut) {
     return { exitCode: -1, stderr: "", stdout: "", timedOut: true };

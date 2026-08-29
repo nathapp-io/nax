@@ -58,11 +58,30 @@ async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
       stderr: "pipe",
     });
 
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      _directoryScanDeps.killProcessGroup(proc.pid, "SIGKILL");
-    }, _directoryScanDeps.timeoutMs);
+    // Race `proc.exited` against a hard deadline so a wedged child cannot stall
+    // the caller indefinitely. The timer resolves the race directly on expiry
+    // — we do NOT rely on SIGKILL causing `proc.exited` to settle, because
+    // that side-effect is an implementation detail of the child and not part
+    // of the contract this helper guarantees. Mirrors the defensive
+    // `awaitProcExit` shape from `src/execution/pid-registry.ts`.
+    const exitCode: number = await new Promise<number>((resolve) => {
+      let settled = false;
+      const finish = (code: number): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(code);
+      };
+      const timer = setTimeout(() => {
+        try {
+          _directoryScanDeps.killProcessGroup(proc.pid, "SIGKILL");
+        } catch {
+          // Process may have already exited; the deadline below still wins.
+        }
+        finish(-1);
+      }, _directoryScanDeps.timeoutMs);
+      proc.exited.then(finish, () => finish(-1));
+    });
 
     // Drain concurrently with the exit wait — a child that fills its pipe's OS
     // buffer before being read would otherwise block on the write and never
@@ -70,10 +89,7 @@ async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
     const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
     const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
-    const exitCode = await proc.exited;
-    clearTimeout(timer);
-
-    if (!timedOut && exitCode === 0) {
+    if (exitCode === 0) {
       const stdout = await stdoutPromise;
       void (await stderrPromise);
       return stdout.split("\n").filter(Boolean);

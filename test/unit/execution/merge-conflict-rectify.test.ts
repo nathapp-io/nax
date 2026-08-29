@@ -281,11 +281,18 @@ describe("closeStaleAcpSession — bounded `acpx sessions close` (hang-path)", (
 
   test("settles without raising when the `acpx sessions close` child never exits (AC-5)", async () => {
     _rectifyDeps.timeoutMs = 50;
-    const proc = makeSpawnResult({ hang: true, pid: 3333, killResolvesExited: true });
+    // Adversarial: SIGKILL is sent but `proc.exited` stays pending — the
+    // implementation MUST settle from the deadline itself, not from the SIGKILL
+    // side-effect. `killResolvesExited` is intentionally FALSE so the timer,
+    // not the kill, drives the race resolution.
+    const proc = makeSpawnResult({ hang: true, pid: 3333 });
     _rectifyDeps.typedSpawn = makeSpawn(() => proc).spawn as typeof _rectifyDeps.typedSpawn;
     _rectifyDeps.killProcessGroup = ((pid) => {
       killedPid = pid;
-      proc.kill();
+      // Intentionally NOT calling proc.kill() — the AC requires the eviction
+      // to settle (without raising) regardless of what the SIGKILL signal does
+      // to `proc.exited`. An implementation that awaits `proc.exited` after
+      // the kill would hang here.
       return true;
     }) as typeof _rectifyDeps.killProcessGroup;
 
