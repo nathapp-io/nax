@@ -1,6 +1,6 @@
 # Deep Code Review: @nathapp/nax (full codebase)
 
-**Date:** 2026-08-29 · **Revised:** 2026-08-29 (verification pass)
+**Date:** 2026-08-29 · **Revised:** 2026-08-29 (verification pass; status refreshed after #1767 merged)
 **Reviewer:** Subrina (AI)
 **Version:** 0.81.1-canary.1 (confirmed `package.json`)
 **Files:** 900 TS files in `src/` + `bin/` (confirmed: `find src bin -name '*.ts' | wc -l` → 900)
@@ -38,16 +38,16 @@ Finding count: 47 → **45** (BUG-1 and BUG-2 retracted and merged into one resi
 
 ---
 
-## Status — as of 2026-08-29, before `nax run`
+## Status — as of 2026-08-29, both tranches merged
 
 All 45 findings are accounted for below. Nothing is silently dropped: a finding is
-either shipped, queued in a spec, or deferred with a stated reason.
+either shipped or deferred with a stated reason.
 
 | | Count | Where it stands |
 |:---|---:|:---|
-| **Shipped** | 5 | PR [#1766](https://github.com/nathapp-io/nax/pull/1766), merged as `b78c75d28` |
-| **Queued** | 19 | `.nax/features/review-remediation-sweep/` — spec + PRD committed, 6 stories `pending`, run not started |
-| **Deferred** | 21 | Recorded here with reasons; see `## Out of Scope` in the sweep spec for the machine-readable form |
+| **Shipped — P0/P1** | 5 | PR [#1766](https://github.com/nathapp-io/nax/pull/1766), merged as `b78c75d28` |
+| **Shipped — sweep** | 19 | PR [#1767](https://github.com/nathapp-io/nax/pull/1767), merged as `10d95e332` — `nax run -f review-remediation-sweep`, 6/6 stories passed |
+| **Deferred** | 21 | Recorded here with reasons; a subset is now proposed as a second sweep (below) |
 
 ### Shipped — PR #1766
 
@@ -64,19 +64,24 @@ survive verification — a claimed exception-propagation path through `appendPro
 `pipelineEventBus.emit`, both of which swallow internally — and are recorded as rejected rather
 than fixed. The three real ones shipped in the same PR.
 
-### Queued — `review-remediation-sweep`
+### Shipped — PR #1767 (`review-remediation-sweep`)
 
 Six independent stories, 35 acceptance criteria, no dependency chain. Selection rule: a finding
 is in only if it changes a behaviour a runtime test can observe.
 
-| Story | Findings |
-|:---|:---|
-| US-001 — bounded subprocess deadlines | BUG-1r, BUG-5, BUG-16 |
-| US-002 — path and shape validation at boundaries | TYPE-18, SEC-11, SEC-26 |
-| US-003 — unrepresentable and forgeable values | BUG-9, BUG-35, SEC-33 |
-| US-004 — NaxError contract in the loaders | BUG-8, TYPE-32, STYLE-46 |
-| US-005 — truthful reporting | BUG-29, BUG-30, BUG-28, BUG-23, BUG-14 |
-| US-006 — acceptance pipeline | BUG-6, BUG-7 |
+**Run outcome** (`run-2026-08-29T07-57-51-812Z`): 6/6 passed, 8 iterations, 3 h 53 m, $46.76 of a
+$60 budget. Post-run acceptance passed. Post-run regression flagged `test/unit/config/dotenv.test.ts`
+and `test/unit/acceptance/hardening.test.ts`; both were reconciled before merge and are green on
+`main` (26 pass / 0 fail, re-run for this update).
+
+| Story | Findings | Cost |
+|:---|:---|---:|
+| US-001 — bounded subprocess deadlines | BUG-1r, BUG-5, BUG-16 | $19.36 |
+| US-002 — path and shape validation at boundaries | TYPE-18, SEC-11, SEC-26 | $2.81 |
+| US-003 — unrepresentable and forgeable values | BUG-9, BUG-35, SEC-33 | $9.02 |
+| US-004 — NaxError contract in the loaders | BUG-8, TYPE-32, STYLE-46 | $0.95 |
+| US-005 — truthful reporting | BUG-29, BUG-30, BUG-28, BUG-23, BUG-14 | $5.56 |
+| US-006 — acceptance pipeline | BUG-6, BUG-7 | $4.50 |
 
 Two rounds of auditing preceded the plan. A contradiction pass found three blockers — two
 acceptance criteria that were unsatisfiable or vacuous as written, and a three-way disagreement
@@ -97,7 +102,34 @@ have been authorised to touch. `bun run spec:lint` now catches that class before
 | PERF-19, PERF-31 | Performance work whose only honest acceptance criterion is a timing threshold; timing assertions are flaky in CI. |
 | STYLE-42, STYLE-43 | A deletion and a consolidation whose blast radius needs a human decision about what the code was for. |
 | STYLE-44 | 16 grandfathered oversized files — a standing ratchet, not a discrete fix. |
-| BUG-21, BUG-25, BUG-34, BUG-41, BUG-47, MEM-20, MEM-22, ENH-24, ENH-27, ENH-45 | Each individually valid and individually small. Excluded to hold the sweep spec at six stories, since story count drives run cost roughly linearly. They remain fully described in the LOW table below and are the natural content of a second sweep. |
+| ENH-45 | `resolvePermissions` failing **open** to `approve-all` when `permissionProfile` is unset is the documented default; the sibling `default:` arm failing *closed* to `approve-reads` is the same class of decision as SEC-12. Changing either disposition is a permission-contract choice, not remediation — deferred with SEC-12 for a human ruling. |
+| BUG-21, BUG-25, BUG-34, BUG-41, BUG-47, MEM-20, MEM-22, ENH-24, ENH-27 | Each individually valid and individually small. Excluded to hold the first sweep spec at six stories, since story count drives run cost roughly linearly. **Now proposed as the second sweep — see below.** |
+
+---
+
+## Proposed second sweep — `review-remediation-sweep-2`
+
+The nine small deferrals above, re-verified as still present on `main` at `10d95e332`. Every one
+changes a behaviour a runtime test can observe, which is the same selection rule the first sweep
+used. ENH-45 is held back by the permission-contract deferral above.
+
+Stories are grouped so that no two touch the same file — the first sweep's parallel batches merge
+per story, so file-disjoint stories cannot conflict.
+
+| Story | Findings | Files | Theme |
+|:---|:---|:---|:---|
+| US-001 | MEM-20, BUG-34 | `worktree/manager.ts`, `verification/smart-runner.ts` | Git failures swallowed into a success-shaped value (`catch {}`, `return []`) with no log |
+| US-002 | BUG-21, MEM-22 | `tdd/isolation.ts`, `tdd/cleanup.ts` | TDD subsystem: honour the discarded exit code; make the 3 s grace wait early-exit once the group is dead |
+| US-003 | ENH-24, BUG-41 | `cli/init-context.ts`, `context/test-scanner.ts` | Replace `mkdir`/`find`/`test -d` shell-outs with Bun-native `stat`/`mkdir`, and stop ignoring their exit codes |
+| US-004 | BUG-25, ENH-27 | `interaction/plugins/telegram.ts`, `…/webhook-serve-compat.ts` | Resolve at call time, not construction time; give the `fetch`/`Bun.serve` patch a restore function |
+| US-005 | BUG-47 | `agents/manager.ts`, `agents/retry/hop-retry-policy.ts`, `runtime/middleware/idle-watchdog.ts`, `agents/acp/spawn-client.ts` | Idle-watchdog defaults from `DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG` instead of three inline `?? 3` sites; `\|\|` → `??` so an explicit `0` survives |
+
+**Path corrections found while re-verifying:** BUG-47's second site is
+`src/agents/retry/hop-retry-policy.ts`, not `src/retry/`; and there is a **third** inline `?? 3` at
+`src/runtime/middleware/idle-watchdog.ts:213` the original finding missed.
+
+Five stories against the first sweep's six, and all nine findings are LOW rather than
+HIGH/MEDIUM — expect materially under the first sweep's $46.76.
 
 ---
 
@@ -504,14 +536,14 @@ JSON off disk, and the project's own config rule requires Zod at the boundary.
 ## Priority Fix Order
 
 The original priority ordering has been resolved into the status ledger above: P0 and P1
-shipped in #1766, and P2/P3 were triaged into the `review-remediation-sweep` spec or deferred
-with a reason. What remains open, in the order it will be worked:
+shipped in #1766, and P2/P3 were triaged into the `review-remediation-sweep` spec (shipped in
+#1767) or deferred with a reason. What remains open, in the order it will be worked:
 
 | Order | Where | Contents |
 |:---|:---|:---|
-| Next | `nax run -f review-remediation-sweep` | The 19 queued findings, as six independent stories |
-| After | A second sweep spec | The ten small deferrals (BUG-21, BUG-25, BUG-34, BUG-41, BUG-47, MEM-20, MEM-22, ENH-24, ENH-27, ENH-45) |
-| Human input needed | — | BUG-15 (a current price list) and SEC-12 (a permission-contract decision) |
+| Done | PR #1766 → #1767 | The 5 P0/P1 fixes, then the 19 sweep findings as six independent stories |
+| Next | `review-remediation-sweep-2` | The nine remaining small deferrals, as five file-disjoint stories (see above) |
+| Human input needed | — | BUG-15 (a current price list) and SEC-12 + ENH-45 (permission-contract decisions) |
 | Standing | — | STYLE-44's oversized-file ratchet; the type-only and timing-bound findings, which want a different verification approach than a runtime AC |
 
 ---
