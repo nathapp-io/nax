@@ -11,6 +11,32 @@
 import { killProcessGroup } from "@/utils/process-kill";
 import type { DetectionSource } from "./types";
 
+/**
+ * Sentinel returned by {@link raceWithDeadline} when the deadline wins. Mirrors
+ * the DRAIN_TIMEOUT symbol in `src/verification/executor.ts` — duplicated here
+ * because routing the import through `@/verification`'s barrel would create a
+ * runtime cycle (`verification/flake-baseline-diff.ts` already pulls from
+ * `test-runners`, closing the loop on detect/). Local copy keeps the cycle
+ * ratchet at its baseline.
+ */
+const DRAIN_TIMEOUT = Symbol("drain-timeout");
+
+/**
+ * Race `p` against a `deadlineMs` setTimeout. The timer resolves directly with
+ * DRAIN_TIMEOUT — we do NOT rely on `p` settling itself. Mirrors the helper
+ * in `src/verification/executor.ts`. Local copy for the same cycle-ratchet
+ * reason as DRAIN_TIMEOUT above.
+ */
+function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<T | typeof DRAIN_TIMEOUT> {
+  const timer = { id: undefined as ReturnType<typeof setTimeout> | undefined };
+  const timeoutP = new Promise<typeof DRAIN_TIMEOUT>((r) => {
+    timer.id = setTimeout(() => r(DRAIN_TIMEOUT), deadlineMs);
+  });
+  return Promise.race([p, timeoutP]).finally(() => {
+    if (timer.id !== undefined) clearTimeout(timer.id);
+  });
+}
+
 /** Directories excluded from file scan */
 const EXCLUDED_DIR_PREFIXES = ["node_modules/", "dist/", "build/", ".nax/", "coverage/", ".git/"];
 
@@ -27,6 +53,16 @@ const MIN_FRACTION_THRESHOLD = 0.1;
  * contract. Tests inject a short value via `_fileScanDeps.timeoutMs`.
  */
 const FILE_SCAN_GIT_TIMEOUT_MS = 10_000;
+
+/**
+ * Cap on the stdout/stderr drain after proc.exited resolves. proc.exited only
+ * signals the direct child exiting — a grandchild that inherited the pipe
+ * write-end keeps the streams open indefinitely. Without a deadline, the
+ * drain itself becomes the new stall point. Mirrors the drainTimeoutMs in
+ * verification/executor.ts (BUG-2). Tests inject a short value via
+ * `_fileScanDeps.drainTimeoutMs`.
+ */
+const FILE_SCAN_DRAIN_TIMEOUT_MS = 2_000;
 
 /** Common test-file suffix patterns to look for */
 const CANDIDATE_SUFFIXES = [
@@ -67,6 +103,7 @@ export const _fileScanDeps = {
   spawn: Bun.spawn as typeof Bun.spawn,
   killProcessGroup,
   timeoutMs: FILE_SCAN_GIT_TIMEOUT_MS,
+  drainTimeoutMs: FILE_SCAN_DRAIN_TIMEOUT_MS,
 };
 
 /**
@@ -81,6 +118,14 @@ async function gitLsFiles(workdir: string): Promise<string[]> {
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
+      // Bun.spawn does not setpgid children into their own group by default, so
+      // killProcessGroup(-pid) on timeout would hit ESRCH and fall back to
+      // killing only the direct child (leaking any grandchildren — git's own
+      // subprocesses, an NFS-handle helper, etc.). `detached` makes this
+      // process a session/group leader via setsid(), so its own PID IS the
+      // real pgid. Matches the established pattern in verification/executor.ts
+      // and worktree/dependencies.ts.
+      detached: true,
     });
 
     // Race `proc.exited` against a hard deadline so a wedged child cannot stall
@@ -117,8 +162,17 @@ async function gitLsFiles(workdir: string): Promise<string[]> {
     if (exitCode === -1) return [];
     if (exitCode !== 0) return [];
 
-    const stdout = await stdoutPromise;
-    void (await stderrPromise);
+    // BUG-2-style: bound the drain. proc.exited resolves when the spawned git
+    // exits, NOT when all pipe write-ends close — a grandchild that inherited
+    // the write-end keeps the stream open. Mirrors verification/executor.ts
+    // (success path): raceWithDeadline caps the drain and a DRAIN_TIMEOUT
+    // result becomes "" in the assembled output.
+    const [out, err] = await Promise.all([
+      raceWithDeadline(stdoutPromise, _fileScanDeps.drainTimeoutMs),
+      raceWithDeadline(stderrPromise, _fileScanDeps.drainTimeoutMs),
+    ]);
+    const stdout = out !== DRAIN_TIMEOUT ? out : "";
+    void err; // stderr is uninteresting for file-scan; drain it for the side-effect
     return stdout.split("\n").filter(Boolean);
   } catch {
     return [];

@@ -55,7 +55,18 @@ export async function closeStaleAcpSession(worktreePath: string, sessionName: st
   try {
     const cmd = ["acpx", "--cwd", worktreePath, "claude", "sessions", "close", sessionName];
     logger?.debug("parallel", "Closing stale ACP session before rectification", { sessionName });
-    const proc = _rectifyDeps.typedSpawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const proc = _rectifyDeps.typedSpawn(cmd, {
+      stdout: "pipe",
+      stderr: "pipe",
+      // Bun.spawn does not setpgid children into their own group by default, so
+      // killProcessGroup(-pid) on timeout would hit ESRCH and fall back to
+      // killing only acpx itself (leaving any acpx-session-broker / agent
+      // descendants running against a worktree we're about to delete).
+      // `detached` makes this process a session/group leader via setsid(),
+      // so its own PID IS the real pgid. Matches the established pattern in
+      // verification/executor.ts and worktree/dependencies.ts.
+      detached: true,
+    });
 
     // Race `proc.exited` against the deadline with a `settled` flag the timer
     // resolves directly — we do NOT rely on SIGKILL causing `proc.exited` to

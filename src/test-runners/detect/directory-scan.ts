@@ -10,6 +10,32 @@
 import { killProcessGroup } from "@/utils/process-kill";
 import type { DetectionSource } from "./types";
 
+/**
+ * Sentinel returned by {@link raceWithDeadline} when the deadline wins. Mirrors
+ * the DRAIN_TIMEOUT symbol in `src/verification/executor.ts` — duplicated here
+ * because routing the import through `@/verification`'s barrel would create a
+ * runtime cycle (`verification/flake-baseline-diff.ts` already pulls from
+ * `test-runners`, closing the loop on detect/). Local copy keeps the cycle
+ * ratchet at its baseline.
+ */
+const DRAIN_TIMEOUT = Symbol("drain-timeout");
+
+/**
+ * Race `p` against a `deadlineMs` setTimeout. The timer resolves directly with
+ * DRAIN_TIMEOUT — we do NOT rely on `p` settling itself. Mirrors the helper
+ * in `src/verification/executor.ts`. Local copy for the same cycle-ratchet
+ * reason as DRAIN_TIMEOUT above.
+ */
+function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<T | typeof DRAIN_TIMEOUT> {
+  const timer = { id: undefined as ReturnType<typeof setTimeout> | undefined };
+  const timeoutP = new Promise<typeof DRAIN_TIMEOUT>((r) => {
+    timer.id = setTimeout(() => r(DRAIN_TIMEOUT), deadlineMs);
+  });
+  return Promise.race([p, timeoutP]).finally(() => {
+    if (timer.id !== undefined) clearTimeout(timer.id);
+  });
+}
+
 /** Well-known test directory names to probe */
 const WELL_KNOWN_TEST_DIRS = ["test", "tests", "__tests__", "spec", "specs"] as const;
 
@@ -25,6 +51,16 @@ const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage", 
  * fires downstream, so the tier still emits a non-null source).
  */
 const DIRECTORY_SCAN_GIT_TIMEOUT_MS = 10_000;
+
+/**
+ * Cap on the stdout/stderr drain after proc.exited resolves. proc.exited only
+ * signals the direct child exiting — a grandchild that inherited the pipe
+ * write-end keeps the streams open indefinitely. Without a deadline, the
+ * drain itself becomes the new stall point. Mirrors the drainTimeoutMs in
+ * verification/executor.ts (BUG-2). Tests inject a short value via
+ * `_directoryScanDeps.drainTimeoutMs`.
+ */
+const DIRECTORY_SCAN_DRAIN_TIMEOUT_MS = 2_000;
 
 /** Injectable deps for testability */
 export const _directoryScanDeps = {
@@ -42,6 +78,7 @@ export const _directoryScanDeps = {
   spawn: Bun.spawn as typeof Bun.spawn,
   killProcessGroup,
   timeoutMs: DIRECTORY_SCAN_GIT_TIMEOUT_MS,
+  drainTimeoutMs: DIRECTORY_SCAN_DRAIN_TIMEOUT_MS,
 };
 
 /**
@@ -56,6 +93,14 @@ async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
+      // Bun.spawn does not setpgid children into their own group by default, so
+      // killProcessGroup(-pid) on timeout would hit ESRCH and fall back to
+      // killing only the direct child (leaking any grandchildren — git's own
+      // subprocesses, an NFS-handle helper, etc.). `detached` makes this
+      // process a session/group leader via setsid(), so its own PID IS the
+      // real pgid. Matches the established pattern in verification/executor.ts
+      // and worktree/dependencies.ts.
+      detached: true,
     });
 
     // Race `proc.exited` against a hard deadline so a wedged child cannot stall
@@ -90,8 +135,16 @@ async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
     const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
     if (exitCode === 0) {
-      const stdout = await stdoutPromise;
-      void (await stderrPromise);
+      // BUG-2-style: bound the drain. proc.exited resolves when the spawned
+      // git exits, NOT when all pipe write-ends close — a grandchild that
+      // inherited the write-end keeps the stream open. Mirrors
+      // verification/executor.ts (success path).
+      const [out, err] = await Promise.all([
+        raceWithDeadline(stdoutPromise, _directoryScanDeps.drainTimeoutMs),
+        raceWithDeadline(stderrPromise, _directoryScanDeps.drainTimeoutMs),
+      ]);
+      const stdout = out !== DRAIN_TIMEOUT ? out : "";
+      void err; // stderr uninteresting for directory-scan; drain for the side-effect
       return stdout.split("\n").filter(Boolean);
     }
   } catch {

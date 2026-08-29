@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { autoCommitIfDirty, getGitRoot, getUntrackedPaths } from "../utils/git";
@@ -17,6 +18,16 @@ import { killProcessGroup } from "../utils/process-kill";
  */
 const ROLLBACK_GIT_TIMEOUT_MS = 10_000;
 
+/**
+ * Cap on the stdout/stderr drain after proc.exited resolves. proc.exited only
+ * signals the direct child exiting — a grandchild that inherited the pipe
+ * write-end keeps the streams open indefinitely. Without a deadline, the
+ * drain itself becomes the new stall point. Mirrors the drainTimeoutMs in
+ * verification/executor.ts (BUG-2). Tests inject a short value via
+ * `_rollbackDeps.drainTimeoutMs`.
+ */
+const ROLLBACK_DRAIN_TIMEOUT_MS = 2_000;
+
 export const _rollbackDeps = {
   spawn: Bun.spawn as typeof Bun.spawn,
   killProcessGroup,
@@ -25,6 +36,7 @@ export const _rollbackDeps = {
   getGitRoot,
   rm,
   timeoutMs: ROLLBACK_GIT_TIMEOUT_MS,
+  drainTimeoutMs: ROLLBACK_DRAIN_TIMEOUT_MS,
 };
 
 /**
@@ -45,16 +57,27 @@ export const _rollbackDeps = {
 async function runGitBounded(
   args: string[],
   workdir: string,
-): Promise<{ exitCode: number; stderr: string; stdout: string; timedOut: boolean }> {
+): Promise<{ exitCode: number; stderr: string; stdout: string; timedOut: boolean; drainFailed: boolean }> {
   const proc = _rollbackDeps.spawn(["git", ...args], {
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",
+    // Bun.spawn does not setpgid children into their own group by default, so
+    // killProcessGroup(-pid) on timeout would hit ESRCH and fall back to
+    // killing only the direct child (leaking any grandchildren — git's own
+    // subprocesses, an NFS-handle helper, etc.). `detached` makes this
+    // process a session/group leader via setsid(), so its own PID IS the
+    // real pgid. Matches the established pattern in verification/executor.ts
+    // and worktree/dependencies.ts.
+    detached: true,
   });
 
   // Drain concurrently with the exit wait — a child that fills its pipe's OS
   // buffer before being read would otherwise block on the write and never
-  // reach `exited`, defeating the SIGKILL the timeout relies on.
+  // reach `exited`, defeating the SIGKILL the timeout relies on. A `.catch()`
+  // is attached eagerly: a SIGKILL'd process can error its pipes, and an
+  // unawaited rejection would surface as an unhandled rejection and take the
+  // process down.
   const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
   const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
@@ -82,11 +105,26 @@ async function runGitBounded(
   });
 
   if (timedOut) {
-    return { exitCode: -1, stderr: "", stdout: "", timedOut: true };
+    return { exitCode: -1, stderr: "", stdout: "", timedOut: true, drainFailed: false };
   }
 
-  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
-  return { exitCode, stderr, stdout, timedOut: false };
+  // BUG-2-style: bound the drain. proc.exited only resolves when the spawned
+  // git exits, NOT when all pipe write-ends close — a grandchild that
+  // inherited the write-end keeps the streams open indefinitely. Mirror
+  // verification/executor.ts (success path): raceWithDeadline caps the
+  // drain, and a DRAIN_TIMEOUT result turns into "" in the assembled output
+  // while `drainFailed` reports that the cap was hit. captureSnapshotRef uses
+  // this flag to surface a real failure rather than silently returning an
+  // empty SHA, which would otherwise be indistinguishable from a successful
+  // snapshot of an empty repo.
+  const [out, err] = await Promise.all([
+    raceWithDeadline(stdoutPromise, _rollbackDeps.drainTimeoutMs),
+    raceWithDeadline(stderrPromise, _rollbackDeps.drainTimeoutMs),
+  ]);
+  const stdout = out !== DRAIN_TIMEOUT ? out : "";
+  const stderr = err !== DRAIN_TIMEOUT ? err : "";
+  const drainFailed = out === DRAIN_TIMEOUT || err === DRAIN_TIMEOUT;
+  return { exitCode, stderr, stdout, timedOut: false, drainFailed };
 }
 
 /**
@@ -171,7 +209,7 @@ export interface SnapshotRef {
  */
 export async function captureSnapshotRef(workdir: string, storyId: string): Promise<SnapshotRef> {
   await _rollbackDeps.autoCommitIfDirty(workdir, "non-blocking-fix-snapshot", "snapshot", storyId);
-  const { exitCode, stdout, timedOut } = await runGitBounded(["rev-parse", "HEAD"], workdir);
+  const { exitCode, stdout, timedOut, drainFailed } = await runGitBounded(["rev-parse", "HEAD"], workdir);
   if (timedOut) {
     throw new NaxError(
       `git rev-parse HEAD timed out after ${_rollbackDeps.timeoutMs}ms in non-blocking-fix snapshot`,
@@ -186,6 +224,22 @@ export async function captureSnapshotRef(workdir: string, storyId: string): Prom
       stage: "non-blocking-fix-snapshot",
     });
   }
+  // F6: an empty or partially-drained stdout is indistinguishable from a real
+  // empty-repo snapshot. Surface a real failure with SNAPSHOT_REF_FAILED so the
+  // verdict path sees the failure instead of an empty SHA that `rollbackToRef`
+  // would later reject with `git reset --hard ''`. The drain timeout bounds
+  // this path; the read-failure `.catch(() => "")` on stdoutPromise is the
+  // other way stdout can be empty here.
+  const sha = stdout.trim();
+  if (drainFailed || sha.length === 0) {
+    throw new NaxError(
+      drainFailed
+        ? `git rev-parse HEAD stdout drain exceeded ${_rollbackDeps.drainTimeoutMs}ms in non-blocking-fix snapshot`
+        : "git rev-parse HEAD returned an empty SHA in non-blocking-fix snapshot",
+      "SNAPSHOT_REF_FAILED",
+      { storyId, workdir, stage: "non-blocking-fix-snapshot", drainTimeoutMs: _rollbackDeps.drainTimeoutMs },
+    );
+  }
   const untrackedBefore = await _rollbackDeps.getUntrackedPaths(workdir);
-  return { sha: stdout.trim(), untrackedBefore };
+  return { sha, untrackedBefore };
 }
