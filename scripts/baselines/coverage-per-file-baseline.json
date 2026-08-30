@@ -1,33 +1,23 @@
 {
-  "updatedAt": "2026-08-30T10:03:06.257Z",
+  "updatedAt": "2026-08-30T10:28:35.523Z",
   "byFile": {
     "src/acceptance/content-loader.ts": 0,
     "src/agents/acp/adapter-close-physical.ts": 0.1071,
-    "src/agents/shared/validation.ts": 0.375,
     "src/cli/accept.ts": 0.0946,
     "src/cli/prompts-main.ts": 0.2818,
     "src/cli/prompts-shared.ts": 0,
     "src/cli/prompts-tdd.ts": 0.0441,
     "src/cli/setup-verify.ts": 0.0952,
     "src/cli/status-cost.ts": 0.378,
-    "src/commands/migrate.ts": 0.4579,
-    "src/context/injector.ts": 0.4974,
-    "src/debate/runner-stateful-helpers.ts": 0.3456,
-    "src/debate/utils.ts": 0.4583,
     "src/execution/iteration-runner.ts": 0.2618,
-    "src/interaction/bridge-builder.ts": 0.3103,
-    "src/interaction/plugins/cli.ts": 0.4067,
     "src/prompts/core/sections/findings.ts": 0,
     "src/prompts/loader.ts": 0.7727,
-    "src/review/lint-parsing/strategies/eslint-json.ts": 0.325,
-    "src/review/lint-parsing/strategies/ruff-annotated.ts": 0.34,
     "src/review/typecheck-parsing/strategies/text-block.ts": 0.4412,
     "src/tui/App.tsx": 0.7833,
     "src/tui/hooks/useAgentStreamEvents.ts": 0.1789,
     "src/tui/hooks/useKeyboard.ts": 0.5769,
     "src/tui/hooks/usePipelineEvents.ts": 0.6154,
     "src/utils/jsonl-tail.ts": 0,
-    "src/utils/nax-project-root.ts": 0.25,
-    "src/verification/runners.ts": 0.4825
+    "src/utils/nax-project-root.ts": 0.25
   }
 }
