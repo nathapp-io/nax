@@ -461,3 +461,44 @@ Also learned: `nax generate` does not sync `.claude/rules/` - that needs
 `nax rules export --agent=claude`, and `bun run check:rules-drift` is what catches it.
 
 All five gates green. Tranche T1 is now unblocked.
+
+### 8.3 - 2026-08-30 - drain complete, T1-T6
+
+All six tranches landed as six commits on `test/coverage-drain-T1`, off `main`:
+`0c43a0d26` (T1, 20 files), `dc7888846` (T2, 6 files), `cbd6b157e` (T3, 9 files),
+`bc79369dc` (T4, 10 files), `d237d379b` (T5, 6 files), `bd6df76f5` (T6, 6 files).
+57 of the 62 real targets needed dedicated work; 5 (`src/pipeline/stages/constitution.ts`,
+`src/cli/status-cost.ts`, `src/review/typecheck-parsing/strategies/text-block.ts`,
+`src/cli/prompts-shared.ts`, plus one more) crossed the floor for free as incidental
+side effects of earlier tranches exercising shared code paths, and needed no new tests
+by the time their tranche started.
+
+Final state, verified independently after all six tranches: `bun run test:coverage` exits
+0, aggregate **94.28%** lines / **90.49%** functions, and the per-file baseline holds
+exactly **5 entries** - all of them the documented permanent exemptions, none a drain
+target:
+
+```json
+{
+  "src/prompts/loader.ts": 0.7727,
+  "src/tui/App.tsx": 0.7833,
+  "src/tui/hooks/useAgentStreamEvents.ts": 0.1789,
+  "src/tui/hooks/useKeyboard.ts": 0.5769,
+  "src/tui/hooks/usePipelineEvents.ts": 0.6154
+}
+```
+
+`src/prompts/loader.ts` is the #1779 unmeasurable carry-forward (3.1) - not drained, not
+draggable, kept until the upstream Bun defect is fixed. The four `src/tui/**` entries are
+the UI-tier grandfathered files from section 7. Every other file in section 4's original
+62-file list is now at or above the 80% per-file floor.
+
+One correctness finding surfaced along the way, documented rather than fixed as out of
+scope for a coverage-only drain: `acceptCommand()` in `src/cli/accept.ts` passes
+`findProjectDir()`'s result (already the `.nax` directory) into `featureDir()`, which
+appends `.nax` again, producing a real path of `<root>/.nax/.nax/features/<feature>/prd.json`.
+Pinned as current behavior in `accept.test.ts`; worth its own issue.
+
+Each tranche's own commit body has the full before/after percentage table per file. This
+doc's job (draining the baseline to empty) is done; the tiering standard in section 1
+remains the living reference for what a reviewer holds new test PRs to.
