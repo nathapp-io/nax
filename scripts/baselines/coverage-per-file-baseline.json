@@ -1,16 +1,10 @@
 {
-  "updatedAt": "2026-08-30T10:50:53.697Z",
+  "updatedAt": "2026-08-30T11:02:42.888Z",
   "byFile": {
-    "src/acceptance/content-loader.ts": 0,
-    "src/cli/accept.ts": 0.0946,
-    "src/cli/prompts-tdd.ts": 0.0441,
-    "src/cli/setup-verify.ts": 0.0952,
-    "src/prompts/core/sections/findings.ts": 0,
     "src/prompts/loader.ts": 0.7727,
     "src/tui/App.tsx": 0.7833,
     "src/tui/hooks/useAgentStreamEvents.ts": 0.1789,
     "src/tui/hooks/useKeyboard.ts": 0.5769,
-    "src/tui/hooks/usePipelineEvents.ts": 0.6154,
-    "src/utils/jsonl-tail.ts": 0
+    "src/tui/hooks/usePipelineEvents.ts": 0.6154
   }
 }
