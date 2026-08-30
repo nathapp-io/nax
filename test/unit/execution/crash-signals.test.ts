@@ -6,9 +6,14 @@
  * removeListener can actually deregister it.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { SignalHandlerContext } from "@/execution/crash-signals";
-import { installSignalHandlers, performTeardown } from "@/execution/crash-signals";
+import {
+  _crashSignalsDeps,
+  FATAL_TEARDOWN_DEADLINE_MS,
+  installSignalHandlers,
+  performTeardown,
+} from "@/execution/crash-signals";
 import { PidRegistry } from "@/execution/pid-registry";
 import type { StatusWriter } from "@/execution/status-writer";
 
@@ -165,4 +170,110 @@ describe("installSignalHandlers", () => {
     cleanup = undefined;
     expect(process.listenerCount("SIGPIPE")).toBe(before);
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-37: every fatal handler arms a hard exit deadline, not just the signal one
+//
+// The signal path has always armed a 10 s deadline before teardown. The
+// uncaughtException and unhandledRejection paths ran the same teardown with no
+// deadline at all, and all three share one `shuttingDown` flag — so a teardown
+// that wedged after a crash hung the process *and* made a follow-up Ctrl+C a
+// no-op, because the signal handler sees the flag already set and returns.
+//
+// The handlers are driven directly here rather than by firing a real fatal
+// event: `onShutdown` never resolves, so each handler parks inside
+// performTeardown and never reaches its `process.exit`. That is exactly the
+// wedged-teardown state the deadline exists to break.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("fatal teardown deadline (BUG-37)", () => {
+  type FatalEvent = "uncaughtException" | "unhandledRejection" | "SIGTERM";
+  const HANDLER_EVENTS: FatalEvent[] = ["uncaughtException", "unhandledRejection", "SIGTERM"];
+
+  /** ctx whose teardown never completes — the wedge the deadline must escape. */
+  const hangingCtx: SignalHandlerContext = {
+    ...minimalCtx,
+    onShutdown: () => new Promise<void>(() => {}),
+  };
+
+  let scheduled: { delay: number; fire: () => void }[];
+  let realArmDeadline: (typeof _crashSignalsDeps)["armDeadline"];
+  let realExit: (typeof _crashSignalsDeps)["exit"];
+  let realStderrWrite: typeof process.stderr.write;
+
+  beforeEach(() => {
+    scheduled = [];
+    realArmDeadline = _crashSignalsDeps.armDeadline;
+    realExit = _crashSignalsDeps.exit;
+    _crashSignalsDeps.armDeadline = (fn, ms) => {
+      scheduled.push({ delay: ms, fire: fn });
+      return () => {};
+    };
+    // The handlers print a crash banner straight to stderr; swallow it so a
+    // deliberately-triggered crash does not read as a real failure in the run.
+    realStderrWrite = process.stderr.write;
+    process.stderr.write = (() => true) as typeof process.stderr.write;
+  });
+
+  afterEach(() => {
+    _crashSignalsDeps.armDeadline = realArmDeadline;
+    _crashSignalsDeps.exit = realExit;
+    process.stderr.write = realStderrWrite;
+  });
+
+  /**
+   * Invoke the listener this install added for `event`, without awaiting it.
+   *
+   * Dispatched per event rather than through one loosely-typed call so each
+   * listener is invoked with the arguments Node actually passes it.
+   */
+  function fireHandler(event: FatalEvent): () => void {
+    const before = process.listeners(event).length;
+    const cleanup = installSignalHandlers(hangingCtx);
+    // Deliberately not awaited: teardown never settles, which is the point.
+    if (event === "SIGTERM") {
+      void process.listeners("SIGTERM")[before]?.("SIGTERM");
+    } else if (event === "uncaughtException") {
+      void process.listeners("uncaughtException")[before]?.(new Error("boom"), "uncaughtException");
+    } else {
+      void process.listeners("unhandledRejection")[before]?.(new Error("boom"), Promise.resolve());
+    }
+    return cleanup;
+  }
+
+  test.each(HANDLER_EVENTS)("%s arms the hard deadline before teardown", (event) => {
+    const cleanup = fireHandler(event);
+    try {
+      expect(scheduled.map((t) => t.delay)).toContain(FATAL_TEARDOWN_DEADLINE_MS);
+    } finally {
+      cleanup();
+    }
+  });
+
+  const EXPECTED_EXIT_CODES: [FatalEvent, number][] = [
+    ["uncaughtException", 1],
+    ["unhandledRejection", 1],
+    ["SIGTERM", 143],
+  ];
+
+  test.each(EXPECTED_EXIT_CODES)(
+    "%s deadline exits with code %d when teardown never returns",
+    (event, expectedCode) => {
+      const exited: number[] = [];
+      _crashSignalsDeps.exit = (code: number) => {
+        exited.push(code);
+      };
+
+      const cleanup = fireHandler(event);
+      try {
+        const deadline = scheduled.find((t) => t.delay === FATAL_TEARDOWN_DEADLINE_MS);
+        expect(deadline).toBeDefined();
+        deadline?.fire();
+        expect(exited).toEqual([expectedCode]);
+      } finally {
+        cleanup();
+      }
+    },
+  );
 });

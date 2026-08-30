@@ -1,2 +1,2 @@
-export { parseQueueFile, QueueManager } from "./manager";
-export type { QueueCommand, QueueFileResult, QueueItem, QueueItemStatus, QueueStats } from "./types";
+export { parseQueueFile } from "./manager";
+export type { QueueCommand, QueueFileResult } from "./types";

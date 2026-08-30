@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { TokenUsage } from "@/agents/cost";
-import { addTokenUsage, estimateCostFromTokenUsage, resolvePricingSource } from "@/agents/cost";
+import { addTokenUsage, estimateCostFromTokenUsage, RATE_CARD_REVIEWED, resolvePricingSource } from "@/agents/cost";
 
 describe("addTokenUsage", () => {
   test("adds input and output tokens", () => {
@@ -157,9 +157,11 @@ describe("resolvePricingSource", () => {
     ["haiku", "model-rates"],
     ["sonnet", "model-rates"],
     ["claude-haiku-4-5", "model-rates"],
-    // Real July models with no MODEL_PRICING entry.
+    // Real models with no MODEL_PRICING entry. `gpt-5.6-luna[medium]` used to
+    // sit here; BUG-15 gave it a rate card, so the suffixed-and-unpriced case
+    // moved to a model that genuinely has none.
     ["minimax/MiniMax-M2.7", "fallback-rates"],
-    ["gpt-5.6-luna[medium]", "fallback-rates"],
+    ["opencode-go/hy3[high]", "fallback-rates"],
   ] as const)("%s resolves to %s", (model, expected) => {
     expect(resolvePricingSource(model)).toBe(expected);
   });
@@ -233,5 +235,52 @@ describe("effort-suffix normalization (#1464)", () => {
       expect(resolvePricingSource(model)).toBe("model-rates");
       expect(estimateCostFromTokenUsage(usage, model)).not.toBeCloseTo(fallbackPrice, 5);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-15: the rate card covers the models actually in use, and the stale rows
+// that priced nothing are gone.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("MODEL_PRICING — rate card currency (BUG-15)", () => {
+  /** Every model id that appears in a real ~/.nax/profiles/*.json stage pin. */
+  const MODELS_IN_USE = [
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "opencode-go/deepseek-v4-pro",
+    "opencode-go/deepseek-v4-flash",
+    "minimax/MiniMax-M3",
+  ];
+
+  test.each(MODELS_IN_USE)("%s prices from the table, not the generic fallback", (model) => {
+    expect(resolvePricingSource(model)).toBe("model-rates");
+  });
+
+  test.each(MODELS_IN_USE)("%s still prices from the table with an effort suffix", (model) => {
+    expect(resolvePricingSource(`${model}[high]`)).toBe("model-rates");
+  });
+
+  test("a priced model and the generic fallback give different numbers", () => {
+    const usage: TokenUsage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
+    // gpt-5.6-luna is $0.20/$1.20 per 1M; the fallback card is Sonnet's $3/$15.
+    expect(estimateCostFromTokenUsage(usage, "gpt-5.6-luna")).toBeCloseTo(1.4, 6);
+    expect(estimateCostFromTokenUsage(usage, "no-such-model")).toBeCloseTo(18, 6);
+  });
+
+  test("gemini-2.5-pro is priced at its real rate, not the 16x-low stale one", () => {
+    const usage: TokenUsage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
+    expect(estimateCostFromTokenUsage(usage, "gemini-2.5-pro")).toBeCloseTo(11.25, 6);
+  });
+
+  test.each(["gemini-2-pro", "codex", "code-davinci-002"])(
+    "%s carries no rate card — it is not a model id anything resolves",
+    (staleKey) => {
+      expect(resolvePricingSource(staleKey)).toBe("fallback-rates");
+    },
+  );
+
+  test("RATE_CARD_REVIEWED is an ISO date, so staleness is visible in review", () => {
+    expect(RATE_CARD_REVIEWED).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });

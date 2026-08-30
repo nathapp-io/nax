@@ -105,6 +105,51 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
     }
   });
 
+  test("leaves the caller's PRD untouched when marking the story failed (BUG-36)", async () => {
+    const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = async () => {};
+
+    try {
+      const story = makeStory({
+        id: "US-bug36",
+        title: "Terminal story",
+        status: "in-progress",
+        attempts: 1,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+      });
+      const prd = makePRD({ userStories: [story] });
+      const config = makeNaxConfig({
+        autoMode: { escalation: { enabled: true, tierOrder: [{ tier: "fast", attempts: 1 }] } },
+        routing: { llm: { mode: "per-story" } },
+      });
+      const hooks: LoadedHooksConfig = { hooks: {} };
+
+      const result = await preIterationTierCheck(
+        story,
+        { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
+        config,
+        prd,
+        "/tmp/test-prd-bug36.json",
+        undefined,
+        hooks,
+        "f",
+        0,
+        "/tmp",
+      );
+
+      // The returned PRD carries the terminal state...
+      expect(result.prd.userStories.find((s) => s.id === story.id)?.status).toBe("failed");
+      // ...and the caller's PRD, which `{ ...prd }` only appeared to protect,
+      // is genuinely untouched. The shallow copy shared the userStories array,
+      // so markStoryFailed reached straight back into these objects.
+      expect(prd.userStories.find((s) => s.id === story.id)?.status).toBe("in-progress");
+      expect(story.status).toBe("in-progress");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+
   test("does not emit story:failed when the story still has escalation budget or a next tier", async () => {
     const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 

@@ -44,6 +44,55 @@ export interface SignalHandlerContext extends RunCompleteContext {
 }
 
 /**
+ * How long a fatal handler may spend in teardown before the process is killed
+ * anyway.
+ *
+ * BUG-37: only the signal path used to arm this. The uncaughtException and
+ * unhandledRejection paths ran the same `performTeardown` — which awaits
+ * `onShutdown`, a PID sweep, and four artifact writes — with no ceiling. Worse,
+ * all three handlers share one `shuttingDown` flag, so once a crash wedged
+ * teardown the SIGINT handler returned early and Ctrl+C stopped working: the
+ * user was left with a printed crash and an unkillable process.
+ */
+export const FATAL_TEARDOWN_DEADLINE_MS = 10_000;
+
+/** Cancels an armed deadline. Returned by `armDeadline` in place of a raw timer
+ * handle, so no caller — production or test — has to model one. */
+type CancelDeadline = () => void;
+
+/**
+ * Injectable seams for the fatal paths.
+ *
+ * `armDeadline` owns the timer end to end (create, unref, cancel), so a test can
+ * drive the deadline by swapping one function instead of patching globals.
+ */
+export const _crashSignalsDeps: {
+  exit: (code: number) => void;
+  armDeadline: (fn: () => void, ms: number) => CancelDeadline;
+} = {
+  exit: (code: number): void => {
+    process.exit(code);
+  },
+  armDeadline: (fn: () => void, ms: number): CancelDeadline => {
+    const timer = setTimeout(fn, ms);
+    timer.unref?.();
+    return () => clearTimeout(timer);
+  },
+};
+
+/**
+ * Arm the hard exit deadline shared by every fatal handler.
+ *
+ * The timer is unref'd, so it never by itself keeps the loop alive — this is a
+ * backstop for a teardown that hangs, not a reason to stay running.
+ */
+function armTeardownDeadline(exitCode: number): CancelDeadline {
+  return _crashSignalsDeps.armDeadline(() => {
+    _crashSignalsDeps.exit(exitCode);
+  }, FATAL_TEARDOWN_DEADLINE_MS);
+}
+
+/**
  * Shared teardown sequence used by every fatal handler (signal, uncaught
  * exception, unhandled rejection).
  *
@@ -107,10 +156,7 @@ function createSignalHandler(
     }
     state.shuttingDown = true;
 
-    const hardDeadline = setTimeout(() => {
-      process.exit(128 + getSignalNumber(signal));
-    }, 10_000);
-    if (hardDeadline.unref) hardDeadline.unref();
+    const cancelDeadline = armTeardownDeadline(128 + getSignalNumber(signal));
 
     logger?.error("crash-recovery", `Received ${signal}, shutting down...`, { signal });
 
@@ -122,8 +168,8 @@ function createSignalHandler(
     await writeRunComplete(ctx, signal.toLowerCase());
     await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), signal, ctx.featureDir);
 
-    clearTimeout(hardDeadline);
-    process.exit(128 + getSignalNumber(signal));
+    cancelDeadline();
+    _crashSignalsDeps.exit(128 + getSignalNumber(signal));
   };
 }
 
@@ -147,6 +193,8 @@ function createUncaughtExceptionHandler(
     }
     state.shuttingDown = true;
 
+    const cancelDeadline = armTeardownDeadline(1);
+
     logger?.error("crash-recovery", "Uncaught exception", {
       error: error.message,
       stack: error.stack,
@@ -164,7 +212,8 @@ function createUncaughtExceptionHandler(
       ctx.featureDir,
     );
 
-    process.exit(1);
+    cancelDeadline();
+    _crashSignalsDeps.exit(1);
   };
 }
 
@@ -188,6 +237,8 @@ function createUnhandledRejectionHandler(
     }
     state.shuttingDown = true;
 
+    const cancelDeadline = armTeardownDeadline(1);
+
     logger?.error("crash-recovery", "Unhandled promise rejection", {
       error: error.message,
       stack: error.stack,
@@ -205,7 +256,8 @@ function createUnhandledRejectionHandler(
       ctx.featureDir,
     );
 
-    process.exit(1);
+    cancelDeadline();
+    _crashSignalsDeps.exit(1);
   };
 }
 
