@@ -17,13 +17,22 @@
  *       and rejects with the same error.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { type CostReportEmitDeps, emitCostReportJson } from "@/cli";
+import { basename, join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import {
+  type CostReportEmitDeps,
+  displayCostMetrics,
+  displayLastRunMetrics,
+  displayModelEfficiency,
+  emitCostReportJson,
+} from "@/cli";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { CostReportV1 } from "@/metrics";
-import type { RunMetrics } from "@/metrics/types";
+import type { RunMetrics, StoryMetrics } from "@/metrics/types";
 import { projectOutputDir } from "@/runtime";
+import { byCodePoint } from "@/utils/sort";
 
 function makeRunMetrics(overrides: Partial<RunMetrics> = {}): RunMetrics {
   return {
@@ -219,5 +228,209 @@ describe("emitCostReportJson — AC9: I/O error propagation", () => {
 
     await expect(emitCostReportJson("/tmp/workdir", deps)).rejects.toBe(ioError);
     expect(stdout.mock.calls).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// displayCostMetrics / displayLastRunMetrics / displayModelEfficiency
+//
+// These functions have no injectable deps seam (unlike emitCostReportJson) —
+// they call loadConfig/loadRunMetrics/getLogger directly. Rather than reach
+// for a forbidden mock.module(), each test uses a real, isolated project
+// workdir (no .nax/config.json, so `project` resolves to `basename(workdir)`
+// per resolveProject) and writes metrics.json straight into the same
+// outputDir the function under test will resolve to, then captures the
+// logger output through a real sink.
+// ---------------------------------------------------------------------------
+
+function makeStoryMetrics(overrides: Partial<StoryMetrics> = {}): StoryMetrics {
+  return {
+    storyId: "US-001",
+    complexity: "simple",
+    modelTier: "balanced",
+    modelUsed: "claude-sonnet-4-5",
+    attempts: 1,
+    finalTier: "balanced",
+    success: true,
+    cost: 0.1,
+    durationMs: 1000,
+    firstPassSuccess: true,
+    startedAt: "2026-01-01T00:00:00.000Z",
+    completedAt: "2026-01-01T00:00:01.000Z",
+    ...overrides,
+  };
+}
+
+async function seedMetrics(workdir: string, runs: RunMetrics[]): Promise<void> {
+  const outputDir = projectOutputDir(basename(workdir), undefined);
+  await Bun.write(join(outputDir, "metrics.json"), JSON.stringify(runs));
+}
+
+describe("displayCostMetrics / displayLastRunMetrics / displayModelEfficiency", () => {
+  let workdir: string;
+  let entries: LogEntry[];
+  let unsubscribe: () => void;
+
+  beforeEach(() => {
+    workdir = makeTempDir("nax-status-cost-");
+    resetLogger();
+    initLogger({ level: "silent" });
+    entries = [];
+    unsubscribe = addSink((entry) => entries.push(entry));
+  });
+
+  afterEach(() => {
+    unsubscribe();
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  describe("with no metrics data on disk", () => {
+    test("displayCostMetrics logs a 'no data' hint and does not throw", async () => {
+      await expect(displayCostMetrics(workdir)).resolves.toBeUndefined();
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.message).toContain("No metrics data available yet");
+    });
+
+    test("displayLastRunMetrics logs a 'no data' hint and does not throw", async () => {
+      await expect(displayLastRunMetrics(workdir)).resolves.toBeUndefined();
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.message).toContain("No metrics data available yet");
+    });
+
+    test("displayModelEfficiency logs a 'no data' hint and does not throw", async () => {
+      await expect(displayModelEfficiency(workdir)).resolves.toBeUndefined();
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.message).toContain("No metrics data available yet");
+    });
+  });
+
+  describe("with recorded runs", () => {
+    test("displayCostMetrics logs the aggregate across all runs", async () => {
+      await seedMetrics(workdir, [makeRunMetrics({ totalCost: 1.5, stories: [makeStoryMetrics({ cost: 1.5 })] })]);
+
+      await displayCostMetrics(workdir);
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.message).toBe("Cost Metrics (All Runs)");
+      expect(entries[0]?.data?.totalRuns).toBe(1);
+      expect(entries[0]?.data?.totalCost).toBe(1.5);
+    });
+
+    test("displayLastRunMetrics logs the most recent run and its top stories", async () => {
+      const expensiveStory = makeStoryMetrics({ storyId: "US-002", cost: 5 });
+      const cheapStory = makeStoryMetrics({ storyId: "US-001", cost: 1 });
+      await seedMetrics(workdir, [
+        makeRunMetrics({
+          runId: "run-1",
+          feature: "feat-a",
+          totalCost: 6,
+          stories: [cheapStory, expensiveStory],
+        }),
+      ]);
+
+      await displayLastRunMetrics(workdir);
+
+      const summary = entries.find((e) => e.message.startsWith("Last Run:"));
+      expect(summary).toBeDefined();
+      expect(summary?.data?.runId).toBe("run-1");
+      expect(summary?.data?.totalCost).toBe(6);
+
+      const topStories = entries.find((e) => e.message === "Top 5 Most Expensive Stories");
+      expect(topStories).toBeDefined();
+      const stories = topStories?.data?.stories as Array<{ storyId: string; cost: number }>;
+      // Sorted descending by cost — the expensive story comes first.
+      expect(stories[0]?.storyId).toBe("US-002");
+      expect(stories[1]?.storyId).toBe("US-001");
+    });
+
+    test("displayLastRunMetrics returns early with no extra logs when getLastRun yields nothing", async () => {
+      await seedMetrics(workdir, []);
+
+      await displayLastRunMetrics(workdir);
+
+      // Empty runs array — the "no data" branch fires, not the lastRun-null branch.
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.message).toContain("No metrics data available yet");
+    });
+
+    test("displayLastRunMetrics warns on high context pollution above the threshold", async () => {
+      const pollutedStory = makeStoryMetrics({
+        storyId: "US-003",
+        context: {
+          providers: {},
+          pollution: {
+            droppedBelowMinScore: 0,
+            staleChunksInjected: 0,
+            contradictedChunks: 4,
+            ignoredChunks: 1,
+            pollutionRatio: 0.5,
+          },
+        },
+      });
+      await seedMetrics(workdir, [makeRunMetrics({ stories: [pollutedStory] })]);
+
+      await displayLastRunMetrics(workdir);
+
+      const warning = entries.find((e) => e.level === "warn");
+      expect(warning).toBeDefined();
+      expect(warning?.message).toContain("High context pollution detected");
+      expect(warning?.data?.storyId).toBe("US-003");
+      expect(warning?.data?.pollutionRatio).toBe(0.5);
+      expect(warning?.data?.contradictedChunks).toBe(4);
+    });
+
+    test("displayLastRunMetrics does not warn when pollution ratio is at or below the threshold", async () => {
+      const cleanStory = makeStoryMetrics({
+        context: {
+          providers: {},
+          pollution: {
+            droppedBelowMinScore: 0,
+            staleChunksInjected: 0,
+            contradictedChunks: 0,
+            ignoredChunks: 0,
+            pollutionRatio: 0.3,
+          },
+        },
+      });
+      await seedMetrics(workdir, [makeRunMetrics({ stories: [cleanStory] })]);
+
+      await displayLastRunMetrics(workdir);
+
+      expect(entries.some((e) => e.level === "warn")).toBe(false);
+    });
+
+    test("displayModelEfficiency logs model and complexity breakdowns", async () => {
+      await seedMetrics(workdir, [
+        makeRunMetrics({
+          stories: [
+            makeStoryMetrics({ modelUsed: "claude-sonnet-4-5", complexity: "simple" }),
+            makeStoryMetrics({ storyId: "US-002", modelUsed: "claude-opus-4-5", complexity: "complex" }),
+          ],
+        }),
+      ]);
+
+      await displayModelEfficiency(workdir);
+
+      const modelEntry = entries.find((e) => e.message === "Model Efficiency");
+      expect(modelEntry).toBeDefined();
+      const models = modelEntry?.data?.models as Array<{ model: string }>;
+      expect(models.map((m) => m.model).sort(byCodePoint)).toEqual(["claude-opus-4-5", "claude-sonnet-4-5"]);
+
+      const complexityEntry = entries.find((e) => e.message === "Complexity Prediction Accuracy");
+      expect(complexityEntry).toBeDefined();
+    });
+
+    test("displayModelEfficiency logs 'no model data' when aggregate model efficiency is empty", async () => {
+      await seedMetrics(workdir, [makeRunMetrics({ stories: [] })]);
+
+      await displayModelEfficiency(workdir);
+
+      expect(entries.some((e) => e.message === "No model data available")).toBe(true);
+      expect(entries.some((e) => e.message === "Model Efficiency")).toBe(false);
+    });
   });
 });
