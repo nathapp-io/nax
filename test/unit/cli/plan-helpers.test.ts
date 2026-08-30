@@ -1,12 +1,14 @@
 /**
  * Unit tests for src/cli/plan-helpers.ts
  *
- * Tests buildSourceRootsSection output format and edge cases.
+ * Tests buildSourceRootsSection output format and edge cases, plus the
+ * stdin-based CLI interaction bridge used by `nax plan`.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { SourceRoot } from "@/analyze/types";
 import { buildSourceRootsSection } from "@/cli";
+import { createCliInteractionBridge } from "@/cli/plan-helpers";
 
 describe("buildSourceRootsSection", () => {
   // ──────────────────────────────────────────────────────────────────────────
@@ -81,5 +83,53 @@ describe("buildSourceRootsSection", () => {
   test("includes instruction to cite findings as 'path:line'", () => {
     const result = buildSourceRootsSection([]);
     expect(result).toContain("path:line");
+  });
+});
+
+describe("createCliInteractionBridge", () => {
+  describe("detectQuestion", () => {
+    test("returns true when the text contains a question mark", async () => {
+      const bridge = createCliInteractionBridge();
+      expect(await bridge.detectQuestion("What should I do?")).toBe(true);
+    });
+
+    test("returns false when the text has no question mark", async () => {
+      const bridge = createCliInteractionBridge();
+      expect(await bridge.detectQuestion("Implementing the story now.")).toBe(false);
+    });
+  });
+
+  describe("onQuestionDetected", () => {
+    const origIsTTY = process.stdin.isTTY;
+
+    afterEach(() => {
+      Object.defineProperty(process.stdin, "isTTY", { value: origIsTTY, configurable: true });
+    });
+
+    test("skips interaction and returns empty string in non-TTY mode", async () => {
+      Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+      const bridge = createCliInteractionBridge();
+
+      const answer = await bridge.onQuestionDetected("Should I proceed?");
+
+      expect(answer).toBe("");
+    });
+
+    test("resolves with an empty string when stdin closes before a line arrives", async () => {
+      Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+      const bridge = createCliInteractionBridge();
+
+      const origWrite = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (() => true) as typeof process.stdout.write;
+
+      try {
+        const pending = bridge.onQuestionDetected("Should I proceed?");
+        process.stdin.emit("end");
+        const answer = await pending;
+        expect(answer).toBe("");
+      } finally {
+        process.stdout.write = origWrite;
+      }
+    });
   });
 });

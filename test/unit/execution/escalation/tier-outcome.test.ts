@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
 import type { EscalationHandlerContext } from "@/execution/escalation";
@@ -116,6 +117,177 @@ describe("handleMaxAttemptsReached — pause-reason persistence (nax#1582)", () 
 // switches them to per-story cost; the sibling emitter in preIterationTierCheck is
 // already pinned both ways (tier-escalation-story-failed.test.ts), these four were not.
 // ---------------------------------------------------------------------------
+
+describe("handleNoTierAvailable — fail outcome and progress logging", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-tier-outcome-fail-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  test("marks the story failed (not paused) when the failure category maps to 'fail'", async () => {
+    const prdPath = join(tempDir, "prd.json");
+    const ctx = makeCtx({}, prdPath);
+
+    const result = await handleNoTierAvailable(ctx, "tests-failing");
+
+    expect(result.outcome).toBe("failed");
+    const failedStory = result.prd.userStories.find((s) => s.id === "US-001");
+    expect(failedStory?.status).toBe("failed");
+  });
+
+  test("marks the story failed with no failureCategory at all", async () => {
+    const prdPath = join(tempDir, "prd.json");
+    const ctx = makeCtx({}, prdPath);
+
+    const result = await handleNoTierAvailable(ctx, undefined);
+
+    expect(result.outcome).toBe("failed");
+  });
+
+  test("appends a paused progress entry when featureDir is set", async () => {
+    const prdPath = join(tempDir, "prd.json");
+    const featureDir = join(tempDir, "feature");
+    const ctx = makeCtx({ featureDir }, prdPath);
+
+    await handleNoTierAvailable(ctx, "verifier-rejected");
+
+    const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
+    expect(progress).toContain("PAUSED");
+    expect(progress).toContain("needs human review");
+  });
+
+  test("appends a failed progress entry when featureDir is set", async () => {
+    const prdPath = join(tempDir, "prd.json");
+    const featureDir = join(tempDir, "feature");
+    const ctx = makeCtx({ featureDir }, prdPath);
+
+    await handleNoTierAvailable(ctx, "tests-failing");
+
+    const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
+    expect(progress).toContain("FAILED");
+    expect(progress).toContain("Execution failed");
+  });
+
+  test("emits a story:failed event with countsTowardEscalation", async () => {
+    const seen: unknown[] = [];
+    const unsubscribe = pipelineEventBus.on("story:failed", (event) => {
+      seen.push(event);
+    });
+    try {
+      const prdPath = join(tempDir, "prd.json");
+      const ctx = makeCtx({}, prdPath);
+
+      await handleNoTierAvailable(ctx, "tests-failing");
+
+      expect(seen).toHaveLength(1);
+      expect((seen[0] as { countsTowardEscalation?: boolean }).countsTowardEscalation).toBe(true);
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+describe("handleMaxAttemptsReached — fail outcome and progress logging", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-tier-outcome-max-fail-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  test("marks the story failed (not paused) when the failure category maps to 'fail'", async () => {
+    const prdPath = join(tempDir, "prd.json");
+    const ctx = makeCtx({}, prdPath);
+
+    const result = await handleMaxAttemptsReached(ctx, "tests-failing");
+
+    expect(result.outcome).toBe("failed");
+    const failedStory = result.prd.userStories.find((s) => s.id === "US-001");
+    expect(failedStory?.status).toBe("failed");
+  });
+
+  test("appends a paused progress entry when featureDir is set", async () => {
+    const prdPath = join(tempDir, "prd.json");
+    const featureDir = join(tempDir, "feature");
+    const ctx = makeCtx({ featureDir }, prdPath);
+
+    await handleMaxAttemptsReached(ctx, "verifier-rejected");
+
+    const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
+    expect(progress).toContain("PAUSED");
+    expect(progress).toContain("Max attempts reached");
+  });
+
+  test("appends a failed progress entry when featureDir is set", async () => {
+    const prdPath = join(tempDir, "prd.json");
+    const featureDir = join(tempDir, "feature");
+    const ctx = makeCtx({ featureDir }, prdPath);
+
+    await handleMaxAttemptsReached(ctx, "tests-failing");
+
+    const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
+    expect(progress).toContain("FAILED");
+    expect(progress).toContain("Max attempts reached");
+  });
+
+  test("emits a story:paused event carrying the fallback totalCost when no runtime is threaded", async () => {
+    const seen: { cost?: number }[] = [];
+    const unsubscribe = pipelineEventBus.on("story:paused", (event) => {
+      seen.push({ cost: (event as { cost?: number }).cost });
+    });
+    try {
+      const prdPath = join(tempDir, "prd.json");
+      const ctx = makeCtx({ totalCost: 4.5 }, prdPath);
+
+      await handleMaxAttemptsReached(ctx, "verifier-rejected");
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0].cost).toBe(4.5);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test("emits a story:failed event carrying the per-story cost from the aggregator", async () => {
+    const seen: { cost?: number }[] = [];
+    const unsubscribe = pipelineEventBus.on("story:failed", (event) => {
+      seen.push({ cost: (event as { cost?: number }).cost });
+    });
+    try {
+      const runtime = makeMockRuntime();
+      runtime.costAggregator.record({
+        ts: Date.now(),
+        runId: "test-run",
+        agentName: "claude",
+        model: "test-model",
+        storyId: "US-001",
+        tokens: { input: 5, output: 5 },
+        estimatedCostUsd: 1.25,
+        exactCostUsd: 1.25,
+        costUsd: 1.25,
+        confidence: "estimated",
+        durationMs: 100,
+      });
+      const prdPath = join(tempDir, "prd.json");
+      const ctx = makeCtx({ runtime, totalCost: 9.99 }, prdPath);
+
+      await handleMaxAttemptsReached(ctx, "tests-failing");
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0].cost).toBe(1.25);
+    } finally {
+      unsubscribe();
+    }
+  });
+});
 
 describe("handleNoTierAvailable — cost source on story:paused", () => {
   let tempDir: string;

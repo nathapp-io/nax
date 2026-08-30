@@ -10,8 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 import { initLogger, resetLogger } from "@/logger";
+import { buildBatchRoutingPromptAsync, buildRoutingPromptAsync } from "@/routing/strategies/llm";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -126,5 +127,76 @@ describe("LLM routing config shape accepts retry and timeout fields", () => {
   test("retries: 0 disables retry (single attempt only)", () => {
     const config = makeConfig({ retries: 0 });
     expect(config.routing.llm?.retries).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prompt builders
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildRoutingPromptAsync", () => {
+  test("includes the story's title, description, acceptance criteria, and tags", async () => {
+    const story = makeStory({
+      title: "Add login form",
+      description: "Users can sign in with email and password",
+      acceptanceCriteria: ["Shows an error on invalid credentials", "Redirects on success"],
+      tags: ["auth", "frontend"],
+    });
+
+    const prompt = await buildRoutingPromptAsync(story);
+
+    expect(prompt).toContain("Add login form");
+    expect(prompt).toContain("Users can sign in with email and password");
+    expect(prompt).toContain("1. Shows an error on invalid credentials");
+    expect(prompt).toContain("2. Redirects on success");
+    expect(prompt).toContain("auth, frontend");
+    expect(prompt).toContain("RoutingDecision");
+    expect(prompt).toContain("fast");
+    expect(prompt).toContain("balanced");
+    expect(prompt).toContain("powerful");
+  });
+
+  test("handles a story with no acceptance criteria or tags", async () => {
+    const story = makeStory({ acceptanceCriteria: [], tags: [] });
+
+    const prompt = await buildRoutingPromptAsync(story);
+
+    expect(prompt).toContain("Acceptance Criteria:");
+    expect(prompt).toContain("Tags: ");
+  });
+});
+
+describe("buildBatchRoutingPromptAsync", () => {
+  test("includes every story's id, title, description, and criteria numbered per-story", async () => {
+    const storyA = makeStory({
+      id: "US-001",
+      title: "Story A",
+      description: "First story",
+      acceptanceCriteria: ["A does X"],
+      tags: ["a"],
+    });
+    const storyB = makeStory({
+      id: "US-002",
+      title: "Story B",
+      description: "Second story",
+      acceptanceCriteria: ["B does Y", "B does Z"],
+      tags: [],
+    });
+
+    const prompt = await buildBatchRoutingPromptAsync([storyA, storyB]);
+
+    expect(prompt).toContain("1. US-001: Story A");
+    expect(prompt).toContain("First story");
+    expect(prompt).toContain("1. A does X");
+    expect(prompt).toContain("2. US-002: Story B");
+    expect(prompt).toContain("Second story");
+    expect(prompt).toContain("1. B does Y");
+    expect(prompt).toContain("2. B does Z");
+    expect(prompt).toContain("BatchRoutingDecision");
+  });
+
+  test("handles an empty story list", async () => {
+    const prompt = await buildBatchRoutingPromptAsync([]);
+    expect(prompt).toContain("BatchRoutingDecision");
   });
 });
