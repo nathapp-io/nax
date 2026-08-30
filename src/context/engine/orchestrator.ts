@@ -91,6 +91,9 @@ type ProviderActivationSource = NonNullable<NonNullable<ContextManifest["provide
 
 const PROVIDER_FETCH_TIMEOUT_MS = 5_000;
 
+/** #1776: cap on how many floor items the budget-exceeded warn enumerates. */
+const FLOOR_OVERAGE_LOG_LIMIT = 10;
+
 export async function fetchWithTimeout(
   provider: IContextProvider,
   request: ContextRequest,
@@ -442,12 +445,19 @@ export class ContextOrchestrator {
     // token cost so this is visible without a manifest diff.
     if (manifest.usedTokens > manifest.totalBudgetTokens) {
       const overageIds = manifest.floorOverageItems ?? manifest.floorItems;
+      // This condition holds on nearly every stage of every story, and the
+      // floor routinely runs to 60+ chunks — log the heaviest few plus a
+      // count rather than the whole list, so the warn stays readable.
+      const byCost = overageIds
+        .map((id) => ({ id, tokens: manifest.chunkTokens?.[id] ?? 0 }))
+        .sort((a, b) => b.tokens - a.tokens || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       logger.warn("context-v2", "Stage budget exceeded by floor items", {
         storyId: request.storyId,
         stage: request.stage,
         usedTokens: manifest.usedTokens,
         totalBudgetTokens: manifest.totalBudgetTokens,
-        floorOverageItems: overageIds.map((id) => ({ id, tokens: manifest.chunkTokens?.[id] ?? 0 })),
+        floorOverageCount: byCost.length,
+        heaviestFloorItems: byCost.slice(0, FLOOR_OVERAGE_LOG_LIMIT),
       });
     }
 

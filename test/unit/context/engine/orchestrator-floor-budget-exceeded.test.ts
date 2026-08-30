@@ -82,8 +82,51 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     expect(data.stage).toBe("tdd-test-writer");
     expect(data.usedTokens).toBe(bundle.manifest.usedTokens);
     expect(data.totalBudgetTokens).toBe(8_000);
-    expect(Array.isArray(data.floorOverageItems)).toBe(true);
-    expect(data.floorOverageItems).toContainEqual({ id: "static-rules:big-rule", tokens: 22_000 });
+    expect(data.floorOverageCount).toBe(1);
+    expect(Array.isArray(data.heaviestFloorItems)).toBe(true);
+    expect(data.heaviestFloorItems).toContainEqual({ id: "static-rules:big-rule", tokens: 22_000 });
+  });
+
+  test("caps the enumerated floor items at 10, heaviest first, but counts them all", async () => {
+    // The overage condition holds on nearly every stage of every story and the
+    // floor routinely runs to 60+ chunks, so the warn must not dump the lot.
+    const provider: IContextProvider = {
+      id: "rules-provider",
+      kind: "static",
+      fetch: async () => ({
+        chunks: Array.from({ length: 25 }, (_, i) => ({
+          id: `static-rules:rule-${String(i).padStart(2, "0")}`,
+          kind: "static" as const,
+          scope: "project" as const,
+          role: ["all"] as ["all"],
+          content: `### rule-${i}.md\n\nbody`,
+          tokens: 1_000 + i,
+          rawScore: 1.0,
+        })),
+        pullTools: [],
+      }),
+    };
+    const orch = new ContextOrchestrator([provider]);
+
+    await orch.assemble(BASE_REQUEST);
+
+    const call = mockLogger.calls.find((c) => c.level === "warn" && c.message === WARN_MESSAGE);
+    assertDefined(call, "floor-budget-exceeded warn log call");
+    const data = call.data ?? {};
+    expect(data.floorOverageCount).toBe(25);
+    // Exactly the 10 heaviest, heaviest first — rule-24 (1024) down to rule-15 (1015).
+    expect(data.heaviestFloorItems).toEqual([
+      { id: "static-rules:rule-24", tokens: 1024 },
+      { id: "static-rules:rule-23", tokens: 1023 },
+      { id: "static-rules:rule-22", tokens: 1022 },
+      { id: "static-rules:rule-21", tokens: 1021 },
+      { id: "static-rules:rule-20", tokens: 1020 },
+      { id: "static-rules:rule-19", tokens: 1019 },
+      { id: "static-rules:rule-18", tokens: 1018 },
+      { id: "static-rules:rule-17", tokens: 1017 },
+      { id: "static-rules:rule-16", tokens: 1016 },
+      { id: "static-rules:rule-15", tokens: 1015 },
+    ]);
   });
 
   test("does not warn when floor items fit within totalBudgetTokens", async () => {

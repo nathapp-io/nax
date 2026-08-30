@@ -127,6 +127,29 @@ describe("runPhase — phase-bundle prompt rendering (nax#1773)", () => {
     expect(sent.featureCtxBlock).not.toContain("PLAN-TIME-CONTENT stale block");
   });
 
+  test("a stage bundle with empty pushMarkdown leaves the plan-time prompt intact", async () => {
+    // buildForRole gates its v1 featureContext fallback on `contextBundle`
+    // being PRESENT, not on it carrying content, so re-rendering against an
+    // empty bundle silently strips the feature context the plan-time prompt
+    // already had. Reachable in any repo with no .nax/rules, or on a stage
+    // whose `stages:` frontmatter filters every rule out.
+    const story = makeStory({ id: "US-781" });
+    const ctx = makeMockCallContext({
+      story,
+      phaseTelemetry: { testStrategy: "three-session-tdd", sessionModel: "three-session", tier: "balanced" },
+      assembleStageBundle: async () => makeContextBundle({ pushMarkdown: "   " }),
+    });
+    const planTimeInput = {
+      story,
+      promptMarkdown: "## PLAN-TIME-CONTENT\n\nTask body with feature context.",
+    };
+
+    await runPhase(ctx, makeSlot("implementer", planTimeInput), {}, {}, true);
+
+    const sent = dispatchedInput as { promptMarkdown?: string };
+    expect(sent.promptMarkdown).toBe(planTimeInput.promptMarkdown);
+  });
+
   test("an unmapped op's input is left untouched even when a bundle is somehow present", async () => {
     const story = makeStory({ id: "US-780" });
     const ctx = makeMockCallContext({ story, contextBundle: makeContextBundle({ pushMarkdown: "## floor" }) });

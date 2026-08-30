@@ -87,6 +87,14 @@ async function renderTddPromptMarkdown(
 ): Promise<unknown> {
   const i = input as TddPromptInputShape;
   if (!i.promptMarkdown?.trim() || !ctx.story) return input;
+  // An empty pushMarkdown must NOT be rendered: buildForRole gates its v1
+  // fallback on `contextBundle` being present, not on it carrying content
+  // (`.featureContext(opts.contextBundle ? undefined : ...)`), so rebuilding
+  // against an empty bundle drops feature context the plan-time prompt had.
+  // Reachable whenever every provider comes back empty — a repo with no
+  // .nax/rules, or a stage whose `stages:` frontmatter filters them all out.
+  // Mirrors the same guard on the review path below.
+  if (!phaseBundle.pushMarkdown?.trim()) return input;
 
   const isLite = i.lite ?? ctx.phaseTelemetry?.testStrategy === "three-session-tdd-lite";
   const promptMarkdown = await _renderPhaseBundleDeps.buildForRole(
