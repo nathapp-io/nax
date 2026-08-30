@@ -24,6 +24,7 @@ import type { StoryCheckpoint, TreeState } from "../checkpoint/types";
 import { runNonBlockingFix } from "../non-blocking-fix";
 import { buildPhaseOutcomeLogData, logDeterministicPhaseOutcome } from "../story-orchestrator-logging";
 import { productionTriageSeam } from "./flake-triage-seam";
+import { applyPhaseBundleToInput } from "./render-phase-bundle";
 import { emitReviewDecision, logUnifiedReviewPhaseResult, logUnifiedReviewPhaseStart } from "./review-decision";
 import type { AnySlot } from "./types";
 import { TDD_OP_NAMES } from "./types";
@@ -41,6 +42,14 @@ export const _storyOrchestratorDeps = {
    * tests via `_storyOrchestratorDeps.triage`.
    */
   triage: productionTriageSeam,
+  /**
+   * nax#1773 — re-render an op's promptMarkdown / featureCtxBlock from the
+   * per-stage phaseBundle at dispatch time, overriding what
+   * assemblePlanInputsFromCtx baked once at plan-input time (before any
+   * per-stage bundle existed). Overridable in tests to isolate runPhase's
+   * dispatch-flow assertions from the render logic.
+   */
+  applyPhaseBundleToInput,
   /**
    * US-003 resume-integration deps. Defaults are wired to real production
    * implementations so the resume system works out of the box. Tests
@@ -240,6 +249,13 @@ export async function runPhase(
     const dispatchCtx = phaseBundle
       ? { ...ctx, contextBundle: phaseBundle, scopeId: scope.scopeId }
       : { ...ctx, scopeId: scope.scopeId };
+    // nax#1773: phaseBundle only reaches ctx.contextBundle above — the ops
+    // themselves render input.promptMarkdown / input.featureCtxBlock, both
+    // baked once at plan-input time. Re-render them from phaseBundle here so
+    // each role actually sees its own stage's context. Never fails the phase.
+    if (phaseBundle) {
+      dispatchInput = await _storyOrchestratorDeps.applyPhaseBundleToInput(opName, dispatchInput, phaseBundle, ctx);
+    }
     const output = await _storyOrchestratorDeps.callOp(dispatchCtx, slot.op, dispatchInput);
     phaseOutputs[opName] = output;
     emitReviewDecision(ctx, opName, output);

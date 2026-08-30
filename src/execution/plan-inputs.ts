@@ -225,6 +225,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
       ? {
           story,
           promptMarkdown: testWriterPrompt,
+          contextMarkdown: ctx.contextMarkdown,
           featureContextMarkdown: ctx.featureContextMarkdown,
           constitution: ctx.constitution?.content,
           lite: isLite,
@@ -240,6 +241,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   const implementerInput = {
     story,
     promptMarkdown: implementerPrompt,
+    contextMarkdown: ctx.contextMarkdown,
     featureContextMarkdown: ctx.featureContextMarkdown,
     constitution: ctx.constitution?.content,
   };
@@ -268,7 +270,14 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         }
       : undefined;
 
-  const verifierInput = _isTdd ? { story, promptMarkdown: verifierPrompt } : undefined;
+  const verifierInput = _isTdd
+    ? {
+        story,
+        promptMarkdown: verifierPrompt,
+        contextMarkdown: ctx.contextMarkdown,
+        constitution: ctx.constitution?.content,
+      }
+    : undefined;
 
   // verifyScoped: present for non-TDD strategies (TDD uses fullSuiteGate + verifier instead)
   const verifyScopedInput: VerifyScopedInput | undefined = !_isTdd
