@@ -83,14 +83,16 @@ const PER_FILE_EPSILON = 0.001;
  * with the reason. Listed here so the missing-file guard reports them without failing
  * the run — every other absence is a new instance of #1779 and must fail.
  *
- * Keep this map empty if you can. An entry is a measurement hole, not an exemption from
- * the floor: the file's recorded baseline number is still carried forward and still
- * ratcheted the moment the report starts including it again.
+ * Currently EMPTY, and keep it that way if you can. An entry is a measurement hole, not
+ * an exemption from the floor: the file's recorded baseline number is still carried
+ * forward and still ratcheted the moment the report starts including it again.
+ *
+ * It held `src/prompts/loader.ts` until 2026-08-30. #1779 is NOT fixed upstream — its
+ * two-file repro still produces no `SF:` record on Bun 1.4.0 — but that file now records
+ * normally in the gated run, and the baseline it guarded is gone, so the entry described
+ * nothing. A stale entry is worse than none: it would let a genuine disappearance pass.
  */
-export const UNMEASURABLE: Record<string, string> = {
-  "src/prompts/loader.ts":
-    "GitHub #1779 — its 16 tests pass and the module is imported for value, but Bun emits no SF: record for it whenever the run also contains test/unit/execution/mutation-check-wiring.test.ts. Deterministic; not a race, not `smol`, not a file-count threshold.",
-};
+export const UNMEASURABLE: Record<string, string> = {};
 
 /** Suites the gate measures, in one invocation. `test/e2e/` is deliberately out. */
 const GATED_SUITES = ["test/unit/", "test/integration/", "test/ui/"];

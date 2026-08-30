@@ -110,14 +110,17 @@ describe("findMissingBaselined", () => {
     );
   });
 
-  test("the shipped UNMEASURABLE map is what the default argument uses", () => {
-    for (const file of Object.keys(UNMEASURABLE)) {
-      expect(findMissingBaselined({ [file]: 0.42 }, new Map(), everythingExists)).toEqual([]);
-    }
+  // These two used to iterate UNMEASURABLE's entries, which passes vacuously now that
+  // the shipped map is empty. Pin the emptiness directly, and keep the shape guard
+  // meaningful by running it over whatever the map holds plus a synthetic entry.
+  test("the shipped UNMEASURABLE map is empty", () => {
+    expect(UNMEASURABLE).toEqual({});
   });
 
-  test("every UNMEASURABLE entry carries a reason naming its issue", () => {
-    for (const reason of Object.values(UNMEASURABLE)) {
+  test("an unmeasurable entry must carry a reason naming its issue", () => {
+    const entries = { ...UNMEASURABLE, "src/synthetic.ts": "kept honest, see #1779" };
+
+    for (const reason of Object.values(entries)) {
       expect(reason).toMatch(/#\d+/);
     }
   });

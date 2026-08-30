@@ -16,14 +16,13 @@ Gate scope is `test/unit/` + `test/integration/` + `test/ui/` in one invocation,
 
 | Reading | Value | Gate |
 |:--|--:|:--|
-| Aggregate line coverage (`src/` only) | **95.81%** | floor 80%, passing |
-| Aggregate function coverage (`src/` only) | **92.79%** | floor 80%, passing |
-| Files below the 80% per-file floor | **1** | ratchet, passing |
-| Entries recorded in the baseline file | **1** | `src/prompts/loader.ts`, see section 7 |
+| Aggregate line coverage (`src/` only) | **95.82%** | floor 80%, passing |
+| Aggregate function coverage (`src/` only) | **92.80%** | floor 80%, passing |
+| Files below the 80% per-file floor | **0** | ratchet, passing |
+| Entries recorded in the baseline file | **0** | the baseline is EMPTY |
 | Coverage run wall clock | ~47s | was ~20s under the unit-only scope |
 
-The baseline is down to a single entry, and that entry is not untested code - see section 7.
-**There is no drain work left.** Sections 3-6 are history; section 1's tiers remain the
+**The baseline is empty and `UNMEASURABLE` is empty. The drain is finished.** Sections 3-6 are history; section 1's tiers remain the
 standard a reviewer holds a new test PR to.
 
 `bun run test:coverage` runs the three suites with coverage, parses `coverage/lcov.info`,
@@ -405,18 +404,23 @@ The ratchet is easy to satisfy dishonestly. These are rejections, not style note
 
 ## 7. Files that stay in the baseline, with a reason
 
-Do not spend tokens on these; record them here instead, and keep the ratchet holding their
-current number so they cannot get worse.
+**None. The baseline is empty.**
 
-| File | Now | Why it stays |
-|:--|--:|:--|
-| `src/prompts/loader.ts` | 77.27% | Not untested: **100% under `FULL=1`**. The only uncovered lines are its `catch` (the unreadable-file path), reached solely by the two `fullTest`-gated tests in `test/unit/prompts/loader.test.ts`, which chmod a file to `0o000`. The coverage gate does not set `FULL=1`, so those lines never execute under it. Leave the entry: un-gating them would break any environment that runs the suite as root, where `chmod 0o000` does not deny the owner. |
+Every file that once stood here was drained, not excused:
 
-### Retired exemptions
+| File | Was | Why it was here | Outcome |
+|:--|--:|:--|:--|
+| `src/tui/App.tsx` | 78.3% | "UI tier" | drained, 8.4 |
+| `src/tui/hooks/usePipelineEvents.ts` | 61.5% | "UI tier" | drained, 8.4 |
+| `src/tui/hooks/useKeyboard.ts` | 57.7% | "UI tier" | drained, 8.4 |
+| `src/tui/hooks/useAgentStreamEvents.ts` | 17.9% | "UI tier" | drained, 8.4 |
+| `src/prompts/loader.ts` | 77.3% | "#1779 unmeasurable" - it was not | drained, 8.6 |
 
-The four `src/tui/**` rows that stood here until 2026-08-30 are gone - drained, not excused.
-See log entry 8.4. The reasoning that put them here ("UI tier, verified by eye") did not
-survive reading the uncovered lines.
+**The bar for adding a row back.** An entry needs a reason that survives reading the
+uncovered lines, not a category the file belongs to. Both exemptions this doc shipped
+failed that test: one was a tier label applied to event handlers and pure functions, the
+other named an upstream Bun defect that had nothing to do with the number. Before writing
+a row, list the uncovered lines and say what each one is.
 
 ---
 
@@ -597,3 +601,40 @@ labelled as such.
 **Deleted `coverage-baseline.txt`.** A tracked 58KB Bun 1.3.13 text-reporter dump from
 `#1072` (2026-05-22), referenced by no script, workflow or doc. This is the stale file
 the 2026-08-20 gap analysis flagged in its section 9.
+
+### 8.6 - 2026-08-30 - the last entry drained; baseline EMPTY
+
+`src/prompts/loader.ts` is at **100%** and the per-file baseline is now `{}`.
+
+The 77.27% was never about #1779 (see 8.4). The only uncovered lines were `loadOverride`'s
+`catch`, reached solely by two `fullTest`-gated tests that chmod a file to `0o000` - and
+the coverage gate does not set `FULL=1`.
+
+**Un-gating them was rejected.** `chmod 0o000` does not deny the owner when the suite runs
+as root, so those tests would fail in any root container. Two root-proof fixtures were
+probed and both fail earlier than the `catch`: `Bun.file().exists()` returns **false** for
+a directory and **false** for a unix socket, so `loadOverride` returns `null` before it
+ever calls `.text()`. The `catch` is reachable only by a regular file that cannot be
+opened - i.e. by permissions - which is exactly what root cannot be denied.
+
+**What was done instead: a `_deps` seam,** which is this repo's own documented convention
+for external calls and which `loader.ts` was simply missing. `_promptLoaderDeps`
+(`fileExists`, `readText`) follows `_scopeFilesDeps`; two new tests inject a throwing
+`readText` and cover the `catch` deterministically, root or not, including the
+non-`Error` rejection arm. The chmod tests stay exactly as they were - they are the real
+integration check and still pass under `FULL=1` (20/20).
+
+**Fixed in passing:** the floating `expect(loadOverride(...)).rejects.toThrow()` at
+`loader.test.ts:205` reported in 8.4 now has its `await`, so the assertion actually runs.
+
+**`UNMEASURABLE` emptied.** With `loader.ts` gone from the baseline the map described
+nothing. #1779 is **not** fixed upstream - its two-file repro still produces no `SF:`
+record on Bun 1.4.0 - but a stale entry is worse than none, because it would let a genuine
+disappearance pass silently. The two tests that iterated the map now pass vacuously against
+an empty one, so they were replaced: one pins the emptiness, the other runs the reason-shape
+guard over a synthetic entry.
+
+**Final state:** aggregate **95.82%** lines / **92.80%** functions over `src/`, 0 files
+below the per-file floor, 0 baseline entries, 0 unmeasurable entries. 16,402 tests, 0 fail.
+This doc is closed; section 1's tiers remain the standard for new test PRs, and section 7
+records the bar for ever adding an exemption back.

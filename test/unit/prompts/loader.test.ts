@@ -11,7 +11,7 @@ import { type DeepPartial, fullTest, makeNaxConfig, makeTempDir } from "@test/he
 import type { NaxConfig } from "@/config";
 import { promptLoaderConfigSelector } from "@/config";
 import type { PromptRole } from "@/prompts/core/types";
-import { loadOverride } from "@/prompts/loader";
+import { _promptLoaderDeps, loadOverride } from "@/prompts/loader";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -188,6 +188,49 @@ describe("loadOverride — file exists", () => {
 // 5. Throws on unreadable file (permissions error)
 // ---------------------------------------------------------------------------
 
+describe("loadOverride — unreadable file, via the _deps seam", () => {
+  // The chmod tests below are the real integration check but can only deny access
+  // to a non-root user, so they are fullTest-gated and never run under the coverage
+  // gate. These cover the same catch deterministically, root or not.
+  let origReadText: typeof _promptLoaderDeps.readText;
+  let origFileExists: typeof _promptLoaderDeps.fileExists;
+
+  beforeEach(() => {
+    origReadText = _promptLoaderDeps.readText;
+    origFileExists = _promptLoaderDeps.fileExists;
+  });
+
+  afterEach(() => {
+    _promptLoaderDeps.readText = origReadText;
+    _promptLoaderDeps.fileExists = origFileExists;
+  });
+
+  test("rethrows a read failure as an error naming the role and the path", async () => {
+    _promptLoaderDeps.fileExists = async () => true;
+    _promptLoaderDeps.readText = async () => {
+      throw new Error("EACCES: permission denied");
+    };
+
+    const config = makeConfig({ prompts: { overrides: { "test-writer": ".nax/prompts/locked.md" } } });
+
+    await expect(loadOverride("test-writer", tmpDir, config)).rejects.toThrow(
+      /test-writer.*locked\.md.*EACCES: permission denied/,
+    );
+  });
+
+  test("a non-Error rejection is stringified rather than dropped", async () => {
+    _promptLoaderDeps.fileExists = async () => true;
+    // Rejected rather than thrown: biome's useThrowOnlyError bans a literal
+    // `throw` of a non-Error, but the arm under test is exactly what happens
+    // when some dependency rejects with one.
+    _promptLoaderDeps.readText = () => Promise.reject("raw string failure");
+
+    const config = makeConfig({ prompts: { overrides: { implementer: ".nax/prompts/locked.md" } } });
+
+    await expect(loadOverride("implementer", tmpDir, config)).rejects.toThrow(/raw string failure/);
+  });
+});
+
 describe("loadOverride — permission error", () => {
   // Requires file permission manipulation — skipped by default, run with FULL=1.
   const skipOnCI = fullTest;
@@ -202,7 +245,7 @@ describe("loadOverride — permission error", () => {
 
     const config = makeConfig({ prompts: { overrides: { "test-writer": relPath } } });
 
-    expect(loadOverride("test-writer", tmpDir, config)).rejects.toThrow();
+    await expect(loadOverride("test-writer", tmpDir, config)).rejects.toThrow();
   });
 
   skipOnCI("error message mentions the role or path when unreadable", async () => {
