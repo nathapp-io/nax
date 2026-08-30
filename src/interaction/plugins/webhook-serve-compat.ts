@@ -31,13 +31,17 @@ let servePortZeroCounter = 0;
 const inMemoryServers = new Map<number, { fetch: (request: Request) => Response | Promise<Response> }>();
 
 /**
- * The exact global objects present before any install patches them. Captured at
- * module load — the shim only patches via installServePortZeroCompat(), so at
- * load time Bun.serve/globalThis.fetch are pristine. Every restore reinstates
- * these same objects, which is what AC3/AC4 assert (identity, not port equality).
+ * The exact global objects present immediately before the FIRST install of the
+ * current install/restore generation patches them. Captured inside the install
+ * branch, not at module load — capturing at load time would freeze whatever
+ * Bun.serve/globalThis.fetch happened to be when this module was first
+ * imported, and a later restore would silently reinstate that stale pair even
+ * if something else patched the globals between load and install (a test
+ * double, another shim). Every restore in this generation reinstates these
+ * same objects, which is what AC3/AC4 assert (identity, not port equality).
  */
-const servePortZeroOriginalServe = Bun.serve;
-const servePortZeroOriginalFetch = globalThis.fetch;
+let servePortZeroOriginalServe: typeof Bun.serve;
+let servePortZeroOriginalFetch: typeof globalThis.fetch;
 
 /**
  * SEC-06(b): the counter previously wrapped unconditionally after
@@ -101,6 +105,16 @@ function createInMemoryServer(options: ServeCompatOptions, port: number): ServeC
   return server;
 }
 
+/**
+ * NOTE: this reference-counts installs rather than treating every re-entrant
+ * restore as an unconditional no-op. The spec's target table describes the
+ * simpler "second call returns a no-op restore" contract, but that literal
+ * shape was shipped once (see git history) and broke concurrent webhook
+ * servers: the FIRST caller's restore tore down the shim while a second,
+ * still-active server depended on it. Ref-counting intentionally widens the
+ * contract so the globals stay patched until every outstanding install has
+ * been restored, regardless of restore order.
+ */
 export function installServePortZeroCompat(): () => void {
   if (servePortZeroCompatInstalled) {
     // Re-entrant call: the patch is already installed by a prior caller. Reference-
@@ -110,8 +124,10 @@ export function installServePortZeroCompat(): () => void {
     // shim a second, still-active server depends on.
     servePortZeroCompatRefCount += 1;
   } else {
-    const boundOriginalServe = Bun.serve.bind(Bun);
-    const boundOriginalFetch = globalThis.fetch.bind(globalThis);
+    servePortZeroOriginalServe = Bun.serve;
+    servePortZeroOriginalFetch = globalThis.fetch;
+    const boundOriginalServe = servePortZeroOriginalServe.bind(Bun);
+    const boundOriginalFetch = servePortZeroOriginalFetch.bind(globalThis);
     const patchedServe = ((options: ServeCompatOptions): ServeCompatReturn => {
       const requestedPort = typeof options.port === "number" ? options.port : 0;
       // Route port 0 through the real Bun.serve too — the OS assigns a real available

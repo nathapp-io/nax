@@ -18,7 +18,7 @@ async function bunFileExists(path: string): Promise<boolean> {
   return Bun.file(path).exists();
 }
 
-async function bunMkdirp(path: string): Promise<void> {
+async function mkdirp(path: string): Promise<void> {
   await mkdir(path, { recursive: true });
 }
 
@@ -318,8 +318,19 @@ export async function initPackage(repoRoot: string, packagePath: string, force =
     return;
   }
 
-  if (!(await bunFileExists(naxDir))) {
-    await bunMkdirp(naxDir);
+  // mkdir(..., { recursive: true }) throws EEXIST when the path is a regular
+  // file — surface it as a typed NaxError, mirroring initContext. Call it
+  // unconditionally: a bunFileExists(naxDir) guard would return true (and
+  // skip this) when naxDir itself is a regular file — exactly the case this
+  // must catch — since Bun.file(path).exists() is true for a regular file.
+  try {
+    await mkdirp(naxDir);
+  } catch (err) {
+    throw new NaxError(`initPackage: failed to create ${naxDir}: ${(err as Error).message}`, "INIT_ERROR", {
+      stage: "init-context",
+      path: naxDir,
+      cause: err,
+    });
   }
 
   const content = generatePackageContextTemplate(packagePath);
@@ -349,7 +360,7 @@ export async function initContext(projectRoot: string, options: InitContextOptio
   // previous spawn-and-ignore-exit-code path was silently turning into an
   // empty-success result. Surface it as a typed NaxError instead.
   try {
-    await bunMkdirp(naxDir);
+    await mkdirp(naxDir);
   } catch (err) {
     throw new NaxError(`initContext: failed to create ${naxDir}: ${(err as Error).message}`, "INIT_ERROR", {
       stage: "init-context",

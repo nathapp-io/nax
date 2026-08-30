@@ -15,6 +15,7 @@ import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { spawn } from "../utils/bun-deps";
+import { errorMessage } from "../utils/errors";
 import type { IsolationCheck } from "./types";
 
 const GIT_TIMEOUT_MS = 10_000;
@@ -264,7 +265,7 @@ export async function verifyTestWriterIsolation(
       logger.warn("tdd-isolation", "git diff --numstat failed; falling back to strict-mode disposition", {
         workdir,
         fromRef: beforeRef,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     }
   }

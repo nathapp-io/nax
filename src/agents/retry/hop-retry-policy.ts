@@ -14,6 +14,9 @@
 import type { AgentManagerConfig } from "@/config";
 import { DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG, DEFAULT_CONFIG } from "@/config";
 import type { AdapterFailure } from "@/context";
+// Exact alias into the nested barrel (idle-watchdog/index.ts), not the parent
+// runtime/middleware barrel — routing through the parent closes a real
+// runtime import cycle (see src/agents/manager.ts for the full chain).
 import { resolveIdleWatchdogSettings } from "@/runtime/middleware/idle-watchdog";
 import type { AgentResult, AgentRunOptions } from "../types";
 

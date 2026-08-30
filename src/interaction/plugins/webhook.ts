@@ -467,6 +467,8 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       // rejected promise (every future send()/receive() would await it and
       // immediately re-throw, wedging the plugin until a full re-init).
       this.serverStartPromise = null;
+      this.compatRestore?.();
+      this.compatRestore = null;
       throw err;
     }
     this.serverStartPromise = null;
@@ -483,7 +485,6 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     bunServer.stop();
     this.server = null;
     this.serverStartPromise = null;
-    // Reinstate the globals the compat shim patched, exactly when the server stops.
     this.compatRestore?.();
     this.compatRestore = null;
   }

@@ -18,6 +18,7 @@ import type { MiddlewareContext } from "../runtime/agent-middleware";
 import { MiddlewareChain } from "../runtime/agent-middleware";
 import type { IDispatchEventBus } from "../runtime/dispatch-events";
 import { DispatchEventBus } from "../runtime/dispatch-events";
+// Nested-barrel alias, not the parent barrel — the parent closes a runtime import cycle (check:import-cycles).
 import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";

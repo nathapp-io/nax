@@ -10,6 +10,24 @@ withDepsRestore(_cleanupDeps, ["spawn", "sleep", "kill", "killProcessGroupFn"]);
 // ceil(gracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS) iterations, so it
 // terminates as soon as the group dies (instantly with injected sleep).
 
+// The first `ps -o pgid= -p PID` looks up the leader's own PGID; the
+// remaining `ps -o pid= -g PGID` calls probe group membership. The handler
+// distinguishes them by inspecting the args.
+function stubPs(opts: { pgidForLeader: string | null; groupMembers: string[] }): void {
+  _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
+    if (cmd[1] === "-o" && cmd[2] === "pgid=") {
+      return opts.pgidForLeader === null
+        ? { stdout: "", stderr: "No such process\n", exitCode: 1 }
+        : { stdout: `  ${opts.pgidForLeader}\n` };
+    }
+    if (cmd[1] === "-o" && cmd[2] === "pid=") {
+      // hasLiveGroupMembers: returns true if the group has members
+      return { stdout: opts.groupMembers.join("\n") };
+    }
+    return { stdout: "" };
+  }).spawn;
+}
+
 describe("CLEANUP_GRACE_POLL_INTERVAL_MS (US-002)", () => {
   // AC6 — the constant is a small positive number well under the 3000ms
   // default grace. Importing it at module load must not throw.
@@ -21,25 +39,6 @@ describe("CLEANUP_GRACE_POLL_INTERVAL_MS (US-002)", () => {
 });
 
 describe("cleanupProcessTree — bounded grace poll (US-002)", () => {
-  // The first `ps -o pgid= -p PID` looks up the leader's own PGID; the
-  // remaining `ps -o pid= -g PGID` calls probe group membership. The
-  // handler distinguishes them by inspecting the args.
-  function stubPs(opts: { pgidForLeader: string | null; groupMembers: string[] }): void {
-    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
-      if (cmd[1] === "-o" && cmd[2] === "pgid=") {
-        return opts.pgidForLeader === null
-          ? { stdout: "", stderr: "No such process\n", exitCode: 1 }
-          : { stdout: `  ${opts.pgidForLeader}\n` };
-      }
-      if (cmd[1] === "-o" && cmd[2] === "pid=") {
-        // hasLiveGroupMembers: returns true if the group has members
-        const members = opts.groupMembers;
-        return { stdout: members.join("\n") };
-      }
-      return { stdout: "" };
-    }).spawn;
-  }
-
   // AC7 — first ps reports pgid 12345, every later probe reports an empty
   // group. cleanupProcessTree must send exactly one SIGTERM and the
   // recorded sleep arguments must sum to no more than
@@ -106,20 +105,6 @@ describe("cleanupProcessTree — bounded grace poll (US-002)", () => {
 // beyond that interval. Non-finite or negative grace values must not
 // infinite-loop or silently skip the grace either.
 describe("cleanupProcessTree — grace overshoot / non-finite defense", () => {
-  function stubPs(opts: { pgidForLeader: string | null; groupMembers: string[] }): void {
-    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
-      if (cmd[1] === "-o" && cmd[2] === "pgid=") {
-        return opts.pgidForLeader === null
-          ? { stdout: "", stderr: "No such process\n", exitCode: 1 }
-          : { stdout: `  ${opts.pgidForLeader}\n` };
-      }
-      if (cmd[1] === "-o" && cmd[2] === "pid=") {
-        return { stdout: opts.groupMembers.join("\n") };
-      }
-      return { stdout: "" };
-    }).spawn;
-  }
-
   // Overshoot: a grace of 50 ms (less than the 100 ms interval) must not
   // actually sleep 100 ms — every sleep argument must be ≤ gracePeriodMs.
   test("grace shorter than poll interval: sleeps ≤ gracePeriodMs, not a full interval", async () => {
@@ -180,12 +165,17 @@ describe("cleanupProcessTree — grace overshoot / non-finite defense", () => {
       }
     });
 
-    await Promise.race([
-      cleanupProcessTree(12345, Number.POSITIVE_INFINITY),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout: cleanupProcessTree did not terminate")), 2000),
-      ),
-    ]);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        cleanupProcessTree(12345, Number.POSITIVE_INFINITY),
+        new Promise((_, reject) => {
+          deadline = setTimeout(() => reject(new Error("timeout: cleanupProcessTree did not terminate")), 2000);
+        }),
+      ]);
+    } finally {
+      if (deadline) clearTimeout(deadline);
+    }
 
     // Under the bug the rescue fires at call #201, so sleepCalls >= 201.
     // Under the fix the grace is clamped to a finite value and the loop

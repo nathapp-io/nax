@@ -33,6 +33,9 @@ export const _cleanupDeps = {
  */
 export const CLEANUP_GRACE_POLL_INTERVAL_MS = 100;
 
+/** Default grace period for `cleanupProcessTree`, and the clamp fallback for a non-finite/negative caller value. */
+export const DEFAULT_CLEANUP_GRACE_MS = 3000;
+
 /**
  * Get process group ID (PGID) for a given process ID.
  *
@@ -119,7 +122,7 @@ export async function hasLiveGroupMembers(pgid: number): Promise<boolean> {
  * }
  * ```
  */
-export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Promise<void> {
+export async function cleanupProcessTree(pid: number, gracePeriodMs = DEFAULT_CLEANUP_GRACE_MS): Promise<void> {
   try {
     // Get the process group ID
     const pgid = await getPgid(pid);
@@ -141,7 +144,8 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
     // an adversarial caller cannot turn the bounded poll into an infinite
     // loop (`Infinity` → maxIterations = Infinity) or silently skip it
     // (`Math.ceil(-5 / 100)` = `-0`, and `0 < -0` is false).
-    const safeGracePeriodMs = Number.isFinite(gracePeriodMs) && gracePeriodMs > 0 ? gracePeriodMs : 3000;
+    const safeGracePeriodMs =
+      Number.isFinite(gracePeriodMs) && gracePeriodMs > 0 ? gracePeriodMs : DEFAULT_CLEANUP_GRACE_MS;
 
     // Wait for graceful shutdown via a bounded poll. Each iteration sleeps
     // CLEANUP_GRACE_POLL_INTERVAL_MS and re-checks the GROUP (not just the
@@ -158,13 +162,15 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
     // wait 300 ms (or, equivalently, a caller asking for less than the
     // 100 ms interval does not wait the full interval).
     const maxIterations = Math.ceil(safeGracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS);
+    let groupStillAlive = true;
     for (let i = 0; i < maxIterations; i++) {
       const remaining = safeGracePeriodMs - i * CLEANUP_GRACE_POLL_INTERVAL_MS;
       await _cleanupDeps.sleep(Math.min(CLEANUP_GRACE_POLL_INTERVAL_MS, Math.max(0, remaining)));
-      if (!(await hasLiveGroupMembers(pgid))) break;
+      groupStillAlive = await hasLiveGroupMembers(pgid);
+      if (!groupStillAlive) break;
     }
 
-    if (await hasLiveGroupMembers(pgid)) {
+    if (groupStillAlive) {
       _cleanupDeps.killProcessGroupFn(pgid, "SIGKILL");
     }
   } catch (error) {

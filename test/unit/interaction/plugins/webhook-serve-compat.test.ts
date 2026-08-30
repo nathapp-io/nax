@@ -37,18 +37,19 @@ describe("installServePortZeroCompat (SEC-06)", () => {
     const patchedServe = Bun.serve;
     const patchedFetch = globalThis.fetch;
 
-    // The contract added by US-004: installServePortZeroCompat() returns a
-    // restore function. The first call's restore reinstates the originals;
-    // a re-entrant call must return a no-op so it cannot uninstall the
-    // first caller's patch.
+    // The contract added by US-004 (and reference-counted by a later fix, see
+    // the "concurrent installs" test below): installServePortZeroCompat()
+    // returns a restore function. Restores are reference-counted, not
+    // unconditional no-ops — the globals stay patched until every
+    // outstanding install has been restored, regardless of order.
     const secondRestore = installServePortZeroCompat() as unknown;
     expect(typeof secondRestore).toBe("function");
     expect(Bun.serve).toBe(patchedServe);
     expect(globalThis.fetch).toBe(patchedFetch);
-    // AC5 (US-004): the second call's restore is a no-op. Invoking it must
-    // leave Bun.serve and globalThis.fetch still equal to the patched functions
-    // the first call installed — the second caller cannot uninstall the first
-    // caller's patch.
+    // AC5 (US-004): invoking the second call's restore decrements the
+    // refcount but does not reinstate the originals — the first caller's
+    // install is still outstanding, so Bun.serve and globalThis.fetch stay
+    // equal to the patched functions the first call installed.
     (secondRestore as () => void)();
     expect(Bun.serve).toBe(patchedServe);
     expect(globalThis.fetch).toBe(patchedFetch);
