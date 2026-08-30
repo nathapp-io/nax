@@ -77,9 +77,9 @@ jobs:
       - name: Test (e2e)
         run: bun run test:e2e
 
-      # Enforces the documented 80% floor, aggregate and per file. Bun collects
-      # coverage but does not enforce coverageThreshold via exit code, so
-      # scripts/check-coverage.ts parses lcov and fails below the floor.
+      # Enforces the documented 80% floor over `src/`, aggregate and per file. Bun's
+      # own coverageThreshold only exits non-zero with the `text` reporter enabled,
+      # and has no per-file ratchet, so scripts/check-coverage.ts parses lcov instead.
       # Re-runs unit + integration + ui in ONE invocation (~55s) — Bun writes a
       # single merged report per invocation and cannot merge across them, so the
       # three steps above cannot be reused for this.

@@ -11,12 +11,13 @@ Written for handover: every step below is executable without re-deriving the ana
 
 ## 0. Current state - re-measured 2026-08-30, after the UI-tier drain
 
-Gate scope is `test/unit/` + `test/integration/` + `test/ui/` in one invocation.
+Gate scope is `test/unit/` + `test/integration/` + `test/ui/` in one invocation, measuring
+`src/` only (see 8.5 — the aggregate used to include `test/helpers/**`).
 
 | Reading | Value | Gate |
 |:--|--:|:--|
-| Aggregate line coverage | **94.52%** | floor 80%, passing |
-| Aggregate function coverage | **90.59%** | floor 80%, passing |
+| Aggregate line coverage (`src/` only) | **95.81%** | floor 80%, passing |
+| Aggregate function coverage (`src/` only) | **92.79%** | floor 80%, passing |
 | Files below the 80% per-file floor | **1** | ratchet, passing |
 | Entries recorded in the baseline file | **1** | `src/prompts/loader.ts`, see section 7 |
 | Coverage run wall clock | ~47s | was ~20s under the unit-only scope |
@@ -557,3 +558,42 @@ unmeasurable carry-forward - "not drained, not draggable". Both halves are now w
 - The 77.27% was never the defect's doing. The file is **100% under `FULL=1`**; its only
   uncovered lines are the `catch` block, reached solely by the two `fullTest`-gated tests
   that chmod a file to `0o000`. Recorded properly in section 7.
+
+### 8.5 - 2026-08-30 - gate accuracy, and three comments that had gone stale under Bun 1.4.0
+
+No coverage was added here. The gate was measuring the wrong denominator and three
+comments were describing a Bun that this repo no longer runs.
+
+**The aggregate included test scaffolding.** `coverageSkipTestFiles` drops `*.test.ts`
+but not `test/helpers/**` or `test/preload.ts`, and those do get `SF:` records - 55 of
+them. `parseLcov()` summed every `LF`/`LH` regardless of path, so ~5,000 lines of test
+helpers sat in the denominator. The per-file ratchet was always scoped to `src/`; the
+aggregate now is too, via `AGGREGATE_SCOPE_PREFIX`, so both floors describe the same
+thing. Reported aggregate moves 94.52% -> **95.81%** lines and 90.59% -> **92.79%**
+functions. That is a measurement correction, not an improvement; nothing was tested that
+was not tested before. Three `parseLcov` tests pin the scoping.
+
+**Stale claim 1 - the `text` reporter no longer aborts on a pipe.** `bunfig.toml`,
+`check-coverage.ts` and `ci.yml` all carried a note that `--coverage-reporter=text`
+aborts the run with `error: An internal error occurred (WriteFailed)` whenever stdout is
+a pipe, "which is why this gate could never have run in CI". Re-probed on Bun 1.4.0 with
+`coverageReporter = ["text", "lcov"]` piped to `tail`: full table, exit 0. Fixed
+upstream. The reporter stays off - its ~800-row table is cosmetic when the floors are
+computed from lcov - but the comments now say so honestly.
+
+**Stale claim 2 - why `coverageThreshold` cannot replace this script.** The old reason
+given was that Bun "computes but does not enforce" it. The documented behaviour is
+narrower: the threshold check only runs when the `text` reporter is enabled (outside
+`--parallel`), so it was the lcov-only reporter that made it silent here. It still
+cannot replace the script, for a better reason - no per-file ratchet, no missing-file
+guard.
+
+**Stale claim 3 - `--coverage-reporter=lcov` on the command line is a no-op.**
+`bunfig.toml`'s `coverageReporter` wins over the CLI flag (verified: passing
+`--coverage-reporter=text` with `["lcov"]` in bunfig printed no table and still wrote
+`lcov.info`). The argument in `runCoverage()` is belt-and-braces only and is now
+labelled as such.
+
+**Deleted `coverage-baseline.txt`.** A tracked 58KB Bun 1.3.13 text-reporter dump from
+`#1072` (2026-05-22), referenced by no script, workflow or doc. This is the stale file
+the 2026-08-20 gap analysis flagged in its section 9.

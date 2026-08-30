@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildUpdatedBaseline, findMissingBaselined, parsePerFileLines, UNMEASURABLE } from "@scripts/check-coverage";
+import {
+  buildUpdatedBaseline,
+  findMissingBaselined,
+  parseLcov,
+  parsePerFileLines,
+  UNMEASURABLE,
+} from "@scripts/check-coverage";
 
 /** Builds an lcov body for the given files, each as a `covered/found` line pair. */
 function lcov(records: Array<[file: string, hit: number, found: number]>): string {
@@ -16,6 +22,49 @@ function lcov(records: Array<[file: string, hit: number, found: number]>): strin
 }
 
 const everythingExists = () => true;
+
+/** Builds an lcov body carrying function counters as well as line counters. */
+function lcovWithFns(records: Array<[file: string, lh: number, lf: number, fnh: number, fnf: number]>): string {
+  return records
+    .map(([file, lh, lf, fnh, fnf]) => `SF:${file}\nFNF:${fnf}\nFNH:${fnh}\nLF:${lf}\nLH:${lh}\nend_of_record`)
+    .join("\n");
+}
+
+describe("parseLcov", () => {
+  test("sums only records under src/", () => {
+    // `coverageSkipTestFiles` drops *.test.ts but not test/helpers/** or
+    // test/preload.ts, so an unscoped sum folds test scaffolding into the aggregate.
+    const totals = parseLcov(
+      lcovWithFns([
+        ["src/a.ts", 9, 10, 4, 5],
+        ["test/helpers/temp.ts", 1, 100, 0, 20],
+        ["test/preload.ts", 2, 50, 1, 10],
+      ]),
+    );
+
+    expect(totals).toEqual({ linesFound: 10, linesHit: 9, fnFound: 5, fnHit: 4 });
+  });
+
+  test("sums every src record, not just the first", () => {
+    const totals = parseLcov(
+      lcovWithFns([
+        ["src/a.ts", 9, 10, 4, 5],
+        ["src/b.ts", 1, 10, 1, 5],
+      ]),
+    );
+
+    expect(totals).toEqual({ linesFound: 20, linesHit: 10, fnFound: 10, fnHit: 5 });
+  });
+
+  test("the scope prefix is injectable", () => {
+    const body = lcovWithFns([
+      ["src/a.ts", 9, 10, 4, 5],
+      ["test/helpers/temp.ts", 1, 100, 0, 20],
+    ]);
+
+    expect(parseLcov(body, "test/").linesFound).toBe(100);
+  });
+});
 
 describe("parsePerFileLines", () => {
   test("reports each src file's line ratio and ignores paths outside src/", () => {
