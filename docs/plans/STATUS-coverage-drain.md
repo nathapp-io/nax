@@ -9,23 +9,28 @@ Written for handover: every step below is executable without re-deriving the ana
 
 ---
 
-## 0. Current state - measured 2026-08-30 at `36e20f266`
+## 0. Current state - re-measured 2026-08-30, after P0
+
+Gate scope is now `test/unit/` + `test/integration/` + `test/ui/` in one invocation.
 
 | Reading | Value | Gate |
 |:--|--:|:--|
-| Aggregate line coverage (`test/unit` only, today's gate scope) | **88.58%** | floor 80%, passing |
-| Aggregate function coverage (`test/unit` only) | **87.92%** | floor 80%, passing |
-| Files below the 80% per-file floor (`test/unit` only) | **94** | ratchet, passing |
-| Entries recorded in the baseline file | 103 | 8 genuinely stale, 1 anomaly - see 3.1 |
-| Aggregate line coverage (unit + integration + ui, measured) | **91.59%** | - |
-| Files below the 80% per-file floor (unit + integration + ui) | **62** | - |
+| Aggregate line coverage | **91.34%** | floor 80%, passing |
+| Aggregate function coverage | **88.66%** | floor 80%, passing |
+| Files below the 80% per-file floor | **62** | ratchet, passing |
+| Entries recorded in the baseline file | **63** | 62 measured + `src/prompts/loader.ts` carried, see 3.1 |
+| Coverage run wall clock | ~38-55s | was ~20s under the unit-only scope |
 
-The aggregate 80% rule is already met and is not the work. **The work is the per-file
-ratchet.**
+The aggregate 80% rule is met with room to spare and is not the work. **The work is the
+62 files below the per-file ratchet**, listed in section 4.
 
-`bun run test:coverage` re-runs `test/unit/` (about 20s), parses `coverage/lcov.info`, and
-fails when a file not in the baseline sits below 80%, or a baselined file drops below its
-recorded number. There is no tiering: one flat 80% floor.
+`bun run test:coverage` runs the three suites with coverage, parses `coverage/lcov.info`,
+and fails when a file not in the baseline sits below 80%, when a baselined file drops below
+its recorded number, or when a baselined file is missing from the report entirely while
+still on disk. There is no tiering: one flat 80% floor.
+
+For the record, the state this doc opened on (2026-08-30 at `36e20f266`, before P0): 88.58%
+lines / 87.92% functions, 94 files below floor, 103 baseline entries under a unit-only scope.
 
 ---
 
@@ -52,10 +57,12 @@ before **and** after `nax generate`, then `bun run check:rules-drift`.
 
 ---
 
-## 2. Scope decision - the gate should measure unit + integration + ui
+## 2. Scope decision - the gate measures unit + integration + ui
 
-Today the gate instruments `test/unit/` alone. That is why files like
-`src/execution/runner.ts` score 42% in the gate while `test/integration/` covers them
+**Landed.** Kept for the evidence, since it is what justifies the 103 -> 63 baseline drop.
+
+The gate used to instrument `test/unit/` alone. That is why files like
+`src/execution/runner.ts` scored 42% in the gate while `test/integration/` covered them
 thoroughly.
 
 **Probed on 2026-08-30 and it works.** One invocation:
@@ -134,39 +141,72 @@ that the omission can no longer pass silently:
 is not drained and its entry must stay. If #1779 is ever fixed upstream, remove the
 `UNMEASURABLE` entry and let the ratchet pick the file back up.
 
-### 3.2 Widen the gate scope
+### 3.2 Widen the gate scope - DONE
 
-In `scripts/check-coverage.ts`, `runCoverage()` currently spawns `bun test test/unit/`.
-Change the argument list to `test/unit/`, `test/integration/`, `test/ui/`. Update the
-"Scope:" paragraph in the file header - the claim that the suites "cannot be merged" and
-"add little source coverage over the unit suite" is now measurably false (37 files). Update
-the `## Coverage` section of `.nax/rules/testing-commands.md` to match, then `nax generate`.
+`runCoverage()` now spawns `bun test` over `GATED_SUITES` = `test/unit/`,
+`test/integration/`, `test/ui/`. The header's "Scope:" paragraph and the CI step's comment
+were rewritten - the old claim that the suites "cannot be merged" and "add little source
+coverage over the unit suite" was measurably false. `RUN_TIMEOUT_MS` stays at 300,000; a
+merged run takes 38-55s.
 
-`RUN_TIMEOUT_MS` at 300,000 is still ample for a 55s run; leave it.
-
-### 3.3 Re-baseline once, against the new scope
+**Trap for anyone editing `.nax/rules/`.** `nax generate` writes `CLAUDE.md`, `AGENTS.md`,
+`codex.md` and `GEMINI.md`, but it does **not** sync `.claude/rules/` - that needs
+`nax rules export --agent=claude`, and `bun run check:rules-drift` is what catches the
+omission. Full sequence:
 
 ```
-bun run test:coverage:update    # 103 entries -> 62
-bun run test:coverage           # must exit 0
+nax rules lint            # before
+# edit .nax/rules/*.md
+nax generate
+nax rules export --agent=claude
+bun run check:rules-drift
+nax rules lint            # after
 ```
 
-Commit 3.2 and 3.3 together as one PR: `test(coverage): measure the ratchet across unit,
-integration and ui`. This PR writes **no tests** and its diff is one script, one rules file,
-one baseline. That makes the 103 -> 62 drop reviewable as what it is - a change of
-instrument, not progress.
+### 3.3 Re-baseline once, against the new scope - DONE
 
-### 3.4 Record the structural blind spot (no code change)
+```
+bun run test:coverage:update
+bun run test:coverage        # exit 0
+```
 
-30 non-type `src/` files, about 2,240 LOC, are loaded by **no suite at all** and so are
-invisible to the per-file ratchet - it can only see files some test imports. The largest are
-`src/plugins/extensions.ts` (473), `src/commands/detect.ts` (279),
-`src/execution/lifecycle/story-size-prompts.ts` (123),
-`src/constitution/generator.ts` (158), `src/agents/shared/types-extended.ts` (162).
+103 entries -> **63**, and the run reported one carried-forward entry:
 
-Draining the baseline to empty does **not** mean every file meets 80%. Note this in the
-rules text so the finished state is not oversold, and file a follow-up issue. It is out of
-scope for this drain.
+```
+[coverage] per-file baseline updated: 63 files below the 80% floor.
+[coverage] 1 entry carried forward - the file exists but the report omitted it
+(GitHub #1779), so its number is kept rather than dropped:
+  src/prompts/loader.ts
+```
+
+That line is the 3.1 guard doing its job on its first real use. Without it the baseline
+would read 62 and `src/prompts/loader.ts` would have been silently deleted at 77.27%.
+
+63 = the 62 real targets in section 4, plus that one carried entry.
+
+### 3.4 The structural blind spot - recorded, no code change
+
+The ratchet can only see a file some test imports, so **an empty baseline will not mean
+every `src/` file meets 80%.** This is now written into `.nax/rules/testing-commands.md`
+so the finished state is not oversold.
+
+Measured honestly, the hole is much smaller than this doc first claimed. 73 `src/` files
+have no record in the report:
+
+| Group | Count | Verdict |
+|:--|--:|:--|
+| Imported by a test with `import type` only | 33 | legitimate - type imports erase at runtime, there is nothing to instrument |
+| Imported by a test for value, still absent | 1 | `src/prompts/loader.ts` - the #1779 defect, see 3.1 |
+| Referenced by no test, type-only modules | 30 | legitimate - no runtime code |
+| Referenced by no test, with runtime exports | **9** | the real hole, about **892 LOC** |
+
+The nine: `src/commands/detect.ts` (279), `src/constitution/generator.ts` (158),
+`src/execution/lifecycle/story-size-prompts.ts` (123), the five
+`src/acceptance/templates/*.ts` (294 together), and `src/tui/index.tsx` (38).
+
+An earlier revision of this doc put this at "30 non-type files, about 2,240 LOC". That was
+an over-count: it swept in type-only modules and `src/prompts/loader.ts`, which is loaded,
+merely unrecorded. Out of scope for this drain either way - worth its own issue.
 
 ---
 
@@ -174,6 +214,10 @@ scope for this drain.
 
 62 files, about 9,190 src LOC, grouped by cost. **One PR per tranche.** Ordered so the
 cheapest coverage lands first and the instrument is exercised early.
+
+These are the 62 real targets. The baseline holds 63 entries - the extra is
+`src/prompts/loader.ts`, which is unmeasurable rather than untested (3.1) and is not a
+tranche member.
 
 ### T1 - Last mile: 70-80 per cent (21 files, 3141 src LOC)
 
@@ -395,3 +439,25 @@ are all `import type`. Added `findMissingBaselined()` and `buildUpdatedBaseline(
 `scripts/check-coverage.ts` with an `UNMEASURABLE` map holding the one known instance, plus
 `test/unit/scripts/check-coverage.test.ts`. Proved the guard fires by emptying the map and
 watching the gate exit 1 naming the file. All five gates green.
+
+### 8.2 - 2026-08-30 - P0 complete
+
+Widened the gate to `test/unit/` + `test/integration/` + `test/ui/` in one invocation and
+re-baselined against it. 103 entries -> 63; aggregate 88.58% -> **91.34%** lines, 87.92% ->
+**88.66%** functions; files below the per-file floor 94 -> **62**. No test was written for
+any of it - the change is of instrument, not of coverage. Coverage run went from ~20s to
+~38-55s, and the CI step's comment now says why it cannot reuse the three suite steps above
+it.
+
+The 3.1 guard paid for itself on first real use: `--update-baseline` reported one entry
+carried forward (`src/prompts/loader.ts` at 77.27%) instead of deleting it, which is exactly
+the silent deletion the old code would have performed.
+
+Corrected 3.4 while re-measuring: the structural blind spot is **9 files / 892 LOC**, not the
+30 files / 2,240 LOC an earlier revision claimed. The old figure swept in type-only modules
+and `loader.ts`.
+
+Also learned: `nax generate` does not sync `.claude/rules/` - that needs
+`nax rules export --agent=claude`, and `bun run check:rules-drift` is what catches it.
+
+All five gates green. Tranche T1 is now unblocked.
