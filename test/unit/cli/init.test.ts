@@ -11,6 +11,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import { _initDeps, initCommand, initProject } from "@/cli/init";
+import { globalConfigDir } from "@/config/paths";
+import { writeProjectIdentity } from "@/runtime";
 
 describe("initProject — creates the project config scaffold", () => {
   test("creates config.json, constitution.md, hooks/ and features/; config.json has no prompts.overrides", async () => {
@@ -254,6 +256,119 @@ describe("initProject — stack-aware constitution.md", () => {
       await Bun.write(join(tempDir, "turbo.json"), "{}");
       await initProject(tempDir);
       expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(/monorepo|package boundar/i);
+    });
+  });
+
+  test("names nx's own task-scoping command when nx.json is present", async () => {
+    await withTempDir(async (tempDir) => {
+      await Bun.write(join(tempDir, "nx.json"), "{}");
+      await initProject(tempDir);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toContain("nx run <package>:<task>");
+    });
+  });
+
+  test("names pnpm's own task-scoping command when pnpm-workspace.yaml is present", async () => {
+    await withTempDir(async (tempDir) => {
+      await Bun.write(join(tempDir, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
+      await initProject(tempDir);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toContain(
+        "pnpm --filter <package> run <task>",
+      );
+    });
+  });
+
+  test("names bun's own task-scoping command when package.json declares workspaces", async () => {
+    await withTempDir(async (tempDir) => {
+      await Bun.write(join(tempDir, "package.json"), JSON.stringify({ name: "root", workspaces: ["packages/*"] }));
+      await initProject(tempDir);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toContain(
+        "bun run --filter <package> <task>",
+      );
+    });
+  });
+});
+
+describe("initProject — name validation and collision guard", () => {
+  test("throws INIT_INVALID_NAME for a name that fails validateProjectName", async () => {
+    await withTempDir(async (tempDir) => {
+      await expect(initProject(tempDir, { name: "Invalid Name!" })).rejects.toMatchObject({
+        code: "INIT_INVALID_NAME",
+      });
+    });
+  });
+
+  const COLLISION_KEY = "nax-test-init-project-collision";
+  const identityDir = join(globalConfigDir(), COLLISION_KEY);
+
+  test("throws INIT_NAME_COLLISION when the name is already claimed by a different workdir", async () => {
+    await writeProjectIdentity(COLLISION_KEY, {
+      name: COLLISION_KEY,
+      workdir: "/tmp/some-other-project",
+      remoteUrl: null,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    try {
+      await withTempDir(async (tempDir) => {
+        await expect(initProject(tempDir, { name: COLLISION_KEY })).rejects.toMatchObject({
+          code: "INIT_NAME_COLLISION",
+        });
+      });
+    } finally {
+      await Bun.$`rm -rf ${identityDir}`.quiet().nothrow();
+    }
+  });
+
+  test("force bypasses the collision guard even when the name is claimed elsewhere", async () => {
+    await writeProjectIdentity(COLLISION_KEY, {
+      name: COLLISION_KEY,
+      workdir: "/tmp/some-other-project",
+      remoteUrl: null,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    try {
+      await withTempDir(async (tempDir) => {
+        await initProject(tempDir, { name: COLLISION_KEY, force: true });
+        expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(true);
+      });
+    } finally {
+      await Bun.$`rm -rf ${identityDir}`.quiet().nothrow();
+    }
+  });
+});
+
+describe("initProject — detects a real git remote", () => {
+  async function git(cwd: string, args: string[]): Promise<void> {
+    const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    await proc.exited;
+  }
+
+  test("succeeds when the project has a configured origin remote", async () => {
+    await withTempDir(async (tempDir) => {
+      await git(tempDir, ["init"]);
+      await git(tempDir, ["remote", "add", "origin", "git@example.com:org/repo.git"]);
+      await initProject(tempDir);
+      expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(true);
+    });
+  });
+});
+
+describe("initCommand — global config scaffold", () => {
+  test("initializes ~/.nax (redirected to the isolated test global dir by test/preload.ts)", async () => {
+    await initCommand({ global: true });
+    const globalDir = globalConfigDir();
+    expect(existsSync(join(globalDir, "config.json"))).toBe(true);
+    expect(existsSync(join(globalDir, "constitution.md"))).toBe(true);
+    expect(existsSync(join(globalDir, "hooks"))).toBe(true);
+  });
+});
+
+describe("initCommand — default branch delegates to initProject", () => {
+  test("initializes the project scaffold when neither global nor package is set", async () => {
+    await withTempDir(async (tempDir) => {
+      await initCommand({ projectRoot: tempDir });
+      expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(true);
     });
   });
 });

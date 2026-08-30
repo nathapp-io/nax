@@ -514,6 +514,134 @@ describe("setupCommand — AC13: fillScripts invoked iff --fill-scripts flag set
   });
 });
 
+// ─── Real default _setupDeps implementations ─────────────────────────────────
+// These bypass the beforeEach overrides to exercise the actual default
+// functions assigned on the _setupDeps object, which the mocked-dep tests
+// above never invoke.
+
+describe("_setupDeps — real default implementations", () => {
+  test("default fileExists reflects real filesystem state via Bun.file", async () => {
+    await withTempDir(async (dir) => {
+      const missingPath = `${dir}/does-not-exist.json`;
+      expect(await saved.fileExists(missingPath)).toBe(false);
+
+      const presentPath = `${dir}/present.json`;
+      await Bun.write(presentPath, "{}");
+      expect(await saved.fileExists(presentPath)).toBe(true);
+    });
+  });
+
+  test("default stdout writes the message followed by a newline to process.stdout", () => {
+    const origWrite = process.stdout.write;
+    const chunks: string[] = [];
+    process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+      chunks.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stdout.write;
+
+    try {
+      saved.stdout("hello from setup");
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    expect(chunks).toEqual(["hello from setup\n"]);
+  });
+
+  test("default stderr writes the message followed by a newline to process.stderr", () => {
+    const origWrite = process.stderr.write;
+    const chunks: string[] = [];
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      chunks.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      saved.stderr("setup warning");
+    } finally {
+      process.stderr.write = origWrite;
+    }
+
+    expect(chunks).toEqual(["setup warning\n"]);
+  });
+
+  test("default writeSetupConfig writes real config.json and per-package mono configs to disk", async () => {
+    await withTempDir(async (dir) => {
+      const result = await saved.writeSetupConfig(dir, VALID_CONFIG, [{ relativeDir: "packages/a", config: {} }]);
+
+      expect(result.written).toHaveLength(2);
+      const rootConfig = await Bun.file(`${dir}/.nax/config.json`).text();
+      expect(JSON.parse(rootConfig)).toEqual(VALID_CONFIG);
+      const monoConfig = await Bun.file(`${dir}/.nax/mono/packages/a/config.json`).text();
+      expect(JSON.parse(monoConfig)).toEqual({});
+    });
+  });
+
+  test("default buildCallContext builds a real CallContext scoped to the workdir and close() tears it down", async () => {
+    await withTempDir(async (dir) => {
+      const { ctx, close } = await saved.buildCallContext(dir);
+      try {
+        expect(ctx.packageDir).toBe(dir);
+        expect(typeof ctx.agentName).toBe("string");
+        expect(ctx.agentName.length).toBeGreaterThan(0);
+        expect(ctx.runtime).toBeDefined();
+      } finally {
+        await close();
+      }
+    });
+  });
+
+  test("default generateSetupPlan delegates into the real operation and rejects on a malformed CallContext", async () => {
+    // Exercises the thin delegation wrapper without invoking a real agent —
+    // callOp fails fast on a CallContext missing packageView.
+    await expect(
+      saved.generateSetupPlan({} as import("@/operations/types").CallContext, SINGLE_ANALYSIS),
+    ).rejects.toBeDefined();
+  });
+});
+
+// ─── AC5 rethrow: non-SETUP_PLAN_INVALID errors propagate ────────────────────
+
+describe("setupCommand — AC5 rethrow: errors other than SETUP_PLAN_INVALID propagate", () => {
+  test("rethrows a NaxError whose code is not SETUP_PLAN_INVALID", async () => {
+    _setupDeps.generateSetupPlan = mock(async () => {
+      throw new NaxError("boom", "SOME_OTHER_CODE");
+    });
+
+    await withTempDir(async (dir) => {
+      await expect(setupCommand({ dir })).rejects.toThrow("boom");
+    });
+  });
+
+  test("rethrows a plain (non-NaxError) error", async () => {
+    _setupDeps.generateSetupPlan = mock(async () => {
+      throw new Error("unexpected failure");
+    });
+
+    await withTempDir(async (dir) => {
+      await expect(setupCommand({ dir })).rejects.toThrow("unexpected failure");
+    });
+  });
+
+  test("close() is still called when generateSetupPlan rejects with a non-matching error", async () => {
+    let closeCalled = false;
+    _setupDeps.buildCallContext = mock(async () => ({
+      ctx: {} as import("@/operations/types").CallContext,
+      close: mock(async () => {
+        closeCalled = true;
+      }),
+    }));
+    _setupDeps.generateSetupPlan = mock(async () => {
+      throw new Error("unexpected failure");
+    });
+
+    await withTempDir(async (dir) => {
+      await expect(setupCommand({ dir })).rejects.toThrow("unexpected failure");
+    });
+    expect(closeCalled).toBe(true);
+  });
+});
+
 // ─── AC12: CLI barrel exports setupCommand ────────────────────────────────────
 
 describe("setupCommand — AC12: exported from src/cli barrel", () => {

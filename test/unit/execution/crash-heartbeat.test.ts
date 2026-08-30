@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger, makeStatusWriter } from "@test/helpers";
+import { cleanupTempDir, makeLogger, makeStatusWriter, makeTempDir } from "@test/helpers";
 import { _heartbeatDeps, _isHeartbeatActive, startHeartbeat, stopHeartbeat } from "@/execution/crash-heartbeat";
+
+/** A sleep stub that resolves immediately the first N calls, then hangs forever. */
+function sleepResolvesThenHangs(times: number): typeof _heartbeatDeps.sleep {
+  let calls = 0;
+  return () =>
+    calls++ < times
+      ? Promise.resolve()
+      : new Promise<void>(() => {
+          /* park forever — the test stops the loop before it matters */
+        });
+}
 
 let origSleep: typeof _heartbeatDeps.sleep;
 let origGetLogger: typeof _heartbeatDeps.getSafeLogger;
@@ -198,5 +209,72 @@ describe("crash-heartbeat — startHeartbeat", () => {
 
     expect(_isHeartbeatActive()).toBe(false);
     expect(updates).toBe(0);
+  });
+
+  test("a completed tick logs debug, appends a JSONL entry, and calls statusWriter.update", async () => {
+    const dir = makeTempDir("nax-crash-heartbeat-");
+    const jsonlPath = `${dir}/heartbeat.jsonl`;
+    const logger = makeLogger();
+    _heartbeatDeps.getSafeLogger = () => logger;
+    _heartbeatDeps.sleep = sleepResolvesThenHangs(1);
+
+    let updateCalls = 0;
+    let lastCost: number | undefined;
+    let lastIterations: number | undefined;
+
+    try {
+      startHeartbeat(
+        makeStatusWriter({
+          update: async (cost: number, iterations: number) => {
+            updateCalls++;
+            lastCost = cost;
+            lastIterations = iterations;
+          },
+        }),
+        () => 42,
+        () => 7,
+        jsonlPath,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(updateCalls).toBe(1);
+      expect(lastCost).toBe(42);
+      expect(lastIterations).toBe(7);
+      expect(logger.calls.some((c) => c.level === "debug" && c.message === "Heartbeat")).toBe(true);
+
+      const jsonlContent = await Bun.file(jsonlPath).text();
+      const entry = JSON.parse(jsonlContent.trim());
+      expect(entry.stage).toBe("heartbeat");
+      expect(entry.data.pid).toBe(process.pid);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("logs a warning when statusWriter.update rejects during a tick, without crashing the loop", async () => {
+    const logger = makeLogger();
+    _heartbeatDeps.getSafeLogger = () => logger;
+    _heartbeatDeps.sleep = sleepResolvesThenHangs(1);
+
+    startHeartbeat(
+      makeStatusWriter({
+        update: async () => {
+          throw new Error("disk full");
+        },
+      }),
+      () => 0,
+      () => 0,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(
+      logger.calls.some(
+        (c) => c.level === "warn" && c.message === "Failed during heartbeat" && c.data?.error === "disk full",
+      ),
+    ).toBe(true);
+    // The tick's own catch swallowed the failure — the loop itself did not crash.
+    expect(logger.calls.some((c) => c.level === "warn" && c.message.includes("crashed"))).toBe(false);
   });
 });

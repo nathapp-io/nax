@@ -18,7 +18,7 @@
  *        exit code 0.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -566,5 +566,198 @@ describe("_replayCmdDeps.readMetrics — outputDir derived from eventsDir", () =
     const found = await _replayCmdDeps.readMetrics({ runId: "run-custom-outputdir", eventsDir });
 
     expect(found?.runId).toBe("run-custom-outputdir");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _replayCmdDeps.readJsonl (readJsonlLenient) — real implementation
+// ---------------------------------------------------------------------------
+
+describe("_replayCmdDeps.readJsonl — real implementation", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = makeTempDir("nax-replay-readjsonl-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  test("returns an empty array when the file does not exist", async () => {
+    const result = await _replayCmdDeps.readJsonl(join(dir, "missing.jsonl"));
+    expect(result).toEqual([]);
+  });
+
+  test("skips blank and malformed lines, keeping only valid JSON entries", async () => {
+    const entry: LogEntry = {
+      timestamp: "2026-01-01T00:00:00.000Z",
+      level: "info",
+      stage: "story-orchestrator",
+      storyId: "US-001",
+      message: "ok",
+    };
+    const path = join(dir, "log.jsonl");
+    writeFileSync(path, `\n${JSON.stringify(entry)}\n{not valid json\n  \n`);
+
+    const result = await _replayCmdDeps.readJsonl(path);
+    expect(result).toEqual([entry]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _replayCmdDeps.readStatus (readJsonOrUndefined) — real implementation
+// ---------------------------------------------------------------------------
+
+describe("_replayCmdDeps.readStatus — real implementation", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = makeTempDir("nax-replay-readstatus-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  test("returns undefined when the file does not exist", async () => {
+    expect(await _replayCmdDeps.readStatus(join(dir, "missing.json"))).toBeUndefined();
+  });
+
+  test("returns undefined when the file contains malformed JSON", async () => {
+    const path = join(dir, "status.json");
+    writeFileSync(path, "{ not valid json");
+    expect(await _replayCmdDeps.readStatus(path)).toBeUndefined();
+  });
+
+  test("returns the parsed object when the file contains valid JSON", async () => {
+    const status: NaxStatusFile = {
+      version: 1,
+      run: {
+        id: "run-x",
+        feature: "feat-x",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        status: "completed",
+        dryRun: false,
+        pid: 1,
+      },
+      progress: { total: 1, passed: 1, failed: 0, paused: 0, blocked: 0, pending: 0 },
+      cost: { spent: 0, limit: null },
+      current: null,
+      iterations: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      durationMs: 1000,
+    };
+    const path = join(dir, "status.json");
+    writeFileSync(path, JSON.stringify(status));
+    expect(await _replayCmdDeps.readStatus(path)).toEqual(status);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// registerReplayCommand — the .action() callback itself, not just its shape
+// ---------------------------------------------------------------------------
+
+describe("registerReplayCommand — action callback wiring", () => {
+  let origDeps: ReplayCommandDeps;
+  let origExit: typeof process.exit;
+  let stdoutSpy: ReturnType<typeof spyOn>;
+  let exitCalls: Array<number | string | null | undefined>;
+
+  // process.exit must be a real `never`-returning function — bun:test's
+  // spyOn/mockImplementation cannot satisfy that signature with a function
+  // that merely returns `undefined`, and casting the mock to fit is a banned
+  // escape hatch (test-ratchets.md). Throwing is the only way to make the
+  // type genuinely `never`; every call is
+  // recorded first so assertions can inspect it even though the throw
+  // unwinds through registerReplayCommand's own catch (which itself calls
+  // process.exit again) and finally out of program.parseAsync() as a
+  // rejection the tests swallow.
+  function mockProcessExit(): void {
+    process.exit = ((code?: number | string | null): never => {
+      exitCalls.push(code);
+      throw new Error(`process.exit(${String(code)})`);
+    }) as typeof process.exit;
+  }
+
+  beforeEach(() => {
+    origDeps = { ..._replayCmdDeps };
+    origExit = process.exit;
+    exitCalls = [];
+    stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockProcessExit();
+  });
+
+  afterEach(() => {
+    Object.assign(_replayCmdDeps, origDeps);
+    process.exit = origExit;
+    stdoutSpy.mockRestore();
+  });
+
+  test("a successful replay writes the report to stdout and does not call process.exit", async () => {
+    Object.assign(_replayCmdDeps, {
+      discoverRun: mock(async () => ({
+        meta: {
+          runId: "run-ok",
+          project: "demo",
+          feature: "feat-ok",
+          workdir: "/tmp",
+          statusPath: "/tmp/missing-status.json",
+          eventsDir: "/tmp/events",
+          registeredAt: "2026-01-01T00:00:00.000Z",
+        },
+        jsonlPath: "/tmp/missing.jsonl",
+      })),
+      readJsonl: mock(async () => []),
+      readMetrics: mock(async () => undefined),
+      readStatus: mock(async () => undefined),
+      reconstructTimeline: mock(() => buildTimeline()),
+      renderReport: mock(() => "OK REPORT"),
+    });
+
+    const program = new Command();
+    registerReplayCommandFromCmd(program);
+    await program.parseAsync(["node", "nax", "replay", "run-ok"]);
+
+    expect(stdoutSpy.mock.calls.some((c: unknown[]) => String(c[0]).includes("OK REPORT"))).toBe(true);
+    expect(exitCalls).toEqual([]);
+  });
+
+  test("a RUN_NOT_FOUND discovery failure calls process.exit(1)", async () => {
+    Object.assign(_replayCmdDeps, {
+      discoverRun: mock(async () => {
+        throw new NaxError("Run not found in registry: nope", "RUN_NOT_FOUND", { query: "nope" });
+      }),
+    });
+
+    const program = new Command();
+    registerReplayCommandFromCmd(program);
+    // The mock throws to satisfy process.exit's `never` return type, which
+    // unwinds into registerReplayCommand's own catch block (a second,
+    // uncaught process.exit(1)) and out of parseAsync as a rejection — not
+    // the point of this test, so it is swallowed.
+    await program.parseAsync(["node", "nax", "replay", "nope"]).catch(() => {});
+
+    expect(exitCalls[0]).toBe(1);
+  });
+
+  test("an unexpected thrown error is caught, written to stderr, and calls process.exit(1)", async () => {
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
+    Object.assign(_replayCmdDeps, {
+      discoverRun: mock(async () => {
+        throw new Error("boom");
+      }),
+    });
+
+    try {
+      const program = new Command();
+      registerReplayCommandFromCmd(program);
+      await program.parseAsync(["node", "nax", "replay", "whatever"]).catch(() => {});
+
+      expect(stderrSpy.mock.calls.some((c: unknown[]) => String(c[0]).includes("boom"))).toBe(true);
+      expect(exitCalls[0]).toBe(1);
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 });

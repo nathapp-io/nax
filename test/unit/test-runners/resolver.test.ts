@@ -12,7 +12,12 @@ import { makeNaxConfig } from "@test/helpers";
 import { testPatternConfigSelector } from "@/config";
 import type { TestPatternConfig } from "@/config/selectors";
 import type { DetectionResult } from "@/test-runners/detect";
-import { _resolverDeps, resolveReviewExcludePatterns, resolveTestFilePatterns } from "@/test-runners/resolver";
+import {
+  _resolverDeps,
+  findPackageDir,
+  resolveReviewExcludePatterns,
+  resolveTestFilePatterns,
+} from "@/test-runners/resolver";
 
 const WORKDIR = "/fake/workdir";
 
@@ -262,6 +267,72 @@ describe("resolveTestFilePatterns — US-002 per-package shape validation", () =
     const resolved = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "packages/api");
     expect(resolved.resolution).toBe("per-package");
     expect(resolved.globs).toEqual(["test/**/*.ts"]);
+  });
+
+  test("rejects a root-config array containing a blank-string entry", async () => {
+    const config = makeNaxConfig({
+      execution: {
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: ["test/**/*.ts", "   "],
+        },
+      },
+    });
+    await expect(resolveTestFilePatterns(config, WORKDIR)).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_TEST_GLOB",
+    });
+  });
+
+  test("wraps a non-ENOENT per-package readJson failure with code MONO_CONFIG_READ_FAILED", async () => {
+    const monoConfigPath = `${WORKDIR}/.nax/mono/packages/api/config.json`;
+    _resolverDeps.fileExists = async (p) => p === monoConfigPath;
+    _resolverDeps.readJson = async () => {
+      throw new Error("EACCES: permission denied");
+    };
+
+    await expect(resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "packages/api")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "MONO_CONFIG_READ_FAILED",
+    });
+  });
+});
+
+// ─── findPackageDir ────────────────────────────────────────────────────────────
+
+describe("findPackageDir", () => {
+  test("returns the relative dir when a mono config marker exists", async () => {
+    _resolverDeps.fileExists = async (p) => p === `${WORKDIR}/.nax/mono/packages/api/config.json`;
+    const result = await findPackageDir(`${WORKDIR}/packages/api/src/index.ts`, WORKDIR);
+    expect(result).toBe("packages/api");
+  });
+
+  test("returns the relative dir when a package.json boundary marker exists", async () => {
+    _resolverDeps.fileExists = async (p) => p === `${WORKDIR}/packages/lib/package.json`;
+    const result = await findPackageDir(`${WORKDIR}/packages/lib/src/index.ts`, WORKDIR);
+    expect(result).toBe("packages/lib");
+  });
+
+  test("recognises go.mod, pyproject.toml, and Cargo.toml as boundary markers", async () => {
+    for (const marker of ["go.mod", "pyproject.toml", "Cargo.toml"]) {
+      _resolverDeps.fileExists = async (p) => p === `${WORKDIR}/packages/svc/${marker}`;
+      const result = await findPackageDir(`${WORKDIR}/packages/svc/main.go`, WORKDIR);
+      expect(result).toBe("packages/svc");
+    }
+  });
+
+  test("returns undefined when no marker is found up to the workdir root", async () => {
+    _resolverDeps.fileExists = async () => false;
+    const result = await findPackageDir(`${WORKDIR}/src/index.ts`, WORKDIR);
+    expect(result).toBeUndefined();
+  });
+
+  test("walks up multiple directory levels before finding a marker", async () => {
+    _resolverDeps.fileExists = async (p) => p === `${WORKDIR}/packages/api/package.json`;
+    const result = await findPackageDir(`${WORKDIR}/packages/api/src/nested/deep/file.ts`, WORKDIR);
+    expect(result).toBe("packages/api");
   });
 });
 

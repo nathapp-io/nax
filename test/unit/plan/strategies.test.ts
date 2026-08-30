@@ -254,6 +254,71 @@ describe("writeOrRecoverPrd", () => {
 
     await expect(writeOrRecoverPrd(ctx, null, err)).rejects.toBe(err);
   });
+
+  test("throws PLAN_WRITE_PRD_MISSING_ERR when prd is null and no error is supplied", async () => {
+    const deps = makeDeps();
+    const ctx = await buildPlanModeContext(
+      SAMPLE_WORKDIR,
+      makeNaxConfig(),
+      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE },
+      deps,
+    );
+
+    await expect(writeOrRecoverPrd(ctx, null)).rejects.toMatchObject({
+      code: "PLAN_WRITE_PRD_MISSING_ERR",
+    });
+  });
+
+  test("recovers a PRD from a raw TurnResult envelope on disk whose output field holds the PRD JSON", async () => {
+    // Not PRD-shaped at the top level (no userStories) — validatePlanOutput on
+    // the envelope itself fails, so the disk-recovery path must fall through
+    // to the envelope's `.output` string and re-validate that instead. The
+    // envelope arrives as raw JSON text from disk (via readFile), so no cast
+    // is needed to satisfy writeOrRecoverPrd's `prd` parameter — unlike a
+    // direct in-memory argument, which would require deliberately mistyping
+    // a non-PRD value just to reach the same fallback branch.
+    const envelopeJson = JSON.stringify({ output: JSON.stringify(SAMPLE_PRD), turnId: "t-1" });
+    const writeFileMock = mock(async (_path: string, _content: string) => {});
+    const deps = makeDeps({
+      readFile: mock(async (path: string) => {
+        if (path === SAMPLE_SPEC_PATH) return "# Spec";
+        return envelopeJson;
+      }),
+      writeFile: writeFileMock,
+    });
+    const ctx = await buildPlanModeContext(
+      SAMPLE_WORKDIR,
+      makeNaxConfig(),
+      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE },
+      deps,
+    );
+    const err = new Error("plan failed");
+
+    const result = await writeOrRecoverPrd(ctx, null, err);
+
+    expect(result.outputPath).toBe(ctx.outputPath);
+    const writeCall = writeFileMock.mock.calls.at(-1);
+    const writtenPrd: PRD = JSON.parse(String(writeCall?.[1]));
+    expect(writtenPrd.feature).toBe(SAMPLE_PRD.feature);
+  });
+
+  test("rethrows the original error when the recovered file on disk is malformed JSON", async () => {
+    const deps = makeDeps({
+      readFile: mock(async (path: string) => {
+        if (path === SAMPLE_SPEC_PATH) return "# Spec";
+        return "{ not valid json";
+      }),
+    });
+    const ctx = await buildPlanModeContext(
+      SAMPLE_WORKDIR,
+      makeNaxConfig(),
+      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE },
+      deps,
+    );
+    const err = new Error("plan failed");
+
+    await expect(writeOrRecoverPrd(ctx, null, err)).rejects.toBe(err);
+  });
 });
 
 describe("assertIsValidPrd", () => {

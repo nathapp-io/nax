@@ -15,6 +15,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import type { UserStory } from "@/prd/types";
 import { parseRoutingResponse, stripCodeFences, validateRoutingDecision } from "@/routing/strategies/llm";
+import { parseBatchResponse } from "@/routing/strategies/llm-parsing";
 
 const simpleStory: UserStory = {
   id: "US-001",
@@ -112,5 +113,39 @@ describe("validateRoutingDecision", () => {
   test("throws on invalid complexity value", () => {
     const input = { complexity: "mega", modelTier: "fast", testStrategy: "test-after", reasoning: "test" };
     expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Invalid complexity: mega");
+  });
+});
+
+describe("parseBatchResponse", () => {
+  test("parses a batch of valid decisions keyed by story id", () => {
+    const output = JSON.stringify([
+      { id: "US-001", complexity: "simple", modelTier: "fast", reasoning: "trivial fix" },
+      { id: "US-002", complexity: "complex", modelTier: "powerful", reasoning: "security-critical" },
+    ]);
+
+    const decisions = parseBatchResponse(output, [simpleStory, complexStory], DEFAULT_CONFIG);
+
+    expect(decisions.size).toBe(2);
+    expect(decisions.get("US-001")?.complexity).toBe("simple");
+    expect(decisions.get("US-002")?.complexity).toBe("complex");
+  });
+
+  test("throws when the response is not a JSON array", () => {
+    const output = JSON.stringify({ id: "US-001", complexity: "simple", modelTier: "fast", reasoning: "x" });
+    expect(() => parseBatchResponse(output, [simpleStory], DEFAULT_CONFIG)).toThrow(
+      "Batch LLM response must be a JSON array",
+    );
+  });
+
+  test("throws when an entry is missing an id", () => {
+    const output = JSON.stringify([{ complexity: "simple", modelTier: "fast", reasoning: "x" }]);
+    expect(() => parseBatchResponse(output, [simpleStory], DEFAULT_CONFIG)).toThrow("Batch entry missing 'id' field");
+  });
+
+  test("throws when an entry references an unknown story id", () => {
+    const output = JSON.stringify([{ id: "US-999", complexity: "simple", modelTier: "fast", reasoning: "x" }]);
+    expect(() => parseBatchResponse(output, [simpleStory], DEFAULT_CONFIG)).toThrow(
+      "Batch entry has unknown story ID: US-999",
+    );
   });
 });

@@ -4,10 +4,17 @@
  * AC 2: grounderStrategy returns empty manifestSection when specContent is empty
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { makeTestRuntime } from "@test/helpers";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import {
+  cleanupTempDir,
+  makeAgentAdapter,
+  makeRuntimeWithFakeAgent,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { PreDebatePhaseContext } from "@/debate";
-import { grounderStrategy, resolvePreDebatePhase } from "@/debate";
+import { resolvePreDebatePhase } from "@/debate";
+import { _grounderDeps, grounderStrategy } from "@/debate/pre-phase/grounder";
 
 describe("grounderStrategy", () => {
   let runtime: Awaited<ReturnType<typeof makeTestRuntime>> | null = null;
@@ -245,5 +252,64 @@ describe("grounderStrategy", () => {
     const { _grounderDeps } = require("@/debate/pre-phase/grounder");
     expect(_grounderDeps).toHaveProperty("scanSourceRoots");
     expect(typeof _grounderDeps.scanSourceRoots).toBe("function");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // writeManifestArtifact — the full success path, including the artifact write
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("writes the facts manifest to .nax/runs/<runId>/plan/<storyId>/facts-manifest.json on success", async () => {
+    const workdir = makeTempDir("nax-grounder-");
+    const originalScanSourceRoots = _grounderDeps.scanSourceRoots;
+    const originalWrite = _grounderDeps.write;
+    _grounderDeps.scanSourceRoots = async () => [];
+
+    const manifest = { repoFacts: [], specClaims: [], gaps: [] };
+    const adapter = makeAgentAdapter({
+      sendTurn: mock(async () => ({
+        output: JSON.stringify(manifest),
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+        internalRoundTrips: 1,
+      })),
+    });
+    const { runtime } = makeRuntimeWithFakeAgent(adapter);
+
+    try {
+      const ctx: PreDebatePhaseContext = {
+        ctx: {
+          runtime,
+          packageView: runtime.packages.resolve(),
+          packageDir: workdir,
+          featureName: "test-feature",
+          storyId: "US-writes",
+          agentName: "claude",
+        },
+        stage: "plan",
+        stageConfig: {
+          enabled: true,
+          resolver: { type: "synthesis" },
+          sessionMode: "one-shot",
+          rounds: 1,
+        },
+        workdir,
+        featureName: "test-feature",
+        storyId: "US-writes",
+        specContent: "Test spec content",
+      };
+
+      const result = await grounderStrategy(ctx);
+      expect(result.costUsd).toBe(0);
+      expect(result.manifestSection).toContain("Facts Manifest");
+
+      const manifestPath = `${workdir}/.nax/runs/${runtime.runId}/plan/US-writes/facts-manifest.json`;
+      const written = await Bun.file(manifestPath).json();
+      expect(written).toMatchObject(manifest);
+    } finally {
+      _grounderDeps.scanSourceRoots = originalScanSourceRoots;
+      _grounderDeps.write = originalWrite;
+      await runtime.close();
+      cleanupTempDir(workdir);
+    }
   });
 });

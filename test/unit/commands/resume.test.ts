@@ -14,7 +14,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertCaughtInstanceOf, assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { Command } from "commander";
 import {
   _resumeCmdDeps,
@@ -22,6 +22,7 @@ import {
   registerResumeCommand as registerResumeCommandFromCmd,
   runResume,
 } from "@/commands";
+import { NaxError } from "@/errors";
 
 function writeCheckpoint(featureDir: string, records: Array<{ storyId: string; phase: string }>): void {
   const cpPath = join(featureDir, "checkpoint.jsonl");
@@ -88,6 +89,95 @@ describe("registerResumeCommand — AC1: commander wiring", () => {
   // SEC-28: `nax resume -f ../../x` must not escape the .nax directory — the
   // action validates the feature name against validateFeatureName (same
   // guard as src/commands/common.ts:112).
+  test("exits with 'nax not initialized' when no .nax project dir is found", async () => {
+    const origExit = process.exit;
+    const origWrite = process.stderr.write;
+    let exitCode: number | undefined;
+    const stderrChunks: string[] = [];
+    process.exit = ((code?: number) => {
+      exitCode = code ?? 0;
+      throw new Error("__process_exit__");
+    }) as typeof process.exit;
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrChunks.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const program = new Command();
+      registerResumeCommandFromCmd(program);
+      // A temp dir with no .nax anywhere in its ancestry — findProjectDir returns null.
+      const tempDir = makeTempDir("nax-resume-no-project-");
+      try {
+        await program.parseAsync(["node", "nax", "resume", "-f", "some-feature", "-d", tempDir]);
+      } finally {
+        cleanupTempDir(tempDir);
+      }
+    } catch (e) {
+      if (!(e instanceof Error) || e.message !== "__process_exit__") throw e;
+    } finally {
+      process.exit = origExit;
+      process.stderr.write = origWrite;
+    }
+    expect(exitCode).toBe(1);
+    expect(stderrChunks.join("")).toContain("nax not initialized");
+  });
+
+  test("wires the real run() invocation end-to-end for an already-completed feature", async () => {
+    const tempDir = makeTempDir("nax-resume-real-run-");
+    try {
+      const { mkdirSync, writeFileSync: write } = await import("node:fs");
+      mkdirSync(join(tempDir, ".nax"), { recursive: true });
+      write(join(tempDir, ".nax", "config.json"), "{}");
+
+      const featureDir = join(tempDir, ".nax", "features", "done-feature");
+      mkdirSync(featureDir, { recursive: true });
+      const prd = {
+        project: "test-project",
+        feature: "done-feature",
+        branchName: "feat/done-feature",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [
+          {
+            id: "US-001",
+            title: "Already done",
+            description: "Nothing left to do",
+            acceptanceCriteria: ["Works"],
+            tags: [],
+            dependencies: [],
+            status: "passed",
+            passes: true,
+            escalations: [],
+            attempts: 0,
+          },
+        ],
+      };
+      write(join(featureDir, "prd.json"), JSON.stringify(prd, null, 2));
+
+      const program = new Command();
+      registerResumeCommandFromCmd(program);
+
+      const origExit = process.exit;
+      let exitCode: number | undefined;
+      process.exit = ((code?: number) => {
+        exitCode = code ?? 0;
+      }) as typeof process.exit;
+      try {
+        await program.parseAsync(["node", "nax", "resume", "-f", "done-feature", "-d", tempDir]);
+      } finally {
+        process.exit = origExit;
+      }
+
+      // All stories already passed — run() completes without touching an agent,
+      // and resolves normally (exit code reflects the run's own success flag,
+      // which the acceptance/finish gate may still flip to false).
+      assertDefined(exitCode, "exitCode");
+      expect([0, 1]).toContain(exitCode);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  }, 30000);
+
   test("SEC-28: rejects a feature name that fails validateFeatureName", async () => {
     const origExit = process.exit;
     const origWrite = process.stderr.write;
@@ -236,6 +326,17 @@ describe("_resumeCmdDeps — default checkpointExists wiring", () => {
     writeCheckpoint(featureDir, [{ storyId: "US-001", phase: "test-writer" }]);
     const exists = await _resumeCmdDeps.checkpointExists(featureDir);
     expect(exists).toBe(true);
+  });
+
+  test("default runInvocation stub throws — the CLI layer must supply its own", async () => {
+    let caught: unknown;
+    try {
+      await _resumeCmdDeps.runInvocation("some-feature", {});
+    } catch (e) {
+      caught = e;
+    }
+    assertCaughtInstanceOf(caught, NaxError, "_resumeCmdDeps.runInvocation");
+    expect(caught.code).toBe("RESUME_INVOCATION_MISSING");
   });
 
   test("default loadCheckpoints returns the parsed map for a real checkpoint.jsonl", async () => {
