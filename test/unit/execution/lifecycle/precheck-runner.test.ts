@@ -10,19 +10,34 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeNaxConfig,
+  makePRD,
+  makeSpawn,
+  makeStory,
+  makeTempDir,
+  withDepsRestore,
+} from "@test/helpers";
 import { runPrecheckValidation } from "@/execution/lifecycle/precheck-runner";
 import { StatusWriter } from "@/execution/status-writer";
 import { InteractionChain } from "@/interaction/chain";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction/types";
 import type { PRD } from "@/prd/types";
+import { _deps as _cliDeps } from "@/precheck/checks-blockers";
 
 let tmpDir: string;
 let origNaxPrecheck: string | undefined;
 
+withDepsRestore(_cliDeps, ["spawn"]);
+
 beforeEach(() => {
   tmpDir = makeTempDir("nax-precheck-runner-test-");
   origNaxPrecheck = process.env.NAX_PRECHECK;
+  // The agent/claude CLI binary is not guaranteed to be on PATH in CI —
+  // stub it so these tests exercise runPrecheckValidation's own branches
+  // rather than the environment's.
+  _cliDeps.spawn = makeSpawn(() => ({ exitCode: 0 })).spawn;
 });
 
 afterEach(() => {
