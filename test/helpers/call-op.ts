@@ -24,11 +24,13 @@ export interface CallOpStubOptions {
   /** Value returned for non-deterministic ops. Defaults to a successful envelope. */
   fallback?: unknown;
   /**
-   * Called for every dispatch with both the op and the call context — use it
-   * to record `op.name`, count calls, or capture `ctx.scopeId` for assertions
-   * about how the orchestrator threads scope IDs through to callOp.
+   * Called for every dispatch with the op, the call context, and the input —
+   * use it to record `op.name`, count calls, capture `ctx.scopeId` for
+   * assertions about how the orchestrator threads scope IDs through to
+   * callOp, or capture the dispatched input to assert on rendered prompt
+   * content (nax#1773).
    */
-  onDispatch?: (op: { name: string; kind: string }, ctx: CallContext) => void;
+  onDispatch?: (op: { name: string; kind: string }, ctx: CallContext, input: unknown) => void;
 }
 
 /**
@@ -40,7 +42,7 @@ export interface CallOpStubOptions {
 export function makeCallOp(options: CallOpStubOptions = {}) {
   const { fallback = DEFAULT_AGENT_ENVELOPE, onDispatch } = options;
   return async <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
-    onDispatch?.(op, ctx);
+    onDispatch?.(op, ctx, input);
     if (op.kind === "deterministic") return op.execute(input, ctx);
     return fallback as unknown as O; // test-ratchet-allow: as-unknown-as
   };

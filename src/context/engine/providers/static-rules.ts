@@ -324,6 +324,18 @@ export class StaticRulesProvider implements IContextProvider {
           sectionCount: 0,
         };
 
+        // nax#1775: a rule declaring `appliesTo:` that gets admitted only
+        // because the scope-file set was empty is a silent scoping bug, not
+        // a benign default — `appliesToInertCount` alone was invisible
+        // outside manifest telemetry.
+        if (appliesToInertCount > 0) {
+          logger.warn("static-rules", "appliesTo rules admitted unconditionally — scope-file set is empty", {
+            storyId: request.storyId,
+            stage: request.stage,
+            appliesToInertCount,
+          });
+        }
+
         const effectiveBudget = Math.min(this.rulesShare * request.budgetTokens, this.budgetTokens);
 
         // Split each scoped rule into sections, pairing each section with its parent

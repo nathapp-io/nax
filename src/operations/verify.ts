@@ -19,6 +19,15 @@ export interface VerifierInput {
   readonly story: UserStory;
   readonly promptMarkdown?: string;
   /**
+   * Legacy v1 context markdown and constitution — not rendered by `build()`
+   * (already baked into `promptMarkdown` by `TddPromptBuilder.buildForRole`),
+   * carried here only so `render-phase-bundle.ts` (nax#1773) can re-derive
+   * promptMarkdown at dispatch time from the per-stage bundle without losing
+   * either input.
+   */
+  readonly contextMarkdown?: string;
+  readonly constitution?: string;
+  /**
    * Git ref captured by the orchestrator just before this phase dispatches.
    * When present, isolation is checked in both verify and recover paths.
    * Absent in legacy / ad-hoc callers — isolation is then skipped.

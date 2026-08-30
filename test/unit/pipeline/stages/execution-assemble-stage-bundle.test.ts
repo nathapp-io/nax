@@ -58,6 +58,9 @@ beforeEach(() => {
   _executionDeps.captureGitRef = async () => "HEAD";
   _executionDeps.getUntrackedPaths = async () => [];
   _executionDeps.assemblePlanInputsFromCtx = async () => ({ story: makeStory(), config: makeNaxConfig() });
+  // Default: no real git/fs work when a test doesn't set ctx.scopeFiles.
+  // Individual tests below override this to prove the fallback path.
+  _executionDeps.resolveScopeFiles = async () => [];
   _executionDeps.buildPlanForStrategy = async (callCtx: CallContext) => {
     capturedCallCtx = callCtx;
     return new ExecutionPlan(callCtx, {}, false);
@@ -113,5 +116,49 @@ describe("execution stage — assembleStageBundle wiring (nax#1737 Phase B)", ()
     const result = await capturedCallCtx?.assembleStageBundle?.("review-semantic");
 
     expect(result).toBeUndefined();
+  });
+});
+
+describe("execution stage — scopeFiles threading to non-context stages (nax#1775)", () => {
+  test("assembleStageBundle threads ctx.scopeFiles to assembleForStage for a non-context stage", async () => {
+    let receivedOptions: unknown;
+    _executionDeps.assembleForStage = async (_ctx, _stage, options) => {
+      receivedOptions = options;
+      return null;
+    };
+
+    await executionStage.execute(makePipelineContext({ scopeFiles: ["src/foo.ts", "src/bar.ts"] }));
+    // tdd-test-writer, review-semantic, review-adversarial and rectify were the
+    // stages stuck at scopeFileCount: 0 (#1775) — assert one of them by name.
+    await capturedCallCtx?.assembleStageBundle?.("tdd-test-writer");
+
+    expect(receivedOptions).toEqual({ scopeFiles: ["src/foo.ts", "src/bar.ts"] });
+  });
+
+  test("an empty resolved scope-file set is omitted, not passed as scopeFiles: []", async () => {
+    let receivedOptions: unknown;
+    _executionDeps.assembleForStage = async (_ctx, _stage, options) => {
+      receivedOptions = options;
+      return null;
+    };
+
+    await executionStage.execute(makePipelineContext({ scopeFiles: [] }));
+    await capturedCallCtx?.assembleStageBundle?.("review-adversarial");
+
+    expect(receivedOptions).toEqual({});
+  });
+
+  test("falls back to resolveScopeFiles when ctx.scopeFiles was never populated", async () => {
+    let receivedOptions: unknown;
+    _executionDeps.assembleForStage = async (_ctx, _stage, options) => {
+      receivedOptions = options;
+      return null;
+    };
+    _executionDeps.resolveScopeFiles = async () => ["src/resolved-fallback.ts"];
+
+    await executionStage.execute(makePipelineContext({ scopeFiles: undefined }));
+    await capturedCallCtx?.assembleStageBundle?.("rectify");
+
+    expect(receivedOptions).toEqual({ scopeFiles: ["src/resolved-fallback.ts"] });
   });
 });

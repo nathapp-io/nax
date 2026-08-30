@@ -78,15 +78,52 @@ export function buildDigest(chunks: PackedChunk[]): string {
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
 
-  const lines: string[] = [];
+  // #1774 defect B: static-rules chunks are `### <rulePath>\n\n<section>`, so
+  // every section of one rule file produces the identical firstLine summary.
+  // Dedupe identical "[scope] summary" lines (keeping the first, sorted
+  // occurrence — deterministic) before grouping by scope, so a repeated
+  // filename does not multiply-occupy the budget below.
+  const seen = new Set<string>();
+  const byScope = new Map<ChunkScope, string[]>();
   for (const chunk of sorted) {
     const summary = firstLine(chunk.content);
-    if (summary) {
-      lines.push(`[${chunk.scope}] ${summary}`);
+    if (!summary) continue;
+    const line = `[${chunk.scope}] ${summary}`;
+    if (seen.has(line)) continue;
+    seen.add(line);
+    const group = byScope.get(chunk.scope);
+    if (group) {
+      group.push(line);
+    } else {
+      byScope.set(chunk.scope, [line]);
     }
   }
 
-  const raw = lines.join("\n");
+  const activeScopes = SCOPE_ORDER.filter((s) => (byScope.get(s)?.length ?? 0) > 0);
+  if (activeScopes.length === 0) return "";
+
+  // #1774 defect B: reserve a fair per-scope share of MAX_DIGEST_CHARS so a
+  // `project`-scope overflow (the common case — one static-rules chunk per
+  // rule section) cannot starve the feature/story/session/retrieved scopes
+  // that actually carry stage-to-stage state. Unused share from an earlier
+  // scope rolls forward to later ones (SCOPE_ORDER is fixed, so this stays
+  // deterministic for a given input).
+  const perScopeBudget = Math.floor(MAX_DIGEST_CHARS / activeScopes.length);
+  const outLines: string[] = [];
+  let rollover = 0;
+  for (const scope of activeScopes) {
+    const budget = perScopeBudget + rollover;
+    let scopeUsed = 0;
+    for (const line of byScope.get(scope) ?? []) {
+      const cost = outLines.length > 0 ? line.length + 1 : line.length; // +1 for the join newline
+      if (scopeUsed + cost > budget) break;
+      outLines.push(line);
+      scopeUsed += cost;
+    }
+    rollover = Math.max(0, budget - scopeUsed);
+  }
+
+  const raw = outLines.join("\n");
   return raw.length > MAX_DIGEST_CHARS ? `${raw.slice(0, MAX_DIGEST_CHARS - 3)}...` : raw;
 }
 
