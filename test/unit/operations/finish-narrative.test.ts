@@ -265,4 +265,32 @@ describe("finishNarrativeOp shape", () => {
     expect(finishNarrativeOp.timeoutMs?.({ ...NARRATIVE_INPUT, timeoutMs: 777 }, ctx)).toBe(777);
     expect(finishNarrativeOp.timeoutMs?.(NARRATIVE_INPUT, ctx)).toBe(ctx.config.execution.sessionTimeoutSeconds * 1000);
   });
+
+  test("build wraps buildNarrativePrompt's output in a non-overridable task turn", () => {
+    const ctx = makeCtx();
+    const turn = finishNarrativeOp.build(NARRATIVE_INPUT, ctx);
+    expect(turn.role).toEqual({ id: "role", content: "", overridable: false });
+    expect(turn.task.overridable).toBe(false);
+    expect(turn.task.content).toContain("git diff origin/main...HEAD");
+  });
+
+  test("parse delegates to parseNarrativeNode", () => {
+    const ctx = makeCtx();
+    const reply = "<title>fix: repair the gate</title>\n<narrative>Adds a detector.</narrative>";
+    expect(finishNarrativeOp.parse?.(reply, NARRATIVE_INPUT, ctx)).toEqual({
+      title: "fix: repair the gate",
+      narrative: "Adds a detector.",
+    });
+  });
+
+  test("recover always resolves to an empty narrative, never throws", async () => {
+    // finishTerminal calls this after the PR is already promoted; a throw here
+    // would mis-report an already-green run as escalated.
+    const verifyCtx = {
+      ...makeCtx(),
+      readFile: async () => null,
+      fileExists: async () => false,
+    };
+    await expect(finishNarrativeOp.recover?.(NARRATIVE_INPUT, verifyCtx)).resolves.toEqual({ narrative: "" });
+  });
 });

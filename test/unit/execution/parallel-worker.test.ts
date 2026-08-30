@@ -137,6 +137,79 @@ describe("executeParallelBatch", () => {
     expect(result.pipelinePassed.map((s) => s.id).sort(byCodePoint)).toEqual(["US-002", "US-003"]);
     expect(result.totalCost).toBeCloseTo(1.0, 5);
   });
+
+  test("marks a story with no prepared worktree as failed without invoking the executor", async () => {
+    const story = makeStory("US-no-worktree");
+    const config: NaxConfig = DEFAULT_CONFIG;
+    const executeStoryMock = mock(async () => ({ success: true, cost: 0 }));
+    _parallelWorkerDeps.executeStoryInWorktree = executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
+
+    const result = await executeParallelBatch(
+      [story],
+      "/repo",
+      config,
+      makeContext(config),
+      new Map(), // no worktree registered for the story
+      new Map([[story.id, { cwd: "/repo/.nax-wt/US-no-worktree" }]]),
+      1,
+    );
+
+    expect(result.failed).toEqual([{ story, error: "Worktree not created" }]);
+    expect(executeStoryMock).not.toHaveBeenCalled();
+  });
+
+  test("marks a story with no prepared dependency context as failed without invoking the executor", async () => {
+    const story = makeStory("US-no-dep-context");
+    const config: NaxConfig = DEFAULT_CONFIG;
+    const executeStoryMock = mock(async () => ({ success: true, cost: 0 }));
+    _parallelWorkerDeps.executeStoryInWorktree = executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
+
+    const result = await executeParallelBatch(
+      [story],
+      "/repo",
+      config,
+      makeContext(config),
+      new Map([[story.id, "/repo/.nax-wt/US-no-dep-context"]]),
+      new Map(), // no dependency context registered for the story
+      1,
+    );
+
+    expect(result.failed).toEqual([{ story, error: "Worktree dependency context not prepared" }]);
+    expect(executeStoryMock).not.toHaveBeenCalled();
+  });
+
+  test("records a story whose executor resolves with success: false as failed", async () => {
+    const story = makeStory("US-pipeline-failed");
+    const config: NaxConfig = DEFAULT_CONFIG;
+
+    _parallelWorkerDeps.routeTask = mock(
+      (): RoutingDecision => ({
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "test-after",
+        reasoning: "test",
+      }),
+    );
+    _parallelWorkerDeps.executeStoryInWorktree = mock(async () => ({
+      success: false,
+      cost: 0.1,
+      error: "verify gate failed",
+    })) as typeof _parallelWorkerDeps.executeStoryInWorktree;
+
+    const result = await executeParallelBatch(
+      [story],
+      "/repo",
+      config,
+      makeContext(config),
+      new Map([[story.id, "/repo/.nax-wt/US-pipeline-failed"]]),
+      new Map([[story.id, { cwd: "/repo/.nax-wt/US-pipeline-failed" }]]),
+      1,
+    );
+
+    expect(result.pipelinePassed).toEqual([]);
+    expect(result.failed).toEqual([{ story, error: "verify gate failed", pipelineResult: undefined }]);
+    expect(result.storyCosts.get(story.id)).toBeCloseTo(0.1, 5);
+  });
 });
 
 describe("executeStoryInWorktree — cost includes stageCost (BUG-7)", () => {
@@ -229,5 +302,101 @@ describe("executeStoryInWorktree — cost includes stageCost (BUG-7)", () => {
     } finally {
       cleanupTempDir(workdir);
     }
+  });
+});
+
+describe("executeStoryInWorktree — storyGitRef capture", () => {
+  let workdir: string;
+  let originalStages: PipelineStage[];
+  let headSha: string;
+
+  async function git(args: string[]): Promise<string> {
+    const proc = Bun.spawn(["git", ...args], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    return out.trim();
+  }
+
+  function withFakeStage(stage: PipelineStage): void {
+    defaultPipeline.length = 0;
+    defaultPipeline.push(stage);
+  }
+
+  function restoreStages(): void {
+    defaultPipeline.length = 0;
+    defaultPipeline.push(...originalStages);
+  }
+
+  beforeEach(async () => {
+    originalStages = [...defaultPipeline];
+    workdir = makeTempDir("nax-parallel-worker-gitref-");
+    await git(["init"]);
+    await git(["config", "user.email", "test@example.com"]);
+    await git(["config", "user.name", "Test User"]);
+    await Bun.write(`${workdir}/README.md`, "# fixture\n");
+    await git(["add", "."]);
+    await git(["commit", "-m", "initial"]);
+    headSha = await git(["rev-parse", "HEAD"]);
+
+    withFakeStage({
+      name: "fake-noop-stage",
+      enabled: () => true,
+      async execute() {
+        return { action: "continue" };
+      },
+    });
+  });
+
+  afterEach(() => {
+    restoreStages();
+    cleanupTempDir(workdir);
+  });
+
+  test("reuses an already-valid persisted storyGitRef instead of recapturing HEAD", async () => {
+    const story = makeStory("US-gitref-valid");
+    story.storyGitRef = headSha;
+    const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
+
+    const result = await executeStoryInWorktree(story, workdir, dependencyContext, makeContext(), {
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "test-after",
+      reasoning: "",
+    });
+
+    expect(result.success).toBe(true);
+    // Untouched: the persisted ref was valid, so it is reused verbatim.
+    expect(story.storyGitRef).toBe(headSha);
+  });
+
+  test("captures HEAD as storyGitRef when none is persisted", async () => {
+    const story = makeStory("US-gitref-capture");
+    const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
+
+    const result = await executeStoryInWorktree(story, workdir, dependencyContext, makeContext(), {
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "test-after",
+      reasoning: "",
+    });
+
+    expect(result.success).toBe(true);
+    expect(story.storyGitRef).toBe(headSha);
+  });
+
+  test("re-captures HEAD when the persisted storyGitRef is no longer valid", async () => {
+    const story = makeStory("US-gitref-invalid");
+    story.storyGitRef = "0000000000000000000000000000000000000000";
+    const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
+
+    const result = await executeStoryInWorktree(story, workdir, dependencyContext, makeContext(), {
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "test-after",
+      reasoning: "",
+    });
+
+    expect(result.success).toBe(true);
+    expect(story.storyGitRef).toBe(headSha);
   });
 });

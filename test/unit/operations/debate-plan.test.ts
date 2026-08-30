@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { debateConfigSelector } from "@/config";
 import * as operationsModule from "@/operations";
 
@@ -18,6 +19,7 @@ interface PlanDebaterInput {
   readonly selectionSignal: Promise<{ readonly patchPrompt?: string }>;
   readonly signal: AbortSignal;
   readonly storyId: string;
+  readonly includeHybridRebuttals?: boolean;
 }
 
 interface PlanDebaterHopContext {
@@ -33,6 +35,7 @@ interface PlanDebaterOp {
   readonly config: unknown;
   readonly model?: (input: PlanDebaterInput) => { readonly agent: string; readonly model: string };
   readonly hopBody?: (initialPrompt: string, ctx: PlanDebaterHopContext) => Promise<{ readonly output: string }>;
+  readonly parse?: (output: string) => { readonly success: boolean; readonly rebut: string };
 }
 
 function defer<T>(): PromiseWithResolvers<T> {
@@ -196,5 +199,91 @@ describe("planDebaterOp", () => {
 
     await expect(hop as Promise<{ readonly output: string }>).resolves.toEqual({ output: "rebut-0" });
     expect(sendCalls).toHaveLength(3);
+  });
+
+  describe("includeHybridRebuttals: false — skips the rebuttal send entirely", () => {
+    test("resolves the rebuttal barrier with the proposal output and returns the proposal turn when no patch is offered", async () => {
+      const op = getPlanDebaterOp();
+      const input = makeInput({ includeHybridRebuttals: false });
+      const selectionBarrier = defer<{ readonly patchPrompt?: string }>();
+      const sendCalls: string[] = [];
+
+      const hop = op.hopBody?.(input.proposePrompt, {
+        input: { ...input, selectionSignal: selectionBarrier.promise },
+        send: mock(async (prompt: string) => {
+          sendCalls.push(prompt);
+          return { output: "proposal-0" };
+        }),
+      });
+
+      assertDefined(hop, "hop");
+      await Promise.resolve();
+      await expect(input.rebuttalBarrier.promise).resolves.toBe("proposal-0");
+      selectionBarrier.resolve({});
+
+      await expect(hop).resolves.toEqual({ output: "proposal-0" });
+      expect(sendCalls).toEqual([input.proposePrompt]);
+    });
+
+    test("sends the patch prompt and returns its result when a patch is offered", async () => {
+      const op = getPlanDebaterOp();
+      const input = makeInput({ includeHybridRebuttals: false });
+      const selectionBarrier = defer<{ readonly patchPrompt?: string }>();
+      const sendCalls: string[] = [];
+
+      const hop = op.hopBody?.(input.proposePrompt, {
+        input: { ...input, selectionSignal: selectionBarrier.promise },
+        send: mock(async (prompt: string) => {
+          sendCalls.push(prompt);
+          if (sendCalls.length === 1) return { output: "proposal-0" };
+          return { output: "patched-0" };
+        }),
+      });
+
+      assertDefined(hop, "hop");
+      await Promise.resolve();
+      await expect(input.rebuttalBarrier.promise).resolves.toBe("proposal-0");
+      selectionBarrier.resolve({ patchPrompt: "## Patch\nApply the winner update." });
+
+      await expect(hop).resolves.toEqual({ output: "patched-0" });
+      expect(sendCalls).toEqual([input.proposePrompt, "## Patch\nApply the winner update."]);
+    });
+
+    test("falls back to the proposal turn when the patch send fails", async () => {
+      const op = getPlanDebaterOp();
+      const input = makeInput({ includeHybridRebuttals: false });
+      const selectionBarrier = defer<{ readonly patchPrompt?: string }>();
+      const sendCalls: string[] = [];
+
+      const hop = op.hopBody?.(input.proposePrompt, {
+        input: { ...input, selectionSignal: selectionBarrier.promise },
+        send: mock(async (prompt: string) => {
+          sendCalls.push(prompt);
+          if (sendCalls.length === 1) return { output: "proposal-0" };
+          throw new Error("patch failed");
+        }),
+      });
+
+      assertDefined(hop, "hop");
+      await Promise.resolve();
+      await expect(input.rebuttalBarrier.promise).resolves.toBe("proposal-0");
+      selectionBarrier.resolve({ patchPrompt: "## Patch\nApply the winner update." });
+
+      await expect(hop).resolves.toEqual({ output: "proposal-0" });
+      expect(sendCalls).toHaveLength(2);
+    });
+  });
+
+  describe("parse", () => {
+    test("marks success when the output is not the fallback agent-not-found string", () => {
+      const op = getPlanDebaterOp();
+      expect(op.parse?.("Here is the plan.")).toEqual({ success: true, rebut: "Here is the plan." });
+    });
+
+    test("marks failure when the output is the fallback agent-not-found string", () => {
+      const op = getPlanDebaterOp();
+      const output = 'Agent "claude" not found in registry';
+      expect(op.parse?.(output)).toEqual({ success: false, rebut: output });
+    });
   });
 });
