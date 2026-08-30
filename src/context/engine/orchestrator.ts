@@ -435,6 +435,22 @@ export class ContextOrchestrator {
       effectiveBudget,
     });
 
+    // #1776: floor items (static rules, feature/test-coverage floor chunks)
+    // bypass packing's budget check entirely, so `usedTokens` can silently
+    // land 2-3x over `totalBudgetTokens` with nothing surfacing it beyond a
+    // manifest field nobody reads at runtime. Name the floor items and their
+    // token cost so this is visible without a manifest diff.
+    if (manifest.usedTokens > manifest.totalBudgetTokens) {
+      const overageIds = manifest.floorOverageItems ?? manifest.floorItems;
+      logger.warn("context-v2", "Stage budget exceeded by floor items", {
+        storyId: request.storyId,
+        stage: request.stage,
+        usedTokens: manifest.usedTokens,
+        totalBudgetTokens: manifest.totalBudgetTokens,
+        floorOverageItems: overageIds.map((id) => ({ id, tokens: manifest.chunkTokens?.[id] ?? 0 })),
+      });
+    }
+
     logger.debug("context-v2", "Bundle assembled", {
       storyId: request.storyId,
       stage: request.stage,
