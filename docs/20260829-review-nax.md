@@ -24,7 +24,8 @@
 as PR #1768 (`fbf37eb72`), closing the nine deferrals the first sweep had held back. The ledger below
 moves them from Deferred to Shipped; 12 findings remained deferred, all of them needing a human
 ruling or a verification approach other than a runtime AC. SEC-12 and ENH-45 were then closed by
-the permission-contract ruling of 2026-08-30, leaving **10**.
+the permission-contract ruling of 2026-08-30, and BUG-37 / BUG-36 / STYLE-42 / BUG-15 by sweep 3
+the same day, leaving **6**.
 
 Every CRITICAL, HIGH and MEDIUM finding was re-verified by reading the cited source. Two were
 falsified by direct experiment, three were misfiled by path or severity, and two pairs were
@@ -55,7 +56,8 @@ either shipped or deferred with a stated reason.
 | **Shipped — sweep 1** | 19 | PR [#1767](https://github.com/nathapp-io/nax/pull/1767), merged as `10d95e332` — `nax run -f review-remediation-sweep`, 6/6 stories passed |
 | **Shipped — sweep 2** | 9 | PR [#1768](https://github.com/nathapp-io/nax/pull/1768), merged as `fbf37eb72` — `nax run -f review-remediation-sweep-2`, 5/5 stories passed |
 | **Shipped — human ruling** | 2 | SEC-12 + ENH-45, after the permission-contract decision was taken on 2026-08-30 (see below) |
-| **Deferred** | 10 | Recorded here with reasons. No remediation-shaped finding is left open; what remains needs a human decision or a different verification approach. |
+| **Shipped — sweep 3** | 4 | BUG-37, BUG-36, STYLE-42, BUG-15 — the deferrals that a second look found were not actually blocked (see below) |
+| **Deferred** | 6 | Recorded here with reasons. What remains is type-only, timing-bound, or a standing ratchet. |
 
 ### Shipped — PR #1766
 
@@ -192,15 +194,62 @@ makes the *exemption* legible. A gate without markers just moves the argument in
 invisible allowlist — which is why this one has none, and why `check-feature-dir-ssot.ts`
 was used as the template.
 
+### Shipped — sweep 3 (BUG-37, BUG-36, STYLE-42, BUG-15)
+
+Four of the twelve deferrals were re-examined on 2026-08-30 and turned out not to be
+blocked. Recorded here because in three of the four cases the *stated reason for deferring
+was itself wrong*, which is the reusable part.
+
+**BUG-37 — deferred as untestable; it was not.** The reason on file was that exercising the
+deadline "requires driving real process teardown". It does not: `onShutdown` is already an
+injectable field on `SignalHandlerContext`, so a teardown that never resolves is one line,
+and the handler then parks inside `performTeardown` and never reaches its `process.exit`.
+That *is* the wedged state the deadline exists to break. The suite already drove
+`performTeardown` directly (`crash-signals.test.ts:111`), so the technique was in the file
+the whole time. The defect was also worse than filed: all three fatal handlers share one
+`shuttingDown` flag, so once an uncaught exception wedged teardown the SIGINT handler
+returned early and **Ctrl+C stopped working** — a printed crash and an unkillable process.
+Fixed by hoisting the signal path's own 10 s deadline into `armTeardownDeadline` and arming
+it on all three paths.
+
+**BUG-36 — real, and the shallow copy was load-bearing in the wrong direction.**
+`{ ...prd }` shares the `userStories` array, so `markStoryFailed` wrote back into the
+caller's PRD. The escalation branch fifty lines above already builds its copy correctly;
+this one now matches it. No caller depended on the mutation — `unified-executor.ts:508`
+reads the returned PRD.
+
+**STYLE-42 — deleted rather than repaired.** `QueueManager` had no production caller, and
+its `dequeue()` never claimed, aliasing `peek()`. Repairing it would have meant designing a
+claim protocol for a class nothing instantiates. `parseQueueFile` — the live half of the
+file — stays; `manager.ts` drops 297 → 107 lines and `types.ts` 60 → 22.
+
+**BUG-15 — the filed finding was about dead keys; the live defect was elsewhere.** The
+review named `gemini-2.5-pro`, `gemini-2-pro`, `codex` and `code-davinci-002`. Checked
+against real artifacts, no run references any of them. What every cross-agent run *does*
+use — `gpt-5.6-terra`, `gpt-5.6-luna`, `opencode-go/deepseek-v4-{pro,flash}`,
+`minimax/MiniMax-M3` — had **no rate card at all** and silently priced at the generic
+$3/$15 Sonnet fallback. Rates for those were sourced from vendor price lists and added; the
+three non-model keys were removed and `gemini-2.5-pro` corrected to $1.25/$10.
+`RATE_CARD_REVIEWED` now dates the card.
+
+Two rates could not be expressed exactly, and the table carries the compromise in a comment
+rather than silently: DeepSeek has billed by time of day since 2026-08-16 (peak 01:00–04:00
+and 06:00–10:00 UTC, off-peak at half), and `MODEL_PRICING` has no time dimension — it
+carries the **peak** rate, so an over-estimate keeps `execution.costLimit` protective where
+an off-peak card would let a peak-hours run overshoot by 2×. Gemini and MiniMax likewise
+have long-context tiers at double rate; the table carries the common tier.
+
+A prerequisite that had been recorded as blocking this turned out to be already fixed:
+#1468 (v0.77.0) strips the `[effort]` suffix before the rate-card lookup, so cards added for
+suffixed models take effect. Before that, they would have been inert.
+
 ### Deferred
 
 | ID | Reason |
 |:---|:---|
-| BUG-15 | The correct rates are facts about the outside world no test here can establish; a model supplying them from recollection replaces a known-wrong number with an unknown-wrong one. Needs a human with a current price list. |
-| TYPE-17, TYPE-38, BUG-36 | Type-annotation and cosmetic corrections with no observable runtime behaviour, so none can be expressed as a runtime acceptance criterion. Handing them to an autonomous run produces prose contracts no AC pins, which is the shape that deadlocks stories in adversarial review. |
-| BUG-37 | Exercising the uncaughtException/unhandledRejection deadline requires driving real process teardown, which cannot be asserted safely from inside the suite that would host the test. |
+| TYPE-17, TYPE-38 | Type-annotation corrections with no observable runtime behaviour, so none can be expressed as a runtime acceptance criterion. Handing them to an autonomous run produces prose contracts no AC pins, which is the shape that deadlocks stories in adversarial review. |
 | PERF-19, PERF-31 | Performance work whose only honest acceptance criterion is a timing threshold; timing assertions are flaky in CI. |
-| STYLE-42, STYLE-43 | A deletion and a consolidation whose blast radius needs a human decision about what the code was for. |
+| STYLE-43 | A consolidation whose blast radius needs a human decision about what the code was for. |
 | STYLE-44 | 16 grandfathered oversized files — a standing ratchet, not a discrete fix. |
 
 ---
@@ -615,7 +664,7 @@ shipped in #1766, and P2/P3 were triaged into the two `review-remediation-sweep`
 |:---|:---|:---|
 | Done | PR #1766 → #1767 → #1768 | The 5 P0/P1 fixes, then 19 sweep findings as six stories, then the 9 remaining as five file-disjoint stories |
 | Done | Permission ruling | SEC-12 + ENH-45 — unset resolves to `approve-all` (ratified and named), the invalid-profile arm stays fail-closed and now logs, and `check:permission-mode-ssot` stops the literal recurring |
-| Human input needed | — | BUG-15 (a current price list) |
+| Done | Sweep 3 | BUG-37 (fatal-teardown deadline), BUG-36 (real PRD copy), STYLE-42 (`QueueManager` deleted), BUG-15 (rate card refreshed + dated) |
 | Standing | — | STYLE-44's oversized-file ratchet; the type-only and timing-bound findings, which want a different verification approach than a runtime AC |
 
 ---

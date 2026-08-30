@@ -272,7 +272,13 @@ export async function preIterationTierCheck(
     attempts: story.attempts,
   });
 
-  const failedPrd = { ...prd };
+  // BUG-36: `{ ...prd }` alone is a shallow copy — it shares the `userStories`
+  // array, so `markStoryFailed`, which mutates the story object it finds, wrote
+  // straight back into the caller's PRD. The copy read as protective and was
+  // not. Copying the stories too makes it real, and matches how the escalation
+  // branch above builds `updatedPrd`. Callers read the returned PRD, so nothing
+  // depended on the caller's copy being mutated.
+  const failedPrd: PRD = { ...prd, userStories: prd.userStories.map((s) => ({ ...s })) };
   markStoryFailed(failedPrd, story.id, undefined, undefined);
   await _tierEscalationDeps.savePRD(failedPrd, prdPath);
 
