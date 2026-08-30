@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Coverage gate: runs the unit suite with coverage, parses coverage/lcov.info,
+ * Coverage gate: runs the gated suites with coverage, parses coverage/lcov.info,
  * and fails if overall line or function coverage drops below the floor.
  *
  * Why a custom script: Bun 1.3.x collects coverage and accepts a
@@ -8,10 +8,15 @@
  * (verified: 33% coverage vs a 0.99 threshold still exits 0). So the floor is
  * enforced here by parsing the lcov report.
  *
- * Scope: the unit suite (`test/unit/`) — the bulk of the tests, fast (~20s) and
- * reliable. Integration/UI/e2e are excluded because Bun cannot merge coverage
- * across the separate process-group invocations the wrapper uses, and they add
- * little source coverage over the unit suite.
+ * Scope: `test/unit/`, `test/integration/` and `test/ui/`, in ONE `bun test`
+ * invocation (~55s). It used to be the unit suite alone, on the grounds that Bun
+ * "cannot merge coverage across the separate process-group invocations the wrapper
+ * uses" and that the other suites "add little source coverage" — the first is true
+ * of scripts/run-tests.ts's phases but not of a single invocation given all three
+ * directories, and the second was measured false on 2026-08-30: merging moved
+ * aggregate lines 88.58% -> 91.59% and took 94 files below the per-file floor down
+ * to 62, with no test written. `test/e2e/` stays out; it is excluded from
+ * `bun run test` by design and runs as its own CI step.
  *
  * Per-file floor: the aggregate floor above can hide a single file collapsing
  * (e.g. 12% -> 0%) inside an 87%-covered repo. A second ratchet, in the same
@@ -20,9 +25,8 @@
  * below it are grandfathered in scripts/baselines/coverage-per-file-baseline.json
  * at their current pct; the gate then fails if a NEW file drops below the floor,
  * or a grandfathered file's coverage falls further below its recorded baseline.
- * It does not require the aggregate-excluded suites (integration/UI/e2e) to be
- * merged in — it is deliberately blind to coverage those suites alone provide,
- * same caveat as the aggregate floor.
+ * Both floors read the same merged report, so a file covered only by an
+ * integration or UI test counts. `test/e2e/` is still outside both.
  *
  * Missing-file guard (GitHub #1779): a file can be executed by a passing test and
  * still have NO `SF:` record in the report — deterministically, depending on which
@@ -73,7 +77,10 @@ export const UNMEASURABLE: Record<string, string> = {
     "GitHub #1779 — its 16 tests pass and the module is imported for value, but Bun emits no SF: record for it whenever the run also contains test/unit/execution/mutation-check-wiring.test.ts. Deterministic; not a race, not `smol`, not a file-count threshold.",
 };
 
-/** Wall-clock cap for the coverage run, in ms. */
+/** Suites the gate measures, in one invocation. `test/e2e/` is deliberately out. */
+const GATED_SUITES = ["test/unit/", "test/integration/", "test/ui/"];
+
+/** Wall-clock cap for the coverage run, in ms. A full merged run takes about 55s. */
 const RUN_TIMEOUT_MS = 300_000;
 
 export interface Totals {
@@ -84,8 +91,12 @@ export interface Totals {
 }
 
 /**
- * Run the unit suite with coverage in a detached process group so a hang or
+ * Run the gated suites with coverage in a detached process group so a hang or
  * SIGABRT is reaped along with any descendants (mirrors scripts/run-tests.ts).
+ *
+ * All three directories go to ONE invocation: Bun writes a single merged
+ * coverage/lcov.info per invocation and cannot merge across invocations, so
+ * splitting them into phases the way run-tests.ts does would lose the merge.
  *
  * Only the lcov reporter is requested. `--coverage-reporter=text` aborts the
  * whole run with `error: An internal error occurred (WriteFailed)` whenever
@@ -99,10 +110,10 @@ async function runCoverage(): Promise<number> {
     [
       "bun",
       "test",
-      "test/unit/",
+      ...GATED_SUITES,
       "--coverage",
       "--coverage-reporter=lcov",
-      // Same per-test budget as the CI unit step (`bun test test/unit/
+      // Same per-test budget as the CI suite steps (`bun test <dir>
       // --timeout=60000`). Coverage instrumentation adds enough overhead that
       // the 5s default fails process-timing tests that pass uninstrumented —
       // e.g. "runArgv > kills an overrunning process" took 5000.95ms in CI.
@@ -375,7 +386,7 @@ async function main() {
   const perFile = parsePerFileLines(lcovText);
 
   const fmt = (n: number) => `${(n * 100).toFixed(2)}%`;
-  console.log("\n── coverage gate (test/unit) ──");
+  console.log(`\n── coverage gate (${GATED_SUITES.join(", ")}) ──`);
   console.log(`  lines:     ${fmt(lines)}  (${totals.linesHit}/${totals.linesFound}, floor ${fmt(FLOOR.lines)})`);
   console.log(`  functions: ${fmt(functions)}  (${totals.fnHit}/${totals.fnFound}, floor ${fmt(FLOOR.functions)})`);
 

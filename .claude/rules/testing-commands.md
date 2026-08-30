@@ -26,12 +26,51 @@ Nothing enforces this automatically — it is on you to wrap every scoped run. A
 
 ## Coverage
 
-`bun run test:coverage` runs the unit suite with coverage and **fails if overall line or
-function coverage drops below 80%** (the rule in `common/testing.md`). The floor is enforced
-by `scripts/check-coverage.ts`, which parses `coverage/lcov.info` — Bun 1.3.x's `bunfig`
-`coverageThreshold` computes coverage but does NOT gate the exit code, so the script does.
-Scope is `test/unit/` (the bulk, fast and reliable); raise the floor in `check-coverage.ts`
-as coverage improves.
+`bun run test:coverage` runs `test/unit/`, `test/integration/` and `test/ui/` with coverage
+in **one** `bun test` invocation (~55s) and **fails if overall line or function coverage
+drops below 80%**. The floor is enforced by `scripts/check-coverage.ts`, which parses
+`coverage/lcov.info` — Bun's `bunfig` `coverageThreshold` computes coverage but does NOT
+gate the exit code, so the script does.
+
+All three directories go to one invocation because Bun writes a single merged report per
+invocation and cannot merge across them — splitting them into phases the way
+`scripts/run-tests.ts` does would lose the merge. `test/e2e/` is outside the gate; it is
+excluded from `bun run test` by design and runs as its own CI step.
+
+### Two floors
+
+| Floor | Reading | Where |
+|:---|:---|:---|
+| Aggregate | line and function coverage across the whole report, 80% | `FLOOR` in `check-coverage.ts` |
+| Per file | every `src/` file at 80%, with files already below it grandfathered at their current number | `PER_FILE_FLOOR` + `scripts/baselines/coverage-per-file-baseline.json` |
+
+The per-file ratchet fails when a NEW file drops below the floor, when a grandfathered
+file falls further below its recorded number, or when a **baselined file is missing from
+the report entirely** while still present on disk. That last case is GitHub #1779: a file
+can be executed by a passing test and still get no `SF:` record, and without the guard it
+would silently leave the below-floor list and be deleted by `--update-baseline` as if it
+had graduated. Known instances live in `UNMEASURABLE` in the script, each with a reason.
+
+### Coverage tiers
+
+The 80% floors are what the gate enforces. These tiers are the standard a reviewer holds a
+test change to — they are documented, not gated, so read them as the target rather than as
+the pass mark.
+
+| Tier | Target | Scope |
+|:---|:---|:---|
+| Overall | 80% or better | aggregate line and function coverage |
+| Critical paths | 90% or better | logic that decides what runs — `src/execution/`, `src/pipeline/`, `src/routing/`, `src/verification/`, and config merge / path security / selectors |
+| Utility functions | 100% | pure functions with no I/O — `src/utils/`, the parsers under `src/review/*-parsing/`, `src/prd/types.ts`. An untested branch in a pure function is an untested branch, not an integration gap |
+| UI components | below 80% is acceptable | `src/tui/**`. Verified behaviourally by `test/ui/`; chasing line coverage there buys snapshot brittleness. Such files stay grandfathered with a written reason |
+
+A file left below the floor needs a reason recorded next to its baseline entry, in
+`docs/plans/STATUS-coverage-drain.md` §7. An exemption with no written reason rots into an
+excuse.
+
+**The ratchet only sees files some test imports.** A `src/` file that no suite loads gets no
+record at all and is invisible to the per-file floor, so an empty baseline does not mean
+every file meets 80%.
 
 ## Rules
 
