@@ -3,13 +3,16 @@
  * Coverage gate: runs the gated suites with coverage, parses coverage/lcov.info,
  * and fails if overall line or function coverage drops below the floor.
  *
- * Why a custom script: Bun 1.3.x collects coverage and accepts a
- * `coverageThreshold` in bunfig.toml, but does NOT enforce it via exit code
- * (verified: 33% coverage vs a 0.99 threshold still exits 0). So the floor is
- * enforced here by parsing the lcov report.
+ * Why a custom script: Bun's `coverageThreshold` only exits non-zero when the
+ * `text` reporter is enabled (documented, and outside `--parallel`); with the
+ * lcov-only reporter this repo configures, a run below the threshold still exits
+ * 0. That is the real cause of the "Bun computes but does not enforce" note this
+ * comment used to carry. Even with `text` on, `coverageThreshold` has no per-file
+ * ratchet and no missing-file guard, so the floors stay enforced here by parsing
+ * the lcov report.
  *
  * Scope: `test/unit/`, `test/integration/` and `test/ui/`, in ONE `bun test`
- * invocation (~55s). It used to be the unit suite alone, on the grounds that Bun
+ * invocation (~47s), measuring `src/` only — see AGGREGATE_SCOPE_PREFIX. It used to be the unit suite alone, on the grounds that Bun
  * "cannot merge coverage across the separate process-group invocations the wrapper
  * uses" and that the other suites "add little source coverage" — the first is true
  * of scripts/run-tests.ts's phases but not of a single invocation given all three
@@ -57,9 +60,21 @@ const PER_FILE_BASELINE_FILE = join(import.meta.dir, "baselines", "coverage-per-
 /** Enforced floor. Matches the documented 80% rule (.claude/rules/common/testing.md). */
 const FLOOR = { lines: 0.8, functions: 0.8 };
 
-/** Per-file floor and scope for the second ratchet described above. */
+/**
+ * Path prefix both floors measure.
+ *
+ * `coverageSkipTestFiles` drops `*.test.ts` but NOT `test/helpers/**` or
+ * `test/preload.ts`, which do get `SF:` records. Summing every record therefore
+ * folded ~5,000 lines of test scaffolding into the aggregate and understated the
+ * source numbers by over a point (measured 2026-08-30: 94.28% all-records vs
+ * 95.56% src-only). The per-file ratchet was always scoped; the aggregate is now
+ * scoped the same way, so both floors describe the same thing.
+ */
+const AGGREGATE_SCOPE_PREFIX = "src/";
+
+/** Per-file floor for the second ratchet described above. */
 const PER_FILE_FLOOR = 0.8;
-const PER_FILE_SCOPE_PREFIX = "src/";
+const PER_FILE_SCOPE_PREFIX = AGGREGATE_SCOPE_PREFIX;
 /** Baseline comparisons ignore drift below this to absorb run-to-run rounding noise. */
 const PER_FILE_EPSILON = 0.001;
 
@@ -68,14 +83,16 @@ const PER_FILE_EPSILON = 0.001;
  * with the reason. Listed here so the missing-file guard reports them without failing
  * the run — every other absence is a new instance of #1779 and must fail.
  *
- * Keep this map empty if you can. An entry is a measurement hole, not an exemption from
- * the floor: the file's recorded baseline number is still carried forward and still
- * ratcheted the moment the report starts including it again.
+ * Currently EMPTY, and keep it that way if you can. An entry is a measurement hole, not
+ * an exemption from the floor: the file's recorded baseline number is still carried
+ * forward and still ratcheted the moment the report starts including it again.
+ *
+ * It held `src/prompts/loader.ts` until 2026-08-30. #1779 is NOT fixed upstream — its
+ * two-file repro still produces no `SF:` record on Bun 1.4.0 — but that file now records
+ * normally in the gated run, and the baseline it guarded is gone, so the entry described
+ * nothing. A stale entry is worse than none: it would let a genuine disappearance pass.
  */
-export const UNMEASURABLE: Record<string, string> = {
-  "src/prompts/loader.ts":
-    "GitHub #1779 — its 16 tests pass and the module is imported for value, but Bun emits no SF: record for it whenever the run also contains test/unit/execution/mutation-check-wiring.test.ts. Deterministic; not a race, not `smol`, not a file-count threshold.",
-};
+export const UNMEASURABLE: Record<string, string> = {};
 
 /** Suites the gate measures, in one invocation. `test/e2e/` is deliberately out. */
 const GATED_SUITES = ["test/unit/", "test/integration/", "test/ui/"];
@@ -98,12 +115,18 @@ export interface Totals {
  * coverage/lcov.info per invocation and cannot merge across invocations, so
  * splitting them into phases the way run-tests.ts does would lose the merge.
  *
- * Only the lcov reporter is requested. `--coverage-reporter=text` aborts the
- * whole run with `error: An internal error occurred (WriteFailed)` whenever
- * stdout is a pipe rather than a TTY — which is every CI context, and any local
- * `| head`/`| tail`. That is why this gate could never have run in CI. The
- * per-file table it printed was cosmetic: the floor is evaluated by parsing
- * coverage/lcov.info, and the summary below prints the numbers that matter.
+ * Only the lcov reporter is requested. The `text` reporter used to abort the whole
+ * run with `error: An internal error occurred (WriteFailed)` whenever stdout was a
+ * pipe rather than a TTY — every CI context, and any local `| head`/`| tail`. That
+ * is fixed as of Bun 1.4.0 (re-probed 2026-08-30: `coverageReporter = ["text",
+ * "lcov"]` piped to `tail` prints the full table and exits 0), so enabling it is
+ * now an option; it stays off because its ~800-row table is cosmetic here — the
+ * floors are evaluated by parsing coverage/lcov.info and the summary below prints
+ * the numbers that matter.
+ *
+ * Note the flag below is belt-and-braces only: bunfig.toml's `coverageReporter`
+ * wins over `--coverage-reporter` on the command line, so this argument does not
+ * actually select the reporter.
  */
 async function runCoverage(): Promise<number> {
   const child = Bun.spawn(
@@ -151,12 +174,22 @@ async function runCoverage(): Promise<number> {
   return exitCode;
 }
 
-export function parseLcov(text: string): Totals {
+/**
+ * Sums the aggregate line/function totals, counting only records under
+ * `AGGREGATE_SCOPE_PREFIX`. Records outside it (test helpers, preload) are skipped.
+ */
+export function parseLcov(text: string, scopePrefix: string = AGGREGATE_SCOPE_PREFIX): Totals {
   const totals: Totals = { linesFound: 0, linesHit: 0, fnFound: 0, fnHit: 0 };
+  let inScope = false;
   for (const line of text.split("\n")) {
     const colon = line.indexOf(":");
     if (colon === -1) continue;
     const tag = line.slice(0, colon);
+    if (tag === "SF") {
+      inScope = line.slice(colon + 1).startsWith(scopePrefix);
+      continue;
+    }
+    if (!inScope) continue;
     const value = Number.parseInt(line.slice(colon + 1), 10);
     if (Number.isNaN(value)) continue;
     switch (tag) {
@@ -386,7 +419,7 @@ async function main() {
   const perFile = parsePerFileLines(lcovText);
 
   const fmt = (n: number) => `${(n * 100).toFixed(2)}%`;
-  console.log(`\n── coverage gate (${GATED_SUITES.join(", ")}) ──`);
+  console.log(`\n── coverage gate (${GATED_SUITES.join(", ")} → ${AGGREGATE_SCOPE_PREFIX}) ──`);
   console.log(`  lines:     ${fmt(lines)}  (${totals.linesHit}/${totals.linesFound}, floor ${fmt(FLOOR.lines)})`);
   console.log(`  functions: ${fmt(functions)}  (${totals.fnHit}/${totals.fnFound}, floor ${fmt(FLOOR.functions)})`);
 

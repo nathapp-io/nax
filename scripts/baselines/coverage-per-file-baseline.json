@@ -1,10 +1,4 @@
 {
-  "updatedAt": "2026-08-30T11:02:42.888Z",
-  "byFile": {
-    "src/prompts/loader.ts": 0.7727,
-    "src/tui/App.tsx": 0.7833,
-    "src/tui/hooks/useAgentStreamEvents.ts": 0.1789,
-    "src/tui/hooks/useKeyboard.ts": 0.5769,
-    "src/tui/hooks/usePipelineEvents.ts": 0.6154
-  }
+  "updatedAt": "2026-08-30T11:48:41.517Z",
+  "byFile": {}
 }

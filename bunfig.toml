@@ -15,15 +15,21 @@ exclude = [".nax/**"]
 AGENT = 1
 
 # Coverage — only collected when `--coverage` is passed (e.g. `bun run test:coverage`);
-# normal `bun test` runs are unaffected. Test files themselves are excluded from the
-# report. NOTE: Bun 1.3.x computes `coverageThreshold` but does NOT enforce it via exit
-# code, so the floor is enforced by scripts/check-coverage.ts (which parses coverage/
-# lcov.info), not here.
+# normal `bun test` runs are unaffected.
+#
+# `coverageSkipTestFiles` drops `*.test.ts` but NOT `test/helpers/**` or
+# `test/preload.ts`, which still get `SF:` records. check-coverage.ts therefore scopes
+# both floors to `src/` rather than summing every record.
+#
+# No `coverageThreshold` here: Bun only enforces it via exit code when the `text`
+# reporter is enabled (and outside `--parallel`), and it has neither a per-file ratchet
+# nor a missing-file guard. The floors live in scripts/check-coverage.ts, which parses
+# coverage/lcov.info.
 coverageSkipTestFiles = true
-# lcov only. The "text" reporter aborts the run with `error: An internal error
-# occurred (WriteFailed)` whenever stdout is a pipe rather than a TTY — every CI
-# context, and any local `| head`/`| tail`. Its per-file table was cosmetic;
-# check-coverage.ts parses coverage/lcov.info and prints the totals. For per-file
-# detail, read coverage/lcov.info directly.
+# lcov only. The "text" reporter used to abort the run with `error: An internal error
+# occurred (WriteFailed)` whenever stdout was a pipe rather than a TTY; that is fixed
+# as of Bun 1.4.0 (re-probed 2026-08-30). It stays off because its per-file table is
+# cosmetic here — check-coverage.ts parses coverage/lcov.info and prints the totals.
+# For per-file detail, run `bun run test:coverage:list`.
 coverageReporter = ["lcov"]
 coverageDir = "coverage"

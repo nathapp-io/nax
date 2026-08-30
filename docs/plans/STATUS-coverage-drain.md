@@ -9,28 +9,30 @@ Written for handover: every step below is executable without re-deriving the ana
 
 ---
 
-## 0. Current state - re-measured 2026-08-30, after P0
+## 0. Current state - re-measured 2026-08-30, after the UI-tier drain
 
-Gate scope is now `test/unit/` + `test/integration/` + `test/ui/` in one invocation.
+Gate scope is `test/unit/` + `test/integration/` + `test/ui/` in one invocation, measuring
+`src/` only (see 8.5 — the aggregate used to include `test/helpers/**`).
 
 | Reading | Value | Gate |
 |:--|--:|:--|
-| Aggregate line coverage | **91.34%** | floor 80%, passing |
-| Aggregate function coverage | **88.66%** | floor 80%, passing |
-| Files below the 80% per-file floor | **62** | ratchet, passing |
-| Entries recorded in the baseline file | **63** | 62 measured + `src/prompts/loader.ts` carried, see 3.1 |
-| Coverage run wall clock | ~38-55s | was ~20s under the unit-only scope |
+| Aggregate line coverage (`src/` only) | **95.82%** | floor 80%, passing |
+| Aggregate function coverage (`src/` only) | **92.80%** | floor 80%, passing |
+| Files below the 80% per-file floor | **0** | ratchet, passing |
+| Entries recorded in the baseline file | **0** | the baseline is EMPTY |
+| Coverage run wall clock | ~47s | was ~20s under the unit-only scope |
 
-The aggregate 80% rule is met with room to spare and is not the work. **The work is the
-62 files below the per-file ratchet**, listed in section 4.
+**The baseline is empty and `UNMEASURABLE` is empty. The drain is finished.** Sections 3-6 are history; section 1's tiers remain the
+standard a reviewer holds a new test PR to.
 
 `bun run test:coverage` runs the three suites with coverage, parses `coverage/lcov.info`,
 and fails when a file not in the baseline sits below 80%, when a baselined file drops below
 its recorded number, or when a baselined file is missing from the report entirely while
 still on disk. There is no tiering: one flat 80% floor.
 
-For the record, the state this doc opened on (2026-08-30 at `36e20f266`, before P0): 88.58%
-lines / 87.92% functions, 94 files below floor, 103 baseline entries under a unit-only scope.
+For the record, the states this doc has passed through: 2026-08-30 at `36e20f266` (before
+P0) 88.58% lines / 94 files below floor / 103 baseline entries, unit-only scope; after P0,
+91.34% / 62 / 63; after tranches T1-T6, 94.28% / 5 / 5.
 
 ---
 
@@ -45,7 +47,7 @@ are the standard a reviewer holds a test PR to.
 | Overall | 80% or better | Aggregate line and function coverage. Enforced by `scripts/check-coverage.ts`. |
 | Critical paths | 90% or better | Business logic that decides what runs: `src/execution/`, `src/pipeline/`, `src/routing/`, `src/verification/`, `src/config/` (merge, path security, selectors). |
 | Utility functions | 100% | Pure functions with no I/O: `src/utils/`, parsers under `src/review/*-parsing/`, `src/prd/types.ts`. A pure function with an untested branch is an untested branch, not an integration gap. |
-| UI components | Below 80% is acceptable | `src/tui/**`. TUI rendering is verified by `test/ui/` behaviour tests and by eye; chasing line coverage there buys snapshot brittleness. These files stay grandfathered in the baseline with a reason (section 7). |
+| UI components | 80% or better | `src/tui/**`. **Revised 2026-08-30** - the old rule said below 80% was acceptable here. It was wrong: the four grandfathered files' uncovered lines were event handlers, a keyboard-action dispatcher and two pure formatters, not rendering, and a sibling hook (`usePipelineBusEvents.ts`) already sat at 89.7% on the same `ink-testing-library` + `act()` harness. All four now clear the floor. Genuine render-only churn can still be argued, but it needs its own row in section 7. |
 
 Where these get written down: append a "Coverage tiers" subsection to
 `.nax/rules/testing-commands.md` under the existing `## Coverage` heading. That file is the
@@ -402,19 +404,23 @@ The ratchet is easy to satisfy dishonestly. These are rejections, not style note
 
 ## 7. Files that stay in the baseline, with a reason
 
-Do not spend tokens on these; record them here instead, and keep the ratchet holding their
-current number so they cannot get worse.
+**None. The baseline is empty.**
 
-| File | Now | Why it stays |
-|:--|--:|:--|
-| `src/tui/App.tsx` | 78.3% | UI tier. Covered behaviourally by `test/ui/`. |
-| `src/tui/hooks/usePipelineEvents.ts` | 61.5% | UI tier. |
-| `src/tui/hooks/useKeyboard.ts` | 57.7% | UI tier. |
-| `src/tui/hooks/useAgentStreamEvents.ts` | 17.9% | UI tier, and the lowest of them - worth a look in T5 before accepting it. |
+Every file that once stood here was drained, not excused:
 
-Every other file in section 4 is a real target. If a tranche turns up another genuine
-exemption, add a row here with its reason in the same PR - an exemption without a written
-reason rots into an excuse.
+| File | Was | Why it was here | Outcome |
+|:--|--:|:--|:--|
+| `src/tui/App.tsx` | 78.3% | "UI tier" | drained, 8.4 |
+| `src/tui/hooks/usePipelineEvents.ts` | 61.5% | "UI tier" | drained, 8.4 |
+| `src/tui/hooks/useKeyboard.ts` | 57.7% | "UI tier" | drained, 8.4 |
+| `src/tui/hooks/useAgentStreamEvents.ts` | 17.9% | "UI tier" | drained, 8.4 |
+| `src/prompts/loader.ts` | 77.3% | "#1779 unmeasurable" - it was not | drained, 8.6 |
+
+**The bar for adding a row back.** An entry needs a reason that survives reading the
+uncovered lines, not a category the file belongs to. Both exemptions this doc shipped
+failed that test: one was a tier label applied to event handlers and pure functions, the
+other named an upstream Bun defect that had nothing to do with the number. Before writing
+a row, list the uncovered lines and say what each one is.
 
 ---
 
@@ -502,3 +508,162 @@ Pinned as current behavior in `accept.test.ts`; worth its own issue.
 Each tranche's own commit body has the full before/after percentage table per file. This
 doc's job (draining the baseline to empty) is done; the tiering standard in section 1
 remains the living reference for what a reviewer holds new test PRs to.
+
+### 8.4 - 2026-08-30 - the UI tier drained, and the exemption refuted
+
+The five entries 8.3 signed off as "documented permanent exemptions" were not all permanent.
+Four of them were `src/tui/**`, exempted under section 1's UI tier on the grounds that TUI
+rendering is verified behaviourally and by eye. Reading the uncovered lines refuted that:
+
+| File | Uncovered lines were | Before | After |
+|:--|:--|--:|--:|
+| `src/tui/hooks/useAgentStreamEvents.ts` | the whole stream-event `switch` and the 150ms drain effect | 17.89% | **100.00%** |
+| `src/tui/hooks/usePipelineEvents.ts` | both `stage:enter` / `stage:exit` handler bodies | 61.54% | **100.00%** |
+| `src/tui/hooks/useKeyboard.ts` | the character-shortcut branches, the Ctrl guard, `disabled` | 57.69% | **98.08%** |
+| `src/tui/App.tsx` | `dispatchKeyboardAction`, the confirm-dialog handler, `formatTokens` | 78.33% | **99.17%** |
+
+None of that is rendering. `formatTokens` is a pure function, which section 1's own rules put
+at 100%, not exempt. The decisive evidence was already in the tree: `usePipelineBusEvents.ts`
+- a sibling hook of the same shape, in the same directory - has sat at 89.7% since it was
+written, covered by one `test/ui/*.test.tsx` on the `ink-testing-library` + `act()` harness.
+The pattern was proven; the exemption was habit.
+
+Four new test files, 59 tests, no production code changed:
+`test/ui/usePipelineEvents.test.tsx`, `test/ui/useKeyboard.test.tsx`,
+`test/ui/useAgentStreamEvents.test.tsx`, `test/ui/tui-keyboard-actions.test.tsx`.
+
+Aggregate 94.28% -> **94.52%** lines, 90.49% -> **90.59%** functions. Baseline **5 -> 1**.
+
+**Two defects surfaced, both pinned rather than fixed:**
+
+1. **The Agent panel has no working way out.** `useKeyboard`'s escape hatch tests
+   `key.ctrl && input === "]"`, but Ink reports a real Ctrl+] (0x1d) as input `"\x1d"` with
+   `key.ctrl === false` - it only synthesises `ctrl` for codes 1-26, and `]` is 29. So
+   `ESCAPE_AGENT` is unreachable from the keyboard, and once focus moves to the Agent panel
+   every shortcut is ignored with no way back. Probed directly against Ink, then asserted as
+   observed behaviour in `useKeyboard.test.tsx`. This is also the entire reason the two files
+   stop short of 100%: `useKeyboard.ts:104` and `App.tsx:146-147` are the dead binding and
+   the `ESCAPE_AGENT` case it can never reach. Fix is one condition; it wants its own issue
+   and its own test flip.
+
+2. **A floating assertion in an existing test.** `test/unit/prompts/loader.test.ts:205` has
+   `expect(loadOverride(...)).rejects.toThrow()` with no `await` - the assertion never runs.
+   It is `fullTest`-gated so CI never executes it either way.
+
+**And one stale claim corrected.** 8.3 recorded `src/prompts/loader.ts` as the #1779
+unmeasurable carry-forward - "not drained, not draggable". Both halves are now wrong:
+
+- Under **Bun 1.4.0** (the baseline in 8.3 was measured on 1.3.13) the file *does* get an
+  `SF:` record in the gated run, at exactly its recorded 77.27%. The `UNMEASURABLE` entry in
+  `scripts/check-coverage.ts` is therefore inert, and while it stands a genuine future
+  disappearance would pass silently. The underlying Bun defect is NOT fixed - the two-file
+  repro from 3.1 still produces no record on 1.4.0 - so removing the entry trades a silent
+  hole for a loud, possibly surprising, CI failure. Left in place, flagged here.
+- The 77.27% was never the defect's doing. The file is **100% under `FULL=1`**; its only
+  uncovered lines are the `catch` block, reached solely by the two `fullTest`-gated tests
+  that chmod a file to `0o000`. Recorded properly in section 7.
+
+### 8.5 - 2026-08-30 - gate accuracy, and three comments that had gone stale under Bun 1.4.0
+
+No coverage was added here. The gate was measuring the wrong denominator and three
+comments were describing a Bun that this repo no longer runs.
+
+**The aggregate included test scaffolding.** `coverageSkipTestFiles` drops `*.test.ts`
+but not `test/helpers/**` or `test/preload.ts`, and those do get `SF:` records - 55 of
+them. `parseLcov()` summed every `LF`/`LH` regardless of path, so ~5,000 lines of test
+helpers sat in the denominator. The per-file ratchet was always scoped to `src/`; the
+aggregate now is too, via `AGGREGATE_SCOPE_PREFIX`, so both floors describe the same
+thing. Reported aggregate moves 94.52% -> **95.81%** lines and 90.59% -> **92.79%**
+functions. That is a measurement correction, not an improvement; nothing was tested that
+was not tested before. Three `parseLcov` tests pin the scoping.
+
+**Stale claim 1 - the `text` reporter no longer aborts on a pipe.** `bunfig.toml`,
+`check-coverage.ts` and `ci.yml` all carried a note that `--coverage-reporter=text`
+aborts the run with `error: An internal error occurred (WriteFailed)` whenever stdout is
+a pipe, "which is why this gate could never have run in CI". Re-probed on Bun 1.4.0 with
+`coverageReporter = ["text", "lcov"]` piped to `tail`: full table, exit 0. Fixed
+upstream. The reporter stays off - its ~800-row table is cosmetic when the floors are
+computed from lcov - but the comments now say so honestly.
+
+**Stale claim 2 - why `coverageThreshold` cannot replace this script.** The old reason
+given was that Bun "computes but does not enforce" it. The documented behaviour is
+narrower: the threshold check only runs when the `text` reporter is enabled (outside
+`--parallel`), so it was the lcov-only reporter that made it silent here. It still
+cannot replace the script, for a better reason - no per-file ratchet, no missing-file
+guard.
+
+**Stale claim 3 - `--coverage-reporter=lcov` on the command line is a no-op.**
+`bunfig.toml`'s `coverageReporter` wins over the CLI flag (verified: passing
+`--coverage-reporter=text` with `["lcov"]` in bunfig printed no table and still wrote
+`lcov.info`). The argument in `runCoverage()` is belt-and-braces only and is now
+labelled as such.
+
+**Deleted `coverage-baseline.txt`.** A tracked 58KB Bun 1.3.13 text-reporter dump from
+`#1072` (2026-05-22), referenced by no script, workflow or doc. This is the stale file
+the 2026-08-20 gap analysis flagged in its section 9.
+
+### 8.6 - 2026-08-30 - the last entry drained; baseline EMPTY
+
+`src/prompts/loader.ts` is at **100%** and the per-file baseline is now `{}`.
+
+The 77.27% was never about #1779 (see 8.4). The only uncovered lines were `loadOverride`'s
+`catch`, reached solely by two `fullTest`-gated tests that chmod a file to `0o000` - and
+the coverage gate does not set `FULL=1`.
+
+**Un-gating them was rejected.** `chmod 0o000` does not deny the owner when the suite runs
+as root, so those tests would fail in any root container. Two root-proof fixtures were
+probed and both fail earlier than the `catch`: `Bun.file().exists()` returns **false** for
+a directory and **false** for a unix socket, so `loadOverride` returns `null` before it
+ever calls `.text()`. The `catch` is reachable only by a regular file that cannot be
+opened - i.e. by permissions - which is exactly what root cannot be denied.
+
+**What was done instead: a `_deps` seam,** which is this repo's own documented convention
+for external calls and which `loader.ts` was simply missing. `_promptLoaderDeps`
+(`fileExists`, `readText`) follows `_scopeFilesDeps`; two new tests inject a throwing
+`readText` and cover the `catch` deterministically, root or not, including the
+non-`Error` rejection arm. The chmod tests stay exactly as they were - they are the real
+integration check and still pass under `FULL=1` (20/20).
+
+**Fixed in passing:** the floating `expect(loadOverride(...)).rejects.toThrow()` at
+`loader.test.ts:205` reported in 8.4 now has its `await`, so the assertion actually runs.
+
+**`UNMEASURABLE` emptied.** With `loader.ts` gone from the baseline the map described
+nothing. #1779 is **not** fixed upstream - its two-file repro still produces no `SF:`
+record on Bun 1.4.0 - but a stale entry is worse than none, because it would let a genuine
+disappearance pass silently. The two tests that iterated the map now pass vacuously against
+an empty one, so they were replaced: one pins the emptiness, the other runs the reason-shape
+guard over a synthetic entry.
+
+**Final state:** aggregate **95.82%** lines / **92.80%** functions over `src/`, 0 files
+below the per-file floor, 0 baseline entries, 0 unmeasurable entries. 16,402 tests, 0 fail.
+This doc is closed; section 1's tiers remain the standard for new test PRs, and section 7
+records the bar for ever adding an exemption back.
+
+### 8.7 - 2026-08-30 - the Ctrl+] defect fixed, not just pinned
+
+8.4 pinned the dead Agent-panel escape hatch as observed behaviour and left it for its own
+issue. Fixed here instead, since it was the sole reason two files stopped short of 100%.
+
+`useKeyboard` matched only `key.ctrl && input === "]"`. Ink synthesises `key.ctrl` for
+codes 1-26 (Ctrl+A..Ctrl+Z) and `]` is 29, so a real Ctrl+] arrives as the raw GS character
+`\x1d` with `key.ctrl === false` and the branch never fired. `isEscapeAgentKey()` now
+accepts both shapes - the raw control character, and the `key.ctrl` + `"]"` form kept for
+any input adapter that decodes it itself.
+
+Two regression tests, **both proven red against the old predicate before the fix landed**:
+`useKeyboard.test.tsx` asserts the dispatch, and `tui-keyboard-actions.test.tsx` asserts the
+round trip at App level (Tab into the Agent panel, Ctrl+] out, then `c` opens the cost
+overlay again - which it cannot while focus is stuck). A third test was written and then
+deleted: `ink-testing-library`'s stdin cannot synthesise `key.ctrl` for `"]"`, so it only
+re-ran the first under a different name.
+
+`HelpOverlay` already advertised "Ctrl+] - Escape back to Stories panel". That is now true.
+
+This closes the last two uncovered lines in the tier:
+
+| File | 8.4 | now |
+|:--|--:|--:|
+| `src/tui/App.tsx` | 99.17% | **100.00%** |
+| `src/tui/hooks/useKeyboard.ts` | 98.08% | **100.00%** |
+
+All four `src/tui/**` files that opened this doc as UI-tier exemptions are now at 100%.
