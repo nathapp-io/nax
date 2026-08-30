@@ -12,7 +12,11 @@ import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { buildContextToolPreamble } from "@/agents/acp/adapter-output";
 import type { AgentRunOptions } from "@/agents/types";
-import { QUERY_FEATURE_CONTEXT_DESCRIPTOR, QUERY_NEIGHBOR_DESCRIPTOR } from "@/context/engine/pull-tools";
+import {
+  QUERY_FEATURE_CONTEXT_DESCRIPTOR,
+  QUERY_NEIGHBOR_DESCRIPTOR,
+  QUERY_SCRATCH_DESCRIPTOR,
+} from "@/context/engine/pull-tools";
 import type { ToolDescriptor } from "@/context/engine/types";
 
 function makeOptions(tools: ToolDescriptor[], prompt = "implement US-001"): AgentRunOptions {
@@ -58,5 +62,59 @@ describe("buildContextToolPreamble — argument schema reaches the agent", () =>
     const prompt = buildContextToolPreamble(makeOptions([]));
 
     expect(prompt).toBe("implement US-001");
+  });
+});
+
+describe("buildContextToolPreamble — a partial schema degrades instead of throwing", () => {
+  function descriptor(inputSchema: Record<string, unknown>): ToolDescriptor {
+    return {
+      name: "query_partial",
+      description: "a tool whose descriptor omits schema fields",
+      inputSchema,
+      maxCallsPerSession: 3,
+      maxTokensPerCall: 512,
+    };
+  }
+
+  test("renders the tool with no argument list when the schema declares no properties", () => {
+    const prompt = buildContextToolPreamble(makeOptions([descriptor({ type: "object" })]));
+
+    expect(prompt).toContain("query_partial");
+    expect(prompt).not.toContain("Arguments:");
+  });
+
+  test("renders an empty properties object without an argument list", () => {
+    const prompt = buildContextToolPreamble(makeOptions([descriptor({ properties: {} })]));
+
+    expect(prompt).toContain("query_partial");
+    expect(prompt).not.toContain("Arguments:");
+  });
+
+  test("falls back to 'any' for a property with no declared type, and ignores a malformed required", () => {
+    // `required` is a string here, not the array JSON Schema demands.
+    const prompt = buildContextToolPreamble(
+      makeOptions([descriptor({ properties: { x: {}, y: "not-an-object" }, required: "x" })]),
+    );
+
+    expect(prompt).toContain("x (any, optional)");
+    expect(prompt).toContain("y (any, optional)");
+  });
+});
+
+describe("buildContextToolPreamble — the call example is real, not a placeholder", () => {
+  test("shows a payload built from the first advertised tool's own schema", () => {
+    const prompt = buildContextToolPreamble(makeOptions([QUERY_NEIGHBOR_DESCRIPTOR]));
+
+    // A generic {"key":"value"} left the agent to infer the argument name —
+    // the exact guess that made every query_neighbor call return empty.
+    expect(prompt).not.toContain('{"key":"value"}');
+    expect(prompt).toContain('"filePath"');
+  });
+
+  test("pins query_scratch's all-optional arguments too", () => {
+    const prompt = buildContextToolPreamble(makeOptions([QUERY_SCRATCH_DESCRIPTOR]));
+
+    expect(prompt).toContain("kind (string, optional)");
+    expect(prompt).toContain("limit (number, optional)");
   });
 });

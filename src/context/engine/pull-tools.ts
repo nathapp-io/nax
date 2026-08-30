@@ -26,7 +26,7 @@ import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { ScratchEntry } from "@/session";
 import { scratchFilePath } from "@/session";
-import type { ToolDescriptor } from "./types";
+import type { JSONSchema, ToolDescriptor } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependencies (injectable for testing)
@@ -193,6 +193,75 @@ export const PULL_TOOL_REGISTRY: Record<string, ToolDescriptor> = {
   query_feature_context: QUERY_FEATURE_CONTEXT_DESCRIPTOR,
   query_scratch: QUERY_SCRATCH_DESCRIPTOR,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Input validation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** JSON Schema `type` names this validator understands, mapped to a predicate. */
+const SCHEMA_TYPE_CHECKS: Record<string, (value: unknown) => boolean> = {
+  string: (v) => typeof v === "string",
+  number: (v) => typeof v === "number" && Number.isFinite(v),
+  boolean: (v) => typeof v === "boolean",
+  object: (v) => typeof v === "object" && v !== null && !Array.isArray(v),
+  array: (v) => Array.isArray(v),
+};
+
+/**
+ * Validate an agent-authored tool payload against the descriptor's own
+ * `inputSchema` — the SAME declaration `buildContextToolPreamble` renders to
+ * the agent. Advertising a contract and enforcing a different one is how the
+ * two drift apart, so both read this one object.
+ *
+ * Checks only what a descriptor actually declares: that every `required`
+ * property is present, and that each declared property whose value is present
+ * matches its declared `type`. Unknown extra properties are deliberately NOT
+ * rejected — handlers ignore them, and failing a call over a harmless extra
+ * key is worse than accepting it.
+ *
+ * Runs BEFORE the handler and therefore before `budget.consume()`: a call that
+ * never reaches a provider has delivered no context and should not be metered.
+ * `buildRunInteractionHandler` converts this throw into a
+ * `<nax_tool_result status="error">` block, so the agent is told which argument
+ * was wrong and can retry.
+ */
+export function validatePullToolInput(toolName: string, input: unknown, inputSchema: JSONSchema): void {
+  const properties = inputSchema.properties;
+  if (typeof properties !== "object" || properties === null) return;
+
+  const payload = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+
+  const required = Array.isArray(inputSchema.required)
+    ? inputSchema.required.filter((name): name is string => typeof name === "string")
+    : [];
+
+  for (const name of required) {
+    if (payload[name] === undefined) {
+      throw new NaxError(
+        `${toolName} requires the "${name}" argument; received ${JSON.stringify(input)}`,
+        "PULL_TOOL_INVALID_INPUT",
+        { stage: "pull-tool", tool: toolName, argument: name },
+      );
+    }
+  }
+
+  for (const [name, raw] of Object.entries(properties as Record<string, unknown>)) {
+    const value = payload[name];
+    if (value === undefined) continue;
+    const spec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+    const expected = typeof spec.type === "string" ? spec.type : undefined;
+    const check = expected ? SCHEMA_TYPE_CHECKS[expected] : undefined;
+    // An unrecognised or absent `type` is not an error — it means the
+    // descriptor declared no constraint we can enforce.
+    if (check && !check(value)) {
+      throw new NaxError(
+        `${toolName} argument "${name}" must be a ${expected}; received ${JSON.stringify(value)}`,
+        "PULL_TOOL_INVALID_INPUT",
+        { stage: "pull-tool", tool: toolName, argument: name },
+      );
+    }
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Budget tracker

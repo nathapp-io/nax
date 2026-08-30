@@ -184,6 +184,17 @@ Pull tools are off by default. Enable them:
 
 Exhausted budgets throw `PULL_TOOL_BUDGET_EXHAUSTED`; the agent recovers gracefully and finishes with whatever it already has.
 
+The prompt preamble advertises each tool's `inputSchema` — argument name, type,
+whether it is required, and the per-argument description — plus a worked call
+example built from the first advertised tool's own schema. A descriptor is
+therefore the single source for both what the agent is told and what is
+enforced: `validatePullToolInput` (`pull-tools.ts`) checks every call against
+that same schema before dispatch, throwing `PULL_TOOL_INVALID_INPUT` when a
+required argument is missing or a declared argument has the wrong type. That
+check runs before `budget.consume()`, so a rejected call costs no budget, and
+the error is returned to the agent as a `<nax_tool_result status="error">`
+block it can retry from. Unknown extra properties are accepted and ignored.
+
 Which stages get which tools is defined in `stage-config.ts` (`pullToolNames` per stage). You can't currently add a pull tool to an arbitrary stage from config alone — that's a code change.
 
 ---
