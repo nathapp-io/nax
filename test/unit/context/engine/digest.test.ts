@@ -95,6 +95,51 @@ describe("buildDigest", () => {
     const line = digest.split("\n")[0] ?? "";
     expect(line.length).toBeLessThanOrEqual(140); // tag + space + 120
   });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // #1774 defect B: repeated rule filenames starve non-project scopes
+  // ───────────────────────────────────────────────────────────────────────
+
+  test("multiple sections from one rule file dedupe to a single digest line", () => {
+    // static-rules.ts builds every section of a rule as `### <rulePath>\n\n<section>`
+    // (static-rules.ts:417) — every section of one file therefore shares the
+    // identical firstLine summary. Without dedupe, N sections produce N lines.
+    const chunks = Array.from({ length: 9 }, (_, i) =>
+      makePacked({
+        id: `static-rules:adapter-wiring:${i}`,
+        scope: "project",
+        content: "### adapter-wiring.md\n\nSection body.",
+      }),
+    );
+    const digest = buildDigest(chunks);
+    const occurrences = digest.split("\n").filter((l) => l.includes("adapter-wiring.md")).length;
+    expect(occurrences).toBe(1);
+  });
+
+  test("a project-scope overflow does not starve a feature-scope chunk", () => {
+    // Simulates the reported bug: many distinct project-scope rule chunks
+    // (each a different file, so dedupe above doesn't collapse them) exceed
+    // MAX_DIGEST_CHARS on their own — the feature-scope chunk must still
+    // survive into the digest.
+    const projectChunks = Array.from({ length: 15 }, (_, i) =>
+      makePacked({
+        id: `static-rules:rule-${i}`,
+        scope: "project",
+        // Distinct per-chunk content (no shared header line) so this exercises
+        // budget starvation specifically, independent of the dedupe fix above —
+        // ~125 chars/line x 15 chunks comfortably exceeds MAX_DIGEST_CHARS (1000)
+        // on its own.
+        content: `Distinct rule content block number ${i} with enough unique padding text to consume real digest budget space.`,
+      }),
+    );
+    const featureChunk = makePacked({
+      id: "feature:us-004",
+      scope: "feature",
+      content: "# US-004\n\nStory-specific feature context that must survive.",
+    });
+    const digest = buildDigest([...projectChunks, featureChunk]);
+    expect(digest).toContain("[feature] US-004");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
