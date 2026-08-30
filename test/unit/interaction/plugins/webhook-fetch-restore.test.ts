@@ -12,33 +12,33 @@
  * there is no upstream webhook responder to POST to).
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
+import { _resetServePortZeroCompatForTests } from "@/interaction/plugins/webhook-serve-compat";
 
 describe("WebhookInteractionPlugin - compat-shim restore lifetime (US-004 AC6)", () => {
   const originalServe = Bun.serve;
   const originalFetch = globalThis.fetch;
 
+  // `servePortZeroCompatInstalled` is module-level state shared by every test
+  // file in this process, so an earlier test left mid-install (or this file's
+  // own previous run) would otherwise make the install below a no-op and pass
+  // this test vacuously. Force a clean slate instead of re-importing webhook.ts
+  // through a cache-busted specifier — that pattern used to instantiate a
+  // second module tree purely to reset this one flag, and Bun's coverage
+  // instrumentation cannot merge line hits across two instances of the same
+  // source file, which corrupted the reported coverage for webhook.ts.
+  beforeEach(() => {
+    _resetServePortZeroCompatForTests();
+  });
+
   afterEach(() => {
+    _resetServePortZeroCompatForTests();
     (Bun as { serve: typeof Bun.serve }).serve = originalServe;
     globalThis.fetch = originalFetch;
   });
 
   test("AC6: after receive() then destroy(), globalThis.fetch equals the function present before receive()", async () => {
-    // A fresh module instance per call. `servePortZeroCompatInstalled` is
-    // module-level state, so importing the shared webhook.ts would no-op the
-    // shim install — and pass this test vacuously — whenever an earlier test
-    // in a sibling file left the flag set. The query-string tag gives this
-    // test its own module tree (webhook.ts -> webhook-serve-compat) whose flag
-    // starts false, so the patch genuinely happens and is genuinely undone.
-    const { WebhookInteractionPlugin } = (await import(`@/interaction/plugins/webhook?ac6=${Date.now()}`)) as {
-      WebhookInteractionPlugin: new () => {
-        name: string;
-        init(config: Record<string, unknown>): Promise<void>;
-        receive(requestId: string, timeout?: number): Promise<unknown>;
-        destroy(): Promise<void>;
-      };
-    };
-
     // Capture the exact function object that exists on the global before the
     // plugin touches anything. This is the value the test will assert against
     // after destroy(); identity (`toBe`) — not port equality — is the contract.

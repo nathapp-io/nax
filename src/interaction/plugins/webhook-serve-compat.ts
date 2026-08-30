@@ -184,3 +184,25 @@ export function installServePortZeroCompat(): () => void {
     globalThis.fetch = servePortZeroOriginalFetch;
   };
 }
+
+/**
+ * @internal test-only. Force-clears the module-level install state regardless
+ * of the current refcount, and restores the true pre-install globals if the
+ * shim is currently patched. Bun's test suite runs every file in one process,
+ * so `servePortZeroCompatInstalled` can be left set by an earlier test in a
+ * sibling file — this gives a test a reliable clean slate WITHOUT needing a
+ * cache-busted dynamic re-import of this module (or of `webhook.ts`, which
+ * imports it statically): that pattern instantiates a second, isolated
+ * module tree purely to reset one flag, and Bun's coverage instrumentation
+ * cannot merge line hits across the two instances of the same source file,
+ * which corrupts the reported coverage for whichever file gets re-imported
+ * this way.
+ */
+export function _resetServePortZeroCompatForTests(): void {
+  if (servePortZeroCompatInstalled) {
+    (Bun as { serve: typeof Bun.serve }).serve = servePortZeroOriginalServe;
+    globalThis.fetch = servePortZeroOriginalFetch;
+  }
+  servePortZeroCompatInstalled = false;
+  servePortZeroCompatRefCount = 0;
+}
