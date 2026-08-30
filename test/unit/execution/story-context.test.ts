@@ -5,8 +5,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
-import { buildStoryContextFull } from "@/execution/story-context";
+import { makeNaxConfig, makeTempDir, makeTestContext } from "@test/helpers";
+import {
+  buildStoryContext,
+  buildStoryContextFull,
+  buildStoryContextFullFromCtx,
+  maybeGetContext,
+} from "@/execution/story-context";
 import type { PRD, UserStory } from "@/prd";
 
 function makeStory(id = "US-001"): UserStory {
@@ -97,5 +102,105 @@ describe("buildStoryContextFull — package context loading (MW-003)", () => {
 
     expect(result?.markdown).toContain("---");
     expect(result?.markdown).toContain("# Package Context");
+  });
+
+  test("returns undefined when the context builder throws (unknown story id)", async () => {
+    const story = makeStory();
+    const prd = makePrd(story);
+    const unknownStory = makeStory("US-does-not-exist");
+    const result = await buildStoryContextFull(prd, unknownStory, makeConfig(), tmpDir, tmpDir);
+    expect(result).toBeUndefined();
+  });
+});
+
+describe("buildStoryContextFullFromCtx — PipelineContext wrapper", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("nax-test-");
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("uses ctx.workdir as packageWorkdir when the story has its own workdir, appending package context.md", async () => {
+    await Bun.write(join(tmpDir, ".nax", "context.md"), "# Package Context\nfrom ctx.workdir");
+    const story: UserStory = { ...makeStory(), workdir: "packages/a" };
+    const prd = makePrd(story);
+    const ctx = makeTestContext({ prd, story, config: makeConfig(), workdir: tmpDir });
+
+    const result = await buildStoryContextFullFromCtx(ctx);
+    expect(result).toBeDefined();
+    expect(result?.markdown).toContain("Package Context");
+  });
+
+  test("omits packageWorkdir when the story has no workdir, so no package context.md is appended", async () => {
+    await Bun.write(join(tmpDir, ".nax", "context.md"), "# Package Context\nshould not appear");
+    const story = makeStory();
+    const prd = makePrd(story);
+    const ctx = makeTestContext({ prd, story, config: makeConfig(), workdir: tmpDir });
+
+    const result = await buildStoryContextFullFromCtx(ctx);
+    expect(result).toBeDefined();
+    expect(result?.markdown).not.toContain("Package Context");
+  });
+});
+
+describe("maybeGetContext — gate on useContext", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("nax-test-");
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns undefined immediately when useContext is false, without building anything", async () => {
+    const story = makeStory();
+    const prd = makePrd(story);
+    const result = await maybeGetContext(prd, story, makeConfig(), false, tmpDir);
+    expect(result).toBeUndefined();
+  });
+
+  test("delegates to buildStoryContext and returns markdown when useContext is true", async () => {
+    const story = makeStory();
+    const prd = makePrd(story);
+    const result = await maybeGetContext(prd, story, makeConfig(), true, tmpDir);
+    expect(result).toBeDefined();
+    expect(typeof result).toBe("string");
+    expect(result).toContain(story.id);
+  });
+});
+
+describe("buildStoryContext — markdown-only context building", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("nax-test-");
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns context markdown containing the current story", async () => {
+    const story = makeStory();
+    const prd = makePrd(story);
+    const result = await buildStoryContext(prd, story, makeConfig(), tmpDir);
+    expect(result).toBeDefined();
+    expect(result).toContain(story.id);
+  });
+
+  test("returns undefined when the context builder throws (unknown story id)", async () => {
+    // buildContext throws `Story <id> not found in PRD` when currentStoryId
+    // does not match any userStory — buildStoryContext's catch swallows it.
+    const story = makeStory();
+    const prd = makePrd(story);
+    const unknownStory = makeStory("US-does-not-exist");
+    const result = await buildStoryContext(prd, unknownStory, makeConfig(), tmpDir);
+    expect(result).toBeUndefined();
   });
 });

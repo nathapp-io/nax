@@ -10,6 +10,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import { _manifestPurgeDeps, MAX_MANIFEST_SCAN, purgeStaleManifests } from "@/context/engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,5 +285,103 @@ describe("purgeStaleManifests", () => {
     expect(calls[0]?.cwd).toBe(PROJECT_DIR);
     expect(calls[0]?.cap).toBeGreaterThan(0);
     expect(calls[0]?.pattern).toContain(".nax/features");
+  });
+});
+
+describe("_manifestPurgeDeps — real default implementations", () => {
+  test("now() returns the current epoch time", () => {
+    const before = Date.now();
+    const value = _manifestPurgeDeps.now();
+    const after = Date.now();
+    expect(value).toBeGreaterThanOrEqual(before);
+    expect(value).toBeLessThanOrEqual(after);
+  });
+
+  test("scan() finds context-manifest and rebuild-manifest files under .nax/features via a real glob", async () => {
+    await withTempDir(async (dir) => {
+      const storyDir = join(dir, ".nax", "features", "feat-a", "stories", "US-001");
+      await Bun.write(join(storyDir, "context-manifest-review.json"), "{}");
+      await Bun.write(join(storyDir, "rebuild-manifest.json"), "{}");
+      await Bun.write(join(storyDir, "not-a-manifest.json"), "{}");
+
+      const results = await _manifestPurgeDeps.scan(
+        ".nax/features/*/stories/*/{context-manifest-*,rebuild-manifest}.json",
+        dir,
+        MAX_MANIFEST_SCAN,
+      );
+
+      expect(results).toHaveLength(2);
+      expect(results.some((r) => r.includes("context-manifest-review.json"))).toBe(true);
+      expect(results.some((r) => r.includes("rebuild-manifest.json"))).toBe(true);
+      expect(results.some((r) => r.includes("not-a-manifest.json"))).toBe(false);
+    });
+  });
+
+  test("scan() caps results at the provided cap", async () => {
+    await withTempDir(async (dir) => {
+      const storyDir = join(dir, ".nax", "features", "feat-a", "stories", "US-001");
+      for (let i = 0; i < 5; i++) {
+        await Bun.write(join(storyDir, `context-manifest-${i}.json`), "{}");
+      }
+      const results = await _manifestPurgeDeps.scan(
+        ".nax/features/*/stories/*/{context-manifest-*,rebuild-manifest}.json",
+        dir,
+        2,
+      );
+      expect(results).toHaveLength(2);
+    });
+  });
+
+  test("statMtime() returns the real mtime for an existing file", async () => {
+    await withTempDir(async (dir) => {
+      const filePath = join(dir, "context-manifest-x.json");
+      await Bun.write(filePath, "{}");
+      const mtime = await _manifestPurgeDeps.statMtime(filePath);
+      expect(mtime).toBeGreaterThan(0);
+      expect(mtime).toBeLessThanOrEqual(Date.now() + 1000);
+    });
+  });
+
+  test("statMtime() throws for a missing file", async () => {
+    await withTempDir(async (dir) => {
+      await expect(_manifestPurgeDeps.statMtime(join(dir, "does-not-exist.json"))).rejects.toThrow(
+        "stat: file not found",
+      );
+    });
+  });
+
+  test("unlink() removes a real file from disk", async () => {
+    await withTempDir(async (dir) => {
+      const filePath = join(dir, "context-manifest-x.json");
+      await Bun.write(filePath, "{}");
+      expect(await Bun.file(filePath).exists()).toBe(true);
+      await _manifestPurgeDeps.unlink(filePath);
+      expect(await Bun.file(filePath).exists()).toBe(false);
+    });
+  });
+
+  test("rmdirIfEmpty() removes an empty directory and returns true", async () => {
+    await withTempDir(async (dir) => {
+      const storyDir = join(dir, "empty-story-dir");
+      const { mkdir } = await import("node:fs/promises");
+      await mkdir(storyDir, { recursive: true });
+      const removed = await _manifestPurgeDeps.rmdirIfEmpty(storyDir);
+      expect(removed).toBe(true);
+    });
+  });
+
+  test("rmdirIfEmpty() leaves a non-empty directory in place and returns false", async () => {
+    await withTempDir(async (dir) => {
+      const storyDir = join(dir, "non-empty-story-dir");
+      await Bun.write(join(storyDir, "leftover.json"), "{}");
+      const removed = await _manifestPurgeDeps.rmdirIfEmpty(storyDir);
+      expect(removed).toBe(false);
+      expect(await Bun.file(join(storyDir, "leftover.json")).exists()).toBe(true);
+    });
+  });
+
+  test("debugLog() does not throw when called with and without data", () => {
+    expect(() => _manifestPurgeDeps.debugLog("manifest-purge", "test message")).not.toThrow();
+    expect(() => _manifestPurgeDeps.debugLog("manifest-purge", "test message", { key: "value" })).not.toThrow();
   });
 });
