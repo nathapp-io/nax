@@ -28,6 +28,7 @@ import { buildInteractionBridge } from "@/interaction";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
+import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
@@ -87,6 +88,13 @@ export const executionStage: PipelineStage = {
     const packageView = ctx.packageView ?? ctx.runtime?.packages?.resolve(ctx.workdir);
     if (!packageView) return { action: "fail", reason: "Package view unavailable for execution dispatch" };
 
+    // nax#1775: resolve the same scope-file set promptStage passes to the
+    // execution-stage bundle, and thread it to EVERY per-story-phase stage
+    // assembly (tdd-test-writer / tdd-implementer / tdd-verifier /
+    // review-semantic / review-adversarial / rectify), not just "context".
+    // Without this, appliesTo: scoping fails open on every one of them.
+    const scopeFiles = ctx.scopeFiles ?? (await _executionDeps.resolveScopeFiles(ctx));
+
     const interactionBridge = buildInteractionBridge(ctx.interaction, {
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
@@ -114,7 +122,8 @@ export const executionStage: PipelineStage = {
       // the operations layer must not gain. Intentionally NOT memoized here —
       // rectify's query_scratch pull tool depends on re-reading the current
       // verify-result on every retry, and caching would freeze it stale.
-      assembleStageBundle: async (stage: string) => (await _executionDeps.assembleForStage(ctx, stage)) ?? undefined,
+      assembleStageBundle: async (stage: string) =>
+        (await _executionDeps.assembleForStage(ctx, stage, scopeFiles.length > 0 ? { scopeFiles } : {})) ?? undefined,
       // US-005: thread the story scratch dirs the stage-assembly path resolved
       // so the pull-tool runtime's query_scratch handler reads the same JSONL
       // the push providers (SessionScratchProvider / ToolDiagnosticsProvider)
@@ -217,4 +226,5 @@ export const _executionDeps = {
   applyPostRunInspection,
   decideStageAction,
   assembleForStage,
+  resolveScopeFiles,
 };
