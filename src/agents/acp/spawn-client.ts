@@ -23,6 +23,8 @@ import { SpawnAcpSession } from "./spawn-client-session";
 export { _spawnClientDeps } from "./spawn-client-deps";
 export { SpawnAcpSession } from "./spawn-client-session";
 
+export const DEFAULT_ACP_TIMEOUT_SECONDS = 1800;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SpawnAcpClient
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,7 +50,7 @@ export class SpawnAcpClient implements AcpClient {
   /** Reasoning effort split off the profile's model suffix, applied once per session. */
   private readonly reasoningEffort?: string;
   readonly cwd: string;
-  private readonly timeoutSeconds: number;
+  readonly timeoutSeconds: number;
   private readonly promptRetries: number;
   private readonly env: Record<string, string | undefined>;
   private readonly onPidSpawned?: (pid: number) => void;
@@ -89,7 +91,7 @@ export class SpawnAcpClient implements AcpClient {
       throw new Error("[acp-adapter] SpawnAcpClient requires cwd");
     }
     this.cwd = cwd;
-    this.timeoutSeconds = timeoutSeconds || 1800;
+    this.timeoutSeconds = timeoutSeconds ?? DEFAULT_ACP_TIMEOUT_SECONDS;
     this.promptRetries = promptRetries ?? 0;
     // BUG-15: modelDef.env (config.models.<agent>.<tier>.env) was accepted by
     // the schema but never threaded here — a per-model API key/base URL

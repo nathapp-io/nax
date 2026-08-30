@@ -41,8 +41,13 @@ export type {
   SessionTurnDispatchEvent,
 } from "./dispatch-events";
 export { DispatchEventBus } from "./dispatch-events";
-export type { WatchdogState } from "./middleware";
-export { _idleWatchdogDeps, attachAgentIdleWatchdog, attachAgentStreamLogging } from "./middleware";
+export type { ResolvedIdleWatchdogSettings, WatchdogState } from "./middleware";
+export {
+  _idleWatchdogDeps,
+  attachAgentIdleWatchdog,
+  attachAgentStreamLogging,
+  resolveIdleWatchdogSettings,
+} from "./middleware";
 export type { MutationOutcomeSummary, MutationStorySummary } from "./mutation-summary";
 export type { PackageRegistry, PackageView } from "./packages";
 export { createPackageRegistry } from "./packages";

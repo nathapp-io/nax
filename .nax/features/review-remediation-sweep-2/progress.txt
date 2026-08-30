@@ -1,0 +1,5 @@
+[2026-08-29T16:13:17.567Z] US-001 — PASSED — Surface worktree and changed-file git failures — Cost: $5.9026
+[2026-08-29T16:27:19.658Z] US-002 — PASSED — Make TDD git failures loud and cleanup grace waits bounded — Cost: $1.5672
+[2026-08-29T16:45:44.195Z] US-003 — PASSED — Use native filesystem APIs for context and test scanning — Cost: $2.3885
+[2026-08-29T17:27:43.947Z] US-004 — PASSED — Resolve interaction logger at call time and restore webhook globals — Cost: $1.8336
+[2026-08-29T17:51:52.694Z] US-005 — PASSED — Resolve idle-watchdog defaults from their source of truth — Cost: $1.4330

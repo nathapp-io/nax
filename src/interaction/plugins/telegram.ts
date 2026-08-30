@@ -53,7 +53,6 @@ interface BufferedResponse {
  */
 export class TelegramInteractionPlugin implements InteractionPlugin {
   name = "telegram";
-  private readonly logger = getSafeLogger();
   private botToken: string | null = null;
   private chatId: string | null = null;
   // requestId -> { type of the request (gates which update kinds count as an answer), sent message ids }
@@ -95,7 +94,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     // prompt still posts and simply never accepts an answer. Warn rather than
     // throw — notify-only usage against an @channelusername never needs a reply.
     if (normalized?.unmatchable) {
-      this.logger?.warn(
+      getSafeLogger()?.warn(
         "interaction",
         "Telegram chatId is not numeric — inbound updates cannot be matched, so interactive prompts will always fall back to their timeout. Use the numeric chat id (see getUpdates or @userinfobot).",
         { chatId: this.chatId },
@@ -109,17 +108,18 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Advance lastUpdateId past any updates already queued, without processing them.
-   * Pages through getUpdates() (bounded by MAX_DRAIN_PAGES) since a single call only
-   * returns one page (Telegram default limit: 100) and a larger backlog would
-   * otherwise leave older updates unconsumed. Prevents stale/unrelated updates from
-   * being misread as the response to the next interaction request.
+   * Advance lastUpdateId past queued updates without processing them. Pages through
+   * getUpdates() (bounded by MAX_DRAIN_PAGES) since one call returns a single page
+   * and a larger backlog would leave older updates unconsumed, misread as the answer.
    */
   private async drainBacklog(): Promise<void> {
     for (let page = 0; page < TelegramInteractionPlugin.MAX_DRAIN_PAGES; page++) {
       const result = await this.fetchUpdates();
       if (!result.ok) {
-        this.logger?.warn("interaction", "Telegram backlog drain failed — stale updates may be misread as a response");
+        getSafeLogger()?.warn(
+          "interaction",
+          "Telegram backlog drain failed — stale updates may be misread as a response",
+        );
         return;
       }
       // Terminate on the RAW page size, not the authorized one. A page filled
@@ -129,7 +129,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       // exists to prevent.
       if (result.rawCount === 0) return;
     }
-    this.logger?.warn("interaction", "Telegram backlog drain hit page cap — stale updates may remain", {
+    getSafeLogger()?.warn("interaction", "Telegram backlog drain hit page cap — stale updates may remain", {
       pages: TelegramInteractionPlugin.MAX_DRAIN_PAGES,
     });
   }
@@ -163,7 +163,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     try {
       keyboard = buildKeyboard(request);
     } catch (err) {
-      this.logger?.error("interaction", "Cannot build Telegram keyboard — sending prompt without buttons", {
+      getSafeLogger()?.error("interaction", "Cannot build Telegram keyboard — sending prompt without buttons", {
         requestId: request.id,
         error: errorMessage(err),
       });
@@ -284,7 +284,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
   private completeReceiver(requestId: string, response: InteractionResponse, update: TelegramUpdate): void {
     if (update.callback_query) {
-      this.logger?.debug("interaction", "Telegram callback matched", {
+      getSafeLogger()?.debug("interaction", "Telegram callback matched", {
         requestId,
         updateId: update.update_id,
         action: response.action,
@@ -298,7 +298,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   private logIgnoredCallback(update: TelegramUpdate): void {
-    this.logger?.debug("interaction", "Telegram callback ignored (stale/mismatched)", {
+    getSafeLogger()?.debug("interaction", "Telegram callback ignored (stale/mismatched)", {
       updateId: update.update_id,
       callbackData: update.callback_query?.data,
     });
@@ -390,7 +390,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       }
       const updates = raw.filter((u: TelegramUpdate) => this.isFromConfiguredChat(u));
       if (updates.length !== raw.length) {
-        this.logger?.debug("interaction", "Telegram updates rejected -- not from the configured chat", {
+        getSafeLogger()?.debug("interaction", "Telegram updates rejected -- not from the configured chat", {
           rejected: raw.length - updates.length,
         });
       }
@@ -403,7 +403,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       this.backoffMs = Math.min(this.backoffMs * 2, this.maxBackoffMs);
       // Swallow the error — callers retry with backoff. Logged at debug so a
       // persistently failing poll is diagnosable rather than silent.
-      this.logger?.debug("interaction", "Telegram getUpdates failed — retrying with backoff", {
+      getSafeLogger()?.debug("interaction", "Telegram getUpdates failed — retrying with backoff", {
         error: err instanceof Error ? err.message : String(err),
         backoffMs: this.backoffMs,
       });

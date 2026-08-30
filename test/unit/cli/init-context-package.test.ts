@@ -108,4 +108,25 @@ describe("initPackage (MW-005)", () => {
       code: "INVALID_PACKAGE_PATH",
     });
   });
+
+  test("rejects with NaxError code INIT_ERROR when an ancestor of the package .nax dir is a regular file", async () => {
+    // .nax/mono/packages exists as a regular file, so mkdir(..., { recursive: true })
+    // for .nax/mono/packages/api throws ENOTDIR instead of creating the directory.
+    await Bun.write(join(tmpDir, ".nax", "mono", "packages"), "not a directory");
+    await expect(initPackage(tmpDir, "packages/api")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INIT_ERROR",
+    });
+  });
+
+  test("rejects with NaxError code INIT_ERROR when the package .nax dir itself is a regular file", async () => {
+    // naxDir (.nax/mono/api) is itself a regular file. Bun.file(naxDir).exists()
+    // is true for a regular file, so a bunFileExists(naxDir) guard would wrongly
+    // skip bunMkdirp here — this pins that bunMkdirp always runs.
+    await Bun.write(join(tmpDir, ".nax", "mono", "api"), "not a directory");
+    await expect(initPackage(tmpDir, "api")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INIT_ERROR",
+    });
+  });
 });

@@ -1,6 +1,43 @@
 import type { NaxConfig, PipelineStage } from "@/config";
+import { DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG } from "@/config";
 import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
+
+export interface ResolvedIdleWatchdogSettings {
+  idleTimeoutMs: number;
+  toolCallOnlyTimeoutMs: number;
+  graceMs: number;
+  maxRetryAttempts: number;
+  activityKinds: ReadonlyArray<"message_update" | "thinking_update" | "usage_update" | "tool_call_update">;
+}
+
+/**
+ * Structural type for an optional `agent.idleWatchdog` block. Deliberately not
+ * `NaxConfig`: `attachAgentIdleWatchdog` passes a `NaxConfig`'s
+ * `agent.idleWatchdog`, while `trySameAgentRetry` holds only the
+ * `AgentManagerConfig` selector slice — both share this optional block shape.
+ */
+export type IdleWatchdogConfigSlice = {
+  enabled?: boolean;
+  mode?: "off" | "observe" | "warn-then-cancel" | "cancel";
+  idleTimeoutSeconds?: number;
+  toolCallOnlyIdleTimeoutSeconds?: number;
+  activityKinds?: Array<"message_update" | "thinking_update" | "usage_update" | "tool_call_update">;
+  cancelGraceSeconds?: number;
+  maxRetryAttempts?: number;
+};
+
+export function resolveIdleWatchdogSettings(watchdogConfig?: IdleWatchdogConfigSlice): ResolvedIdleWatchdogSettings {
+  const defaults = DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG;
+  return {
+    idleTimeoutMs: (watchdogConfig?.idleTimeoutSeconds ?? defaults.idleTimeoutSeconds) * 1000,
+    toolCallOnlyTimeoutMs:
+      (watchdogConfig?.toolCallOnlyIdleTimeoutSeconds ?? defaults.toolCallOnlyIdleTimeoutSeconds) * 1000,
+    graceMs: (watchdogConfig?.cancelGraceSeconds ?? defaults.cancelGraceSeconds) * 1000,
+    maxRetryAttempts: watchdogConfig?.maxRetryAttempts ?? defaults.maxRetryAttempts,
+    activityKinds: watchdogConfig?.activityKinds ?? defaults.activityKinds,
+  };
+}
 
 export interface WatchdogState {
   readonly callId: string;
@@ -207,13 +244,12 @@ export function attachAgentIdleWatchdog(
   }
 
   const mode = watchdogConfig.mode;
-  const idleTimeoutMs = (watchdogConfig.idleTimeoutSeconds ?? 30) * 1000;
-  const toolCallOnlyTimeoutMs = (watchdogConfig.toolCallOnlyIdleTimeoutSeconds ?? 0) * 1000;
-  const graceMs = (watchdogConfig.cancelGraceSeconds ?? 5) * 1000;
-  const maxRetryAttempts = watchdogConfig.maxRetryAttempts ?? 3;
-  const activityKinds = new Set<string>(
-    watchdogConfig.activityKinds ?? ["message_update", "thinking_update", "usage_update", "tool_call_update"],
-  );
+  const settings = resolveIdleWatchdogSettings(watchdogConfig);
+  const idleTimeoutMs = settings.idleTimeoutMs;
+  const toolCallOnlyTimeoutMs = settings.toolCallOnlyTimeoutMs;
+  const graceMs = settings.graceMs;
+  const maxRetryAttempts = settings.maxRetryAttempts;
+  const activityKinds = new Set<string>(settings.activityKinds);
   // Poll at 1/4 of the idle timeout so detection latency is at most idleTimeout * 5/4
   // rather than up to 2× idleTimeout when the tick interval equals idleTimeoutMs.
   const tickIntervalMs = Math.max(1, Math.ceil(idleTimeoutMs / 4));

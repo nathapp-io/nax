@@ -80,6 +80,7 @@ export type { AgentRoutingConfig, AgentRoutingProfile } from "./schemas-infra";
 export {
   AgentRoutingConfigSchema,
   AgentRoutingProfileSchema,
+  DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   RoutingConfigSchema,
 } from "./schemas-infra";

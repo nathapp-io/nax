@@ -18,14 +18,93 @@ describe("installServePortZeroCompat (SEC-06)", () => {
     globalThis.fetch = originalFetch;
   });
 
+  /**
+   * A fresh module instance per call, so `servePortZeroCompatInstalled` starts
+   * false regardless of what earlier tests in this file or sibling files left
+   * behind (the flag is module-level and sticky). Without this, AC3/AC4 would
+   * silently no-op — and not patch — whenever the shared module's flag is
+   * already set by an earlier install that was never restored.
+   */
+  async function freshInstall(tag: string): Promise<() => void> {
+    const mod = (await import(`@/interaction/plugins/webhook-serve-compat?sec06=${tag}`)) as {
+      installServePortZeroCompat: () => () => void;
+    };
+    return mod.installServePortZeroCompat();
+  }
+
   test("installing is idempotent and only patches globals once", () => {
-    installServePortZeroCompat();
+    const firstRestore = installServePortZeroCompat();
     const patchedServe = Bun.serve;
     const patchedFetch = globalThis.fetch;
 
-    installServePortZeroCompat();
+    // The contract added by US-004 (and reference-counted by a later fix, see
+    // the "concurrent installs" test below): installServePortZeroCompat()
+    // returns a restore function. Restores are reference-counted, not
+    // unconditional no-ops — the globals stay patched until every
+    // outstanding install has been restored, regardless of order.
+    const secondRestore = installServePortZeroCompat() as unknown;
+    expect(typeof secondRestore).toBe("function");
     expect(Bun.serve).toBe(patchedServe);
     expect(globalThis.fetch).toBe(patchedFetch);
+    // AC5 (US-004): invoking the second call's restore decrements the
+    // refcount but does not reinstate the originals — the first caller's
+    // install is still outstanding, so Bun.serve and globalThis.fetch stay
+    // equal to the patched functions the first call installed.
+    (secondRestore as () => void)();
+    expect(Bun.serve).toBe(patchedServe);
+    expect(globalThis.fetch).toBe(patchedFetch);
+    // Clean up: the first call's restore reinstates the originals. Without it the
+    // module-level installation flag stays set, making every later install in this
+    // file a no-op (the AC3/AC4 tests below assert a genuine first install).
+    (firstRestore as () => void)();
+  });
+
+  test("AC3: the first install returns a restore whose invocation reinstates the pre-install globalThis.fetch", async () => {
+    const firstRestore = await freshInstall("ac3");
+    expect(typeof firstRestore).toBe("function");
+    expect(globalThis.fetch).not.toBe(originalFetch);
+
+    firstRestore();
+    expect(globalThis.fetch).toBe(originalFetch);
+  });
+
+  test("AC4: the first install returns a restore whose invocation reinstates the pre-install Bun.serve", async () => {
+    const firstRestore = await freshInstall("ac4");
+    expect(typeof firstRestore).toBe("function");
+    expect(Bun.serve).not.toBe(originalServe);
+
+    firstRestore();
+    expect(Bun.serve).toBe(originalServe);
+  });
+
+  test("concurrent installs are reference-counted: the patch survives until the last restore", async () => {
+    // A single fresh module shared by both installs, so they share the same
+    // refcount and originals — the real concurrent-webhook-server scenario.
+    // This is the regression guard for the review finding: a re-entrant install
+    // must not leave the first server's restore able to tear down a shim a
+    // second, still-active server depends on.
+    const mod = (await import(`@/interaction/plugins/webhook-serve-compat?concurrent=${Date.now()}`)) as {
+      installServePortZeroCompat: () => () => void;
+    };
+    const install = mod.installServePortZeroCompat;
+
+    const firstRestore = install();
+    const patchedServe = Bun.serve;
+    const patchedFetch = globalThis.fetch;
+    const secondRestore = install();
+    expect(Bun.serve).toBe(patchedServe);
+    expect(globalThis.fetch).toBe(patchedFetch);
+
+    // The first server is destroyed first — its restore must NOT tear down the
+    // shim the still-active second server depends on.
+    firstRestore();
+    expect(Bun.serve).toBe(patchedServe);
+    expect(globalThis.fetch).toBe(patchedFetch);
+
+    // Only the last active caller's restore reinstates the originals.
+    secondRestore();
+    expect(Bun.serve).toBe(originalServe);
+    expect(globalThis.fetch).toBe(originalFetch);
   });
 });
 

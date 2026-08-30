@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { makeSpawn } from "@test/helpers";
+import { makeSpawn, withWarnSpy } from "@test/helpers";
 import {
   _isolationDeps,
   isSourceFile,
@@ -203,5 +203,70 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
     const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["src/index.ts"], ["**/*.test.ts"], "lite");
     expect(result.passed).toBe(true);
     expect(result.softViolations).toContain("src/index.ts");
+  });
+});
+
+// US-002: make numstat failures loud in lite mode — when git diff --numstat
+// exits non-zero, lite mode treats the file as a hard violation (it can no
+// longer prove the file is stub-sized), records a logger.warn with stage
+// "tdd-isolation", and the check resolves rather than throwing. Strict mode
+// never requests numstat so it must NOT warn.
+describe("verifyTestWriterIsolation: numstat failures are loud (US-002)", () => {
+  let origSpawn: typeof _isolationDeps.spawn;
+
+  beforeEach(() => {
+    origSpawn = _isolationDeps.spawn;
+  });
+  afterEach(() => {
+    _isolationDeps.spawn = origSpawn;
+  });
+
+  function stubNumstatFailure(): void {
+    _isolationDeps.spawn = makeSpawn(({ cmd }) => {
+      if (cmd.includes("--name-only")) return "src/a.ts\n";
+      if (cmd.includes("--porcelain")) return "";
+      if (cmd.includes("--numstat")) {
+        // --numstat exits non-zero — simulates a git hiccup
+        return { stdout: "", stderr: "fatal: bad revision 'HEAD'\n", exitCode: 1 };
+      }
+      return "";
+    }).spawn;
+  }
+
+  // AC3 — when --name-only returns a source file but --numstat exits 1, the
+  // lite check resolves and reports the file as a hard violation (the check
+  // can no longer prove it's stub-sized, so it stays loud).
+  it("lite: resolves and reports src/a.ts as a hard violation when numstat fails", async () => {
+    stubNumstatFailure();
+
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", [], [], "lite");
+
+    expect(result.passed).toBe(false);
+    expect(result.violations).toContain("src/a.ts");
+  });
+
+  // AC4 — the lite warn-on-numstat-failure contract: a `logger.warn` with
+  // stage "tdd-isolation" is recorded.
+  it("lite: logs warn with stage tdd-isolation when numstat fails", async () => {
+    stubNumstatFailure();
+
+    await withWarnSpy(async (warnSpy) => {
+      await verifyTestWriterIsolation("/tmp", "HEAD", [], [], "lite");
+      const warn = warnSpy.mock.calls.find((c) => c[0] === "tdd-isolation");
+      expect(warn).toBeDefined();
+    });
+  });
+
+  // AC5 — strict mode never asks for numstat, so the same git stub must NOT
+  // record a warn with stage "tdd-isolation".
+  it("strict: never requests numstat, so no tdd-isolation warn", async () => {
+    stubNumstatFailure();
+
+    await withWarnSpy(async (warnSpy) => {
+      const result = await verifyTestWriterIsolation("/tmp", "HEAD", [], [], "strict");
+      expect(result.passed).toBe(false);
+      const warn = warnSpy.mock.calls.find((c) => c[0] === "tdd-isolation");
+      expect(warn).toBeUndefined();
+    });
   });
 });

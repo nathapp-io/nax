@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import fs from "node:fs/promises";
+import fs, { stat as realStat } from "node:fs/promises";
 import path from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { makeTempDir, withDepsRestore } from "@test/helpers";
 import {
+  _testScannerDeps,
   deriveTestPatterns,
   extractTestStructure,
   formatTestSummary,
@@ -378,6 +379,85 @@ describe("scanTestFiles — per-file size cap (PERF-2)", () => {
       const rels = result.map((f) => f.relativePath).sort(byCodePoint);
       expect(rels.some((p) => p.endsWith("small.test.ts"))).toBe(true);
       expect(rels.some((p) => p.endsWith("huge.test.ts"))).toBe(false);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// US-003: native filesystem APIs for test scanning
+describe("scanTestFiles — _testScannerDeps.stat seam (US-003)", () => {
+  withDepsRestore(_testScannerDeps, ["stat"]);
+
+  test("AC3 — returns empty array when _testScannerDeps.stat rejects for every path", async () => {
+    const tempDir = makeTempDir("nax-test-scanner-stat-rejects-");
+    try {
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+      await fs.writeFile(path.join(testDir, "foo.test.ts"), 'describe("Foo", () => { test("ok", () => {}); });');
+
+      _testScannerDeps.stat = async () => {
+        throw new Error("stat unavailable");
+      };
+
+      const result = await scanTestFiles({
+        workdir: tempDir,
+        testDir: "test",
+        scopeToStory: false,
+      });
+
+      expect(result).toEqual([]);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("AC4 — records paths and delegates to real stat when given a passthrough", async () => {
+    const tempDir = makeTempDir("nax-test-scanner-stat-record-");
+    try {
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+      await fs.writeFile(path.join(testDir, "foo.test.ts"), 'describe("Foo", () => { test("ok", () => {}); });');
+
+      const recordedPaths: string[] = [];
+      _testScannerDeps.stat = (async (p: Parameters<typeof realStat>[0]) => {
+        const pathStr = String(p);
+        recordedPaths.push(pathStr);
+        return realStat(pathStr);
+      }) as typeof _testScannerDeps.stat;
+
+      const result = await scanTestFiles({
+        workdir: tempDir,
+        testDir: "test",
+        scopeToStory: false,
+      });
+
+      expect(result.length).toBe(1);
+      expect(result[0].relativePath).toBe("test/foo.test.ts");
+
+      // Must have stat'd the test file itself and the test subdirectory
+      const recordedHasFoo = recordedPaths.some((p) => p.endsWith("foo.test.ts"));
+      const recordedHasTestDir = recordedPaths.some((p) => p === testDir);
+      expect(recordedHasFoo).toBe(true);
+      expect(recordedHasTestDir).toBe(true);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("AC5 — returns empty array when `test` is a regular file rather than a directory", async () => {
+    const tempDir = makeTempDir("nax-test-scanner-test-file-");
+    try {
+      // Create a regular file named `test` (no directory)
+      await fs.writeFile(path.join(tempDir, "test"), "not a directory");
+
+      const result = await scanTestFiles({
+        workdir: tempDir,
+        testDir: "test",
+        scopeToStory: false,
+      });
+
+      expect(result).toEqual([]);
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

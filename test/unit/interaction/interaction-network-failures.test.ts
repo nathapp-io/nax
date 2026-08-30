@@ -10,6 +10,7 @@ import { mockFetch, telegramInternals, webhookInternals } from "@test/helpers";
 import type { InteractionRequest } from "@/interaction";
 import { _telegramPluginDeps, TelegramInteractionPlugin } from "@/interaction/plugins/telegram";
 import { _webhookPluginDeps, WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
+import { installServePortZeroCompat } from "@/interaction/plugins/webhook-serve-compat";
 
 function timeoutResult<T>(value: T, delayMs = 0): Promise<T> {
   return new Promise((resolve) => {
@@ -441,8 +442,30 @@ describe("WebhookInteractionPlugin - Capacity & Startup Recovery", () => {
   });
 
   test("BUG-50: serverStartPromise is reset after a Bun.serve failure so a retry can succeed", async () => {
+    // Snapshot the exact globals present before this test touches anything.
+    // The test must leave them in this state on exit — the shim patches both,
+    // and later tests in this file (and sibling files that load
+    // webhook-serve-compat) start from whatever the previous test left behind.
+    // Bun test runs all tests in one process, so module-level state leaks.
+    const realServe = Bun.serve;
+    const realFetch = globalThis.fetch;
+
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
+
+    // US-004 changed the compat-shim lifecycle: startServer() now installs the
+    // shim and stopServer() uninstalls it. Install it explicitly here so the
+    // startServer() install below is a no-op — leaving `Bun.serve` as the raw
+    // throwing stub below — otherwise the shim's in-memory fallback would
+    // swallow the simulated startup failure and startServer() would resolve.
+    // The returned restore is the ONLY way to undo this test's own install:
+    // startServer's install (and the retry's install) are re-entrant, so
+    // plugin.destroy() ends up holding whichever restore the LAST startServer
+    // stored, not the test's. Without invoking uninstallShim here AND
+    // restoring the globals directly below, the patched Bun.serve and
+    // globalThis.fetch leak into every test that loads webhook-serve-compat
+    // after this one.
+    const uninstallShim = installServePortZeroCompat();
 
     const originalServe = Bun.serve;
     (Bun as { serve: typeof Bun.serve }).serve = (() => {
@@ -463,6 +486,17 @@ describe("WebhookInteractionPlugin - Capacity & Startup Recovery", () => {
     expect(webhookInternals(plugin).server).not.toBeNull();
 
     await plugin.destroy();
+
+    // Tear the shim down: invoke the test's own restore to decrement its
+    // refcount slot, then restore the pre-test globals by hand. The
+    // destroy() above called plugin.compatRestore — whatever startServer
+    // stored on the last retry — which under the ref-counted implementation
+    // only decrements the count without uninstalling. Pair that with the
+    // direct global restore so the next test sees realServe and realFetch
+    // regardless of where the refcount lands.
+    uninstallShim();
+    (Bun as { serve: typeof Bun.serve }).serve = realServe;
+    globalThis.fetch = realFetch;
   });
 });
 
