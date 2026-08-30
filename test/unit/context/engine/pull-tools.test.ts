@@ -241,6 +241,49 @@ describe("handleQueryNeighbor", () => {
     expect(threw.code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
+  test("rejects a call with no filePath instead of silently returning empty", async () => {
+    // An agent that was never told the argument schema sends `{}`. That reached
+    // CodeNeighborProvider as touchedFiles: [undefined], matched nothing, and
+    // returned "" — indistinguishable from "this file has no neighbors".
+    const budget = makeBudget();
+    let threw: unknown;
+    try {
+      await handleQueryNeighbor({}, "/repo", budget);
+    } catch (e) {
+      threw = e;
+    }
+    assertNaxError(threw);
+    expect(threw.code).toBe("PULL_TOOL_INVALID_INPUT");
+    // The message must name the argument so the agent can retry correctly.
+    expect(threw.message).toContain("filePath");
+  });
+
+  test("rejects a non-string or blank filePath", async () => {
+    const budget = makeBudget();
+    for (const bad of [42, "", "   ", null]) {
+      let threw: unknown;
+      try {
+        await handleQueryNeighbor({ filePath: bad }, "/repo", budget);
+      } catch (e) {
+        threw = e;
+      }
+      assertNaxError(threw, `filePath=${JSON.stringify(bad)}`);
+      expect(threw.code).toBe("PULL_TOOL_INVALID_INPUT");
+    }
+  });
+
+  test("does not consume session budget for a malformed call", async () => {
+    // Budget meters context DELIVERED. A rejected call delivers none, and the
+    // turn cap already bounds an agent looping on bad payloads.
+    const budget = makeBudget();
+    try {
+      await handleQueryNeighbor({}, "/repo", budget);
+    } catch {
+      // expected
+    }
+    expect(budget.sessionCallsUsed).toBe(0);
+  });
+
   test("returns neighbor content (string) for src/ file and empty string for file with no neighbors", async () => {
     _codeNeighborDeps.fileExists = async (p) => p.includes("src/a.ts");
     _codeNeighborDeps.readFile = async () => "";

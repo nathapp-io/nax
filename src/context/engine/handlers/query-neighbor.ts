@@ -11,6 +11,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Pull tools
  */
 
+import { NaxError } from "@/errors";
 import { CodeNeighborProvider } from "../providers/code-neighbor";
 import type { PullToolBudget } from "../pull-tools";
 import { _pullToolsDeps, DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools";
@@ -19,7 +20,7 @@ import type { ContextRequest } from "../types";
 /**
  * Server-side handler for the query_neighbor pull tool.
  *
- * @param input           - Tool call arguments from the agent
+ * @param input           - Tool call arguments from the agent (untrusted, validated here)
  * @param repoRoot        - Working directory for file resolution
  * @param budget          - Budget tracker for this session
  * @param maxTokensPerCall - Per-call token ceiling (chars = tokens × 4)
@@ -28,7 +29,11 @@ import type { ContextRequest } from "../types";
  * @param providerOptions - Optional provider overrides
  */
 export async function handleQueryNeighbor(
-  input: { filePath: string; depth?: number },
+  // Declared as unknown-valued because this payload is agent-authored JSON,
+  // not a typed internal call: tool-runtime hands it straight through from the
+  // wire. Typing it `{ filePath: string }` was a claim the caller could not
+  // honour, and it hid the missing validation below.
+  input: { filePath?: unknown; depth?: unknown },
   repoRoot: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
@@ -36,6 +41,23 @@ export async function handleQueryNeighbor(
   storyId?: string,
   providerOptions?: { sourceGlob?: string; maxGlobFiles?: number },
 ): Promise<string> {
+  // Validate BEFORE consuming budget. The agent supplies this payload as free
+  // JSON, so `filePath` is only as trustworthy as the preamble that advertised
+  // the schema. A missing one previously reached CodeNeighborProvider as
+  // touchedFiles: [undefined], matched nothing, and returned "" — the same
+  // answer as a genuine file with no neighbors, so a mis-called tool looked
+  // like an empty repo. Budget meters context DELIVERED and a rejected call
+  // delivers none; the session turn cap already bounds an agent that keeps
+  // sending malformed payloads. buildRunInteractionHandler catches this and
+  // hands the agent a status="error" block, so it can retry with real args.
+  if (typeof input?.filePath !== "string" || input.filePath.trim() === "") {
+    throw new NaxError(
+      `query_neighbor requires a non-empty string "filePath" (repo-relative path); received ${JSON.stringify(input?.filePath)}`,
+      "PULL_TOOL_INVALID_INPUT",
+      { stage: "pull-tool", tool: "query_neighbor", ...(storyId ? { storyId } : {}) },
+    );
+  }
+
   budget.consume();
 
   const provider = new CodeNeighborProvider(providerOptions ?? {});

@@ -92,6 +92,38 @@ export function extractContextToolCall(output: string): { name: string; input?: 
   }
 }
 
+/**
+ * Render a pull tool's JSON Schema as an agent-readable argument list.
+ *
+ * The descriptors have always carried a full `inputSchema`, but the preamble
+ * used to advertise only name + description — so an agent was told
+ * `query_neighbor` exists and never told it needs `filePath`. It had to guess
+ * the payload, and a guessed `{}` produced an empty result. Rendering the
+ * schema is what closes that gap.
+ *
+ * Kept tolerant of a partial schema (no `properties`, no `required`, a
+ * type-less property): a descriptor that omits a field degrades to a coarser
+ * line rather than throwing inside prompt assembly.
+ */
+function renderToolArguments(inputSchema: Record<string, unknown>): string {
+  const properties = inputSchema.properties;
+  if (typeof properties !== "object" || properties === null) return "";
+
+  const required = new Set(
+    Array.isArray(inputSchema.required) ? inputSchema.required.filter((name) => typeof name === "string") : [],
+  );
+
+  const lines = Object.entries(properties as Record<string, unknown>).map(([name, raw]) => {
+    const spec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+    const type = typeof spec.type === "string" ? spec.type : "any";
+    const necessity = required.has(name) ? "required" : "optional";
+    const description = typeof spec.description === "string" ? `: ${spec.description}` : "";
+    return `  - ${name} (${type}, ${necessity})${description}`;
+  });
+
+  return lines.length > 0 ? `\n  Arguments:\n${lines.join("\n")}` : "";
+}
+
 export function buildContextToolPreamble(options: AgentRunOptions): string {
   const tools = options.contextPullTools;
   if (!tools || tools.length === 0 || !options.contextToolRuntime) {
@@ -99,7 +131,11 @@ export function buildContextToolPreamble(options: AgentRunOptions): string {
   }
 
   const toolList = tools
-    .map((tool) => `- ${tool.name}: ${tool.description} (max ${tool.maxCallsPerSession} calls/session)`)
+    .map(
+      (tool) =>
+        `- ${tool.name}: ${tool.description} (max ${tool.maxCallsPerSession} calls/session)` +
+        renderToolArguments(tool.inputSchema),
+    )
     .join("\n");
 
   return `${options.prompt}
