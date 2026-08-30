@@ -157,10 +157,11 @@ describe("resolvePricingSource", () => {
     ["haiku", "model-rates"],
     ["sonnet", "model-rates"],
     ["claude-haiku-4-5", "model-rates"],
-    // Real models with no MODEL_PRICING entry. `gpt-5.6-luna[medium]` used to
-    // sit here; BUG-15 gave it a rate card, so the suffixed-and-unpriced case
-    // moved to a model that genuinely has none.
-    ["minimax/MiniMax-M2.7", "fallback-rates"],
+    // Real models with no MODEL_PRICING entry. Two models have now vacated this
+    // list by being given a card — `gpt-5.6-luna[medium]` (BUG-15) and
+    // `minimax/MiniMax-M2.7` (priced identically to M3) — so keep the bare and
+    // suffixed cases pointed at a model that genuinely has none.
+    ["opencode-go/hy3", "fallback-rates"],
     ["opencode-go/hy3[high]", "fallback-rates"],
   ] as const)("%s resolves to %s", (model, expected) => {
     expect(resolvePricingSource(model)).toBe(expected);
@@ -174,8 +175,8 @@ describe("resolvePricingSource", () => {
     const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
     // The generic card is $3/$15 per 1M. A model reported as fallback-rates must
     // price exactly there; one reported as model-rates must not (haiku is $0.8/$4).
-    expect(resolvePricingSource("minimax/MiniMax-M2.7")).toBe("fallback-rates");
-    expect(estimateCostFromTokenUsage(usage, "minimax/MiniMax-M2.7")).toBeCloseTo(18, 5);
+    expect(resolvePricingSource("opencode-go/hy3")).toBe("fallback-rates");
+    expect(estimateCostFromTokenUsage(usage, "opencode-go/hy3")).toBeCloseTo(18, 5);
 
     expect(resolvePricingSource("haiku")).toBe("model-rates");
     expect(estimateCostFromTokenUsage(usage, "haiku")).toBeCloseTo(4.8, 5);

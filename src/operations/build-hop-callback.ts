@@ -5,7 +5,7 @@
  * directly to runWithFallback.
  */
 
-import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
+import { buildContextToolPreamble, buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
@@ -248,14 +248,38 @@ export function buildHopCallback(
         })
       : undefined;
     const contextPullTools = workingBundle?.pullTools;
+    // nax#1744: the run() path dispatches through this callback as
+    // AgentManager's `executeHop`, and runWithFallback invokes `executeHop`
+    // INSTEAD OF `_runHop` — so createSessionRunHop (runtime/session-run-hop.ts)
+    // is bypassed here, and it was the only place that told the agent the pull
+    // tools exist. #1737/#1741/#1742 assembled the bundle, the descriptors and
+    // the runtime correctly, but nothing advertised them: no agent could emit a
+    // <nax_tool_call>, so every pull tool was unreachable outside unit tests.
+    // The three lines that made it reachable are the preamble below, the
+    // handler that answers the call, and the turn budget in `send`.
+    const hasContextTools = Boolean(contextToolRuntime && (contextPullTools?.length ?? 0) > 0);
+    if (hasContextTools) {
+      // AFTER the swap-handoff / timeout-retry rewrites above, both of which
+      // replace the prompt wholesale — a preamble applied before either would
+      // be discarded, leaving that hop's agent with tools it was never told
+      // about. Safe against compounding across hops: `prompt` is re-seeded from
+      // resolvedRunOptions.prompt on every hop, and the `finalPrompt` the hop
+      // returns is audit-only (manager.ts) — it never feeds a later hop's
+      // runOptions.
+      prompt = buildContextToolPreamble({ ...resolvedRunOptions, prompt, contextPullTools, contextToolRuntime });
+    }
 
-    const interactionHandler = interactionBridge
-      ? buildRunInteractionHandler({
-          contextToolRuntime,
-          contextPullTools,
-          interactionBridge,
-        } as unknown as AgentRunOptions)
-      : undefined;
+    // A bridge is no longer required: without a handler, sendPrompt falls back
+    // to NO_OP_INTERACTION_HANDLER and a well-formed tool call goes unanswered.
+    const interactionHandler =
+      interactionBridge || hasContextTools
+        ? buildRunInteractionHandler({
+            ...resolvedRunOptions,
+            contextToolRuntime,
+            contextPullTools,
+            ...(interactionBridge ? { interactionBridge } : {}),
+          })
+        : undefined;
 
     const sessionName = sessionManager.nameFor({
       workdir,
@@ -365,7 +389,14 @@ export function buildHopCallback(
           ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
           ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
           ...(interactionHandler ? { interactionHandler } : {}),
-          ...(maxInteractionTurns !== undefined ? { maxTurns: maxInteractionTurns } : {}),
+          // Context tools need at least one extra round-trip to answer a call;
+          // the adapter default of a single turn leaves no room. Mirrors
+          // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
+          ...(hasContextTools
+            ? { maxTurns: maxInteractionTurns ?? 10 }
+            : maxInteractionTurns !== undefined
+              ? { maxTurns: maxInteractionTurns }
+              : {}),
         });
 
       const turnResult = hopBody ? await hopBody(prompt, { send, input: hopBodyInput }) : await send(prompt);
