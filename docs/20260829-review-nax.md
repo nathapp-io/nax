@@ -22,8 +22,9 @@
 
 **2026-08-30 update:** status only — no finding was re-graded. The second remediation sweep shipped
 as PR #1768 (`fbf37eb72`), closing the nine deferrals the first sweep had held back. The ledger below
-moves them from Deferred to Shipped; 12 findings remain deferred, all of them needing a human ruling
-or a verification approach other than a runtime AC.
+moves them from Deferred to Shipped; 12 findings remained deferred, all of them needing a human
+ruling or a verification approach other than a runtime AC. SEC-12 and ENH-45 were then closed by
+the permission-contract ruling of 2026-08-30, leaving **10**.
 
 Every CRITICAL, HIGH and MEDIUM finding was re-verified by reading the cited source. Two were
 falsified by direct experiment, three were misfiled by path or severity, and two pairs were
@@ -53,7 +54,8 @@ either shipped or deferred with a stated reason.
 | **Shipped — P0/P1** | 5 | PR [#1766](https://github.com/nathapp-io/nax/pull/1766), merged as `b78c75d28` |
 | **Shipped — sweep 1** | 19 | PR [#1767](https://github.com/nathapp-io/nax/pull/1767), merged as `10d95e332` — `nax run -f review-remediation-sweep`, 6/6 stories passed |
 | **Shipped — sweep 2** | 9 | PR [#1768](https://github.com/nathapp-io/nax/pull/1768), merged as `fbf37eb72` — `nax run -f review-remediation-sweep-2`, 5/5 stories passed |
-| **Deferred** | 12 | Recorded here with reasons. No remediation-shaped finding is left open; what remains needs a human decision or a different verification approach. |
+| **Shipped — human ruling** | 2 | SEC-12 + ENH-45, after the permission-contract decision was taken on 2026-08-30 (see below) |
+| **Deferred** | 10 | Recorded here with reasons. No remediation-shaped finding is left open; what remains needs a human decision or a different verification approach. |
 
 ### Shipped — PR #1766
 
@@ -140,18 +142,66 @@ instrumentation artifact, not a coverage gap: an AC test re-imported the module 
 specifier, and Bun cannot merge line hits across two instances of the same source. Fixed at the root
 cause with a test-only `_resetServePortZeroCompatForTests()` export.
 
+### Shipped — permission-contract ruling (SEC-12, ENH-45)
+
+Both were deferred for the same reason: each is a decision about what the permission
+contract *should* say, which no autonomous run can take. The decision was taken on
+2026-08-30.
+
+**The ruling — an unset `permissionProfile` resolves to `approve-all`.** This ratifies the
+existing behaviour rather than changing it. nax's own pipeline is the caller: every stage
+runs an agent that must edit files, run tests and commit with no human at the keyboard, so
+a config that simply omits the field is the common case, not an error. It is now named as
+`DEFAULT_PERMISSION_PROFILE` instead of an inline `?? "unrestricted"`.
+
+**The `default:` arm is a different case, and stays fail-closed.** ENH-45 read the two arms
+as one inconsistency; they are not. `PermissionProfile` is a closed union and the config
+schema rejects anything outside it, so reaching `default:` means validation was bypassed —
+an *invalid* profile, not an *unset* one. An unrecognised profile carries no intent to
+widen, so it still resolves to `approve-reads` (`INVALID_PROFILE_MODE`) — but it now logs a
+warning, which answers the half of ENH-45 that was a real defect: silently downgrading a
+caller that asked for something else is how a misconfiguration passes for working software.
+
+**SEC-12's literal is gone.** `adapter-close-physical.ts` now reads
+`SESSION_CLOSE_PERMISSION_MODE`, exported from `permissions.ts` with the exemption recorded
+at the definition. Threading resolved permissions in — the finding's first suggested fix —
+turned out to be *forbidden* by an existing gate: `scripts/check-adapter-no-config-import.sh`
+bans `NaxConfig` from `src/agents/acp/`, so no config is in scope there by design. The named
+constant was the only compliant route.
+
+#### Why three reviews kept re-filing SEC-12
+
+Worth recording, because the recurrence was the expensive part, not the fix. The rule
+("never hardcode a literal permission mode") lived only in prose, in `.nax/rules/` and
+`CLAUDE.md`. Every review read the rule, grepped, found the literal, and filed it —
+correctly. Nothing in the repo could tell a reviewer that a given literal was a *ruled
+exemption* rather than an unfixed defect, so a deferred finding was indistinguishable from a
+new one, and deferring it guaranteed it would come back.
+
+Three mechanisms now close that loop, in increasing order of what they cost to bypass:
+
+| Mechanism | What it stops |
+|:---|:---|
+| `scripts/check-permission-mode-ssot.ts`, wired into `check:all` | A *new* literal cannot land. The rule is now machine-checked, not just written down. |
+| `// nax-permission-mode-allow: <reason>` markers | A legitimate site — `spawn-client-session.ts:120`, which translates an already-resolved mode into the `acpx` flag and decides nothing — carries its exemption on the line. A reviewer reading it sees the ruling where the suspicion arises. |
+| Rationale at the definition, not the call site | `SESSION_CLOSE_PERMISSION_MODE` and `DEFAULT_PERMISSION_PROFILE` each carry why they hold that value, so the next review re-derives the decision instead of re-opening it. |
+
+The generalisable lesson: **a prose-only rule with a standing exemption will be re-filed
+every review cycle.** The gate is what makes the rule enforceable; the inline marker is what
+makes the *exemption* legible. A gate without markers just moves the argument into an
+invisible allowlist — which is why this one has none, and why `check-feature-dir-ssot.ts`
+was used as the template.
+
 ### Deferred
 
 | ID | Reason |
 |:---|:---|
 | BUG-15 | The correct rates are facts about the outside world no test here can establish; a model supplying them from recollection replaces a known-wrong number with an unknown-wrong one. Needs a human with a current price list. |
-| SEC-12 | Every candidate fix changes the permission-resolution contract — architecture, not remediation. |
 | TYPE-17, TYPE-38, BUG-36 | Type-annotation and cosmetic corrections with no observable runtime behaviour, so none can be expressed as a runtime acceptance criterion. Handing them to an autonomous run produces prose contracts no AC pins, which is the shape that deadlocks stories in adversarial review. |
 | BUG-37 | Exercising the uncaughtException/unhandledRejection deadline requires driving real process teardown, which cannot be asserted safely from inside the suite that would host the test. |
 | PERF-19, PERF-31 | Performance work whose only honest acceptance criterion is a timing threshold; timing assertions are flaky in CI. |
 | STYLE-42, STYLE-43 | A deletion and a consolidation whose blast radius needs a human decision about what the code was for. |
 | STYLE-44 | 16 grandfathered oversized files — a standing ratchet, not a discrete fix. |
-| ENH-45 | `resolvePermissions` failing **open** to `approve-all` when `permissionProfile` is unset is the documented default; the sibling `default:` arm failing *closed* to `approve-reads` is the same class of decision as SEC-12. Changing either disposition is a permission-contract choice, not remediation — deferred with SEC-12 for a human ruling. |
 
 ---
 
@@ -564,7 +614,8 @@ shipped in #1766, and P2/P3 were triaged into the two `review-remediation-sweep`
 | Order | Where | Contents |
 |:---|:---|:---|
 | Done | PR #1766 → #1767 → #1768 | The 5 P0/P1 fixes, then 19 sweep findings as six stories, then the 9 remaining as five file-disjoint stories |
-| Human input needed | — | BUG-15 (a current price list) and SEC-12 + ENH-45 (permission-contract decisions) |
+| Done | Permission ruling | SEC-12 + ENH-45 — unset resolves to `approve-all` (ratified and named), the invalid-profile arm stays fail-closed and now logs, and `check:permission-mode-ssot` stops the literal recurring |
+| Human input needed | — | BUG-15 (a current price list) |
 | Standing | — | STYLE-44's oversized-file ratchet; the type-only and timing-bound findings, which want a different verification approach than a runtime AC |
 
 ---
