@@ -18,7 +18,13 @@ import { errorMessage } from "@/utils/errors";
 // reference that the previous re-export created.
 import { handleQueryScratch } from "./handlers/query-scratch";
 import type { RunCallCounter } from "./pull-tools";
-import { createRunCallCounter, handleQueryFeatureContext, handleQueryNeighbor, PullToolBudget } from "./pull-tools";
+import {
+  createRunCallCounter,
+  handleQueryFeatureContext,
+  handleQueryNeighbor,
+  PullToolBudget,
+  validatePullToolInput,
+} from "./pull-tools";
 import type { ContextBundle, ToolDescriptor } from "./types";
 
 export interface ContextToolRuntime {
@@ -123,11 +129,17 @@ export function createContextToolRuntime(options: {
         });
       }
 
+      // Validate against the descriptor's own inputSchema BEFORE dispatching —
+      // one gate for every tool, reading the same declaration the preamble
+      // advertises, so a new descriptor is enforced the day it is registered
+      // rather than whenever someone remembers to hand-write a check.
+      validatePullToolInput(name, input, tool.inputSchema);
+
       switch (name) {
         case "query_neighbor": {
           const patterns = await getResolvedTestPatterns();
           return handleQueryNeighbor(
-            input as { filePath: string; depth?: number },
+            input as { filePath?: unknown; depth?: unknown },
             repoRoot,
             getBudget(tool),
             tool.maxTokensPerCall,
@@ -138,7 +150,7 @@ export function createContextToolRuntime(options: {
         }
         case "query_feature_context":
           return handleQueryFeatureContext(
-            input as { filter?: string },
+            input as { filter?: unknown },
             story,
             config,
             repoRoot,
@@ -150,7 +162,7 @@ export function createContextToolRuntime(options: {
           );
         case "query_scratch":
           return handleQueryScratch(
-            input as { kind?: string; limit?: number },
+            input as { kind?: unknown; limit?: unknown },
             story,
             options.storyScratchDirs ?? [],
             getBudget(tool),

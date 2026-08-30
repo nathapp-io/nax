@@ -144,7 +144,8 @@ function renderScratchEntry(entry: ScratchEntry, targetAgent: string): string {
  * @param options          - Cross-agent neutralization options (AC-42)
  */
 export async function handleQueryScratch(
-  input: { kind?: string; limit?: number },
+  // Agent-authored JSON — see the note in query-feature-context.ts.
+  input: { kind?: unknown; limit?: unknown },
   story: UserStory,
   storyScratchDirs: string[],
   budget: PullToolBudget,
@@ -164,14 +165,16 @@ export async function handleQueryScratch(
   }
 
   // Apply kind filter (AC6).
-  const filtered = input.kind ? allEntries.filter((e) => e.kind === input.kind) : allEntries;
+  const kind = typeof input.kind === "string" && input.kind !== "" ? input.kind : undefined;
+  const limit = typeof input.limit === "number" && input.limit > 0 ? input.limit : undefined;
+  const filtered = kind ? allEntries.filter((e) => e.kind === kind) : allEntries;
 
   // Apply limit (AC7). Most-recent-first: sort by timestamp descending, then
   // cap. JSONL appends write entries oldest-first at the tail, so the latest
   // entry is the last parsed line — reversing gives "most-recent first".
-  const sortedNewestFirst = typeof input.limit === "number" && input.limit > 0;
+  const sortedNewestFirst = limit !== undefined;
   const limited = sortedNewestFirst
-    ? [...filtered].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, input.limit)
+    ? [...filtered].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, limit)
     : filtered;
 
   // Render defensively: a malformed entry (e.g. a known kind missing a required
@@ -195,7 +198,7 @@ export async function handleQueryScratch(
 
   budget.record({
     tool: "query_scratch",
-    query: input.kind ?? "",
+    query: kind ?? "",
     at: new Date().toISOString(),
     tokensReturned: Math.ceil(finalContent.length / 4),
     chunkIds: [],
@@ -205,8 +208,8 @@ export async function handleQueryScratch(
   logger.info("pull-tool", "invoked", {
     storyId: story.id,
     tool: "query_scratch",
-    kind: input.kind ?? null,
-    limit: input.limit ?? null,
+    kind: kind ?? null,
+    limit: limit ?? null,
     resultCount: rendered.length,
     resultBytes: finalContent.length,
   });

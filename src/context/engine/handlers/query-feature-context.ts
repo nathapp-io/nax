@@ -52,7 +52,10 @@ function filterByKeyword(content: string, keyword: string): string {
  *                           silently limits this tool to context.md entries.
  */
 export async function handleQueryFeatureContext(
-  input: { filter?: string },
+  // Agent-authored JSON. tool-runtime validates it against the descriptor's
+  // inputSchema before dispatch; the narrowing below keeps this handler correct
+  // for direct callers (tests, future call sites) that bypass that gate.
+  input: { filter?: unknown },
   story: UserStory,
   config: ContextToolRuntimeConfig,
   repoRoot: string,
@@ -76,8 +79,9 @@ export async function handleQueryFeatureContext(
 
   let content = result.chunks.map((c) => c.content).join("\n\n");
 
-  if (input.filter && content) {
-    content = filterByKeyword(content, input.filter);
+  const filter = typeof input.filter === "string" && input.filter !== "" ? input.filter : undefined;
+  if (filter && content) {
+    content = filterByKeyword(content, filter);
   }
 
   const maxChars = maxTokensPerCall * 4;
@@ -85,7 +89,7 @@ export async function handleQueryFeatureContext(
 
   budget.record({
     tool: "query_feature_context",
-    query: input.filter ?? "",
+    query: filter ?? "",
     at: new Date().toISOString(),
     tokensReturned: Math.ceil(finalContent.length / 4),
     chunkIds: result.chunks.map((c) => c.id),
@@ -95,7 +99,7 @@ export async function handleQueryFeatureContext(
   logger.info("pull-tool", "invoked", {
     storyId: story.id,
     tool: "query_feature_context",
-    keyword: input.filter ?? null,
+    keyword: filter ?? null,
     resultCount: result.chunks.length,
     resultBytes: finalContent.length,
   });

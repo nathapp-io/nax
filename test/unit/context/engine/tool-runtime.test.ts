@@ -1,11 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeContextBundle, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  assertNaxError,
+  cleanupTempDir,
+  makeContextBundle,
+  makeNaxConfig,
+  makeStory,
+  makeTempDir,
+  withTempDir,
+} from "@test/helpers";
 import { contextToolRuntimeConfigSelector } from "@/config";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import type { ContextBundle } from "@/context/engine";
 import { createContextToolRuntime, createSessionToolBudgets } from "@/context/engine";
+import { QUERY_FEATURE_CONTEXT_DESCRIPTOR, QUERY_NEIGHBOR_DESCRIPTOR } from "@/context/engine/pull-tools";
 import type { ScratchEntry } from "@/session";
 import { appendScratchEntry, scratchFilePath } from "@/session";
 
@@ -276,5 +285,72 @@ describe("createContextToolRuntime — query_scratch dispatch", () => {
       threw = e;
     }
     expect(threw).toMatchObject({ code: "PULL_TOOL_BUDGET_EXHAUSTED" });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent-authored input is validated against the descriptor's own inputSchema
+// before any handler runs. Descriptors already declare the contract the
+// preamble advertises; validating against that same declaration is what keeps
+// the advertised shape and the enforced shape from drifting apart.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("createContextToolRuntime — validates input against the descriptor schema", () => {
+  const story = makeStory({ id: "S-001", workdir: "" });
+
+  function runtimeFor(descriptor: ContextBundle["pullTools"][number], repoRoot: string) {
+    return createContextToolRuntime({
+      bundle: makeContextBundle({ pushMarkdown: "", pullTools: [descriptor] }),
+      story,
+      config: RUNTIME_CONFIG,
+      repoRoot,
+    });
+  }
+
+  test("rejects a wrongly-typed optional argument before it reaches the handler", async () => {
+    // `filterByKeyword` calls `keyword.toLowerCase()`, so a numeric filter used
+    // to throw a raw TypeError out of the provider — after budget.consume().
+    await withTempDir(async (repoRoot) => {
+      const runtime = runtimeFor(QUERY_FEATURE_CONTEXT_DESCRIPTOR, repoRoot);
+
+      let threw: unknown;
+      try {
+        await runtime?.callTool("query_feature_context", { filter: 5 });
+      } catch (e) {
+        threw = e;
+      }
+      assertNaxError(threw);
+      expect(threw.code).toBe("PULL_TOOL_INVALID_INPUT");
+      expect(threw.message).toContain("filter");
+    });
+  });
+
+  test("rejects a missing required argument before it reaches the handler", async () => {
+    await withTempDir(async (repoRoot) => {
+      const runtime = runtimeFor(QUERY_NEIGHBOR_DESCRIPTOR, repoRoot);
+
+      let threw: unknown;
+      try {
+        await runtime?.callTool("query_neighbor", {});
+      } catch (e) {
+        threw = e;
+      }
+      assertNaxError(threw);
+      expect(threw.code).toBe("PULL_TOOL_INVALID_INPUT");
+      expect(threw.message).toContain("filePath");
+    });
+  });
+
+  test("accepts a well-formed call, and tolerates an absent optional argument", async () => {
+    // This case passes validation and reaches the real CodeNeighborProvider,
+    // which globs repoRoot. An isolated empty dir keeps that scan bounded —
+    // pointing it at the shared os.tmpdir() made the test depend on whatever
+    // else lived there (CI runners carry an unreadable `snap-private-tmp`,
+    // which raised EACCES and failed the suite).
+    await withTempDir(async (repoRoot) => {
+      const runtime = runtimeFor(QUERY_NEIGHBOR_DESCRIPTOR, repoRoot);
+      // No throw: filePath is present and well-typed, depth is legitimately absent.
+      await runtime?.callTool("query_neighbor", { filePath: "src/a.ts" });
+    });
   });
 });
