@@ -89,35 +89,50 @@ CI already did in three earlier steps. That is the price of measuring the truth.
 
 ## 3. P0 - do these before writing any test
 
-### 3.1 Investigate the vanishing-file defect (blocking) - GitHub #1779
+### 3.1 The vanishing-file defect - GitHub #1779, GUARDED
 
-`src/prompts/loader.ts` is recorded in the 2026-08-24 baseline at 77.27%. It appears in
-**neither** the fresh unit-only lcov nor the merged lcov - not at 0%, but absent, with no
-`SF:` record at all. Run its test file alone and the record comes back:
+**Done.** Kept here because it explains a permanent entry in the gate and a permanent
+caveat on every number below.
 
-```
-AGENT=1 timeout 60 bun test test/unit/prompts/loader.test.ts --coverage --coverage-reporter=lcov
-grep -c "SF:src/prompts/loader.ts" coverage/lcov.info   # -> 1
-```
+`src/prompts/loader.ts` is recorded in the 2026-08-24 baseline at 77.27% and appears in
+neither the unit-only nor the merged lcov - not at 0%, but absent, with no `SF:` record at
+all. Its 16 tests pass in both runs and the module is imported for value, not as a type.
 
-So Bun drops per-file records from a large run. This is not cosmetic: a file that vanishes
-from the report **silently leaves the below-floor list**, and `--update-baseline` then
-deletes its entry - the ratchet reads that as an improvement. Any "drained" baseline built
-on top of this is partly a lie.
+What the investigation established:
 
-Do this first:
+- **Not a race.** Three consecutive merged runs instrumented an identical set of 836 `src/`
+  files - union equals intersection, zero drift. The omission is deterministic.
+- **Not scale.** It survives a 747-file run and is dropped from a 675-file one.
+- **Not `smol`.** Setting `smol = false` in `bunfig.toml` changes nothing.
+- **It is an interaction between test files.** Bisected to a two-file reproduction:
 
-1. Run the merged coverage command **three times**, saving each `coverage/lcov.info`.
-2. Diff the set of `SF:src/...` paths across the three runs. Zero difference means the
-   `loader.ts` case has another explanation and should be chased; any difference means the
-   report is nondeterministic under load.
-3. If it is nondeterministic, `check-coverage.ts` must gain a guard: **a baselined file that
-   is missing from the report is an error, not a pass**, and `--update-baseline` must refuse
-   to drop an entry whose file still exists on disk unless the file is present in the report
-   at or above the floor. Record the mechanism on #1779 either way.
+  ```
+  bun test test/unit/prompts/loader.test.ts \
+           test/unit/execution/mutation-check-wiring.test.ts \
+           --coverage --coverage-reporter=lcov
+  # 29 pass, 0 fail - and no SF: record for src/prompts/loader.ts
+  ```
 
-Do not start tranche T1 until this is settled. Everything downstream is measured with this
-instrument.
+  Pair `loader.test.ts` with any other test file tried and the record is present.
+
+- **Blast radius today is exactly one file.** 73 `src/` files are absent from the full
+  report; 34 of those are imported by some test, and all but `src/prompts/loader.ts` are
+  imported with `import type`, which erases at runtime and so is legitimately absent.
+
+The root cause is inside Bun's coverage recording and is not fixed here. What is fixed is
+that the omission can no longer pass silently:
+
+- `findMissingBaselined()` fails the gate on any baselined file absent from the report while
+  still present on disk.
+- `buildUpdatedBaseline()` carries such an entry forward at its recorded number instead of
+  dropping it, so `--update-baseline` can no longer delete debt it merely failed to see.
+- `UNMEASURABLE` in `scripts/check-coverage.ts` holds the one known instance with its reason
+  and issue link. Every other absence fails. Verified end to end: emptying that map makes
+  `bun run test:coverage` exit 1 naming `src/prompts/loader.ts` at its 77.27% baseline.
+
+**The caveat this leaves.** `src/prompts/loader.ts` is not measured by the gate at all. It
+is not drained and its entry must stay. If #1779 is ever fixed upstream, remove the
+`UNMEASURABLE` entry and let the ratchet pick the file back up.
 
 ### 3.2 Widen the gate scope
 
@@ -370,3 +385,13 @@ Measured at `36e20f266`. Aggregate 88.58% lines / 87.92% functions under the uni
 `bun test test/unit/ test/integration/ test/ui/ --coverage` invocation, 15,814 tests, 0 fail,
 51.3s, exit 0, aggregate 91.59% lines, 62 files below floor. Found the vanishing-file defect
 in 3.1 while reconciling the two reports, filed as #1779. No code changed.
+
+### 8.1 - 2026-08-30 - the #1779 guard
+
+Root-caused the vanishing file to a deterministic interaction between test files, not a race
+(3 identical runs), not scale (survives 747, dropped at 675), not `smol`. Minimal repro is
+two test files. Blast radius today is exactly one file - the other 33 test-imported absentees
+are all `import type`. Added `findMissingBaselined()` and `buildUpdatedBaseline()` to
+`scripts/check-coverage.ts` with an `UNMEASURABLE` map holding the one known instance, plus
+`test/unit/scripts/check-coverage.test.ts`. Proved the guard fires by emptying the map and
+watching the gate exit 1 naming the file. All five gates green.
