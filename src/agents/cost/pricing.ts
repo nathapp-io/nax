@@ -70,6 +70,10 @@ export const MODEL_PRICING: Record<
 
   // MiniMax — standard tier, prompts ≤512K. Above that MiniMax doubles both
   // rates; as with Gemini, the common tier is what this table can express.
+  // M2.7 and M3 are priced identically; both are carried explicitly rather than
+  // aliased, because an absent key is the one failure `resolvePricingSource`
+  // detects — M2.7 was silently costing at the generic $3/$15 fallback.
+  "minimax/MiniMax-M2.7": { input: 0.3, output: 1.2, cacheRead: 0.06 },
   "minimax/MiniMax-M3": { input: 0.3, output: 1.2, cacheRead: 0.06 },
 };
 

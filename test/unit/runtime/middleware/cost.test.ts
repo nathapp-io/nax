@@ -444,10 +444,11 @@ describe("attachCostSubscriber", () => {
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");
 
-    // Real July models with no MODEL_PRICING entry — these were the 60% of
-    // review spend and 63% of plan spend priced on guessed rates.
+    // A real model with no MODEL_PRICING entry — this class was the 60% of
+    // review spend and 63% of plan spend priced on guessed rates. `MiniMax-M2.7`
+    // stood here until it was given a card (it is priced identically to M3).
     bus.emitDispatch(
-      makeSessionTurnEvent({ model: "minimax/MiniMax-M2.7", exactCostUsd: undefined, estimatedCostUsd: 0.01 }),
+      makeSessionTurnEvent({ model: "opencode-go/hy3", exactCostUsd: undefined, estimatedCostUsd: 0.01 }),
     );
 
     expect(recorded[0].pricingSource).toBe("fallback-rates");
