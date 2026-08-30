@@ -7,9 +7,30 @@
  * When agent panel IS focused, only Ctrl+] escapes back to TUI controls.
  */
 
-import { useInput } from "ink";
+import { type Key, useInput } from "ink";
 import type { UserStory } from "@/prd/types";
 import { PanelFocus } from "../types";
+
+/**
+ * The raw control character a terminal sends for Ctrl+] (GS, 0x1d).
+ *
+ * Ink does NOT report this as `key.ctrl === true` with `input === "]"`: it only
+ * synthesises `ctrl` for codes 1-26 (Ctrl+A..Ctrl+Z), and "]" is 29. The keypress
+ * therefore arrives as this character with `key.ctrl === false`.
+ */
+const CTRL_RIGHT_BRACKET = "\x1d";
+
+/**
+ * Whether a keypress is Ctrl+], the Agent panel's escape hatch.
+ *
+ * Accepts both shapes: the raw control character every terminal Ink has been tried
+ * with actually sends, and the `key.ctrl` + "]" form, kept for any input adapter
+ * that does decode it that way. Matching only the latter left the binding dead and
+ * the Agent panel with no keyboard exit.
+ */
+function isEscapeAgentKey(input: string, key: Pick<Key, "ctrl">): boolean {
+  return input === CTRL_RIGHT_BRACKET || (key.ctrl && input === "]");
+}
 
 /**
  * Keyboard action types.
@@ -99,8 +120,7 @@ export function useKeyboard({ focus, currentStory, onAction, disabled = false }:
 
     // When Agent panel is focused, only Ctrl+] escapes back to TUI
     if (focus === PanelFocus.Agent) {
-      // Ctrl+] is key.ctrl === true and input === ']'
-      if (key.ctrl && input === "]") {
+      if (isEscapeAgentKey(input, key)) {
         dispatch({ type: "ESCAPE_AGENT" });
       }
       // All other keys are ignored while the Agent panel is focused; shortcuts

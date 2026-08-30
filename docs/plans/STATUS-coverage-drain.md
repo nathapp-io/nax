@@ -638,3 +638,32 @@ guard over a synthetic entry.
 below the per-file floor, 0 baseline entries, 0 unmeasurable entries. 16,402 tests, 0 fail.
 This doc is closed; section 1's tiers remain the standard for new test PRs, and section 7
 records the bar for ever adding an exemption back.
+
+### 8.7 - 2026-08-30 - the Ctrl+] defect fixed, not just pinned
+
+8.4 pinned the dead Agent-panel escape hatch as observed behaviour and left it for its own
+issue. Fixed here instead, since it was the sole reason two files stopped short of 100%.
+
+`useKeyboard` matched only `key.ctrl && input === "]"`. Ink synthesises `key.ctrl` for
+codes 1-26 (Ctrl+A..Ctrl+Z) and `]` is 29, so a real Ctrl+] arrives as the raw GS character
+`\x1d` with `key.ctrl === false` and the branch never fired. `isEscapeAgentKey()` now
+accepts both shapes - the raw control character, and the `key.ctrl` + `"]"` form kept for
+any input adapter that decodes it itself.
+
+Two regression tests, **both proven red against the old predicate before the fix landed**:
+`useKeyboard.test.tsx` asserts the dispatch, and `tui-keyboard-actions.test.tsx` asserts the
+round trip at App level (Tab into the Agent panel, Ctrl+] out, then `c` opens the cost
+overlay again - which it cannot while focus is stuck). A third test was written and then
+deleted: `ink-testing-library`'s stdin cannot synthesise `key.ctrl` for `"]"`, so it only
+re-ran the first under a different name.
+
+`HelpOverlay` already advertised "Ctrl+] - Escape back to Stories panel". That is now true.
+
+This closes the last two uncovered lines in the tier:
+
+| File | 8.4 | now |
+|:--|--:|--:|
+| `src/tui/App.tsx` | 99.17% | **100.00%** |
+| `src/tui/hooks/useKeyboard.ts` | 98.08% | **100.00%** |
+
+All four `src/tui/**` files that opened this doc as UI-tier exemptions are now at 100%.

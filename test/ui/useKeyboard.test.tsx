@@ -130,15 +130,12 @@ describe("useKeyboard — Agent panel focused", () => {
     expect(press(ESC, agent)).toEqual([]);
   });
 
-  // DEFECT, pinned rather than fixed: the hook's documented escape hatch is
-  // `key.ctrl && input === "]"`, but Ink reports a real Ctrl+] keypress (0x1d)
-  // as input "\x1d" with key.ctrl === false — it only synthesises ctrl for
-  // codes 1-26, and "]" is 29. So ESCAPE_AGENT is unreachable from the
-  // keyboard and the Agent panel has no documented way out. Asserted here as
-  // observed behaviour so the branch is covered and the defect is visible;
-  // flip this to expect ESCAPE_AGENT when the binding is repaired.
-  test("Ctrl+] does NOT escape the Agent panel — the binding is unreachable", () => {
-    expect(press(CTRL_RIGHT_BRACKET, agent)).toEqual([]);
+  // Regression: the binding used to test `key.ctrl && input === "]"` only, but Ink
+  // reports a real Ctrl+] (0x1d) as this character with key.ctrl === false — it
+  // synthesises ctrl for codes 1-26 and "]" is 29 — so ESCAPE_AGENT was
+  // unreachable and the Agent panel had no keyboard exit at all.
+  test("Ctrl+] escapes back to the Stories panel", () => {
+    expect(press(CTRL_RIGHT_BRACKET, agent)).toEqual([{ type: "ESCAPE_AGENT" }]);
   });
 });
 

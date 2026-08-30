@@ -21,6 +21,7 @@ import { waitForFile } from "../helpers/fs";
 
 const ESC = "\x1b";
 const TAB = "\t";
+const CTRL_RIGHT_BRACKET = "\x1d";
 
 function makeStory(id: string): StoryDisplayState {
   return {
@@ -134,6 +135,23 @@ describe("TUI keyboard actions", () => {
     });
 
     expect(lastFrame()).not.toContain("Cost Breakdown");
+    unmount();
+  });
+
+  test("Ctrl+] returns focus from the Agent panel and the shortcuts fire again", () => {
+    const { stdin, lastFrame, unmount } = renderApp();
+
+    act(() => {
+      stdin.write(TAB);
+    });
+    act(() => {
+      stdin.write(CTRL_RIGHT_BRACKET);
+    });
+    act(() => {
+      stdin.write("c");
+    });
+
+    expect(lastFrame()).toContain("Cost Breakdown");
     unmount();
   });
 
