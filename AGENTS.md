@@ -28,7 +28,7 @@ Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model
 
 | Layer | Choice |
 |:------|:-------|
-| Runtime | **Bun 1.3.7+** — Bun-native APIs only, no Node.js equivalents |
+| Runtime | **Bun 1.4.0** (pinned in CI) — Bun-native APIs only, no Node.js equivalents |
 | Language | **TypeScript strict** — no `any` without explicit justification |
 | Test | **`bun:test`** — describe/test/expect |
 | Lint/Format | **Biome** (`bun run lint`) |
@@ -45,8 +45,13 @@ Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model
 | `bun test test/unit/foo.test.ts --timeout=30000` | Targeted test during iteration with timeout |
 | `bun run test` | Full suite |
 | `bun run test:bail` | Full suite with bail |
+| `bun run test:coverage` | Per-file coverage gate against the baseline (CI runs this) |
+| `bun run test:coverage:report` | Coverage report without failing the gate |
 
 nax runs lint, typecheck, and tests automatically via the pipeline. Run these manually only when working outside a nax session.
+
+`test:coverage` is **not** part of the nax pipeline — it is a separate CI step with a per-file floor.
+Run it by hand after changes that add or move tests, since a passing suite can still fail the gate.
 
 ## Engineering Persona
 
@@ -66,9 +71,10 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
         → Pipeline stages 1–8 (defaultPipeline)
         → executionStage delegates per-story work to
           StoryOrchestratorBuilder.CANONICAL_ORDER (test-writer →
-          greenfield-gate → implementer → full-suite-gate → verifier →
-          verify-scoped → lint/typecheck checks → semantic/adversarial
-          review) + runFixCycle FixStrategies for rectification
+          greenfield-gate → implementer → test-presence-gate →
+          full-suite-gate → mutation-check → verifier → verify-scoped →
+          lint/typecheck checks → semantic/adversarial review)
+          + runFixCycle FixStrategies for rectification
         → Escalation on failure (fast → balanced → powerful)
   → runCompletionPhase() [lifecycle/run-completion.ts]
     → postRunPipeline (acceptance)
@@ -85,8 +91,8 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/pipeline/stages/` | 10 pipeline stages (8 default + 1 pre-run + 1 post-run) |
 | `src/pipeline/subscribers/` | Event-driven hooks (interaction, hooks.ts) |
 | `src/routing/` | Model-tier routing — keyword, LLM, plugin chain |
-| `src/routing/strategies/` | llm.ts, llm-prompts.ts |
-| `src/interaction/` | Interaction triggers + plugins (Auto, Webhook) |
+| `src/routing/strategies/` | llm.ts, llm-cache.ts, llm-parsing.ts |
+| `src/interaction/` | Interaction triggers + chain + plugins (CLI, Telegram, Webhook) |
 | `src/plugins/` | Plugin system — loader, registry, validator (7 extension points) |
 | `src/verification/` | Test execution, smart runner, scoped runner (per-story verify via verifyScopedOp / fullSuiteGateOp) |
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
@@ -96,8 +102,8 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/agents/shared/` | Cross-adapter utilities (decompose, env, model-resolution, validation) |
 | `src/cli/` + `src/commands/` | CLI commands — check both locations |
 | `src/prd/` | PRD types, loader, story state machine |
-| `src/hooks/` | Lifecycle hook wiring (11 event types) |
-| `src/constitution/` | Constitution loader + generation (6 agent types) |
+| `src/hooks/` | Lifecycle hook wiring (12 event types) |
+| `src/constitution/` | Constitution loader + generation (5 agent types) |
 | `src/context/` | Context generation + auto-detect (7 agent generators) |
 | `src/acceptance/` | Acceptance test generation, refinement, fix stories, templates |
 | `src/tdd/` | TDD orchestration (three-session workflow, isolation, verdict) |
@@ -109,11 +115,30 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/tui/` | React/Ink terminal UI |
 | `src/optimizer/` | Prompt optimization seam (no-op built-in, plugin-provided) |
 | `src/project/` | Auto-detect project type, language, frameworks |
+| `src/runtime/` | Run-scoped runtime — dispatch context/events, agent middleware (incl. idle watchdog), cost aggregation, prompt auditing, paths |
+| `src/operations/` | Per-story operations invoked by the orchestrator phases (implementer, verifier, reviews, autofix, acceptance generate/refine/fix) |
+| `src/findings/` | Finding model + fix cycle — selection, retirement, iteration log, per-story fix history |
+| `src/finish/` | `nax finish` — audit, gates, commit, PR/notify state machine |
+| `src/precheck/` | Pre-run checks (agents, CLI, config, git, system) + story-size gate |
+| `src/quality/` | Resolves and runs the project's real lint/typecheck/test commands |
+| `src/test-runners/` | Test-framework detection, output parsing, scoped test selection |
+| `src/session/` | Agent session lifecycle — naming, model selection, keeper, scratch dirs, sweep |
+| `src/plan/` | `nax plan` — draft strategies, critic, spec deltas, citations |
+| `src/replay/` | Reconstruct a past run from its artifacts (`nax replay`) |
+| `src/bakeoff/` | Multi-contestant bakeoff runs — coordinator, ranking, report |
+| `src/forge/` | Git-forge integration — provider detect, PR creation, templates |
+| `src/schedule/` | Schedule parsing and waiting for deferred runs |
+| `src/prompts/` | Prompt composition — core, sections, builders, loader |
+| `src/logger/` | Structured JSONL logger — sinks, formatters, redaction |
+| `src/log-format/` | Human-facing formatting of log records and mutation summaries |
+| `src/utils/` | Shared helpers (git, file locks, JSON/JSONL, diffs, errors) |
+| `src/errors.ts` | `NaxError` base class and error codes (a single file, not a directory) |
 
 ### Plugin Extension Points
 
 | Interface | Loaded By | Purpose |
 |:----------|:----------|:--------|
+| `AgentAdapter` | Agent registry | Supply a custom agent adapter |
 | `IContextProvider` | `context.ts` stage | Inject context into agent prompts |
 | `IReviewPlugin` | Deferred end-of-run review (`deferred-review.ts`) | Observational by default; set `review.pluginMode: "gating"` to fail the run on findings. Per-story gating removed (ADR-023 / #1146). |
 | `IReporter` | Runner | onRunStart / onStoryComplete / onRunEnd events |
@@ -185,11 +210,21 @@ config load until GitHub #374 lands — neither is wired to anything.
 - **Logging** — structured JSONL with stage prefix
 - **Git** — conventional commits, one concern per commit
 
-Additional rules in `.claude/rules/` (loaded automatically):
+Additional rules live in `.nax/rules/` — the agent-neutral canonical store. `.claude/rules/` is
+**generated** from it by `nax generate`; edit `.nax/rules/`, never the generated copies.
+`bun run check:rules-drift` fails if the two diverge. Each file carries frontmatter (`priority`,
+`appliesTo`, `stages`) so it is loaded only for the paths and stages it applies to.
 
 - `project-conventions.md` — Bun-native APIs, 400-line limit, barrel imports, logging, commits
-- `test-architecture.md` — directory mirroring, placement rules, file naming (path-scoped to `test/**/*.test.ts`)
-- `forbidden-patterns.md` — banned APIs and test anti-patterns with alternatives
+- `monorepo-awareness.md` — per-package config, workspace-scoped commands
 - `error-handling.md` — NaxError base class, cause chaining, return vs throw
 - `config-patterns.md` — Zod schema validation, config SSOT, layering order
 - `adapter-wiring.md` — run() vs complete(), session naming, agent resolution (path-scoped to `src/agents/**`)
+- `retry-strategy.md` — retry/hop policy, idle watchdog, escalation boundaries
+- `forbidden-patterns-source.md` — banned APIs in `src/` with alternatives
+- `forbidden-patterns-tests.md` — test anti-patterns with alternatives
+- `test-architecture.md` — directory mirroring, placement rules, file naming (path-scoped to `test/**/*.test.ts`)
+- `test-writing.md` — what a test must assert to count
+- `test-helpers.md` — shared mock/helper catalogue, no inline re-implementations
+- `test-ratchets.md` — the escape-hatch and coverage baselines and how to move them
+- `testing-commands.md` — which test command to run when
