@@ -3,6 +3,7 @@
  * to stay under the file-size ratchet.
  */
 
+import { SESSION_CLOSE_PERMISSION_MODE } from "@/config";
 import { getSafeLogger } from "@/logger";
 import { _acpAdapterDeps } from "./adapter-lifecycle";
 
@@ -24,7 +25,7 @@ export async function closePhysicalSession(
           await client.forceStop?.(agentName, options?.signal).catch(() => {});
         }
       } else if (client.loadSession) {
-        const session = await client.loadSession(handle, agentName, "approve-reads");
+        const session = await client.loadSession(handle, agentName, SESSION_CLOSE_PERMISSION_MODE);
         if (session) await session.close({ forceTerminate: options?.force, signal: options?.signal }).catch(() => {});
       }
     } catch (err) {

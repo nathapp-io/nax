@@ -5,19 +5,28 @@
  * - resolvePermissions() for all 3 profiles × representative stages
  * - Default behaviour when no config / no permissionProfile is provided
  * - "scoped" profile returns safe defaults (Phase 2 stub)
+ * - Unset profile resolves through DEFAULT_PERMISSION_PROFILE (ruled: approve-all)
+ * - An invalid profile that bypassed schema validation fails closed to approve-reads
+ * - SESSION_CLOSE_PERMISSION_MODE is the SSOT constant for the session-close path
  * - No dangerouslySkipPermissions references remain in src/ (grep check)
  */
 
 import { describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import type { PipelineStage } from "@/config/permissions";
-import { resolvePermissions } from "@/config/permissions";
+import { DEFAULT_PERMISSION_PROFILE, resolvePermissions, SESSION_CLOSE_PERMISSION_MODE } from "@/config/permissions";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig {
+/**
+ * `rawProfile` injects a profile the `PermissionProfile` union does not contain —
+ * the only way to reach `resolvePermissions`'s `default:` arm, which models a
+ * config that bypassed schema validation. It rides the cast this helper already
+ * makes rather than adding a second one at the call site.
+ */
+function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}, rawProfile?: string): NaxConfig {
   return {
     execution: {
       maxIterations: 5,
@@ -36,6 +45,7 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig 
       contextProviderTokenBudget: 2000,
       verificationTimeoutSeconds: 300,
       ...overrides,
+      ...(rawProfile === undefined ? {} : { permissionProfile: rawProfile }),
     },
   } as NaxConfig;
 }
@@ -95,6 +105,39 @@ describe("resolvePermissions — default behaviour", () => {
   test("no config → unrestricted (approve-all)", () => {
     const result = resolvePermissions(undefined, "run");
     expect(result.mode).toBe("approve-all");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENH-45: the two dispositions are distinct and each is named
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolvePermissions — unset vs invalid profile (ENH-45)", () => {
+  test("DEFAULT_PERMISSION_PROFILE is unrestricted — the ruled disposition for unset", () => {
+    expect(DEFAULT_PERMISSION_PROFILE).toBe("unrestricted");
+  });
+
+  test("unset profile resolves through DEFAULT_PERMISSION_PROFILE, not the invalid-value arm", () => {
+    const viaUnset = resolvePermissions(makeConfig(), "run");
+    const viaExplicit = resolvePermissions(makeConfig({ permissionProfile: DEFAULT_PERMISSION_PROFILE }), "run");
+    expect(viaUnset.mode).toBe(viaExplicit.mode);
+    expect(viaUnset.mode).toBe("approve-all");
+  });
+
+  test.each(REPRESENTATIVE_STAGES)("an invalid profile fails closed to approve-reads (stage=%s)", (stage) => {
+    // A value the schema rejects; reachable only if config load was bypassed.
+    const config = makeConfig({}, "wide-open");
+    expect(resolvePermissions(config, stage).mode).toBe("approve-reads");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-12: the session-close path reads a named constant, not a literal
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SESSION_CLOSE_PERMISSION_MODE (SEC-12)", () => {
+  test("is approve-reads — the close path never runs agent work", () => {
+    expect(SESSION_CLOSE_PERMISSION_MODE).toBe("approve-reads");
   });
 });
 

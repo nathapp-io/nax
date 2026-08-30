@@ -143,6 +143,9 @@ All agent permission decisions go through `resolvePermissions(config, stage)` in
 **Rules — no exceptions:**
 - **Always call `resolvePermissions(config, stage)`** — single source of truth
 - **Never hardcode** `?? true`, `?? false`, or literal `"approve-all"` / `"approve-reads"`
+  — enforced by `scripts/check-permission-mode-ssot.ts`; a site that only *consumes* an already-resolved mode takes `// nax-permission-mode-allow: <reason>`
+- **Unset `permissionProfile` resolves to `approve-all`** — ruled 2026-08-30 (ENH-45), named as `DEFAULT_PERMISSION_PROFILE`. nax's own pipeline is the caller and must run unattended. An *invalid* profile is a different case: it fails closed to `approve-reads` and logs, because reaching that arm means config validation was bypassed
+- **The session-close path is a ruled exemption** — `SESSION_CLOSE_PERMISSION_MODE` (SEC-12). `src/agents/acp/` cannot see `NaxConfig` by design (`check:adapter-no-config-import`), and no agent work runs under the loaded-then-closed session
 - **Never reintroduce `dangerouslySkipPermissions`** — removed, not deprecated: it has zero occurrences in `src/`, and `test/unit/config/permissions.test.ts` pins that at zero
 - **Always pass `config` and `pipelineStage`** to adapter calls (`run()`, `complete()`, `plan()`, `decompose()`)
 

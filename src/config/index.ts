@@ -22,6 +22,7 @@ export {
   projectConfigDir,
 } from "./paths";
 export type { PipelineStage } from "./permissions";
+export { SESSION_CLOSE_PERMISSION_MODE } from "./permissions";
 export {
   listProfiles,
   loadProfile,

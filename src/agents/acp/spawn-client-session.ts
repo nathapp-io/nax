@@ -116,7 +116,8 @@ export class SpawnAcpSession implements AcpSession {
       this.cwd,
       "--format",
       "json",
-      ...(this.permissionMode === "approve-all" ? ["--approve-all"] : []),
+      // Translates the mode resolvePermissions already decided into the acpx flag; decides nothing.
+      ...(this.permissionMode === "approve-all" ? ["--approve-all"] : []), // nax-permission-mode-allow: consumer, not decider
       "--model",
       this.model,
       "--timeout",
