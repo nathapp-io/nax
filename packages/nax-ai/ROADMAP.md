@@ -28,7 +28,7 @@ The artifact is a point-in-time analysis and does not track progress — it is t
 | **M1 — protocol architecture** | ✅ done | `Protocol`, registry, catalog, client, 4 protocol backends | **no** |
 | **M2 — real transport** | ✅ done (publish pending) | `createPiClient`, auth wiring, first real LLM call | yes |
 | **M3 — recorded fixtures** | 🚧 next | The suite that gates merges | yes |
-| **M4 — hardening** | ⬜ not started | Transport retry, `CredentialStore`, live canary | yes |
+| **M4 — hardening** | 🚧 in progress | Transport retry ✅ done, `CredentialStore`, live canary | yes |
 
 ## Milestones
 
@@ -85,9 +85,9 @@ Rulings and follow-ups made during M1 that land in M2, recorded here because the
 
 Capture real provider responses during M2 and turn them into the fixture suite that gates merges. Until this exists, protocol correctness rests on scripted events that assert the mapping is *self-consistent* rather than *right*.
 
-### M4 — hardening ⬜
+### M4 — hardening 🚧
 
-- Transport retry (`transportRetries`, accepted but unused since M1) — retry transport faults only, and only before the first event is emitted. Spec §10.1.
+- ✅ Transport retry (`transportRetries`) — `src/protocols/retry.ts` retries transport faults only, and only before the first event is emitted. Threaded through `src/client.ts`; `src/protocols/pi-client.ts` normalises a raw stream throw (connection reset, DNS failure) into a transport `error` event via `classifyThrown`, without relabelling the caller's own abort. Spec §10.1.
 - `CredentialStore` cross-process locking via `modify()`. pi-ai's in-process serialisation covers a single nax process; concurrent `nax` invocations sharing `~/.nax/credentials` can still race.
 - Scheduled live-provider canary — a **detector**, never a merge gate. Spec §10.3.
 
@@ -100,7 +100,7 @@ Carried from the M1 plan so they are not lost when it is merged:
 | Real `createPiClient` | M2 | §5 |
 | `CredentialStore` wiring | M2 | §5 |
 | Recorded-fixture tests | M3 | §9 |
-| Transport retry | M4 | §10.1 |
+| Transport retry | M4 — ✅ done | §10.1 |
 | Live-provider canary | M4 | §10.3 |
 
 ## How this maps onto nax

@@ -26,7 +26,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
-import { classifyHttpError, parseRetryAfter } from "./errors.ts";
+import { classifyHttpError, classifyThrown, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { createToolArgAccumulator, parseToolArgs } from "./tool-args.ts";
 import type { ConversationMessage, Protocol, ProtocolEvent, ProtocolRequest } from "./types.ts";
@@ -195,89 +195,101 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
       });
       const toolArgs = createToolArgAccumulator();
 
-      for await (const event of events) {
-        switch (event.type) {
-          case "text_delta":
-            yield { type: "text-delta", text: event.delta };
-            break;
+      try {
+        for await (const event of events) {
+          switch (event.type) {
+            case "text_delta":
+              yield { type: "text-delta", text: event.delta };
+              break;
 
-          case "thinking_delta":
-            yield { type: "thinking-delta", text: event.delta };
-            break;
+            case "thinking_delta":
+              yield { type: "thinking-delta", text: event.delta };
+              break;
 
-          case "toolcall_delta": {
-            // The delta carries neither id nor name; both are only on the
-            // in-progress call block that partial.content holds at this index.
-            const call = toolCallAt(event.partial, event.contentIndex);
-            if (call === undefined) break;
-            const rawInput = toolArgs.append(call.id, call.name, event.delta);
-            yield { type: "tool-call-partial", id: call.id, name: call.name, rawInput };
-            break;
-          }
+            case "toolcall_delta": {
+              // The delta carries neither id nor name; both are only on the
+              // in-progress call block that partial.content holds at this index.
+              const call = toolCallAt(event.partial, event.contentIndex);
+              if (call === undefined) break;
+              const rawInput = toolArgs.append(call.id, call.name, event.delta);
+              yield { type: "tool-call-partial", id: call.id, name: call.name, rawInput };
+              break;
+            }
 
-          case "toolcall_end": {
-            const pending = toolArgs.take(event.toolCall.id);
-            let input: unknown;
-            try {
-              input = parseToolArgs(pending?.raw ?? "");
-            } catch (cause) {
-              // An error event, not a throw: text and usage already yielded
-              // must survive.
+            case "toolcall_end": {
+              const pending = toolArgs.take(event.toolCall.id);
+              let input: unknown;
+              try {
+                input = parseToolArgs(pending?.raw ?? "");
+              } catch (cause) {
+                // An error event, not a throw: text and usage already yielded
+                // must survive.
+                yield {
+                  type: "error",
+                  error: {
+                    kind: "bad-request",
+                    message: `Tool "${event.toolCall.name}" returned unparseable arguments.`,
+                    cause,
+                  },
+                };
+                return;
+              }
+              yield { type: "tool-call", call: { id: event.toolCall.id, name: event.toolCall.name, input } };
+              break;
+            }
+
+            case "done": {
+              const stopReason = STOP_REASONS[event.reason];
+              yield { type: "usage", usage: toTokenUsage(event.message.usage) };
+              if (stopReason === undefined) {
+                yield {
+                  type: "error",
+                  error: {
+                    kind: "unknown",
+                    message: `Upstream reported stop reason "${event.reason}", which nax-ai never requests.`,
+                  },
+                };
+                return;
+              }
+              yield { type: "done", stopReason };
+              return;
+            }
+
+            case "error": {
+              const status = observed?.status;
+              const retryAfter = parseRetryAfter(observed?.headers);
+              const usage = toTokenUsage(event.error.usage);
+              // A failed request that consumed tokens still bills for them.
+              if (totalTokens(usage) > 0) yield { type: "usage", usage };
               yield {
                 type: "error",
                 error: {
-                  kind: "bad-request",
-                  message: `Tool "${event.toolCall.name}" returned unparseable arguments.`,
-                  cause,
+                  kind: classifyHttpError(status),
+                  message: event.error.errorMessage ?? `Upstream stream ended: ${event.reason}.`,
+                  ...(status !== undefined ? { status } : {}),
+                  ...(retryAfter !== undefined ? { retryAfter } : {}),
                 },
               };
               return;
             }
-            yield { type: "tool-call", call: { id: event.toolCall.id, name: event.toolCall.name, input } };
-            break;
-          }
 
-          case "done": {
-            const stopReason = STOP_REASONS[event.reason];
-            yield { type: "usage", usage: toTokenUsage(event.message.usage) };
-            if (stopReason === undefined) {
-              yield {
-                type: "error",
-                error: {
-                  kind: "unknown",
-                  message: `Upstream reported stop reason "${event.reason}", which nax-ai never requests.`,
-                },
-              };
-              return;
-            }
-            yield { type: "done", stopReason };
-            return;
+            default:
+              // start, text_start, text_end, thinking_start, thinking_end and
+              // toolcall_start carry nothing our vocabulary expresses: content
+              // is already delivered by the deltas.
+              break;
           }
-
-          case "error": {
-            const status = observed?.status;
-            const retryAfter = parseRetryAfter(observed?.headers);
-            const usage = toTokenUsage(event.error.usage);
-            // A failed request that consumed tokens still bills for them.
-            if (totalTokens(usage) > 0) yield { type: "usage", usage };
-            yield {
-              type: "error",
-              error: {
-                kind: classifyHttpError(status),
-                message: event.error.errorMessage ?? `Upstream stream ended: ${event.reason}.`,
-                ...(status !== undefined ? { status } : {}),
-                ...(retryAfter !== undefined ? { retryAfter } : {}),
-              },
-            };
-            return;
-          }
-
-          default:
-            // start, text_start, text_end, thinking_start, thinking_end and
-            // toolcall_start carry nothing our vocabulary expresses: content
-            // is already delivered by the deltas.
-            break;
         }
+      } catch (cause) {
+        // A stream failure with no HTTP response (connection reset, DNS
+        // failure, an immediate socket error) propagates as a raw throw
+        // rather than pi-ai's own "error" event — there was never a response
+        // to build one from, which is why classifyHttpError(undefined) would
+        // otherwise return "unknown" here. The caller's own abort must not be
+        // relabelled as a transport fault: retryTransportFaults, and any
+        // consumer-level abort handling, both need to see abort as abort.
+        if (req.signal?.aborted) throw cause;
+        yield { type: "error", error: classifyThrown(cause) };
       }
     },
   };

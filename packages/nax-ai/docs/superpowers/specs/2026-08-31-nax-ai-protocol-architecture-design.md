@@ -374,9 +374,11 @@ The split is principled rather than arbitrary: transport faults carry no policy 
 
 | Fault | Owner | Behaviour |
 |---|---|---|
-| Connection reset, DNS failure, malformed SSE frame, 502 / 503 / 504 | **nax-ai** | Bounded retry with exponential backoff |
-| 429 rate-limit, 529 overloaded | **consumer** | Surfaced as `ProtocolError` with `retryAfter`; never retried internally |
+| Connection reset, DNS failure, malformed SSE frame, 500 / 502 / 504 | **nax-ai** | Bounded retry with exponential backoff |
+| 429 rate-limit, 503 / 529 overloaded | **consumer** | Surfaced as `ProtocolError` with `retryAfter`; never retried internally |
 | 4xx bad request, auth failure | neither | Terminal — retrying cannot help |
+
+`classifyHttpError` (`src/protocols/errors.ts`) classifies 503 as `"overloaded"`, alongside 529, not `"transport"` — both are capacity signals a provider emits under load, and capacity policy belongs to the consumer per the split above. An earlier draft of this table grouped 503 with the transport-retried statuses; the implementation and its test (`test/protocols/errors.test.ts`) settled it the other way, and this row now matches the code.
 
 A rate limit interacts with the consumer's concurrency, its cost budget, and whether to fail over to a different model. nax runs stories in parallel, so retrying every one of them the instant a 429 arrives is worse than staggering — and that decision needs information nax-ai does not have. Upstream agrees: pi-ai's `retryAssistantCall` is documented as mirroring `settings.retry` in *coding-agent*, so pi-ai supplies the mechanism while its own consumer supplies the policy.
 

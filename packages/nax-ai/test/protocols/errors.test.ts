@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyHttpError, parseRetryAfter } from "../../src/protocols/errors.ts";
+import { classifyHttpError, classifyThrown, parseRetryAfter } from "../../src/protocols/errors.ts";
 
 describe("classifyHttpError", () => {
   it.each([
@@ -44,5 +44,22 @@ describe("parseRetryAfter", () => {
 
   it("returns undefined for a negative value", () => {
     expect(parseRetryAfter({ "retry-after": "-5" })).toBeUndefined();
+  });
+});
+
+describe("classifyThrown", () => {
+  it("classifies an arbitrary throw as a transport fault, preserving cause and message", () => {
+    const cause = new Error("socket hang up");
+    const error = classifyThrown(cause);
+    expect(error.kind).toBe("transport");
+    expect(error.message).toBe("socket hang up");
+    expect(error.cause).toBe(cause);
+  });
+
+  it("stringifies a non-Error throw rather than losing it", () => {
+    const error = classifyThrown("connection reset");
+    expect(error.kind).toBe("transport");
+    expect(error.message).toBe("connection reset");
+    expect(error.cause).toBe("connection reset");
   });
 });

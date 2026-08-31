@@ -426,6 +426,59 @@ describe("createPiProtocol error path", () => {
   });
 });
 
+/** A backend whose stream throws instead of yielding pi-ai's own "error" event
+ * — the shape of a connection reset or DNS failure, which never reaches a
+ * response to build a pi-ai error from. */
+function fakePiThrowing(cause: unknown) {
+  return {
+    resolveModel: async () => MODEL,
+    stream: (
+      _model: Model<Api>,
+      _context: Context,
+      _options: SimpleStreamOptions,
+      _onResponse: unknown,
+    ): AsyncIterable<AssistantMessageEvent> => ({
+      [Symbol.asyncIterator]() {
+        return { next: () => Promise.reject(cause) };
+      },
+    }),
+  };
+}
+
+describe("createPiProtocol raw throw normalisation", () => {
+  it("turns a thrown stream failure into a transport error event", async () => {
+    const events: ProtocolEvent[] = [];
+    for await (const event of createPiProtocol("openai-completions", fakePiThrowing(new Error("ECONNRESET"))).stream(
+      BASE,
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "error", error: { kind: "transport", message: "ECONNRESET", cause: expect.any(Error) } },
+    ]);
+  });
+
+  it("does not dress up the caller's own abort as a transport fault", async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException("Aborted", "AbortError");
+    controller.abort(abortError);
+
+    const iterate = async () => {
+      const out: ProtocolEvent[] = [];
+      for await (const event of createPiProtocol("openai-completions", fakePiThrowing(abortError)).stream({
+        ...BASE,
+        signal: controller.signal,
+      })) {
+        out.push(event);
+      }
+      return out;
+    };
+
+    await expect(iterate()).rejects.toBe(abortError);
+  });
+});
+
 runProtocolConformance(
   "pi",
   async () =>

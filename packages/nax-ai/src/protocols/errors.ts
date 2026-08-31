@@ -6,7 +6,7 @@
  * different source and should not carry a second copy of this table.
  */
 
-import type { ProtocolErrorKind } from "./types.ts";
+import type { ProtocolError, ProtocolErrorKind } from "./types.ts";
 
 export function classifyHttpError(status: number | undefined): ProtocolErrorKind {
   if (status === undefined) return "unknown";
@@ -35,4 +35,22 @@ export function parseRetryAfter(headers: Readonly<Record<string, string>> | unde
   const seconds = Number(entry[1]);
   if (!Number.isFinite(seconds) || seconds < 0) return undefined;
   return seconds;
+}
+
+/**
+ * Normalises an arbitrary thrown value (connection reset, DNS failure, an
+ * immediate socket error) into a `ProtocolError`.
+ *
+ * Always classified as "transport": `classifyHttpError(undefined)` would
+ * return "unknown", but a throw with no HTTP response is exactly the class
+ * of fault §10.1 assigns to nax-ai's own bounded retry, not the consumer's
+ * rate-limit/overload policy. `cause` is preserved so the original value is
+ * never lost.
+ */
+export function classifyThrown(cause: unknown): ProtocolError {
+  return {
+    kind: "transport",
+    message: cause instanceof Error ? cause.message : String(cause),
+    cause,
+  };
 }

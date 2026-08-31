@@ -8,6 +8,7 @@
 
 import { collectStream } from "./protocols/collect.ts";
 import { type BackendSelection, createRegistry, type ProtocolEntries } from "./protocols/registry.ts";
+import { retryTransportFaults } from "./protocols/retry.ts";
 import { clampThinkingLevel } from "./protocols/thinking.ts";
 import type { ProtocolEvent, ProtocolRequest } from "./protocols/types.ts";
 import { normaliseCatalog, type RawProvider } from "./providers/catalog.ts";
@@ -36,9 +37,24 @@ export interface Client {
   validate(): void;
 }
 
+/** Matches the doc comment on `ClientOptions.transportRetries`. */
+const DEFAULT_TRANSPORT_RETRIES = 2;
+
+function realSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function createClient(options: ClientOptions): Client {
   const catalog = normaliseCatalog(options.providers, options.providerOverrides ?? []);
   const registry = createRegistry(options.protocols, options.backends ?? {});
+
+  // A negative value is a config bug, not a policy choice — clamping it to 0
+  // would silently disable retry instead of telling the caller their option
+  // is nonsense. Checked here, once, rather than per stream() call.
+  const transportRetries = options.transportRetries ?? DEFAULT_TRANSPORT_RETRIES;
+  if (transportRetries < 0) {
+    throw new Error(`transportRetries must be >= 0, got ${transportRetries}.`);
+  }
 
   async function* streamFrom(model: ResolvedModel, req: ClientRequest): AsyncIterable<ProtocolEvent> {
     const protocol = await registry.resolve(model.protocol);
@@ -51,7 +67,11 @@ export function createClient(options: ClientOptions): Client {
       ...(thinking !== undefined ? { thinking } : {}),
     };
 
-    yield* protocol.stream(protocolRequest);
+    yield* retryTransportFaults(() => protocol.stream(protocolRequest), {
+      retries: transportRetries,
+      sleep: realSleep,
+      ...(req.signal !== undefined ? { signal: req.signal } : {}),
+    });
   }
 
   return {

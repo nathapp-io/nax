@@ -93,6 +93,40 @@ describe("client", () => {
     expect(seen).toBe("medium"); // nearest supported
   });
 
+  it("retries a transport-fault stream via the injected transportRetries option", async () => {
+    let calls = 0;
+    const client = createClient({
+      providers: PROVIDERS,
+      protocols: {
+        "openai-completions": {
+          pi: async () => ({
+            name: "openai-completions",
+            async *stream() {
+              calls += 1;
+              if (calls === 1) {
+                throw new Error("connection reset");
+              }
+              for (const event of OK) yield event;
+            },
+          }),
+        },
+      },
+      transportRetries: 1,
+    });
+
+    const model = await client.model("deepseek", "deepseek-chat");
+    const result = await client.complete(model, { messages: [{ role: "user", content: "hi" }] });
+
+    expect(calls).toBe(2);
+    expect(result.text).toBe("hi");
+  });
+
+  it("throws at createClient for a negative transportRetries, rather than clamping it", () => {
+    expect(() => createClient({ providers: PROVIDERS, protocols: {}, transportRetries: -1 })).toThrow(
+      /transportRetries/,
+    );
+  });
+
   it("validate() rejects a selection naming an unregistered backend", () => {
     const client = createClient({
       providers: PROVIDERS,
