@@ -1,0 +1,26 @@
+language js
+
+// `as never` — the bottom type is assignable to EVERY other type, so this
+// silences any assignment error in one word. It is a strictly stronger escape
+// hatch than `as any`, and biome ships no built-in rule for it.
+//
+// Scoped at biome.json's ROOT since 2026-08-27, so it covers src/, bin/ and
+// test/ alike. It sat in the `test/**` override until `src/`'s last 2 sites
+// were drained (webhook-serve-compat.ts passed `undefined as never` for the
+// `this` and `server` arguments of a fetch handler; both now receive the real
+// in-memory server object). An override entry would silently re-narrow it.
+//
+// This is the ONLY gate on the shape. It replaced the `asNever` counter in
+// scripts/check-test-escape-hatches.ts, which retired on 2026-08-27: that
+// counter was text, its glob missed `.tsx` for the whole drain, and its whole
+// remaining residue was prose. A regex kept as a "secondary guard" behind a
+// working rule guards nothing.
+//
+// Because nothing else watches this shape, the wiring is pinned behind
+// test/unit/scripts/biome-no-as-never-plugin.test.ts.
+`$expr as never` where {
+  register_diagnostic(
+    span = $expr,
+    message = "`as never` silences every assignment error. Complete the fixture, tighten the helper's return type, or narrow the parameter — see .nax/rules/test-ratchets.md."
+  )
+}

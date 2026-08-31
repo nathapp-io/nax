@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Gates that are runtime-independent. Split from the matrix so a lint or type
+  # failure reports once rather than twice.
+  static:
+    name: lint + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      # Vitest transpiles via esbuild and does not type-check, so this is the
+      # only step that proves the package compiles.
+      - run: bun run typecheck
+
+  # The declared compatibility target. This is the leg that catches Bun-only
+  # code and imports Node cannot resolve, so it must run the real suite rather
+  # than a smoke check.
+  test-node:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: bun install --frozen-lockfile
+      - run: node --version
+      - run: bun x vitest --run
+
+  # The primary consumer's runtime. Builds, then imports the built artifact the
+  # way an installed consumer would — this is what would catch a broken exports
+  # map or files array, which the source-level suite cannot see.
+  smoke-bun:
+    name: smoke (bun)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: import built package
+        run: |
+          bun --eval '
+            import { assertOAuthFlowPermitted, PERMITTED_OAUTH_FLOWS } from "./dist/index.js";
+            if (PERMITTED_OAUTH_FLOWS.includes("anthropic")) {
+              throw new Error("anthropic must never be a permitted OAuth flow");
+            }
+            try {
+              assertOAuthFlowPermitted("anthropic");
+              throw new Error("anthropic OAuth flow was not rejected");
+            } catch (e) {
+              if (e.name !== "OAuthFlowProhibitedError") throw e;
+            }
+            console.log("smoke ok");
+          '
+
+  # Proves the tarball a consumer installs contains what the exports map
+  # promises. A files/exports mistake is invisible until publish otherwise.
+  pack:
+    name: pack + install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: npm pack
+      - name: install the tarball into a clean project and import it
+        run: |
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/nathapp-nax-ai-*.tgz
+          node --input-type=module -e '
+            import { PERMITTED_OAUTH_FLOWS } from "@nathapp/nax-ai";
+            console.log("resolved from registry-shaped install:", PERMITTED_OAUTH_FLOWS.join(", "));
+          '

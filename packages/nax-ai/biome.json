@@ -1,0 +1,104 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "plugins": ["./biome-plugins/no-as-never.grit", "./biome-plugins/no-empty-catch.grit"],
+  "linter": {
+    "enabled": true,
+    "domains": {
+      "test": "recommended",
+      "types": "recommended"
+    },
+    "rules": {
+      "recommended": true,
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": { "maxAllowedComplexity": 176 }
+        }
+      },
+      "suspicious": {
+        "noConsole": "error",
+        "noDuplicateTestHooks": "error",
+        "noEvolvingTypes": "error",
+        "noExplicitAny": "error",
+        "noSkippedTests": "error",
+        "noTsIgnore": "error",
+        "useArraySortCompare": "error",
+        "useErrorMessage": "error"
+      },
+      "style": {
+        "noNonNullAssertion": "error",
+        "noParameterAssign": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": { "patterns": [{ "group": ["../../*", "../../**"] }] }
+        },
+        "useThrowOnlyError": "error"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "useAwaitThenable": "error",
+        "useExhaustiveSwitchCases": "error"
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "overrides": [
+    {
+      "includes": ["src/**", "!src/cli/**", "!src/commands/**", "!src/config/loader.ts"],
+      "plugins": ["./biome-plugins/no-process-cwd.grit"]
+    },
+    {
+      "includes": [
+        "bin/**",
+        "scripts/**",
+        "src/cli/**",
+        "src/commands/**",
+        "src/precheck/index.ts",
+        "src/execution/lifecycle/headless-formatter.ts",
+        "src/logger/logger.ts"
+      ],
+      "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
+    },
+    {
+      "includes": ["**/test/**"],
+      "plugins": ["./biome-plugins/no-absent-value.grit"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off",
+            "noExplicitAny": "error"
+          },
+          "style": {
+            "noNonNullAssertion": "error"
+          },
+          "performance": {
+            "noDelete": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/test/helpers/**/*-internals.ts"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "useLiteralKeys": "off"
+          }
+        }
+      }
+    }
+  ]
+}

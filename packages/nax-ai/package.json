@@ -1,0 +1,65 @@
+{
+  "name": "@nathapp/nax-ai",
+  "version": "0.1.0",
+  "description": "Provider-agnostic LLM client: completions, streaming, tool calls, usage and auth across API-key and OAuth providers.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "check:no-bun-apis": "bun run scripts/check-no-bun-apis.ts",
+    "lint": "bun x biome check --error-on-warnings src/ test/ scripts/ && bun run check:no-bun-apis",
+    "lint:fix": "bun x biome check --write src/ test/ scripts/",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.84.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.10",
+    "@types/node": "22.19.19",
+    "typescript": "7.0.2",
+    "vitest": "4.1.9"
+  },
+  "keywords": [
+    "llm",
+    "ai",
+    "anthropic",
+    "openai",
+    "provider",
+    "streaming"
+  ],
+  "license": "MIT",
+  "author": "William Khoo",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nathapp-io/nax-ai.git"
+  },
+  "homepage": "https://github.com/nathapp-io/nax-ai",
+  "bugs": {
+    "url": "https://github.com/nathapp-io/nax-ai/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true,
+    "tag": "next"
+  }
+}
