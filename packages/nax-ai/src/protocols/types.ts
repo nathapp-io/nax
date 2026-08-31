@@ -25,6 +25,7 @@ export type CacheRetention = (typeof CACHE_RETENTIONS)[number];
 export const PROTOCOL_EVENT_TYPES = [
   "text-delta",
   "thinking-delta",
+  "thinking",
   "tool-call-partial",
   "tool-call",
   "usage",
@@ -65,12 +66,32 @@ export interface ToolCall {
   readonly input: unknown;
 }
 
+/**
+ * A complete extended-thinking block, durable enough to replay on the next
+ * turn. Anthropic requires the exact thinking block (text plus signature) that
+ * preceded a tool call to be sent back verbatim on the following request, or
+ * the call cannot be verified server-side.
+ */
+export interface ThinkingBlock {
+  readonly text: string;
+  /**
+   * Opaque, like `StoredCredential`'s `key` (see src/types.ts): some
+   * providers put a cryptographic signature here, a redacted block puts its
+   * entire encrypted payload here instead. Never inspect, compare or log it.
+   * Absent means the provider did not send one — never synthesise "" for
+   * that, since an empty string is itself a value a provider could send.
+   */
+  readonly signature?: string;
+  readonly redacted?: boolean;
+}
+
 export type ConversationMessage =
   | { readonly role: "user"; readonly content: string }
   | {
       readonly role: "assistant";
       readonly content: string;
       readonly toolCalls?: readonly ToolCall[];
+      readonly thinking?: readonly ThinkingBlock[];
     }
   | {
       readonly role: "tool-result";
@@ -105,6 +126,12 @@ export interface ProtocolRequest {
 export type ProtocolEvent =
   | { readonly type: "text-delta"; readonly text: string }
   | { readonly type: "thinking-delta"; readonly text: string }
+  /**
+   * Mirrors the "tool-call-partial" -> "tool-call" pair: "thinking-delta"
+   * stays display-only progress, this is the durable complete block a
+   * consumer can carry into the next request's `ConversationMessage`.
+   */
+  | { readonly type: "thinking"; readonly block: ThinkingBlock }
   | {
       readonly type: "tool-call-partial";
       readonly id: string;

@@ -55,6 +55,13 @@ export interface CompleteResult {
   readonly usage: TokenUsage;
   readonly stopReason: StopReason;
   readonly toolCalls?: readonly import("./protocols/types.ts").ToolCall[];
+  /**
+   * Present only when the provider emitted extended thinking. A caller that
+   * wants to continue this turn (e.g. after running a tool call) must send
+   * these back on the next request's assistant message, in order — without
+   * this field there is no way to construct that follow-up turn.
+   */
+  readonly thinking?: readonly import("./protocols/types.ts").ThinkingBlock[];
 }
 
 /**

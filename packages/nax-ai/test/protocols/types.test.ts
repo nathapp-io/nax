@@ -3,10 +3,14 @@ import { describe, expect, it } from "vitest";
 import { PROTOCOL_ERROR_KINDS, PROTOCOL_EVENT_TYPES, THINKING_LEVELS } from "../../src/protocols/types.ts";
 
 describe("protocol discriminants", () => {
-  it("declares exactly the seven event types the spec names", () => {
+  it("declares exactly the eight event types the spec names", () => {
+    // "thinking" was added for the thinking-block round-trip fix: it carries
+    // the durable complete block, alongside "thinking-delta"'s display-only
+    // partial — the same pairing "tool-call-partial"/"tool-call" already use.
     expect([...PROTOCOL_EVENT_TYPES]).toEqual([
       "text-delta",
       "thinking-delta",
+      "thinking",
       "tool-call-partial",
       "tool-call",
       "usage",

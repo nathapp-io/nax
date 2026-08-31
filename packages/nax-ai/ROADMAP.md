@@ -28,7 +28,7 @@ The artifact is a point-in-time analysis and does not track progress — it is t
 | **M1 — protocol architecture** | ✅ done | `Protocol`, registry, catalog, client, 4 protocol backends | **no** |
 | **M2 — real transport** | ✅ done (publish pending) | `createPiClient`, auth wiring, first real LLM call | yes |
 | **M3 — recorded fixtures** | 🚧 next | The suite that gates merges | yes |
-| **M4 — hardening** | 🚧 in progress | Transport retry ✅ done, `CredentialStore`, live canary | yes |
+| **M4 — hardening** | 🚧 in progress | Transport retry ✅ done, thinking-block round-trip ✅ done, `CredentialStore`, live canary | yes |
 
 ## Milestones
 
@@ -88,6 +88,7 @@ Capture real provider responses during M2 and turn them into the fixture suite t
 ### M4 — hardening 🚧
 
 - ✅ Transport retry (`transportRetries`) — `src/protocols/retry.ts` retries transport faults only, and only before the first event is emitted. Threaded through `src/client.ts`; `src/protocols/pi-client.ts` normalises a raw stream throw (connection reset, DNS failure) into a transport `error` event via `classifyThrown`, without relabelling the caller's own abort. Spec §10.1.
+- ✅ Thinking-block round-trip — `ConversationMessage`'s assistant variant had nowhere to carry a thinking block, so extended thinking combined with tool use could not round-trip: the next request must replay the thinking block (text plus opaque signature) or the tool call cannot be verified server-side. Fixed by a new `ThinkingBlock` type (`src/protocols/types.ts`), a `"thinking"` `ProtocolEvent` durable-complete-block counterpart to the existing display-only `"thinking-delta"`, `pi-client.ts` emitting it from `thinking_end` (signature/redacted read defensively off `partial.content[contentIndex]`, the same shape trap `toolCallAt` already handles), `toPiMessages` placing thinking blocks first in the assistant content array (Anthropic's wire ordering requirement), and `CompleteResult.thinking` accumulated by `collectStream` so a `complete()` caller can construct the following turn.
 - `CredentialStore` cross-process locking via `modify()`. pi-ai's in-process serialisation covers a single nax process; concurrent `nax` invocations sharing `~/.nax/credentials` can still race.
 - Scheduled live-provider canary — a **detector**, never a merge gate. Spec §10.3.
 

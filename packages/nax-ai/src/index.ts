@@ -46,6 +46,7 @@ export type {
   ProtocolError,
   ProtocolEvent,
   ProtocolRequest,
+  ThinkingBlock,
   ThinkingLevel,
   ToolCall,
   ToolDefinition,

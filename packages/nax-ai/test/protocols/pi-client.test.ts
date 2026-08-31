@@ -115,6 +115,42 @@ describe("toPiContext", () => {
     );
     expect(context.messages[0]).toMatchObject({ content: [{ type: "toolCall", id: "t1" }] });
   });
+
+  it("places thinking blocks before text and tool calls, mapping all three fields", () => {
+    const context = toPiContext(
+      {
+        ...BASE,
+        messages: [
+          {
+            role: "assistant",
+            content: "on it",
+            thinking: [{ text: "let me think", signature: "sig-1", redacted: false }],
+            toolCalls: [{ id: "t1", name: "read", input: { path: "a.ts" } }],
+          },
+        ],
+      },
+      MODEL,
+    );
+
+    expect(context.messages[0]).toMatchObject({
+      content: [
+        { type: "thinking", thinking: "let me think", thinkingSignature: "sig-1", redacted: false },
+        { type: "text", text: "on it" },
+        { type: "toolCall", id: "t1", name: "read", arguments: { path: "a.ts" } },
+      ],
+    });
+  });
+
+  it("omits thinkingSignature when the block carries none, rather than sending an empty string", () => {
+    const context = toPiContext(
+      { ...BASE, messages: [{ role: "assistant", content: "", thinking: [{ text: "hmm" }] }] },
+      MODEL,
+    );
+    const message = context.messages[0] as unknown as { content: readonly Record<string, unknown>[] };
+    const block = message.content[0];
+    expect(block).toMatchObject({ type: "thinking", thinking: "hmm" });
+    expect("thinkingSignature" in (block ?? {})).toBe(false);
+  });
 });
 
 describe("toPiOptions", () => {
@@ -223,6 +259,72 @@ describe("createPiProtocol event mapping", () => {
     ] as AssistantMessageEvent[]);
 
     expect(events).toContainEqual({ type: "thinking-delta", text: "hmm" });
+  });
+
+  it("emits a thinking event on thinking_end, reading signature and redacted off the block at that content index", async () => {
+    const withThinking = message({
+      content: [{ type: "thinking", thinking: "hmm", thinkingSignature: "sig-1", redacted: false }],
+    });
+    const events = await drain([
+      { type: "thinking_start", contentIndex: 0, partial: withThinking },
+      { type: "thinking_delta", contentIndex: 0, delta: "hmm", partial: withThinking },
+      { type: "thinking_end", contentIndex: 0, content: "hmm", partial: withThinking },
+      { type: "done", reason: "stop", message: message() },
+    ] as AssistantMessageEvent[]);
+
+    expect(events).toContainEqual({
+      type: "thinking",
+      block: { text: "hmm", signature: "sig-1", redacted: false },
+    });
+  });
+
+  it("omits signature on the thinking event when the block carries none, never synthesising an empty string", async () => {
+    const noSignature = message({ content: [{ type: "thinking", thinking: "hmm" }] });
+    const events = await drain([
+      { type: "thinking_end", contentIndex: 0, content: "hmm", partial: noSignature },
+      { type: "done", reason: "stop", message: message() },
+    ] as AssistantMessageEvent[]);
+
+    const thinking = events.find((e) => e.type === "thinking");
+    expect(thinking).toBeDefined();
+    const block = (thinking as unknown as { type: "thinking"; block: Record<string, unknown> }).block;
+    expect("signature" in block).toBe(false);
+    expect(block.text).toBe("hmm");
+  });
+
+  it("round-trips a redacted block's flag and opaque payload", async () => {
+    const redacted = message({
+      content: [{ type: "thinking", thinking: "", thinkingSignature: "encrypted-payload", redacted: true }],
+    });
+    const events = await drain([
+      { type: "thinking_end", contentIndex: 0, content: "", partial: redacted },
+      { type: "done", reason: "stop", message: message() },
+    ] as AssistantMessageEvent[]);
+
+    expect(events).toContainEqual({
+      type: "thinking",
+      block: { text: "", signature: "encrypted-payload", redacted: true },
+    });
+  });
+
+  it("still emits the text when the block at that content index is not a recognisable thinking shape", async () => {
+    const wrongShape = message({ content: [{ type: "text", text: "not thinking" }] });
+    const events = await drain([
+      { type: "thinking_end", contentIndex: 0, content: "hmm", partial: wrongShape },
+      { type: "done", reason: "stop", message: message() },
+    ] as AssistantMessageEvent[]);
+
+    expect(events).toContainEqual({ type: "thinking", block: { text: "hmm" } });
+  });
+
+  it("still emits the text when there is no block at all at that content index", async () => {
+    const empty = message({ content: [] });
+    const events = await drain([
+      { type: "thinking_end", contentIndex: 0, content: "hmm", partial: empty },
+      { type: "done", reason: "stop", message: message() },
+    ] as AssistantMessageEvent[]);
+
+    expect(events).toContainEqual({ type: "thinking", block: { text: "hmm" } });
   });
 
   it("recovers a partial tool call's id and name from partial.content", async () => {

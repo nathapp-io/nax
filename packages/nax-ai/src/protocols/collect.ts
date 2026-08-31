@@ -7,7 +7,7 @@
  */
 
 import type { CompleteResult, TokenUsage } from "../types.ts";
-import type { ProtocolError, ProtocolEvent, ToolCall } from "./types.ts";
+import type { ProtocolError, ProtocolEvent, ThinkingBlock, ToolCall } from "./types.ts";
 
 const EMPTY_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
@@ -22,6 +22,7 @@ export class ProtocolStreamError extends Error {
 export async function collectStream(events: AsyncIterable<ProtocolEvent>): Promise<CompleteResult> {
   const text: string[] = [];
   const toolCalls: ToolCall[] = [];
+  const thinking: ThinkingBlock[] = [];
   let usage: TokenUsage | undefined;
   let stopReason: CompleteResult["stopReason"] | undefined;
 
@@ -32,6 +33,11 @@ export async function collectStream(events: AsyncIterable<ProtocolEvent>): Promi
         break;
       case "tool-call":
         toolCalls.push(event.call);
+        break;
+      case "thinking":
+        // Without this, complete() has no way to hand a caller the block
+        // needed to replay the next turn — the whole point of the fix.
+        thinking.push(event.block);
         break;
       case "usage":
         usage = event.usage;
@@ -58,6 +64,7 @@ export async function collectStream(events: AsyncIterable<ProtocolEvent>): Promi
     usage: usage ?? EMPTY_USAGE,
     stopReason,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(thinking.length > 0 ? { thinking } : {}),
   };
   return result;
 }

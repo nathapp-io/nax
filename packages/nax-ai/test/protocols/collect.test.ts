@@ -70,4 +70,25 @@ describe("collectStream", () => {
     );
     expect(result.text).toBe("answer");
   });
+
+  it("accumulates thinking blocks from thinking events, in order, onto the result", async () => {
+    const first = { text: "first thought", signature: "sig-1" };
+    const second = { text: "second thought", signature: "sig-2" };
+    const result = await collectStream(
+      emit(
+        { type: "thinking", block: first },
+        { type: "thinking", block: second },
+        { type: "text-delta", text: "answer" },
+        { type: "done", stopReason: "stop" },
+      ),
+    );
+    expect(result.thinking).toEqual([first, second]);
+  });
+
+  it("omits thinking from the result when the stream carried no thinking events", async () => {
+    const result = await collectStream(
+      emit({ type: "text-delta", text: "answer" }, { type: "done", stopReason: "stop" }),
+    );
+    expect("thinking" in result).toBe(false);
+  });
 });

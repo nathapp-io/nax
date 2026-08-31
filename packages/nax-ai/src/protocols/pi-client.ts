@@ -29,7 +29,7 @@ import { toTokenUsage, totalTokens } from "../usage.ts";
 import { classifyHttpError, classifyThrown, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { createToolArgAccumulator, parseToolArgs } from "./tool-args.ts";
-import type { ConversationMessage, Protocol, ProtocolEvent, ProtocolRequest } from "./types.ts";
+import type { ConversationMessage, Protocol, ProtocolEvent, ProtocolRequest, ThinkingBlock } from "./types.ts";
 
 export interface PiResponse {
   readonly status: number;
@@ -81,6 +81,26 @@ function toPiTool(tool: ProtocolRequest["tools"] extends readonly (infer T)[] | 
   };
 }
 
+/**
+ * pi's ThinkingContent, from our ThinkingBlock. `thinkingSignature` is left
+ * unset rather than "" when absent, because pi's own request-side handling
+ * (dist/api/anthropic-messages.js:923-957) treats "no signature" and "empty
+ * signature" differently — a synthesised "" would pick the wrong branch.
+ */
+function toPiThinking(block: ThinkingBlock): {
+  type: "thinking";
+  thinking: string;
+  thinkingSignature?: string;
+  redacted?: boolean;
+} {
+  return {
+    type: "thinking",
+    thinking: block.text,
+    ...(block.signature !== undefined ? { thinkingSignature: block.signature } : {}),
+    ...(block.redacted !== undefined ? { redacted: block.redacted } : {}),
+  };
+}
+
 function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api>): PiMessage[] {
   const toolNames = new Map<string, string>();
   const out: PiMessage[] = [];
@@ -96,6 +116,10 @@ function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api
       out.push({
         role: "assistant",
         content: [
+          // Anthropic requires thinking blocks to lead the assistant
+          // message when present — this is a wire ordering requirement, not
+          // a style choice, so it goes first unconditionally.
+          ...(message.thinking ?? []).map(toPiThinking),
           ...(message.content === "" ? [] : [{ type: "text" as const, text: message.content }]),
           ...(message.toolCalls ?? []).map((call) => ({
             type: "toolCall" as const,
@@ -183,6 +207,29 @@ function toolCallAt(partial: { content: readonly unknown[] }, index: number): { 
   return { id: candidate.id, name: candidate.name };
 }
 
+/**
+ * The signature and redacted flag for the thinking block at a content index,
+ * when the block at that index has that shape. `thinking_end`'s own event
+ * carries no signature — pi accumulates it onto the block in `partial`
+ * during the stream (signature_delta, dist/api/anthropic-messages.js:501-502)
+ * so by the time the block ends it is complete there. Same trap as
+ * `toolCallAt` above: the terminal event is missing fields only the partial
+ * carries.
+ */
+function thinkingBlockAt(
+  partial: { content: readonly unknown[] },
+  index: number,
+): { signature?: string; redacted?: boolean } {
+  const block = partial.content[index];
+  if (typeof block !== "object" || block === null) return {};
+  const candidate = block as { type?: unknown; thinkingSignature?: unknown; redacted?: unknown };
+  if (candidate.type !== "thinking") return {};
+  return {
+    ...(typeof candidate.thinkingSignature === "string" ? { signature: candidate.thinkingSignature } : {}),
+    ...(typeof candidate.redacted === "boolean" ? { redacted: candidate.redacted } : {}),
+  };
+}
+
 export function createPiProtocol(name: string, deps: PiDeps): Protocol {
   return {
     name,
@@ -205,6 +252,22 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
             case "thinking_delta":
               yield { type: "thinking-delta", text: event.delta };
               break;
+
+            case "thinking_end": {
+              // Losing thinking text is worse than losing a signature: even
+              // when the block at this content index is not the shape we
+              // expect, still emit the text `thinking_end` itself carries.
+              const { signature, redacted } = thinkingBlockAt(event.partial, event.contentIndex);
+              yield {
+                type: "thinking",
+                block: {
+                  text: event.content,
+                  ...(signature !== undefined ? { signature } : {}),
+                  ...(redacted !== undefined ? { redacted } : {}),
+                },
+              };
+              break;
+            }
 
             case "toolcall_delta": {
               // The delta carries neither id nor name; both are only on the
@@ -274,9 +337,10 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
             }
 
             default:
-              // start, text_start, text_end, thinking_start, thinking_end and
-              // toolcall_start carry nothing our vocabulary expresses: content
-              // is already delivered by the deltas.
+              // start, text_start, text_end, thinking_start and toolcall_start
+              // carry nothing our vocabulary expresses: content is already
+              // delivered by the deltas (and, for thinking, by "thinking_end"
+              // above).
               break;
           }
         }
