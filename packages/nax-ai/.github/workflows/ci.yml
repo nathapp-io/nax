@@ -1,9 +1,23 @@
 name: CI
 
+# Documentation-only changes cannot break a gate, so they do not spend a run.
+# `paths-ignore` skips only when EVERY changed path matches, so a commit that
+# touches both a doc and a source file still runs the full suite. No branch
+# protection requires these checks, so a skipped run cannot block a merge.
+# The list is repeated rather than shared via a YAML anchor: GitHub Actions does
+# not resolve anchors in workflow files.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "ROADMAP.md"
+      - "README.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "ROADMAP.md"
+      - "README.md"
 
 jobs:
   # Gates that are runtime-independent. Split from the matrix so a lint or type

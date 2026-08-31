@@ -13,7 +13,21 @@ Provider-agnostic LLM client: completions, streaming, tool calls, usage accounti
 
 New to this repository, or picking the work up cold? **[`ROADMAP.md`](ROADMAP.md)** records the current milestone, what is next, and links to the design spec and the feasibility analysis behind it.
 
-One thing worth knowing before reading further: the package **cannot make a network call yet** — see the milestone table.
+## Usage
+
+```ts
+import { createClient, piProtocols, piProviders } from "@nathapp/nax-ai";
+
+const client = createClient({
+  providers: await piProviders(["deepseek", "anthropic"]),
+  protocols: piProtocols(),
+});
+
+const model = await client.model("deepseek", "deepseek-v4-flash");
+const result = await client.complete(model, { messages: [{ role: "user", content: "hi" }] });
+```
+
+Install from the `next` dist-tag while the API is unstable: `npm install @nathapp/nax-ai@next`.
 
 ## Scope
 

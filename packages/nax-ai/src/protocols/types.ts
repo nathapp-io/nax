@@ -82,6 +82,11 @@ export type ConversationMessage =
 export interface ProtocolRequest {
   readonly model: string;
   /**
+   * The model's owning provider, supplied by the client so a protocol can
+   * scope model resolution when ids are ambiguous across providers.
+   */
+  readonly provider?: string;
+  /**
    * Kept out of `messages` deliberately: Anthropic takes a top-level `system`
    * parameter while OpenAI takes a system message in the array. Each backend
    * places it correctly, so callers never encode a provider's shape.

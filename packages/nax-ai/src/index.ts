@@ -19,8 +19,15 @@ export {
   PERMITTED_OAUTH_FLOWS,
   PROHIBITED_OAUTH_FLOWS,
 } from "./auth/oauth-policy.ts";
+export type { AuthResolver, ResolvedAuth } from "./auth/resolver.ts";
 export { type Client, type ClientOptions, type ClientRequest, createClient } from "./client.ts";
 export { collectStream, ProtocolStreamError } from "./protocols/collect.ts";
+export {
+  PI_PROTOCOL_NAMES,
+  type PiProtocolName,
+  type PiProtocolOptions,
+  piProtocols,
+} from "./protocols/pi-protocols.ts";
 export {
   type BackendId,
   type BackendSelection,
@@ -44,8 +51,11 @@ export type {
   ToolDefinition,
 } from "./protocols/types.ts";
 export { type Catalog, normaliseCatalog, type RawModel, type RawProvider } from "./providers/catalog.ts";
+export { piProviders } from "./providers/pi-catalog.ts";
 export type {
   Pricing,
+  PricingRates,
+  PricingTier,
   ProviderAuth,
   ProviderOverride,
   ResolvedModel,

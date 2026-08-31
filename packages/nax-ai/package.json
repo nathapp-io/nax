@@ -23,6 +23,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
+    "test:live": "vitest --run --config vitest.live.config.ts",
     "test:watch": "vitest",
     "check:no-bun-apis": "bun run scripts/check-no-bun-apis.ts",
     "check:pi-ai-imports": "bun run scripts/check-pi-ai-imports.ts",

@@ -6,7 +6,8 @@
  * is only true while its types stay behind the adapter boundary — one import
  * in a shared module and the migration turns from a swap into a rewrite.
  *
- * Allowed: src/protocols/pi-client.ts and any src/protocols/<name>/backend-pi.ts.
+ * Allowed: src/protocols/pi-client.ts, src/providers/pi-catalog.ts,
+ * src/auth/pi-auth.ts.
  */
 
 import { readdir, readFile } from "node:fs/promises";
@@ -19,7 +20,7 @@ const SCAN_DIR = join(ROOT, "src");
 // imports. The latter still couples a shared module to pi-ai and must remain
 // outside the adapter boundary.
 const PI_IMPORT = /(?:from\s+|import\s*(?:\(\s*)?)["']@earendil-works\/pi-ai/;
-const ALLOWED = [/^src\/protocols\/pi-client\.ts$/, /^src\/protocols\/[^/]+\/backend-pi\.ts$/];
+const ALLOWED = [/^src\/protocols\/pi-client\.ts$/, /^src\/providers\/pi-catalog\.ts$/, /^src\/auth\/pi-auth\.ts$/];
 
 async function* walk(dir: string): AsyncGenerator<string> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -46,7 +47,9 @@ for await (const file of walk(SCAN_DIR)) {
 if (violations.length > 0) {
   console.error(`pi-ai imported outside an adapter (${violations.length}):\n`);
   for (const v of violations) console.error(`  ${v.file}:${v.line}  ${v.text}`);
-  console.error("\npi-ai may only be imported in src/protocols/pi-client.ts or a backend-pi.ts.");
+  console.error(
+    "\npi-ai may only be imported in src/protocols/pi-client.ts, src/providers/pi-catalog.ts, or src/auth/pi-auth.ts.",
+  );
   process.exit(1);
 }
 

@@ -10,16 +10,40 @@
 import type { ThinkingLevel } from "../protocols/types.ts";
 
 /** Rates per 1M tokens. nax-ai supplies rates; the consumer computes cost. */
-export interface Pricing {
+export interface PricingRates {
   readonly input: number;
   readonly output: number;
   readonly cacheRead: number;
   readonly cacheWrite: number;
 }
 
+/**
+ * A request-wide pricing tier. The highest matching threshold applies to the
+ * whole request.
+ *
+ * Extends the rates rather than `Pricing` so a tier cannot carry its own tiers.
+ */
+export interface PricingTier extends PricingRates {
+  /** Applies when total input usage exceeds this token count. */
+  readonly inputTokensAbove: number;
+}
+
+export interface Pricing extends PricingRates {
+  /**
+   * Present for the 22 upstream models that price in tiers. A consumer that
+   * ignores this bills the base rates and will under-report a long-context
+   * request; one that honours it is correct. nax-ai still computes no cost.
+   */
+  readonly tiers?: readonly PricingTier[];
+}
+
 export type ProviderAuth =
-  | { readonly kind: "api-key"; readonly env: string }
-  | { readonly kind: "oauth"; readonly flow: string };
+  /**
+   * `env` is descriptive only and is often absent: the upstream catalog does
+   * not expose variable names in a form that can be read without consulting
+   * the ambient environment. Auth resolution never reads this field.
+   */
+  { readonly kind: "api-key"; readonly env?: string } | { readonly kind: "oauth"; readonly flow: string };
 
 export interface ResolvedProvider {
   readonly id: string;

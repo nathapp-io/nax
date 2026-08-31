@@ -47,6 +47,7 @@ export function createClient(options: ClientOptions): Client {
     const protocolRequest: ProtocolRequest = {
       ...req,
       model: model.id,
+      provider: model.provider,
       ...(thinking !== undefined ? { thinking } : {}),
     };
 

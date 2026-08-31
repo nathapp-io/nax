@@ -149,4 +149,54 @@ describe("normaliseCatalog", () => {
     expect(catalog.model("a/b", "c")?.provider).toBe("a/b");
     expect(catalog.listModels()).toHaveLength(2);
   });
+
+  it("preserves tiered pricing through normalisation", () => {
+    const catalog = normaliseCatalog([
+      {
+        id: "openai",
+        baseUrl: "https://api.openai.com",
+        auth: { kind: "api-key" },
+        defaultProtocol: "openai-responses",
+        models: [
+          {
+            id: "gpt-5.4",
+            pricing: {
+              input: 2.5,
+              output: 15,
+              cacheRead: 0.25,
+              cacheWrite: 0,
+              tiers: [{ inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0 }],
+            },
+            contextWindow: 400000,
+            supportsTools: true,
+            thinkingLevels: [],
+          },
+        ],
+      },
+    ]);
+
+    const model = catalog.model("openai", "gpt-5.4");
+    expect(model?.pricing.tiers).toHaveLength(1);
+    expect(model?.pricing.tiers?.[0]).toEqual({
+      inputTokensAbove: 272000,
+      input: 5,
+      output: 22.5,
+      cacheRead: 0.5,
+      cacheWrite: 0,
+    });
+  });
+
+  it("accepts an api-key provider that declares no env var name", () => {
+    const catalog = normaliseCatalog([
+      {
+        id: "deepseek",
+        baseUrl: "https://api.deepseek.com",
+        auth: { kind: "api-key" },
+        defaultProtocol: "openai-completions",
+        models: [],
+      },
+    ]);
+
+    expect(catalog.provider("deepseek")?.auth).toEqual({ kind: "api-key" });
+  });
 });

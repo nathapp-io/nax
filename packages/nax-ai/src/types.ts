@@ -68,6 +68,11 @@ export interface CompleteResult {
  */
 export interface CredentialStore {
   read(providerId: ProviderId): Promise<StoredCredential | undefined>;
+  /**
+   * Returning `undefined` from `fn` removes the credential, and the pi adapter
+   * accordingly maps pi's leave-unchanged `undefined` (its no-op refresh) to
+   * the current credential.
+   */
   modify(
     providerId: ProviderId,
     fn: (current: StoredCredential | undefined) => Promise<StoredCredential | undefined>,
@@ -76,7 +81,17 @@ export interface CredentialStore {
 }
 
 export type StoredCredential =
-  | { readonly kind: "api-key"; readonly key: string }
+  | {
+      readonly kind: "api-key";
+      /**
+       * Opaque. Some stores hold a literal, others a "$VAR" template or a
+       * "!command"; resolving those is the store's business, not nax-ai's.
+       * Never inspect, compare or log this value.
+       */
+      readonly key: string;
+      /** Provider-scoped values, including the substitution scope for `key`. */
+      readonly env?: Readonly<Record<string, string>>;
+    }
   | {
       readonly kind: "oauth";
       readonly access: string;
