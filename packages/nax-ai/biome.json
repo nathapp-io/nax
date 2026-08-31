@@ -7,7 +7,10 @@
       }
     }
   },
-  "plugins": ["./biome-plugins/no-as-never.grit", "./biome-plugins/no-empty-catch.grit"],
+  "plugins": [
+    "./biome-plugins/no-as-never.grit",
+    "./biome-plugins/no-empty-catch.grit"
+  ],
   "linter": {
     "enabled": true,
     "domains": {
@@ -19,7 +22,9 @@
       "complexity": {
         "noExcessiveCognitiveComplexity": {
           "level": "error",
-          "options": { "maxAllowedComplexity": 176 }
+          "options": {
+            "maxAllowedComplexity": 176
+          }
         }
       },
       "suspicious": {
@@ -35,10 +40,6 @@
       "style": {
         "noNonNullAssertion": "error",
         "noParameterAssign": "error",
-        "noRestrictedImports": {
-          "level": "error",
-          "options": { "patterns": [{ "group": ["../../*", "../../**"] }] }
-        },
         "useThrowOnlyError": "error"
       },
       "nursery": {
@@ -57,24 +58,24 @@
   },
   "overrides": [
     {
-      "includes": ["src/**", "!src/cli/**", "!src/commands/**", "!src/config/loader.ts"],
-      "plugins": ["./biome-plugins/no-process-cwd.grit"]
+      "includes": [
+        "scripts/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
     },
     {
       "includes": [
-        "bin/**",
-        "scripts/**",
-        "src/cli/**",
-        "src/commands/**",
-        "src/precheck/index.ts",
-        "src/execution/lifecycle/headless-formatter.ts",
-        "src/logger/logger.ts"
+        "test/**"
       ],
-      "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
-    },
-    {
-      "includes": ["**/test/**"],
-      "plugins": ["./biome-plugins/no-absent-value.grit"],
+      "plugins": [
+        "./biome-plugins/no-absent-value.grit"
+      ],
       "linter": {
         "rules": {
           "suspicious": {
@@ -86,16 +87,6 @@
           },
           "performance": {
             "noDelete": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["**/test/helpers/**/*-internals.ts"],
-      "linter": {
-        "rules": {
-          "complexity": {
-            "useLiteralKeys": "off"
           }
         }
       }

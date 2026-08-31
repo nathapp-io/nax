@@ -25,7 +25,8 @@
     "test": "vitest --run",
     "test:watch": "vitest",
     "check:no-bun-apis": "bun run scripts/check-no-bun-apis.ts",
-    "lint": "bun x biome check --error-on-warnings src/ test/ scripts/ && bun run check:no-bun-apis",
+    "check:pi-ai-imports": "bun run scripts/check-pi-ai-imports.ts",
+    "lint": "bun x biome check --error-on-warnings src/ test/ scripts/ && bun run check:no-bun-apis && bun run check:pi-ai-imports",
     "lint:fix": "bun x biome check --write src/ test/ scripts/",
     "prepublishOnly": "npm run build"
   },

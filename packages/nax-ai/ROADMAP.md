@@ -1,0 +1,109 @@
+# nax-ai roadmap
+
+**Last updated:** 2026-08-31 · **Current milestone:** M1, in progress on `feat/protocol-architecture`
+
+This file records where the project is and what comes next. It is the entry point for anyone — human or agent — picking the work up cold.
+
+> **Keep this current.** A stale roadmap is worse than none: it is confidently wrong. Update the position table when a milestone opens or closes, in the same commit as the work.
+
+## Where the documents live
+
+Four documents, each answering a different question. Start here, then follow the one you need.
+
+| Question | Document |
+|---|---|
+| **Why** does this package exist, and why pi-ai rather than the Vercel AI SDK or hand-rolling? | [Feasibility analysis](https://claude.ai/code/artifact/3f52e26b-9614-411f-ba38-31dd6393f804) (Claude artifact) — strategy, evidence, and the corrections made along the way |
+| **Where** are we, and what is next? | This file |
+| **What** is nax-ai, and what was decided about its internals? | [`docs/superpowers/specs/2026-08-31-nax-ai-protocol-architecture-design.md`](docs/superpowers/specs/2026-08-31-nax-ai-protocol-architecture-design.md) |
+| **How** do I build the current milestone? | [`docs/superpowers/plans/2026-08-31-protocol-architecture.md`](docs/superpowers/plans/2026-08-31-protocol-architecture.md) |
+
+The artifact is a point-in-time analysis and does not track progress — it is the reasoning, not the state. The spec records decisions; **read it before designing anything new**, because several questions that look open are already settled there (see the warning below).
+
+## Position
+
+| Milestone | State | Delivers | Can it call a provider? |
+|---|---|---|---|
+| **M0 — scaffold** | ✅ done | Package, toolchain, two working gates | no |
+| **M1 — protocol architecture** | 🚧 in progress | `Protocol`, registry, catalog, client, 4 protocol backends | **no** |
+| **M2 — real transport** | ⬜ not started | `createPiClient`, auth wiring, first real LLM call | yes |
+| **M3 — recorded fixtures** | ⬜ not started | The suite that gates merges | yes |
+| **M4 — hardening** | ⬜ not started | Transport retry, `CredentialStore`, live canary | yes |
+
+### ⚠️ M1 produces a package that cannot make a network call
+
+This surprises people, so it is stated plainly. Every protocol backend takes an **injected** `PiClientPort`, and `createPiClient` is a stub that throws. That is deliberate: it makes all eleven tasks testable without network, credentials or spend.
+
+At the end of M1 the tests pass, the build emits declarations, and the tarball installs — and nothing talks to a provider. **M2 is where nax-ai becomes usable.** Do not publish `0.1.0` to `latest` before M2 lands.
+
+## Milestones
+
+### M0 — scaffold ✅
+
+Package skeleton, toolchain decisions, and two gates that fail on real violations rather than existing decoratively:
+
+- `src/auth/oauth-policy.ts` — OAuth allowlist. Anthropic is prohibited and the reason is recorded in the code.
+- `scripts/check-no-bun-apis.ts` — rejects `Bun.*` in `src/`, because the primary consumer runs on Bun and would never notice the breakage.
+
+### M1 — protocol architecture 🚧
+
+The seam that lets a wire protocol be replaced later without consumers noticing. Eleven tasks; see the plan.
+
+Ends when the plan's Definition of Done passes. Note that the definition covers *verification*, not *capability* — see the warning above.
+
+### M2 — real transport ⬜
+
+The critical path to a usable package, and the piece the M1 plan explicitly defers because it needs knowledge no document currently holds.
+
+- **`createPiClient`** — map pi-ai's `AssistantMessageEventStream` onto the `PiStreamEvent` port. Requires reading `node_modules/@earendil-works/pi-ai/dist/utils/event-stream.d.ts` and `dist/types.d.ts`. This mapping is the one part of M1's design that was never verified against pi-ai's real event union.
+- **Auth wiring** — `CredentialStore` reaching pi-ai's auth resolution; Codex OAuth end to end.
+- **Catalog source** — replace hand-written `RawProvider[]` fixtures with pi-ai's bundled catalog (~42 providers, 652 KB of model and pricing data).
+- First real completion against a cheap provider (`deepseek`, `groq`).
+- Publish `0.1.0` under the **`next`** dist-tag, never `latest`, while the API is unstable.
+
+M2 needs its own spec section or a short design note before its plan: the event mapping is the risky part and should be designed against pi-ai's actual types, not sketched.
+
+### M3 — recorded fixtures ⬜
+
+Capture real provider responses during M2 and turn them into the fixture suite that gates merges. Until this exists, protocol correctness rests on scripted events that assert the mapping is *self-consistent* rather than *right*.
+
+### M4 — hardening ⬜
+
+- Transport retry (`transportRetries`, accepted but unused since M1) — retry transport faults only, and only before the first event is emitted. Spec §10.1.
+- `CredentialStore` cross-process locking via `modify()`. pi-ai's in-process serialisation covers a single nax process; concurrent `nax` invocations sharing `~/.nax/credentials` can still race.
+- Scheduled live-provider canary — a **detector**, never a merge gate. Spec §10.3.
+
+## Deferred items and where they land
+
+Carried from the M1 plan so they are not lost when it is merged:
+
+| Item | Milestone | Spec § |
+|---|---|---|
+| Real `createPiClient` | M2 | §5 |
+| `CredentialStore` wiring | M2 | §5 |
+| Recorded-fixture tests | M3 | §9 |
+| Transport retry | M4 | §10.1 |
+| Live-provider canary | M4 | §10.3 |
+
+## How this maps onto nax
+
+nax's own phasing lives in the artifact (§9). The dependency runs one way — nax consumes nax-ai, never the reverse.
+
+| nax phase | Needs from nax-ai | Earliest |
+|---|---|---|
+| **Phase A** — 9 one-shot `complete` ops | A working client with exact usage | after **M2** |
+| **Phase B** — read-only agentic ops, native pull tools | Streaming + native tool calls | after **M2** (tools ship in M1's design) |
+| **Phase C** — full native coding agent | Nothing further; the work is nax-side | — |
+
+**The nax-side spec and plan are deliberately unwritten.** Writing them now would target an API that does not exist and will shift during M2 — the same reason the M1 plan defers `createPiClient`. The moment to write them is when M2 publishes and the surface is real.
+
+When that time comes, nax's side involves: `NativeAgentAdapter` implementing nax's `AgentAdapter` and mapping to its 7 `AgentStreamEvent` kinds; changing `src/agents/registry.ts` (which currently hard-codes `new AcpAgentAdapter(name)`); deleting `src/agents/cost/pricing.ts` in favour of nax-ai's rates; and a fence gate for `src/agents/native/`.
+
+## Before you design anything new
+
+The spec's §10 records three questions that were resolved against evidence, not preference. They read like open questions and are not:
+
+1. **Retry** is split by fault class — nax-ai retries transport faults only, and only before the first event. Rate limits are the consumer's, because backoff interacts with concurrency and cost budget.
+2. **`ThinkingLevel` has seven values**, matching pi-ai's scale. A narrower enum would remove expressiveness nax already has, since nax forwards effort opaquely today.
+3. **The live-provider job is a detector, not a gate.** The first outage that turns it red must not read as "the branch is broken".
+
+Likewise settled in the spec, and easy to re-derive differently by accident: the swap unit is the **protocol** (not the provider); `Protocol` exposes **only** `stream` with `complete` derived once at the client; an unregistered backend **throws rather than falling back**; and nax-ai supplies pricing **rates** while the consumer computes cost.

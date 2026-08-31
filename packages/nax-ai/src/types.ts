@@ -54,6 +54,7 @@ export interface CompleteResult {
   readonly text: string;
   readonly usage: TokenUsage;
   readonly stopReason: StopReason;
+  readonly toolCalls?: readonly import("./protocols/types.ts").ToolCall[];
 }
 
 /**

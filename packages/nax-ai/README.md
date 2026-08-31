@@ -9,6 +9,12 @@ Provider-agnostic LLM client: completions, streaming, tool calls, usage accounti
 > npm install @nathapp/nax-ai@next
 > ```
 
+## Where to start
+
+New to this repository, or picking the work up cold? **[`ROADMAP.md`](ROADMAP.md)** records the current milestone, what is next, and links to the design spec and the feasibility analysis behind it.
+
+One thing worth knowing before reading further: the package **cannot make a network call yet** — see the milestone table.
+
 ## Scope
 
 This package speaks a generic LLM vocabulary — models, messages, tool calls, usage, credentials. It knows nothing about any consumer's domain concepts, and that direction is one-way by design: consumers map onto their own types at their own boundary.

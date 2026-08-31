@@ -19,6 +19,38 @@ export {
   PERMITTED_OAUTH_FLOWS,
   PROHIBITED_OAUTH_FLOWS,
 } from "./auth/oauth-policy.ts";
+export { type Client, type ClientOptions, type ClientRequest, createClient } from "./client.ts";
+export { collectStream, ProtocolStreamError } from "./protocols/collect.ts";
+export {
+  type BackendId,
+  type BackendSelection,
+  createRegistry,
+  type ProtocolBackends,
+  type ProtocolEntries,
+  UnknownProtocolError,
+  UnregisteredBackendError,
+} from "./protocols/registry.ts";
+export { clampThinkingLevel } from "./protocols/thinking.ts";
+export type {
+  CacheRetention,
+  ConversationMessage,
+  JsonSchema,
+  Protocol,
+  ProtocolError,
+  ProtocolEvent,
+  ProtocolRequest,
+  ThinkingLevel,
+  ToolCall,
+  ToolDefinition,
+} from "./protocols/types.ts";
+export { type Catalog, normaliseCatalog, type RawModel, type RawProvider } from "./providers/catalog.ts";
+export type {
+  Pricing,
+  ProviderAuth,
+  ProviderOverride,
+  ResolvedModel,
+  ResolvedProvider,
+} from "./providers/types.ts";
 export type {
   CompleteOptions,
   CompleteResult,
@@ -31,5 +63,4 @@ export type {
   StoredCredential,
   TokenUsage,
 } from "./types.ts";
-
 export { toTokenUsage, totalTokens, type UpstreamUsage } from "./usage.ts";

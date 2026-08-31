@@ -60,16 +60,33 @@ jobs:
       - name: import built package
         run: |
           bun --eval '
-            import { assertOAuthFlowPermitted, PERMITTED_OAUTH_FLOWS } from "./dist/index.js";
+            import { createClient, PERMITTED_OAUTH_FLOWS } from "./dist/index.js";
+
             if (PERMITTED_OAUTH_FLOWS.includes("anthropic")) {
               throw new Error("anthropic must never be a permitted OAuth flow");
             }
-            try {
-              assertOAuthFlowPermitted("anthropic");
-              throw new Error("anthropic OAuth flow was not rejected");
-            } catch (e) {
-              if (e.name !== "OAuthFlowProhibitedError") throw e;
-            }
+
+            const client = createClient({
+              providers: [{
+                id: "fake", baseUrl: "https://example.invalid",
+                auth: { kind: "api-key", env: "NONE" },
+                defaultProtocol: "p",
+                models: [{ id: "m", pricing: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+                           contextWindow: 1, supportsTools: false, thinkingLevels: [] }],
+              }],
+              protocols: { p: { pi: async () => ({
+                name: "p",
+                async *stream() {
+                  yield { type: "text-delta", text: "ok" };
+                  yield { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } };
+                  yield { type: "done", stopReason: "stop" };
+                },
+              }) } },
+            });
+
+            const model = await client.model("fake", "m");
+            const result = await client.complete(model, { messages: [{ role: "user", content: "hi" }] });
+            if (result.text !== "ok") throw new Error(`unexpected result: ${result.text}`);
             console.log("smoke ok");
           '
 
