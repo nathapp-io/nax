@@ -83,6 +83,8 @@ Rulings and follow-ups made during M1 that land in M2, recorded here because the
 
 ### M3 — recorded fixtures 🚧 next
 
+**Designed and planned:** [design](docs/superpowers/specs/2026-08-31-nax-ai-m3-recorded-fixtures-design.md) · [plan](docs/superpowers/plans/2026-08-31-nax-ai-m3-recorded-fixtures.md) (7 tasks). Planning found that M2's recorder captured the mapper's *output* rather than its input, so replaying it could not catch a mapping regression — the two fixtures it produced are superseded, not extended. All four protocols are reachable from credentials already present; the thinking-signature round-trip is not, and stays an explicitly stated gap.
+
 Capture real provider responses during M2 and turn them into the fixture suite that gates merges. Until this exists, protocol correctness rests on scripted events that assert the mapping is *self-consistent* rather than *right*.
 
 ### M4 — hardening 🚧
