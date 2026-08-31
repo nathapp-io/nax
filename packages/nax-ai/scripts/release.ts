@@ -104,10 +104,17 @@ function bumpVersion(current: string, type: string): string {
   }
 }
 
-/** Mirrors release.yml's mapping so the plan printed here matches what ships. */
-function distTagFor(version: string): string {
-  if (version.includes("-canary.")) return "canary";
-  return parseVersion(version).major === 0 ? "next" : "latest";
+/**
+ * Mirrors release.yml's mapping so the plan printed here matches what ships.
+ *
+ * A 0.x stable lands on both `next` and `latest`: npm points `latest` at a
+ * package's first publish whatever --tag says, so "never latest before 1.0"
+ * stopped being achievable at 0.1.0. Since it exists either way, it tracks the
+ * current release rather than freezing on the first one.
+ */
+function distTagsFor(version: string): string[] {
+  if (version.includes("-canary.")) return ["canary"];
+  return parseVersion(version).major === 0 ? ["next", "latest"] : ["latest"];
 }
 
 async function confirm(message: string): Promise<boolean> {
@@ -144,7 +151,7 @@ async function tagRelease() {
 
   const version = await readPkgVersion();
   const tagName = `v${version}`;
-  const npmTag = distTagFor(version);
+  const npmTags = distTagsFor(version).join(" + ");
 
   try {
     gitQuiet("rev-parse", tagName);
@@ -155,14 +162,14 @@ async function tagRelease() {
   }
 
   console.log(`\nTagging: ${tagName}`);
-  console.log(`Dist-tag it will publish under: ${npmTag}`);
+  console.log(`Dist-tags it will publish under: ${npmTags}`);
 
   if (dryRun) {
     console.log("(dry run - no tag created)");
     return;
   }
 
-  if (!(await confirm(`Push tag ${tagName}? This publishes to npm under "${npmTag}".`))) {
+  if (!(await confirm(`Push tag ${tagName}? This publishes to npm under "${npmTags}".`))) {
     console.log("Aborted.");
     process.exit(0);
   }
@@ -171,8 +178,8 @@ async function tagRelease() {
   git("push", "origin", tagName);
 
   console.log(`\nTag ${tagName} pushed - GitHub Actions will publish to npm.`);
-  console.log(`   Install: npm install @nathapp/nax-ai@${npmTag}`);
-  if (npmTag === "canary") console.log("   Promote: bun run release promote");
+  console.log(`   Install: npm install @nathapp/nax-ai@${distTagsFor(version)[0]}`);
+  if (npmTags === "canary") console.log("   Promote: bun run release promote");
   console.log("   Watch:   https://github.com/nathapp-io/nax-ai/actions");
 }
 
@@ -202,7 +209,7 @@ async function bumpRelease() {
   console.log(`   Next:     ${nextVersion}`);
   console.log(`   Tag:      ${tagName}`);
   console.log(`   Branch:   ${branchName}`);
-  console.log(`   Dist-tag: ${distTagFor(nextVersion)}`);
+  console.log(`   Dist-tags: ${distTagsFor(nextVersion).join(" + ")}`);
   if (dryRun) {
     console.log("\nDry run complete. No changes made.");
     return;
@@ -228,7 +235,7 @@ async function bumpRelease() {
   git("push", "-u", "origin", branchName);
 
   console.log("5. Opening PR");
-  const prBody = `## Release ${tagName}\n\nBumps version: ${currentVersion} -> ${nextVersion}\nPublishes under the \`${distTagFor(nextVersion)}\` dist-tag.\n\nAfter merging:\n\`\`\`bash\ngit checkout main && git pull origin main\nbun run release tag\n\`\`\``;
+  const prBody = `## Release ${tagName}\n\nBumps version: ${currentVersion} -> ${nextVersion}\nPublishes under: \`${distTagsFor(nextVersion).join("` + `")}\`.\n\nAfter merging:\n\`\`\`bash\ngit checkout main && git pull origin main\nbun run release tag\n\`\`\``;
 
   try {
     const result = execFileSync(

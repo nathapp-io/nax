@@ -53,9 +53,9 @@ The critical path to a usable package, and the piece the M1 plan explicitly defe
 - **Auth wiring** — `CredentialStore` reaching pi-ai's auth resolution; Codex OAuth end to end.
 - **Catalog source** — replace hand-written `RawProvider[]` fixtures with pi-ai's bundled catalog (~42 providers, 652 KB of model and pricing data).
 - First real completion against a cheap provider (`deepseek`, `groq`).
-- Publish `0.1.0` under the **`next`** dist-tag, never `latest`, while the API is unstable.
+- Publish `0.1.0`. Done: it is on npm under both `next` and `latest`. The original rule was `next` and never `latest` before 1.0.0; npm points `latest` at a package's first publish whatever `--tag` says, so that was unachievable from the first release. Since `latest` exists either way, a 0.x stable now updates both rather than leaving `latest` frozen on 0.1.0.
 
-**Executed via [`docs/superpowers/plans/2026-08-31-nax-ai-m2-real-transport.md`](docs/superpowers/plans/2026-08-31-nax-ai-m2-real-transport.md), 11 tasks in dependency order — all complete. `0.1.0` is not yet on the `next` dist-tag: publishing awaits explicit consent. The live probe used a `DEEPSEEK_API_KEY`; the Codex OAuth check used a pre-existing pi credential, since M2 does not implement login.**
+**Executed via [`docs/superpowers/plans/2026-08-31-nax-ai-m2-real-transport.md`](docs/superpowers/plans/2026-08-31-nax-ai-m2-real-transport.md), 11 tasks in dependency order — all complete. `0.1.0` is published to npm (79 files, MIT), by hand for the first release because npm trusted publishing cannot be configured until the package exists. The live probe used a `DEEPSEEK_API_KEY`; the Codex OAuth check used a pre-existing pi credential, since M2 does not implement login.**
 
 **M2's design is written and approved: [`docs/superpowers/specs/2026-08-31-nax-ai-m2-real-transport-design.md`](docs/superpowers/specs/2026-08-31-nax-ai-m2-real-transport-design.md).** It was designed against pi-ai's actual types rather than sketched, and it supersedes the three mismatches listed below with a fuller set.
 

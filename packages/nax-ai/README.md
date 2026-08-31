@@ -3,7 +3,7 @@
 Provider-agnostic LLM client: completions, streaming, tool calls, usage accounting and auth across API-key and OAuth providers.
 
 > **Pre-1.0 — the API is unstable and will change without deprecation cycles.**
-> Published under the `next` dist-tag. Pin an exact version; do not use a caret range.
+> Pre-1.0 and API-unstable. Pin an exact version; do not use a caret range.
 >
 > ```
 > npm install @nathapp/nax-ai@next
@@ -27,7 +27,7 @@ const model = await client.model("deepseek", "deepseek-v4-flash");
 const result = await client.complete(model, { messages: [{ role: "user", content: "hi" }] });
 ```
 
-Install from the `next` dist-tag while the API is unstable: `npm install @nathapp/nax-ai@next`.
+While the API is unstable, `latest` and `next` both point at the current 0.x release, so `npm install @nathapp/nax-ai` and `npm install @nathapp/nax-ai@next` are equivalent. Canary builds are published to `canary` and are not covered by either.
 
 ## Scope
 

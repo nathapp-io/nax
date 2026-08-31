@@ -69,9 +69,14 @@ jobs:
           echo "Version match: $TAG"
 
       # The dist-tag is DERIVED from the version, never passed in by a human.
-      # While the major is 0 the API is unstable, so nothing may reach `latest`:
-      # a bare `npm i @nathapp/nax-ai` must not hand a stranger a moving API.
-      # Releasing 1.0.0 is what flips this, and it flips by itself.
+      #
+      # A 0.x stable release lands on BOTH `next` and `latest`. The original
+      # rule was that nothing reaches `latest` before 1.0.0, but npm points
+      # `latest` at a package's first publish whatever --tag says, so that rule
+      # was unachievable from the moment 0.1.0 shipped. Given `latest` exists
+      # regardless, it is better pointing at the current release than frozen on
+      # the first one: a stale `latest` misleads more quietly than a moving one.
+      # Canary builds still stay off both.
       - name: Set release info
         id: info
         env:
@@ -83,19 +88,23 @@ jobs:
           if [[ "$VERSION" == *"-canary."* ]]; then
             NPM_TAG=canary
             PRERELEASE=true
+            ALSO_LATEST=false
           elif [ "$MAJOR" = "0" ]; then
             NPM_TAG=next
             PRERELEASE=true
+            ALSO_LATEST=true
           else
             NPM_TAG=latest
             PRERELEASE=false
+            ALSO_LATEST=false
           fi
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "Publishing $TAG under dist-tag '$NPM_TAG'"
+          echo "also_latest=$ALSO_LATEST" >> "$GITHUB_OUTPUT"
+          echo "Publishing $TAG under dist-tag '$NPM_TAG' (also latest: $ALSO_LATEST)"
 
       # Trusted publishing via OIDC - no npm token in this repository.
       - name: Publish to npm
@@ -103,6 +112,15 @@ jobs:
           NPM_CONFIG_PROVENANCE: "true"
           NPM_TAG: ${{ steps.info.outputs.npm_tag }}
         run: npm publish --access public --tag "$NPM_TAG" --provenance
+
+      # npm publish takes a single --tag, so the second one is added after.
+      # Pre-1.0 the two are the same version by design; from 1.0.0 the publish
+      # tag is already `latest` and this step does not run.
+      - name: Point latest at this release (0.x only)
+        if: steps.info.outputs.also_latest == 'true'
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+        run: npm dist-tag add "@nathapp/nax-ai@$VERSION" latest
 
       - name: Extract release notes
         id: notes
