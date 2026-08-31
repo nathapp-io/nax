@@ -1,7 +1,7 @@
 # nax-ai protocol architecture
 
 **Date:** 2026-08-31
-**Status:** Approved design, not yet implemented
+**Status:** Approved design, all questions resolved — not yet implemented
 **Scope:** The internal structure of `@nathapp/nax-ai` — the `Protocol` interface, backend selection, and provider declarations.
 
 ## 1. Context
@@ -26,7 +26,7 @@ These are settled and this design assumes them:
 
 - **Tool execution.** nax-ai emits tool calls and accepts tool results. Executing a tool requires permission policy, which belongs to the consumer.
 - **Cost computation.** nax-ai supplies pricing rates; the consumer computes cost. See §7.
-- **Agent loop, sessions, retries-as-policy.** The consumer owns orchestration.
+- **Agent loop, sessions, rate-limit policy.** The consumer owns orchestration. nax-ai retries transport faults only — see §10.1.
 - **Hand-rolling auth or the model catalog.** Explicitly out of scope permanently — see §8.
 
 ## 2. Decisions
@@ -90,7 +90,7 @@ interface ToolCall {
   readonly input: unknown;                  // parsed, never a raw string
 }
 
-type ThinkingLevel = "off" | "low" | "medium" | "high";
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 type CacheRetention = "none" | "short" | "long";
 
 /** JSON Schema draft 2020-12 object. Structural, not validated by nax-ai. */
@@ -135,7 +135,7 @@ No row uses one provider's field name:
 - **`tool-call` carries parsed input and is emitted only once parseable.** Both wire formats stream tool arguments as incremental strings, so accumulation happens inside the protocol. `tool-call-partial` exposes the raw accumulated text for progress display; partial JSON is useless to a caller but useful to a UI.
 - **Errors are events, not exceptions.** A mid-stream failure would otherwise discard text and usage already received, and usage is still billed. Setup failures (unknown model, missing credential, prohibited OAuth flow) still throw, because there is no partial result to preserve.
 - **`toolChoice` is `auto | none` only.** Forcing a specific tool is inconsistently supported across providers and would need per-protocol fallbacks. pi-ai stopped at the same two values.
-- **`ThinkingLevel` is normalised to four values.** pi-ai carries six plus a per-model mapping table; four covers the distinctions nax makes, and the protocol maps to provider-specific values.
+- **`ThinkingLevel` carries seven values, matching pi-ai's scale.** Resolved in §10.2 against nax's current pass-through behaviour: a narrower enum would remove expressiveness nax has today. Unsupported levels clamp to the nearest the model supports.
 
 ## 4. Registry and backend selection
 
@@ -203,7 +203,7 @@ interface ResolvedModel {
   readonly pricing: Pricing;
   readonly contextWindow: number;
   readonly supportsTools: boolean;
-  readonly supportsThinking: boolean;
+  readonly thinkingLevels: readonly ThinkingLevel[];  // empty = no thinking support
 }
 
 interface Pricing {                        // rates only; consumer computes cost
@@ -286,6 +286,8 @@ interface ClientOptions {
   readonly backends?: BackendSelection;
   readonly credentials?: CredentialStore;      // injected; see src/types.ts
   readonly providerOverrides?: readonly ProviderOverride[];
+  /** Transport-fault retries before the first event. Default 2; 0 disables. See §10.1. */
+  readonly transportRetries?: number;
 }
 
 interface Client {
@@ -362,10 +364,50 @@ src/
 
 The conformance suite is the load-bearing piece: it is what makes replacing a backend a bounded task rather than an open-ended one.
 
-## 10. Open questions
+## 10. Resolved questions
 
-These do not block implementation but should be resolved before the corresponding work:
+### 10.1 Retry: split by fault class
 
-1. **Retry and rate-limit handling.** pi-ai ships `utils/retry`. Whether nax-ai exposes retry configuration or leaves it entirely to the consumer is undecided. Leaning: expose provider-signalled retry-after as an event field, leave the retry loop to the consumer, since backoff interacts with the consumer's concurrency policy.
-2. **Whether `ThinkingLevel`'s four values suffice.** pi-ai carries six. If nax's profiles need finer control the enum widens; widening is backward-compatible, narrowing is not.
-3. **Whether the conformance suite can run against a live provider** in an opt-in CI job. Valuable for catching upstream wire changes; needs credentials in CI, which is a separate decision.
+**nax-ai retries transport faults. The consumer owns rate-limit and capacity policy.**
+
+The split is principled rather than arbitrary: transport faults carry no policy content, and rate limits do.
+
+| Fault | Owner | Behaviour |
+|---|---|---|
+| Connection reset, DNS failure, malformed SSE frame, 502 / 503 / 504 | **nax-ai** | Bounded retry with exponential backoff |
+| 429 rate-limit, 529 overloaded | **consumer** | Surfaced as `ProtocolError` with `retryAfter`; never retried internally |
+| 4xx bad request, auth failure | neither | Terminal — retrying cannot help |
+
+A rate limit interacts with the consumer's concurrency, its cost budget, and whether to fail over to a different model. nax runs stories in parallel, so retrying every one of them the instant a 429 arrives is worse than staggering — and that decision needs information nax-ai does not have. Upstream agrees: pi-ai's `retryAssistantCall` is documented as mirroring `settings.retry` in *coding-agent*, so pi-ai supplies the mechanism while its own consumer supplies the policy.
+
+**Transport retry stops once the first event is emitted.** After a `text-delta` has reached the caller, restarting the request would duplicate delivered output. Past that point a transport fault becomes an `error` event like any other. This constraint is what makes the retry safe rather than merely convenient.
+
+```ts
+interface ClientOptions {
+  /** Transport-fault retries before the first event. Default 2; 0 disables. */
+  readonly transportRetries?: number;
+}
+```
+
+### 10.2 ThinkingLevel: adopt the six-level scale
+
+**Resolved against nax's current behaviour rather than preference.** nax has no thinking vocabulary of its own: `src/agents/acp/reasoning-effort.ts` discovers the provider's option *name* per agent (`codex → reasoning_effort`, `claude`/`opencode` → `effort`, `pi → thought_level`) and forwards the configured value opaquely. Narrowing to four values would therefore *remove* expressiveness nax has today — profiles could no longer express `minimal` or `xhigh`.
+
+```ts
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+```
+
+This matches pi-ai's scale, which means the pi backend needs no mapping table of its own and a future native backend inherits a vocabulary already proven across providers. It is a normalisation that happens to agree with upstream, not a leaked type: the union is declared in nax-ai's own `types.ts` and no pi-ai type is imported.
+
+**Unsupported levels clamp, and the model says what it supports.** `ResolvedModel` carries `thinkingLevels: readonly ThinkingLevel[]` so a consumer can validate configuration up front. If a request names a level outside that list, the protocol clamps to the nearest supported level rather than failing — a valid-looking profile should not become a hard error because one model exposes a coarser scale. Clamping is documented per protocol and covered by conformance tests.
+
+### 10.3 Live-provider testing: a scheduled canary, explicitly not a gate
+
+**Yes, but it must never block a merge.**
+
+- Runs on a schedule and by manual dispatch. **Never on pull requests.**
+- Cheapest models only — `deepseek` and `groq` cost fractions of a cent per call.
+- Asserts **shape, not content**: the event sequence, that `usage` arrives with the expected fields populated, that a tool call round-trips. Model output varies between runs and is not assertable.
+- Requires repository secrets and a spend cap.
+
+The distinction matters more than the job: this is a **detector of upstream wire changes**, not a correctness gate. A provider outage or a transient 503 turning the badge red must not be readable as "the branch is broken", or the first false alarm trains everyone to ignore it. It is labelled accordingly in the workflow, and the recorded-fixture suite from §9 remains the thing that actually gates merges.
