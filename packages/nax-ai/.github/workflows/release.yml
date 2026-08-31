@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*.*.*-canary.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to re-publish (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write # GitHub Release creation
+  id-token: write # npm OIDC trusted publishing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # full history, so release notes can be generated
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Publishing cannot be taken back, so the gates run here as well as in CI
+      # rather than trusting that main was green when the tag was cut.
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      # Tag names reach this job as untrusted input: the `v*.*.*` filter still
+      # admits shell metacharacters, and a workflow_dispatch input is free text.
+      # Every one is passed through env and referenced as "$VAR", so it is never
+      # substituted into the script before the shell parses it. This job can
+      # publish to npm, so an injection here would be a supply-chain problem.
+      - name: Validate version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG_VERSION" ]; then
+            echo "Tag $TAG does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+          echo "Version match: $TAG"
+
+      # The dist-tag is DERIVED from the version, never passed in by a human.
+      # While the major is 0 the API is unstable, so nothing may reach `latest`:
+      # a bare `npm i @nathapp/nax-ai` must not hand a stranger a moving API.
+      # Releasing 1.0.0 is what flips this, and it flips by itself.
+      - name: Set release info
+        id: info
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          MAJOR="${VERSION%%.*}"
+
+          if [[ "$VERSION" == *"-canary."* ]]; then
+            NPM_TAG=canary
+            PRERELEASE=true
+          elif [ "$MAJOR" = "0" ]; then
+            NPM_TAG=next
+            PRERELEASE=true
+          else
+            NPM_TAG=latest
+            PRERELEASE=false
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Publishing $TAG under dist-tag '$NPM_TAG'"
+
+      # Trusted publishing via OIDC - no npm token in this repository.
+      - name: Publish to npm
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+          NPM_TAG: ${{ steps.info.outputs.npm_tag }}
+        run: npm publish --access public --tag "$NPM_TAG" --provenance
+
+      - name: Extract release notes
+        id: notes
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+        run: |
+          NOTES=$(awk -v want="## [$VERSION]" '$0 == want {found=1; next} /^## \[/{if(found) exit} found{print}' CHANGELOG.md 2>/dev/null || true)
+          if [ -n "$NOTES" ]; then
+            echo "$NOTES" > /tmp/release-notes.md
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release (changelog notes)
+        if: steps.notes.outputs.has_notes == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.tag }}
+          name: ${{ steps.info.outputs.tag }}
+          body_path: /tmp/release-notes.md
+          prerelease: ${{ steps.info.outputs.prerelease }}
+
+      - name: Create GitHub Release (auto-generated notes)
+        if: steps.notes.outputs.has_notes != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.tag }}
+          name: ${{ steps.info.outputs.tag }}
+          prerelease: ${{ steps.info.outputs.prerelease }}
+          generate_release_notes: true

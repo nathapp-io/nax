@@ -21,6 +21,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "release": "bun scripts/release.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
     "test:live": "vitest --run --config vitest.live.config.ts",
