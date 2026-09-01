@@ -53,14 +53,26 @@ export class NativeAgentAdapter implements AgentAdapter {
     return this.hasCredentials();
   }
 
+  /**
+   * Reports client construction, not credential resolution — so it is
+   * effectively always true, and AgentManager.validateCredentials() cannot
+   * prune this agent.
+   *
+   * That is known and deliberate for now. Answering honestly means asking
+   * whether a specific provider resolves, and this method takes no provider:
+   * the registry receives the manager's config slice, and
+   * agentManagerConfigSelector excludes config.models by design under ADR-019.
+   * Probing every provider in the catalog is not an alternative, because
+   * pi's resolve() may execute commands.
+   *
+   * The fix belongs to Phase A plan 3, which does model resolution and has a
+   * provider legitimately in scope. Until then a missing or bad credential
+   * surfaces per provider at request time, through the typed mapping from
+   * ProtocolError.kind "auth" to availability / fail-auth.
+   *
+   * See docs/superpowers/specs/2026-09-01-nax-auth-credentials-design.md §6.
+   */
   async hasCredentials(): Promise<boolean> {
-    // The probe is client construction, nothing more: getNativeClient()
-    // succeeds with no keys anywhere — createClient is synchronous pure
-    // construction and piProviders() loads a bundled static catalog. nax-ai
-    // resolves credentials at call time inside the protocol backend, so this
-    // cannot mean "keys resolve". The credential store (plan 2) provides the
-    // real probe; until then the availability seam fires from
-    // toAdapterFailure("auth") -> fail-auth at request time.
     try {
       await getNativeClient();
       return true;

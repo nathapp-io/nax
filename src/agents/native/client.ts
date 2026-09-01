@@ -11,6 +11,8 @@
 
 import { type Client, createClient, piProtocols, piProviders } from "@nathapp/nax-ai";
 
+import { naxCredentialStore } from "./credentials";
+
 /**
  * The real builder. Exported on its own — not just as `_clientDeps.build` —
  * because test/preload.ts overwrites `_clientDeps.build` with a sentinel
@@ -22,6 +24,11 @@ export async function buildNativeClient(): Promise<Client> {
   return createClient({
     providers: await piProviders(),
     protocols: piProtocols(),
+    // Without this the store is never consulted and `nax auth login` has no
+    // effect on a run. pi resolves store first, then ambient sources, so a
+    // stored credential owns its provider and CI with only an env var keeps
+    // working.
+    credentials: naxCredentialStore(),
   });
 }
 

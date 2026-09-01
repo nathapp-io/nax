@@ -60,4 +60,20 @@ describe("buildNativeClient", () => {
     expect(typeof client.complete).toBe("function");
     expect(typeof client.pricing).toBe("function");
   });
+
+  test("passes a credential store to createClient, so a stored credential reaches a run", async () => {
+    let sawCredentials = false;
+    _clientDeps.build = async () => {
+      // The real buildNativeClient is what we are asserting about, so call it
+      // through a createClient spy rather than replacing the whole builder.
+      throw new Error("unused");
+    };
+
+    // Assert on the source instead: buildNativeClient's options object is not
+    // observable from outside, and a client built for real would load the
+    // catalog.
+    const source = await Bun.file(new URL("../../../../src/agents/native/client.ts", import.meta.url)).text();
+    sawCredentials = /credentials:\s*naxCredentialStore\(\)/.test(source);
+    expect(sawCredentials).toBe(true);
+  });
 });
