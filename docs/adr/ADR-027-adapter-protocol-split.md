@@ -273,6 +273,37 @@ branch reachable. The classifier's own history is the warning: a blanket
 `quality / fail-unknown` once made every transient failure terminal for exactly
 these complete-kind ops.
 
+### 10. Not in scope: sessions and multi-turn — and what that will cost
+
+`openSession`/`sendTurn`/`closeSession` throw until Phase B (§8). This ADR
+deliberately does not design them, because the shape of a session boundary
+depends on what runs across it, and Phase A has no multi-turn op to learn from.
+Deciding it here is the guess §Negative already says to avoid.
+
+What is worth recording now, because it is easy to under-read as a mapping
+exercise:
+
+**nax has never stored a transcript.** `SessionDescriptor`
+(`src/session/types.ts:65`) carries id, role, state, agent, workdir,
+`protocolIds`, `handle`, scratch dir, completed stages and timestamps — and no
+message, history or transcript field of any kind. `handle` is documented as the
+string "used by the adapter to resume the physical ACP session", and
+`OpenSessionOpts.resume` (`src/agents/session-types.ts:77`) means "reattach to
+that session". Conversation state lives in the acpx subprocess, not in nax.
+
+nax-ai's client is **stateless**: `complete(model, req)` takes the whole
+`ConversationMessage[]` every call. So against the native path nax must persist
+and replay conversations itself, and `openSession`/`closeSession` become either
+no-ops or transcript-file handles rather than calls to a backend that remembers.
+
+That makes Phase B a **storage feature** — persistence format, resume semantics,
+the mapping between a nax session id and a stored transcript, and retention —
+sitting alongside the tool-loop work the analysis describes. Nothing in this ADR
+forecloses it: `AgentAdapter` is unchanged, `SessionDescriptor` is untouched, and
+the `CompletionAdapter`/`SessionAdapter` split stays available once the boundary
+is real. It is called out so Phase B is scoped from this, not from the
+assumption that sessions are a thin mapping over `complete()`.
+
 ## Consequences
 
 ### Positive
@@ -303,7 +334,7 @@ these complete-kind ops.
   this is the end state, not a migration window.
 - An `AgentAdapter` whose session methods throw. Splitting `CompletionAdapter`
   from `SessionAdapter` is the right end state; deferred to Phase B, when the
-  boundary is known rather than guessed.
+  boundary is known rather than guessed (§10).
 - Two ADR-025 amendments (§6, §7) that are not native-specific. They are
   consequences of native making custom tiers ordinary, and this ADR is not
   implementable without them.
