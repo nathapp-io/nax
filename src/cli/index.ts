@@ -4,6 +4,14 @@
 
 export { type AcceptOptions, acceptCommand } from "./accept";
 export { agentsListCommand } from "./agents";
+export {
+  _cliAuthDeps,
+  authImportCommand,
+  authListCommand,
+  authLoginCommand,
+  authRmCommand,
+} from "./auth";
+export { _authPromptDeps, PromptCancelledError, type PromptStdin, promptForLine, promptForSecret } from "./auth-prompt";
 export { type ConfigCommandOptions, configCommand } from "./config";
 export { FIELD_DESCRIPTIONS } from "./config-descriptions";
 export { _confirmDeps, type ConfirmStdin, promptForConfirmation } from "./confirm";

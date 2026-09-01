@@ -37,6 +37,20 @@ delete process.env.NAX_TELEGRAM_TOKEN;
 delete process.env.NAX_TELEGRAM_CHAT_ID;
 delete process.env.TELEGRAM_BOT_TOKEN;
 
+// ─── Provider-credential isolation ───────────────────────────────────────────
+// The ambient-auth probe asks whether a provider would resolve from the
+// environment. A developer with a real key exported would make it answer true
+// in tests written to expect false — they would pass without proving anything.
+// Redirecting ~/.nax does not isolate env, so scrub before any test file loads.
+// Scrubbed by pattern rather than a fixed provider list: nax-ai's provider
+// catalog is larger than any list here would stay in sync with, and a
+// developer with e.g. MISTRAL_API_KEY exported would otherwise get a
+// locally-passing test that proves nothing. Non-env ambient sources (AWS
+// profile, ADC) remain unisolated — this only covers the *_API_KEY shape.
+for (const key of Object.keys(process.env)) {
+  if (/_API_KEY$/.test(key)) delete process.env[key];
+}
+
 // ─── Console suppression ──────────────────────────────────────────────────────
 // Suppress all console output in tests. Tests that need to capture output
 // should override _deps.log / _deps.warn in a local beforeEach, not rely on

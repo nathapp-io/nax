@@ -11,6 +11,8 @@
 
 import { type Client, createClient, piProtocols, piProviders } from "@nathapp/nax-ai";
 
+import { naxCredentialStore } from "./credentials";
+
 /**
  * The real builder. Exported on its own — not just as `_clientDeps.build` —
  * because test/preload.ts overwrites `_clientDeps.build` with a sentinel
@@ -21,13 +23,26 @@ import { type Client, createClient, piProtocols, piProviders } from "@nathapp/na
 export async function buildNativeClient(): Promise<Client> {
   return createClient({
     providers: await piProviders(),
-    protocols: piProtocols(),
+    protocols: _clientDeps.piProtocols({
+      // The credential seam: pi resolves the store first, then ambient sources
+      // (env vars, AWS profiles, ADC), so a stored credential owns its provider
+      // and CI with only an environment variable keeps working. Passing it here
+      // is what makes `nax auth login` reach a run — ClientOptions.credentials
+      // is accepted by nax-ai's type but never read by createClient.
+      credentials: naxCredentialStore(),
+    }),
   });
 }
 
-/** Test seam: replaced in tests so no catalog is loaded and no network is reached. */
+/**
+ * Test seam. `build` is replaced in tests so no catalog is loaded and no
+ * network is reached. `piProtocols` is separately injectable so a test can
+ * observe what buildNativeClient passes it (the credentials wiring above)
+ * without loading the real catalog — see client.test.ts.
+ */
 export const _clientDeps = {
   build: buildNativeClient,
+  piProtocols,
 };
 
 let cached: Promise<Client> | undefined;

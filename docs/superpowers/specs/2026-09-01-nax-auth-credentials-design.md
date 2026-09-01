@@ -323,6 +323,18 @@ Separately, one login run from `dist/nax.js` rather than from source. pi loads
 its OAuth flows through a deliberately bundler-opaque dynamic import, so the
 bundle is the case that can break while source passes.
 
+## Live verification (2026-09-01)
+
+Run against the real machine during implementation. Results, including where reality differed from prediction:
+
+- **Import.** `nax auth import` read `~/.pi/agent/auth.json` and imported three providers — `minimax` (api-key), `openai-codex` (oauth), `opencode-go` (api-key). No key material appeared in the output. The plan's example named `openrouter`; no such entry exists in this machine's pi file, so the shadow check below was run against `minimax` instead. One prediction wrong in the M5 tradition.
+- **File mode.** `~/.nax/credentials` is `-rw-------` (0600).
+- **List.** Each provider with its kind; the OAuth entry shows its expiry (2026-09-10). No keys.
+- **Shadow warning is honest and selective.** With `MINIMAX_API_KEY=whatever`, exactly `minimax` is marked "shadows an environment variable"; the other two are not. A negative control (`OPENAI_API_KEY=whatever`) marks nothing. The probe is not returning true unconditionally.
+- **End-to-end: store → client → provider.** A real `minimax`/`MiniMax-M2.7-highspeed` completion through `buildNativeClient()` with every provider env var unset succeeded (stop reason `length` at the 16-token cap). The first attempt failed with "Provider is not configured": the implementation plan had wired the store into `ClientOptions.credentials`, which nax-ai's `createClient` accepts in its type but never reads. The real seam is `piProtocols({ credentials })` (`PiProtocolOptions.credentials` — "Omitted means ambient only"). Fixed in the implementation; this paragraph records the correction.
+- **rm does not overclaim.** `nax auth rm openrouter` (nothing stored) exits 1 with "No stored credential". `nax auth rm minimax` prints "removed locally. The token stays valid at the provider until it expires — revoke it there if you need it dead" and never "logged out". The credential was restored by re-import afterwards.
+- **Bundle.** `dist/nax.js` is built with `--target bun`; under Bun, `bun dist/nax.js auth list` works from the bundle (store read, probe run). The plan's `node dist/nax.js` command was misinformed — the artifact is not Node-targeted, and under Node it crashes at module scope on a pre-existing top-level `Bun.Glob` destructure in `src/context/` that predates this feature. **One item remains for a human: an interactive OAuth login from the bundle** (`bun dist/nax.js auth login openai-codex`), which opens a browser and could not be run unattended.
+
 ## Out of scope
 
 - **Logout.** pi has no revocation. `rm` is deletion, and says so.
