@@ -8,13 +8,15 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { resolveStartAgent, type StartAgentSource } from "@/agents/hop-budget";
 import { AgentManager } from "@/agents/manager";
 import { resolveFinalDispatch, resolveHopCompleteOptions } from "@/agents/manager-dispatch";
-import type { AgentFallbackRecord } from "@/agents/manager-types";
+import type { AgentFallbackRecord, HopKind } from "@/agents/manager-types";
 import { availableCandidates, credentialCandidates, normaliseFallbackTarget } from "@/agents/swap-decision";
-import type { ResolvedCompleteOptions } from "@/agents/types";
-import { resolveModelForAgent } from "@/config";
+import type { AgentRunOptions, ResolvedCompleteOptions } from "@/agents/types";
+import { type AgentManagerConfig, resolveModelForAgent } from "@/config";
 import { NaxConfigSchema } from "@/config/schemas";
+import type { AdapterFailure } from "@/context/engine";
 
 const none = () => false;
 
@@ -112,6 +114,105 @@ describe("nextCandidate", () => {
   });
 });
 
+describe("resolveStartAgent", () => {
+  const tieredSource: StartAgentSource = {
+    isUnavailable: (agent) => agent === "claude",
+    nextCandidate: () => ({ agent: "native", tier: "cheap" }),
+  };
+
+  test("a healthy primary is returned as a tier-less target", () => {
+    expect(resolveStartAgent(tieredSource, "codex", true, undefined, null)).toEqual({ agent: "codex" });
+  });
+
+  test("an unavailable primary with fallback enabled returns the candidate with its tier", () => {
+    expect(resolveStartAgent(tieredSource, "claude", true, undefined, null)).toEqual({
+      agent: "native",
+      tier: "cheap",
+    });
+  });
+
+  test("fallback off keeps the primary even when unavailable (the toggle must win)", () => {
+    expect(resolveStartAgent(tieredSource, "claude", false, undefined, null)).toEqual({ agent: "claude" });
+  });
+
+  test("no candidate left returns the dead primary", () => {
+    const empty: StartAgentSource = { isUnavailable: () => true, nextCandidate: () => null };
+    expect(resolveStartAgent(empty, "claude", true, undefined, null)).toEqual({ agent: "claude" });
+  });
+});
+
+describe("dead-primary start preserves a named tier on the run path", () => {
+  const AVAIL_FAILURE: AdapterFailure = {
+    category: "availability",
+    outcome: "fail-quota",
+    retriable: false,
+    message: "quota exceeded",
+  };
+
+  function makeRunOptions(config: AgentManagerConfig): AgentRunOptions {
+    return {
+      prompt: "do it",
+      workdir: "/tmp",
+      modelTier: "balanced",
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      timeoutSeconds: 60,
+      config,
+    };
+  }
+
+  test("an op starting on a dead primary dispatches the fallback agent at its named tier", async () => {
+    // A multi-op story where the primary dies in op 1 must start op 2 on the
+    // fallback agent AT THE TIER the fallback map named — not at the caller's
+    // effective tier. The manager seeds currentHopKind from the start target,
+    // and hopTier reads the tier off the primary kind.
+    const config = NaxConfigSchema.parse({
+      agent: { default: "claude", fallback: { enabled: true, map: { claude: [{ agent: "native", tier: "cheap" }] } } },
+    });
+    const manager = new AgentManager(config);
+    manager.markUnavailable("claude", AVAIL_FAILURE);
+
+    const hops: { agent: string; hopKind: HopKind }[] = [];
+    const outcome = await manager.runWithFallback({
+      runOptions: makeRunOptions(config),
+      executeHop: async (agent, bundle, hopKind) => {
+        hops.push({ agent, hopKind });
+        return {
+          result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
+          bundle,
+        };
+      },
+    });
+
+    expect(outcome.result.success).toBe(true);
+    expect(hops).toHaveLength(1);
+    expect(hops[0].agent).toBe("native");
+    expect(hops[0].hopKind).toEqual({ kind: "primary", tier: "cheap" });
+  });
+
+  test("a plain-string fallback starts at the caller's effective tier, as before", async () => {
+    const config = NaxConfigSchema.parse({
+      agent: { default: "claude", fallback: { enabled: true, map: { claude: ["codex"] } } },
+    });
+    const manager = new AgentManager(config);
+    manager.markUnavailable("claude", AVAIL_FAILURE);
+
+    const hops: { agent: string; hopKind: HopKind }[] = [];
+    await manager.runWithFallback({
+      runOptions: makeRunOptions(config),
+      executeHop: async (agent, bundle, hopKind) => {
+        hops.push({ agent, hopKind });
+        return {
+          result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
+          bundle,
+        };
+      },
+    });
+
+    expect(hops[0].agent).toBe("codex");
+    expect(hops[0].hopKind).toEqual({ kind: "primary" });
+  });
+});
+
 describe("resolveHopCompleteOptions", () => {
   const base: ResolvedCompleteOptions = {
     modelDef: { provider: "anthropic", model: "primary-model" },
@@ -156,6 +257,7 @@ describe("resolveFinalDispatch", () => {
   const base: ResolvedCompleteOptions = {
     modelDef: { provider: "anthropic", model: "primary-model" },
     modelDefFor: (agent: string, tier?: string) => ({ provider: "p", model: `${agent}:${tier ?? "default"}` }),
+    modelTier: "balanced",
     workdir: "/tmp",
     resolvedPermissions: { mode: "approve-all" },
   };
@@ -177,7 +279,19 @@ describe("resolveFinalDispatch", () => {
     expect(resolveFinalDispatch(base, "claude", swapped, "cheap").options.modelDef.model).toBe("native:cheap");
   });
 
+  test("a tier-carrying swap also records that tier, so model and modelTier agree", () => {
+    // The dispatched model is "native:cheap"; reporting the primary's
+    // "balanced" (or nothing) alongside it would record a tier that never ran.
+    const out = resolveFinalDispatch(base, "claude", swapped, "cheap").options;
+    expect(out.modelDef.model).toBe("native:cheap");
+    expect(out.modelTier).toBe("cheap");
+  });
+
   test("no tier means today's behaviour", () => {
     expect(resolveFinalDispatch(base, "claude", swapped).options.modelDef.model).toBe("native:default");
+  });
+
+  test("no tier leaves modelTier as the base had it", () => {
+    expect(resolveFinalDispatch(base, "claude", swapped).options.modelTier).toBe("balanced");
   });
 });

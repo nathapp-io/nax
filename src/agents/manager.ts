@@ -213,7 +213,10 @@ export class AgentManager implements IAgentManager {
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     const storyId = request.runOptions.storyId;
-    let currentAgent = resolveStartAgent(this, primaryAgent, this._config.agent?.fallback?.enabled, storyId, logger);
+    const start = resolveStartAgent(this, primaryAgent, this._config.agent?.fallback?.enabled, storyId, logger);
+    let currentAgent = start.agent;
+    let currentHopKind: import("./manager-types").HopKind =
+      "tier" in start ? { kind: "primary", tier: start.tier } : { kind: "primary" };
     let hopsSoFar = this._budget.spent(storyId);
     let rateLimitRetry = 0;
     let staleRetryAttempts = 0;
@@ -221,7 +224,6 @@ export class AgentManager implements IAgentManager {
     let adapterErrorRetries = 0;
     let currentBundle = request.bundle;
     let currentRunOptions: AgentRunOptions = request.runOptions;
-    let currentHopKind: import("./manager-types").HopKind = { kind: "primary" };
     let finalPrompt: string | undefined;
 
     const _opStartMs = Date.now();
@@ -406,8 +408,7 @@ export class AgentManager implements IAgentManager {
         hopsSoFar = this._budget.spend(storyId, hopsSoFar);
         rateLimitRetry = 0;
         currentBundle = updatedBundle;
-        // The hop kind is the per-hop channel the caller already reads, so the
-        // target's tier rides there rather than in a parallel variable.
+        // The tier rides on the hop kind, the per-hop channel the caller already reads, not a parallel variable.
         currentHopKind = { kind: "swap", failure: adapterFailure, ...("tier" in next ? { tier: next.tier } : {}) };
 
         const hop = buildFallbackRecord({
@@ -503,8 +504,7 @@ export class AgentManager implements IAgentManager {
 
         _totalCostUsd += result.estimatedCostUsd;
 
-        // Synthesize fail-stale when agent returns empty output with no pre-existing failure.
-        // Mirrors sendWithFileOutput synthesis in call.ts for run-kind ops (spec §B2).
+        // Empty output with no failure synthesizes fail-stale; mirrors call.ts sendWithFileOutput (spec §B2).
         if (!result.adapterFailure && !result.output?.trim()) {
           result = {
             ...result,

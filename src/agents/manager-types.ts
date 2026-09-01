@@ -14,7 +14,7 @@ import type { FallbackTarget } from "./swap-decision";
  * conflated "primary" and "stale-retry" as both `undefined`.
  */
 export type HopKind =
-  | { kind: "primary" }
+  | { kind: "primary"; tier?: string } // tier present when an op started on a fallback that named one
   | { kind: "stale-retry"; attempt: number } // same agent, reuse existing session
   | { kind: "timeout-retry"; attempt: number } // same agent, fresh session after fail-timeout
   | { kind: "swap"; failure: AdapterFailure; tier?: string }; // new agent, fresh session

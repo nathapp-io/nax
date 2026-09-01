@@ -248,7 +248,10 @@ export function resolveHopCompleteOptions(
  * `finalTier` is the tier the final hop actually ran at (Task 6), carried out of
  * `completeWithFallback` rather than re-derived — re-resolving without it would
  * record a model that never ran, reintroducing the same divergence in the tier
- * dimension.
+ * dimension. When it is present the returned options also carry that tier as
+ * `modelTier`, so the cost row records the tier the dispatched model actually
+ * ran at — `model` and `modelTier` must not disagree (nax#1739). `modelTier` is
+ * inert for dispatch (never branched on), so this only fixes attribution.
  */
 export function resolveFinalDispatch(
   options: ResolvedCompleteOptions,
@@ -257,7 +260,8 @@ export function resolveFinalDispatch(
   finalTier?: string,
 ): { agentName: string; options: ResolvedCompleteOptions } {
   const agentName = fallbacks.at(-1)?.newAgent ?? primaryAgent;
-  return { agentName, options: resolveHopCompleteOptions(options, agentName, primaryAgent, finalTier) };
+  const hopOptions = resolveHopCompleteOptions(options, agentName, primaryAgent, finalTier);
+  return { agentName, options: finalTier !== undefined ? { ...hopOptions, modelTier: finalTier } : hopOptions };
 }
 
 /**

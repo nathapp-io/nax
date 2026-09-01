@@ -24,6 +24,10 @@ describe("hopTier", () => {
     expect(hopTier({ kind: "primary" }, "balanced")).toBe("balanced");
   });
 
+  test("a start-on-fallback primary hop that named a tier uses it", () => {
+    expect(hopTier({ kind: "primary", tier: "cheap" }, "balanced")).toBe("cheap");
+  });
+
   test("a swap with no tier uses the caller's effective tier", () => {
     expect(hopTier({ kind: "swap", failure: SWAP_FAILURE }, "balanced")).toBe("balanced");
   });

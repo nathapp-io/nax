@@ -116,12 +116,12 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
 /**
  * The tier a hop should resolve its model at.
  *
- * Only a swap can carry one, and only when the fallback target named it.
+ * Only a swap, or a start-on-fallback that named one, can carry a tier.
  * Everything else is the caller's effective tier, which is what every hop did
  * before tier-aware targets existed.
  */
 export function hopTier(hopKind: HopKind, effectiveTier: string): string {
-  return hopKind.kind === "swap" ? (hopKind.tier ?? effectiveTier) : effectiveTier;
+  return "tier" in hopKind ? (hopKind.tier ?? effectiveTier) : effectiveTier;
 }
 
 export function buildHopCallback(
