@@ -13,13 +13,12 @@ import { clampThinkingLevel } from "./protocols/thinking.ts";
 import type { ProtocolEvent, ProtocolRequest } from "./protocols/types.ts";
 import { normaliseCatalog, type RawProvider } from "./providers/catalog.ts";
 import type { Pricing, ProviderOverride, ResolvedModel } from "./providers/types.ts";
-import type { CompleteResult, CredentialStore } from "./types.ts";
+import type { CompleteResult } from "./types.ts";
 
 export interface ClientOptions {
   readonly providers: readonly RawProvider[];
   readonly protocols: ProtocolEntries;
   readonly backends?: BackendSelection;
-  readonly credentials?: CredentialStore;
   readonly providerOverrides?: readonly ProviderOverride[];
   /** Transport-fault retries before the first event. Default 2; 0 disables. */
   readonly transportRetries?: number;

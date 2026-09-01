@@ -92,4 +92,21 @@ describe("ambientAuthAvailable", () => {
     ]);
     expect(await ambientAuthAvailable("angry")).toBe(false);
   });
+
+  it("is false rather than throwing when check() itself throws", async () => {
+    withProviders([
+      piProvider({
+        id: "check-throws",
+        apiKey: {
+          check: async () => {
+            throw new Error("the credential helper exited 1");
+          },
+          resolve: async () => {
+            throw new Error("resolve must not be called when check exists");
+          },
+        },
+      }),
+    ]);
+    expect(await ambientAuthAvailable("check-throws")).toBe(false);
+  });
 });

@@ -14,16 +14,32 @@ import type { CredentialStore } from "../types.ts";
 import type { ProtocolEntries } from "./registry.ts";
 import type { Transport } from "./types.ts";
 
-export const PI_PROTOCOL_NAMES = [
+/**
+ * Neutral names for this module's public surface.
+ *
+ * This package exists to hide pi-ai behind its own vocabulary — that is its
+ * whole reason to exist. Naming the public API after "pi" defeats that: the
+ * name either starts lying the day the backend stops being pi-ai, or forces a
+ * breaking rename at exactly the moment the internals change. `DEFAULT_*` /
+ * `default*` name what these are (the client's default, pi-backed protocol
+ * set), not what implements them today.
+ */
+export const DEFAULT_PROTOCOL_NAMES = [
   "anthropic-messages",
   "openai-completions",
   "openai-responses",
   "openai-codex-responses",
 ] as const;
 
-export type PiProtocolName = (typeof PI_PROTOCOL_NAMES)[number];
+/** @deprecated Use {@link DEFAULT_PROTOCOL_NAMES}. Kept as a non-breaking alias. */
+export const PI_PROTOCOL_NAMES = DEFAULT_PROTOCOL_NAMES;
 
-export interface PiProtocolOptions {
+export type ProtocolName = (typeof DEFAULT_PROTOCOL_NAMES)[number];
+
+/** @deprecated Use {@link ProtocolName}. Kept as a non-breaking alias. */
+export type PiProtocolName = ProtocolName;
+
+export interface ProtocolOptions {
   /** Where OAuth and api-key credentials live. Omitted means ambient only. */
   readonly credentials?: CredentialStore;
   /**
@@ -43,9 +59,12 @@ export interface PiProtocolOptions {
   readonly transport?: Transport;
 }
 
-export function piProtocols(options: PiProtocolOptions = {}): ProtocolEntries {
+/** @deprecated Use {@link ProtocolOptions}. Kept as a non-breaking alias. */
+export type PiProtocolOptions = ProtocolOptions;
+
+export function defaultProtocols(options: ProtocolOptions = {}): ProtocolEntries {
   return Object.fromEntries(
-    PI_PROTOCOL_NAMES.map((name) => [
+    DEFAULT_PROTOCOL_NAMES.map((name) => [
       name,
       {
         pi: async () => {
@@ -56,3 +75,6 @@ export function piProtocols(options: PiProtocolOptions = {}): ProtocolEntries {
     ]),
   );
 }
+
+/** @deprecated Use {@link defaultProtocols}. Kept as a non-breaking alias. */
+export const piProtocols = defaultProtocols;

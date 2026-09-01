@@ -32,7 +32,16 @@ function toProviderAuth(id: string, auth: { apiKey?: unknown; oauth?: unknown })
   throw new Error(`Provider "${id}" declares neither api-key nor oauth auth.`);
 }
 
-export async function piProviders(ids?: readonly string[]): Promise<RawProvider[]> {
+/**
+ * Neutral name for this module's public entry point.
+ *
+ * This package exists to hide pi-ai behind its own vocabulary, so a public
+ * name built from "pi" either lies once the backend stops being pi-ai, or
+ * forces a breaking rename exactly when that happens. `defaultProviders`
+ * names what this returns (the client's default provider catalog), not what
+ * produces it today. The old name stays as a deprecated, non-breaking alias.
+ */
+export async function defaultProviders(ids?: readonly string[]): Promise<RawProvider[]> {
   const { builtinProviders, getBuiltinModels, getBuiltinProviders } = await import(
     "@earendil-works/pi-ai/providers/all"
   );
@@ -103,3 +112,6 @@ export async function piProviders(ids?: readonly string[]): Promise<RawProvider[
     };
   });
 }
+
+/** @deprecated Use {@link defaultProviders}. Kept as a non-breaking alias. */
+export const piProviders = defaultProviders;

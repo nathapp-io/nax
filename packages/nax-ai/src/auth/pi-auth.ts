@@ -119,7 +119,8 @@ export interface LoginTarget {
 
 /**
  * Test seam. The real read is a dynamic import because pi-ai's provider table
- * is large and only login needs it, matching pi-catalog.ts's own pattern.
+ * is large and only login and the ambient-auth probe need it, matching
+ * pi-catalog.ts's own pattern.
  */
 export const _loginDeps = {
   providers: async (): Promise<readonly PiProvider[]> => {
@@ -261,6 +262,56 @@ function toPiInteraction(interaction: LoginInteraction): {
  * this only ever decorates a diagnostic, and breaking the command it decorates
  * would be worse than a missing warning.
  */
+let bundledOAuthFlows: Promise<void> | undefined;
+
+/**
+ * Registers pi-ai's OAuth flow modules so a bundled build of this package can
+ * still find them.
+ *
+ * The bug this exists to fix: pi-ai's default loader (`auth/oauth/load.js`)
+ * reaches each flow module through a *variable* import specifier, built from
+ * `import.meta.url` at run time. From source that resolves fine inside
+ * node_modules, but once this package is bundled `import.meta.url` points at
+ * the bundle file, the flow module is not beside it on disk, and login fails
+ * with "Cannot find module './openai-codex.js'". pi-ai ships a fix for this
+ * exact shape: `registerBundledOAuthFlowLoaders`, which lets a bundler-aware
+ * caller hand it the flow modules directly instead of letting it compute a
+ * path at run time.
+ *
+ * The import below MUST stay a dynamic import of a LITERAL specifier string:
+ *   - Literal, so a bundler can statically follow and include it — that is
+ *     the entire fix. Building the specifier from a variable (even
+ *     `"@earendil-works/pi-ai" + "/bun-oauth"`) reintroduces the original bug
+ *     in a new spot.
+ *   - Dynamic, so this cost is paid only by a consumer that actually logs in.
+ *     A static top-level import would drag all seven OAuth flow modules plus
+ *     their `node:http`/`node:crypto` dependencies into every consumer's
+ *     eager import graph, including ones that never call this function.
+ * A future "simplification" to a static import, or to a computed specifier,
+ * would silently undo the fix this function exists to provide.
+ *
+ * Named without "bun": pi-ai exposes this at the subpath `bun-oauth` because
+ * it was built for pi-ai's own standalone Bun binary, but nothing inside it
+ * is Bun-specific — it is seven plain imports and one function call, and it
+ * fixes the same bundler problem for any bundled build (Node included). This
+ * package ships to Node and Deno consumers too, so an API named after Bun
+ * here would misdescribe what it does.
+ */
+export function registerBundledOAuthFlows(): Promise<void> {
+  bundledOAuthFlows ??= (async () => {
+    const { registerBunOAuthFlows } = await import("@earendil-works/pi-ai/bun-oauth");
+    registerBunOAuthFlows();
+  })().catch((error: unknown) => {
+    // Memoise the success, never the failure. Caching a rejected promise
+    // would turn one transient import error into a permanent one: every
+    // later login in this process would fail with it, and nothing would
+    // clear it short of a restart.
+    bundledOAuthFlows = undefined;
+    throw error;
+  });
+  return bundledOAuthFlows;
+}
+
 export async function ambientAuthAvailable(providerId: ProviderId): Promise<boolean> {
   const provider = (await _loginDeps.providers()).find((candidate) => candidate.id === providerId);
   const apiKey = provider?.auth.apiKey;

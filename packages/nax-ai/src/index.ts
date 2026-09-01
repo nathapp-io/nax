@@ -35,7 +35,7 @@ export {
   PERMITTED_OAUTH_FLOWS,
   PROHIBITED_OAUTH_FLOWS,
 } from "./auth/oauth-policy.ts";
-export { ambientAuthAvailable } from "./auth/pi-auth.ts";
+export { ambientAuthAvailable, registerBundledOAuthFlows } from "./auth/pi-auth.ts";
 export type { AuthResolver, ResolvedAuth } from "./auth/resolver.ts";
 export { type Client, type ClientOptions, type ClientRequest, createClient } from "./client.ts";
 export {
@@ -45,9 +45,13 @@ export {
 export { createMemoryCredentialStore } from "./credentials/memory-store.ts";
 export { collectStream, ProtocolStreamError } from "./protocols/collect.ts";
 export {
+  DEFAULT_PROTOCOL_NAMES,
+  defaultProtocols,
   PI_PROTOCOL_NAMES,
   type PiProtocolName,
   type PiProtocolOptions,
+  type ProtocolName,
+  type ProtocolOptions,
   piProtocols,
 } from "./protocols/pi-protocols.ts";
 export {
@@ -76,7 +80,7 @@ export type {
   Transport,
 } from "./protocols/types.ts";
 export { type Catalog, normaliseCatalog, type RawModel, type RawProvider } from "./providers/catalog.ts";
-export { piProviders } from "./providers/pi-catalog.ts";
+export { defaultProviders, piProviders } from "./providers/pi-catalog.ts";
 export type {
   Pricing,
   PricingRates,
