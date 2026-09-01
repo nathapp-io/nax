@@ -247,9 +247,21 @@ as a known limitation rather than silently ignored.
   reads it at run start.
 - **`buildCommand()`** — `[]`. Dry-run display shows no process because there is none.
 - **`binary`** — `""`.
-- **`capabilities`** — `supportedTiers` is the configured tier names under
-  `models.native`; `maxContextTokens` a conservative constant in Phase A (ADR-027
-  Open Question 3); `features` matches the acpx adapter's set.
+- **`capabilities`** — `supportedTiers` is the three builtin names, **not** the
+  configured ones. `agentManagerConfigSelector` (`selectors.ts:78`) excludes
+  `models` by design: ADR-019 puts model resolution at the `callOp` seam, so
+  widening the slice to populate a capability field would breach that boundary.
+  **It must never be empty**: `validateAgentForTier` clamps an unsupported tier
+  to `supportedTiers[0]`, so `[]` would log a tier mismatch on every story. The
+  gap is bounded — `validateAgentForTier` lives in the execution stage, which
+  serves `kind: "run"` ops, and Phase A's seven take `callOp`'s complete branch.
+  Phase B decides whether capabilities become model-derived (ADR-027 Open
+  Question 3).
+  `maxContextTokens` is a conservative constant in Phase A (ADR-027 Open
+  Question 3). `features` is `["review"]` — narrower than acpx's
+  `["tdd","review","refactor"]`, because Phase A runs no sessions. Nothing in
+  `src/` reads it today (`validateAgentFeature` is exported but unwired), so it
+  is a declaration rather than a gate.
 - **`timeoutMs`** — becomes an `AbortSignal` passed as `req.signal`, which the
   option's own doc comment already promises adapters do.
 - **`onPidSpawned` / `onPidExited`** — never called. There is no process.

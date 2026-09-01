@@ -1005,6 +1005,18 @@ describe("NativeAgentAdapter.complete", () => {
 });
 
 describe("NativeAgentAdapter shape", () => {
+  test("takes its tiers from config, since native's are arbitrary names", () => {
+    const adapter = new NativeAgentAdapter(["cheap", "strong"]);
+    expect(adapter.capabilities.supportedTiers).toEqual(["cheap", "strong"]);
+  });
+
+  test("falls back to the builtin tiers rather than none when built without config", () => {
+    // [] would make the execution stage log a tier mismatch on every story:
+    // it clamps to supportedTiers[0], which would be undefined.
+    expect(new NativeAgentAdapter().capabilities.supportedTiers).toEqual(["fast", "balanced", "powerful"]);
+    expect(new NativeAgentAdapter([]).capabilities.supportedTiers).toHaveLength(3);
+  });
+
   test("declares no binary and builds no command", () => {
     const adapter = new NativeAgentAdapter();
     expect(adapter.binary).toBe("");
@@ -1050,16 +1062,34 @@ function isProtocolStreamError(err: unknown): err is { protocolError: { kind: st
   return typeof err === "object" && err !== null && "protocolError" in err;
 }
 
+/** The builtin names, used when the adapter is built without config. */
+const DEFAULT_TIERS: readonly string[] = ["fast", "balanced", "powerful"];
+
 export class NativeAgentAdapter implements AgentAdapter {
   readonly name = NATIVE_AGENT;
   readonly displayName = "Native (nax-ai)";
   /** Nothing to spawn. Not a placeholder — the absence is the fact. */
   readonly binary = "";
-  readonly capabilities: AgentCapabilities = {
-    supportedTiers: [],
-    maxContextTokens: CONSERVATIVE_CONTEXT_TOKENS,
-    features: new Set(["review", "batch"] as const),
-  };
+  readonly capabilities: AgentCapabilities;
+
+  /**
+   * `supportedTiers` comes from config because native's tiers are whatever
+   * `models.native` names — arbitrary strings, not the three builtins
+   * (ADR-027 section 5). An empty array would be actively wrong: the execution
+   * stage clamps an unsupported tier to `supportedTiers[0]`, and with none it
+   * logs a tier mismatch on every story. The config-less listing path passes
+   * nothing and gets the builtins, matching the approximation the ADR already
+   * documents for `getAllAgents`.
+   */
+  constructor(supportedTiers: readonly string[] = DEFAULT_TIERS) {
+    this.capabilities = {
+      supportedTiers: supportedTiers.length > 0 ? supportedTiers : DEFAULT_TIERS,
+      maxContextTokens: CONSERVATIVE_CONTEXT_TOKENS,
+      // Explicitly typed, like AcpAgentAdapter does, rather than relying on
+      // inference from a literal array.
+      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
+    };
+  }
 
   /** "Installed" can only mean "credentials resolve" with no binary to find. */
   async isInstalled(): Promise<boolean> {
@@ -1212,7 +1242,7 @@ nothing on this path is exact."
 import { describe, expect, test } from "bun:test";
 import { NativeAgentAdapter } from "@/agents/native";
 import { AcpAgentAdapter } from "@/agents/acp/adapter";
-import { getAllAgents, KNOWN_AGENT_NAMES } from "@/agents/registry";
+import { createAgentRegistry, getAllAgents, KNOWN_AGENT_NAMES } from "@/agents/registry";
 
 describe("registry discrimination", () => {
   test("knows the native agent", () => {
@@ -1225,6 +1255,17 @@ describe("registry discrimination", () => {
     expect(byName.get("native")).toBeInstanceOf(NativeAgentAdapter);
     expect(byName.get("claude")).toBeInstanceOf(AcpAgentAdapter);
     expect(byName.get("codex")).toBeInstanceOf(AcpAgentAdapter);
+  });
+
+  test("resolves native through the config-aware registry too", () => {
+    const registry = createAgentRegistry({
+      agent: { protocol: "hybrid", default: "claude" },
+    } as unknown as Parameters<typeof createAgentRegistry>[0]);
+
+    expect(registry.getAgent("native")).toBeInstanceOf(NativeAgentAdapter);
+    // Builtin tiers, not the configured ones: the manager's config slice
+    // deliberately excludes `models` (ADR-019).
+    expect(registry.getAgent("native")?.capabilities.supportedTiers).toEqual(["fast", "balanced", "powerful"]);
   });
 
   test("the native adapter reports no binary, so nothing tries to spawn it", () => {
@@ -1272,14 +1313,84 @@ function buildAdapterList(): AgentAdapter[] {
 
 - [ ] **Step 4: Apply the same discrimination inside `createAgentRegistry`**
 
-`createAgentRegistry` keeps its own `acpCache`. Adapt its `getAgent` path so a
-request for `native` returns a `NativeAgentAdapter` rather than a cached
-`AcpAgentAdapter`, and fix the hard-coded log line:
+`createAgentRegistry` builds `new AcpAgentAdapter(name)` in **three** places
+(`getAgent`, `getInstalledAgents`, `checkAgentHealth`) into a cache typed
+`Map<string, AcpAgentAdapter>` — which cannot hold a `NativeAgentAdapter`.
+Widen the cache and route all three through one helper.
+
+Replace the cache declaration and log line:
 
 ```typescript
+  // Widened from Map<string, AcpAgentAdapter>: the registry is a routing
+  // decision now, so the cache holds whichever adapter the name selects.
+  const adapterCache = new Map<string, AgentAdapter>();
   const protocol = config.agent?.protocol ?? "acp";
+
   logger?.info("agents", `Agent protocol: ${protocol}`, { protocol, hasConfig: !!config.agent });
+
+  function cachedAdapter(name: string): AgentAdapter {
+    let adapter = adapterCache.get(name);
+    if (adapter === undefined) {
+      // No configured tiers are passed: agentManagerConfigSelector picks
+      // "agent", "execution", "profile" and deliberately NOT "models" —
+      // ADR-019 puts model resolution at the callOp seam, not the manager.
+      // Widening the selector to reach models.native would breach that
+      // boundary for a capability field. See the note below Step 4.
+      adapter = name === NATIVE_AGENT ? new NativeAgentAdapter() : new AcpAgentAdapter(name);
+      adapterCache.set(name, adapter);
+      logger?.debug("agents", `Created ${adapter.constructor.name} for ${name}`, { name });
+    }
+    return adapter;
+  }
 ```
+
+Then replace each of the three construction sites with `cachedAdapter(name)`:
+
+```typescript
+  function getAgent(name: string): AgentAdapter | undefined {
+    // Test override takes precedence
+    if (_registryTestAdapters.has(name)) return _registryTestAdapters.get(name);
+    if (!KNOWN_AGENT_NAMES.includes(name)) return undefined;
+    return cachedAdapter(name);
+  }
+```
+
+and in both `getInstalledAgents` and `checkAgentHealth`, replace
+
+```typescript
+    const acpAdapters = KNOWN_AGENT_NAMES.map((name) => {
+      if (!acpCache.has(name)) {
+        acpCache.set(name, new AcpAgentAdapter(name));
+      }
+      return acpCache.get(name) as AcpAgentAdapter;
+    });
+```
+
+with
+
+```typescript
+    const adapters = KNOWN_AGENT_NAMES.map(cachedAdapter);
+```
+
+updating the following `[...testAdapters, ...acpAdapters]` to use `adapters`.
+The `as AcpAgentAdapter` casts go with them — they were only needed because the
+cache's value type was narrower than the map lookup's return.
+
+**Known limitation, decided rather than discovered.** The native adapter's
+`supportedTiers` stays the three builtin names even when `models.native` uses
+custom ones. `agentManagerConfigSelector` (`src/config/selectors.ts:78`) is
+`pickSelector("agent-manager", "agent", "execution", "profile")` — it excludes
+`models` **by design**: ADR-019 puts model resolution at the `callOp` seam and
+the manager owns only the swap loop. Widening the slice to populate a
+capability field would breach that boundary, and `check:naxconfig-cast` forbids
+casting around it.
+
+The consequence is bounded and belongs to Phase B: `validateAgentForTier` lives
+in the **execution stage**, which serves `kind: "run"` ops. Phase A's seven ops
+take `callOp`'s complete branch and never reach it. When a custom tier does meet
+that stage in Phase B, it clamps to `supportedTiers[0]` and logs a mismatch —
+noise, not breakage. Phase B should decide whether capabilities become
+model-derived (ADR-027 Open Question 3) rather than patching it here.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
