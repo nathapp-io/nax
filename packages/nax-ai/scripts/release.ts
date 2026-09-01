@@ -25,9 +25,9 @@
  * that stance.
  *
  * The dist-tag is NEVER chosen here. It is derived from the version by
- * .github/workflows/release.yml, so that "nothing reaches `latest` before
- * 1.0.0" is a property of the pipeline rather than something a releaser has
- * to remember. See that file for the mapping.
+ * .github/workflows/release.yml, so which tag a release lands on is a property
+ * of the pipeline rather than something a releaser has to remember. See that
+ * file for the mapping.
  */
 
 import { execFileSync } from "node:child_process";
@@ -106,15 +106,20 @@ function bumpVersion(current: string, type: string): string {
 
 /**
  * Mirrors release.yml's mapping so the plan printed here matches what ships.
+ * If the two drift, this prints a release plan that is not the one that runs.
  *
- * A 0.x stable lands on both `next` and `latest`: npm points `latest` at a
+ * A 0.x stable publishes straight to `latest`: npm points `latest` at a
  * package's first publish whatever --tag says, so "never latest before 1.0"
  * stopped being achievable at 0.1.0. Since it exists either way, it tracks the
  * current release rather than freezing on the first one.
+ *
+ * It used to be `next` + `latest`, with the second added afterwards. That is
+ * not possible without an npm token: trusted publishing authenticates
+ * `npm publish` alone, and `npm dist-tag add` failed with E401 on v0.1.1.
  */
 function distTagsFor(version: string): string[] {
   if (version.includes("-canary.")) return ["canary"];
-  return parseVersion(version).major === 0 ? ["next", "latest"] : ["latest"];
+  return ["latest"];
 }
 
 async function confirm(message: string): Promise<boolean> {

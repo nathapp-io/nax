@@ -65,6 +65,6 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/",
     "provenance": true,
-    "tag": "next"
+    "tag": "latest"
   }
 }
