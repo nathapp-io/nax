@@ -139,7 +139,7 @@ describe("getAgentVersions", () => {
     expect(Array.isArray(versions)).toBe(true);
   });
 
-  test("each entry has name, displayName, version, and installed properties", async () => {
+  test("each entry has name, displayName, binary, version, and installed properties", async () => {
     _versionDetectionDeps.getInstalledAgents = mock(async () => []);
     _versionDetectionDeps.spawn = mock(() => makeMockProc("", 1)) as typeof _versionDetectionDeps.spawn;
 
@@ -147,6 +147,7 @@ describe("getAgentVersions", () => {
     for (const entry of versions) {
       expect(typeof entry.name).toBe("string");
       expect(typeof entry.displayName).toBe("string");
+      expect(typeof entry.binary).toBe("string");
       expect(entry.version === null || typeof entry.version === "string").toBe(true);
       expect(typeof entry.installed).toBe("boolean");
     }

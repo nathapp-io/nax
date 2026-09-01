@@ -239,12 +239,31 @@ Tiered pricing (`Pricing.tiers`, 22 upstream models) is **not** honoured in
 Phase A; base rates are used and a long-context request under-reports. Recorded
 as a known limitation rather than silently ignored.
 
+**Ruling (review M-3, 2026-09-01) — `NATIVE_PRICING_MISSING` is unreachable in
+Phase A.** Rates are total by construction: the bundled catalog always supplies
+`PricingRates` for every model it resolves, and the `pricing` override is
+schema-complete (its fields are required, not optional), so `rates` always
+exists. The "zero cost that is really unknown corrupts every aggregate that sums
+it" policy is therefore recorded here as a ruling, not as code — the guard in
+`estimateCostUsd` stays as defence-in-depth for the future (an unresolvable
+model, a partial override), but nothing in Phase A can trip it.
+
 ## 7. Adapter semantics
 
-- **`isInstalled()`** — true when credentials resolve for at least one provider.
-  "Installed" has no other meaning with no binary. Phase A: ambient env only.
-- **`hasCredentials()`** — same probe; declared because `AgentManager.validateCredentials()`
-  reads it at run start.
+- **`isInstalled()`** — Phase A's probe is *client construction*, not credential
+  resolution. `getNativeClient()` succeeds with no keys anywhere: `createClient`
+  is synchronous pure construction and `piProviders()` loads a bundled static
+  catalog (nax-ai's `ProviderAuth.env` is descriptive-only — deliberately not a
+  probe). nax-ai resolves credentials at **call time** inside the protocol
+  backend, so a machine without keys still reports the native agent as
+  installed. The availability seam the ADR names therefore fires from
+  `toAdapterFailure("auth")` → `fail-auth` at request time — which is why the
+  §6.2 error-mapping table exists. A real credential probe arrives with plan 2
+  (the credential store / `nax auth`); until then, "no binary" is all
+  `isInstalled()` can honestly report.
+- **`hasCredentials()`** — the same construction probe. It stays declared
+  because `AgentManager.validateCredentials()` reads it at run start, but in
+  Phase A it resolves no keys itself — do not read it as a credential check.
 - **`buildCommand()`** — `[]`. Dry-run display shows no process because there is none.
 - **`binary`** — `""`.
 - **`capabilities`** — `supportedTiers` is the three builtin names, **not** the

@@ -1,7 +1,9 @@
 /**
  * Agent Registry
  *
- * Discovers and manages available coding agents via the ACP protocol.
+ * Discovers and manages available coding agents. The agent name selects the
+ * transport: every known name but `native` is an ACP adapter via acpx, and
+ * `native` is the in-process nax-ai path (ADR-027 section 3).
  */
 
 import type { AgentManagerConfig } from "@/config/selectors";
@@ -85,16 +87,18 @@ export interface AgentRegistry {
   getInstalledAgents(): Promise<AgentAdapter[]>;
   /** Check health of all agents */
   checkAgentHealth(): Promise<Array<{ name: string; displayName: string; installed: boolean }>>;
-  /** Active protocol (always 'acp') */
-  protocol: "acp";
+  /** Resolved `agent.protocol` gate — which transports are permitted (ADR-027 §2). */
+  protocol: "acp" | "native" | "hybrid";
 }
 
 /**
- * Create an ACP-based agent registry.
+ * Create the agent registry.
  *
- * All agents use AcpAgentAdapter instances, cached per agent name for the
- * lifetime of the registry. Test adapters registered in _registryTestAdapters
- * take precedence and are returned as-is without ACP wrapping.
+ * The registry is a routing decision, not one adapter kind repeated: the agent
+ * name selects the adapter — `native` gets `NativeAgentAdapter`, every other
+ * known name gets `AcpAgentAdapter` — cached per agent name for the lifetime
+ * of the registry. Test adapters registered in _registryTestAdapters take
+ * precedence and are returned as-is without adaptation.
  */
 export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
   const logger = getLogger();
@@ -150,5 +154,5 @@ export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
     );
   }
 
-  return { getAgent, getInstalledAgents, checkAgentHealth, protocol: "acp" };
+  return { getAgent, getInstalledAgents, checkAgentHealth, protocol };
 }

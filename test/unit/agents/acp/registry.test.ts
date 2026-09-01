@@ -56,11 +56,20 @@ describe("createAgentRegistry — protocol selection", () => {
     expect(registry.getAgent("unknown-agent-xyz")).toBeUndefined();
   });
 
-  test("exposes protocol field as 'acp'", () => {
+  test("exposes protocol field from config", () => {
     const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
     const defaultRegistry = createAgentRegistry(makeNaxConfig());
     expect(registry.protocol).toBe("acp");
     expect(defaultRegistry.protocol).toBe("acp");
+  });
+
+  // M-1 (final review): the return type was `protocol: "acp"` hard-coded while
+  // the resolved gate value was already computed — this pins the resolution.
+  test("resolves protocol field from config instead of hard-coding 'acp'", () => {
+    const nativeRegistry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "native" } }));
+    const hybridRegistry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "hybrid" } }));
+    expect(nativeRegistry.protocol).toBe("native");
+    expect(hybridRegistry.protocol).toBe("hybrid");
   });
 });
 

@@ -48,13 +48,19 @@ export class NativeAgentAdapter implements AgentAdapter {
     };
   }
 
-  /** "Installed" can only mean "credentials resolve" with no binary to find. */
+  /** Phase A's probe is client construction, not credential resolution — nax-ai resolves keys at call time (ADR-027 §3). */
   async isInstalled(): Promise<boolean> {
     return this.hasCredentials();
   }
 
   async hasCredentials(): Promise<boolean> {
-    // Phase A resolves ambient environment keys only; a store arrives in plan 2.
+    // The probe is client construction, nothing more: getNativeClient()
+    // succeeds with no keys anywhere — createClient is synchronous pure
+    // construction and piProviders() loads a bundled static catalog. nax-ai
+    // resolves credentials at call time inside the protocol backend, so this
+    // cannot mean "keys resolve". The credential store (plan 2) provides the
+    // real probe; until then the availability seam fires from
+    // toAdapterFailure("auth") -> fail-auth at request time.
     try {
       await getNativeClient();
       return true;

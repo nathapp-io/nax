@@ -97,7 +97,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/verification/` | Test execution, smart runner, scoped runner (per-story verify via verifyScopedOp / fullSuiteGateOp) |
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
 | `src/config/` | Config schema + layered loader (global → project) + permissions |
-| `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` (the only protocol) |
+| `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` (one of two transports; see ADR-027) |
 | `src/agents/cost/` | Centralized cost calculation (pricing, token parsing) |
 | `src/agents/native/` | Native in-process LLM path over `@nathapp/nax-ai` (one-shot `complete()`; sessions are Phase B) |
 | `src/agents/shared/` | Cross-adapter utilities (decompose, env, model-resolution, validation) |

@@ -17,6 +17,8 @@ export interface AgentVersionInfo {
   name: string;
   /** Human-readable display name */
   displayName: string;
+  /** The binary the agent spawns — "" for adapterless agents (native). */
+  binary: string;
   /** Agent version or null if not installed/unable to detect */
   version: string | null;
   /** Whether the agent binary is installed */
@@ -144,6 +146,7 @@ export async function getAgentVersions(): Promise<AgentVersionInfo[]> {
       return {
         name: agent.name,
         displayName: agent.displayName,
+        binary: agent.binary,
         version,
         installed,
       };

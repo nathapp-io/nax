@@ -152,10 +152,17 @@ Two ADR-025 rules land with no amendment:
 
 - **"Never invent an agent."** `native` is a known agent name; an unknown one
   still degrades to the default with a warning.
-- **The availability seam.** A native agent with no resolvable credentials is
-  *unavailable*, and `resolveExecutionAgent` already degrades unavailable agents
-  to the default with a warning. This gives `isInstalled()` an honest meaning
-  for an adapter with no binary: credentials resolve.
+- **The availability seam.** At call time, a native call with no resolvable
+  credentials fails with a typed `auth` error, mapped by §9 to
+  `availability / fail-auth`, and `resolveExecutionAgent` already degrades
+  unavailable agents to the default with a warning. Phase A's `isInstalled()`
+  must not be read as the seam's trigger, though: the probe is client
+  construction, not credential resolution — nax-ai resolves credentials at call
+  time inside the protocol backend, so a machine without keys still reports
+  `native` installed. The availability seam fires from `fail-auth` at request
+  time, and a real credential probe arrives with plan 2 (the
+  `~/.nax/credentials` store / `nax auth`); the construction probe is all
+  `isInstalled()` can honestly answer until then.
 
 ### 4. `src/agents/native/` layout and the wire-isolation gate
 
