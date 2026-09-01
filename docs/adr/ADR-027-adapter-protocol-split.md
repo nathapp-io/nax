@@ -4,7 +4,7 @@
 **Date:** 2026-09-01
 **Author:** William Khoo, Claude
 **Builds on:** ADR-025 (Agent Routing and Cross-Agent Escalation), ADR-012 (Agent Manager Ownership)
-**Amends:** ADR-025 §5 (fallback targets) and §4 (tier attribution) — see §6 and §7
+**Amends:** the AgentManager fallback map from ADR-012 / ADR-013 (§6), and ADR-025 §4's profile↔rung binding (§7)
 **Related:** [Nax Native LLM Harness](https://claude.ai/code/artifact/3f52e26b-9614-411f-ba38-31dd6393f804) (feasibility analysis, the "why"), `@nathapp/nax-ai@0.1.1`, #374 (scoped permissions, blocked on Phase C)
 **Implementation:** none yet — this ADR is the first concrete step the feasibility analysis names.
 
@@ -94,6 +94,10 @@ parsed as `<provider>/<model>`, split on the **first** `/` — which handles
 requires. Under any acpx agent the string stays opaque and is passed through
 unchanged, as today.
 
+A native model string with **no `/` is a config error**, naming the remedy. There
+is no default provider to fall back on (Open Question 2), and silently treating
+a bare model id as a provider would fail later and further away.
+
 `anthropic/claude-sonnet-5` under `native` and `claude` under acpx are the same
 vendor on **two different billing paths** — API key versus subscription. Keeping
 them distinct entries makes that visible in config rather than inferred.
@@ -112,6 +116,10 @@ The agent name routes; `protocol` decides what is *permitted*:
 | `hybrid` | both engines allowed |
 | `native` | acpx entries rejected — for an install with no subscription CLI |
 
+Under `native`, `agent.default` must name `native` — the schema default is
+`"claude"`, so an install choosing `native` without changing it would default to
+a rejected agent. Validation says so rather than leaving it to fail at run time.
+
 It is a gate rather than a router because the two would be redundant, and
 because native calls hit a **different billing path**: reaching it should be an
 explicit opt-in, not the consequence of a typo in `models`. Defaulting to `acp`
@@ -125,8 +133,22 @@ function adapterFor(name: string): AgentAdapter {
 }
 ```
 
-`_registryTestAdapters` already proves this injection shape. Two ADR-025 rules
-then land with no amendment:
+`_registryTestAdapters` already proves this injection shape.
+
+**One wrinkle to resolve deliberately rather than discover:** `createAgentRegistry`
+takes config (`registry.ts:96`), but `buildAdapterList` and the two module-level
+functions above it (`getAllAgents`, `getInstalledAgents`) are **config-less by
+design** — so they cannot consult `protocol`. `native` therefore appears in those
+listings whatever the gate says, and its `isInstalled()` answers about
+credentials, not about permission. The gate bites where config is available: at
+`createAgentRegistry` and at config validation. Consequence: `nax agents` and the
+multi-agent-health precheck may list `native` under `protocol: "acp"`. Threading
+config into those two functions would fix it and is a wider change than this ADR;
+see Open Question 4. (`registry.ts:100` also logs a hard-coded
+`"Agent protocol: acp"`, which becomes a lie at step 1 and should log the
+resolved value.)
+
+Two ADR-025 rules land with no amendment:
 
 - **"Never invent an agent."** `native` is a known agent name; an unknown one
   still degrades to the default with a warning.
@@ -215,9 +237,15 @@ This is a widening, not a behaviour change: no existing config's meaning moves.
 
 ### 7. Amendment to ADR-025: custom tiers lose their attribution
 
-`resolveConfiguredModel` (`src/config/schema-types.ts:100-119`) branches on
-`isBuiltinModelTier`. A `{agent, model}` selection naming a **non-builtin** tier
+`resolveConfiguredModel` (`src/config/schema-types.ts:85-119`) has two paths, and
+only one of them is broken. A **string** selection already returns
+`modelTier: selection` for any tier name, builtin or not. The **object** form
+`{agent, model}` branches on `isBuiltinModelTier`, and a non-builtin tier there
 falls through to `resolveModel(selection.model)` and returns **no `modelTier`**.
+
+The object form is exactly the shape ADR-025 profiles use for `target`, so this
+is the profile path specifically — fixing the string branch would be fixing the
+half that works.
 
 Today that is nearly harmless — custom tiers are exotic. Under §5 they become
 ordinary, and the loss matters twice: `modelTier` is recorded on cost rows for
@@ -401,7 +429,12 @@ As a gate (§2) the same field is useful without being a second router.
    `ResolvedModel` carries context limits, but `AgentCapabilities` is
    per-adapter. Phase A can hardcode a conservative value; the right answer
    probably makes capabilities model-derived, which is wider than this ADR.
-4. **Should `MODEL_SHORTHAND_TIERS` gain native-shaped shorthands?** Today
+4. **Should `getAllAgents` / `getInstalledAgents` take config** so agent listings
+   reflect the `protocol` gate (§3)? It would change two config-less signatures
+   and their call sites in `src/cli/agents.ts` and the multi-agent-health
+   precheck. Deferred because listing an agent that resolution would reject is
+   misleading but not harmful.
+5. **Should `MODEL_SHORTHAND_TIERS` gain native-shaped shorthands?** Today
    `haiku`/`sonnet`/`opus` map to the three builtin tiers, which is
    Anthropic-shaped. Cosmetic, and safe to defer.
 
