@@ -1,6 +1,6 @@
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { createPiProtocol, toPiContext, toPiOptions } from "../../src/protocols/pi-client.ts";
+import { createPiProtocol, toPiContext, toPiOptions, toPiTool } from "../../src/protocols/pi-client.ts";
 import type { ProtocolEvent, ProtocolRequest } from "../../src/protocols/types.ts";
 import { runProtocolConformance } from "../support/conformance.ts";
 
@@ -150,6 +150,30 @@ describe("toPiContext", () => {
     const block = message.content[0];
     expect(block).toMatchObject({ type: "thinking", thinking: "hmm" });
     expect("thinkingSignature" in (block ?? {})).toBe(false);
+  });
+});
+
+describe("toPiTool", () => {
+  const TOOL = { name: "search", description: "search the web", inputSchema: { type: "object" } };
+
+  it("forwards constrainedSampling verbatim when set", () => {
+    const constrainedSampling = { type: "json_schema" as const, strict: "require" as const };
+    const piTool = toPiTool({ ...TOOL, constrainedSampling });
+    expect(piTool.constrainedSampling).toEqual(constrainedSampling);
+  });
+
+  it("omits constrainedSampling entirely when unset, not present-and-undefined", () => {
+    const piTool = toPiTool(TOOL);
+    expect("constrainedSampling" in piTool).toBe(false);
+  });
+
+  it("matches the pre-change shape for a tool without constrainedSampling", () => {
+    const piTool = toPiTool(TOOL);
+    expect(piTool).toEqual({
+      name: "search",
+      description: "search the web",
+      parameters: { type: "object" },
+    });
   });
 });
 

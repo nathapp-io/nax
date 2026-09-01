@@ -53,10 +53,29 @@ export interface ProtocolError {
   readonly cause?: unknown;
 }
 
+/**
+ * Provider-side constrained sampling for a tool's arguments.
+ *
+ * Support is per-MODEL, never caller-controllable: pi-ai's generated catalog
+ * sets `supportsStrictMode` / `supportsStrictTools` on each model entry, and a
+ * model that lacks it simply cannot honour this. `"prefer"` degrades SILENTLY
+ * to an unconstrained tool on such a model — a well-formed response is not
+ * evidence the constraint was applied. `"require"` throws instead of
+ * degrading. Only the `json_schema` variant is carried here; pi-ai's
+ * `grammar` variant is OpenAI-specific Lark/regex encoding with no caller in
+ * this codebase, and would put a provider-shaped union into vocabulary this
+ * file otherwise keeps free of one.
+ */
+export type ConstrainedSampling = {
+  readonly type: "json_schema";
+  readonly strict: "prefer" | "require";
+};
+
 export interface ToolDefinition {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: JsonSchema;
+  readonly constrainedSampling?: ConstrainedSampling;
 }
 
 export interface ToolCall {

@@ -78,13 +78,14 @@ const NO_USAGE: PiUsage = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-function toPiTool(tool: ProtocolRequest["tools"] extends readonly (infer T)[] | undefined ? T : never): PiTool {
+export function toPiTool(tool: ProtocolRequest["tools"] extends readonly (infer T)[] | undefined ? T : never): PiTool {
   return {
     name: tool.name,
     description: tool.description,
     // pi-ai types this as a TypeBox TSchema, which is a JSON Schema object at
     // runtime. nax-ai does not validate schemas; it forwards what it was given.
     parameters: tool.inputSchema as PiTool["parameters"],
+    ...(tool.constrainedSampling !== undefined ? { constrainedSampling: tool.constrainedSampling } : {}),
   };
 }
 

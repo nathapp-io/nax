@@ -45,6 +45,7 @@ export {
 export { clampThinkingLevel } from "./protocols/thinking.ts";
 export type {
   CacheRetention,
+  ConstrainedSampling,
   ConversationMessage,
   JsonSchema,
   Protocol,

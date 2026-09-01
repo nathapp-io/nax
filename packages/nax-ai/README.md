@@ -29,6 +29,10 @@ const result = await client.complete(model, { messages: [{ role: "user", content
 
 While the API is unstable, `latest` and `next` both point at the current 0.x release, so `npm install @nathapp/nax-ai` and `npm install @nathapp/nax-ai@next` are equivalent. Canary builds are published to `canary` and are not covered by either.
 
+### Constrained sampling
+
+A `ToolDefinition` can carry an optional `constrainedSampling: { type: "json_schema"; strict: "prefer" | "require" }` to ask the provider to constrain a tool's arguments to its schema. Support is per-model, not caller-controllable — some models simply cannot honour it. `"prefer"` degrades silently to an unconstrained tool when the model lacks support, so a well-formed response is not evidence the constraint was applied; `"require"` throws instead of degrading.
+
 ## Scope
 
 This package speaks a generic LLM vocabulary — models, messages, tool calls, usage, credentials. It knows nothing about any consumer's domain concepts, and that direction is one-way by design: consumers map onto their own types at their own boundary.
