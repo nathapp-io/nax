@@ -15,6 +15,7 @@ export { NativeAgentAdapter } from "./adapter";
 export {
   AuthCancelledError,
   ambientShadows,
+  anyAmbientCredential,
   authImportOutcomeLabel,
   DEFAULT_PI_AUTH_PATH,
   type ImportOutcome,
