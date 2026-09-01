@@ -57,7 +57,8 @@
 **Files:**
 - Modify: `nax-ai:src/auth/pi-auth.ts`
 - Modify: `nax-ai:src/index.ts`
-- Test: `nax-ai:test/auth/ambient.test.ts` (create)
+- Test: `nax-ai:test/auth/pi-auth-ambient.test.ts` (create — the siblings are `pi-auth.test.ts` and `pi-auth-login.test.ts`)
+- Modify: `nax-ai:test/index.test.ts` (it pins the public surface; a new export belongs in it)
 
 **Interfaces:**
 - Consumes: the existing `_loginDeps.providers()` seam in `pi-auth.ts`, which returns `readonly PiProvider[]`.
@@ -67,7 +68,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `nax-ai:test/auth/ambient.test.ts`:
+Create `nax-ai:test/auth/pi-auth-ambient.test.ts`:
 
 ```ts
 import { afterEach, describe, expect, it } from "vitest";
@@ -146,12 +147,29 @@ describe("ambientAuthAvailable", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd repos/nax-ai && bun x vitest --run test/auth/ambient.test.ts`
+Run: `cd repos/nax-ai && bun x vitest --run test/auth/pi-auth-ambient.test.ts`
 Expected: FAIL — `ambientAuthAvailable` is not exported from `pi-auth.ts`.
 
 - [ ] **Step 3: Implement the probe**
 
-In `nax-ai:src/auth/pi-auth.ts`, add `defaultProviderAuthContext` to the existing pi-ai import. **That import is a plain `import type { ... }` today — you are adding a VALUE, so it needs its own `import { defaultProviderAuthContext } from "@earendil-works/pi-ai";` statement.** Under `verbatimModuleSyntax` you cannot add a value to an `import type` statement.
+In `nax-ai:src/auth/pi-auth.ts`, add `defaultProviderAuthContext`. Two constraints, both verified by compiling this against the repo:
+
+1. The existing pi-ai import is `import type { ... }`, and under `verbatimModuleSyntax` you cannot add a value to it. It needs its own statement.
+2. **That statement goes immediately AFTER the `import type { ... } from "@earendil-works/pi-ai";` block, not before it.** biome's `organizeImports` sorts the type import first, and `bun run lint` runs with `--error-on-warnings`, so the other order fails the gate.
+
+The result reads:
+
+```ts
+import type {
+  Credential,
+  MutableModels,
+  AuthEvent as PiAuthEvent,
+  AuthPrompt as PiAuthPrompt,
+  CredentialStore as PiCredentialStore,
+  Provider as PiProvider,
+} from "@earendil-works/pi-ai";
+import { defaultProviderAuthContext } from "@earendil-works/pi-ai";
+```
 
 Append:
 
@@ -194,7 +212,7 @@ Note the absent `credential` property: under `exactOptionalPropertyTypes`, omit 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd repos/nax-ai && bun x vitest --run test/auth/ambient.test.ts`
+Run: `cd repos/nax-ai && bun x vitest --run test/auth/pi-auth-ambient.test.ts`
 Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Export it from the package root**
@@ -204,6 +222,16 @@ In `nax-ai:src/index.ts`, beside the existing `export { login } from "./auth/log
 ```ts
 export { ambientAuthAvailable } from "./auth/pi-auth.ts";
 ```
+
+Then extend `nax-ai:test/index.test.ts`, which exists to pin the public surface:
+
+```ts
+  it("exports the ambient-auth probe", () => {
+    expect(typeof naxAi.ambientAuthAvailable).toBe("function");
+  });
+```
+
+Note that file also asserts `expect(naxAi).not.toHaveProperty("_loginDeps")`. A named re-export keeps that true; a `export * from "./auth/pi-auth.ts"` would not.
 
 - [ ] **Step 6: Run the full gate**
 
@@ -215,7 +243,7 @@ Expected: all pass. `check:pi-ai-imports` stays clean — `pi-auth.ts` is alread
 ```bash
 cd repos/nax-ai
 git checkout -b feat/ambient-auth-probe
-git add src/auth/pi-auth.ts src/index.ts test/auth/ambient.test.ts
+git add src/auth/pi-auth.ts src/index.ts test/auth/pi-auth-ambient.test.ts test/index.test.ts
 git commit -m "feat(auth): report whether ambient auth alone satisfies a provider
 
 nax needs to tell a user that a stored credential is shadowing a working
@@ -1313,6 +1341,8 @@ breaking the command it decorates would be worse than a missing warning."
 
 **Write control characters as escapes, never as literal bytes.** `scripts/check-no-control-bytes.ts` fails the build on raw control bytes in source, and `confirm.ts` already uses this form.
 
+**Do not cast the listeners when removing them.** nax has a custom biome plugin that rejects `as never` ("silences every assignment error", see `.nax/rules/test-ratchets.md`), and the cast is unnecessary anyway: `PromptStdin.removeListener` takes `(...args: never[]) => void`, which already accepts a `(chunk: string) => void` handler. `confirm.ts:89-91` passes its handlers bare for the same reason.
+
 **The invariants under test:** raw mode is entered and left exactly once on every exit path; typed characters are never echoed; Ctrl+C rejects; Ctrl+D rejects rather than submitting a partial secret; a stream that ends or errors rejects rather than hanging forever.
 
 - [ ] **Step 1: Write the failing test**
@@ -1523,9 +1553,9 @@ function read(message: string, echo: boolean): Promise<string> {
     const cleanup = (): void => {
       if (settled) return;
       settled = true;
-      stdin.removeListener("data", onData as never);
-      stdin.removeListener("end", onEnd as never);
-      stdin.removeListener("error", onEnd as never);
+      stdin.removeListener("data", onData);
+      stdin.removeListener("end", onEnd);
+      stdin.removeListener("error", onEnd);
       stdin.setRawMode(false);
       stdin.pause();
       _authPromptDeps.write("\n");
@@ -2364,6 +2394,17 @@ git commit -m "docs: record the live verification of nax auth"
 1. Tasks 1 and 2 must precede everything. Nothing else typechecks against nax-ai 0.1.2, because `login()` and `ambientAuthAvailable` are not in it.
 2. Task 6 uses `_authDeps.ambientAuthAvailable`, which Task 5 Step 3 defines in the same object literal as `login`. Executing Task 6 first leaves that seam undefined.
 3. **The native barrel is extended in Task 6, not Task 8.** `src/cli/auth.ts` must import from `@/agents/native` rather than `@/agents/native/auth`, because `scripts/check-alias-internals.ts` rejects value imports aliasing into a barrel's internals from `src/` — it exempts type-only imports, and exempts `test/` entirely, which is why Task 8's *test* may import `@/agents/native/auth` directly while its *source* may not.
+
+**What was verified by compiling and running, not by reasoning (2026-09-01).** Following the method that paid off on nax-ai M5, the riskiest code in this plan was written into the real repos, compiled against their real tsconfigs, run, and then reverted:
+
+- **Task 1's probe and all 6 of its tests: written, compiled, run — 6 passed.** `defaultProviderAuthContext` resolves from pi's package root, `apiKey.check`/`resolve` accept `{ ctx, signal }` with `credential` omitted under `exactOptionalPropertyTypes`, and `check:pi-ai-imports` stays clean because `pi-auth.ts` is already on its allowlist.
+- **Task 3's `credentials.ts` and all 6 of its tests: written, compiled, run — 6 passed**, against the real file store in a temp `NAX_GLOBAL_CONFIG_DIR`, including the round-trip, the sort, and the unparseable-file case.
+- **Task 7's `auth-prompt.ts` and all 7 of its tests: written, compiled, run — 7 passed**, including "raw mode restored exactly once" and Ctrl+D rejecting rather than submitting a partial secret.
+- **The `mock()` assignment shape used in Tasks 5, 6 and 8 typechecks** under `tsconfig.test.json`. A narrowed mock does assign to the `_authDeps` seam.
+
+That pass found two defects that would have failed the executor's first `bun run lint`, both now fixed above: biome's `organizeImports` requires Task 1's value import to sit *after* the type import from the same specifier, and Task 7's `as never` casts are rejected by a custom biome plugin (and were unnecessary — `confirm.ts` passes its handlers bare).
+
+**Still unverified, and why.** Tasks 4, 5, 6 and 8 could not be compiled: they import `login`, the `Login*` types and `ambientAuthAvailable`, none of which exist in the installed nax-ai 0.1.2. They become checkable the moment Task 2 lands. Treat their code as carefully-written but unproven, and expect the first `bun run typecheck` after Task 2 to be where any remaining type slip surfaces.
 
 **A self-review correction worth recording.** The first draft of this plan had Task 8's CLI importing from the barrel while Task 9 was what populated it, and had Task 6 re-importing a symbol Task 5 already imported. Both would have failed at the executor's first `bun run lint`, not at review.
 
