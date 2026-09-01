@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _authDeps } from "@/agents/native/auth";
 import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
 import { _cliAuthDeps, authImportCommand, authListCommand, authLoginCommand, authRmCommand } from "@/cli/auth";
@@ -35,16 +35,29 @@ type LoginCallOptions = Parameters<typeof _authDeps.login>[0];
 
 let out: string[];
 let promptWritten: string[];
+let dir: string;
+let extraDirs: string[];
 const realLogin = _authDeps.login;
 const realAmbient = _authDeps.ambientAuthAvailable;
 const realPromptStdin = _authPromptDeps.stdin;
 const realPromptWrite = _authPromptDeps.write;
+const realLog = _cliAuthDeps.log;
+const realIsTTY = _cliAuthDeps.isTTY;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+
+/** Tracked so afterEach can clean up every source temp dir a test creates. */
+function makeTrackedTempDir(prefix: string): string {
+  const created = makeTempDir(prefix);
+  extraDirs.push(created);
+  return created;
+}
 
 beforeEach(() => {
   out = [];
   promptWritten = [];
-  process.env.NAX_GLOBAL_CONFIG_DIR = mkdtempSync(join(tmpdir(), "nax-cli-auth-"));
+  extraDirs = [];
+  dir = makeTempDir("nax-cli-auth-");
+  process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   _resetCredentialStore();
   _cliAuthDeps.log = (text: string) => out.push(text);
   _cliAuthDeps.isTTY = () => true;
@@ -60,8 +73,12 @@ afterEach(() => {
   _authDeps.ambientAuthAvailable = realAmbient;
   _authPromptDeps.stdin = realPromptStdin;
   _authPromptDeps.write = realPromptWrite;
+  _cliAuthDeps.log = realLog;
+  _cliAuthDeps.isTTY = realIsTTY;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
+  cleanupTempDir(dir);
+  for (const extra of extraDirs) cleanupTempDir(extra);
 });
 
 describe("authLoginCommand", () => {
@@ -186,7 +203,7 @@ describe("authLoginCommand", () => {
 describe("authImportCommand", () => {
   test("imports pi entries, reports each outcome, and never the key", async () => {
     await naxCredentialStore().modify("openrouter", async () => ({ kind: "api-key", key: "sk-stored" }));
-    const source = join(mkdtempSync(join(tmpdir(), "nax-pi-")), "auth.json");
+    const source = join(makeTrackedTempDir("nax-pi-"), "auth.json");
     writeFileSync(
       source,
       JSON.stringify({
@@ -212,7 +229,7 @@ describe("authImportCommand", () => {
   });
 
   test("says there is nothing to import when the source has no entries", async () => {
-    const source = join(mkdtempSync(join(tmpdir(), "nax-pi-")), "auth.json");
+    const source = join(makeTrackedTempDir("nax-pi-"), "auth.json");
     writeFileSync(source, "{}");
 
     const code = await authImportCommand({ from: source });
@@ -222,7 +239,7 @@ describe("authImportCommand", () => {
   });
 
   test("reports a missing source file and exits 1", async () => {
-    const source = join(mkdtempSync(join(tmpdir(), "nax-pi-")), "absent.json");
+    const source = join(makeTrackedTempDir("nax-pi-"), "absent.json");
 
     const code = await authImportCommand({ from: source });
 

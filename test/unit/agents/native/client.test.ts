@@ -7,8 +7,9 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { createClient } from "@nathapp/nax-ai";
+import { createClient, type PiProtocolOptions } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient, buildNativeClient, getNativeClient } from "@/agents/native/client";
+import { naxCredentialStore } from "@/agents/native/credentials";
 
 const REAL_BUILD = _clientDeps.build;
 // A real client with no providers and no protocols: constructing it loads no
@@ -61,19 +62,24 @@ describe("buildNativeClient", () => {
     expect(typeof client.pricing).toBe("function");
   });
 
-  test("passes a credential store to createClient, so a stored credential reaches a run", async () => {
-    let sawCredentials = false;
-    _clientDeps.build = async () => {
-      // The real buildNativeClient is what we are asserting about, so call it
-      // through a createClient spy rather than replacing the whole builder.
-      throw new Error("unused");
-    };
+  test("passes the credential store to piProtocols, so a stored credential reaches a run", async () => {
+    const realPiProtocols = _clientDeps.piProtocols;
+    let seenCredentials: unknown;
+    _clientDeps.piProtocols = ((options?: PiProtocolOptions) => {
+      seenCredentials = options?.credentials;
+      return realPiProtocols(options);
+    }) as typeof _clientDeps.piProtocols;
 
-    // Assert on the source instead: buildNativeClient's options object is not
-    // observable from outside, and a client built for real would load the
-    // catalog.
-    const source = await Bun.file(new URL("../../../../src/agents/native/client.ts", import.meta.url)).text();
-    sawCredentials = /credentials:\s*naxCredentialStore\(\)/.test(source);
-    expect(sawCredentials).toBe(true);
+    try {
+      // The real buildNativeClient, called directly (not through _clientDeps.build,
+      // which test/preload.ts sentinels): this proves the seam nax-ai actually
+      // reads (piProtocols), not ClientOptions.credentials, which it accepts in
+      // its type but silently ignores.
+      await buildNativeClient();
+    } finally {
+      _clientDeps.piProtocols = realPiProtocols;
+    }
+
+    expect(seenCredentials).toBe(naxCredentialStore());
   });
 });

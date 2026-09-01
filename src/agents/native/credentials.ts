@@ -76,7 +76,12 @@ export async function readStoredEntries(): Promise<StoredEntry[]> {
   }
 
   const credentials = (parsed as { credentials?: Record<string, { kind?: string; expires?: number }> })?.credentials;
-  if (credentials === undefined || typeof credentials !== "object") {
+  if (
+    credentials === undefined ||
+    credentials === null ||
+    typeof credentials !== "object" ||
+    Array.isArray(credentials)
+  ) {
     throw new NaxError(
       `The credential file at ${path} could not be parsed as a credential store.`,
       "CREDENTIAL_FILE_UNREADABLE",

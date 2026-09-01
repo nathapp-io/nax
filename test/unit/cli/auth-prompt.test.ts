@@ -128,4 +128,13 @@ describe("promptForSecret", () => {
 
     expect(await pending).toBe("a");
   });
+
+  test("rejects without touching raw mode when stdin is not a TTY", async () => {
+    const h = makeStdin();
+    h.stdin.isTTY = false;
+    _authPromptDeps.stdin = h.stdin;
+
+    await expect(promptForSecret("API key:")).rejects.toBeInstanceOf(PromptCancelledError);
+    expect(h.rawModeCalls).toEqual([]);
+  });
 });

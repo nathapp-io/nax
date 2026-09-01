@@ -49,6 +49,7 @@ export const _authPromptDeps: {
 
 function read(message: string, echo: boolean): Promise<string> {
   const { stdin } = _authPromptDeps;
+  if (stdin.isTTY !== true) return Promise.reject(new PromptCancelledError());
   _authPromptDeps.write(`${chalk.cyan("?")} ${message} `);
 
   return new Promise<string>((resolve, reject) => {

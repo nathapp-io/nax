@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _authDeps,
   ambientShadows,
@@ -23,7 +23,7 @@ const PI_FILE = {
 };
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "nax-import-"));
+  dir = makeTempDir("nax-import-");
   process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   piPath = join(dir, "pi-auth.json");
   writeFileSync(piPath, JSON.stringify(PI_FILE));
@@ -34,6 +34,7 @@ afterEach(() => {
   _authDeps.ambientAuthAvailable = realAmbient;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
+  cleanupTempDir(dir);
 });
 
 describe("importPiCredentials", () => {

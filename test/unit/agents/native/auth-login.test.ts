@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _authDeps, AuthCancelledError, runLogin } from "@/agents/native/auth";
 import type { AuthInteraction } from "@/agents/native/auth-types";
 import { _resetCredentialStore } from "@/agents/native/credentials";
@@ -11,8 +9,11 @@ const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 
 const silent: AuthInteraction = { prompt: async () => "", notify: () => undefined };
 
+let dir: string;
+
 beforeEach(() => {
-  process.env.NAX_GLOBAL_CONFIG_DIR = mkdtempSync(join(tmpdir(), "nax-login-"));
+  dir = makeTempDir("nax-login-");
+  process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   _resetCredentialStore();
 });
 
@@ -20,6 +21,7 @@ afterEach(() => {
   _authDeps.login = realLogin;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
+  cleanupTempDir(dir);
 });
 
 describe("runLogin", () => {

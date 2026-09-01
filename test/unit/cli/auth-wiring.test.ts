@@ -34,8 +34,11 @@ describe("auth command wiring", () => {
 
   test("the preload scrubs ambient provider keys, so probes cannot pass for the wrong reason", () => {
     const source = readFileSync(join(ROOT, "test", "preload.ts"), "utf8");
-    expect(source).toContain("OPENROUTER_API_KEY");
-    expect(source).toContain("OPENCODE_API_KEY");
+    // Scrubbed by pattern, not a fixed provider list — see the comment above
+    // the loop in preload.ts for why. Assert the pattern itself is present,
+    // and that it actually took effect on the environment this process saw.
+    expect(source).toMatch(/_API_KEY\$/);
     expect(process.env.OPENROUTER_API_KEY).toBeUndefined();
+    expect(process.env.OPENAI_API_KEY).toBeUndefined();
   });
 });

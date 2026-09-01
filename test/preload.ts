@@ -42,17 +42,13 @@ delete process.env.TELEGRAM_BOT_TOKEN;
 // environment. A developer with a real key exported would make it answer true
 // in tests written to expect false — they would pass without proving anything.
 // Redirecting ~/.nax does not isolate env, so scrub before any test file loads.
-for (const key of [
-  "OPENROUTER_API_KEY",
-  "OPENCODE_API_KEY",
-  "OPENAI_API_KEY",
-  "ANTHROPIC_API_KEY",
-  "DEEPSEEK_API_KEY",
-  "MINIMAX_API_KEY",
-  "GEMINI_API_KEY",
-  "GOOGLE_API_KEY",
-]) {
-  delete process.env[key];
+// Scrubbed by pattern rather than a fixed provider list: nax-ai's provider
+// catalog is larger than any list here would stay in sync with, and a
+// developer with e.g. MISTRAL_API_KEY exported would otherwise get a
+// locally-passing test that proves nothing. Non-env ambient sources (AWS
+// profile, ADC) remain unisolated — this only covers the *_API_KEY shape.
+for (const key of Object.keys(process.env)) {
+  if (/_API_KEY$/.test(key)) delete process.env[key];
 }
 
 // ─── Console suppression ──────────────────────────────────────────────────────

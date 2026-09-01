@@ -34,13 +34,25 @@ export const _cliAuthDeps: {
 function terminalInteraction(): AuthInteraction {
   return {
     prompt: async (prompt: AuthPrompt): Promise<string> => {
-      if (prompt.type === "secret") return promptForSecret(prompt.message);
+      // Invert the default: echo only the known-safe, non-secret shapes, and
+      // treat anything this mirror doesn't recognise as a secret. AuthPrompt
+      // is a hand-maintained copy of nax-ai's LoginPrompt (auth-types.ts), so
+      // a future secret-bearing prompt type must not fall through to echo.
+      if (prompt.type === "text" || prompt.type === "manual-code") return promptForLine(prompt.message);
       if (prompt.type === "select") {
         _cliAuthDeps.log(prompt.message);
         for (const option of prompt.options) _cliAuthDeps.log(`  ${chalk.cyan(option.id)}  ${option.label}`);
-        return promptForLine("Choose:");
+        // Loop rather than pass a mistyped answer straight to nax-ai: an
+        // unrecognised value there is reported as "no login method is
+        // available", which sends the user chasing a config problem that
+        // does not exist.
+        for (;;) {
+          const answer = await promptForLine("Choose:");
+          if (prompt.options.some((option) => option.id === answer)) return answer;
+          _cliAuthDeps.log(chalk.red(`"${answer}" is not one of the options above.`));
+        }
       }
-      return promptForLine(prompt.message);
+      return promptForSecret(prompt.message);
     },
     notify: (event: AuthEvent): void => {
       switch (event.type) {
@@ -55,8 +67,12 @@ function terminalInteraction(): AuthInteraction {
           _cliAuthDeps.log(event.message);
           for (const link of event.links ?? []) _cliAuthDeps.log(`  ${link.label ?? "Link"}: ${link.url}`);
           return;
-        default:
+        case "progress":
           _cliAuthDeps.log(chalk.dim(event.message));
+          return;
+        default:
+        // An event type this mirror doesn't recognise: say nothing rather
+        // than logging `undefined` for a field this shape may not carry.
       }
     },
   };

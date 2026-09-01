@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _resetCredentialStore,
   credentialFilePath,
@@ -13,7 +13,7 @@ let dir: string;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "nax-creds-"));
+  dir = makeTempDir("nax-creds-");
   process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   _resetCredentialStore();
 });
@@ -21,6 +21,7 @@ beforeEach(() => {
 afterEach(() => {
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
+  cleanupTempDir(dir);
 });
 
 describe("credentialFilePath", () => {
@@ -63,6 +64,11 @@ describe("readStoredEntries", () => {
 
   test("throws rather than reporting empty when the file is unparseable", async () => {
     writeFileSync(credentialFilePath(), "{ not json");
+    await expect(readStoredEntries()).rejects.toThrow(/could not be parsed/);
+  });
+
+  test("throws the crafted message rather than a raw TypeError when credentials is null", async () => {
+    writeFileSync(credentialFilePath(), JSON.stringify({ credentials: null }));
     await expect(readStoredEntries()).rejects.toThrow(/could not be parsed/);
   });
 });

@@ -50,7 +50,13 @@ export const _authDeps = { login, ambientAuthAvailable };
  */
 function toNaxError(error: unknown, providerId: string): Error {
   if (error instanceof Error) {
-    if (error.name === "LoginCancelledError") return new AuthCancelledError(providerId);
+    // Nax's own prompts reject with PromptCancelledError from inside the
+    // interaction callback, so it surfaces here rather than being converted
+    // by nax-ai's login() — that conversion only fires on an aborted signal,
+    // and runLogin never threads one.
+    if (error.name === "LoginCancelledError" || error.name === "PromptCancelledError") {
+      return new AuthCancelledError(providerId);
+    }
     if (error.name === "OAuthFlowProhibitedError") {
       return new NaxError(error.message, "AUTH_OAUTH_PROHIBITED", { providerId });
     }
@@ -126,8 +132,10 @@ function fromPiEntry(
  * after a fresh login, and silently replacing a credential just obtained would
  * be the worst kind of quiet data loss.
  *
- * Each write goes through modify(), which is what holds the store's
- * cross-process lock across the read-modify-write.
+ * The presence check happens inside modify()'s callback, not before it: that
+ * is what holds the store's cross-process lock across the whole
+ * read-modify-write. Deciding "already present" from a separate, unlocked
+ * read would race a concurrent login completing between the two calls.
  */
 export async function importPiCredentials(options?: { from?: string; force?: boolean }): Promise<ImportOutcome[]> {
   const path = options?.from ?? DEFAULT_PI_AUTH_PATH;
@@ -135,15 +143,27 @@ export async function importPiCredentials(options?: { from?: string; force?: boo
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
-  } catch {
-    throw new NaxError(`No credential file to import at ${path}.`, "AUTH_IMPORT_SOURCE_MISSING", { path });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new NaxError(`No credential file to import at ${path}.`, "AUTH_IMPORT_SOURCE_MISSING", {
+        path,
+        cause: error,
+      });
+    }
+    throw new NaxError(`The file at ${path} could not be read.`, "AUTH_IMPORT_SOURCE_UNREADABLE", {
+      path,
+      cause: error,
+    });
   }
 
   let parsed: Record<string, PiEntry>;
   try {
     parsed = JSON.parse(raw) as Record<string, PiEntry>;
-  } catch {
-    throw new NaxError(`The file at ${path} is not valid JSON.`, "AUTH_IMPORT_SOURCE_UNREADABLE", { path });
+  } catch (error) {
+    throw new NaxError(`The file at ${path} is not valid JSON.`, "AUTH_IMPORT_SOURCE_UNREADABLE", {
+      path,
+      cause: error,
+    });
   }
 
   const store = naxCredentialStore();
@@ -156,12 +176,15 @@ export async function importPiCredentials(options?: { from?: string; force?: boo
       outcomes.push({ providerId, status: "unsupported" });
       continue;
     }
-    if (options?.force !== true && (await store.read(providerId)) !== undefined) {
-      outcomes.push({ providerId, status: "skipped" });
-      continue;
-    }
-    await store.modify(providerId, async () => credential);
-    outcomes.push({ providerId, status: "imported" });
+    let status: "imported" | "skipped" = "imported";
+    await store.modify(providerId, async (existing) => {
+      if (existing !== undefined && options?.force !== true) {
+        status = "skipped";
+        return existing;
+      }
+      return credential;
+    });
+    outcomes.push({ providerId, status });
   }
 
   return outcomes;

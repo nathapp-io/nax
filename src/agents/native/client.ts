@@ -23,7 +23,7 @@ import { naxCredentialStore } from "./credentials";
 export async function buildNativeClient(): Promise<Client> {
   return createClient({
     providers: await piProviders(),
-    protocols: piProtocols({
+    protocols: _clientDeps.piProtocols({
       // The credential seam: pi resolves the store first, then ambient sources
       // (env vars, AWS profiles, ADC), so a stored credential owns its provider
       // and CI with only an environment variable keeps working. Passing it here
@@ -34,9 +34,15 @@ export async function buildNativeClient(): Promise<Client> {
   });
 }
 
-/** Test seam: replaced in tests so no catalog is loaded and no network is reached. */
+/**
+ * Test seam. `build` is replaced in tests so no catalog is loaded and no
+ * network is reached. `piProtocols` is separately injectable so a test can
+ * observe what buildNativeClient passes it (the credentials wiring above)
+ * without loading the real catalog — see client.test.ts.
+ */
 export const _clientDeps = {
   build: buildNativeClient,
+  piProtocols,
 };
 
 let cached: Promise<Client> | undefined;
