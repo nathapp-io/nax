@@ -142,8 +142,7 @@ Create `test/unit/agents/native/ambient-probe.test.ts`:
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { anyAmbientCredential } from "@/agents/native/auth";
-import { _authDeps } from "@/agents/native/auth";
+import { _authDeps, anyAmbientCredential } from "@/agents/native/auth";
 
 const REAL_PROVIDER_IDS = _authDeps.providerIds;
 const REAL_AMBIENT = _authDeps.ambientAuthAvailable;
@@ -500,7 +499,7 @@ describe("native agent credential pruning (Phase A plan 3)", () => {
       checkAgentHealth: async () => [],
       protocol: "acp" as const,
     };
-    const manager = new AgentManager(config, { registry } as never);
+    const manager = new AgentManager(config, registry as never);
 
     await manager.validateCredentials();
 
@@ -517,14 +516,14 @@ describe("native agent credential pruning (Phase A plan 3)", () => {
       checkAgentHealth: async () => [],
       protocol: "acp" as const,
     };
-    const manager = new AgentManager(config, { registry } as never);
+    const manager = new AgentManager(config, registry as never);
 
     await expect(manager.validateCredentials()).rejects.toMatchObject({ code: "AGENT_CREDENTIALS_MISSING" });
   });
 });
 ```
 
-Note: the existing file already defines `stubAdapter` and imports `AgentManager` and `NaxConfigSchema`. If the `AgentManager` constructor signature in this file differs from the shape above, copy the construction used by the tests already in the file rather than the shape written here.
+Note: the existing file already defines `stubAdapter` and imports `AgentManager` and `NaxConfigSchema`, so add only the new `describe` block. The constructor is `new AgentManager(config, registry?, opts?)` — the registry is the **second positional argument**, not a field of an options object.
 
 Run: `bun test test/unit/agents/manager-credentials.test.ts`
 Expected: PASS.
@@ -792,7 +791,7 @@ describe("nextCandidate", () => {
 });
 ```
 
-Note: if `AgentManager`'s constructor in this repo requires more than a config, copy the construction used in `test/unit/agents/manager-credentials.test.ts` instead.
+Note: `new AgentManager(config)` is valid — the registry is an optional second positional argument and `nextCandidate` never reaches the registry.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -918,6 +917,8 @@ git commit -m "feat(agents): nextCandidate carries the fallback target's tier"
 - Modify: `src/agents/manager-dispatch.ts:223-230` (`resolveHopCompleteOptions`)
 - Modify: `src/agents/manager.ts:481` (the `resolveHopCompleteOptions` call), `:561-588`
 - Modify: `src/operations/call.ts:89-92` (the `modelDefFor` implementation)
+- Modify: `src/agents/manager-types.ts:53-56` (`AgentCompleteOutcome.finalTier`)
+- Modify: `src/agents/manager-dispatch.ts:242-249` (`resolveFinalDispatch`), `src/agents/manager.ts:731`
 - Test: `test/unit/agents/fallback-tier-targets.test.ts`
 
 **Interfaces:**
@@ -1037,11 +1038,90 @@ In `src/operations/call.ts`, honour the tier:
 Run: `bun test test/unit/agents/fallback-tier-targets.test.ts && bun run typecheck`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Close the cost-attribution gap**
+
+`resolveFinalDispatch` (`manager-dispatch.ts:242-249`) rebuilds the dispatch
+options for `buildCompleteEvent`, the cost row. It calls
+`resolveHopCompleteOptions` **without a tier**, so after a tier-carrying swap it
+would re-resolve at the default tier and record a model that never ran.
+
+This repo has already been burned by exactly this divergence in the agent
+dimension — see the docstring above `resolveFinalDispatch`: "once the dispatch
+is correct, the event must follow it." Do not reintroduce it in the tier
+dimension.
+
+Carry the final tier out of `completeWithFallback` rather than re-deriving it.
+In `src/agents/manager-types.ts`:
+
+```ts
+export interface AgentCompleteOutcome {
+  result: CompleteResult;
+  fallbacks: AgentFallbackRecord[];
+  /** Tier of the hop that actually ran, when a fallback target named one. */
+  finalTier?: string;
+}
+```
+
+In `src/agents/manager.ts`, every `return { result, fallbacks }` inside
+`completeWithFallback` becomes:
+
+```ts
+        return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+```
+
+In `src/agents/manager-dispatch.ts`:
+
+```ts
+export function resolveFinalDispatch(
+  options: ResolvedCompleteOptions,
+  primaryAgent: string,
+  fallbacks: readonly AgentFallbackRecord[],
+  finalTier?: string,
+): { agentName: string; options: ResolvedCompleteOptions } {
+  const agentName = fallbacks.at(-1)?.newAgent ?? primaryAgent;
+  return { agentName, options: resolveHopCompleteOptions(options, agentName, primaryAgent, finalTier) };
+}
+```
+
+And at `src/agents/manager.ts:731`:
+
+```ts
+        ...resolveFinalDispatch(augmented, agentName, outcome.fallbacks, outcome.finalTier),
+```
+
+Add the covering test to `test/unit/agents/fallback-tier-targets.test.ts`:
+
+```ts
+describe("resolveFinalDispatch", () => {
+  const base = {
+    modelDef: { provider: "anthropic", model: "primary-model" } as ModelDef,
+    modelDefFor: (agent: string, tier?: string) =>
+      ({ provider: "p", model: `${agent}:${tier ?? "default"}` }) as ModelDef,
+  } as unknown as ResolvedCompleteOptions;
+  const swapped = [{ newAgent: "native" }] as never;
+
+  test("the cost row records the model the swapped hop actually ran", () => {
+    // Without threading finalTier this is "native:default" — a model that
+    // never ran, billed against the run.
+    expect(resolveFinalDispatch(base, "claude", swapped, "cheap").options.modelDef.model).toBe("native:cheap");
+  });
+
+  test("no tier means today's behaviour", () => {
+    expect(resolveFinalDispatch(base, "claude", swapped).options.modelDef.model).toBe("native:default");
+  });
+});
+```
+
+Import `resolveFinalDispatch` alongside `resolveHopCompleteOptions`.
+
+Run: `bun test test/unit/agents/fallback-tier-targets.test.ts && bun run typecheck`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 bun run lint
-git add src/agents/types.ts src/agents/manager-dispatch.ts src/agents/manager.ts src/operations/call.ts test/unit/agents/fallback-tier-targets.test.ts
+git add src/agents/types.ts src/agents/manager-dispatch.ts src/agents/manager.ts src/agents/manager-types.ts src/operations/call.ts test/unit/agents/fallback-tier-targets.test.ts
 git commit -m "feat(agents): apply a fallback target's tier on the complete path"
 ```
 
