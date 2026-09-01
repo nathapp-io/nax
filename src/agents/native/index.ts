@@ -11,4 +11,6 @@
  * fails it.
  */
 
-export {};
+export { NativeAgentAdapter } from "./adapter";
+export { NativeSessionUnsupportedError } from "./errors";
+export { NATIVE_AGENT } from "./models";
