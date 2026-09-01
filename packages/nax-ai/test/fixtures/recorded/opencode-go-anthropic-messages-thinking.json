@@ -1,0 +1,3792 @@
+{
+  "meta": {
+    "provider": "opencode-go",
+    "protocol": "anthropic-messages",
+    "model": "minimax-m3",
+    "api": "anthropic-messages",
+    "note": "Recorded from opencode-go. Evidence of anthropic-messages event shape only.",
+    "recordedAt": "2026-08-31"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    }
+  },
+  "events": [
+    {
+      "type": "start",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_start",
+      "contentIndex": 0,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "The user wants me",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " to think step by",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " step and then read",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " a.ts",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " using",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " the read tool.",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " Let me start",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " by thinking",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " about what they",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " might want.\n\n",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "They",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " haven't",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " specified what",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " a",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": ".ts contains",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " or what they",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " want me to do",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " with it. I",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " should think",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " step",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " by step about",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " the approach:\n\n",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "1. First,",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " I need to use",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " the read tool to",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " read the contents",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " of a.ts\n",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "2. Then I",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " can analyze or discuss",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " the",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " contents based",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " on what",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " they",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " ask",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "\n\nLet",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " me read",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " the file first",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " as",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " instructed",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": ".",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "thinking_end",
+      "contentIndex": 0,
+      "content": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_start",
+      "contentIndex": 1,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "I'll help",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " you",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " read",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " a.ts.",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " Let me first think",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " through the approach",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": ":\n\n**Step-by",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "-step thinking",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": ":**\n1. The",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " user wants me to",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " read a",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " Type",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "Script file named",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " `a.ts`\n",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "2. I should",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " use the `read",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "` tool to fetch",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " its contents\n3",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": ". After",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " reading, I",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " can analyze or",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " discuss it",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " based on what",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " they",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " need",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "\n\nLet me proceed",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " with reading the file",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": ":",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "text_end",
+      "contentIndex": 1,
+      "content": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "toolcall_start",
+      "contentIndex": 2,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "toolcall_delta",
+      "contentIndex": 2,
+      "delta": "{\"path\":\"a.ts\"}",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "toolcall_end",
+      "contentIndex": 2,
+      "toolCall": {
+        "type": "toolCall",
+        "id": "call_de80c7ba447c4499a619d9ab",
+        "name": "read",
+        "arguments": {
+          "path": "a.ts"
+        }
+      },
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    },
+    {
+      "type": "done",
+      "reason": "toolUse",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants me to think step by step and then read a.ts using the read tool. Let me start by thinking about what they might want.\n\nThey haven't specified what a.ts contains or what they want me to do with it. I should think step by step about the approach:\n\n1. First, I need to use the read tool to read the contents of a.ts\n2. Then I can analyze or discuss the contents based on what they ask\n\nLet me read the file first as instructed.",
+            "thinkingSignature": "81522a82e2ff6cc9f209d2dc901749c8dcb4e432aacd9758d6a9ff3998a8d98a"
+          },
+          {
+            "type": "text",
+            "text": "I'll help you read a.ts. Let me first think through the approach:\n\n**Step-by-step thinking:**\n1. The user wants me to read a TypeScript file named `a.ts`\n2. I should use the `read` tool to fetch its contents\n3. After reading, I can analyze or discuss it based on what they need\n\nLet me proceed with reading the file:"
+          },
+          {
+            "type": "toolCall",
+            "id": "call_de80c7ba447c4499a619d9ab",
+            "name": "read",
+            "arguments": {
+              "path": "a.ts"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 402,
+          "output": 207,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 609,
+          "cost": {
+            "input": 0.00012059999999999999,
+            "output": 0.00024839999999999997,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00036899999999999997
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1788195273236,
+        "responseId": "06e4e4c9fc1d603be8c43e73ca1a24c2",
+        "rawStopReason": "tool_use"
+      }
+    }
+  ]
+}

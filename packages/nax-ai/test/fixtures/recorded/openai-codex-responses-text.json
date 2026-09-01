@@ -1,0 +1,197 @@
+{
+  "meta": {
+    "provider": "openai-codex",
+    "protocol": "openai-codex-responses",
+    "model": "gpt-5.4-mini",
+    "api": "openai-codex-responses",
+    "note": "Recorded from openai-codex with transport forced to sse so onResponse captures a real HTTP status and headers (the default WebSocket transport has none to capture).",
+    "recordedAt": "2026-08-31"
+  },
+  "response": {
+    "status": 200,
+    "headers": {}
+  },
+  "events": [
+    {
+      "type": "start",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "model": "gpt-5.4-mini",
+        "usage": {
+          "input": 23,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 28,
+          "cost": {
+            "input": 0.00001725,
+            "output": 0.0000225,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000039750000000000004
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788196060654,
+        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "text_start",
+      "contentIndex": 0,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "model": "gpt-5.4-mini",
+        "usage": {
+          "input": 23,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 28,
+          "cost": {
+            "input": 0.00001725,
+            "output": 0.0000225,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000039750000000000004
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788196060654,
+        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "model": "gpt-5.4-mini",
+        "usage": {
+          "input": 23,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 28,
+          "cost": {
+            "input": 0.00001725,
+            "output": 0.0000225,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000039750000000000004
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788196060654,
+        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "text_end",
+      "contentIndex": 0,
+      "content": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "model": "gpt-5.4-mini",
+        "usage": {
+          "input": 23,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 28,
+          "cost": {
+            "input": 0.00001725,
+            "output": 0.0000225,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000039750000000000004
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788196060654,
+        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "done",
+      "reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-codex-responses",
+        "provider": "openai-codex",
+        "model": "gpt-5.4-mini",
+        "usage": {
+          "input": 23,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 28,
+          "cost": {
+            "input": 0.00001725,
+            "output": 0.0000225,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000039750000000000004
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788196060654,
+        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "rawStopReason": "completed"
+      }
+    }
+  ]
+}

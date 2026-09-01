@@ -1,6 +1,6 @@
 # nax-ai roadmap
 
-**Last updated:** 2026-08-31 · **Current milestone:** M3 — recorded fixtures. M2 — real transport is done, publish pending. M1 merged to `main` in [#1](https://github.com/nathapp-io/nax-ai/pull/1) (`d3a3968`).
+**Last updated:** 2026-09-01 · **Current milestone:** M4 — hardening. M3 — recorded fixtures is done. M2 — real transport is done, publish pending. M1 merged to `main` in [#1](https://github.com/nathapp-io/nax-ai/pull/1) (`d3a3968`).
 
 This file records where the project is and what comes next. It is the entry point for anyone — human or agent — picking the work up cold.
 
@@ -27,7 +27,7 @@ The artifact is a point-in-time analysis and does not track progress — it is t
 | **M0 — scaffold** | ✅ done | Package, toolchain, two working gates | no |
 | **M1 — protocol architecture** | ✅ done | `Protocol`, registry, catalog, client, 4 protocol backends | **no** |
 | **M2 — real transport** | ✅ done (publish pending) | `createPiClient`, auth wiring, first real LLM call | yes |
-| **M3 — recorded fixtures** | 🚧 next | The suite that gates merges | yes |
+| **M3 — recorded fixtures** | ✅ done | The suite that gates merges | yes |
 | **M4 — hardening** | 🚧 in progress | Transport retry ✅ done, thinking-block round-trip ✅ done, `CredentialStore`, live canary | yes |
 
 ## Milestones
@@ -81,11 +81,25 @@ Rulings and follow-ups made during M1 that land in M2, recorded here because the
 - Optional: the four `classify()` implementations are near-duplicates; the seam permits a shared interior helper.
 - Parked minor: the comment at `test/protocols/thinking.test.ts:25` misstates the rank distance ("low" is 1 rank from each neighbour, not 3). Comment-only; correct at first touch.
 
-### M3 — recorded fixtures 🚧 next
+### M3 — recorded fixtures ✅
 
-**Designed and planned:** [design](docs/superpowers/specs/2026-08-31-nax-ai-m3-recorded-fixtures-design.md) · [plan](docs/superpowers/plans/2026-08-31-nax-ai-m3-recorded-fixtures.md) (7 tasks). Planning found that M2's recorder captured the mapper's *output* rather than its input, so replaying it could not catch a mapping regression — the two fixtures it produced are superseded, not extended. All four protocols are reachable from credentials already present; the thinking-signature round-trip is not, and stays an explicitly stated gap.
+**Designed and planned:** [design](docs/superpowers/specs/2026-08-31-nax-ai-m3-recorded-fixtures-design.md) · [plan](docs/superpowers/plans/2026-08-31-nax-ai-m3-recorded-fixtures.md), 8 tasks, all complete (`55ca89c` through `83ac4d2`). Planning found that M2's recorder captured the mapper's *output* rather than its input, so replaying it could not catch a mapping regression — the two fixtures it produced are superseded, not extended.
 
-Capture real provider responses during M2 and turn them into the fixture suite that gates merges. Until this exists, protocol correctness rests on scripted events that assert the mapping is *self-consistent* rather than *right*.
+Captured real provider responses and turned them into the fixture suite that gates merges, replayed by `test/protocols/replay.test.ts`. All four protocols now have at least one real recorded fixture:
+
+- **`anthropic-messages`** — three real fixtures (text, tool, thinking), recorded from `opencode-go`, a gateway provider rather than first-party Anthropic.
+- **`openai-completions`** — one real fixture (text), recorded from `opencode-go` (gateway), plus a synthetic example fixture from Task 1 and the synthetic error fixture from Task 7.
+- **`openai-responses`** — one real fixture (text), recorded from `opencode-go` (gateway).
+- **`openai-codex-responses`** — one real fixture (text), recorded from `openai-codex`, which is a first-party provider (OpenAI's own Codex/ChatGPT-Plus OAuth), not a gateway.
+
+**The thinking-signature round-trip was observed** — this is not an open gap. `opencode-go-anthropic-messages-thinking.json`'s `thinking_end` event carries a real, non-empty `thinkingSignature`, recorded through the gateway. The M3 plan anticipated this might be absent and require a first-party Anthropic API key as a follow-up; that did not happen.
+
+**The error fixture is synthetic.** `test/fixtures/recorded/error-rate-limit.json` is hand-written, not recorded from a live 429 (one cannot be provoked on demand). It shows the error-classification path maps status and retry-after correctly; it is not evidence of any real provider's actual 429 response shape. Its `note` field says this explicitly.
+
+Two follow-ups surfaced while executing this plan, out of M3's evidence-only scope and left open:
+
+1. **`openai-codex-responses`'s error-classification path may be blind in production.** pi-ai's `openai-codex-responses` backend defaults to WebSocket transport, not HTTP/SSE, unless a caller explicitly requests `transport: "sse"`. WebSocket has no HTTP response for `onResponse` to observe, so `classifyHttpError`/`parseRetryAfter` (`src/protocols/errors.ts`, called from `src/protocols/pi-client.ts`) would receive `status: 0` and no headers for any `openai-codex` call made over the default transport — error classification for that provider may not work correctly in production today. `src/protocols/pi-client.ts`'s `toPiOptions` has no pass-through for pi-ai's `transport` option, so a nax-ai consumer currently has no way to request `"sse"`. Recording the `openai-codex-responses-text` fixture had to bypass `createPiProtocol`/`toPiOptions` and drive `PiDeps.stream` directly with `transport: "sse"` forced — see the dedicated test in `test/live/complete.live.test.ts`. Needs a `src/` change (transport pass-through) in a future milestone; M3 does not touch `src/`.
+2. **The replay suite's tool-call excusal branch is exercised but not load-bearing.** `test/protocols/replay.test.ts` excuses "emitted no text delta" when a fixture contains a tool call, since a pure tool-call turn legitimately has no prose. The `opencode-go-anthropic-messages-thinking.json` fixture does contain a tool-call event, so the excusal runs and is exercised during every test run; however, that same fixture also emits 28 text-delta events, so it would pass the "must emit text" check regardless of whether the excusal applies. The real gap is a pure tool-call-only turn (no prose at all) — no fixture in the current corpus exercises the excusal in a load-bearing way (one where the excusal actually changes the pass/fail outcome). Not a bug; closing it needs a future re-recording that successfully elicits a tool call with no accompanying prose.
 
 ### M4 — hardening 🚧
 
@@ -102,7 +116,7 @@ Carried from the M1 plan so they are not lost when it is merged:
 |---|---|---|
 | Real `createPiClient` | M2 | §5 |
 | `CredentialStore` wiring | M2 | §5 |
-| Recorded-fixture tests | M3 | §9 |
+| Recorded-fixture tests | M3 — ✅ done | §9 |
 | Transport retry | M4 — ✅ done | §10.1 |
 | Live-provider canary | M4 | §10.3 |
 

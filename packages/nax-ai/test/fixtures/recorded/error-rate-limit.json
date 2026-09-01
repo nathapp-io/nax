@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "provider": "example",
+    "protocol": "openai-completions",
+    "model": "example-model",
+    "api": "openai-completions",
+    "recordedAt": "2026-08-31",
+    "note": "SYNTHETIC rate-limit response. A live 429 cannot be provoked on demand. Evidence that the error path maps status and retry-after correctly, NOT evidence of any provider's real 429 shape."
+  },
+  "response": { "status": 429, "headers": { "retry-after": "30" } },
+  "events": [
+    {
+      "type": "error",
+      "reason": "error",
+      "error": {
+        "role": "assistant",
+        "content": [],
+        "api": "openai-completions",
+        "provider": "example",
+        "model": "example-model",
+        "usage": { "input": 5, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+        "stopReason": "stop",
+        "timestamp": 0,
+        "errorMessage": "rate limited"
+      }
+    }
+  ]
+}
