@@ -138,3 +138,14 @@ describe("NativeAgentAdapter shape", () => {
     await expect(adapter.sendTurn()).rejects.toThrow(/Phase B/);
   });
 });
+
+describe("isInstalled", () => {
+  test("is true even when hasCredentials is false: in-process, nothing to install", async () => {
+    const adapter = new NativeAgentAdapter();
+    // Force the credential probe to say no. If isInstalled still delegates,
+    // it returns false and this fails.
+    adapter.hasCredentials = async () => false;
+
+    expect(await adapter.isInstalled()).toBe(true);
+  });
+});

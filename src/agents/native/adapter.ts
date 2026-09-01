@@ -48,9 +48,18 @@ export class NativeAgentAdapter implements AgentAdapter {
     };
   }
 
-  /** Phase A's probe is client construction, not credential resolution — nax-ai resolves keys at call time (ADR-027 §3). */
+  /**
+   * Always true: the native agent runs in-process. There is no binary, so
+   * there is nothing to install, and "not installed" would be a false
+   * answer to a question about presence.
+   *
+   * Deliberately NOT delegating to hasCredentials(). Whether a credential
+   * exists is a different question, and AgentManager.validateCredentials()
+   * is the place that asks it. Conflating them made checkAgentHealth()
+   * report "not installed" for something that is always present.
+   */
   async isInstalled(): Promise<boolean> {
-    return this.hasCredentials();
+    return true;
   }
 
   /**
