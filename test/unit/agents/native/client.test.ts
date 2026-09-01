@@ -1,0 +1,51 @@
+/**
+ * Construction of the nax-ai client.
+ *
+ * piProviders() loads a ~650KB bundled catalog, so the client is built once and
+ * memoised. Tests replace the builder through _clientDeps rather than reaching
+ * the network or the catalog.
+ */
+
+import { afterEach, describe, expect, test } from "bun:test";
+import { createClient } from "@nathapp/nax-ai";
+import { _clientDeps, _resetNativeClient, getNativeClient } from "@/agents/native/client";
+
+const REAL_BUILD = _clientDeps.build;
+// A real client with no providers and no protocols: constructing it loads no
+// catalog and touches no network, so the builder swap counts builds, nothing
+// more.
+const FAKE_CLIENT = createClient({ providers: [], protocols: {} });
+
+afterEach(() => {
+  _clientDeps.build = REAL_BUILD;
+  _resetNativeClient();
+});
+
+describe("getNativeClient", () => {
+  test("builds the client once and reuses it", async () => {
+    let built = 0;
+    _clientDeps.build = async () => {
+      built += 1;
+      return FAKE_CLIENT;
+    };
+
+    const a = await getNativeClient();
+    const b = await getNativeClient();
+
+    expect(built).toBe(1);
+    expect(a).toBe(b);
+  });
+
+  test("does not memoise a failed build, so a later call can succeed", async () => {
+    let attempt = 0;
+    _clientDeps.build = async () => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("catalog unavailable");
+      return FAKE_CLIENT;
+    };
+
+    await expect(getNativeClient()).rejects.toThrow("catalog unavailable");
+    await expect(getNativeClient()).resolves.toBe(FAKE_CLIENT);
+    expect(attempt).toBe(2);
+  });
+});
