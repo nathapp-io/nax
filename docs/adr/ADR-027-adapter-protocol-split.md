@@ -270,13 +270,28 @@ Recorded so the implementation plan does not relitigate them:
 
 - **Credentials:** `createFileCredentialStore` at `~/.nax/credentials`.
   Resolution order is store → ambient env → fail, so CI needs no store.
-- **Credential entry:** `nax auth login <provider>` (API key, prompted, never
-  echoed or logged), `nax auth import` (from `~/.pi/agent/auth.json`, which
-  brings an existing `openai-codex` OAuth credential across), `nax auth list`
-  (provider names only), `nax auth rm`. No OAuth *flow* is built: nax-ai scoped
-  login flows out of M2, and Anthropic subscription OAuth is prohibited outright
-  (`PROHIBITED_OAUTH_FLOWS`) — Claude subscription traffic stays on acpx
-  permanently, by ToS, not by preference.
+- **Credential entry:** `nax auth login <provider>` (prompted, never echoed or
+  logged), `nax auth import` (from `~/.pi/agent/auth.json`, which brings an
+  existing `openai-codex` OAuth credential across), `nax auth list` (provider
+  names, kinds, and OAuth expiry status — never key material), `nax auth rm`.
+
+  **Amended 2026-09-01: OAuth login is in scope.** This bullet previously read
+  "No OAuth *flow* is built", on the grounds that nax-ai had scoped login out of
+  M2 and that Anthropic subscription OAuth is prohibited outright. The first
+  ground has expired: nax-ai M5 (PR #16) shipped `login()`, covering API-key
+  entry and OAuth behind a per-method policy gate. The second never supported
+  the conclusion it was attached to — what keeps Anthropic subscription traffic
+  off the native path is `PROHIBITED_OAUTH_FLOWS` being enforced *per method*,
+  not the absence of a flow runner. Claude subscription traffic still stays on
+  acpx permanently, by ToS, not by preference; `anthropic` simply offers its
+  API-key method and never its OAuth one.
+
+  Building the flow in nax-ai rather than nax is what makes this safe: reaching
+  pi-ai's flows from nax directly would mean a direct dependency on a transitive
+  package, and one call away from the prohibited Anthropic flow with no
+  allowlist in front of it.
+
+  The design is `docs/superpowers/specs/2026-09-01-nax-auth-credentials-design.md`.
 - **Cost:** `modelDef.pricing ?? client.pricing(model)`. A model with no rate
   throws at resolution rather than reporting `$0`. `src/agents/cost/pricing.ts`
   is untouched and keeps serving the acpx path.
@@ -425,9 +440,12 @@ As a gate (§2) the same field is useful without being a second router.
 
 ## Open Questions
 
-1. **Does `nax auth` belong in this ADR or its own?** It is a new CLI surface
-   with its own UX, and nothing else in Phase A depends on its shape — only on
-   the store existing.
+1. ~~**Does `nax auth` belong in this ADR or its own?**~~ **Closed
+   2026-09-01: it stays here.** The credential decisions are §8's and the
+   reversal above belongs beside them; a second ADR would split one story across
+   two documents that then drift. The command UX itself is spec-level detail,
+   not an architectural decision, and lives in
+   `docs/superpowers/specs/2026-09-01-nax-auth-credentials-design.md`.
 2. **Should a native model string be allowed to omit the provider**, falling
    back to a configured default provider? Convenient for single-provider users,
    and ambiguous the moment a model id contains no slash by accident. Not
