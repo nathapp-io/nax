@@ -1,22 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPiAuthResolver, toPiCredentialStore } from "../../src/auth/pi-auth.ts";
-import type { CredentialStore, StoredCredential } from "../../src/types.ts";
-
-function memoryStore(initial: Record<string, StoredCredential> = {}): CredentialStore {
-  const data = new Map(Object.entries(initial));
-  return {
-    read: async (id) => data.get(id),
-    modify: async (id, fn) => {
-      const next = await fn(data.get(id));
-      if (next === undefined) data.delete(id);
-      else data.set(id, next);
-      return next;
-    },
-    delete: async (id) => {
-      data.delete(id);
-    },
-  };
-}
+import { createMemoryCredentialStore as memoryStore } from "../../src/credentials/memory-store.ts";
 
 describe("toPiCredentialStore", () => {
   it("presents an api-key credential in pi's shape", async () => {

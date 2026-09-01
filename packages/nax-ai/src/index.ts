@@ -21,6 +21,11 @@ export {
 } from "./auth/oauth-policy.ts";
 export type { AuthResolver, ResolvedAuth } from "./auth/resolver.ts";
 export { type Client, type ClientOptions, type ClientRequest, createClient } from "./client.ts";
+export {
+  createFileCredentialStore,
+  type FileCredentialStoreOptions,
+} from "./credentials/file-store.ts";
+export { createMemoryCredentialStore } from "./credentials/memory-store.ts";
 export { collectStream, ProtocolStreamError } from "./protocols/collect.ts";
 export {
   PI_PROTOCOL_NAMES,
