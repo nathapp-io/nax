@@ -77,3 +77,44 @@ describe("AgentManager.validateCredentials (#518)", () => {
     await expect(manager.validateCredentials()).resolves.toBeUndefined();
   });
 });
+
+describe("native agent credential pruning (Phase A plan 3)", () => {
+  test("an uncredentialed native fallback candidate is pruned", async () => {
+    const config = NaxConfigSchema.parse({
+      agent: { default: "claude", fallback: { enabled: true, map: { claude: ["native"] } } },
+    });
+    const registry = {
+      getAgent: (n: string) => (n === "claude" ? stubAdapter("claude", true) : stubAdapter("native", false)),
+      getInstalledAgents: async () => [],
+      checkAgentHealth: async () => [],
+      protocol: "acp" as const,
+    };
+    const manager = new AgentManager(config, registry);
+
+    await manager.validateCredentials();
+
+    expect(
+      manager.resolveFallbackChain("claude", {
+        category: "availability",
+        outcome: "fail-auth",
+        message: "",
+        retriable: false,
+      }),
+    ).not.toContain("native");
+  });
+
+  test("an uncredentialed native PRIMARY throws AGENT_CREDENTIALS_MISSING", async () => {
+    const config = NaxConfigSchema.parse({
+      agent: { default: "native", fallback: { enabled: true, map: {} } },
+    });
+    const registry = {
+      getAgent: () => stubAdapter("native", false),
+      getInstalledAgents: async () => [],
+      checkAgentHealth: async () => [],
+      protocol: "acp" as const,
+    };
+    const manager = new AgentManager(config, registry);
+
+    await expect(manager.validateCredentials()).rejects.toMatchObject({ code: "AGENT_CREDENTIALS_MISSING" });
+  });
+});
