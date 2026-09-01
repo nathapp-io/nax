@@ -1,28 +1,65 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _authDeps } from "@/agents/native/auth";
 import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
-import { _cliAuthDeps, authListCommand, authLoginCommand, authRmCommand } from "@/cli/auth";
+import { _cliAuthDeps, authImportCommand, authListCommand, authLoginCommand, authRmCommand } from "@/cli/auth";
+import { _authPromptDeps, type PromptStdin } from "@/cli/auth-prompt";
+
+function makeFakeStdin(): { stdin: PromptStdin; emit: (event: string, chunk?: string) => void } {
+  const listeners = new Map<string, ((chunk: string) => void)[]>();
+  const stdin: PromptStdin = {
+    isTTY: true,
+    setRawMode: () => undefined,
+    resume: () => undefined,
+    pause: () => undefined,
+    setEncoding: () => undefined,
+    on: (event, listener) => listeners.set(event, [...(listeners.get(event) ?? []), listener]),
+    once: (event, listener) => listeners.set(event, [...(listeners.get(event) ?? []), listener as () => void]),
+    removeListener: (event, listener) =>
+      listeners.set(
+        event,
+        (listeners.get(event) ?? []).filter((l) => l !== (listener as unknown)),
+      ),
+  };
+  return {
+    stdin,
+    emit: (event: string, chunk = "") => {
+      for (const l of [...(listeners.get(event) ?? [])]) l(chunk);
+    },
+  };
+}
+
+type LoginCallOptions = Parameters<typeof _authDeps.login>[0];
 
 let out: string[];
+let promptWritten: string[];
 const realLogin = _authDeps.login;
 const realAmbient = _authDeps.ambientAuthAvailable;
+const realPromptStdin = _authPromptDeps.stdin;
+const realPromptWrite = _authPromptDeps.write;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 
 beforeEach(() => {
   out = [];
+  promptWritten = [];
   process.env.NAX_GLOBAL_CONFIG_DIR = mkdtempSync(join(tmpdir(), "nax-cli-auth-"));
   _resetCredentialStore();
   _cliAuthDeps.log = (text: string) => out.push(text);
   _cliAuthDeps.isTTY = () => true;
   _authDeps.ambientAuthAvailable = mock(async () => false);
+  _authPromptDeps.write = (text: string) => {
+    promptWritten.push(text);
+    return true;
+  };
 });
 
 afterEach(() => {
   _authDeps.login = realLogin;
   _authDeps.ambientAuthAvailable = realAmbient;
+  _authPromptDeps.stdin = realPromptStdin;
+  _authPromptDeps.write = realPromptWrite;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
 });
@@ -72,6 +109,125 @@ describe("authLoginCommand", () => {
     const code = await authLoginCommand("openrouter");
     expect(code).toBe(0);
     expect(out.join("\n")).toMatch(/takes precedence/i);
+  });
+
+  test("routes prompts to the terminal and renders the login events", async () => {
+    const h = makeFakeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    _authDeps.login = mock(async (options: LoginCallOptions) => {
+      const { interaction } = options;
+      const secret = interaction.prompt({ type: "secret", message: "Paste your API key:" });
+      h.emit("data", "sk-1\r");
+      await secret;
+      const select = interaction.prompt({
+        type: "select",
+        message: "Pick a method:",
+        options: [{ id: "oauth", label: "OAuth" }],
+      });
+      h.emit("data", "oauth\r");
+      await select;
+      const text = interaction.prompt({ type: "text", message: "Account name:" });
+      h.emit("data", "work\r");
+      await text;
+      const manual = interaction.prompt({ type: "manual-code", message: "Enter the code:" });
+      h.emit("data", "WDJB-MJHT\r");
+      await manual;
+      interaction.notify({ type: "auth-url", url: "https://example.com/authorize" });
+      interaction.notify({
+        type: "auth-url",
+        url: "https://example.com/authorize",
+        instructions: "Paste the verifier back.",
+      });
+      interaction.notify({
+        type: "device-code",
+        userCode: "WDJB-MJHT",
+        verificationUri: "https://example.com/device",
+      });
+      interaction.notify({
+        type: "info",
+        message: "Provider docs:",
+        links: [{ label: "Docs", url: "https://example.com/docs" }],
+      });
+      interaction.notify({ type: "info", message: "No links this time." });
+      interaction.notify({ type: "progress", message: "Exchanging tokens" });
+      return { providerId: "openrouter", method: "oauth" as const, kind: "oauth" as const };
+    });
+
+    const code = await authLoginCommand("openrouter");
+
+    const text = out.join("\n");
+    expect(code).toBe(0);
+    expect(text).toContain("Pick a method:");
+    expect(text).toContain("Open this URL to continue:");
+    expect(text).toContain("https://example.com/authorize");
+    expect(text).toContain("Paste the verifier back.");
+    expect(text).toContain("https://example.com/device");
+    expect(text).toContain("WDJB-MJHT");
+    expect(text).toContain("Docs: https://example.com/docs");
+    expect(text).toContain("No links this time.");
+    expect(text).toContain("Exchanging tokens");
+    expect(promptWritten.join("")).toContain("Choose:");
+    expect(promptWritten.join("")).toContain("Account name:");
+    expect(promptWritten.join("")).toContain("Enter the code:");
+    expect(text).not.toContain("sk-1");
+    expect(promptWritten.join("")).not.toContain("sk-1");
+  });
+
+  test("reports a login failure and exits 1", async () => {
+    _authDeps.login = mock(async () => {
+      throw new Error("provider unreachable");
+    });
+    const code = await authLoginCommand("openrouter");
+    expect(code).toBe(1);
+    expect(out.join("\n")).toContain("provider unreachable");
+  });
+});
+
+describe("authImportCommand", () => {
+  test("imports pi entries, reports each outcome, and never the key", async () => {
+    await naxCredentialStore().modify("openrouter", async () => ({ kind: "api-key", key: "sk-stored" }));
+    const source = join(mkdtempSync(join(tmpdir(), "nax-pi-")), "auth.json");
+    writeFileSync(
+      source,
+      JSON.stringify({
+        mystery: { type: "wat" },
+        openai: { type: "api_key", key: "sk-pi-value" },
+        openrouter: { type: "api_key", key: "sk-pi-other" },
+      }),
+    );
+
+    const code = await authImportCommand({ from: source });
+
+    expect(code).toBe(0);
+    const text = out.join("\n");
+    expect(text).toContain("mystery");
+    expect(text).toContain("openai");
+    expect(text).toContain("openrouter");
+    expect(text).toContain("imported");
+    expect(text).toContain("skipped, already present");
+    expect(text).toContain("unsupported credential type");
+    expect(text).not.toContain("sk-pi-value");
+    expect(text).not.toContain("sk-pi-other");
+    expect(await naxCredentialStore().read("openai")).toMatchObject({ kind: "api-key", key: "sk-pi-value" });
+  });
+
+  test("says there is nothing to import when the source has no entries", async () => {
+    const source = join(mkdtempSync(join(tmpdir(), "nax-pi-")), "auth.json");
+    writeFileSync(source, "{}");
+
+    const code = await authImportCommand({ from: source });
+
+    expect(code).toBe(0);
+    expect(out.join("\n")).toMatch(/nothing to import/i);
+  });
+
+  test("reports a missing source file and exits 1", async () => {
+    const source = join(mkdtempSync(join(tmpdir(), "nax-pi-")), "absent.json");
+
+    const code = await authImportCommand({ from: source });
+
+    expect(code).toBe(1);
+    expect(out.join("\n")).toMatch(/no credential file to import/i);
   });
 });
 
