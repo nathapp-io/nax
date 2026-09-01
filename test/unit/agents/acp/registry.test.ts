@@ -193,10 +193,13 @@ describe("module-level getInstalledAgents() / checkAgentHealth() (BUG-19)", () =
     expect(installed.some((a) => a.name === "claude")).toBe(true);
   });
 
-  test("getInstalledAgents returns empty when nothing is on PATH", async () => {
+  test("getInstalledAgents returns no acpx agents when nothing is on PATH", async () => {
     _acpAdapterDeps.which = mock((_name: string) => null);
     const installed = await getInstalledAgents();
-    expect(installed).toEqual([]);
+    // Native is exempt: with no binary, it counts as installed whenever its
+    // client resolves (ADR-027 section 3 / Open Question 4). What BUG-19's
+    // unconditional [] used to fake is the acpx set staying out.
+    expect(installed.filter((a) => a.name !== "native")).toEqual([]);
   });
 
   test("checkAgentHealth reflects real installed status instead of an unconditional []", async () => {
