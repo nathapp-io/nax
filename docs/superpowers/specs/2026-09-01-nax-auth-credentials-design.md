@@ -117,10 +117,17 @@ is touched. In practice: `anthropic` offers only its API-key path;
 `openai-codex` and `openrouter` are the two permitted OAuth flows;
 `github-copilot` sits in `PROHIBITED_OAUTH_FLOWS` with a recorded reason.
 
-On success the command prints provider, method and kind from `LoginResult`.
-`openrouter` legitimately reports `method: "oauth"` with `kind: "api-key"` — its
-PKCE exchange yields a permanent key — and the output must not present that as
-an inconsistency.
+On success the command prints provider, method and kind from `LoginResult`,
+whatever they are. It must not derive one from the other, or treat any
+combination as an inconsistency to correct.
+
+That is not a stylistic preference. M5's design predicted `openrouter` would
+report `method: "oauth"` with `kind: "api-key"`, reasoning that its PKCE
+exchange yields a permanent key. M5's recorded live verification (nax-ai
+`ROADMAP.md`, 2026-09-01) instead observed `method: "oauth"`, `kind: "oauth"`.
+A plausible prediction about the same provider was wrong within one milestone,
+so the CLI reports what the result carries rather than what the method implies,
+and no test asserts a kind for a given provider.
 
 ### 4. Import, list and remove
 
