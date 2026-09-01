@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { AgentManager } from "@/agents/manager";
 import { availableCandidates, credentialCandidates, normaliseFallbackTarget } from "@/agents/swap-decision";
 import { NaxConfigSchema } from "@/config/schemas";
 
@@ -80,5 +81,29 @@ describe("credentialCandidates", () => {
   test("yields names for both forms, so validateCredentials checks both sides", () => {
     const got = credentialCandidates({ claude: ["codex", { agent: "native", tier: "cheap" }] }, "claude");
     expect([...got].sort()).toEqual(["claude", "codex", "native"]);
+  });
+});
+
+describe("nextCandidate", () => {
+  function manager(map: Record<string, unknown[]>) {
+    const config = NaxConfigSchema.parse({
+      agent: { default: "claude", fallback: { enabled: true, map } },
+    });
+    return new AgentManager(config);
+  }
+
+  test("returns a bare agent for a plain-string target", () => {
+    expect(manager({ claude: ["codex"] }).nextCandidate("claude", 0)).toEqual({ agent: "codex" });
+  });
+
+  test("returns the tier for an object target", () => {
+    expect(manager({ claude: [{ agent: "native", tier: "cheap" }] }).nextCandidate("claude", 0)).toEqual({
+      agent: "native",
+      tier: "cheap",
+    });
+  });
+
+  test("returns null when the chain is empty", () => {
+    expect(manager({ claude: [] }).nextCandidate("claude", 0)).toBeNull();
   });
 });

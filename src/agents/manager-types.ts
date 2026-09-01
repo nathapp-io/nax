@@ -6,6 +6,7 @@
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
 import type { SessionRole } from "../runtime/session-role";
+import type { FallbackTarget } from "./swap-decision";
 
 /**
  * Discriminates which kind of hop executeHop is being invoked for.
@@ -16,7 +17,7 @@ export type HopKind =
   | { kind: "primary" }
   | { kind: "stale-retry"; attempt: number } // same agent, reuse existing session
   | { kind: "timeout-retry"; attempt: number } // same agent, fresh session after fail-timeout
-  | { kind: "swap"; failure: AdapterFailure }; // new agent, fresh session
+  | { kind: "swap"; failure: AdapterFailure; tier?: string }; // new agent, fresh session
 
 import type { SessionRunHopFn } from "../runtime/session-run-hop";
 import type {
@@ -158,7 +159,7 @@ export interface IAgentManager {
   readonly events: AgentManagerEvents;
 
   /** Resolve the ordered fallback chain for a given agent given a failure. */
-  resolveFallbackChain(agent: string, failure: AdapterFailure): string[];
+  resolveFallbackChain(agent: string, failure: AdapterFailure): FallbackTarget[];
 
   /**
    * Returns true when the manager should attempt a swap to a fallback agent.
@@ -169,11 +170,11 @@ export interface IAgentManager {
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number): boolean;
 
   /**
-   * Returns the next candidate agent name for a given current agent and hop count,
-   * excluding pruned (no credentials) and already-unavailable agents.
-   * Returns null when no candidate is available.
+   * Returns the next fallback target (agent, and its optional tier) for a given
+   * current agent and hop count, excluding pruned (no credentials) and
+   * already-unavailable agents. Returns null when no candidate is available.
    */
-  nextCandidate(current: string, hopsSoFar: number): string | null;
+  nextCandidate(current: string, hopsSoFar: number): FallbackTarget | null;
 
   /**
    * Run the prompt with automatic agent-swap fallback on availability failures.

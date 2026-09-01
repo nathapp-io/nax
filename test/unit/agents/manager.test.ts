@@ -170,8 +170,8 @@ describe("AgentManager.shouldSwap (Phase 4)", () => {
 
 describe("AgentManager.nextCandidate (Phase 4)", () => {
   test("returns first available candidate regardless of hopsSoFar (hop 0 and hop 1)", () => {
-    expect(makeManager().nextCandidate("claude", 0)).toBe("codex");
-    expect(makeManager().nextCandidate("claude", 1)).toBe("codex");
+    expect(makeManager().nextCandidate("claude", 0)).toEqual({ agent: "codex" });
+    expect(makeManager().nextCandidate("claude", 1)).toEqual({ agent: "codex" });
   });
 
   test("returns null for unknown agent", () => {
@@ -203,7 +203,7 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
       registry,
     );
     await m.validateCredentials();
-    expect(m.nextCandidate("claude", 0)).toBe("gemini");
+    expect(m.nextCandidate("claude", 0)).toEqual({ agent: "gemini" });
   });
 
   test("filters unavailable candidates", () => {

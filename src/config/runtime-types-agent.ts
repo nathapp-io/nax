@@ -30,8 +30,11 @@ export interface PromptAuditConfig {
 export interface AgentFallbackConfig {
   /** Whether agent fallback is enabled (default: false) */
   enabled?: boolean;
-  /** Fallback map: agent name → ordered list of fallback agent names */
-  map?: Record<string, string[]>;
+  /**
+   * Fallback map: agent name → ordered list of fallback targets, each either a
+   * bare agent name or `{ agent, tier }` naming the tier the fallback should use.
+   */
+  map?: Record<string, (string | { agent: string; tier: string })[]>;
   /** Maximum fallback hops per story (default: 2, min 1, max 10) */
   maxHopsPerStory?: number;
   /** Whether to fall back on quality failure (default: false) */

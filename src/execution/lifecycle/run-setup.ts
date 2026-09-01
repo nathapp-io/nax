@@ -114,14 +114,15 @@ export function warnFallbackMisconfiguration(
   const warned = new Set<string>();
   for (const [primaryAgent, candidates] of Object.entries(fallback.map)) {
     for (const candidate of candidates) {
-      if (warned.has(candidate)) continue;
-      if (!agentGetFn(candidate)) {
+      const candidateName = typeof candidate === "string" ? candidate : candidate.agent;
+      if (warned.has(candidateName)) continue;
+      if (!agentGetFn(candidateName)) {
         logger?.warn("fallback", "Fallback candidate not available — will be skipped if triggered", {
           storyId: "_setup",
           primaryAgent,
-          candidate,
+          candidate: candidateName,
         });
-        warned.add(candidate);
+        warned.add(candidateName);
       }
     }
   }

@@ -103,9 +103,7 @@ export function availableCandidates(
   agent: string,
   isExcluded: (candidate: string) => boolean,
 ): FallbackTarget[] {
-  return (map?.[agent] ?? [])
-    .map(normaliseFallbackTarget)
-    .filter((candidate) => !isExcluded(candidate.agent));
+  return (map?.[agent] ?? []).map(normaliseFallbackTarget).filter((candidate) => !isExcluded(candidate.agent));
 }
 
 /**

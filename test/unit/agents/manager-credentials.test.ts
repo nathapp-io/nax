@@ -41,12 +41,14 @@ describe("AgentManager.validateCredentials (#518)", () => {
     const manager = new AgentManager(config, registry, { logger: { warn, info } });
     await manager.validateCredentials();
     expect(
-      manager.resolveFallbackChain("claude", {
-        category: "availability",
-        outcome: "fail-auth",
-        message: "",
-        retriable: false,
-      }),
+      manager
+        .resolveFallbackChain("claude", {
+          category: "availability",
+          outcome: "fail-auth",
+          message: "",
+          retriable: false,
+        })
+        .map((t) => t.agent),
     ).not.toContain("codex");
     expect(warn).toHaveBeenCalled();
   });
@@ -94,12 +96,14 @@ describe("native agent credential pruning (Phase A plan 3)", () => {
     await manager.validateCredentials();
 
     expect(
-      manager.resolveFallbackChain("claude", {
-        category: "availability",
-        outcome: "fail-auth",
-        message: "",
-        retriable: false,
-      }),
+      manager
+        .resolveFallbackChain("claude", {
+          category: "availability",
+          outcome: "fail-auth",
+          message: "",
+          retriable: false,
+        })
+        .map((t) => t.agent),
     ).not.toContain("native");
   });
 

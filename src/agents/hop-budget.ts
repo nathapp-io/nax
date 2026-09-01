@@ -15,10 +15,12 @@
  * Lives outside manager.ts because that file is at its grandfathered size limit.
  */
 
+import type { FallbackTarget } from "./swap-decision";
+
 /** The `AgentManager` surface `resolveStartAgent` reads. */
 export interface StartAgentSource {
   isUnavailable(agent: string): boolean;
-  nextCandidate(current: string, hopsSoFar: number): string | null;
+  nextCandidate(current: string, hopsSoFar: number): FallbackTarget | null;
 }
 
 /** Minimal logger surface — `getSafeLogger()` and the manager's override both satisfy it. */
@@ -47,9 +49,9 @@ export function resolveStartAgent(
   logger?.info("agent-manager", "Primary agent already unavailable — starting on fallback", {
     storyId,
     fromAgent: primary,
-    toAgent: candidate,
+    toAgent: candidate.agent,
   });
-  return candidate;
+  return candidate.agent;
 }
 
 /**

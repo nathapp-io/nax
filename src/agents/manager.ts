@@ -192,7 +192,7 @@ export class AgentManager implements IAgentManager {
 
   private readonly _isExcluded = (c: string): boolean => this._prunedFallback.has(c) || this.isUnavailable(c);
 
-  resolveFallbackChain(agent: string, _failure: AdapterFailure): string[] {
+  resolveFallbackChain(agent: string, _failure: AdapterFailure): import("./swap-decision").FallbackTarget[] {
     return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded);
   }
 
@@ -200,7 +200,7 @@ export class AgentManager implements IAgentManager {
     return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
-  nextCandidate(current: string, _hopsSoFar: number): string | null {
+  nextCandidate(current: string, _hopsSoFar: number): import("./swap-decision").FallbackTarget | null {
     return availableCandidates(this._config.agent?.fallback?.map, current, this._isExcluded)[0] ?? null;
   }
 
@@ -404,15 +404,16 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
         hopsSoFar = this._budget.spend(storyId, hopsSoFar);
-        // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
         rateLimitRetry = 0;
         currentBundle = updatedBundle;
-        currentHopKind = { kind: "swap", failure: adapterFailure };
+        // The hop kind is the per-hop channel the caller already reads, so the
+        // target's tier rides there rather than in a parallel variable.
+        currentHopKind = { kind: "swap", failure: adapterFailure, ...("tier" in next ? { tier: next.tier } : {}) };
 
         const hop = buildFallbackRecord({
           storyId: request.runOptions.storyId,
           priorAgent: currentAgent,
-          newAgent: next,
+          newAgent: next.agent,
           hop: hopsSoFar,
           failure: adapterFailure,
           costUsd: result.estimatedCostUsd ?? 0,
@@ -423,12 +424,12 @@ export class AgentManager implements IAgentManager {
         logger?.info("agent-manager", "Agent swap triggered", {
           storyId: request.runOptions.storyId,
           fromAgent: currentAgent,
-          toAgent: next,
+          toAgent: next.agent,
           hop: hopsSoFar,
         });
 
-        _agentChain.push(next);
-        currentAgent = next;
+        _agentChain.push(next.agent);
+        currentAgent = next.agent;
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({
@@ -569,7 +570,7 @@ export class AgentManager implements IAgentManager {
         const hop = buildFallbackRecord({
           storyId: options.storyId,
           priorAgent: currentAgent,
-          newAgent: next,
+          newAgent: next.agent,
           hop: hopsSoFar,
           failure: result.adapterFailure,
           costUsd: result.estimatedCostUsd,
@@ -580,12 +581,12 @@ export class AgentManager implements IAgentManager {
         logger?.info("agent-manager", "complete() swap triggered", {
           storyId: options.storyId,
           fromAgent: currentAgent,
-          toAgent: next,
+          toAgent: next.agent,
           hop: hopsSoFar,
         });
 
-        _agentChain.push(next);
-        currentAgent = next;
+        _agentChain.push(next.agent);
+        currentAgent = next.agent;
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({

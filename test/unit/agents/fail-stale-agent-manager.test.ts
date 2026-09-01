@@ -113,7 +113,7 @@ describe("AgentManager with fail-stale availability failures", () => {
       }),
     );
     const next = manager.nextCandidate("claude", 0);
-    expect(next).toBe("codex");
+    expect(next).toEqual({ agent: "codex" });
   });
 });
 
