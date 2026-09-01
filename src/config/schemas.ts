@@ -540,4 +540,35 @@ export const NaxConfigSchema = z
         });
       }
     }
+    // Cross-section: the protocol gate decides which agents `models` may name.
+    const protocol = data.agent?.protocol ?? "acp";
+    const modelAgents = Object.keys(data.models ?? {});
+    const NATIVE = "native";
+
+    if (protocol === "acp" && modelAgents.includes(NATIVE)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["models", NATIVE],
+        message:
+          'models.native requires agent.protocol "hybrid" or "native" (it is "acp"). Set agent.protocol, or remove the native entry.',
+      });
+    }
+
+    if (protocol === "native") {
+      for (const agent of modelAgents) {
+        if (agent === NATIVE) continue;
+        ctx.addIssue({
+          code: "custom",
+          path: ["models", agent],
+          message: `agent.protocol "native" permits only models.native; "${agent}" is an acpx agent. Use "hybrid" to run both.`,
+        });
+      }
+      if ((data.agent?.default ?? "claude") !== NATIVE) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["agent", "default"],
+          message: 'agent.protocol "native" requires agent.default "native".',
+        });
+      }
+    }
   });
