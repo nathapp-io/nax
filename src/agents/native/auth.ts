@@ -6,10 +6,13 @@
  * nax-ai type, so src/cli/auth.ts can consume it without breaching that gate.
  */
 
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { ambientAuthAvailable, type LoginEvent, type LoginInteraction, type LoginPrompt, login } from "@nathapp/nax-ai";
 import { NaxError } from "@/errors";
 import type { AuthEvent, AuthInteraction, AuthPrompt, AuthResult } from "./auth-types";
-import { naxCredentialStore } from "./credentials";
+import { naxCredentialStore, readStoredEntries, type StoredEntry } from "./credentials";
 
 /**
  * Deliberately dumb: the two vocabularies are one-for-one by design, so this
@@ -82,4 +85,118 @@ export async function runLogin(providerId: string, interaction: AuthInteraction)
   } catch (error) {
     throw toNaxError(error, providerId);
   }
+}
+
+export const DEFAULT_PI_AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json");
+
+export interface ImportOutcome {
+  providerId: string;
+  status: "imported" | "skipped" | "unsupported";
+}
+
+type PiEntry = { type?: string; key?: string; access?: string; refresh?: string; expires?: number };
+
+/**
+ * pi's on-disk shape is flat and snake-cased; the store's is versioned and
+ * kebab-cased. accountId is deliberately dropped: pi derives it from the
+ * access-token JWT at request time rather than trusting what is stored, and
+ * nax-ai's own credential round-trip already drops it.
+ */
+function fromPiEntry(
+  entry: PiEntry,
+): { kind: "api-key"; key: string } | { kind: "oauth"; access: string; refresh: string; expires: number } | undefined {
+  if (entry.type === "api_key" && typeof entry.key === "string") {
+    return { kind: "api-key", key: entry.key };
+  }
+  if (
+    entry.type === "oauth" &&
+    typeof entry.access === "string" &&
+    typeof entry.refresh === "string" &&
+    typeof entry.expires === "number"
+  ) {
+    return { kind: "oauth", access: entry.access, refresh: entry.refresh, expires: entry.expires };
+  }
+  return undefined;
+}
+
+/**
+ * Bring pi's credentials across.
+ *
+ * Existing entries are skipped rather than overwritten: import plausibly runs
+ * after a fresh login, and silently replacing a credential just obtained would
+ * be the worst kind of quiet data loss.
+ *
+ * Each write goes through modify(), which is what holds the store's
+ * cross-process lock across the read-modify-write.
+ */
+export async function importPiCredentials(options?: { from?: string; force?: boolean }): Promise<ImportOutcome[]> {
+  const path = options?.from ?? DEFAULT_PI_AUTH_PATH;
+
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch {
+    throw new NaxError(`No credential file to import at ${path}.`, "AUTH_IMPORT_SOURCE_MISSING", { path });
+  }
+
+  let parsed: Record<string, PiEntry>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, PiEntry>;
+  } catch {
+    throw new NaxError(`The file at ${path} is not valid JSON.`, "AUTH_IMPORT_SOURCE_UNREADABLE", { path });
+  }
+
+  const store = naxCredentialStore();
+  const outcomes: ImportOutcome[] = [];
+
+  for (const providerId of Object.keys(parsed).sort()) {
+    const entry = parsed[providerId];
+    const credential = entry === undefined ? undefined : fromPiEntry(entry);
+    if (credential === undefined) {
+      outcomes.push({ providerId, status: "unsupported" });
+      continue;
+    }
+    if (options?.force !== true && (await store.read(providerId)) !== undefined) {
+      outcomes.push({ providerId, status: "skipped" });
+      continue;
+    }
+    await store.modify(providerId, async () => credential);
+    outcomes.push({ providerId, status: "imported" });
+  }
+
+  return outcomes;
+}
+
+export async function listStoredProviders(): Promise<StoredEntry[]> {
+  return readStoredEntries();
+}
+
+/**
+ * Removal, not revocation. pi has no revocation anywhere — its own types
+ * define logout as deletion — so the provider-side token stays live until it
+ * expires. Callers must not describe this as logging out.
+ */
+export async function removeStoredProvider(providerId: string): Promise<void> {
+  await naxCredentialStore().delete(providerId);
+}
+
+/**
+ * Of these providers, which would ambient auth satisfy on its own?
+ *
+ * A stored credential owns its provider in pi's resolution order, so any
+ * provider named here has a working environment variable that the stored
+ * credential is shadowing. This only ever decorates a diagnostic, so a failing
+ * probe reports nothing rather than breaking the command around it.
+ */
+export async function ambientShadows(providerIds: readonly string[]): Promise<string[]> {
+  const checked = await Promise.all(
+    providerIds.map(async (providerId) => {
+      try {
+        return (await _authDeps.ambientAuthAvailable(providerId)) ? providerId : undefined;
+      } catch {
+        return undefined;
+      }
+    }),
+  );
+  return checked.filter((id): id is string => id !== undefined);
 }

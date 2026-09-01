@@ -12,5 +12,25 @@
  */
 
 export { NativeAgentAdapter } from "./adapter";
+export {
+  AuthCancelledError,
+  ambientShadows,
+  DEFAULT_PI_AUTH_PATH,
+  type ImportOutcome,
+  importPiCredentials,
+  listStoredProviders,
+  removeStoredProvider,
+  runLogin,
+} from "./auth";
+export type {
+  AuthEvent,
+  AuthInteraction,
+  AuthLink,
+  AuthMethod,
+  AuthOption,
+  AuthPrompt,
+  AuthResult,
+} from "./auth-types";
+export { credentialFilePath, naxCredentialStore, type StoredEntry } from "./credentials";
 export { NativeSessionUnsupportedError } from "./errors";
 export { NATIVE_AGENT } from "./models";
