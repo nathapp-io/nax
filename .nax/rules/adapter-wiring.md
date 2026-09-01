@@ -102,3 +102,10 @@ Selectors, debater closures, and helper functions that influence routing or exec
 - Leaf helpers (e.g. quality thresholds, routing heuristics) must declare their inputs explicitly — no implicit dependency-injection of cost.
 
 Cost attribution belongs to **orchestration layers** that wire `costAggregator.openScope()` and pass `scopeId` downward through `CallContext`. Leaf code sees neither `CostAggregator` nor `DispatchEvent` — it receives only structured input and returns structured output.
+
+## Native path
+
+`src/agents/native/` is the only directory that may import `@nathapp/nax-ai`.
+Its adapter answers `complete()` only — `openSession`/`sendTurn`/`closeSession`
+throw `NativeSessionUnsupportedError` until Phase B. Model entries under
+`models.native` are `"provider/model"`; a string with no `/` is a config error.
