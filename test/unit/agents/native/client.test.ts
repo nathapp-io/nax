@@ -8,7 +8,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { createClient } from "@nathapp/nax-ai";
-import { _clientDeps, _resetNativeClient, getNativeClient } from "@/agents/native/client";
+import { _clientDeps, _resetNativeClient, buildNativeClient, getNativeClient } from "@/agents/native/client";
 
 const REAL_BUILD = _clientDeps.build;
 // A real client with no providers and no protocols: constructing it loads no
@@ -47,5 +47,17 @@ describe("getNativeClient", () => {
     await expect(getNativeClient()).rejects.toThrow("catalog unavailable");
     await expect(getNativeClient()).resolves.toBe(FAKE_CLIENT);
     expect(attempt).toBe(2);
+  });
+});
+
+describe("buildNativeClient", () => {
+  // test/preload.ts overwrites _clientDeps.build with a sentinel before any
+  // test file loads, so the real builder is only reachable through this
+  // named export, not through _clientDeps.build.
+  test("constructs a real client synchronously, with no network reached", async () => {
+    const client = await buildNativeClient();
+    expect(typeof client.model).toBe("function");
+    expect(typeof client.complete).toBe("function");
+    expect(typeof client.pricing).toBe("function");
   });
 });

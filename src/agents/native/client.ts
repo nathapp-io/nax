@@ -11,13 +11,23 @@
 
 import { type Client, createClient, piProtocols, piProviders } from "@nathapp/nax-ai";
 
+/**
+ * The real builder. Exported on its own — not just as `_clientDeps.build` —
+ * because test/preload.ts overwrites `_clientDeps.build` with a sentinel
+ * before any test file loads (to stop a real client leaking into the
+ * module-level cache across files), which would otherwise make this
+ * synchronous, no-network construction path uncoverable by any test.
+ */
+export async function buildNativeClient(): Promise<Client> {
+  return createClient({
+    providers: await piProviders(),
+    protocols: piProtocols(),
+  });
+}
+
 /** Test seam: replaced in tests so no catalog is loaded and no network is reached. */
 export const _clientDeps = {
-  build: async (): Promise<Client> =>
-    createClient({
-      providers: await piProviders(),
-      protocols: piProtocols(),
-    }),
+  build: buildNativeClient,
 };
 
 let cached: Promise<Client> | undefined;
