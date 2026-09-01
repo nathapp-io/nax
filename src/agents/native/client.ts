@@ -23,12 +23,14 @@ import { naxCredentialStore } from "./credentials";
 export async function buildNativeClient(): Promise<Client> {
   return createClient({
     providers: await piProviders(),
-    protocols: piProtocols(),
-    // Without this the store is never consulted and `nax auth login` has no
-    // effect on a run. pi resolves store first, then ambient sources, so a
-    // stored credential owns its provider and CI with only an env var keeps
-    // working.
-    credentials: naxCredentialStore(),
+    protocols: piProtocols({
+      // The credential seam: pi resolves the store first, then ambient sources
+      // (env vars, AWS profiles, ADC), so a stored credential owns its provider
+      // and CI with only an environment variable keeps working. Passing it here
+      // is what makes `nax auth login` reach a run — ClientOptions.credentials
+      // is accepted by nax-ai's type but never read by createClient.
+      credentials: naxCredentialStore(),
+    }),
   });
 }
 
