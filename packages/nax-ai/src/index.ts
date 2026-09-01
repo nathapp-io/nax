@@ -35,6 +35,7 @@ export {
   PERMITTED_OAUTH_FLOWS,
   PROHIBITED_OAUTH_FLOWS,
 } from "./auth/oauth-policy.ts";
+export { ambientAuthAvailable } from "./auth/pi-auth.ts";
 export type { AuthResolver, ResolvedAuth } from "./auth/resolver.ts";
 export { type Client, type ClientOptions, type ClientRequest, createClient } from "./client.ts";
 export {

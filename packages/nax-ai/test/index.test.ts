@@ -9,6 +9,10 @@ describe("public surface", () => {
     expect(typeof naxAi.LoginFailedError).toBe("function");
   });
 
+  it("exports the ambient-auth probe", () => {
+    expect(typeof naxAi.ambientAuthAvailable).toBe("function");
+  });
+
   it("does not export the test seams", () => {
     // A seam on the public surface becomes something consumers depend on.
     expect(naxAi).not.toHaveProperty("_loginDeps");

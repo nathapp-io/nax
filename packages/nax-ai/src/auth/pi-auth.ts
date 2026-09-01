@@ -13,6 +13,7 @@ import type {
   CredentialStore as PiCredentialStore,
   Provider as PiProvider,
 } from "@earendil-works/pi-ai";
+import { defaultProviderAuthContext } from "@earendil-works/pi-ai";
 import type { CredentialStore, ModelRef, ProviderId, StoredCredential } from "../types.ts";
 import { AuthMethodUnavailableError, LoginFailedError } from "./login-errors.ts";
 import type { LoginEvent, LoginInteraction, LoginPrompt } from "./login-types.ts";
@@ -244,4 +245,37 @@ function toPiInteraction(interaction: LoginInteraction): {
       interaction.notify(fromPiEvent(event));
     },
   };
+}
+
+/**
+ * Whether ambient auth alone would satisfy this provider.
+ *
+ * Enumerating env var names cannot answer this: ProviderAuth.env is
+ * descriptive only, often absent, and never read by auth resolution. pi's own
+ * resolve() returns undefined when a provider is not configured and already
+ * merges env vars, AWS profiles and ADC files, so asking it with no credential
+ * is the question exactly. check() is the side-effect-free variant, preferred
+ * because resolve() may execute commands.
+ *
+ * A probe that throws is reported as "not available" rather than propagated:
+ * this only ever decorates a diagnostic, and breaking the command it decorates
+ * would be worse than a missing warning.
+ */
+export async function ambientAuthAvailable(providerId: ProviderId): Promise<boolean> {
+  const provider = (await _loginDeps.providers()).find((candidate) => candidate.id === providerId);
+  const apiKey = provider?.auth.apiKey;
+  if (apiKey === undefined) return false;
+
+  const ctx = defaultProviderAuthContext();
+  const signal = new AbortController().signal;
+
+  try {
+    // Bind rather than call detached: pi's auth objects are methods that may read `this`.
+    if (apiKey.check !== undefined) {
+      return (await apiKey.check.bind(apiKey)({ ctx, signal })) !== undefined;
+    }
+    return (await apiKey.resolve.bind(apiKey)({ ctx, signal })) !== undefined;
+  } catch {
+    return false;
+  }
 }
