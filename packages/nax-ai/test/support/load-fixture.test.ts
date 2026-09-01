@@ -13,6 +13,11 @@ describe("loadFixture", () => {
     expect(() => loadFixture("example-bad-header")).toThrow(/allowlist/);
   });
 
+  it("rejects a fixture whose shape predates the current recorder", () => {
+    expect(() => loadFixture("example-bad-shape")).toThrow(/example-bad-shape/);
+    expect(() => loadFixture("example-bad-shape")).toThrow(/meta, response and events/);
+  });
+
   it("lists every recorded fixture by name", () => {
     expect(fixtureNames()).toContain("example-text");
   });

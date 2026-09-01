@@ -100,6 +100,16 @@ export type ConversationMessage =
       readonly isError?: boolean;
     };
 
+/**
+ * Preferred wire transport, for the providers that offer a choice.
+ *
+ * Declared here rather than imported from pi-ai so the registration surface
+ * stays free of pi-ai types. The values match pi-ai's scale because they name
+ * real transports rather than an abstraction over them; a backend that offers
+ * no choice ignores the setting.
+ */
+export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
+
 export interface ProtocolRequest {
   readonly model: string;
   /**

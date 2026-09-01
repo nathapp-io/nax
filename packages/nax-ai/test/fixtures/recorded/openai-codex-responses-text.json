@@ -4,8 +4,8 @@
     "protocol": "openai-codex-responses",
     "model": "gpt-5.4-mini",
     "api": "openai-codex-responses",
-    "note": "Recorded from openai-codex with transport forced to sse so onResponse captures a real HTTP status and headers (the default WebSocket transport has none to capture).",
-    "recordedAt": "2026-08-31"
+    "note": "Recorded from openai-codex, a first-party provider rather than a gateway, over SSE — createPiDeps defaults transport to \"sse\" because pi-ai would otherwise prefer WebSocket here and no HTTP status could be captured. Evidence of openai-codex-responses event shape and that onResponse observes a real response; not evidence of any error status.",
+    "recordedAt": "2026-09-01"
   },
   "response": {
     "status": 200,
@@ -20,7 +20,7 @@
           {
             "type": "text",
             "text": "ok",
-            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+            "textSignature": "{\"v\":1,\"id\":\"msg_028d7b40c525ed9a016a9638e4c36c87d0b7ef66264255ee17\",\"phase\":\"final_answer\"}"
           }
         ],
         "api": "openai-codex-responses",
@@ -42,8 +42,8 @@
           }
         },
         "stopReason": "stop",
-        "timestamp": 1788196060654,
-        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "timestamp": 1788229858136,
+        "responseId": "resp_028d7b40c525ed9a016a9638e3c37087d0989fc75e270a755d",
         "rawStopReason": "completed"
       }
     },
@@ -56,7 +56,7 @@
           {
             "type": "text",
             "text": "ok",
-            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+            "textSignature": "{\"v\":1,\"id\":\"msg_028d7b40c525ed9a016a9638e4c36c87d0b7ef66264255ee17\",\"phase\":\"final_answer\"}"
           }
         ],
         "api": "openai-codex-responses",
@@ -78,8 +78,8 @@
           }
         },
         "stopReason": "stop",
-        "timestamp": 1788196060654,
-        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "timestamp": 1788229858136,
+        "responseId": "resp_028d7b40c525ed9a016a9638e3c37087d0989fc75e270a755d",
         "rawStopReason": "completed"
       }
     },
@@ -93,7 +93,7 @@
           {
             "type": "text",
             "text": "ok",
-            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+            "textSignature": "{\"v\":1,\"id\":\"msg_028d7b40c525ed9a016a9638e4c36c87d0b7ef66264255ee17\",\"phase\":\"final_answer\"}"
           }
         ],
         "api": "openai-codex-responses",
@@ -115,8 +115,8 @@
           }
         },
         "stopReason": "stop",
-        "timestamp": 1788196060654,
-        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "timestamp": 1788229858136,
+        "responseId": "resp_028d7b40c525ed9a016a9638e3c37087d0989fc75e270a755d",
         "rawStopReason": "completed"
       }
     },
@@ -130,7 +130,7 @@
           {
             "type": "text",
             "text": "ok",
-            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+            "textSignature": "{\"v\":1,\"id\":\"msg_028d7b40c525ed9a016a9638e4c36c87d0b7ef66264255ee17\",\"phase\":\"final_answer\"}"
           }
         ],
         "api": "openai-codex-responses",
@@ -152,8 +152,8 @@
           }
         },
         "stopReason": "stop",
-        "timestamp": 1788196060654,
-        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "timestamp": 1788229858136,
+        "responseId": "resp_028d7b40c525ed9a016a9638e3c37087d0989fc75e270a755d",
         "rawStopReason": "completed"
       }
     },
@@ -166,7 +166,7 @@
           {
             "type": "text",
             "text": "ok",
-            "textSignature": "{\"v\":1,\"id\":\"msg_0e6ab592501f15f4016a95b4dddedc87d0bb820a02cd46d9c2\",\"phase\":\"final_answer\"}"
+            "textSignature": "{\"v\":1,\"id\":\"msg_028d7b40c525ed9a016a9638e4c36c87d0b7ef66264255ee17\",\"phase\":\"final_answer\"}"
           }
         ],
         "api": "openai-codex-responses",
@@ -188,8 +188,8 @@
           }
         },
         "stopReason": "stop",
-        "timestamp": 1788196060654,
-        "responseId": "resp_0e6ab592501f15f4016a95b4dd4a8887d0bb29d9f050b7b05a",
+        "timestamp": 1788229858136,
+        "responseId": "resp_028d7b40c525ed9a016a9638e3c37087d0989fc75e270a755d",
         "rawStopReason": "completed"
       }
     }

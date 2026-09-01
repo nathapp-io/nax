@@ -3,7 +3,6 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
-test/fixtures/recorded/
 .superpowers/
 
 # nax - generated files

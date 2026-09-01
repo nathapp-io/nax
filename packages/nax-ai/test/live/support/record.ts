@@ -20,7 +20,7 @@ function filterHeaders(headers: Readonly<Record<string, string>>): Record<string
 export function recordingDeps(
   inner: PiDeps,
   meta: Omit<RecordedMeta, "recordedAt">,
-): { deps: PiDeps; write: (name: string) => void } {
+): { deps: PiDeps; write: (name: string) => RecordedFixture } {
   const events: AssistantMessageEvent[] = [];
   let response: PiResponse = { status: 0, headers: {} };
 
@@ -38,7 +38,10 @@ export function recordingDeps(
       })(),
   };
 
-  const write = (name: string): void => {
+  // Returns what it wrote, so a caller can assert on the captured response.
+  // `status` is 0 until onResponse fires, which is the signature of a
+  // transport that carries no HTTP response at all.
+  const write = (name: string): RecordedFixture => {
     const file = join(DIR, `${name}.json`);
     mkdirSync(dirname(file), { recursive: true });
     const body: RecordedFixture = {
@@ -47,6 +50,7 @@ export function recordingDeps(
       events,
     };
     writeFileSync(file, `${JSON.stringify(body, null, 2)}\n`, "utf8");
+    return body;
   };
 
   return { deps, write };

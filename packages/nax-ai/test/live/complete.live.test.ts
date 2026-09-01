@@ -1,4 +1,3 @@
-import type { AssistantMessageEvent, Context } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { createPiDeps, createPiProtocol } from "../../src/protocols/pi-client.ts";
 import type { ProtocolEvent, ProtocolRequest } from "../../src/protocols/types.ts";
@@ -12,6 +11,8 @@ interface Target {
   readonly model: string;
   readonly api: string;
   readonly request: Omit<ProtocolRequest, "model" | "provider">;
+  /** Overrides the generic note when a fixture is evidence of something more. */
+  readonly note?: string;
 }
 
 const READ_TOOL = {
@@ -72,6 +73,20 @@ const TARGETS: readonly Target[] = [
     api: "openai-responses",
     request: { messages: [{ role: "user", content: "Reply with the single word: ok" }], maxTokens: 16 },
   },
+  {
+    // The one first-party target: OpenAI's own Codex OAuth rather than a
+    // gateway. It records over SSE because createPiDeps defaults transport to
+    // "sse" — pi-ai would otherwise prefer WebSocket here, which has no HTTP
+    // response, so onResponse would capture nothing and the fixture could not
+    // be evidence of the error-classification path.
+    fixture: "openai-codex-responses-text",
+    provider: "openai-codex",
+    protocol: "openai-codex-responses",
+    model: "gpt-5.4-mini",
+    api: "openai-codex-responses",
+    request: { messages: [{ role: "user", content: "Reply with the single word: ok" }], maxTokens: 16 },
+    note: 'Recorded from openai-codex, a first-party provider rather than a gateway, over SSE — createPiDeps defaults transport to "sse" because pi-ai would otherwise prefer WebSocket here and no HTTP status could be captured. Evidence of openai-codex-responses event shape and that onResponse observes a real response; not evidence of any error status.',
+  },
 ];
 
 describe("record fixtures from live providers", () => {
@@ -82,7 +97,7 @@ describe("record fixtures from live providers", () => {
         protocol: t.protocol,
         model: t.model,
         api: t.api,
-        note: `Recorded from ${t.provider}. Evidence of ${t.protocol} event shape only.`,
+        note: t.note ?? `Recorded from ${t.provider}. Evidence of ${t.protocol} event shape only.`,
       });
       const protocol = createPiProtocol(t.protocol, rec.deps);
 
@@ -91,38 +106,13 @@ describe("record fixtures from live providers", () => {
         events.push(e);
       }
 
-      rec.write(t.fixture);
+      const fixture = rec.write(t.fixture);
       expect(events.at(-1)?.type).toBe("done");
+      // A recorded status of 0 means onResponse never fired, so the fixture
+      // could not be evidence of the error-classification path. That is what
+      // WebSocket transport produced for openai-codex before the transport
+      // default moved to "sse".
+      expect(fixture.response.status).toBe(200);
     }, 120_000);
   }
-
-  // openai-codex-responses defaults to WebSocket transport, which has no HTTP
-  // response for onResponse to observe — a fixture recorded that way carries
-  // status 0 and no headers, so the error-classification path this suite
-  // exists to exercise would go untested for this protocol. toPiOptions has
-  // no transport pass-through (adding one is a src/ change, out of scope for
-  // this plan), so this one target bypasses createPiProtocol/toPiOptions and
-  // drives PiDeps.stream directly with transport forced to "sse".
-  it("records openai-codex-responses-text over sse so onResponse captures a real status", async () => {
-    const rec = recordingDeps(createPiDeps({ credentials: piAuthStore() }), {
-      provider: "openai-codex",
-      protocol: "openai-codex-responses",
-      model: "gpt-5.4-mini",
-      api: "openai-codex-responses",
-      note: "Recorded from openai-codex with transport forced to sse so onResponse captures a real HTTP status and headers (the default WebSocket transport has none to capture).",
-    });
-
-    const model = await rec.deps.resolveModel("gpt-5.4-mini", "openai-codex");
-    const context: Context = {
-      messages: [{ role: "user", content: "Reply with the single word: ok", timestamp: 0 }],
-    };
-
-    const events: AssistantMessageEvent[] = [];
-    for await (const e of rec.deps.stream(model, context, { maxTokens: 16, transport: "sse" }, () => {})) {
-      events.push(e);
-    }
-
-    rec.write("openai-codex-responses-text");
-    expect(events.at(-1)?.type).toBe("done");
-  }, 120_000);
 });

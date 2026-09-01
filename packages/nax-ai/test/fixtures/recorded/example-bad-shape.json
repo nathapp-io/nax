@@ -1,0 +1,4 @@
+{
+  "note": "Not a fixture in the current format. This is the shape M2's recorder produced: the mapper's ProtocolEvent output, with no captured HTTP response. It exists so loadFixture's shape check has something to reject, and so a stale fixture left on disk fails with a diagnosis rather than a TypeError.",
+  "events": [{ "type": "text-delta", "text": "hi" }]
+}

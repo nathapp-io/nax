@@ -29,7 +29,14 @@ import { toTokenUsage, totalTokens } from "../usage.ts";
 import { classifyHttpError, classifyThrown, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { createToolArgAccumulator, parseToolArgs } from "./tool-args.ts";
-import type { ConversationMessage, Protocol, ProtocolEvent, ProtocolRequest, ThinkingBlock } from "./types.ts";
+import type {
+  ConversationMessage,
+  Protocol,
+  ProtocolEvent,
+  ProtocolRequest,
+  ThinkingBlock,
+  Transport,
+} from "./types.ts";
 
 export interface PiResponse {
   readonly status: number;
@@ -369,7 +376,25 @@ let shared: MutableModels | undefined;
  */
 const credentialed = new WeakMap<CredentialStore, MutableModels>();
 
-export function createPiDeps(options: PiProtocolOptions = {}): PiDeps {
+/**
+ * See PiProtocolOptions.transport for why this is not pi-ai's own "auto".
+ */
+const DEFAULT_TRANSPORT: Transport = "sse";
+
+/**
+ * pi-ai's stream entry point, injectable so tests need no network.
+ *
+ * Narrowed to what this file uses — an async iterable — rather than reusing
+ * MutableModels["streamSimple"], whose return type is a concrete class a test
+ * double would have to reimplement to satisfy.
+ */
+type StreamSimple = (
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) => AsyncIterable<AssistantMessageEvent>;
+
+export function createPiDeps(options: PiProtocolOptions = {}, streamSimple?: StreamSimple): PiDeps {
   const store = options.credentials;
   let models: MutableModels;
   if (store === undefined) {
@@ -406,7 +431,11 @@ export function createPiDeps(options: PiProtocolOptions = {}): PiDeps {
       // so the seam a native backend will use is exercised in production
       // rather than merely exported.
       const auth = await resolver.resolve({ provider: model.provider, model: model.id });
-      yield* models.streamSimple(model, context, {
+      const stream = streamSimple ?? models.streamSimple.bind(models);
+      yield* stream(model, context, {
+        // Construction-time first, so a per-request option could still override
+        // it later without this line having to move.
+        transport: options.transport ?? DEFAULT_TRANSPORT,
         ...options_,
         ...(auth.apiKey !== undefined ? { apiKey: auth.apiKey } : {}),
         ...(auth.headers !== undefined ? { headers: { ...auth.headers } } : {}),

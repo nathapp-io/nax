@@ -12,6 +12,7 @@
 
 import type { CredentialStore } from "../types.ts";
 import type { ProtocolEntries } from "./registry.ts";
+import type { Transport } from "./types.ts";
 
 export const PI_PROTOCOL_NAMES = [
   "anthropic-messages",
@@ -25,6 +26,21 @@ export type PiProtocolName = (typeof PI_PROTOCOL_NAMES)[number];
 export interface PiProtocolOptions {
   /** Where OAuth and api-key credentials live. Omitted means ambient only. */
   readonly credentials?: CredentialStore;
+  /**
+   * Preferred transport, defaulting to "sse" rather than to pi-ai's "auto".
+   *
+   * Only openai-codex-responses offers a choice; the other three ignore this.
+   * pi-ai prefers WebSocket there, and a WebSocket has no HTTP response for
+   * the classifier's onResponse hook to observe, so every failure over it
+   * classifies as "unknown" with no status and no retry-after — a rate limit
+   * becomes invisible to a consumer's backoff. Correct classification is worth
+   * more than Codex's cached-context path, so that is the default; pass "auto"
+   * to trade back.
+   *
+   * Construction-time rather than per-request: it is meaningful to one of the
+   * four protocols, and ProtocolRequest is the shared protocol-agnostic type.
+   */
+  readonly transport?: Transport;
 }
 
 export function piProtocols(options: PiProtocolOptions = {}): ProtocolEntries {

@@ -3,9 +3,10 @@ import { sequenceViolations } from "../support/conformance.ts";
 import { fixtureNames, loadFixture } from "../support/load-fixture.ts";
 import { drainFixture } from "../support/replay.ts";
 
-// `example-bad-header` exists to prove the loader rejects it, so it is not
-// replayable by construction.
-const REPLAYABLE = fixtureNames().filter((n) => n !== "example-bad-header");
+// `example-bad-*` fixtures exist to prove the loader rejects them, so they are
+// not replayable by construction. Excluding them by prefix rather than by name
+// means a new negative fixture does not also have to be added here.
+const REPLAYABLE = fixtureNames().filter((n) => !n.startsWith("example-bad-"));
 
 describe("recorded fixtures", () => {
   it("has at least one fixture per protocol", () => {
