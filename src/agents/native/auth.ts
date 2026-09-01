@@ -180,6 +180,12 @@ export async function removeStoredProvider(providerId: string): Promise<void> {
   await naxCredentialStore().delete(providerId);
 }
 
+export function authImportOutcomeLabel(status: ImportOutcome["status"]): string {
+  if (status === "imported") return "imported";
+  if (status === "skipped") return "skipped, already present";
+  return "unsupported credential type";
+}
+
 /**
  * Of these providers, which would ambient auth satisfy on its own?
  *

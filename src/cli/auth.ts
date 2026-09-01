@@ -1,0 +1,165 @@
+/**
+ * The `nax auth` commands.
+ *
+ * Terminal I/O only. Everything touching nax-ai lives behind
+ * src/agents/native/, the only place in src/ permitted to import it, so
+ * nothing here imports the wire package or its types.
+ *
+ * Each command returns an exit code rather than calling process.exit, so the
+ * behaviour is testable and bin/nax.ts owns the process.
+ */
+
+import chalk from "chalk";
+import type { AuthEvent, AuthInteraction, AuthPrompt } from "@/agents/native";
+import {
+  AuthCancelledError,
+  ambientShadows,
+  authImportOutcomeLabel,
+  importPiCredentials,
+  listStoredProviders,
+  removeStoredProvider,
+  runLogin,
+} from "@/agents/native";
+import { PromptCancelledError, promptForLine, promptForSecret } from "./auth-prompt";
+
+export const _cliAuthDeps: {
+  log: (text: string) => void;
+  isTTY: () => boolean;
+} = {
+  log: (text: string) => console.log(text),
+  isTTY: () => process.stdin.isTTY === true,
+};
+
+/** The terminal's side of a login. Secrets go through the non-echoing prompt. */
+function terminalInteraction(): AuthInteraction {
+  return {
+    prompt: async (prompt: AuthPrompt): Promise<string> => {
+      if (prompt.type === "secret") return promptForSecret(prompt.message);
+      if (prompt.type === "select") {
+        _cliAuthDeps.log(prompt.message);
+        for (const option of prompt.options) _cliAuthDeps.log(`  ${chalk.cyan(option.id)}  ${option.label}`);
+        return promptForLine("Choose:");
+      }
+      return promptForLine(prompt.message);
+    },
+    notify: (event: AuthEvent): void => {
+      switch (event.type) {
+        case "auth-url":
+          _cliAuthDeps.log(`\n${chalk.bold("Open this URL to continue:")}\n  ${event.url}`);
+          if (event.instructions !== undefined) _cliAuthDeps.log(event.instructions);
+          return;
+        case "device-code":
+          _cliAuthDeps.log(`\nGo to ${event.verificationUri} and enter code ${chalk.bold(event.userCode)}`);
+          return;
+        case "info":
+          _cliAuthDeps.log(event.message);
+          for (const link of event.links ?? []) _cliAuthDeps.log(`  ${link.label ?? "Link"}: ${link.url}`);
+          return;
+        default:
+          _cliAuthDeps.log(chalk.dim(event.message));
+      }
+    },
+  };
+}
+
+export async function authLoginCommand(providerId: string): Promise<number> {
+  if (!_cliAuthDeps.isTTY()) {
+    _cliAuthDeps.log(
+      `${chalk.red("nax auth login needs an interactive terminal.")}\n` +
+        "For CI, set the provider's environment variable instead — nax reads it when nothing is stored.",
+    );
+    return 1;
+  }
+
+  try {
+    const result = await runLogin(providerId, terminalInteraction());
+    // Reported as returned. kind is never derived from method: M5 predicted
+    // openrouter would report api-key here and its live run reported oauth.
+    _cliAuthDeps.log(
+      `${chalk.green("Signed in to")} ${chalk.bold(result.providerId)} ` +
+        chalk.dim(`(method: ${result.method}, credential: ${result.kind})`),
+    );
+
+    if ((await ambientShadows([result.providerId])).length > 0) {
+      _cliAuthDeps.log(
+        chalk.yellow(
+          `Note: ${result.providerId} also has credentials in your environment. The stored credential ` +
+            `takes precedence from now on — run \`nax auth rm ${result.providerId}\` to go back to the environment.`,
+        ),
+      );
+    }
+    return 0;
+  } catch (error) {
+    // Ctrl+C is not a failure: 130 and nothing on stdout.
+    if (error instanceof AuthCancelledError || error instanceof PromptCancelledError) return 130;
+    _cliAuthDeps.log(chalk.red((error as Error).message));
+    return 1;
+  }
+}
+
+export async function authImportCommand(options: { from?: string; force?: boolean }): Promise<number> {
+  try {
+    const outcomes = await importPiCredentials(options);
+    if (outcomes.length === 0) {
+      _cliAuthDeps.log("Nothing to import.");
+      return 0;
+    }
+    for (const outcome of outcomes) {
+      _cliAuthDeps.log(`  ${outcome.providerId.padEnd(20)} ${authImportOutcomeLabel(outcome.status)}`);
+    }
+    return 0;
+  } catch (error) {
+    _cliAuthDeps.log(chalk.red((error as Error).message));
+    return 1;
+  }
+}
+
+export async function authListCommand(): Promise<number> {
+  try {
+    const entries = await listStoredProviders();
+    if (entries.length === 0) {
+      _cliAuthDeps.log("No credentials stored. Add one with `nax auth login <provider>`.");
+      return 0;
+    }
+
+    const shadowed = new Set(await ambientShadows(entries.map((entry) => entry.providerId)));
+
+    for (const entry of entries) {
+      const expiry =
+        entry.expires === undefined
+          ? ""
+          : entry.expires <= Date.now()
+            ? chalk.red(" expired")
+            : chalk.dim(` expires ${new Date(entry.expires).toISOString()}`);
+      const shadow = shadowed.has(entry.providerId) ? chalk.yellow(" shadows an environment variable") : "";
+      _cliAuthDeps.log(`  ${entry.providerId.padEnd(20)} ${entry.kind}${expiry}${shadow}`);
+    }
+    return 0;
+  } catch (error) {
+    _cliAuthDeps.log(chalk.red((error as Error).message));
+    return 1;
+  }
+}
+
+export async function authRmCommand(providerId: string): Promise<number> {
+  try {
+    const stored = await listStoredProviders();
+    if (!stored.some((entry) => entry.providerId === providerId)) {
+      _cliAuthDeps.log(chalk.red(`No stored credential for "${providerId}".`));
+      return 1;
+    }
+
+    await removeStoredProvider(providerId);
+
+    // Never "logged out": pi has no revocation, so the provider-side token
+    // stays live until it expires. Saying otherwise would be false.
+    _cliAuthDeps.log(
+      `Credential for ${chalk.bold(providerId)} removed locally. ` +
+        chalk.dim("The token stays valid at the provider until it expires — revoke it there if you need it dead."),
+    );
+    return 0;
+  } catch (error) {
+    _cliAuthDeps.log(chalk.red((error as Error).message));
+    return 1;
+  }
+}
