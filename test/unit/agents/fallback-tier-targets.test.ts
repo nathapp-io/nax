@@ -9,7 +9,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { AgentManager } from "@/agents/manager";
+import { resolveFinalDispatch, resolveHopCompleteOptions } from "@/agents/manager-dispatch";
+import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { availableCandidates, credentialCandidates, normaliseFallbackTarget } from "@/agents/swap-decision";
+import type { ResolvedCompleteOptions } from "@/agents/types";
+import { resolveModelForAgent } from "@/config";
 import { NaxConfigSchema } from "@/config/schemas";
 
 const none = () => false;
@@ -105,5 +109,75 @@ describe("nextCandidate", () => {
 
   test("returns null when the chain is empty", () => {
     expect(manager({ claude: [] }).nextCandidate("claude", 0)).toBeNull();
+  });
+});
+
+describe("resolveHopCompleteOptions", () => {
+  const base: ResolvedCompleteOptions = {
+    modelDef: { provider: "anthropic", model: "primary-model" },
+    modelDefFor: (agent: string, tier?: string) => ({ provider: "p", model: `${agent}:${tier ?? "default"}` }),
+    workdir: "/tmp",
+    resolvedPermissions: { mode: "approve-all" },
+  };
+
+  test("the primary hop is untouched", () => {
+    expect(resolveHopCompleteOptions(base, "claude", "claude").modelDef.model).toBe("primary-model");
+  });
+
+  test("a swapped hop with no tier resolves the agent's default, as today", () => {
+    expect(resolveHopCompleteOptions(base, "codex", "claude").modelDef.model).toBe("codex:default");
+  });
+
+  test("a swapped hop passes its tier through to modelDefFor", () => {
+    // The assertion that matters: the tier must REACH the dispatch. Asserting
+    // only that the schema parsed would pass while the feature is inert.
+    expect(resolveHopCompleteOptions(base, "native", "claude", "cheap").modelDef.model).toBe("native:cheap");
+  });
+});
+
+describe("an unknown tier on a fallback target", () => {
+  test("throws MODEL_NOT_FOUND rather than silently falling back to balanced", () => {
+    // resolveModelForAgent throws when neither the agent nor the default agent
+    // defines the tier. Swallowing that would run the hop on a model the user
+    // never asked for, which is worse than failing.
+    const models = { claude: { balanced: "claude-sonnet-5" }, native: { cheap: "opencode-go/glm-5" } };
+    expect(() => resolveModelForAgent(models, "native", "no-such-tier", "claude")).toThrow(
+      /MODEL_NOT_FOUND|no-such-tier/,
+    );
+  });
+
+  test("a tier the agent lacks falls back to the default agent's entry before throwing", () => {
+    const models = { claude: { premium: "claude-opus-5" }, native: { cheap: "opencode-go/glm-5" } };
+    expect(resolveModelForAgent(models, "native", "premium", "claude").model).toBe("claude-opus-5");
+  });
+});
+
+describe("resolveFinalDispatch", () => {
+  const base: ResolvedCompleteOptions = {
+    modelDef: { provider: "anthropic", model: "primary-model" },
+    modelDefFor: (agent: string, tier?: string) => ({ provider: "p", model: `${agent}:${tier ?? "default"}` }),
+    workdir: "/tmp",
+    resolvedPermissions: { mode: "approve-all" },
+  };
+  const swapped: AgentFallbackRecord[] = [
+    {
+      priorAgent: "claude",
+      newAgent: "native",
+      hop: 1,
+      outcome: "fail-quota",
+      category: "availability",
+      timestamp: "2026-09-02T00:00:00.000Z",
+      costUsd: 0,
+    },
+  ];
+
+  test("the cost row records the model the swapped hop actually ran", () => {
+    // Without threading finalTier this is "native:default" — a model that
+    // never ran, billed against the run.
+    expect(resolveFinalDispatch(base, "claude", swapped, "cheap").options.modelDef.model).toBe("native:cheap");
+  });
+
+  test("no tier means today's behaviour", () => {
+    expect(resolveFinalDispatch(base, "claude", swapped).options.modelDef.model).toBe("native:default");
   });
 });

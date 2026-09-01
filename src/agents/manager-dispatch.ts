@@ -219,14 +219,20 @@ export function buildCompleteCallPreamble(input: {
  * keeps the model it was resolved with — so an explicit `{ agent, model }` pin
  * survives — and only a swapped-to agent re-resolves. A missing or undefined
  * resolution leaves `modelDef` untouched, preserving pre-#1739 behaviour.
+ *
+ * `tier` is the fallback target's named tier (Task 6); when supplied it is passed
+ * through to `modelDefFor`, so the swapped hop dispatches the model the operator
+ * asked for rather than the caller's own effective tier. Absent means exactly
+ * today's behaviour.
  */
 export function resolveHopCompleteOptions(
   options: ResolvedCompleteOptions,
   currentAgent: string,
   primaryAgent: string,
+  tier?: string,
 ): ResolvedCompleteOptions {
   if (currentAgent === primaryAgent) return options;
-  return { ...options, modelDef: options.modelDefFor?.(currentAgent) ?? options.modelDef };
+  return { ...options, modelDef: options.modelDefFor?.(currentAgent, tier) ?? options.modelDef };
 }
 
 /**
@@ -238,14 +244,20 @@ export function resolveHopCompleteOptions(
  * regardless; once the dispatch is correct, the event must follow it. The last
  * fallback record names the final agent — same-agent fail-stale retries record
  * `newAgent === priorAgent`, so it holds for those too.
+ *
+ * `finalTier` is the tier the final hop actually ran at (Task 6), carried out of
+ * `completeWithFallback` rather than re-derived — re-resolving without it would
+ * record a model that never ran, reintroducing the same divergence in the tier
+ * dimension.
  */
 export function resolveFinalDispatch(
   options: ResolvedCompleteOptions,
   primaryAgent: string,
   fallbacks: readonly AgentFallbackRecord[],
+  finalTier?: string,
 ): { agentName: string; options: ResolvedCompleteOptions } {
   const agentName = fallbacks.at(-1)?.newAgent ?? primaryAgent;
-  return { agentName, options: resolveHopCompleteOptions(options, agentName, primaryAgent) };
+  return { agentName, options: resolveHopCompleteOptions(options, agentName, primaryAgent, finalTier) };
 }
 
 /**

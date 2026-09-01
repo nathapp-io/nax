@@ -54,6 +54,8 @@ export interface AgentRunOutcome {
 export interface AgentCompleteOutcome {
   result: CompleteResult;
   fallbacks: AgentFallbackRecord[];
+  /** Tier of the hop that actually ran, when a fallback target named one. */
+  finalTier?: string;
 }
 
 export type AgentManagerEventName = "onAgentSelected" | "onSwapAttempt" | "onAgentUnavailable" | "onSwapExhausted";

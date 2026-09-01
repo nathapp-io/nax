@@ -250,7 +250,12 @@ export interface CompleteOptions extends TrackedSpawnDeadlineOptions {
    * owns it (ADR-019: the manager owns the swap loop, callOp owns model
    * resolution). Absent, or returning undefined, leaves `modelDef` in place.
    */
-  modelDefFor?: (agentName: string) => ModelDef | undefined;
+  /**
+   * The model to dispatch for a given agent, and optionally at a given tier.
+   * `tier` is supplied when a fallback target named one; absent means the
+   * caller's own effective tier, which is what every pre-existing config does.
+   */
+  modelDefFor?: (agentName: string, tier?: string) => ModelDef | undefined;
   /**
    * Tier the model was resolved from, when it came from one. Absent when an
    * explicit `{ agent, model }` pin bypassed tier resolution. Recorded on cost

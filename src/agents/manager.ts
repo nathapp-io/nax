@@ -460,6 +460,7 @@ export class AgentManager implements IAgentManager {
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     // No dead-primary skip (nax#1722); swapped hops re-resolve the model (nax#1739). Hop budget shared with run().
     let currentAgent = primaryAgent;
+    let currentTier: string | undefined;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     const maxStaleRetries = resolveIdleWatchdogSettings(this._config.agent?.idleWatchdog).maxRetryAttempts;
@@ -480,7 +481,7 @@ export class AgentManager implements IAgentManager {
           });
         }
 
-        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent);
+        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent, currentTier);
         let result: CompleteResult;
         try {
           const optionsWithLifecycle: ResolvedCompleteOptions = this._pidRegistry
@@ -519,7 +520,7 @@ export class AgentManager implements IAgentManager {
 
         if (!result.adapterFailure) {
           _finalStatus = "ok";
-          return { result, fallbacks };
+          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
         // fail-stale same-agent retry (mirrors runWithFallback pattern at manager.ts:275-298).
@@ -554,7 +555,7 @@ export class AgentManager implements IAgentManager {
             failure: result.adapterFailure,
           });
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
-          return { result, fallbacks };
+          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
         // Mark unavailable before nextCandidate so the filter excludes the just-failed agent.
@@ -562,7 +563,7 @@ export class AgentManager implements IAgentManager {
         const next = this.nextCandidate(primaryAgent, hopsSoFar);
         if (!next) {
           _finalStatus = "exhausted";
-          return { result, fallbacks };
+          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
         hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);
@@ -586,7 +587,7 @@ export class AgentManager implements IAgentManager {
         });
 
         _agentChain.push(next.agent);
-        currentAgent = next.agent;
+        [currentAgent, currentTier] = [next.agent, next.tier];
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({
@@ -729,7 +730,7 @@ export class AgentManager implements IAgentManager {
         sessionName,
         prompt,
         response: outcome.result.output,
-        ...resolveFinalDispatch(augmented, agentName, outcome.fallbacks),
+        ...resolveFinalDispatch(augmented, agentName, outcome.fallbacks, outcome.finalTier),
         stage,
         resolvedPermissions,
         tokenUsage: outcome.result.tokenUsage,

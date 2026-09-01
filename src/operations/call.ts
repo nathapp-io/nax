@@ -86,10 +86,10 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       // run() path's pinnedModelAgent semantics (build-hop-callback.ts): a
       // caller-pinned `{ agent, model }` survives for its own agent, and any
       // other agent re-resolves from its own tier map.
-      modelDefFor: (agent: string) =>
-        agent === dispatchAgent
+      modelDefFor: (agent: string, tier?: string) =>
+        agent === dispatchAgent && tier === undefined
           ? resolved.modelDef
-          : resolveModelForAgent(effectiveModels, agent, effectiveTier, defaultAgent),
+          : resolveModelForAgent(effectiveModels, agent, tier ?? effectiveTier, defaultAgent),
       ...(resolved.modelTier !== undefined ? { modelTier: resolved.modelTier } : {}),
       jsonMode: completeOp.jsonMode ?? false,
       pipelineStage: op.stage,

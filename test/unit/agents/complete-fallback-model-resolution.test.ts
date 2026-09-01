@@ -84,7 +84,8 @@ describe("completeWithFallback model re-resolution (nax#1739)", () => {
     expect(outcome.result.output).toBe("codex-out");
     expect(seen).toHaveLength(1);
     expect(seen[0].modelDef).toEqual(CODEX_MODEL);
-    expect(modelDefFor).toHaveBeenCalledWith("codex");
+    // The resolver is consulted with the fallback target's tier, undefined when none named.
+    expect(modelDefFor).toHaveBeenCalledWith("codex", undefined);
   });
 
   test("AC-2: without a resolver the primary's modelDef is still used (back-compat)", async () => {
