@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - **Two repos.** Paths are relative to `repos/nax` unless prefixed `nax-ai:`, which means `repos/nax-ai`. Tasks 1 and 2 are nax-ai; Tasks 3-11 are nax.
+- **Branches.** This plan and its spec are documentation, on `docs/nax-auth-credentials-design` (PR #1789). The implementation belongs on `feat/nax-auth-credentials`, branched from `main` — see Task 2 Step 8. Task 1's nax-ai work has its own branch, `feat/ambient-auth-probe`. Do not commit code onto the docs branch.
 - **The two repos have different TypeScript strictness. Do not carry idioms across.** nax-ai has `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess` and `verbatimModuleSyntax`; nax has none of the three (`strict: true` only). In nax-ai, build an optional property with a spread (`...(x !== undefined ? { x } : {})`) and never write `import type { A, type B }`. In nax, plain optional assignment is fine.
 - **nax: `@nathapp/nax-ai` may be imported only from `src/agents/native/`.** Enforced by `scripts/check-nax-ai-imports.ts`, which scans `src/` only. A violation fails `bun run lint`.
 - **nax-ai: `@earendil-works/pi-ai` may be imported only from `src/protocols/pi-client.ts`, `src/providers/pi-catalog.ts`, `src/auth/pi-auth.ts`.** Task 1 lands in `pi-auth.ts`, which is already allowed — **no gate change is needed.**
@@ -294,10 +295,20 @@ Expected: `bun.lock` updates.
 Run: `bun -e 'import("@nathapp/nax-ai").then(m => console.log(typeof m.login, typeof m.ambientAuthAvailable, typeof m.createFileCredentialStore))'`
 Expected: `function function function`
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8: Branch for the implementation, from `main`**
+
+The spec, this plan and the ADR-027 amendment live on `docs/nax-auth-credentials-design` (PR #1789) and are documentation only. **Branch the implementation from `main` once that PR merges, not from the docs branch** — otherwise the code PR carries the docs commits and cannot be reviewed or reverted separately.
 
 ```bash
+git checkout main && git pull --ff-only
 git checkout -b feat/nax-auth-credentials
+```
+
+If PR #1789 has not merged yet, branching from `main` anyway is correct: nothing in Tasks 3-11 reads the spec at runtime.
+
+- [ ] **Step 9: Commit**
+
+```bash
 git add package.json bun.lock
 git commit -m "chore: take nax-ai 0.1.3 for login() and the ambient-auth probe
 
