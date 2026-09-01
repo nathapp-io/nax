@@ -1,13 +1,13 @@
 /**
  * Construction of the nax-ai client.
  *
- * piProviders() loads a ~650KB bundled catalog, so the client is built once and
+ * defaultProviders() loads a ~650KB bundled catalog, so the client is built once and
  * memoised. Tests replace the builder through _clientDeps rather than reaching
  * the network or the catalog.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { createClient, type PiProtocolOptions } from "@nathapp/nax-ai";
+import { createClient, type ProtocolOptions } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient, buildNativeClient, getNativeClient } from "@/agents/native/client";
 import { naxCredentialStore } from "@/agents/native/credentials";
 
@@ -62,22 +62,22 @@ describe("buildNativeClient", () => {
     expect(typeof client.pricing).toBe("function");
   });
 
-  test("passes the credential store to piProtocols, so a stored credential reaches a run", async () => {
-    const realPiProtocols = _clientDeps.piProtocols;
+  test("passes the credential store to defaultProtocols, so a stored credential reaches a run", async () => {
+    const realDefaultProtocols = _clientDeps.defaultProtocols;
     let seenCredentials: unknown;
-    _clientDeps.piProtocols = ((options?: PiProtocolOptions) => {
+    _clientDeps.defaultProtocols = ((options?: ProtocolOptions) => {
       seenCredentials = options?.credentials;
-      return realPiProtocols(options);
-    }) as typeof _clientDeps.piProtocols;
+      return realDefaultProtocols(options);
+    }) as typeof _clientDeps.defaultProtocols;
 
     try {
       // The real buildNativeClient, called directly (not through _clientDeps.build,
       // which test/preload.ts sentinels): this proves the seam nax-ai actually
-      // reads (piProtocols), not ClientOptions.credentials, which it accepts in
-      // its type but silently ignores.
+      // reads (defaultProtocols). ClientOptions once carried a `credentials`
+      // field that createClient never read; nax-ai 0.1.4 removed it.
       await buildNativeClient();
     } finally {
-      _clientDeps.piProtocols = realPiProtocols;
+      _clientDeps.defaultProtocols = realDefaultProtocols;
     }
 
     expect(seenCredentials).toBe(naxCredentialStore());
