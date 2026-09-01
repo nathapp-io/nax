@@ -33,6 +33,37 @@ While the API is unstable, `latest` and `next` both point at the current 0.x rel
 
 A `ToolDefinition` can carry an optional `constrainedSampling: { type: "json_schema"; strict: "prefer" | "require" }` to ask the provider to constrain a tool's arguments to its schema. Support is per-model, not caller-controllable — some models simply cannot honour it. `"prefer"` degrades silently to an unconstrained tool when the model lacks support, so a well-formed response is not evidence the constraint was applied; `"require"` throws instead of degrading.
 
+### Logging in
+
+`login()` obtains a credential and writes it to the store you pass. It covers
+both api-key entry and OAuth, choosing between them when a provider offers
+both, and returns metadata rather than the credential — the store already has
+it.
+
+```ts
+import { createFileCredentialStore, login } from "@nathapp/nax-ai";
+
+const credentials = createFileCredentialStore({ path: `${homedir()}/.nax/credentials` });
+
+const result = await login({
+  providerId: "openrouter",
+  credentials,
+  interaction: {
+    prompt: async (prompt) => ask(prompt.message),  // your UI
+    notify: (event) => render(event),
+  },
+});
+// result: { providerId: "openrouter", method: "oauth", kind: "oauth" }
+```
+
+Permitted OAuth flows are `openai-codex` and `openrouter`; see
+`PERMITTED_OAUTH_FLOWS`. A provider outside that list keeps its api-key login.
+
+There is no `logout`: removing a credential is `credentials.delete(providerId)`.
+Note that nothing is revoked upstream — the provider-side token stays valid
+until it expires, so a UI should say the credential was removed locally rather
+than that the user was logged out.
+
 ## Scope
 
 This package speaks a generic LLM vocabulary — models, messages, tool calls, usage, credentials. It knows nothing about any consumer's domain concepts, and that direction is one-way by design: consumers map onto their own types at their own boundary.

@@ -1,6 +1,6 @@
 # nax-ai roadmap
 
-**Last updated:** 2026-09-01 · **Current milestone:** M4 — hardening is **done** (transport retry, thinking round-trip, transport pass-through and the file-backed `CredentialStore`); the scheduled live-provider drift detector was deferred out of M4 rather than built — see Deferred items. Per-tool constrained sampling is in flight on a branch. M3 — recorded fixtures is done. M2 — real transport is done, publish pending. M1 merged to `main` in [#1](https://github.com/nathapp-io/nax-ai/pull/1) (`d3a3968`).
+**Last updated:** 2026-09-01 · **Current milestone:** M4 — hardening is **done** (transport retry, thinking round-trip, transport pass-through and the file-backed `CredentialStore`); the scheduled live-provider drift detector was deferred out of M4 rather than built — see Deferred items. Per-tool constrained sampling is in flight on a branch. M5 — login flows is done, verified live 2026-09-01. M3 — recorded fixtures is done. M2 — real transport is done, publish pending. M1 merged to `main` in [#1](https://github.com/nathapp-io/nax-ai/pull/1) (`d3a3968`).
 
 This file records where the project is and what comes next. It is the entry point for anyone — human or agent — picking the work up cold.
 
@@ -29,6 +29,7 @@ The artifact is a point-in-time analysis and does not track progress — it is t
 | **M2 — real transport** | ✅ done (publish pending) | `createPiClient`, auth wiring, first real LLM call | yes |
 | **M3 — recorded fixtures** | ✅ done | The suite that gates merges | yes |
 | **M4 — hardening** | ✅ done | Transport retry, thinking-block round-trip, transport pass-through, file-backed `CredentialStore` | yes |
+| **M5 — login flows** | ✅ done | `login()` for api-key and OAuth entry, behind the existing allowlist gate | n/a — obtains credentials |
 
 ## Milestones
 
@@ -131,6 +132,20 @@ Two properties a consumer must not assume away, documented on the type:
 Deliberately not in scope: widening `ProtocolRequest.toolChoice`, which stays `"auto" | "none"`. Neither value means "must" — constrained sampling makes the arguments valid when a tool is called, and nothing here makes the model call one. Consumers are expected to own that with their own retry.
 
 Reaching nax requires a `0.2.0` publish; until then the field exists only on the branch.
+
+### M5 — login flows ✅
+
+**Design & plan:** [`docs/superpowers/specs/2026-09-01-nax-ai-m5-login-flows-design.md`](docs/superpowers/specs/2026-09-01-nax-ai-m5-login-flows-design.md).
+
+nax-ai can hold credentials and use them; it cannot obtain them. M2's record says as much — its Codex check "used a pre-existing pi credential, since M2 does not implement login." The consumer-side gap is now concrete: nax's Phase A plan 2 is a `nax auth` CLI with nothing here to call, and it cannot reach pi-ai's flows itself without taking a direct dependency on a transitive package and landing one call from the prohibited Anthropic flow with no allowlist in front of it.
+
+One `login()` covering both api-key entry and OAuth, gated per method. The load-bearing finding: `toProviderAuth` (`src/providers/pi-catalog.ts:29`) resolves api-key over oauth when a provider declares both, so `ResolvedProvider.auth.kind` reports `api-key` for `openrouter` — half of what M5 permits — while hiding `anthropic`'s OAuth, which is the one case where hiding it is correct. Dispatch reads pi's own `provider.auth` inside `src/auth/pi-auth.ts` instead; the projection stays as it is, because mapping Anthropic to `oauth` is what would make it unloadable.
+
+M5 also **removes `github-copilot` from `PERMITTED_OAUTH_FLOWS`**, leaving `openai-codex` and `openrouter`. pi reports `isSubscription: true` for it, which fails the allowlist's own "first-party developer credential rather than a consumer subscription" clause and was never established against the alternative one. It moves to `PROHIBITED_OAUTH_FLOWS` with the reason recorded as *not cleared* rather than *ToS violation*, so a terms review can reverse it on evidence. Nothing reaches the flow today — the provider declares both auth kinds, so the gate is never called for it — and its api-key login is unaffected.
+
+Out of scope, and recorded so it is not added later: no logout — pi defines logout *as* deletion (`auth/types.d.ts:77`) and has no revocation anywhere, so `CredentialStore.delete` already is it; and no credential listing, which would widen a published interface to serve one CLI subcommand.
+
+**Live verification 2026-09-01:** `login()` completed an OpenRouter OAuth flow (browser PKCE, method `oauth`, kind `oauth`) and wrote the credential through the file store at mode 0600; the github-copilot negative case offered only the api-key prompt, no OAuth flow.
 
 ## Deferred items and where they land
 

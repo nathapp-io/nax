@@ -12,6 +12,22 @@
  * noticing.
  */
 
+export { login } from "./auth/login.ts";
+export {
+  AuthMethodUnavailableError,
+  LoginCancelledError,
+  LoginFailedError,
+} from "./auth/login-errors.ts";
+export type {
+  LoginEvent,
+  LoginInteraction,
+  LoginLink,
+  LoginMethod,
+  LoginOption,
+  LoginOptions,
+  LoginPrompt,
+  LoginResult,
+} from "./auth/login-types.ts";
 export {
   assertOAuthFlowPermitted,
   isOAuthFlowPermitted,

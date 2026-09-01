@@ -5,8 +5,18 @@
  * pi-ai type through an export a consumer sees.
  */
 
-import type { Credential, MutableModels, CredentialStore as PiCredentialStore } from "@earendil-works/pi-ai";
-import type { CredentialStore, ModelRef, StoredCredential } from "../types.ts";
+import type {
+  Credential,
+  MutableModels,
+  AuthEvent as PiAuthEvent,
+  AuthPrompt as PiAuthPrompt,
+  CredentialStore as PiCredentialStore,
+  Provider as PiProvider,
+} from "@earendil-works/pi-ai";
+import type { CredentialStore, ModelRef, ProviderId, StoredCredential } from "../types.ts";
+import { AuthMethodUnavailableError, LoginFailedError } from "./login-errors.ts";
+import type { LoginEvent, LoginInteraction, LoginPrompt } from "./login-types.ts";
+import { assertOAuthFlowPermitted, isOAuthFlowPermitted } from "./oauth-policy.ts";
 import type { AuthResolver, ResolvedAuth } from "./resolver.ts";
 
 function toPi(credential: StoredCredential | undefined): Credential | undefined {
@@ -91,6 +101,147 @@ export function createPiAuthResolver(models: MutableModels): AuthResolver {
             }
           : {}),
       };
+    },
+  };
+}
+
+export interface LoginRunner {
+  /** Shown in the method prompt when a provider offers both. */
+  readonly label: string;
+  run(interaction: LoginInteraction, signal: AbortSignal): Promise<StoredCredential>;
+}
+
+export interface LoginTarget {
+  readonly apiKey?: LoginRunner;
+  readonly oauth?: LoginRunner;
+}
+
+/**
+ * Test seam. The real read is a dynamic import because pi-ai's provider table
+ * is large and only login needs it, matching pi-catalog.ts's own pattern.
+ */
+export const _loginDeps = {
+  providers: async (): Promise<readonly PiProvider[]> => {
+    const { builtinProviders } = await import("@earendil-works/pi-ai/providers/all");
+    return builtinProviders();
+  },
+};
+
+function required(credential: Credential, providerId: ProviderId): StoredCredential {
+  const stored = fromPi(credential);
+  if (stored === undefined) throw new LoginFailedError(providerId, "the flow returned no credential");
+  return stored;
+}
+
+/**
+ * Resolves which logins a provider can actually run.
+ *
+ * Reads pi's own two auth fields, NOT ResolvedProvider.auth: toProviderAuth
+ * resolves api-key over oauth when a provider declares both, which hides
+ * openrouter's OAuth flow (wrong) and anthropic's (right) indistinguishably.
+ *
+ * The allowlist is applied per method, not per provider, so a provider with a
+ * disallowed OAuth flow keeps its api-key login.
+ */
+export async function resolveLoginTarget(providerId: ProviderId): Promise<LoginTarget> {
+  const provider = (await _loginDeps.providers()).find((candidate) => candidate.id === providerId);
+  if (provider === undefined) throw new AuthMethodUnavailableError(providerId);
+
+  const target: { apiKey?: LoginRunner; oauth?: LoginRunner } = {};
+
+  const apiKeyAuth = provider.auth.apiKey;
+  if (apiKeyAuth?.login !== undefined) {
+    // bind rather than call detached: pi's flows are object methods and may
+    // read `this`.
+    const run = apiKeyAuth.login.bind(apiKeyAuth);
+    target.apiKey = {
+      label: apiKeyAuth.name,
+      run: async (interaction, signal) => required(await run({ ...toPiInteraction(interaction), signal }), providerId),
+    };
+  }
+
+  const oauthAuth = provider.auth.oauth;
+  if (oauthAuth !== undefined && isOAuthFlowPermitted(providerId)) {
+    const run = oauthAuth.login.bind(oauthAuth);
+    target.oauth = {
+      label: oauthAuth.loginLabel ?? oauthAuth.name,
+      run: async (interaction, signal) => {
+        // Before the loader is touched, not after: pi bundles every flow behind
+        // one lazy loader, so the gate must sit in front of it.
+        assertOAuthFlowPermitted(providerId);
+        return required(await run({ ...toPiInteraction(interaction), signal }), providerId);
+      },
+    };
+  }
+
+  if (target.apiKey === undefined && provider.auth.oauth !== undefined) {
+    // The provider's only method is an OAuth flow this package refuses to run.
+    // A policy refusal must not read as an absence: throw the policy error
+    // rather than AuthMethodUnavailableError. assertOAuthFlowPermitted
+    // distinguishes prohibited (OAuthFlowProhibitedError) from unknown.
+    assertOAuthFlowPermitted(providerId);
+  }
+
+  return target;
+}
+
+function fromPiPrompt(prompt: PiAuthPrompt): LoginPrompt {
+  const signal = prompt.signal !== undefined ? { signal: prompt.signal } : {};
+  switch (prompt.type) {
+    case "manual_code":
+      return {
+        ...signal,
+        type: "manual-code",
+        message: prompt.message,
+        ...(prompt.placeholder !== undefined ? { placeholder: prompt.placeholder } : {}),
+      };
+    case "select":
+      return { ...signal, type: "select", message: prompt.message, options: prompt.options };
+    default:
+      return {
+        ...signal,
+        type: prompt.type,
+        message: prompt.message,
+        ...(prompt.placeholder !== undefined ? { placeholder: prompt.placeholder } : {}),
+      };
+  }
+}
+
+function fromPiEvent(event: PiAuthEvent): LoginEvent {
+  switch (event.type) {
+    case "auth_url":
+      return {
+        type: "auth-url",
+        url: event.url,
+        ...(event.instructions !== undefined ? { instructions: event.instructions } : {}),
+      };
+    case "device_code":
+      return {
+        type: "device-code",
+        userCode: event.userCode,
+        verificationUri: event.verificationUri,
+        ...(event.intervalSeconds !== undefined ? { intervalSeconds: event.intervalSeconds } : {}),
+        ...(event.expiresInSeconds !== undefined ? { expiresInSeconds: event.expiresInSeconds } : {}),
+      };
+    case "info":
+      return { type: "info", message: event.message, ...(event.links !== undefined ? { links: event.links } : {}) };
+    default:
+      return { type: "progress", message: event.message };
+  }
+}
+
+/**
+ * Presents a consumer's LoginInteraction to pi. pi calls us, so this maps
+ * inward: pi's snake_case names become nax-ai's kebab-case ones.
+ */
+function toPiInteraction(interaction: LoginInteraction): {
+  prompt(prompt: PiAuthPrompt): Promise<string>;
+  notify(event: PiAuthEvent): void;
+} {
+  return {
+    prompt: async (prompt) => interaction.prompt(fromPiPrompt(prompt)),
+    notify: (event) => {
+      interaction.notify(fromPiEvent(event));
     },
   };
 }

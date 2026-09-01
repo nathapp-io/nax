@@ -51,4 +51,22 @@ describe("oauth policy", () => {
     expect(Object.isFrozen(PERMITTED_OAUTH_FLOWS)).toBe(true);
     expect(Object.isFrozen(PROHIBITED_OAUTH_FLOWS)).toBe(true);
   });
+
+  it("does not permit the github-copilot flow", () => {
+    expect(isOAuthFlowPermitted("github-copilot")).toBe(false);
+    expect(PERMITTED_OAUTH_FLOWS).not.toContain("github-copilot");
+  });
+
+  it("records why github-copilot is not cleared, and does not overstate it", () => {
+    // The reason must survive, or a future reader restores the entry as an
+    // oversight. It must also not claim a ToS violation we have not
+    // established — that is anthropic's case, not this one.
+    expect(PROHIBITED_OAUTH_FLOWS["github-copilot"]).toMatch(/not cleared/i);
+    expect(PROHIBITED_OAUTH_FLOWS["github-copilot"]).not.toMatch(/ToS violation/i);
+  });
+
+  it("still permits openrouter", () => {
+    expect(isOAuthFlowPermitted("openrouter")).toBe(true);
+    expect(() => assertOAuthFlowPermitted("openrouter")).not.toThrow();
+  });
 });

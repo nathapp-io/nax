@@ -23,11 +23,7 @@ import type { ProviderId } from "../types.ts";
  * provider whose terms permit third-party OAuth use, or whose flow is a
  * first-party developer credential rather than a consumer subscription.
  */
-export const PERMITTED_OAUTH_FLOWS: readonly ProviderId[] = Object.freeze([
-  "openai-codex",
-  "github-copilot",
-  "openrouter",
-]);
+export const PERMITTED_OAUTH_FLOWS: readonly ProviderId[] = Object.freeze(["openai-codex", "openrouter"]);
 
 /**
  * OAuth flows that must never be registered, with the reason recorded so a
@@ -36,6 +32,8 @@ export const PERMITTED_OAUTH_FLOWS: readonly ProviderId[] = Object.freeze([
 export const PROHIBITED_OAUTH_FLOWS: Readonly<Record<ProviderId, string>> = Object.freeze({
   anthropic:
     "Anthropic subscription OAuth outside the official Claude CLI is server-blocked and a Consumer ToS violation. Route Claude subscription traffic through the official CLI instead.",
+  "github-copilot":
+    "Not cleared: the upstream catalog marks this flow isSubscription: true, which fails this allowlist's 'first-party developer credential rather than a consumer subscription' clause, and its terms were never checked against the other one. This is an unresolved terms question, not an established violation like anthropic's — a review may reverse it on evidence. The provider's api-key login is unaffected.",
 });
 
 export class OAuthFlowProhibitedError extends Error {
