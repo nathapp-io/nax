@@ -39,9 +39,14 @@ import { basename, join } from "node:path";
 import chalk from "chalk";
 import { Command, Option } from "commander";
 
+import { DEFAULT_PI_AUTH_PATH } from "../src/agents/native";
 import {
   acceptCommand,
   agentsListCommand,
+  authImportCommand,
+  authListCommand,
+  authLoginCommand,
+  authRmCommand,
   contextInspectCommand,
   effectivenessEvalCommand,
   exportPromptCommand,
@@ -1176,6 +1181,39 @@ configProfileCmd
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
     }
+  });
+
+// ── auth ─────────────────────────────────────────────
+const authCmd = program.command("auth").description("Manage provider credentials for the native agent");
+
+authCmd
+  .command("login <provider>")
+  .description("Sign in to a provider and store the credential (interactive)")
+  .action(async (provider: string) => {
+    process.exit(await authLoginCommand(provider));
+  });
+
+authCmd
+  .command("import")
+  .description("Import credentials from pi's credential file")
+  .option("--from <path>", "Source file", DEFAULT_PI_AUTH_PATH)
+  .option("--force", "Overwrite credentials that are already stored", false)
+  .action(async (options: { from?: string; force?: boolean }) => {
+    process.exit(await authImportCommand({ from: options.from, force: options.force }));
+  });
+
+authCmd
+  .command("list")
+  .description("List stored credentials. A stored credential takes precedence over an environment variable")
+  .action(async () => {
+    process.exit(await authListCommand());
+  });
+
+authCmd
+  .command("rm <provider>")
+  .description("Remove a stored credential locally. Does not revoke it at the provider")
+  .action(async (provider: string) => {
+    process.exit(await authRmCommand(provider));
   });
 
 // ── routing ──────────────────────────────────────────

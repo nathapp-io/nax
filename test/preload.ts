@@ -37,6 +37,24 @@ delete process.env.NAX_TELEGRAM_TOKEN;
 delete process.env.NAX_TELEGRAM_CHAT_ID;
 delete process.env.TELEGRAM_BOT_TOKEN;
 
+// ─── Provider-credential isolation ───────────────────────────────────────────
+// The ambient-auth probe asks whether a provider would resolve from the
+// environment. A developer with a real key exported would make it answer true
+// in tests written to expect false — they would pass without proving anything.
+// Redirecting ~/.nax does not isolate env, so scrub before any test file loads.
+for (const key of [
+  "OPENROUTER_API_KEY",
+  "OPENCODE_API_KEY",
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "MINIMAX_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+]) {
+  delete process.env[key];
+}
+
 // ─── Console suppression ──────────────────────────────────────────────────────
 // Suppress all console output in tests. Tests that need to capture output
 // should override _deps.log / _deps.warn in a local beforeEach, not rely on
