@@ -147,11 +147,34 @@ an actual swap. So the change is a chain, not a schema edit:
 2. `credentialCandidates` normalises to names — it only ever wanted names
 3. `availableCandidates` normalises, preserving the tier on the entry it returns
 4. `nextCandidate` returns `{ agent, tier? } | null`
-5. The two swap sites (`manager.ts:400`, `manager.ts:561`) apply the tier
+5. The two swap sites (`manager.ts:400`, `manager.ts:561`) consume `.agent`
+   everywhere they consume a name today, and carry the tier forward
 6. `hop-budget.ts:45` takes `.agent`; otherwise untouched
 
 Plain strings normalise to `{ agent, tier: undefined }` and behave exactly as
 before at every step.
+
+**The tier is applied in two different places, because the two dispatch paths
+resolve their model differently.** This is the part that makes item B larger
+than a schema change:
+
+- **complete path** — `resolveHopCompleteOptions` (`manager-dispatch.ts:229`)
+  already re-resolves per hop via `options.modelDefFor?.(currentAgent)`, whose
+  type is `(agentName: string) => ModelDef | undefined` (`types.ts:253`). The
+  tier reaches it by widening that callback to
+  `(agentName: string, tier?: ModelTier) => ModelDef | undefined` and having
+  `resolveHopCompleteOptions` pass the hop's tier. `call.ts`'s implementation
+  then uses `tier ?? effectiveTier`, so an absent tier is exactly today's
+  behaviour.
+- **run path** — the model is resolved by the *caller*, in
+  `build-hop-callback.ts:313/338-340`, from an `effectiveTier` passed into
+  `buildHopCallback`. The manager does not resolve it, so the hop's tier must
+  cross the hop-callback boundary to be applied.
+
+Both paths must be covered, or `{ agent, tier }` works for `complete` ops and
+is silently ignored for `run` ops — a split behaviour worse than not shipping
+it. A test per path is therefore mandatory, asserted at the dispatch, not the
+schema.
 
 ### Tests
 
