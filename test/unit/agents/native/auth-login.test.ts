@@ -87,6 +87,36 @@ describe("runLogin", () => {
       throw new AuthMethodUnavailableError();
     });
     await expect(runLogin("nope", silent)).rejects.toMatchObject({ code: "AUTH_METHOD_UNAVAILABLE" });
+    await expect(runLogin("nope", silent)).rejects.toThrow(/No login method is available/);
+  });
+
+  test("names the requested method rather than claiming none is available", async () => {
+    class AuthMethodUnavailableError extends Error {
+      requested: string;
+      constructor(requested: string) {
+        super("no method");
+        this.name = "AuthMethodUnavailableError";
+        this.requested = requested;
+      }
+    }
+    _authDeps.login = mock(async () => {
+      throw new AuthMethodUnavailableError("api-key");
+    });
+
+    // The provider does offer oauth: saying "no login method is available"
+    // would send the user chasing a config problem that does not exist.
+    await expect(runLogin("openai-codex", silent, "api-key")).rejects.toThrow(/does not offer "api-key" login/);
+    await expect(runLogin("openai-codex", silent, "api-key")).rejects.not.toThrow(/No login method is available/);
+  });
+
+  test("forwards the requested method to nax-ai", async () => {
+    let seen: unknown;
+    _authDeps.login = mock(async (options: { method?: string }) => {
+      seen = options.method;
+      return { providerId: "openrouter", method: "oauth" as const, kind: "oauth" as const };
+    });
+    await runLogin("openrouter", silent, "oauth");
+    expect(seen).toBe("oauth");
   });
 
   test("reports any other failure with code AUTH_LOGIN_FAILED", async () => {

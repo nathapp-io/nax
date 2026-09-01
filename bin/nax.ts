@@ -39,6 +39,7 @@ import { basename, join } from "node:path";
 import chalk from "chalk";
 import { Command, Option } from "commander";
 
+import type { AuthMethod } from "../src/agents/native";
 import { DEFAULT_PI_AUTH_PATH } from "../src/agents/native";
 import {
   acceptCommand,
@@ -1189,8 +1190,13 @@ const authCmd = program.command("auth").description("Manage provider credentials
 authCmd
   .command("login <provider>")
   .description("Sign in to a provider and store the credential (interactive)")
-  .action(async (provider: string) => {
-    process.exit(await authLoginCommand(provider));
+  .option("--method <method>", "Skip the method prompt: api-key or oauth")
+  .action(async (provider: string, options: { method?: string }) => {
+    if (options.method !== undefined && options.method !== "api-key" && options.method !== "oauth") {
+      console.error(`Unknown --method "${options.method}". Use api-key or oauth.`);
+      process.exit(1);
+    }
+    process.exit(await authLoginCommand(provider, options.method as AuthMethod | undefined));
   });
 
 authCmd

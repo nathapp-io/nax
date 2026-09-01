@@ -6,6 +6,7 @@ import { _authDeps } from "@/agents/native/auth";
 import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
 import { _cliAuthDeps, authImportCommand, authListCommand, authLoginCommand, authRmCommand } from "@/cli/auth";
 import { _authPromptDeps, type PromptStdin } from "@/cli/auth-prompt";
+import { _openUrlDeps } from "@/cli/open-url";
 
 function makeFakeStdin(): { stdin: PromptStdin; emit: (event: string, chunk?: string) => void } {
   const listeners = new Map<string, ((chunk: string) => void)[]>();
@@ -174,16 +175,19 @@ describe("authLoginCommand", () => {
 
     const text = out.join("\n");
     expect(code).toBe(0);
-    expect(text).toContain("Pick a method:");
+    // The select renders through the prompt writer now, not the logger.
+    expect(promptWritten.join("")).toContain("Pick a method:");
+    expect(promptWritten.join("")).toContain("OAuth");
     expect(text).toContain("Open this URL to continue:");
     expect(text).toContain("https://example.com/authorize");
-    expect(text).toContain("Paste the verifier back.");
+    // The flow's own instructions are deliberately dropped: pi says a browser
+    // "should open", and nothing has opened one at this point.
+    expect(text).not.toContain("Paste the verifier back.");
     expect(text).toContain("https://example.com/device");
     expect(text).toContain("WDJB-MJHT");
     expect(text).toContain("Docs: https://example.com/docs");
     expect(text).toContain("No links this time.");
     expect(text).toContain("Exchanging tokens");
-    expect(promptWritten.join("")).toContain("Choose:");
     expect(promptWritten.join("")).toContain("Account name:");
     expect(promptWritten.join("")).toContain("Enter the code:");
     expect(text).not.toContain("sk-1");
@@ -299,5 +303,101 @@ describe("authRmCommand", () => {
   test("reports a provider that has no stored credential", async () => {
     expect(await authRmCommand("absent")).toBe(1);
     expect(out.join("\n")).toMatch(/no stored credential/i);
+  });
+});
+
+describe("authLoginCommand browser handoff", () => {
+  test("Enter on the manual-code prompt opens the parked auth url", async () => {
+    const h = makeFakeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const opened: string[] = [];
+    _openUrlDeps.spawn = (command) => {
+      opened.push(command[command.length - 1] as string);
+    };
+    _openUrlDeps.platform = () => "darwin";
+
+    _authDeps.login = mock(async (options: LoginCallOptions) => {
+      const { interaction } = options;
+      interaction.notify({ type: "auth-url", url: "https://example.com/authorize" });
+      const manual = interaction.prompt({ type: "manual-code", message: "Paste the code here:" });
+      h.emit("data", "\r");
+      h.emit("data", "CODE\r");
+      await manual;
+      return { providerId: "openrouter", method: "oauth" as const, kind: "oauth" as const };
+    });
+
+    expect(await authLoginCommand("openrouter")).toBe(0);
+    expect(opened).toEqual(["https://example.com/authorize"]);
+    expect(out.join("\n")).toContain("Press Enter to open it in your browser.");
+    // The flow's own message is passed through verbatim as the prompt.
+    expect(promptWritten.join("")).toContain("Paste the code here:");
+  });
+
+  test("a second Enter does not launch a second window", async () => {
+    const h = makeFakeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const opened: string[] = [];
+    _openUrlDeps.spawn = (command) => {
+      opened.push(command[command.length - 1] as string);
+    };
+    _openUrlDeps.platform = () => "darwin";
+
+    _authDeps.login = mock(async (options: LoginCallOptions) => {
+      const { interaction } = options;
+      interaction.notify({ type: "auth-url", url: "https://example.com/authorize" });
+      const first = interaction.prompt({ type: "manual-code", message: "Paste it:" });
+      h.emit("data", "\r");
+      h.emit("data", "A\r");
+      await first;
+      const second = interaction.prompt({ type: "manual-code", message: "Paste it:" });
+      h.emit("data", "B\r");
+      await second;
+      return { providerId: "openrouter", method: "oauth" as const, kind: "oauth" as const };
+    });
+
+    expect(await authLoginCommand("openrouter")).toBe(0);
+    expect(opened).toEqual(["https://example.com/authorize"]);
+  });
+
+  test("with no auth url parked, the manual-code prompt is left alone", async () => {
+    const h = makeFakeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const opened: string[] = [];
+    _openUrlDeps.spawn = (command) => {
+      opened.push(command[command.length - 1] as string);
+    };
+
+    _authDeps.login = mock(async (options: LoginCallOptions) => {
+      const manual = options.interaction.prompt({ type: "manual-code", message: "Paste the code here:" });
+      h.emit("data", "CODE\r");
+      await manual;
+      return { providerId: "openrouter", method: "oauth" as const, kind: "oauth" as const };
+    });
+
+    expect(await authLoginCommand("openrouter")).toBe(0);
+    expect(opened).toEqual([]);
+    expect(out.join("\n")).not.toContain("Press Enter to open");
+  });
+
+  test("forwards an explicit method to nax-ai without interpreting it", async () => {
+    let seen: string | undefined;
+    _authDeps.login = mock(async (options: LoginCallOptions & { method?: string }) => {
+      seen = options.method;
+      return { providerId: "openrouter", method: "oauth" as const, kind: "oauth" as const };
+    });
+
+    expect(await authLoginCommand("openrouter", "oauth")).toBe(0);
+    expect(seen).toBe("oauth");
+  });
+
+  test("omits method entirely when none is given, leaving nax-ai to prompt", async () => {
+    let hasKey = true;
+    _authDeps.login = mock(async (options: LoginCallOptions) => {
+      hasKey = "method" in options;
+      return { providerId: "openrouter", method: "oauth" as const, kind: "oauth" as const };
+    });
+
+    expect(await authLoginCommand("openrouter")).toBe(0);
+    expect(hasKey).toBe(false);
   });
 });

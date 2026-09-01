@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { _authPromptDeps, PromptCancelledError, type PromptStdin, promptForSecret } from "@/cli/auth-prompt";
+import {
+  _authPromptDeps,
+  PromptCancelledError,
+  type PromptStdin,
+  promptForLine,
+  promptForSecret,
+  promptForSelect,
+} from "@/cli/auth-prompt";
 
 const ETX = "\u0003";
 const EOT = "\u0004";
@@ -136,5 +143,140 @@ describe("promptForSecret", () => {
 
     await expect(promptForSecret("API key:")).rejects.toBeInstanceOf(PromptCancelledError);
     expect(h.rawModeCalls).toEqual([]);
+  });
+});
+
+const ARROW_UP = "\u001b[A";
+const ARROW_DOWN = "\u001b[B";
+
+describe("promptForLine onEmptySubmit", () => {
+  test("Enter on an empty buffer runs the hook and keeps reading", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    let hits = 0;
+
+    const pending = promptForLine("Paste the code:", () => {
+      hits += 1;
+    });
+    h.emit("data", CR);
+    h.emit("data", CR);
+    expect(hits).toBe(2);
+
+    h.emit("data", "abc");
+    h.emit("data", CR);
+    expect(await pending).toBe("abc");
+    expect(hits).toBe(2);
+  });
+
+  test("Enter on a non-empty buffer submits rather than firing the hook", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    let hits = 0;
+
+    const pending = promptForLine("Paste the code:", () => {
+      hits += 1;
+    });
+    h.emit("data", "x");
+    h.emit("data", CR);
+
+    expect(await pending).toBe("x");
+    expect(hits).toBe(0);
+  });
+
+  test("without a hook an empty Enter still submits", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForLine("Paste the code:");
+    h.emit("data", CR);
+    expect(await pending).toBe("");
+  });
+});
+
+describe("promptForSelect", () => {
+  const choices = [
+    { id: "browser", label: "Browser login (default)" },
+    { id: "device_code", label: "Device code login (headless)" },
+  ];
+
+  test("Enter picks the first option", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", choices);
+    h.emit("data", CR);
+    expect(await pending).toBe("browser");
+  });
+
+  test("arrow down moves the highlight before committing", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", choices);
+    h.emit("data", ARROW_DOWN);
+    h.emit("data", CR);
+    expect(await pending).toBe("device_code");
+  });
+
+  test("arrow up from the first option wraps to the last", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", choices);
+    h.emit("data", ARROW_UP);
+    h.emit("data", CR);
+    expect(await pending).toBe("device_code");
+  });
+
+  test("cannot return a value that is not one of the options", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", choices);
+    h.emit("data", "nonsense");
+    h.emit("data", CR);
+    expect(choices.map((c) => c.id)).toContain(await pending);
+  });
+
+  test("Ctrl+C cancels and restores the terminal", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", choices);
+    h.emit("data", ETX);
+    await expect(pending).rejects.toBeInstanceOf(PromptCancelledError);
+    expect(h.rawModeCalls.at(-1)).toBe(false);
+  });
+
+  test("Ctrl+D cancels rather than committing the highlighted row", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", choices);
+    h.emit("data", EOT);
+    await expect(pending).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  test("a closed stream cancels", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", choices);
+    h.emit("end");
+    await expect(pending).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  test("rejects when stdin is not a TTY", async () => {
+    const h = makeStdin();
+    (h.stdin as { isTTY?: boolean }).isTTY = false;
+    _authPromptDeps.stdin = h.stdin;
+    await expect(promptForSelect("How?", choices)).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  test("rejects an empty option list rather than picking for the user", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    await expect(promptForSelect("How?", [])).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  test("removes its listeners once settled", async () => {
+    const h = makeStdin();
+    _authPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", choices);
+    h.emit("data", CR);
+    await pending;
+    expect(h.listenerCount("data")).toBe(0);
   });
 });

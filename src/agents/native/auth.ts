@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { ambientAuthAvailable, type LoginEvent, type LoginInteraction, type LoginPrompt, login } from "@nathapp/nax-ai";
 import { NaxError } from "@/errors";
-import type { AuthEvent, AuthInteraction, AuthPrompt, AuthResult } from "./auth-types";
+import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt, AuthResult } from "./auth-types";
 import { naxCredentialStore, readStoredEntries, type StoredEntry } from "./credentials";
 
 /**
@@ -61,9 +61,18 @@ function toNaxError(error: unknown, providerId: string): Error {
       return new NaxError(error.message, "AUTH_OAUTH_PROHIBITED", { providerId });
     }
     if (error.name === "AuthMethodUnavailableError") {
-      return new NaxError(`No login method is available for "${providerId}".`, "AUTH_METHOD_UNAVAILABLE", {
-        providerId,
-      });
+      // "requested" separates "this provider offers nothing we can run" from
+      // "it offers something, just not the --method you asked for". Collapsing
+      // them tells a user whose provider supports oauth that nothing is
+      // available, and sends them to a config problem that does not exist.
+      const requested = (error as { requested?: string }).requested;
+      return new NaxError(
+        requested === undefined
+          ? `No login method is available for "${providerId}".`
+          : `"${providerId}" does not offer "${requested}" login. Omit --method to see what it does offer.`,
+        "AUTH_METHOD_UNAVAILABLE",
+        { providerId, ...(requested !== undefined ? { requested } : {}) },
+      );
     }
     return new NaxError(`Login for "${providerId}" failed: ${error.message}`, "AUTH_LOGIN_FAILED", { providerId });
   }
@@ -73,19 +82,25 @@ function toNaxError(error: unknown, providerId: string): Error {
 /**
  * Obtain a credential and write it to the store.
  *
- * No `method` is passed: when a provider offers both, nax-ai runs its own
- * selection prompt. Duplicating that table here is how the two drift apart.
+ * `method` is forwarded, not interpreted: nax-ai owns the table of what each
+ * provider offers and rejects an unavailable choice itself. Omitted, it runs
+ * its own selection prompt. Deciding here is how the two drift apart.
  *
  * The result is reported exactly as returned. kind is never derived from
  * method — M5's design predicted openrouter would report kind "api-key" and
  * its live run reported "oauth".
  */
-export async function runLogin(providerId: string, interaction: AuthInteraction): Promise<AuthResult> {
+export async function runLogin(
+  providerId: string,
+  interaction: AuthInteraction,
+  method?: AuthMethod,
+): Promise<AuthResult> {
   try {
     const result = await _authDeps.login({
       providerId,
       credentials: naxCredentialStore(),
       interaction: toLoginInteraction(interaction),
+      ...(method !== undefined ? { method } : {}),
     });
     return { providerId: result.providerId, method: result.method, kind: result.kind };
   } catch (error) {
