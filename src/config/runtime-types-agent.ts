@@ -84,8 +84,8 @@ export interface AgentTimeoutRetryConfig {
 
 /** Agent protocol configuration (ACP-003) */
 export interface AgentConfig {
-  /** Protocol to use for agent communication (always 'acp') */
-  protocol?: "acp";
+  /** Protocol to use for agent communication — a capability gate, not a router ('acp' | 'native' | 'hybrid', default 'acp') */
+  protocol?: "acp" | "native" | "hybrid";
   /** Default agent name to use (default: 'claude') */
   default?: string;
   /** Max interaction turns when interactionBridge is active (default: 20) */

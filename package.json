@@ -11,7 +11,7 @@
     "dev": "bun run bin/nax.ts",
     "build": "bun build bin/nax.ts --outdir dist --target bun --define \"GIT_COMMIT=\\\"$(git rev-parse --short HEAD)\\\"\"",
     "typecheck": "bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.test.json",
-    "lint": "bun x biome check --error-on-warnings src/ bin/ test/ scripts/ && bun run check:no-real-global-nax && bun run check:feature-dir-ssot && bun run check:alias-internals && bun run check:import-cycles && bun run check:nax-error && bun run check:logger-storyid && bun run check:log-format-layering && bun run check:file-sizes && bun run check:no-control-bytes && bun run check:review-prompts",
+    "lint": "bun x biome check --error-on-warnings src/ bin/ test/ scripts/ && bun run check:no-real-global-nax && bun run check:feature-dir-ssot && bun run check:alias-internals && bun run check:import-cycles && bun run check:nax-error && bun run check:logger-storyid && bun run check:log-format-layering && bun run check:file-sizes && bun run check:no-control-bytes && bun run check:review-prompts && bun run check:nax-ai-imports",
     "lint:json": "bun x biome check --error-on-warnings src/ bin/ test/ scripts/ --reporter json && bun run check:nax-error 1>&2 && bun run check:logger-storyid 1>&2",
     "lint:fix": "bun x biome check --write src/ bin/ test/ scripts/",
     "check:no-real-global-nax": "bun run scripts/check-no-real-global-nax.ts",
@@ -28,6 +28,7 @@
     "check:file-sizes:update": "bun run scripts/check-file-sizes.ts --update-baseline",
     "check:no-control-bytes": "bun run scripts/check-no-control-bytes.ts",
     "check:review-prompts": "bun run scripts/check-review-prompts-generated.ts",
+    "check:nax-ai-imports": "bun run scripts/check-nax-ai-imports.ts",
     "check:rules-drift": "bun run scripts/check-rules-drift.ts",
     "gen:review-prompts": "bun run scripts/generate-review-prompts.ts",
     "release": "bun scripts/release.ts",
@@ -64,6 +65,7 @@
     "spec:lint": "bun run scripts/spec-lint.ts"
   },
   "dependencies": {
+    "@nathapp/nax-ai": "0.1.2",
     "@types/react": "^19.2.14",
     "chalk": "^5.6.2",
     "commander": "^13.1.0",

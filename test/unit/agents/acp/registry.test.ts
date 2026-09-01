@@ -56,11 +56,20 @@ describe("createAgentRegistry — protocol selection", () => {
     expect(registry.getAgent("unknown-agent-xyz")).toBeUndefined();
   });
 
-  test("exposes protocol field as 'acp'", () => {
+  test("exposes protocol field from config", () => {
     const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
     const defaultRegistry = createAgentRegistry(makeNaxConfig());
     expect(registry.protocol).toBe("acp");
     expect(defaultRegistry.protocol).toBe("acp");
+  });
+
+  // M-1 (final review): the return type was `protocol: "acp"` hard-coded while
+  // the resolved gate value was already computed — this pins the resolution.
+  test("resolves protocol field from config instead of hard-coding 'acp'", () => {
+    const nativeRegistry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "native" } }));
+    const hybridRegistry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "hybrid" } }));
+    expect(nativeRegistry.protocol).toBe("native");
+    expect(hybridRegistry.protocol).toBe("hybrid");
   });
 });
 
@@ -193,10 +202,13 @@ describe("module-level getInstalledAgents() / checkAgentHealth() (BUG-19)", () =
     expect(installed.some((a) => a.name === "claude")).toBe(true);
   });
 
-  test("getInstalledAgents returns empty when nothing is on PATH", async () => {
+  test("getInstalledAgents returns no acpx agents when nothing is on PATH", async () => {
     _acpAdapterDeps.which = mock((_name: string) => null);
     const installed = await getInstalledAgents();
-    expect(installed).toEqual([]);
+    // Native is exempt: with no binary, it counts as installed whenever its
+    // client resolves (ADR-027 section 3 / Open Question 4). What BUG-19's
+    // unconditional [] used to fake is the acpx set staying out.
+    expect(installed.filter((a) => a.name !== "native")).toEqual([]);
   });
 
   test("checkAgentHealth reflects real installed status instead of an unconditional []", async () => {

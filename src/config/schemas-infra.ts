@@ -279,7 +279,10 @@ export const DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG: {
 };
 
 export const AgentConfigSchema = z.object({
-  protocol: z.literal("acp").default("acp"),
+  // A capability gate, not a router: the agent name routes (ADR-027 §2).
+  // Native calls bill on a different path, so reaching them is an explicit
+  // opt-in rather than the consequence of a typo in `models`.
+  protocol: z.enum(["acp", "native", "hybrid"]).default("acp"),
   default: z.string().trim().min(1, "agent.default must be non-empty").default("claude"),
   maxInteractionTurns: z.number().int().min(1).max(100).default(20),
   promptAudit: PromptAuditConfigSchema.default({ enabled: false }),

@@ -8,12 +8,19 @@
  * called without a test-level mock, preventing accidental real acpx session
  * leaks. To allow real spawns (rare), override the dep in your describe block:
  *   _acpAdapterDeps.createClient = mock(() => makeClient(makeSession()));
+ *
+ * Same idea for _clientDeps.build (the native/nax-ai client): unmocked, it
+ * builds a real client that gets memoised in client.ts's module-level cache
+ * for the rest of the process — any later test relying on its own
+ * _clientDeps.build override then silently gets the real client instead.
+ * Fail fast here instead.
  */
 
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _acpAdapterDeps } from "../src/agents/acp/adapter";
+import { _clientDeps } from "../src/agents/native/client";
 import { _notifyDeps } from "../src/finish/notify";
 
 const isolatedGlobalDir = mkdtempSync(join(tmpdir(), "nax-test-global-"));
@@ -51,6 +58,26 @@ _acpAdapterDeps.createClient = () => {
       "Add to your describe block:\n" +
       "  beforeEach(() => { _acpAdapterDeps.createClient = mock(() => makeClient(makeSession())); })\n" +
       "  afterEach(() => { _acpAdapterDeps.createClient = <saved original>; mock.restore(); })",
+  );
+};
+
+// ─── Native client sentinel ───────────────────────────────────────────────────
+// Blocks a real @nathapp/nax-ai client from being built and memoised in
+// client.ts's module-level cache. Without this, any test that reaches
+// NativeAgentAdapter without mocking _clientDeps.build (e.g. via
+// isInstalled()/hasCredentials() through getInstalledAgents() or
+// checkAgentHealth()) builds a real client that then silently overrides
+// every later test file's own _clientDeps.build mock, since getNativeClient()
+// only calls the builder once. To opt in to a real client, replace the dep in
+// your describe block and clear the cache afterward.
+_clientDeps.build = () => {
+  throw new Error(
+    "[test-preload] _clientDeps.build called without a mock — " +
+      "this would build a real nax-ai client and cache it for the rest of the " +
+      "process, silently overriding every later test's own mock. " +
+      "Add to your describe block:\n" +
+      "  beforeEach(() => { _clientDeps.build = mock(async () => fakeClient); })\n" +
+      "  afterEach(() => { _clientDeps.build = <saved original>; _resetNativeClient(); })",
   );
 };
 

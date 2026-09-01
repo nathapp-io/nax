@@ -75,8 +75,9 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/verification/` | Test execution, smart runner, scoped runner (per-story verify via verifyScopedOp / fullSuiteGateOp) |
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
 | `src/config/` | Config schema + layered loader (global → project) + permissions |
-| `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` (the only protocol) |
+| `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` (one of two transports; see ADR-027) |
 | `src/agents/cost/` | Centralized cost calculation (pricing, token parsing) |
+| `src/agents/native/` | Native in-process LLM path over `@nathapp/nax-ai` (one-shot `complete()`; sessions are Phase B) |
 | `src/agents/shared/` | Cross-adapter utilities (decompose, env, model-resolution, validation) |
 | `src/cli/` + `src/commands/` | CLI commands — check both locations |
 | `src/prd/` | PRD types, loader, story state machine |
@@ -131,7 +132,12 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 
 ## Agent Adapter & LLM Calls
 
-- **Single protocol:** ACP (JSON-RPC via `acpx`) is the only protocol. `agent.protocol` accepts only `"acp"`; the registry hard-codes it (`src/agents/registry.ts`). The legacy CLI (`Bun.spawn`) adapter was removed.
+- **Two transports, selected by agent name:** ACP via `acpx` for every named CLI
+  agent, and the in-process native path (`@nathapp/nax-ai`) for the `native`
+  agent. `agent.protocol` (`acp` | `native` | `hybrid`, default `acp`) is a
+  capability gate, not a router — it decides which are permitted. See ADR-027.
+- **nax-ai is importable only from `src/agents/native/`**, enforced by
+  `bun run check:nax-ai-imports`.
 - **LLM fallback rule:** Any code needing LLM calls MUST resolve the agent via the canonical accessors — `ctx.agentManager?.getDefault() ?? "claude"` in pipeline stages, or `resolveDefaultAgent(config)` in standalone modules. Never inline stubs, never read `config.autoMode.defaultAgent` (removed in ADR-012 Phase 6). Use `agent.complete(prompt, { jsonMode: true })` for one-shot calls.
 - **Forward-compatible:** `getAgent()` returns the active adapter — calling code doesn't depend on the protocol.
 - See `docs/architecture/design-patterns.md` §11 (Adapter) for full pattern.

@@ -1,16 +1,19 @@
 /**
  * Agent Registry
  *
- * Discovers and manages available coding agents via the ACP protocol.
+ * Discovers and manages available coding agents. The agent name selects the
+ * transport: every known name but `native` is an ACP adapter via acpx, and
+ * `native` is the in-process nax-ai path (ADR-027 section 3).
  */
 
 import type { AgentManagerConfig } from "@/config/selectors";
 import { getLogger } from "../logger";
 import { AcpAgentAdapter } from "./acp/adapter";
+import { NATIVE_AGENT, NativeAgentAdapter } from "./native";
 import type { AgentAdapter } from "./types";
 
 /** Known agent names (used for name validation and health checks) */
-export const KNOWN_AGENT_NAMES = ["claude", "codex", "opencode", "gemini", "aider", "pi"];
+export const KNOWN_AGENT_NAMES = ["claude", "codex", "opencode", "gemini", "aider", "pi", NATIVE_AGENT];
 
 /**
  * Test-only adapter overrides. Keys are agent names; values are adapter instances
@@ -29,13 +32,15 @@ export function getAllAgentNames(): string[] {
 }
 
 /**
- * Build the module-level adapter list (test overrides + one AcpAgentAdapter
- * per known agent name). Shared by the two config-less module-level
- * functions below — createAgentRegistry() keeps its own cached version
- * since it needs to reuse adapters across getAgent() calls too.
+ * The registry is a routing decision, not one adapter kind repeated: the agent
+ * name selects the transport (ADR-027 section 3).
  */
+function adapterFor(name: string): AgentAdapter {
+  return name === NATIVE_AGENT ? new NativeAgentAdapter() : new AcpAgentAdapter(name);
+}
+
 function buildAdapterList(): AgentAdapter[] {
-  return [...Array.from(_registryTestAdapters.values()), ...KNOWN_AGENT_NAMES.map((name) => new AcpAgentAdapter(name))];
+  return [...Array.from(_registryTestAdapters.values()), ...KNOWN_AGENT_NAMES.map(adapterFor)];
 }
 
 /**
@@ -82,43 +87,54 @@ export interface AgentRegistry {
   getInstalledAgents(): Promise<AgentAdapter[]>;
   /** Check health of all agents */
   checkAgentHealth(): Promise<Array<{ name: string; displayName: string; installed: boolean }>>;
-  /** Active protocol (always 'acp') */
-  protocol: "acp";
+  /** Resolved `agent.protocol` gate — which transports are permitted (ADR-027 §2). */
+  protocol: "acp" | "native" | "hybrid";
 }
 
 /**
- * Create an ACP-based agent registry.
+ * Create the agent registry.
  *
- * All agents use AcpAgentAdapter instances, cached per agent name for the
- * lifetime of the registry. Test adapters registered in _registryTestAdapters
- * take precedence and are returned as-is without ACP wrapping.
+ * The registry is a routing decision, not one adapter kind repeated: the agent
+ * name selects the adapter — `native` gets `NativeAgentAdapter`, every other
+ * known name gets `AcpAgentAdapter` — cached per agent name for the lifetime
+ * of the registry. Test adapters registered in _registryTestAdapters take
+ * precedence and are returned as-is without adaptation.
  */
 export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
   const logger = getLogger();
-  const acpCache = new Map<string, AcpAgentAdapter>();
+  // Widened from Map<string, AcpAgentAdapter>: the registry is a routing
+  // decision now, so the cache holds whichever adapter the name selects.
+  const adapterCache = new Map<string, AgentAdapter>();
+  const protocol = config.agent?.protocol ?? "acp";
 
-  logger?.info("agents", "Agent protocol: acp", { protocol: "acp", hasConfig: !!config.agent });
+  logger?.info("agents", `Agent protocol: ${protocol}`, { protocol, hasConfig: !!config.agent });
+
+  function cachedAdapter(name: string): AgentAdapter {
+    let adapter = adapterCache.get(name);
+    if (adapter === undefined) {
+      // No configured tiers are passed: agentManagerConfigSelector picks
+      // "agent", "execution", "profile" and deliberately NOT "models" —
+      // ADR-019 puts model resolution at the callOp seam, not the manager.
+      // Widening the selector to reach models.native would breach that
+      // boundary for a capability field. See the note below Step 4.
+      adapter = name === NATIVE_AGENT ? new NativeAgentAdapter() : new AcpAgentAdapter(name);
+      adapterCache.set(name, adapter);
+      logger?.debug("agents", `Created ${adapter.constructor.name} for ${name}`, { name });
+    }
+    return adapter;
+  }
 
   function getAgent(name: string): AgentAdapter | undefined {
     // Test override takes precedence
     if (_registryTestAdapters.has(name)) return _registryTestAdapters.get(name);
     if (!KNOWN_AGENT_NAMES.includes(name)) return undefined;
-    if (!acpCache.has(name)) {
-      acpCache.set(name, new AcpAgentAdapter(name));
-      logger?.debug("agents", `Created AcpAgentAdapter for ${name}`, { name });
-    }
-    return acpCache.get(name);
+    return cachedAdapter(name);
   }
 
   async function getInstalledAgents(): Promise<AgentAdapter[]> {
     const testAdapters = Array.from(_registryTestAdapters.values());
-    const acpAdapters = KNOWN_AGENT_NAMES.map((name) => {
-      if (!acpCache.has(name)) {
-        acpCache.set(name, new AcpAgentAdapter(name));
-      }
-      return acpCache.get(name) as AcpAgentAdapter;
-    });
-    const allAdapters = [...testAdapters, ...acpAdapters];
+    const adapters = KNOWN_AGENT_NAMES.map(cachedAdapter);
+    const allAdapters = [...testAdapters, ...adapters];
     const results = await Promise.all(
       allAdapters.map(async (agent) => ({ agent, installed: await agent.isInstalled() })),
     );
@@ -127,13 +143,8 @@ export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
 
   async function checkAgentHealth(): Promise<Array<{ name: string; displayName: string; installed: boolean }>> {
     const testAdapters = Array.from(_registryTestAdapters.values());
-    const acpAdapters = KNOWN_AGENT_NAMES.map((name) => {
-      if (!acpCache.has(name)) {
-        acpCache.set(name, new AcpAgentAdapter(name));
-      }
-      return acpCache.get(name) as AcpAgentAdapter;
-    });
-    const allAdapters = [...testAdapters, ...acpAdapters];
+    const adapters = KNOWN_AGENT_NAMES.map(cachedAdapter);
+    const allAdapters = [...testAdapters, ...adapters];
     return Promise.all(
       allAdapters.map(async (agent) => ({
         name: agent.name,
@@ -143,5 +154,5 @@ export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
     );
   }
 
-  return { getAgent, getInstalledAgents, checkAgentHealth, protocol: "acp" };
+  return { getAgent, getInstalledAgents, checkAgentHealth, protocol };
 }

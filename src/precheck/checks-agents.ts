@@ -34,7 +34,10 @@ export async function checkMultiAgentHealth(): Promise<Check> {
     if (installed.length > 0) {
       lines.push(`Installed agents (${installed.length}):`);
       for (const agent of installed) {
-        const versionStr = agent.version ? ` v${agent.version}` : " (version unknown)";
+        // An installed agent with a binary but no parseable version keeps the
+        // old label; an adapterless agent (native — no binary to probe) gets
+        // the honest one.
+        const versionStr = agent.version ? ` v${agent.version}` : agent.binary ? " (version unknown)" : " (no binary)";
         lines.push(`  • ${agent.displayName}${versionStr}`);
       }
     } else {

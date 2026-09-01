@@ -10,8 +10,8 @@ import type { AgentVersionInfo } from "@/agents/shared/version-detection";
 import { _checkAgentsDeps, checkMultiAgentHealth } from "@/precheck/checks-agents";
 
 const MOCK_VERSIONS: AgentVersionInfo[] = [
-  { name: "claude", displayName: "Claude Code", version: "v1.2.3", installed: true },
-  { name: "codex", displayName: "Codex", version: null, installed: false },
+  { name: "claude", displayName: "Claude Code", binary: "claude", version: "v1.2.3", installed: true },
+  { name: "codex", displayName: "Codex", binary: "codex", version: null, installed: false },
 ];
 
 let result: Awaited<ReturnType<typeof checkMultiAgentHealth>>;
@@ -76,5 +76,27 @@ describe("checkMultiAgentHealth — no agents installed", () => {
     expect(r.passed).toBe(true);
     expect(r.tier).toBe("warning");
     expect(r.message).toContain("No additional agents");
+  });
+});
+
+describe("checkMultiAgentHealth — version label honesty", () => {
+  // I-1 (final review): native is installed by construction but has no binary
+  // and no version — " (version unknown)" implied a probe that never ran.
+  test("adapterless installed agent (no binary, no version) renders ' (no binary)'", async () => {
+    _checkAgentsDeps.getAgentVersions = mock(async () => [
+      { name: "native", displayName: "Native (nax-ai)", binary: "", version: null, installed: true },
+    ]);
+    const r = await checkMultiAgentHealth();
+    expect(r.message).toContain("Native (nax-ai) (no binary)");
+    expect(r.message).not.toContain("version unknown");
+  });
+
+  test("agent with a binary but undetectable version keeps ' (version unknown)'", async () => {
+    _checkAgentsDeps.getAgentVersions = mock(async () => [
+      { name: "claude", displayName: "Claude Code", binary: "claude", version: null, installed: true },
+    ]);
+    const r = await checkMultiAgentHealth();
+    expect(r.message).toContain("Claude Code (version unknown)");
+    expect(r.message).not.toContain("(no binary)");
   });
 });
