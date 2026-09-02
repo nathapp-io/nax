@@ -134,8 +134,16 @@ Nothing new is wired. The policy rides that rail.
 
 **Decide** — `src/config/permissions.ts`. `ResolvedPermissions` goes from `{ mode }`
 to `{ mode, toolGrants? }`, a grant being `{ tool, patterns }`: **declarative data, no
-matchers**. The `resolveScopedPermissions` stub becomes real and the loader guard
-rejecting `"scoped"` is removed. `unrestricted` grants every declared tool with `*`;
+matchers**. The `resolveScopedPermissions` stub becomes real and **both** loader guards are
+removed: `rejectUnimplementedScopedProfile` (rejects
+`permissionProfile: "scoped"`) and `rejectUnimplementedPermissionsBlock` (rejects the
+`execution.permissions` block outright). They are separate guards on separate keys and
+an implementation that removes only the first leaves the policy block unreachable.
+
+**Ordering constraint:** the guards come out **last**, after enforcement is wired and
+proven end to end. Removing them earlier opens a window where a config can declare
+`scoped` while nothing enforces it — silently weaker permissions than the operator
+asked for, which is the exact failure both guards were written to prevent. `unrestricted` grants every declared tool with `*`;
 `safe` grants read tools only. ACP's consumption of `mode` is untouched.
 
 This home is not a preference. `check-permission-mode-ssot.ts` is an enforced gate:
@@ -257,9 +265,36 @@ written down rather than assumed:
 Scoping is subcommand-level: `Git(diff,log,show)`, the same shape as #374's
 `Bash(bun test*)` and exactly the non-path scoping section 3.6 requires anyway.
 
-`Git` is **not** in the default set. That draws a line worth keeping: everything
-defaulted on is in-process, and anything that **spawns** must be declared. The line
-still holds when `Bash` arrives and must also be declared.
+`Git` is **not** in the default set.
+
+The line this draws is **not** "in-process versus spawning". `Grep` shells out too
+(section 4.1), so that basis does not survive. The durable version has two parts:
+
+- **A tool may be built at all** only if it is a fixed binary invoked with a
+  nax-constructed argv and no shell. `Git`, `Grep` and a future `Bash` differ sharply
+  here: for the first two nax chooses the program *and* every argument, so the model
+  supplies data, never a command. `Bash` inverts that, which is why it needs a sandbox
+  and a threat model rather than an allowlist.
+- **A tool may be in the default set** only if it is read-only and narrow — a single
+  bounded operation over file content. `Grep` and `Read` qualify. `Git` does not: it
+  exposes history, arbitrary refs and blame, which is materially more surface than
+  "search the working tree", and it is the capability a reviewer should ask for
+  deliberately.
+
+`Write` and `Edit` are excluded from the default set by the first clause of the second
+rule; `Bash` is excluded from C1 entirely by the first rule.
+
+### 4.1 Grep: `rg` when present, `grep` otherwise
+
+`Grep` prefers `rg` and falls back to `grep`, selected at runtime via the injectable
+`which` wrapper in `src/utils/bun-deps.ts`. Both branches spawn, and both are governed
+by the same constraints as `Git`: fixed binary, nax-constructed argv, no shell, output
+truncated.
+
+The two binaries take different flags, so the argv builder is per-binary rather than
+shared, and the fallback is tested explicitly — a machine without `rg` must produce the
+same matches, not a silent empty result. Selection is resolved once and reported, so a
+run's behaviour is attributable to which binary was found.
 
 ## 5. What #374 gets, and what its spec loses
 
@@ -357,9 +392,10 @@ produces it anyway, which is the mitigation.
 
 ## 10. Open questions
 
-1. Does `Grep` shell out to `rg` when present, or stay in-process? Shelling out
-   reintroduces a spawn on the default path, which section 4's line argues against.
-   In-process is slower on large trees. Not yet decided.
+1. ~~Does `Grep` shell out to `rg`, or stay in-process?~~ **Closed by user ruling:
+   `rg` when present, `grep` otherwise.** See section 4.1. The consequence is recorded
+   in section 4: the default-set rule is restated on read-only narrowness rather than
+   on being in-process, because `Grep` spawns.
 2. What is the per-call output bound for `Read` and `Git`, and is it shared with the
    pull tools' existing budget or separate?
 3. Does `Edit` take `old_string`/`new_string`, or a line range? The former is the
