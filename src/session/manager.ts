@@ -482,6 +482,7 @@ export class SessionManager implements ISessionManager {
       resume,
       onActiveCall: this._buildOnActiveCall(name),
       onStreamActivity: this._onStreamActivity,
+      transcriptDir: opts.transcriptDir,
       ...trackedSpawnDeadlines(this._config), // #1583
     });
     this._liveHandles.set(name, handle);
@@ -601,6 +602,7 @@ export class SessionManager implements ISessionManager {
         interactionHandler: opts?.interactionHandler ?? NO_OP_INTERACTION_HANDLER,
         signal: opts?.signal,
         maxTurns: opts?.maxTurns,
+        contextPullTools: opts?.contextPullTools,
       });
       return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {
@@ -690,6 +692,7 @@ export class SessionManager implements ISessionManager {
           interactionHandler: opts.interactionHandler,
           signal: opts.signal,
           maxTurns: opts.maxTurns,
+          contextPullTools: opts.contextPullTools,
         });
       }
       return await (promptOrFnOrRunner as (h: SessionHandle) => Promise<unknown>)(handle);

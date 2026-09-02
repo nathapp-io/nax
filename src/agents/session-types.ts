@@ -9,7 +9,7 @@
 
 import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
-import type { AdapterFailure } from "../context/engine";
+import type { AdapterFailure, ToolDescriptor } from "../context/engine";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
 import type { TokenUsage } from "./cost";
@@ -91,6 +91,13 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * bus. Required for the idle watchdog to track calls.
    */
   onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
+  /**
+   * Native: directory the session's transcript file lives in. Supplied by
+   * SessionManager because the adapter cannot derive it — openSession runs
+   * before the SessionDescriptor exists (manager.ts:472 vs :492), and no
+   * scratch dir reaches the adapter otherwise. ACP ignores it.
+   */
+  transcriptDir?: string;
 }
 
 /** Options for sendTurn(). */
@@ -101,6 +108,12 @@ export interface SendTurnOpts {
   signal?: AbortSignal;
   /** Max turns in multi-turn loop (default: 10). */
   maxTurns?: number;
+  /**
+   * Native: pull-tool catalogue for this turn, sent as structured tool
+   * definitions. Under ACP the same catalogue is rendered into the prompt
+   * instead, so that path ignores this.
+   */
+  contextPullTools?: readonly ToolDescriptor[];
 }
 
 /** Result returned by sendTurn(). */

@@ -6,6 +6,7 @@
  *
  * See: docs/specs/SPEC-session-manager-integration.md
  */
+import type { ToolDescriptor } from "../context/engine";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
 
@@ -190,6 +191,11 @@ export interface OpenSessionRequest {
   signal?: AbortSignal;
   /** Eager protocol-id callback forwarded to the adapter. */
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
+  /**
+   * Native: directory the session's transcript file lives in. Forwarded to
+   * the adapter's openSession — see OpenSessionOpts.transcriptDir. ACP ignores it.
+   */
+  transcriptDir?: string;
 }
 
 /**
@@ -203,6 +209,11 @@ export interface SendPromptOpts {
   signal?: AbortSignal;
   /** Max interaction round-trips per turn (default: 10). */
   maxTurns?: number;
+  /**
+   * Native: pull-tool catalogue for this turn, forwarded to the adapter's
+   * sendTurn — see SendTurnOpts.contextPullTools. ACP ignores it.
+   */
+  contextPullTools?: readonly ToolDescriptor[];
 }
 
 /**
@@ -213,6 +224,8 @@ export interface RunInSessionOpts extends OpenSessionRequest {
   interactionHandler?: import("../agents/interaction-handler").InteractionHandler;
   /** Max interaction round-trips per prompt. */
   maxTurns?: number;
+  /** Native: pull-tool catalogue forwarded to sendPrompt. ACP ignores it. */
+  contextPullTools?: readonly ToolDescriptor[];
 }
 
 /**
