@@ -1,5 +1,6 @@
-import { buildContextToolPreamble, buildRunInteractionHandler } from "../agents/acp/adapter";
+import { buildRunInteractionHandler } from "../agents/acp/adapter";
 import type { IAgentManager } from "../agents/manager-types";
+import { promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { ISessionManager } from "../session";
@@ -18,7 +19,7 @@ export function createSessionRunHop(
 ): SessionRunHopFn {
   return async (agentName: string, options: AgentRunOptions): Promise<SessionRunHopResult> => {
     const startMs = Date.now();
-    const prompt = buildContextToolPreamble(options);
+    const prompt = promptWithToolPreamble(agentName, options);
     const sessionName =
       options.sessionHandle ??
       sessionManager.nameFor({
