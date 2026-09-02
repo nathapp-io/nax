@@ -73,6 +73,8 @@ export class SessionManager implements ISessionManager {
   private _defaultAgent: string;
   private _pidRegistry: PidRegistry | undefined;
   private _watchdogControllerRegistry: Map<string, () => Promise<void>> | undefined;
+  /** Native transcript root, injected by `configureRuntime` — never the project tree. */
+  private _transcriptRoot: string | undefined;
   private _onStreamActivity: ((event: import("../runtime/agent-stream-events").AgentStreamEvent) => void) | undefined;
   /**
    * Bookkeeping: per-session callIds whose cancel was invoked via the watchdog
@@ -104,6 +106,8 @@ export class SessionManager implements ISessionManager {
     pidRegistry?: PidRegistry;
     watchdogControllerRegistry?: Map<string, () => Promise<void>>;
     onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
+    /** Native transcript root (sibling of `runs/`) — see `deriveNativeTranscriptDir` in manager-deps.ts. */
+    transcriptRoot?: string;
     /**
      * Stream event bus. SessionManager subscribes once to depopulate the
      * watchdog registry on `agent.call_ended` (event-driven cleanup, no
@@ -118,6 +122,7 @@ export class SessionManager implements ISessionManager {
     if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
     if (opts.watchdogControllerRegistry) this._watchdogControllerRegistry = opts.watchdogControllerRegistry;
     if (opts.onStreamActivity) this._onStreamActivity = opts.onStreamActivity;
+    if (opts.transcriptRoot) this._transcriptRoot = opts.transcriptRoot;
     if (opts.agentStreamEvents) {
       this._agentStreamUnsubscribe?.();
       this._agentStreamUnsubscribe = opts.agentStreamEvents.onAgentStream((event) => {
@@ -483,9 +488,11 @@ export class SessionManager implements ISessionManager {
       onActiveCall: this._buildOnActiveCall(name),
       onStreamActivity: this._onStreamActivity,
       // Finding 1 (whole-branch review): callers never supplied transcriptDir,
-      // so derive it here — the one place documented by ADR-028 §3 — keyed by
-      // session name. An explicit caller value still wins.
-      transcriptDir: opts.transcriptDir ?? deriveNativeTranscriptDir(name, opts),
+      // so derive it here — the one place documented by ADR-028 §3 — from the
+      // runtime-injected transcript root. An explicit caller value still wins.
+      transcriptDir:
+        opts.transcriptDir ??
+        deriveNativeTranscriptDir({ featureName: opts.featureName, transcriptRoot: this._transcriptRoot }),
       ...trackedSpawnDeadlines(this._config), // #1583
     });
     this._liveHandles.set(name, handle);

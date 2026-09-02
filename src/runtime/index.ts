@@ -297,6 +297,10 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       watchdogControllerRegistry,
       onStreamActivity: (event) => agentStreamEvents.emitAgentStream(event),
       agentStreamEvents,
+      // Native session transcripts are written under the run's output dir
+      // (a sibling of `runs/`), never the project tree — see
+      // deriveNativeTranscriptDir in session/manager-deps.ts.
+      transcriptRoot: outputDir,
     });
   }
   const agentManagerOpts: CreateAgentManagerOpts = {

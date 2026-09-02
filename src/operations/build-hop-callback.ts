@@ -348,7 +348,6 @@ export function buildHopCallback(
             DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
           featureName,
           storyId: story.id,
-          projectDir,
           signal: resolvedRunOptions.abortSignal,
         });
       }
@@ -376,7 +375,6 @@ export function buildHopCallback(
           DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
         featureName,
         storyId: story.id,
-        projectDir,
         signal: resolvedRunOptions.abortSignal,
       });
     }

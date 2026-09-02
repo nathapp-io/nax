@@ -41,7 +41,6 @@ export function createSessionRunHop(
       timeoutSeconds: options.timeoutSeconds,
       featureName: options.featureName,
       storyId: options.storyId,
-      projectDir: options.projectDir,
       signal: options.abortSignal,
       onSessionEstablished: options.onSessionEstablished,
     });

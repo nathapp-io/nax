@@ -1,12 +1,15 @@
 // RE-ARCH: keep
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import {
+  _resetTranscriptTruncationWarningForTests,
   deleteTranscript,
   loadTranscript,
+  MAX_RETAINED_TRANSCRIPTS,
+  pruneRetainedTranscripts,
   saveTranscript,
   transcriptPath,
 } from "@/agents/native/session/transcript-store";
@@ -58,5 +61,52 @@ describe("transcript store", () => {
   test("a corrupt transcript throws rather than silently starting over", async () => {
     await writeFile(transcriptPath(dir, "sess-a"), "{not json", "utf8");
     await expect(loadTranscript(dir, "sess-a")).rejects.toThrow();
+  });
+});
+
+describe("pruneRetainedTranscripts", () => {
+  beforeEach(() => {
+    _resetTranscriptTruncationWarningForTests();
+  });
+
+  test("does nothing when the directory does not exist", async () => {
+    await expect(pruneRetainedTranscripts(join(dir, "missing"), 5)).resolves.toBeUndefined();
+  });
+
+  test("does nothing when the count is at or below the cap", async () => {
+    await saveTranscript(dir, "sess-a", msgs);
+    await saveTranscript(dir, "sess-b", msgs);
+    await pruneRetainedTranscripts(dir, 2);
+    const remaining = await readdir(dir);
+    expect(remaining.sort()).toEqual(["sess-a.transcript.json", "sess-b.transcript.json"]);
+  });
+
+  test("prunes to the N most recent, deleting the oldest first", async () => {
+    // mtime, not filename or write order, drives the ranking — set it explicitly
+    // so the ordering is deterministic regardless of write scheduling.
+    const names = ["sess-old", "sess-mid", "sess-new"];
+    for (const [i, name] of names.entries()) {
+      await saveTranscript(dir, name, msgs);
+      const mtime = new Date(2026, 0, 1 + i);
+      await utimes(transcriptPath(dir, name), mtime, mtime);
+    }
+
+    await pruneRetainedTranscripts(dir, 2);
+
+    const remaining = (await readdir(dir)).sort();
+    expect(remaining).toEqual(["sess-mid.transcript.json", "sess-new.transcript.json"]);
+  });
+
+  test("ignores non-transcript files in the directory", async () => {
+    await saveTranscript(dir, "sess-a", msgs);
+    await writeFile(join(dir, "descriptor.json"), "{}", "utf8");
+    await pruneRetainedTranscripts(dir, 0);
+    const remaining = await readdir(dir);
+    expect(remaining).toContain("descriptor.json");
+    expect(remaining).not.toContain("sess-a.transcript.json");
+  });
+
+  test("exports the documented default cap", () => {
+    expect(MAX_RETAINED_TRANSCRIPTS).toBeGreaterThan(0);
   });
 });

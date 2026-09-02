@@ -18,7 +18,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { resolveProjectDirFromScratchDir, toProjectRelativePath } from "@/session/manager-deps";
+import {
+  deriveNativeTranscriptDir,
+  resolveProjectDirFromScratchDir,
+  toProjectRelativePath,
+} from "@/session/manager-deps";
 import type { SessionDescriptor } from "@/session/types";
 
 // `writeDescriptor` is part of the `_sessionManagerDeps` object that other
@@ -104,6 +108,35 @@ describe("toProjectRelativePath", () => {
   it("returns the leading-`..` form when the path lies outside projectDir", () => {
     // Use a flat layout to keep the expected depth-2 form deterministic.
     expect(toProjectRelativePath("/a/b", "/etc/hosts")).toBe("../../etc/hosts");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deriveNativeTranscriptDir
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("deriveNativeTranscriptDir", () => {
+  it("builds <transcriptRoot>/features/<featureName>/sessions when both are present", () => {
+    expect(deriveNativeTranscriptDir({ featureName: "demo", transcriptRoot: "/tmp/nax-out" })).toBe(
+      join("/tmp/nax-out", "features", "demo", "sessions"),
+    );
+  });
+
+  it("never derives a path under the project tree (no .nax segment)", () => {
+    const result = deriveNativeTranscriptDir({ featureName: "demo", transcriptRoot: "/tmp/nax-out" });
+    expect(result).not.toContain(".nax");
+  });
+
+  it("returns undefined when transcriptRoot is missing", () => {
+    expect(deriveNativeTranscriptDir({ featureName: "demo" })).toBeUndefined();
+  });
+
+  it("returns undefined when featureName is missing", () => {
+    expect(deriveNativeTranscriptDir({ transcriptRoot: "/tmp/nax-out" })).toBeUndefined();
+  });
+
+  it("returns undefined when both are missing", () => {
+    expect(deriveNativeTranscriptDir({})).toBeUndefined();
   });
 });
 

@@ -7,7 +7,6 @@ import { makeAgentAdapter } from "@test/helpers";
 import { closeNativeSession, openNativeSession } from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@/agents/session-types";
-import { featureDir } from "@/config/paths";
 import { SessionManager } from "@/session/manager";
 import type { OpenSessionRequest } from "@/session/types";
 
@@ -97,14 +96,18 @@ describe("SessionManager forwards transcriptDir to the adapter", () => {
 // Finding 1 (whole-branch review, 2026-09-02): nothing in the real call sites
 // (session-run-hop.ts, build-hop-callback.ts) ever supplied transcriptDir, so
 // every native session threw NATIVE_TRANSCRIPT_DIR_MISSING before a single
-// turn ran. ADR-028 §3 documented deriving it inside SessionManager, keyed by
-// session NAME (not id — the id doesn't exist until create() runs, after this
-// value is needed). This test proves the derivation happens; it was verified
-// to fail (by temporarily deleting the `?? deriveNativeTranscriptDir(name, opts)`
+// turn ran. ADR-028 §3 documented deriving it inside SessionManager. Phase B's
+// transcript relocation moved the root off the project tree entirely: the
+// root is injected once via `configureRuntime({ transcriptRoot })` (mirroring
+// the prompt-audit `outputDir` wiring in runtime/index.ts), not threaded
+// per-request as `projectDir`. This test proves the derivation happens and
+// lands under the injected root, not `<projectDir>/.nax/...`; it was verified
+// to fail (by temporarily deleting the
+// `?? deriveNativeTranscriptDir({ featureName: opts.featureName, transcriptRoot: this._transcriptRoot })`
 // half of the forwarding line in src/session/manager.ts and restoring it) —
 // see the fix report for the exact before/after.
 describe("SessionManager derives transcriptDir when the caller omits it", () => {
-  test("adapter.openSession receives a transcriptDir keyed by session name under featureDir/sessions", async () => {
+  test("adapter.openSession receives a transcriptDir under the injected transcript root, not the project tree", async () => {
     const capturedOpts: OpenSessionOpts[] = [];
     const adapter = makeAgentAdapter({
       openSession: mock(async (name: string, opts: OpenSessionOpts) => {
@@ -114,6 +117,7 @@ describe("SessionManager derives transcriptDir when the caller omits it", () => 
     });
 
     const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ transcriptRoot: "/tmp/nax-output-root" });
     const request: OpenSessionRequest = {
       agentName: "native-fake",
       workdir: "/tmp",
@@ -121,7 +125,6 @@ describe("SessionManager derives transcriptDir when the caller omits it", () => 
       modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
       timeoutSeconds: 60,
       featureName: "native-sessions-phase-b",
-      projectDir: "/tmp/project",
       // transcriptDir deliberately omitted — this is the derive-from-nothing case.
     };
 
@@ -129,8 +132,10 @@ describe("SessionManager derives transcriptDir when the caller omits it", () => 
 
     expect(capturedOpts).toHaveLength(1);
     expect(capturedOpts[0].transcriptDir).toBe(
-      join(featureDir("/tmp/project", "native-sessions-phase-b"), "sessions", "nax-derived-transcript"),
+      join("/tmp/nax-output-root", "features", "native-sessions-phase-b", "sessions"),
     );
+    // Never derived under the project tree (the pre-relocation shape).
+    expect(capturedOpts[0].transcriptDir).not.toContain(".nax");
   });
 
   test("an explicit caller-supplied transcriptDir still wins over derivation", async () => {
@@ -143,6 +148,7 @@ describe("SessionManager derives transcriptDir when the caller omits it", () => 
     });
 
     const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ transcriptRoot: "/tmp/nax-output-root" });
     const request: OpenSessionRequest = {
       agentName: "native-fake",
       workdir: "/tmp",
@@ -150,7 +156,6 @@ describe("SessionManager derives transcriptDir when the caller omits it", () => 
       modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
       timeoutSeconds: 60,
       featureName: "native-sessions-phase-b",
-      projectDir: "/tmp/project",
       transcriptDir: dir,
     };
 
@@ -159,7 +164,32 @@ describe("SessionManager derives transcriptDir when the caller omits it", () => 
     expect(capturedOpts[0].transcriptDir).toBe(dir);
   });
 
-  test("derivation leaves transcriptDir undefined when featureName or projectDir is missing", async () => {
+  test("derivation leaves transcriptDir undefined when the transcript root was never configured", async () => {
+    const capturedOpts: OpenSessionOpts[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedOpts.push(opts);
+        return { id: name, agentName: "native-fake" } satisfies SessionHandle;
+      }),
+    });
+
+    // No configureRuntime call — _transcriptRoot stays undefined.
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const request: OpenSessionRequest = {
+      agentName: "native-fake",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
+      timeoutSeconds: 60,
+      featureName: "native-sessions-phase-b",
+    };
+
+    await sm.openSession("nax-no-root-configured", request);
+
+    expect(capturedOpts[0].transcriptDir).toBeUndefined();
+  });
+
+  test("derivation leaves transcriptDir undefined when featureName is missing", async () => {
     const capturedOpts: OpenSessionOpts[] = [];
     const adapter = makeAgentAdapter({
       openSession: mock(async (name: string, opts: OpenSessionOpts) => {
@@ -169,16 +199,17 @@ describe("SessionManager derives transcriptDir when the caller omits it", () => 
     });
 
     const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ transcriptRoot: "/tmp/nax-output-root" });
     const request: OpenSessionRequest = {
       agentName: "native-fake",
       workdir: "/tmp",
       pipelineStage: "run",
       modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
       timeoutSeconds: 60,
-      // featureName and projectDir both omitted.
+      // featureName omitted.
     };
 
-    await sm.openSession("nax-no-derivation-possible", request);
+    await sm.openSession("nax-no-feature-name", request);
 
     expect(capturedOpts[0].transcriptDir).toBeUndefined();
   });

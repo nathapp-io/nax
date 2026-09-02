@@ -10,7 +10,7 @@
 import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { NATIVE_AGENT } from "../models";
-import { deleteTranscript } from "./transcript-store";
+import { deleteTranscript, pruneRetainedTranscripts } from "./transcript-store";
 
 /**
  * Session name -> transcript directory, so sendTurn and close can find it.
@@ -50,13 +50,19 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
 
 /**
  * Kept on failure, deleted on success. Every Phase B op is lifetime "fresh", so
- * the transcript survives exactly when it is worth reading — and nothing in the
- * repo prunes session directories, so keeping them all would grow without bound
- * (ADR-028 section 3).
+ * the transcript survives exactly when it is worth reading. The kept-on-failure
+ * set is otherwise unbounded, so a failed close also prunes the feature's
+ * `sessions/` directory down to `MAX_RETAINED_TRANSCRIPTS` (ADR-028 section 3).
  */
 export async function closeNativeSession(handle: SessionHandle, failed: boolean): Promise<void> {
   const dir = nativeTranscriptDirs.get(handle.id);
-  if (dir !== undefined && !failed) await deleteTranscript(dir, handle.id);
+  if (dir !== undefined) {
+    if (failed) {
+      await pruneRetainedTranscripts(dir);
+    } else {
+      await deleteTranscript(dir, handle.id);
+    }
+  }
   nativeTranscriptDirs.delete(handle.id);
   nativeSessionTimeouts.delete(handle.id);
 }
