@@ -1,12 +1,15 @@
 # ADR-027: Adapter-Protocol Split for the Native LLM Path
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-01
 **Author:** William Khoo, Claude
 **Builds on:** ADR-025 (Agent Routing and Cross-Agent Escalation), ADR-012 (Agent Manager Ownership)
 **Amends:** the AgentManager fallback map from ADR-012 / ADR-013 (§6), and ADR-025 §4's profile↔rung binding (§7)
-**Related:** [Nax Native LLM Harness](https://claude.ai/code/artifact/3f52e26b-9614-411f-ba38-31dd6393f804) (feasibility analysis, the "why"), `@nathapp/nax-ai@0.1.1`, #374 (scoped permissions, blocked on Phase C)
-**Implementation:** none yet — this ADR is the first concrete step the feasibility analysis names.
+**Related:** [Nax Native LLM Harness](https://claude.ai/code/artifact/3f52e26b-9614-411f-ba38-31dd6393f804) (feasibility analysis, the "why"), `@nathapp/nax-ai@0.1.4`, #374 (scoped permissions, blocked on Phase C)
+**Implementation:** shipped. #1787 (native completion path), #1790 + #1789 + #1791
+(`nax auth`, credential store, bundled-OAuth build fix), #1792 (credential probe and
+tier-aware fallback targets), #1793 (tier-or-model resolution), #1794 (the two
+silent-failure bugs the cutover experiment exposed).
 
 ---
 
@@ -356,6 +359,46 @@ forecloses it: `AgentAdapter` is unchanged, `SessionDescriptor` is untouched, an
 the `CompletionAdapter`/`SessionAdapter` split stays available once the boundary
 is real. It is called out so Phase B is scoped from this, not from the
 assumption that sessions are a thin mapping over `complete()`.
+
+#### Measured 2026-09-02: what the deferral actually costs a user today
+
+The cost above was a prediction. Running `acceptance-refine` over the native
+transport turned it into a measurement, and the shape is worth recording because
+the failure it produces does not look like a session problem.
+
+**A config knob names an agent, but a *stage* is not all one op kind.** The
+acceptance stage runs `acceptanceRefineOp` (`kind: "complete"`) and then
+`acceptanceGenerateOp` (`kind: "run"`, `session: { role: "acceptance-gen" }`),
+and both read the same setting — `acceptance.generateModel ?? acceptance.model`
+(`src/operations/acceptance-generate.ts:62`). Pointing `acceptance.model` at
+`native` therefore dispatches a session op to a completion-only adapter, and the
+stage dies on the second call.
+
+**What that looked like:** the refine call succeeded and produced good output,
+then the stage threw `NativeSessionUnsupportedError` before writing anything —
+so `acceptance-refined.json`, `acceptance-meta.json` and the acceptance test file
+were all absent (the artifact write sits *after* the generate loop,
+`src/pipeline/stages/acceptance-setup.ts:403`). Absence of the artifact reads as
+"refine failed", which is the wrong conclusion: refine had worked.
+
+**The workaround exists and needs no new code.** `acceptance.generateModel`
+already separates the two: point it at an ACP agent while `acceptance.model`
+stays native, and the stage completes end-to-end. Measured on the same fixture,
+that arm passed 1/1 with 7/7 criteria refined.
+
+```json
+"agent":      { "protocol": "hybrid", "default": "opencode" },
+"acceptance": { "model":         { "agent": "native",   "model": "fast" },
+                "generateModel": { "agent": "opencode", "model": "fast" } }
+```
+
+**So the rule until Phase B:** a stage whose ops span both kinds may only be
+pointed at `native` for its `complete` ops, and every session-kind op in that
+stage needs an explicit ACP target. Nothing validates this — `agent.protocol:
+"hybrid"` accepts the config and it fails at call time. A validation gate was
+considered and rejected: `native` is the only sessionless adapter, so the gate
+would have exactly one subject and Phase B removes it. #1794 makes the failure
+loud instead, which is transport-independent and outlives Phase B.
 
 ## Consequences
 
