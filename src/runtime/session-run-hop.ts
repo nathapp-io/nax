@@ -1,5 +1,6 @@
-import { buildContextToolPreamble, buildRunInteractionHandler } from "../agents/acp/adapter";
+import { buildRunInteractionHandler } from "../agents/acp/adapter";
 import type { IAgentManager } from "../agents/manager-types";
+import { promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { ISessionManager } from "../session";
@@ -18,7 +19,7 @@ export function createSessionRunHop(
 ): SessionRunHopFn {
   return async (agentName: string, options: AgentRunOptions): Promise<SessionRunHopResult> => {
     const startMs = Date.now();
-    const prompt = buildContextToolPreamble(options);
+    const prompt = promptWithToolPreamble(agentName, options);
     const sessionName =
       options.sessionHandle ??
       sessionManager.nameFor({
@@ -73,11 +74,17 @@ export function createSessionRunHop(
             signal: options.abortSignal,
             interactionHandler,
             maxTurns,
+            // Finding 3 (whole-branch review): this hop only routes the three
+            // Phase B target ops today (which go through build-hop-callback.ts
+            // instead), but a future op on the default hop needs its pull-tool
+            // catalogue forwarded here too, or it silently gets none.
+            contextPullTools: options.contextPullTools,
           })
         : await sessionManager.sendPrompt(handle, prompt, {
             interactionHandler,
             signal: options.abortSignal,
             maxTurns,
+            contextPullTools: options.contextPullTools,
           });
 
       return {

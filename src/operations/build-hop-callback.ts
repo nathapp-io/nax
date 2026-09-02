@@ -5,8 +5,9 @@
  * directly to runWithFallback.
  */
 
-import { buildContextToolPreamble, buildRunInteractionHandler } from "../agents/acp/adapter-output";
+import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import type { AgentRunRequest, HopKind, IAgentManager } from "../agents/manager-types";
+import { promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { NaxConfig } from "../config";
@@ -277,7 +278,12 @@ export function buildHopCallback(
       // resolvedRunOptions.prompt on every hop, and the `finalPrompt` the hop
       // returns is audit-only (manager.ts) — it never feeds a later hop's
       // runOptions.
-      prompt = buildContextToolPreamble({ ...resolvedRunOptions, prompt, contextPullTools, contextToolRuntime });
+      prompt = promptWithToolPreamble(agentName, {
+        ...resolvedRunOptions,
+        prompt,
+        contextPullTools,
+        contextToolRuntime,
+      });
     }
 
     // A bridge is no longer required: without a handler, sendPrompt falls back

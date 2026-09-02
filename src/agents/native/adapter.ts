@@ -2,16 +2,20 @@
  * The native AgentAdapter: one-shot completions over nax-ai, no subprocess.
  *
  * Members that describe a process are answered honestly rather than faked:
- * there is no binary, no command and no pid. Session methods throw until
- * Phase B, which is a storage feature rather than a mapping over complete()
- * (ADR-027 section 10).
+ * there is no binary, no command and no pid. openSession/closeSession are
+ * transcript-file bookkeeping, and sendTurn maps the native turn loop
+ * (session/turn-loop.ts) over complete() — nax owns the conversation because
+ * nax-ai's client is stateless (ADR-027 section 10, ADR-028).
  */
 
+import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
-import { NativeSessionUnsupportedError, toAdapterFailure } from "./errors";
+import { toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
+import { closeNativeSession, nativeSessionTimeouts, openNativeSession } from "./session/session";
+import { runNativeTurn } from "./session/turn-loop";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
 const CONSERVATIVE_CONTEXT_TOKENS = 128_000;
@@ -151,15 +155,55 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
   }
 
-  openSession(): Promise<never> {
-    return Promise.reject(new NativeSessionUnsupportedError("openSession"));
+  openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
+    return openNativeSession(name, opts);
   }
 
-  sendTurn(): Promise<never> {
-    return Promise.reject(new NativeSessionUnsupportedError("sendTurn"));
+  async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
+    const { provider, model } = parseNativeModel(handle.modelDef?.model ?? "");
+    const client = await getNativeClient();
+    const resolved = await client.model(provider, model);
+    const catalog = client.pricing(resolved);
+    const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer1M: catalog.output };
+    const timeoutSeconds = nativeSessionTimeouts.get(handle.id);
+
+    return runNativeTurn(handle, prompt, opts, {
+      complete: async (messages, tools) => {
+        // Finding 4 (whole-branch review): maxTurns bounds round-trip COUNT,
+        // not duration — a hung provider call would otherwise hang the turn
+        // forever. Same AbortController + deadline shape as complete() above,
+        // combined with any caller-supplied opts.signal via AbortSignal.any so
+        // either can end the call.
+        const controller = new AbortController();
+        const timer =
+          timeoutSeconds !== undefined ? setTimeout(() => controller.abort(), timeoutSeconds * 1000) : undefined;
+        const signal =
+          opts.signal !== undefined ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
+
+        try {
+          const res = await client.complete(resolved, {
+            messages,
+            ...(tools.length > 0 ? { tools } : {}),
+            signal,
+          });
+          const usage = toNaxTokenUsage(res.usage);
+          return {
+            text: res.text,
+            ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
+            ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
+            usage,
+            costUsd: estimateCostUsd(usage, rates),
+          };
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      },
+    });
   }
 
-  closeSession(): Promise<never> {
-    return Promise.reject(new NativeSessionUnsupportedError("closeSession"));
+  closeSession(handle: SessionHandle): Promise<void> {
+    // The adapter interface has no failure signal, so a close through this path
+    // is a clean one. sendTurn keeps the transcript itself when a turn fails.
+    return closeNativeSession(handle, false);
   }
 }

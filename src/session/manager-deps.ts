@@ -27,6 +27,26 @@ export function toProjectRelativePath(projectDir: string, pathValue: string): st
   return relativePath === "" ? "." : relativePath;
 }
 
+/**
+ * Derive the native transcript directory for a session opened without one
+ * explicitly (ADR-028 section 3; Phase B transcript relocation). Built from
+ * the runtime-injected transcript root — `SessionManager.configureRuntime`'s
+ * `transcriptRoot` option, threaded from `outputDir` in `runtime/index.ts` —
+ * never from the project tree. The resulting directory is flat: the file
+ * itself (`<name>.transcript.json`, per `transcriptPath` in
+ * `agents/native/session/transcript-store.ts`) already identifies its
+ * session, so there is no per-session subdirectory.
+ *
+ * Requires both `featureName` and `transcriptRoot` — when either is missing,
+ * returning undefined and letting the native adapter throw its own
+ * `NATIVE_TRANSCRIPT_DIR_MISSING` is honest; inventing a path here would be a
+ * directory nobody looks in, exactly what that throw exists to prevent.
+ */
+export function deriveNativeTranscriptDir(opts: { featureName?: string; transcriptRoot?: string }): string | undefined {
+  if (!opts.featureName || !opts.transcriptRoot) return undefined;
+  return join(opts.transcriptRoot, "features", opts.featureName, "sessions");
+}
+
 export const _sessionManagerDeps = {
   now: () => new Date().toISOString(),
   nowMs: () => Date.now(),

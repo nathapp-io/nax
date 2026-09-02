@@ -8,7 +8,11 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
+import { waitForCondition } from "@test/helpers";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import type { ResolvedCompleteOptions } from "@/agents/types";
@@ -136,10 +140,100 @@ describe("NativeAgentAdapter shape", () => {
     expect(adapter.buildCommand()).toEqual([]);
   });
 
-  test("refuses session methods, naming the phase that adds them", async () => {
+  test("sendTurn calls the model and returns its output", async () => {
+    _clientDeps.build = async () => fakeClient();
     const adapter = new NativeAgentAdapter();
-    await expect(adapter.openSession()).rejects.toThrow(/Phase B/);
-    await expect(adapter.sendTurn()).rejects.toThrow(/Phase B/);
+    const handle = await adapter.openSession("sess-adapter", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-turn-")),
+    });
+
+    const result = await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+
+    expect(result.output).toBe("ok");
+    expect(result.internalRoundTrips).toBe(1);
+  });
+
+  // Finding 4 (whole-branch review, 2026-09-02): maxTurns bounds round-trip
+  // COUNT, not duration — a hung provider call would otherwise hang the turn
+  // forever, since neither OpenSessionOpts.timeoutSeconds nor SendTurnOpts
+  // carried a wall-clock bound. sendTurn now derives an AbortController with
+  // a deadline from the session's timeoutSeconds for every complete() call,
+  // combined with any caller-supplied opts.signal via AbortSignal.any —
+  // mirroring the shape complete() already uses for its own single call.
+  test("bounds each complete() call with a deadline derived from the session's timeoutSeconds", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    let resolveComplete: (() => void) | undefined;
+    _clientDeps.build = async () =>
+      fakeClient({
+        // Stays pending until the test resolves it, so the deadline timer has
+        // a chance to fire while the call is still in flight — asserting on a
+        // call that already returned would race the deadline's clearTimeout.
+        complete: async (_model: ResolvedModel, callOpts: { signal?: AbortSignal }) => {
+          capturedSignal = callOpts.signal;
+          await new Promise<void>((resolve) => {
+            resolveComplete = resolve;
+          });
+          return { text: "ok", usage: { inputTokens: 0, outputTokens: 0 }, stopReason: "stop" };
+        },
+      });
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession("sess-deadline", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      // Effectively immediate — the assertion polls for the deadline timer to
+      // fire rather than sleeping a fixed duration for it.
+      timeoutSeconds: 0.001,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-deadline-")),
+    });
+
+    const sendTurnPromise = adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+
+    await waitForCondition(() => capturedSignal?.aborted === true, 500);
+    expect(capturedSignal?.aborted).toBe(true);
+    resolveComplete?.();
+    await sendTurnPromise;
+  });
+
+  test("combines a caller-supplied signal with the deadline, either can abort the call", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async (_model: ResolvedModel, callOpts: { signal?: AbortSignal }) => {
+          capturedSignal = callOpts.signal;
+          return { text: "ok", usage: { inputTokens: 0, outputTokens: 0 }, stopReason: "stop" };
+        },
+      });
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession("sess-caller-signal", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      // Long enough that the deadline itself never fires during this test.
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-caller-signal-")),
+    });
+
+    const callerController = new AbortController();
+    callerController.abort();
+
+    await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+      signal: callerController.signal,
+    });
+
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });
 
