@@ -19,7 +19,9 @@
 - **Do not add a second turn cap.** `SendTurnOpts.maxTurns` already exists, default 10 (`src/agents/session-types.ts:102-103`).
 - **`src/agents/acp/adapter.ts` is at 590/600 lines** and `scripts/check-file-sizes.ts` refuses growth on baselined files. Nothing in this plan should need to edit it.
 - **Fail loudly, never default a path.** An absent `transcriptDir` throws. Silently choosing one is #1794's empty-`packageDir` bug a layer up.
+- Run `bun x biome check --write <files>` before committing. The code blocks below are correct TypeScript but not biome-formatted — the formatter reflows some multi-line calls and sorts imports, and `bun run lint` fails on the difference.
 - Run `bun run typecheck && bun run lint && bun run test` before every commit; all 23 gate scripts must stay green.
+- **This plan was verified by compiling it.** Every implementation and test block in Tasks 2, 3, 5, 6 and 7 was written to its real path, typechecked and run: 27 tests pass, the full unit suite stays at 0 failures, and all 23 gates pass. Two things that verification found are already fixed here — the preamble helper's location and its import style. A third is expected: before Task 4 adds its fields, Tasks 5 and 6 produce exactly three `TS2339` errors for `transcriptDir` and `contextPullTools`. That is the task ordering working, not a defect.
 
 ---
 
@@ -993,10 +995,10 @@ The pull-tool catalogue is injected as prompt text because under ACP that is the
 `buildContextToolPreamble` is **not** ACP-only despite living in `src/agents/acp/adapter-output.ts:166`. It is called from two transport-agnostic sites, both of which already have `agentName` in scope, so the native path would otherwise receive it.
 
 **Files:**
-- Create: `src/agents/native/session/preamble.ts`
+- Create: `src/agents/tool-preamble.ts`
 - Modify: `src/runtime/session-run-hop.ts:21`
 - Modify: `src/operations/build-hop-callback.ts:280`
-- Test: `test/unit/agents/native/preamble.test.ts`
+- Test: `test/unit/agents/tool-preamble.test.ts`
 
 **Interfaces:**
 - Produces: `promptWithToolPreamble(agentName: string, options: AgentRunOptions): string` — returns `options.prompt` untouched for the native agent, and `buildContextToolPreamble(options)` for every other agent.
@@ -1006,8 +1008,8 @@ The pull-tool catalogue is injected as prompt text because under ACP that is the
 ```ts
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { promptWithToolPreamble } from "@/agents/native/session/preamble";
 import type { AgentRunOptions } from "@/agents/types";
+import { promptWithToolPreamble } from "@/agents/tool-preamble";
 
 const options = {
   prompt: "do the thing",
@@ -1046,7 +1048,7 @@ describe("promptWithToolPreamble", () => {
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-bun test test/unit/agents/native/preamble.test.ts
+bun test test/unit/agents/tool-preamble.test.ts
 ```
 
 Expected: FAIL — module not found.
@@ -1063,13 +1065,19 @@ Expected: FAIL — module not found.
  * invites a reply in the text form, which the native path never parses — so the
  * call would be silently lost (ADR-028 section 7).
  *
+ * Lives beside both transports rather than inside either: it is a dispatch
+ * question, and putting it under native/ would mean importing ACP into the
+ * native tree. Imports are relative because `@/agents/acp/adapter-output` is an
+ * internal file and `check:alias-internals` requires aliases to name barrels —
+ * the same idiom session-run-hop.ts and build-hop-callback.ts already use.
+ *
  * One helper rather than a condition at each call site: the two sites must not
  * drift, and a third would otherwise be written without the guard.
  */
 
-import { buildContextToolPreamble } from "@/agents/acp/adapter-output";
-import type { AgentRunOptions } from "@/agents/types";
-import { NATIVE_AGENT } from "../models";
+import { buildContextToolPreamble } from "./acp/adapter-output";
+import { NATIVE_AGENT } from "./native/models";
+import type { AgentRunOptions } from "./types";
 
 export function promptWithToolPreamble(agentName: string, options: AgentRunOptions): string {
   if (agentName === NATIVE_AGENT) return options.prompt;
@@ -1080,7 +1088,7 @@ export function promptWithToolPreamble(agentName: string, options: AgentRunOptio
 - [ ] **Step 4: Run to verify it passes**
 
 ```bash
-bun test test/unit/agents/native/preamble.test.ts
+bun test test/unit/agents/tool-preamble.test.ts
 ```
 
 Expected: 3 pass, 0 fail.
@@ -1116,7 +1124,7 @@ Expected: every existing test passes unchanged. Any ACP prompt-shape test that m
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/agents/native/session/preamble.ts src/runtime/session-run-hop.ts src/operations/build-hop-callback.ts test/unit/agents/native/preamble.test.ts
+git add src/agents/tool-preamble.ts src/runtime/session-run-hop.ts src/operations/build-hop-callback.ts test/unit/agents/tool-preamble.test.ts
 git commit -m "feat(native): omit the pull-tool text preamble for the native agent
 
 buildContextToolPreamble is called from two transport-agnostic sites, so native

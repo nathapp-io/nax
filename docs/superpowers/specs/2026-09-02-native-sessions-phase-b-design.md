@@ -183,7 +183,10 @@ The suppression point is **not** inside the ACP adapter, despite
 is called from two transport-agnostic sites — `src/runtime/session-run-hop.ts:21`
 and `src/operations/build-hop-callback.ts:280` — both of which already have
 `agentName` in scope. A single shared helper gates both, so the two cannot drift
-and a third call site is not written without the guard.
+and a third call site is not written without the guard. It lives at
+`src/agents/tool-preamble.ts` — beside both transports rather than inside
+either, since putting it under `native/` would mean importing ACP into the
+native tree.
 
 ## 8. Thinking blocks must round-trip
 
