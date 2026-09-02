@@ -159,6 +159,8 @@ export interface AgentRunOptions {
   contextToolRuntime?: {
     callTool(name: string, input: unknown): Promise<string>;
   };
+  /** Executes nax's own coding tools; absent means the op declared none. */
+  codingToolRuntime?: import("@/tools").CodingToolRuntime;
   /**
    * Session descriptor from SessionManager (Phase 1 plumbing — optional for backward compat).
    * When provided, the adapter MAY use descriptor.id/role/handle for audit correlation.
