@@ -99,24 +99,18 @@ Four files:
 
 One file per session, JSON array of `ConversationMessage`, rewritten on flush.
 
-**Its directory arrives on `OpenSessionOpts`, as a new optional
-`transcriptDir?: string`.** The adapter cannot use the descriptor's `scratchDir`:
-`SessionManager` calls `adapter.openSession` at `manager.ts:472` and only creates
-the descriptor afterwards at `:492`, so on a first open no scratch dir exists yet
-— and `OpenSessionOpts` carries none in any case. `SessionManager` computes the
-path with its existing `sessionScratchDir` dependency (`manager-deps.ts:34`),
-keyed by the session **name** it already holds rather than the id it has not yet
-generated, and passes it in. The ACP adapter ignores the field.
+**Its directory is injected once at runtime construction**, via
+`SessionManager.configureRuntime({ transcriptRoot })`, and resolves to
+`<outputDir>/features/<feature>/sessions/` — `~/.nax/<projectKey>/…` by default,
+honouring a `config.outputDir` override, and a sibling of that feature's `runs/`.
 
-**If `transcriptDir` is absent the native adapter fails loudly** rather than
-choosing a default. An adapter that silently picks its own path is the
-empty-`packageDir` bug fixed in #1794, one layer up.
-
-**On disk from the start, deliberately**, even though no target op can resume
-across a restart. The transcript is the debugging artifact: when a native review
-goes wrong, the message array is the only record of why. Prompt-audit earned
-that argument this week — the plan-4 root cause was recoverable *only* because
-the responses had been persisted.
+It cannot be derived per call: `OpenSessionRequest.config` is an
+`AgentManagerConfig` slice with no `name` and no `outputDir`. `runtime/index.ts`
+already resolves `outputDir` and injects `join(outputDir, "prompt-audit")` into the
+prompt auditor; the transcript root follows that precedent. **If the root or the
+feature name is absent the native adapter fails loudly** rather than choosing a
+default — an adapter that silently picks its own path is the empty-`packageDir` bug
+fixed in #1794, one layer up.
 
 **Deleted on clean close, kept only when the turn failed.** Transcripts do not
 inherit the scratch-dir lifecycle: nothing in the repo deletes a session scratch

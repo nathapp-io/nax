@@ -50,39 +50,37 @@ boundary is the reason nax-ai exists (it isolates pi-ai and gives the
 Anthropic-OAuth prohibition exactly one chokepoint), and a session store offers
 no comparable forcing function.
 
-### 3. The transcript is a file per session, on disk, adapter-private
+### 3. The transcript lives under the nax output dir, not the project tree
 
-One file per session. `SessionDescriptor` gains no message field; instead
-`OpenSessionOpts` gains an optional `transcriptDir`, supplied by
-`SessionManager`.
+`<outputDir>/features/<feature>/sessions/<sessionName>.transcript.json` — that is
+`~/.nax/<projectKey>/…` by default and honours a `config.outputDir` override. It
+sits beside the `runs/` directory for the same feature, so a transcript is next to
+the run log that produced it. `SessionDescriptor` gains no message field.
 
-It cannot come from the descriptor: `adapter.openSession` is called at
-`manager.ts:472` and the descriptor is created afterwards at `:492`, so on a
-first open there is no scratch dir yet — and `OpenSessionOpts` carries none
-regardless. The manager computes the path with its existing `sessionScratchDir`
-dependency, keyed by the session name it already has. **An absent
-`transcriptDir` fails loudly**; an adapter that picks its own default path is
-#1794's empty-`packageDir` bug one layer up.
+**Not in the repository.** An earlier revision of this ADR put it in the project's
+own `.nax/features/<f>/sessions/`, which `.gitignore` covers — but a transcript
+holds a whole conversation, including source and prompts, and a gitignore line is a
+weaker guarantee than absence: a fresh clone, `git add -f`, or any tool that does
+not consult gitignore defeats it.
 
-On disk from the start even though no Phase B op resumes across a restart: the
-transcript is the debugging artifact. The plan-4 root cause was recoverable only
-because responses had been persisted, and a native turn that goes wrong leaves
-nothing else to read.
+**The root is injected once, not derived per call.** `runtime/index.ts` already
+resolves `outputDir` and hands `join(outputDir, "prompt-audit")` to the prompt
+auditor; the transcript root travels the same way, through
+`SessionManager.configureRuntime({ transcriptRoot })`. Per-call derivation is not
+possible: `OpenSessionRequest.config` is an `AgentManagerConfig` slice carrying
+`agent`, `execution` and `profile` only — no `name`, no `outputDir`.
 
-Adapter-private rather than a shared nax service, because a shared store would
-put a native-only concern into types both transports depend on, for a second
-consumer that does not exist.
+⚠️ An earlier revision claimed the manager "computes the path with its existing
+`sessionScratchDir` dependency". That was never true and is recorded here because
+believing it cost real time: `sessionScratchDir` is used inside `create()`, which
+runs *after* `adapter.openSession` needs the value, and it builds a project-relative
+path in any case.
 
-**Deleted on clean close; kept only when the turn failed.** Transcripts do not
-inherit the scratch-dir lifecycle, because there is none — nothing in the repo
-deletes a session scratch directory. Inheriting that would make every transcript
-permanent, which is the unbounded-growth failure already open as #1445, with
-much larger files.
-
-Every Phase B op is `lifetime: "fresh"`, so the session ends with the op and this
-costs nothing: the transcript survives exactly when it is worth reading, which is
-when something went wrong. If a bound on the kept-on-failure set is later wanted,
-`MAX_RETAINED_RUNS` (`src/metrics/tracker.ts:33`) is the existing precedent.
+**Kept on failure, deleted on a clean close, and capped.** Every Phase B op is
+`lifetime: "fresh"`, so the transcript survives exactly when it is worth reading.
+Nothing prunes the output dir, so the kept-on-failure set is bounded by
+`MAX_RETAINED_TRANSCRIPTS` (50), pruned by modification time when a failed close
+adds one — the shape `MAX_RETAINED_RUNS` already uses in `src/metrics/tracker.ts`.
 
 ### 4. A transcript write failure fails the turn
 
