@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
 import { ContextConfigSchema } from "./schemas-context";
 import { DebateConfigSchema } from "./schemas-debate";
 import {
@@ -519,12 +520,17 @@ export const NaxConfigSchema = z
         }
       }
     }
-    // Profile↔ladder binding: every profile's target must map to a rung in tierOrder
+    // Profile↔ladder binding: every profile whose target names a tier must map to a rung in tierOrder
     const profiles = data.routing.agents?.profiles ?? [];
     for (const [pi, profile] of profiles.entries()) {
       const { agent: pAgent, model: pModel } = profile.target;
+      // Plan C (spec §4): a target that names a tier must bind to a rung; a target that names a
+      // literal model is a pin — exempt from binding, and exempt from tier escalation.
+      const namesTier =
+        MODEL_SHORTHAND_TIERS[pModel.toLowerCase()] !== undefined ||
+        resolveTierMembership(data.models ?? {}, pAgent, pModel, data.agent?.default ?? "claude").isTier;
       const hasMatchingRung = tierOrder.some((r) => r.tier === pModel && r.agent === pAgent);
-      if (!hasMatchingRung) {
+      if (namesTier && !hasMatchingRung) {
         ctx.addIssue({
           code: "custom",
           path: ["routing", "agents", "profiles", pi, "target"],

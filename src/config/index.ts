@@ -46,6 +46,7 @@ export type {
   ModelDef,
   ModelEntry,
   ModelMap,
+  ModelsConfig,
   ModelTier,
   NaxConfig,
   ProjectProfile,

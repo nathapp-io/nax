@@ -15,7 +15,7 @@
  * repairs they apply"). Re-application is safe: `backfillOutOfScope` early-returns
  * once nothing is missing, and `applyModifiedFiles` merges deduped by path.
  */
-import type { AgentRoutingConfig } from "@/config";
+import type { AgentRoutingConfig, ModelsConfig } from "@/config";
 import { applyPlanFidelity } from "@/operations";
 import type { PRD } from "@/prd/types";
 import { finalizePrdRouting } from "./finalize-routing";
@@ -28,6 +28,8 @@ export interface PersistPrdArgs {
   readonly projectName: string;
   readonly agentRouting: AgentRoutingConfig | undefined;
   readonly profileName: string | undefined;
+  readonly models: ModelsConfig;
+  readonly defaultAgent: string;
   readonly outputPath: string;
   readonly writeFile: (path: string, content: string) => Promise<void>;
 }
@@ -40,7 +42,13 @@ export interface PersistPrdArgs {
  */
 export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string> {
   const repaired = applyPlanFidelity(args.prd, args.specContent, args.featureName);
-  const finalized = finalizePrdRouting({ ...repaired, project: args.projectName }, args.agentRouting, args.profileName);
+  const finalized = finalizePrdRouting(
+    { ...repaired, project: args.projectName },
+    args.agentRouting,
+    args.profileName,
+    args.models,
+    args.defaultAgent,
+  );
   await args.writeFile(args.outputPath, JSON.stringify(finalized, null, 2));
   return args.outputPath;
 }
@@ -54,6 +62,8 @@ export async function persistPrd(ctx: PlanModeContext, prd: PRD): Promise<string
     projectName: ctx.projectName,
     agentRouting: ctx.config.routing?.agents,
     profileName: ctx.profileName,
+    models: ctx.config.models,
+    defaultAgent: ctx.config.agent?.default ?? "claude",
     outputPath: ctx.outputPath,
     writeFile: ctx.deps.writeFile,
   });

@@ -116,6 +116,10 @@ export interface StoryRouting {
   profileModelTier?: ModelTier;
   /** Model tier at first route — written once, never overwritten by escalation. Used by reset (ADR-025). */
   initialModelTier?: ModelTier;
+  /** Literal model pinned by the matched profile's target — set at plan time; mutually exclusive with profileModelTier (plan C spec §4). */
+  profileModelPin?: string;
+  /** Pin at first route — written once, never overwritten by escalation. */
+  initialModelPin?: string;
 }
 
 /**

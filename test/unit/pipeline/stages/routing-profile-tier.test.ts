@@ -321,6 +321,40 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
     expect(tierAfterFirst).toBe("balanced");
     expect(tierAfterSecond).toBe("balanced");
   });
+
+  test("a profileModelPin does not poison tier selection — derived tier wins (spec §4)", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    // Plan-time finalize recorded the pin (no profileModelTier) — the stage must derive
+    // the starting rung from complexity and never treat "claude-opus-5-1" as a tier name.
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+        agentProfileId: "p1",
+        profileModelPin: "claude-opus-5-1",
+      },
+    });
+    const ctx = makeCtx(story);
+
+    await routingStage.execute(ctx);
+
+    expect(ctx.story.routing?.modelTier).toBe("fast");
+    expect(ctx.story.routing?.modelTier).not.toBe("claude-opus-5-1");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -128,6 +128,11 @@ pairs: profiles say *what each is good at* (for the start pick); the ladder says
   next step), and every `target.agent` / `tierOrder[].agent` must exist in
   `config.models` with a defined tier. The binding error names the remedy
   (agent-qualify the ladder).
+  **Amended by plan C (2026-09-02):** the binding invariant applies to targets that name a *tier* for
+  their agent (per the tier-or-model contract in
+  `docs/superpowers/specs/2026-09-02-plan-c-tier-or-model-resolution-design.md` §2). A target that
+  names a literal model is a **pin**: exempt from rung binding, recorded as `profileModelPin` (never as
+  a tier), and excluded from tier escalation (nax#1739).
 
 ### 5. Selection rules (decided)
 
@@ -138,6 +143,9 @@ pairs: profiles say *what each is good at* (for the start pick); the ladder says
   intended, designed behavior, locked by an explicit test.
 - **PRD agent wins; `decision.agent` (future Part A) applies only when the PRD
   leaves agent unset** — never clobbered unconditionally.
+  **Amended by plan C (2026-09-02):** when the
+  PRD leaves agent unset and the classifier abstains, a rung-qualified `complexityRouting` entry may
+  seed the agent (precedence: PRD agent → `decision.agent` → complexity-rung agent → default).
 - **Never invent an agent.** Unknown/missing `agentProfileId` → default profile →
   `agent` stays `undefined` → precedence falls to `agentManager.getDefault()`,
   with a warn. Degradation is in code, not prose.
