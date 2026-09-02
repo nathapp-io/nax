@@ -64,6 +64,17 @@ Adapter-private rather than a shared nax service, because a shared store would
 put a native-only concern into types both transports depend on, for a second
 consumer that does not exist.
 
+**Deleted on clean close; kept only when the turn failed.** Transcripts do not
+inherit the scratch-dir lifecycle, because there is none — nothing in the repo
+deletes a session scratch directory. Inheriting that would make every transcript
+permanent, which is the unbounded-growth failure already open as #1445, with
+much larger files.
+
+Every Phase B op is `lifetime: "fresh"`, so the session ends with the op and this
+costs nothing: the transcript survives exactly when it is worth reading, which is
+when something went wrong. If a bound on the kept-on-failure set is later wanted,
+`MAX_RETAINED_RUNS` (`src/metrics/tracker.ts:33`) is the existing precedent.
+
 ### 4. A transcript write failure fails the turn
 
 It does not warn and continue. Proceeding on a history that could not be
@@ -78,7 +89,21 @@ budgets and truncation ceilings. Phase B changes how the model **asks** — from
 regex-matched text protocol to structured tool-use blocks — and not how nax
 **answers**.
 
-### 6. The prompt preamble is suppressed on the native path
+### 6. The loop's iteration cap is derived from the tool budget
+
+`maxCallsPerSession + 3` — 8 with today's default of 5 — and configurable.
+
+The cap is load-bearing rather than defensive. Tool calls are already bounded by
+`PullToolBudget`, but `consume()` throws when the ceiling is already reached
+**without incrementing**, so a rejected call costs no budget. A model that keeps
+asking after exhaustion would loop forever with nothing to stop it.
+
+Derived rather than chosen for two reasons: it tracks `maxCallsPerSession` if
+that is ever raised, and no empirical distribution exists to fit a literal to —
+`internalRoundTrips` reaches `manager-dispatch.ts:91` as `turn` but appears in no
+run artifact.
+
+### 7. The prompt preamble is suppressed on the native path
 
 The pull-tool catalogue is injected as prompt text because under ACP that is the
 only channel. On the native path the same tools arrive as `ToolDefinition`s.
@@ -89,7 +114,7 @@ would be silently lost.
 The ACP path keeps the preamble and the regex extractor unchanged. This is the
 only behavioural change Phase B makes to existing prompt construction.
 
-### 7. Thinking blocks must be appended, not merely representable
+### 8. Thinking blocks must be appended, not merely representable
 
 nax-ai's `ConversationMessage` now carries `thinking?: readonly ThinkingBlock[]`
 with a `signature`, fixed before publication. The turn loop must actually append
@@ -97,7 +122,7 @@ what it received. A type with nowhere to put the signature and a loop that drops
 it produce the identical defect — Anthropic extended thinking combined with tool
 use failing to survive a turn.
 
-### 8. Sessions do not get their own package
+### 9. Sessions do not get their own package
 
 The feasibility analysis considered converting nax-ai to a monorepo with a
 sibling session package, and declined. Recorded here because "later" otherwise
@@ -143,15 +168,23 @@ un-inventing a wrong abstraction does not.
 
 ## Open Questions
 
-1. **Retention.** How long do transcripts live, and who prunes them? Session
-   scratch dirs have an existing lifecycle; whether transcripts simply inherit it
-   is unverified.
-2. **Iteration cap value.** The loop needs a hard cap. What it should be is a
-   measurement, not a guess — the A/B runs should report observed round-trip
-   counts before one is fixed.
-3. **Whether the verifier needs tools at all.** It declares none today. If a
-   native verifier scores worse without the context a pull tool would give it,
-   that is an argument about the op rather than about this ADR.
+Both questions raised at design time were answered by checking the code; the
+answers are folded into §3 and §9 above and recorded here with their evidence.
+
+1. **Retention — RESOLVED, and it corrected the plan.** Transcripts do *not*
+   inherit the scratch-dir lifecycle, because there is no lifecycle to inherit:
+   nothing in the repo deletes a session scratch directory, and the directories
+   on disk go back months. Inheriting it would mean transcripts are never
+   deleted, which is #1445's failure mode ("rollup grows unbounded because gc is
+   never invoked") in a second place, with much larger files. See §3.
+2. **Iteration cap — RESOLVED as derived, not chosen.** See §9. It could not be
+   set empirically: `internalRoundTrips` reaches `manager-dispatch.ts:91` as
+   `turn` but appears in no run artifact, so there is no observed distribution to
+   fit. Deriving it from the budget is better than a literal anyway, because it
+   tracks `maxCallsPerSession` if that is ever raised.
+3. **Whether the verifier needs tools at all.** Still open. It declares none
+   today. If a native verifier scores worse without the context a pull tool would
+   give it, that is an argument about the op rather than about this ADR.
 
 ## Implementation
 

@@ -99,6 +99,14 @@ goes wrong, the message array is the only record of why. Prompt-audit earned
 that argument this week — the plan-4 root cause was recoverable *only* because
 the responses had been persisted.
 
+**Deleted on clean close, kept only when the turn failed.** Transcripts do not
+inherit the scratch-dir lifecycle: nothing in the repo deletes a session scratch
+directory, so inheriting it means never deleting them — #1445's unbounded-growth
+failure in a second place, with much larger files. Every Phase B op is
+`lifetime: "fresh"`, so the session ends with the op and the transcript survives
+exactly when it is worth reading. `MAX_RETAINED_RUNS` (`src/metrics/tracker.ts:33`)
+is the precedent if the kept-on-failure set later needs a bound.
+
 **A write failure fails the turn.** It does not warn and continue. A turn that
 proceeds on a history it could not persist is the silent-degradation shape
 #1794 removed from the pipeline, and reintroducing it in a new subsystem would
@@ -122,10 +130,20 @@ counts for ACP (`session.prompt()` calls). Token usage accumulates across the
 whole loop, so the returned `TurnResult` describes the turn rather than its last
 leg.
 
-**The loop needs a hard iteration cap.** `toolChoice` is `"auto" | "none"` with
-no "required" (a pi-ai ceiling, not a nax-ai narrowing), so the model may call
-tools indefinitely or never call one. Neither may hang a run. On hitting the cap
-the turn ends with what it has and records that it did.
+**Iteration cap: `maxCallsPerSession + 3`** (8 by default), configurable. On
+hitting it the turn ends with what it has and records that it did.
+
+The cap is load-bearing, not defensive. `PullToolBudget.consume()`
+(`src/context/engine/pull-tools.ts:326`) throws when the ceiling is already
+reached **without incrementing**, so a rejected call costs no budget — a model
+that keeps asking after exhaustion would loop forever with nothing to stop it.
+`toolChoice` cannot help: it is `"auto" | "none"` with no "required", a pi-ai
+ceiling rather than a nax-ai narrowing.
+
+Derived rather than chosen because it tracks `maxCallsPerSession` if that is
+raised, and because no empirical distribution exists to fit a literal to —
+`internalRoundTrips` reaches `manager-dispatch.ts:91` as `turn` but appears in no
+run artifact.
 
 ## 7. Suppressing the prompt preamble
 
