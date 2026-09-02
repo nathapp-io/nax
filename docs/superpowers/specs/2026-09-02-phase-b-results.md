@@ -9,8 +9,8 @@ Every arm ran `agent.default: opencode` — no Claude anywhere, deliberately, on
 ## Headline
 
 **Phase B works.** The native transport carried real multi-turn review sessions with
-structured tool calls, and reached the same verdict as the acpx baseline at **46% of
-the cost and 64% of the wall-clock**.
+structured tool calls, reached the same verdict as the acpx baseline, and did it for
+**about a tenth of the cost of the review ops themselves**.
 
 **One op was mis-selected by the spec.** `tdd-verifier` is not a Phase B op. It needs
 agent-side filesystem tools, which is Phase C.
@@ -67,19 +67,39 @@ nothing about the review ops; it only re-proves the verifier finding.
 
 ## Native vs acpx, on the ops that are genuinely Phase B
 
-Arm 3 against the baseline, same fixture, same story, reviews only:
+Arm 3 against the baseline, same fixture, same story, reviews only.
+
+**Per-op cost, which is the comparison that means something:**
 
 | | native (0731) | acpx (opencode/M2.7) |
 |---|---|---|
-| verdict | passed, no findings | passed, no findings |
-| cost | **$0.0628** | $0.1156 |
-| wall-clock | **4m01s** | 6m19s |
-| warnings/errors | 0 | 0 |
-| review output | 3518 + 1085 chars of reasoning | 131 + 121 chars of terse JSON |
-| files read | **none — diff only** | `calc.ts`, `calc.test.ts` |
+| semantic review | $0.000451 | $0.010369 |
+| adversarial review | $0.001905 | $0.014868 |
+| **review subtotal** | **$0.002356** | **$0.025237** |
+| cost confidence | `estimated` / fallback-rates | `exact` / wire |
+| input / output tokens | 2792+5424 / 938+1746 | 7+0 / 46+43 |
 
-**Same verdict, 46% cheaper, 36% faster.** But the two reviewers did different work to
-get there, and the difference is the point:
+**Native is ~10.7x cheaper on the ops under test.**
+
+Whole-run totals are a much weaker comparison and are recorded only for context:
+$0.0628 (native arm) against $0.1156 (baseline), 4m01s against 6m19s. Both figures
+include the test-writer, implementer and verifier work, which ran on opencode in **both**
+arms — so most of each total is shared cost that has nothing to do with the transport
+under test. Quoting the run totals understates the difference by roughly 6x.
+
+Two caveats on the cost numbers themselves:
+
+- **The native figure is an estimate, not a billed amount.** `pricingSource:
+  fallback-rates` means `modelDef.pricing` was unset, so nax computed the cost from
+  catalog rates. The acpx figure is `exact` / `wire` — what the agent reported it
+  actually cost. A 10.7x gap is far too large to be estimation error, but the native
+  side should not be quoted as billed.
+- **Token counts are not comparable across transports.** opencode reports `input: 0`
+  with `cacheRead: 25848` on some rows (cache-heavy wire accounting); native reports
+  plain input tokens. Native's input reporting *does* work here, which is worth noting
+  because an earlier probe on a different model saw `0` input on the native path.
+
+**Same verdict, and the work behind it differed:**
 
 The acpx reviewer ran with `permissionProfile: unrestricted` and its full toolset. It
 read the files and returned a terse verdict naming what it inspected. The native
