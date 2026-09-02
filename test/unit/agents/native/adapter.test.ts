@@ -8,6 +8,9 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
@@ -136,9 +139,24 @@ describe("NativeAgentAdapter shape", () => {
     expect(adapter.buildCommand()).toEqual([]);
   });
 
-  test("refuses sendTurn, naming the phase that adds it", async () => {
+  test("sendTurn calls the model and returns its output", async () => {
+    _clientDeps.build = async () => fakeClient();
     const adapter = new NativeAgentAdapter();
-    await expect(adapter.sendTurn()).rejects.toThrow(/Phase B/);
+    const handle = await adapter.openSession("sess-adapter", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-turn-")),
+    });
+
+    const result = await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+
+    expect(result.output).toBe("ok");
+    expect(result.internalRoundTrips).toBe(1);
   });
 });
 

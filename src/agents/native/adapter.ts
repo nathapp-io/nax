@@ -3,18 +3,19 @@
  *
  * Members that describe a process are answered honestly rather than faked:
  * there is no binary, no command and no pid. openSession/closeSession are
- * transcript-file bookkeeping (Phase B); sendTurn still throws until the next
- * task replaces it with the actual multi-turn mapping over complete()
- * (ADR-027 section 10).
+ * transcript-file bookkeeping, and sendTurn maps the native turn loop
+ * (session/turn-loop.ts) over complete() — nax owns the conversation because
+ * nax-ai's client is stateless (ADR-027 section 10, ADR-028).
  */
 
-import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
+import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
-import { NativeSessionUnsupportedError, toAdapterFailure } from "./errors";
+import { toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
 import { closeNativeSession, openNativeSession } from "./session/session";
+import { runNativeTurn } from "./session/turn-loop";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
 const CONSERVATIVE_CONTEXT_TOKENS = 128_000;
@@ -158,8 +159,30 @@ export class NativeAgentAdapter implements AgentAdapter {
     return openNativeSession(name, opts);
   }
 
-  sendTurn(): Promise<never> {
-    return Promise.reject(new NativeSessionUnsupportedError("sendTurn"));
+  async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
+    const { provider, model } = parseNativeModel(handle.modelDef?.model ?? "");
+    const client = await getNativeClient();
+    const resolved = await client.model(provider, model);
+    const catalog = client.pricing(resolved);
+    const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer1M: catalog.output };
+
+    return runNativeTurn(handle, prompt, opts, {
+      complete: async (messages, tools) => {
+        const res = await client.complete(resolved, {
+          messages,
+          ...(tools.length > 0 ? { tools } : {}),
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+        });
+        const usage = toNaxTokenUsage(res.usage);
+        return {
+          text: res.text,
+          ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
+          ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
+          usage,
+          costUsd: estimateCostUsd(usage, rates),
+        };
+      },
+    });
   }
 
   closeSession(handle: SessionHandle): Promise<void> {
