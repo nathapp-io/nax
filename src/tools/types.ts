@@ -1,0 +1,51 @@
+/**
+ * Shared vocabulary for nax's own coding tools.
+ *
+ * Deliberately free of any transport type: this module is imported by the
+ * policy, the tools and the runtime, none of which may see `@nathapp/nax-ai`
+ * (check:nax-ai-imports confines that package to src/agents/native/).
+ */
+
+/** The tools nax ships. Third parties register additional names at runtime. */
+export type CodingToolName = "Read" | "Glob" | "Grep" | "Write" | "Edit" | "Git";
+
+/**
+ * One declarative permission grant, as produced by resolvePermissions.
+ *
+ * `patterns` is either globs over the tool's path-bearing fields
+ * (`["src/**"]`), or the verb list for a verb-gated tool (`["diff","log"]`).
+ * `["*"]` means unconditional — but never wider than the root.
+ */
+export interface ToolGrant {
+  readonly tool: string;
+  readonly patterns: readonly string[];
+}
+
+/**
+ * How the policy gates a given tool, declared by the tool itself.
+ *
+ * Declaring the path-bearing fields is what lets the policy gate a tool it has
+ * no special knowledge of, including one registered by a third party. A tool
+ * with no path fields is gated at the tool/verb level instead — the honest
+ * expression for something whose arguments are not paths.
+ */
+export interface ToolScope {
+  readonly pathFields: readonly string[];
+  readonly verbField?: string;
+  readonly allowedVerbs?: readonly string[];
+}
+
+/**
+ * `breach` separates "you may not write there" from "that path is not in this
+ * repository at all". Both deny; only the latter is logged at warn, because a
+ * path escaping the root can mean prompt injection.
+ */
+export type PolicyVerdict =
+  | { readonly allowed: true; readonly resolvedPaths: readonly string[] }
+  | { readonly allowed: false; readonly reason: string; readonly breach: boolean };
+
+export interface ToolPolicy {
+  readonly root: string;
+  grantedTools(): readonly string[];
+  check(tool: string, scope: ToolScope, input: Record<string, unknown>): PolicyVerdict;
+}
