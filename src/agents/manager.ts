@@ -272,12 +272,12 @@ export class AgentManager implements IAgentManager {
         }
 
         const isFailStale = result.adapterFailure?.outcome === "fail-stale";
-
         const retryState: SameAgentRetryState = {
           staleRetryAttempts,
           timeoutRetryAttempts,
           adapterErrorRetries,
           currentRunOptions,
+          tier: "tier" in currentHopKind ? currentHopKind.tier : undefined,
         };
         const retryDecision = trySameAgentRetry(result, retryState, {
           config: this._config,

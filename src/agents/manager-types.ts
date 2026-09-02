@@ -15,8 +15,8 @@ import type { FallbackTarget } from "./swap-decision";
  */
 export type HopKind =
   | { kind: "primary"; tier?: string } // tier present when an op started on a fallback that named one
-  | { kind: "stale-retry"; attempt: number } // same agent, reuse existing session
-  | { kind: "timeout-retry"; attempt: number } // same agent, fresh session after fail-timeout
+  | { kind: "stale-retry"; attempt: number; tier?: string } // same agent, reuse existing session
+  | { kind: "timeout-retry"; attempt: number; tier?: string } // same agent, fresh session after fail-timeout
   | { kind: "swap"; failure: AdapterFailure; tier?: string }; // new agent, fresh session
 
 import type { SessionRunHopFn } from "../runtime/session-run-hop";

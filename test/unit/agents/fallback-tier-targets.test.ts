@@ -213,6 +213,80 @@ describe("dead-primary start preserves a named tier on the run path", () => {
   });
 });
 
+describe("tiered fallback retries", () => {
+  const AVAIL_FAILURE: AdapterFailure = {
+    category: "availability",
+    outcome: "fail-auth",
+    retriable: false,
+    message: "authentication failed",
+  };
+  const TIMEOUT_FAILURE: AdapterFailure = {
+    category: "quality",
+    outcome: "fail-timeout",
+    retriable: true,
+    message: "wall-clock timeout exceeded",
+  };
+
+  function makeRunOptions(config: AgentManagerConfig): AgentRunOptions {
+    return {
+      prompt: "do it",
+      workdir: "/tmp",
+      modelTier: "balanced",
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      timeoutSeconds: 60,
+      config,
+    };
+  }
+
+  test("a same-agent timeout retry preserves the fallback target's tier", async () => {
+    const config = NaxConfigSchema.parse({
+      agent: {
+        default: "claude",
+        fallback: { enabled: true, map: { claude: [{ agent: "native", tier: "cheap" }] } },
+        timeoutRetry: { maxAttempts: 1, budgetMultiplier: 0.5 },
+      },
+    });
+    const manager = new AgentManager(config);
+    const hops: { agent: string; hopKind: HopKind }[] = [];
+
+    await manager.runWithFallback({
+      runOptions: makeRunOptions(config),
+      executeHop: async (agent, bundle, hopKind) => {
+        hops.push({ agent, hopKind });
+        const result =
+          hops.length === 1
+            ? {
+                success: false,
+                exitCode: 1,
+                output: "auth",
+                rateLimited: false,
+                durationMs: 0,
+                estimatedCostUsd: 0,
+                adapterFailure: AVAIL_FAILURE,
+              }
+            : hops.length === 2
+              ? {
+                  success: false,
+                  exitCode: 1,
+                  output: "timeout",
+                  rateLimited: false,
+                  durationMs: 0,
+                  estimatedCostUsd: 0,
+                  adapterFailure: TIMEOUT_FAILURE,
+                }
+              : { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
+        return { result, bundle };
+      },
+    });
+
+    expect(hops).toEqual([
+      { agent: "claude", hopKind: { kind: "primary" } },
+      { agent: "native", hopKind: { kind: "swap", failure: AVAIL_FAILURE, tier: "cheap" } },
+      { agent: "native", hopKind: { kind: "timeout-retry", attempt: 1, tier: "cheap" } },
+    ]);
+  });
+});
+
 describe("resolveHopCompleteOptions", () => {
   const base: ResolvedCompleteOptions = {
     modelDef: { provider: "anthropic", model: "primary-model" },

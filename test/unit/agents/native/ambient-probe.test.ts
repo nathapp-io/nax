@@ -41,17 +41,18 @@ describe("anyAmbientCredential", () => {
   });
 
   test("short-circuits: a satisfied provider resolves without awaiting the rest", async () => {
-    let settledSlow = false;
+    let resolveSlow: ((value: boolean) => void) | undefined;
+    const slow = new Promise<boolean>((resolve) => {
+      resolveSlow = resolve;
+    });
     _authDeps.providerIds = async () => ["fast-yes", "slow"];
-    _authDeps.ambientAuthAvailable = async (id: string) => {
-      if (id === "fast-yes") return true;
-      await new Promise((r) => setTimeout(r, 5_000));
-      settledSlow = true;
-      return false;
+    _authDeps.ambientAuthAvailable = (id: string) => {
+      if (id === "fast-yes") return Promise.resolve(true);
+      return slow;
     };
 
     expect(await anyAmbientCredential()).toBe(true);
-    expect(settledSlow).toBe(false);
+    resolveSlow?.(false);
   });
 
   test("a throwing probe is not a satisfied provider, and does not propagate", async () => {

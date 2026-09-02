@@ -30,13 +30,14 @@ export interface SameAgentRetryState {
   timeoutRetryAttempts: number;
   adapterErrorRetries: number;
   currentRunOptions: AgentRunOptions;
+  tier?: string;
 }
 
 export type SameAgentRetryResult =
   | {
       outcome: "stale-retry";
       staleRetryAttempts: number;
-      kind: { kind: "stale-retry"; attempt: number };
+      kind: { kind: "stale-retry"; attempt: number; tier?: string };
       fallbackRecord: {
         outcome: AdapterFailure["outcome"];
         category: AdapterFailure["category"];
@@ -47,7 +48,7 @@ export type SameAgentRetryResult =
   | {
       outcome: "timeout-retry";
       timeoutRetryAttempts: number;
-      kind: { kind: "timeout-retry"; attempt: number };
+      kind: { kind: "timeout-retry"; attempt: number; tier?: string };
       currentRunOptions: AgentRunOptions;
       fallbackRecord: {
         outcome: AdapterFailure["outcome"];
@@ -59,7 +60,7 @@ export type SameAgentRetryResult =
   | {
       outcome: "adapter-error";
       adapterErrorRetries: number;
-      kind: { kind: "stale-retry"; attempt: number };
+      kind: { kind: "stale-retry"; attempt: number; tier?: string };
       fallbackRecord: {
         outcome: AdapterFailure["outcome"];
         category: AdapterFailure["category"];
@@ -81,7 +82,7 @@ export function trySameAgentRetry(
   state: SameAgentRetryState,
   deps: TrySameAgentRetryDeps,
 ): SameAgentRetryResult {
-  const { staleRetryAttempts, timeoutRetryAttempts, adapterErrorRetries, currentRunOptions } = state;
+  const { staleRetryAttempts, timeoutRetryAttempts, adapterErrorRetries, currentRunOptions, tier } = state;
   const { config, requestRunOptions, signal } = deps;
 
   // fail-stale: same-agent retries up to maxRetryAttempts before swap or terminal failure.
@@ -92,7 +93,7 @@ export function trySameAgentRetry(
     return {
       outcome: "stale-retry",
       staleRetryAttempts: newAttempts,
-      kind: { kind: "stale-retry", attempt: newAttempts },
+      kind: { kind: "stale-retry", attempt: newAttempts, ...(tier !== undefined ? { tier } : {}) },
       fallbackRecord: {
         outcome: result.adapterFailure?.outcome ?? "fail-stale",
         category: result.adapterFailure?.category ?? "availability",
@@ -111,7 +112,7 @@ export function trySameAgentRetry(
       return {
         outcome: "timeout-retry",
         timeoutRetryAttempts: newAttempts,
-        kind: { kind: "timeout-retry", attempt: newAttempts },
+        kind: { kind: "timeout-retry", attempt: newAttempts, ...(tier !== undefined ? { tier } : {}) },
         currentRunOptions: resolveTimeoutRetryOptions(
           currentRunOptions,
           timeoutConfig,
@@ -140,7 +141,7 @@ export function trySameAgentRetry(
       return {
         outcome: "adapter-error",
         adapterErrorRetries: newAttempts,
-        kind: { kind: "stale-retry", attempt: newAttempts },
+        kind: { kind: "stale-retry", attempt: newAttempts, ...(tier !== undefined ? { tier } : {}) },
         fallbackRecord: {
           outcome: result.adapterFailure?.outcome ?? "fail-adapter-error",
           category: result.adapterFailure?.category ?? "availability",

@@ -36,6 +36,10 @@ describe("hopTier", () => {
     expect(hopTier({ kind: "swap", failure: SWAP_FAILURE, tier: "cheap" }, "balanced")).toBe("cheap");
   });
 
+  test("a timeout retry retains its fallback target's tier", () => {
+    expect(hopTier({ kind: "timeout-retry", attempt: 1, tier: "cheap" }, "balanced")).toBe("cheap");
+  });
+
   test("a stale-retry uses the caller's effective tier", () => {
     expect(hopTier({ kind: "stale-retry", attempt: 1 }, "balanced")).toBe("balanced");
   });
