@@ -38,6 +38,7 @@ export type {
   AutoRouteDowngradeConfig,
   AutoRouteUpgradeConfig,
   Complexity,
+  ComplexityRung,
   ConfiguredModel,
   ConfiguredModelObject,
   ConstitutionConfig,

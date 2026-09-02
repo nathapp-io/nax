@@ -23,6 +23,7 @@ export {
   _tryLlmBatchRouteDeps,
   classifyComplexity,
   complexityToModelTier,
+  complexityToRungAgent,
   determineTestStrategy,
   isSecurityCriticalStory,
   resolveRouting,

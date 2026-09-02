@@ -285,3 +285,83 @@ describe("validateConfig — combined agent.fallback.map and tierOrder validatio
     expect(agentErrors).toHaveLength(0);
   });
 });
+
+describe("validateConfig — complexityRouting rung-qualified entries (spec §6)", () => {
+  test("string form error message stays byte-identical to the pre-plan-C one", () => {
+    const config = cfg({
+      models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
+      autoMode: {
+        complexityRouting: {
+          simple: "ultra",
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    expect(result.errors).toContain("complexityRouting.simple must be one of: fast, balanced, powerful (got 'ultra')");
+  });
+
+  test("object rung with an unknown agent errors", () => {
+    const config = cfg({
+      models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
+      autoMode: {
+        complexityRouting: {
+          simple: { tier: "cheap", agent: "codex" },
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('complexityRouting.simple: agent "codex" is not a key in models');
+  });
+
+  test("object rung whose tier is missing under its agent errors", () => {
+    const config = cfg({
+      models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
+      autoMode: {
+        complexityRouting: {
+          simple: { tier: "cheap" },
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('complexityRouting.simple: tier "cheap" not found under agent "claude"');
+  });
+
+  test("valid object rung produces no complexityRouting errors", () => {
+    const config = cfg({
+      models: {
+        claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+        native: { cheap: "opencode-go/deepseek-v4-flash" },
+      },
+      autoMode: {
+        complexityRouting: {
+          simple: { tier: "cheap", agent: "native" },
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    const routingErrors = result.errors.filter((e) => e.includes("complexityRouting"));
+    expect(routingErrors).toHaveLength(0);
+  });
+});

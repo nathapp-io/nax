@@ -541,3 +541,91 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
     expect(ctx.story.routing?.initialAgent).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// H3 — complexity-rung agent seeding (spec §6)
+// ---------------------------------------------------------------------------
+
+describe("routingStage — H3: complexity-rung agent seeding (spec §6)", () => {
+  let origRoutingDeps: typeof RoutingDeps;
+
+  afterEach(() => {
+    if (origRoutingDeps) {
+      const { _routingDeps } = require("@/pipeline/stages/routing");
+      Object.assign(_routingDeps, origRoutingDeps);
+    }
+  });
+
+  function h3Config() {
+    return makeNaxConfig({
+      tdd: { greenfieldDetection: false },
+      models: {
+        claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+        native: { cheap: "opencode-go/deepseek-v4-flash" },
+      },
+      autoMode: {
+        complexityRouting: {
+          simple: { tier: "cheap", agent: "native" },
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+  }
+
+  test("unprofiled story routes to the complexity rung's agent", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "cheap" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const story = makeStory({
+      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "" },
+    });
+    const ctx = makeCtx(story, { config: h3Config() });
+
+    await routingStage.execute(ctx);
+
+    expect(ctx.story.routing?.agent).toBe("native");
+    expect(ctx.story.routing?.modelTier).toBe("cheap");
+  });
+
+  test("profiled story ignores the complexity rung's agent", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "cheap" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+        agentProfileId: "cl-bal",
+      },
+    });
+    const ctx = makeCtx(story, { config: h3Config() });
+
+    await routingStage.execute(ctx);
+
+    expect(ctx.story.routing?.agent).toBe("claude");
+  });
+});

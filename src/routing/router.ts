@@ -98,8 +98,15 @@ const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
 
 /** Map complexity to model tier */
 export function complexityToModelTier(complexity: Complexity, config: RoutingConfig): ModelTier {
-  const mapping = config.autoMode.complexityRouting;
-  return (mapping[complexity] ?? "balanced") as ModelTier;
+  const entry = config.autoMode.complexityRouting[complexity];
+  if (entry === undefined) return "balanced"; // degrade-don't-throw display default (spec §7)
+  return typeof entry === "string" ? entry : entry.tier;
+}
+
+/** Agent named by a rung-qualified complexityRouting entry; undefined for the string form. */
+export function complexityToRungAgent(complexity: Complexity, config: RoutingConfig): string | undefined {
+  const entry = config.autoMode.complexityRouting[complexity];
+  return typeof entry === "object" ? entry.agent : undefined;
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import { escalateTier } from "@/execution/runner";
 import {
   classifyComplexity,
   complexityToModelTier,
+  complexityToRungAgent,
   determineTestStrategy,
   isSecurityCriticalStory,
   routeTask,
@@ -298,4 +299,23 @@ describe("routing — stripped config (issue #745 Phase 4d)", () => {
     expect(decision.modelTier).toBe("fast");
     expect(decision.complexity).toBe("simple");
   });
+});
+
+test("complexityToModelTier unwraps rung objects; complexityToRungAgent reads the agent (spec §6)", () => {
+  // makeNaxConfig is already imported in this file (line 11) from "@test/helpers".
+  const config = makeNaxConfig({
+    autoMode: {
+      ...DEFAULT_CONFIG.autoMode,
+      complexityRouting: {
+        simple: { tier: "cheap", agent: "native" },
+        medium: "balanced",
+        complex: "balanced",
+        expert: "powerful",
+      },
+    },
+  });
+  expect(complexityToModelTier("simple", config)).toBe("cheap");
+  expect(complexityToRungAgent("simple", config)).toBe("native");
+  expect(complexityToModelTier("medium", config)).toBe("balanced");
+  expect(complexityToRungAgent("medium", config)).toBeUndefined();
 });

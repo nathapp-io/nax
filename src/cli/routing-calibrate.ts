@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
 import { loadConfig as _loadConfig, DEFAULT_CONFIG, deepMergeConfig } from "../config";
+import type { Complexity, ComplexityRung, ModelTier } from "../config/schema-types";
 import { NaxError } from "../errors";
 import type { RunMetrics } from "../metrics";
 import { loadRunMetrics as _loadRunMetrics } from "../metrics";
@@ -124,10 +125,16 @@ function resolveOutputDir(workdir: string, override: string | undefined, prior: 
   return projectOutputDir(key, prior?.outputDir);
 }
 
-function mergeComplexityRouting(prior: Record<string, string>, adjustments: TierAdjustment[]): Record<string, string> {
-  const merged: Record<string, string> = { ...prior };
+function mergeComplexityRouting(
+  prior: Record<string, ComplexityRung>,
+  adjustments: TierAdjustment[],
+): Record<string, ComplexityRung> {
+  const merged: Record<string, ComplexityRung> = { ...prior };
   for (const adj of adjustments) {
-    merged[adj.band] = adj.to;
+    const existing = prior[adj.band];
+    // A rung object keeps its agent when the tier moves — an unprofiled story
+    // still starts on that agent, just at the calibrated rung.
+    merged[adj.band] = typeof existing === "object" ? { tier: adj.to, agent: existing.agent } : adj.to;
   }
   return merged;
 }
@@ -184,7 +191,18 @@ export async function routingCalibrateCommand(
     return { proposal: emptyProposal, exitCode: 0 };
   }
 
-  const priorMapping = priorConfig.autoMode.complexityRouting;
+  // Local alias mirrors band-stats' ComplexityMapping (Record<Complexity, ModelTier>);
+  // the same name is exported with a looser shape from calibrate/propose.
+  type CalibrationMapping = Record<Complexity, ModelTier>;
+
+  // Calibration proposes moves on the builtin ladder, so rung-qualified entries
+  // participate by their tier alone; --apply preserves their agent (see merge).
+  const priorMapping = Object.fromEntries(
+    Object.entries(priorConfig.autoMode.complexityRouting).map(([complexity, entry]) => [
+      complexity,
+      typeof entry === "string" ? entry : entry.tier,
+    ]),
+  ) as CalibrationMapping;
   const bandStats = computeBandStats(runs, priorMapping);
 
   const thresholds: { minSamples?: number } = {};
@@ -205,10 +223,7 @@ export async function routingCalibrateCommand(
       ...priorConfig,
       autoMode: {
         ...priorConfig.autoMode,
-        complexityRouting: mergeComplexityRouting(
-          priorConfig.autoMode.complexityRouting as unknown as Record<string, string>,
-          proposal.adjustments,
-        ),
+        complexityRouting: mergeComplexityRouting(priorConfig.autoMode.complexityRouting, proposal.adjustments),
       },
     };
     await deps.writeConfig(workdir, nextConfig);

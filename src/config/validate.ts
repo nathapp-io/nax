@@ -128,12 +128,28 @@ export function validateConfig(config: NaxConfig): ValidationResult {
 
   // Validate complexityRouting values reference tiers that exist in models config
   const defaultAgentKey = config.agent?.default ?? "claude";
-  const configuredTiers = Object.keys(config.models[defaultAgentKey] ?? {});
   const complexities = ["simple", "medium", "complex", "expert"] as const;
   for (const complexity of complexities) {
-    const tier = config.autoMode.complexityRouting[complexity];
-    if (!configuredTiers.includes(tier)) {
-      errors.push(`complexityRouting.${complexity} must be one of: ${configuredTiers.join(", ")} (got '${tier}')`);
+    const entry = config.autoMode.complexityRouting[complexity];
+    if (entry === undefined) continue;
+
+    // String form: message BYTE-IDENTICAL to the pre-plan-C one (spec §11).
+    if (typeof entry === "string") {
+      const configuredTiers = Object.keys(config.models[defaultAgentKey] ?? {});
+      if (!configuredTiers.includes(entry)) {
+        errors.push(`complexityRouting.${complexity} must be one of: ${configuredTiers.join(", ")} (got '${entry}')`);
+      }
+      continue;
+    }
+
+    // Object form: new shape, new messages — nothing pre-existing to preserve.
+    if (entry.agent !== undefined && config.models[entry.agent] === undefined) {
+      errors.push(`complexityRouting.${complexity}: agent "${entry.agent}" is not a key in models`);
+      continue;
+    }
+    const owner = entry.agent ?? defaultAgentKey;
+    if (!Object.keys(config.models[owner] ?? {}).includes(entry.tier)) {
+      errors.push(`complexityRouting.${complexity}: tier "${entry.tier}" not found under agent "${owner}"`);
     }
   }
 

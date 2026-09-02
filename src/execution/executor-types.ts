@@ -13,7 +13,7 @@ import type { PipelineEventEmitter } from "../pipeline/events";
 import type { AgentGetFn, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
-import { complexityToModelTier, resolveOperatingTier } from "../routing";
+import { complexityToModelTier, complexityToRungAgent, resolveOperatingTier } from "../routing";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import type { StoryBatch } from "./batching";
@@ -103,6 +103,7 @@ export function buildPreviewRouting(story: UserStory, config: NaxConfig): Routin
     profileTier: cached?.profileModelTier,
     profileAgent: cached?.initialAgent ?? cached?.agent,
     derivedTier,
+    derivedAgent: config.autoMode?.complexityRouting ? complexityToRungAgent(complexity, config) : undefined,
     hasEscalationRecords: (story.escalations?.length ?? 0) > 0,
     tierOrder: config.autoMode?.escalation?.tierOrder,
   });

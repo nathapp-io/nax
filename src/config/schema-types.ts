@@ -14,6 +14,9 @@ export type TddStrategy = "auto" | "strict" | "lite" | "simple" | "off";
 /** Model tier names — extensible (TYPE-3 fix: preserve autocomplete for known tiers) */
 export type ModelTier = "fast" | "balanced" | "powerful" | (string & {});
 
+/** A complexityRouting entry: a bare tier on the default agent, or a rung object naming an agent. */
+export type ComplexityRung = ModelTier | { tier: ModelTier; agent?: string };
+
 export interface TokenPricing {
   inputPer1M: number;
   outputPer1M: number;
