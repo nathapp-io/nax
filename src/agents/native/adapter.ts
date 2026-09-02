@@ -14,7 +14,7 @@ import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
-import { closeNativeSession, openNativeSession } from "./session/session";
+import { closeNativeSession, nativeSessionTimeouts, openNativeSession } from "./session/session";
 import { runNativeTurn } from "./session/turn-loop";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
@@ -165,22 +165,38 @@ export class NativeAgentAdapter implements AgentAdapter {
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
     const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer1M: catalog.output };
+    const timeoutSeconds = nativeSessionTimeouts.get(handle.id);
 
     return runNativeTurn(handle, prompt, opts, {
       complete: async (messages, tools) => {
-        const res = await client.complete(resolved, {
-          messages,
-          ...(tools.length > 0 ? { tools } : {}),
-          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-        });
-        const usage = toNaxTokenUsage(res.usage);
-        return {
-          text: res.text,
-          ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
-          ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
-          usage,
-          costUsd: estimateCostUsd(usage, rates),
-        };
+        // Finding 4 (whole-branch review): maxTurns bounds round-trip COUNT,
+        // not duration — a hung provider call would otherwise hang the turn
+        // forever. Same AbortController + deadline shape as complete() above,
+        // combined with any caller-supplied opts.signal via AbortSignal.any so
+        // either can end the call.
+        const controller = new AbortController();
+        const timer =
+          timeoutSeconds !== undefined ? setTimeout(() => controller.abort(), timeoutSeconds * 1000) : undefined;
+        const signal =
+          opts.signal !== undefined ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
+
+        try {
+          const res = await client.complete(resolved, {
+            messages,
+            ...(tools.length > 0 ? { tools } : {}),
+            signal,
+          });
+          const usage = toNaxTokenUsage(res.usage);
+          return {
+            text: res.text,
+            ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
+            ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
+            usage,
+            costUsd: estimateCostUsd(usage, rates),
+          };
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
       },
     });
   }

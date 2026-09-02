@@ -41,6 +41,7 @@ export function createSessionRunHop(
       timeoutSeconds: options.timeoutSeconds,
       featureName: options.featureName,
       storyId: options.storyId,
+      projectDir: options.projectDir,
       signal: options.abortSignal,
       onSessionEstablished: options.onSessionEstablished,
     });
@@ -74,11 +75,17 @@ export function createSessionRunHop(
             signal: options.abortSignal,
             interactionHandler,
             maxTurns,
+            // Finding 3 (whole-branch review): this hop only routes the three
+            // Phase B target ops today (which go through build-hop-callback.ts
+            // instead), but a future op on the default hop needs its pull-tool
+            // catalogue forwarded here too, or it silently gets none.
+            contextPullTools: options.contextPullTools,
           })
         : await sessionManager.sendPrompt(handle, prompt, {
             interactionHandler,
             signal: options.abortSignal,
             maxTurns,
+            contextPullTools: options.contextPullTools,
           });
 
       return {

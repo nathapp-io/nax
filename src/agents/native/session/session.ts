@@ -12,8 +12,23 @@ import { NaxError } from "@/errors";
 import { NATIVE_AGENT } from "../models";
 import { deleteTranscript } from "./transcript-store";
 
-/** Session name -> transcript directory, so sendTurn and close can find it. */
+/**
+ * Session name -> transcript directory, so sendTurn and close can find it.
+ *
+ * Cleared only by `closeNativeSession`: a caller that opens a session and
+ * never closes it (e.g. an early return, or a thrown error between open and
+ * close) leaks an entry here for the lifetime of the process. Harmless in
+ * practice (it is a small in-memory map keyed by session name, not a handle
+ * to a real resource), but worth knowing when debugging a growing map.
+ */
 export const nativeTranscriptDirs = new Map<string, string>();
+
+/**
+ * Session name -> timeoutSeconds, so sendTurn can bound each `complete()`
+ * call with a deadline (whole-branch review finding 4). Same lifecycle as
+ * `nativeTranscriptDirs` — populated on open, cleared on close only.
+ */
+export const nativeSessionTimeouts = new Map<string, number>();
 
 export async function openNativeSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
   // Never defaulted. An adapter that picks its own path writes a transcript
@@ -24,6 +39,7 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
     });
   }
   nativeTranscriptDirs.set(name, opts.transcriptDir);
+  nativeSessionTimeouts.set(name, opts.timeoutSeconds);
   return {
     id: name,
     agentName: NATIVE_AGENT,
@@ -42,4 +58,5 @@ export async function closeNativeSession(handle: SessionHandle, failed: boolean)
   const dir = nativeTranscriptDirs.get(handle.id);
   if (dir !== undefined && !failed) await deleteTranscript(dir, handle.id);
   nativeTranscriptDirs.delete(handle.id);
+  nativeSessionTimeouts.delete(handle.id);
 }

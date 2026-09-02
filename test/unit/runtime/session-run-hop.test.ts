@@ -1,8 +1,11 @@
 import { describe, expect, mock, test } from "bun:test";
-import { makeSessionManager } from "@test/helpers";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
+import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
+import type { ToolDescriptor } from "@/context/engine";
 import { createSessionRunHop } from "@/runtime/session-run-hop";
+import type { SendPromptOpts } from "@/session/types";
 
 function makeRunOptions(): AgentRunOptions {
   return {
@@ -112,5 +115,70 @@ describe("createSessionRunHop", () => {
     expect(result.result.exactCostUsd).toBe(0.0049);
     expect(result.result.tokenUsage?.inputTokens).toBe(250);
     expect(result.result.tokenUsage?.outputTokens).toBe(90);
+  });
+
+  // Finding 3 (whole-branch review, 2026-09-02): both dispatch branches below
+  // computed `hasContextTools` but never forwarded `contextPullTools` to the
+  // transport — the three Phase B target ops route through
+  // build-hop-callback.ts instead, so nothing broke today, but a future op on
+  // the default hop would silently get an empty tool catalogue.
+  const pullTools: ToolDescriptor[] = [
+    {
+      name: "query_neighbor",
+      description: "d",
+      inputSchema: { type: "object" },
+      maxCallsPerSession: 5,
+      maxTokensPerCall: 100,
+    },
+  ];
+
+  test("forwards contextPullTools to sessionManager.sendPrompt (no-agentManager fallback branch)", async () => {
+    const handle: SessionHandle = { id: "nax-session", agentName: "claude" };
+    let capturedOpts: SendPromptOpts | undefined;
+    const sessionManager = makeSessionManager({
+      nameFor: mock(() => "nax-session"),
+      openSession: mock(async () => handle),
+      sendPrompt: mock(async (_handle: SessionHandle, _prompt: string, opts?: SendPromptOpts) => {
+        capturedOpts = opts;
+        return {
+          output: "done",
+          tokenUsage: { inputTokens: 1, outputTokens: 1 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+        } satisfies TurnResult;
+      }),
+      closeSession: mock(async () => {}),
+    });
+
+    const hop = createSessionRunHop(sessionManager);
+    await hop("claude", { ...makeRunOptions(), contextPullTools: pullTools });
+
+    expect(capturedOpts?.contextPullTools).toBe(pullTools);
+  });
+
+  test("forwards contextPullTools to agentManager.runAsSession (agentManager branch)", async () => {
+    const handle: SessionHandle = { id: "nax-session", agentName: "claude" };
+    let capturedOpts: RunAsSessionOpts | undefined;
+    const sessionManager = makeSessionManager({
+      nameFor: mock(() => "nax-session"),
+      openSession: mock(async () => handle),
+      closeSession: mock(async () => {}),
+    });
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async (_agentName, _handle, _prompt, opts) => {
+        capturedOpts = opts;
+        return {
+          output: "done",
+          tokenUsage: { inputTokens: 1, outputTokens: 1 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+        } satisfies TurnResult;
+      },
+    });
+
+    const hop = createSessionRunHop(sessionManager, () => agentManager);
+    await hop("claude", { ...makeRunOptions(), contextPullTools: pullTools });
+
+    expect(capturedOpts?.contextPullTools).toBe(pullTools);
   });
 });

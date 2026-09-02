@@ -27,6 +27,25 @@ export function toProjectRelativePath(projectDir: string, pathValue: string): st
   return relativePath === "" ? "." : relativePath;
 }
 
+/**
+ * Derive the native transcriptDir for a session opened without one explicitly
+ * (ADR-028 section 3; whole-branch review finding 1). Keyed by the session
+ * NAME, not the session id: the id is generated inside `create()`, which runs
+ * after `adapter.openSession` needs this value, so the id is not available yet.
+ *
+ * Requires both `featureName` and `projectDir` — when either is missing,
+ * returning undefined and letting the native adapter throw its own
+ * `NATIVE_TRANSCRIPT_DIR_MISSING` is honest; inventing a path here would be a
+ * directory nobody looks in, exactly what that throw exists to prevent.
+ */
+export function deriveNativeTranscriptDir(
+  name: string,
+  opts: { featureName?: string; projectDir?: string },
+): string | undefined {
+  if (!opts.featureName || !opts.projectDir) return undefined;
+  return _sessionManagerDeps.sessionScratchDir(opts.projectDir, opts.featureName, name);
+}
+
 export const _sessionManagerDeps = {
   now: () => new Date().toISOString(),
   nowMs: () => Date.now(),

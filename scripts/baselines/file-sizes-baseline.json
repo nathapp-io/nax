@@ -7,7 +7,7 @@
     "src/interaction/plugins/telegram.ts": 613,
     "src/prd/schema.ts": 629,
     "src/prompts/builders/rectifier-builder.ts": 902,
-    "src/session/manager.ts": 734,
+    "src/session/manager.ts": 737,
     "test/unit/agents/acp/spawn-client.test.ts": 817,
     "test/unit/cli/plan.test.ts": 1203,
     "test/unit/context/engine/providers/static-rules.test.ts": 803,

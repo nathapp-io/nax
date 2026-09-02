@@ -17,7 +17,7 @@ import { getLogger } from "../logger";
 import { DispatchEventBus, type IDispatchEventBus } from "../runtime/dispatch-events";
 import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
 import type { ProtocolIds } from "../runtime/protocol-types";
-import { _sessionManagerDeps, resolveProjectDirFromScratchDir } from "./manager-deps";
+import { _sessionManagerDeps, deriveNativeTranscriptDir, resolveProjectDirFromScratchDir } from "./manager-deps";
 import { runTrackedSession } from "./manager-run";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { selectModel } from "./model-selection";
@@ -482,7 +482,10 @@ export class SessionManager implements ISessionManager {
       resume,
       onActiveCall: this._buildOnActiveCall(name),
       onStreamActivity: this._onStreamActivity,
-      transcriptDir: opts.transcriptDir,
+      // Finding 1 (whole-branch review): callers never supplied transcriptDir,
+      // so derive it here — the one place documented by ADR-028 §3 — keyed by
+      // session name. An explicit caller value still wins.
+      transcriptDir: opts.transcriptDir ?? deriveNativeTranscriptDir(name, opts),
       ...trackedSpawnDeadlines(this._config), // #1583
     });
     this._liveHandles.set(name, handle);

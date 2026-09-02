@@ -187,6 +187,12 @@ export interface OpenSessionRequest {
   featureName?: string;
   /** Story ID for session naming and log correlation. */
   storyId?: string;
+  /**
+   * Project directory (repo root where `.nax/` lives). Used by SessionManager
+   * to derive `transcriptDir` (keyed by session name) when the caller does not
+   * supply one explicitly — see `deriveNativeTranscriptDir` in manager-deps.ts.
+   */
+  projectDir?: string;
   /** Abort signal forwarded to the adapter. */
   signal?: AbortSignal;
   /** Eager protocol-id callback forwarded to the adapter. */
@@ -194,6 +200,8 @@ export interface OpenSessionRequest {
   /**
    * Native: directory the session's transcript file lives in. Forwarded to
    * the adapter's openSession — see OpenSessionOpts.transcriptDir. ACP ignores it.
+   * When omitted, SessionManager derives one from `projectDir` + `featureName`,
+   * keyed by session name (ADR-028 section 3).
    */
   transcriptDir?: string;
 }

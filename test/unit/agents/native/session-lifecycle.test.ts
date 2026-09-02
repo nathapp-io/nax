@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { makeAgentAdapter } from "@test/helpers";
 import { closeNativeSession, openNativeSession } from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
-import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
+import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@/agents/session-types";
+import { featureDir } from "@/config/paths";
 import { SessionManager } from "@/session/manager";
 import type { OpenSessionRequest } from "@/session/types";
 
@@ -88,5 +89,143 @@ describe("SessionManager forwards transcriptDir to the adapter", () => {
 
     expect(capturedOpts).toHaveLength(1);
     expect(capturedOpts[0].transcriptDir).toBe(dir);
+  });
+});
+
+// ─── SessionManager derives transcriptDir when the caller omits it ─────────
+//
+// Finding 1 (whole-branch review, 2026-09-02): nothing in the real call sites
+// (session-run-hop.ts, build-hop-callback.ts) ever supplied transcriptDir, so
+// every native session threw NATIVE_TRANSCRIPT_DIR_MISSING before a single
+// turn ran. ADR-028 §3 documented deriving it inside SessionManager, keyed by
+// session NAME (not id — the id doesn't exist until create() runs, after this
+// value is needed). This test proves the derivation happens; it was verified
+// to fail (by temporarily deleting the `?? deriveNativeTranscriptDir(name, opts)`
+// half of the forwarding line in src/session/manager.ts and restoring it) —
+// see the fix report for the exact before/after.
+describe("SessionManager derives transcriptDir when the caller omits it", () => {
+  test("adapter.openSession receives a transcriptDir keyed by session name under featureDir/sessions", async () => {
+    const capturedOpts: OpenSessionOpts[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedOpts.push(opts);
+        return { id: name, agentName: "native-fake" } satisfies SessionHandle;
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const request: OpenSessionRequest = {
+      agentName: "native-fake",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
+      timeoutSeconds: 60,
+      featureName: "native-sessions-phase-b",
+      projectDir: "/tmp/project",
+      // transcriptDir deliberately omitted — this is the derive-from-nothing case.
+    };
+
+    await sm.openSession("nax-derived-transcript", request);
+
+    expect(capturedOpts).toHaveLength(1);
+    expect(capturedOpts[0].transcriptDir).toBe(
+      join(featureDir("/tmp/project", "native-sessions-phase-b"), "sessions", "nax-derived-transcript"),
+    );
+  });
+
+  test("an explicit caller-supplied transcriptDir still wins over derivation", async () => {
+    const capturedOpts: OpenSessionOpts[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedOpts.push(opts);
+        return { id: name, agentName: "native-fake" } satisfies SessionHandle;
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const request: OpenSessionRequest = {
+      agentName: "native-fake",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
+      timeoutSeconds: 60,
+      featureName: "native-sessions-phase-b",
+      projectDir: "/tmp/project",
+      transcriptDir: dir,
+    };
+
+    await sm.openSession("nax-explicit-transcript", request);
+
+    expect(capturedOpts[0].transcriptDir).toBe(dir);
+  });
+
+  test("derivation leaves transcriptDir undefined when featureName or projectDir is missing", async () => {
+    const capturedOpts: OpenSessionOpts[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedOpts.push(opts);
+        return { id: name, agentName: "native-fake" } satisfies SessionHandle;
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const request: OpenSessionRequest = {
+      agentName: "native-fake",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
+      timeoutSeconds: 60,
+      // featureName and projectDir both omitted.
+    };
+
+    await sm.openSession("nax-no-derivation-possible", request);
+
+    expect(capturedOpts[0].transcriptDir).toBeUndefined();
+  });
+});
+
+// ─── SessionManager forwards contextPullTools to sendTurn ──────────────────
+//
+// Finding 2 (whole-branch review, 2026-09-02): sendPrompt forwards
+// `contextPullTools: opts?.contextPullTools` at manager.ts:~608, but only a
+// type-level pin exists (session-opts-threading.test.ts) — deleting that
+// forwarding line leaves typecheck and the whole suite green while making
+// every native turn silently toolless. This test exercises the forwarding
+// end-to-end through a fake adapter, mirroring the transcriptDir wiring test
+// above. Verified to fail (by temporarily deleting the
+// `contextPullTools: opts?.contextPullTools,` line in src/session/manager.ts
+// and restoring it) — see the fix report for the exact before/after.
+describe("SessionManager forwards contextPullTools to the adapter", () => {
+  test("adapter.sendTurn receives the exact contextPullTools passed to SessionManager.sendPrompt", async () => {
+    const capturedSendTurnOpts: SendTurnOpts[] = [];
+    const handle: SessionHandle = { id: "nax-pull-tools", agentName: "native-fake" };
+    const adapter = makeAgentAdapter({
+      openSession: mock(async () => handle),
+      sendTurn: mock(async (_handle: SessionHandle, _prompt: string, opts: SendTurnOpts) => {
+        capturedSendTurnOpts.push(opts);
+        return {
+          output: "ok",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+        };
+      }),
+    });
+
+    const pullTools = [
+      {
+        name: "query_neighbor",
+        description: "d",
+        inputSchema: { type: "object" },
+        maxCallsPerSession: 5,
+        maxTokensPerCall: 100,
+      },
+    ];
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    await sm.sendPrompt(handle, "hi", { contextPullTools: pullTools });
+
+    expect(capturedSendTurnOpts).toHaveLength(1);
+    expect(capturedSendTurnOpts[0].contextPullTools).toBe(pullTools);
   });
 });

@@ -129,6 +129,32 @@ describe("native turn loop", () => {
     expect(saved).toContainEqual(expect.objectContaining({ role: "tool-result", toolCallId: "c1", isError: true }));
   });
 
+  // Finding 6 (whole-branch review, 2026-09-02): InteractionHandler.onInteraction
+  // is documented to be able to return null (no answer given), and turn-loop.ts
+  // handles it via `answer?.answer ?? ""` — but only the throw path and the
+  // normal-answer path were covered before this test.
+  test("a null interaction answer records an empty tool-result and the turn continues", async () => {
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        interactionHandler: {
+          onInteraction: async () => null,
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          return round === 1 ? reply({ toolCalls: [{ id: "c1", name: "t", input: {} }] }) : reply({ text: "ok" });
+        },
+      },
+    );
+    expect(result.output).toBe("ok");
+    const saved = await loadTranscript(dir, "sess-a");
+    expect(saved).toContainEqual({ role: "tool-result", toolCallId: "c1", content: "" });
+  });
+
   test("a session with no known transcript directory fails loudly", async () => {
     nativeTranscriptDirs.delete("sess-a");
     await expect(runNativeTurn(handle, "hi", opts(), { complete: async () => reply() })).rejects.toThrow(/transcript/i);
