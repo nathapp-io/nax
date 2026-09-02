@@ -12,7 +12,12 @@
 import { describe, expect, test } from "bun:test";
 import { assertNaxError } from "@test/helpers";
 import type { ModelsConfig, TierConfig } from "@/config/schema-types";
-import { resolveConfiguredModel, resolveModelForAgent } from "@/config/schema-types";
+import {
+  isUnrecognizedLiteralModel,
+  resolveConfiguredModel,
+  resolveModelForAgent,
+  resolveTierMembership,
+} from "@/config/schema-types";
 import { NaxError } from "@/errors";
 import type { StoryRouting } from "@/prd/types";
 
@@ -217,5 +222,71 @@ describe("resolveConfiguredModel", () => {
     expect(result.agent).toBe("codex");
     expect(result.modelTier).toBeUndefined();
     expect(result.modelDef).toEqual({ provider: "openai", model: "gpt-5.4" });
+  });
+});
+
+describe("resolveTierMembership (spec §3)", () => {
+  const models = {
+    claude: { fast: "claude-haiku-4-5", balanced: "claude-sonnet-5", powerful: "claude-opus-5" },
+    native: { cheap: "opencode-go/deepseek-v4-flash", turbo: { provider: "opencode-go", model: "deepseek-v4-turbo" } },
+  };
+
+  test("own-map custom tier is a tier", () => {
+    expect(resolveTierMembership(models, "native", "cheap", "claude")).toEqual({
+      isTier: true,
+      viaDefaultAgentFallback: false,
+    });
+  });
+
+  test("defaultAgent-fallback tier is a tier, flagged", () => {
+    expect(resolveTierMembership(models, "native", "balanced", "claude")).toEqual({
+      isTier: true,
+      viaDefaultAgentFallback: true,
+    });
+  });
+
+  test("unknown name is not a tier", () => {
+    expect(resolveTierMembership(models, "native", "gpt-5", "claude").isTier).toBe(false);
+  });
+
+  test("custom tier resolves through the object form with modelTier set", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "native", model: "turbo" }, "claude");
+    expect(r).toEqual({
+      agent: "native",
+      modelDef: { provider: "opencode-go", model: "deepseek-v4-turbo" },
+      modelTier: "turbo",
+    });
+  });
+
+  test("object and string spellings agree on a custom tier", () => {
+    const obj = resolveConfiguredModel(models, "native", { agent: "native", model: "cheap" }, "claude");
+    const str = resolveConfiguredModel(models, "native", "cheap", "claude");
+    expect(obj).toEqual(str);
+  });
+
+  test("fallback-tier membership keeps the target agent", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "native", model: "balanced" }, "claude");
+    expect(r.agent).toBe("native");
+    expect(r.modelTier).toBe("balanced");
+    expect(r.modelDef.model).toBe("claude-sonnet-5");
+  });
+
+  test("provider-qualified literal stays a pin (modelTier absent)", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "native", model: "opencode-go/qwen-4" }, "claude");
+    expect(r.modelTier).toBeUndefined();
+    expect(r.modelDef.model).toBe("opencode-go/qwen-4");
+  });
+
+  test("known-prefix literal stays a pin", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "claude-opus-5-1" }, "claude");
+    expect(r.modelTier).toBeUndefined();
+    expect(r.modelDef.provider).toBe("anthropic");
+  });
+
+  test("isUnrecognizedLiteralModel", () => {
+    expect(isUnrecognizedLiteralModel("turbo")).toBe(true);
+    expect(isUnrecognizedLiteralModel("opencode-go/qwen-4")).toBe(false);
+    expect(isUnrecognizedLiteralModel("claude-opus-5")).toBe(false);
+    expect(isUnrecognizedLiteralModel("gpt-5")).toBe(false);
   });
 });

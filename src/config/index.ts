@@ -62,11 +62,13 @@ export {
   ContextConfigSchema,
   ContextV2ConfigSchema,
   DEFAULT_CONFIG,
+  isUnrecognizedLiteralModel,
   NaxConfigSchema,
   PlanConfigSchema,
   resolveConfiguredModel,
   resolveModel,
   resolveModelForAgent,
+  resolveTierMembership,
 } from "./schema";
 export { DebateConfigSchema } from "./schemas-debate";
 export {

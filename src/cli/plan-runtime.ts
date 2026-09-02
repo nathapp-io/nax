@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { scanSourceRoots } from "../analyze/scanner";
 import type { NaxConfig } from "../config";
-import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
+import { DEFAULT_CONFIG, isUnrecognizedLiteralModel, resolveConfiguredModel } from "../config";
 import { discoverWorkspacePackages } from "../context/generator";
 import type { DebateRunnerOptions } from "../debate";
 import { DebateRunner } from "../debate";
@@ -33,7 +33,24 @@ export function resolvePlanModelSelection(config: NaxConfig, preferredAgent: str
   const selection = config.plan?.model ?? "balanced";
   const defaultAgent = config.agent?.default ?? preferredAgent;
   try {
-    return resolveConfiguredModel(config.models ?? DEFAULT_CONFIG.models, preferredAgent, selection, defaultAgent);
+    const resolved = resolveConfiguredModel(
+      config.models ?? DEFAULT_CONFIG.models,
+      preferredAgent,
+      selection,
+      defaultAgent,
+    );
+    if (resolved.modelTier === undefined && isUnrecognizedLiteralModel(resolved.modelDef.model)) {
+      getLogger()?.warn(
+        "plan",
+        "plan.model is neither a tier nor a recognizable model id — using default balanced model",
+        {
+          agent: resolved.agent,
+          model: resolved.modelDef.model,
+        },
+      );
+      return resolveConfiguredModel(DEFAULT_CONFIG.models, preferredAgent, "balanced", defaultAgent);
+    }
+    return resolved;
   } catch (err) {
     getLogger()?.warn("plan", "Failed to resolve plan model from config, falling back to defaults", {
       error: errorMessage(err),

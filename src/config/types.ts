@@ -75,8 +75,10 @@ export type {
 } from "./schema-types";
 export {
   isBuiltinModelTier,
+  isUnrecognizedLiteralModel,
   MODEL_SHORTHAND_TIERS,
   resolveConfiguredModel,
   resolveModel,
   resolveModelForAgent,
+  resolveTierMembership,
 } from "./schema-types";
