@@ -178,6 +178,13 @@ native path does not parse, so the call would be silently lost.
 So: when the dispatching agent is native, the catalogue preamble is omitted and
 `extractContextToolCall` is not consulted. **The ACP path keeps both, unchanged.**
 
+The suppression point is **not** inside the ACP adapter, despite
+`buildContextToolPreamble` living at `src/agents/acp/adapter-output.ts:166`. It
+is called from two transport-agnostic sites — `src/runtime/session-run-hop.ts:21`
+and `src/operations/build-hop-callback.ts:280` — both of which already have
+`agentName` in scope. A single shared helper gates both, so the two cannot drift
+and a third call site is not written without the guard.
+
 ## 8. Thinking blocks must round-trip
 
 The analysis found that nax-ai's `ConversationMessage` had nowhere to carry
