@@ -9,6 +9,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
+import type { CodingToolName, ToolGrant } from "@/tools";
 import type { AgentManagerConfig } from "./selectors";
 
 export type PermissionProfile = "unrestricted" | "safe" | "scoped";
@@ -30,6 +31,12 @@ export interface ResolvedPermissions {
    * (`agents/acp/adapter.ts`, `runtime/middleware/audit.ts`).
    */
   mode: "approve-all" | "approve-reads" | "default";
+  /**
+   * Declarative grants — data, never matchers. Compiled into an enforceable
+   * policy by src/tools/, which keeps glob and filesystem semantics out of the
+   * config layer while the decision stays here, in the gated SSOT.
+   */
+  toolGrants?: readonly ToolGrant[];
 }
 
 /**
@@ -74,6 +81,45 @@ const INVALID_PROFILE_MODE: ResolvedPermissions["mode"] = "approve-reads";
 export const SESSION_CLOSE_PERMISSION_MODE: ResolvedPermissions["mode"] = "approve-reads";
 
 /**
+ * Coding tools a native run-op receives when it declares none.
+ *
+ * Named rather than inlined for the same reason as DEFAULT_PERMISSION_PROFILE
+ * above: the *unset* case is a deliberate disposition, not an accident, and it
+ * should be greppable. Reading within the root is the same risk class as the
+ * context pull tools ops already receive, and defaulting it on is what closes
+ * the diff-only review gap for every native op at once.
+ *
+ * Write, Edit and Git are absent by design: Write/Edit mutate, and Git exposes
+ * history, arbitrary refs and blame — materially more surface than "search the
+ * working tree". Each must be declared by the operation that wants it.
+ */
+export const DEFAULT_CODING_TOOLS: readonly CodingToolName[] = ["Read", "Glob", "Grep"];
+
+/** Grants for a profile that imposes no per-stage policy. */
+function unconditionalGrants(tools: readonly string[]): ToolGrant[] {
+  return tools.map((tool) => ({ tool, patterns: ["*"] }));
+}
+
+/**
+ * Parse one #374 tool expression.
+ *
+ * `Read`                  -> unconditional
+ * `Write(src/**,test/**)` -> those two globs
+ * `Git(diff,log)`         -> those two subcommands
+ */
+function parseToolExpression(expression: string): ToolGrant {
+  const open = expression.indexOf("(");
+  if (open === -1) return { tool: expression.trim(), patterns: ["*"] };
+  const tool = expression.slice(0, open).trim();
+  const inner = expression.slice(open + 1, expression.lastIndexOf(")"));
+  const patterns = inner
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  return { tool, patterns: patterns.length > 0 ? patterns : ["*"] };
+}
+
+/**
  * Resolve permissions for a given pipeline stage.
  * Single source of truth — all adapters call this.
  */
@@ -82,9 +128,12 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
 
   switch (profile) {
     case "unrestricted":
-      return { mode: "approve-all" };
+      return {
+        mode: "approve-all",
+        toolGrants: unconditionalGrants([...DEFAULT_CODING_TOOLS, "Write", "Edit", "Git"]),
+      };
     case "safe":
-      return { mode: "approve-reads" };
+      return { mode: "approve-reads", toolGrants: unconditionalGrants(DEFAULT_CODING_TOOLS) };
     case "scoped":
       return resolveScopedPermissions(config, _stage);
     default:
@@ -98,15 +147,34 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
 }
 
 /**
- * Phase 2 stub — resolves per-stage permissions from config block.
+ * Per-stage scoped allowlists (GitHub #374).
  *
- * NOT YET IMPLEMENTED (tracked by GitHub #374). Currently unreachable in normal
- * flow: `rejectUnimplementedScopedProfile` in src/config/loader.ts rejects
- * `permissionProfile: "scoped"` at config-load time so it can't silently degrade
- * here. Kept as a defensive fallback for any path that bypasses the loader guard.
- * When #374 lands, implement per docs/specs/scoped-permissions.md §2.4 and remove
- * the loader guard.
+ * Lookup order matches docs/specs/scoped-permissions.md section 2.4:
+ * stage block -> inherit target -> default block -> no grants.
+ *
+ * Note what does NOT appear here: any notion of a filesystem root. Containment
+ * is not expressible in config by design — the root is a hard boundary that no
+ * profile can widen, enforced in src/tools/policy.ts.
  */
-function resolveScopedPermissions(_config: AgentManagerConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
-  return { mode: "approve-reads" };
+function resolveScopedPermissions(config: AgentManagerConfig | undefined, stage: PipelineStage): ResolvedPermissions {
+  const blocks = config?.execution?.permissions as
+    | Record<string, { allowedTools?: string[]; inherit?: string } | undefined>
+    | undefined;
+  if (!blocks) return { mode: "approve-reads", toolGrants: [] };
+
+  const seen = new Set<string>();
+  let key: string | undefined = stage;
+  let block = blocks[stage];
+
+  // Bounded inherit chain: a cycle or a dangling target falls through to
+  // `default` rather than looping or throwing mid-run.
+  while (block?.inherit !== undefined && key !== undefined && !seen.has(key)) {
+    seen.add(key);
+    key = block.inherit;
+    block = blocks[key];
+  }
+  block ??= blocks.default;
+  if (!block?.allowedTools) return { mode: "approve-reads", toolGrants: [] };
+
+  return { mode: "approve-reads", toolGrants: block.allowedTools.map(parseToolExpression) };
 }
