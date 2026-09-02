@@ -19,6 +19,7 @@ import {
   resolveTierMembership,
 } from "@/config/schema-types";
 import { NaxError } from "@/errors";
+import { addSink, initLogger, resetLogger } from "@/logger";
 import type { StoryRouting } from "@/prd/types";
 
 // Type-level assertions to ensure agent field exists
@@ -269,6 +270,20 @@ describe("resolveTierMembership (spec §3)", () => {
     expect(r.agent).toBe("native");
     expect(r.modelTier).toBe("balanced");
     expect(r.modelDef.model).toBe("claude-sonnet-5");
+  });
+
+  test("fallback-tier membership warns across a native/ACP boundary", () => {
+    const messages: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => messages.push(entry.message));
+    try {
+      resolveConfiguredModel(models, "claude", { agent: "native", model: "balanced" }, "claude");
+      expect(messages).toContain("Configured tier resolves via the default agent across a protocol boundary");
+    } finally {
+      removeSink();
+      resetLogger();
+    }
   });
 
   test("provider-qualified literal stays a pin (modelTier absent)", () => {

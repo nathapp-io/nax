@@ -524,17 +524,21 @@ export const NaxConfigSchema = z
     const profiles = data.routing.agents?.profiles ?? [];
     for (const [pi, profile] of profiles.entries()) {
       const { agent: pAgent, model: pModel } = profile.target;
+      const targetTier = MODEL_SHORTHAND_TIERS[pModel.toLowerCase()] ?? pModel;
       // Plan C (spec §4): a target that names a tier must bind to a rung; a target that names a
       // literal model is a pin — exempt from binding, and exempt from tier escalation.
-      const namesTier =
-        MODEL_SHORTHAND_TIERS[pModel.toLowerCase()] !== undefined ||
-        resolveTierMembership(data.models ?? {}, pAgent, pModel, data.agent?.default ?? "claude").isTier;
-      const hasMatchingRung = tierOrder.some((r) => r.tier === pModel && r.agent === pAgent);
+      const namesTier = resolveTierMembership(
+        data.models ?? {},
+        pAgent,
+        targetTier,
+        data.agent?.default ?? "claude",
+      ).isTier;
+      const hasMatchingRung = tierOrder.some((r) => r.tier === targetTier && r.agent === pAgent);
       if (namesTier && !hasMatchingRung) {
         ctx.addIssue({
           code: "custom",
           path: ["routing", "agents", "profiles", pi, "target"],
-          message: `Profile "${profile.id}" target (${pAgent}@${pModel}) has no matching rung in autoMode.escalation.tierOrder — escalation from this profile has no defined path. To fix: agent-qualify the ladder by adding a rung { "tier": "${pModel}", "agent": "${pAgent}", "attempts": <n> } (and an agent on every other rung) to autoMode.escalation.tierOrder.`,
+          message: `Profile "${profile.id}" target (${pAgent}@${targetTier}) has no matching rung in autoMode.escalation.tierOrder — escalation from this profile has no defined path. To fix: agent-qualify the ladder by adding a rung { "tier": "${targetTier}", "agent": "${pAgent}", "attempts": <n> } (and an agent on every other rung) to autoMode.escalation.tierOrder.`,
         });
       }
       // Cross-section: profile target agent must exist in config.models

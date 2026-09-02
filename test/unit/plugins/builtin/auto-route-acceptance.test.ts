@@ -249,6 +249,32 @@ describe("autoRoutePlugin.shouldRun", () => {
     assertDefined(postRunAction, "postRunAction");
     expect(await postRunAction.shouldRun(ctx)).toBe(true);
   });
+
+  test("normalizes an agent-qualified complexity rung before calibrating", async () => {
+    _autoRouteDeps.loadRunMetrics = (async () => makeAdjustmentHistory()) as typeof _autoRouteDeps.loadRunMetrics;
+    const ctx = makeContext({
+      config: {
+        autoRoute: {
+          enabled: true,
+          minSamples: 8,
+          upgrade: { escalationRate: 0.3, mismatchRate: 0.25 },
+          downgrade: { firstPassRate: 0.9, escalationRate: 0.05 },
+        },
+        autoMode: {
+          complexityRouting: {
+            simple: "fast",
+            medium: { tier: "balanced", agent: "native" },
+            complex: "powerful",
+            expert: "powerful",
+          },
+        },
+      },
+    });
+    const postRunAction = autoRoutePlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+
+    expect(await postRunAction.shouldRun(ctx)).toBe(true);
+  });
 });
 
 // ─── AC4–AC6: execute ──────────────────────────────────────────────────────

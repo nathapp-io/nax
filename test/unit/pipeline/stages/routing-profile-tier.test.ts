@@ -731,4 +731,38 @@ describe("routingStage — H4: off-ladder profile rung warning (spec §7)", () =
       ).toBe(false);
     });
   });
+
+  test("same tier name on a different agent is off-ladder and warns", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+        profileModelTier: "balanced",
+      },
+    });
+    const ctx = makeCtx(story, { config: ladderConfig() });
+
+    await withWarnSpy(async (warnSpy) => {
+      await routingStage.execute(ctx);
+
+      expect(
+        warnSpy.mock.calls.some((c) => c[0] === "routing" && c[1].includes("Profile targets a rung not on tierOrder")),
+      ).toBe(true);
+    });
+  });
 });

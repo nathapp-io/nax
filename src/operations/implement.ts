@@ -39,10 +39,16 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
   stage: "run",
   session: { role: "implementer", lifetime: "warm" },
   config: tddConfigSelector,
-  // Routing-driven: escalation mutates story.routing.modelTier in the PRD before
-  // re-dispatch, so reading it here is escalation-aware. Returns undefined for
-  // ad-hoc callers without routing — callOp then falls back to its default tier.
-  model: (input) => input.story.routing?.modelTier,
+  // Routing-driven: a literal profile pin selects its own agent's exact model;
+  // otherwise escalation mutates modelTier in the PRD before re-dispatch.
+  // Ad-hoc callers without routing return undefined, so callOp uses its default tier.
+  model: (input) => {
+    const routing = input.story.routing;
+    if (routing?.profileModelPin !== undefined && routing.agent !== undefined) {
+      return { agent: routing.agent, model: routing.profileModelPin };
+    }
+    return routing?.modelTier;
+  },
   keepOpen: (_input, ctx) => shouldKeepSessionOpen(ctx.config, "implementer"),
   build(input, _ctx) {
     if (input.promptMarkdown?.trim()) {

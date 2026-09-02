@@ -135,6 +135,13 @@ export function resolveConfiguredModel(
 
   const membership = resolveTierMembership(models, selection.agent, selection.model, defaultAgent);
   if (membership.isTier) {
+    if (membership.viaDefaultAgentFallback && (selection.agent === "native") !== (defaultAgent === "native")) {
+      getSafeLogger()?.warn("config", "Configured tier resolves via the default agent across a protocol boundary", {
+        agent: selection.agent,
+        tier: selection.model,
+        defaultAgent,
+      });
+    }
     return {
       agent: selection.agent,
       modelDef: resolveModelForAgent(models, selection.agent, selection.model, defaultAgent),

@@ -11,7 +11,7 @@
  */
 
 import { join } from "node:path";
-import type { ModelTier } from "@/config/schema-types";
+import type { ComplexityRung, ModelTier } from "@/config";
 import { loadRunMetrics as _loadRunMetrics } from "@/metrics";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import {
@@ -76,8 +76,15 @@ function getAutoRouteConfig(context: PostRunContext): AutoRouteConfig {
 function getComplexityRouting(context: PostRunContext): Record<string, ModelTier> {
   const cfg = context.config as Record<string, unknown> | undefined;
   const autoMode = cfg?.autoMode as Record<string, unknown> | undefined;
-  const mapping = autoMode?.complexityRouting as Record<string, ModelTier> | undefined;
-  if (mapping) return mapping;
+  const mapping = autoMode?.complexityRouting as Record<string, ComplexityRung> | undefined;
+  if (mapping) {
+    return Object.fromEntries(
+      Object.entries(mapping).map(([complexity, entry]) => [
+        complexity,
+        typeof entry === "string" ? entry : entry.tier,
+      ]),
+    );
+  }
   return { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" };
 }
 

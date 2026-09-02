@@ -65,6 +65,7 @@ export {
   ContextV2ConfigSchema,
   DEFAULT_CONFIG,
   isUnrecognizedLiteralModel,
+  MODEL_SHORTHAND_TIERS,
   NaxConfigSchema,
   PlanConfigSchema,
   resolveConfiguredModel,

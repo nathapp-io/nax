@@ -78,6 +78,21 @@ describe("resolveAgentAssignment", () => {
     expect(a).toEqual({ agent: "native", agentProfileId: "p1", profileModelTier: "cheap" });
   });
 
+  test("shorthand target resolves to its canonical tier (spec §2)", () => {
+    const shorthandRouting: AgentRoutingConfig = {
+      enabled: true,
+      strategy: "off",
+      default: undefined,
+      profiles: [{ id: "p1", target: { agent: "claude", model: "sonnet" }, strengths: ["quality"] }],
+    };
+
+    expect(resolveAgentAssignment("p1", shorthandRouting, "US-001", models, "claude")).toEqual({
+      agent: "claude",
+      agentProfileId: "p1",
+      profileModelTier: "balanced",
+    });
+  });
+
   test("literal target sets profileModelPin, no tier (spec §4)", () => {
     const pinRouting: AgentRoutingConfig = {
       enabled: true,

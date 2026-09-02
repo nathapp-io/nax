@@ -1,5 +1,5 @@
 import type { AgentRoutingConfig, AgentRoutingProfile, ModelsConfig, ModelTier } from "@/config";
-import { resolveTierMembership } from "@/config";
+import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "@/config";
 import { getSafeLogger } from "@/logger";
 
 const NATIVE_AGENT = "native";
@@ -44,7 +44,8 @@ export function resolveAgentAssignment(
 }
 
 function toAssignment(p: AgentRoutingProfile, models: ModelsConfig, defaultAgent: string): ResolvedAgentAssignment {
-  const membership = resolveTierMembership(models, p.target.agent, p.target.model, defaultAgent);
+  const targetModel = MODEL_SHORTHAND_TIERS[p.target.model.toLowerCase()] ?? p.target.model;
+  const membership = resolveTierMembership(models, p.target.agent, targetModel, defaultAgent);
   if (!membership.isTier) {
     return { agent: p.target.agent, agentProfileId: p.id, profileModelPin: p.target.model };
   }
@@ -53,9 +54,9 @@ function toAssignment(p: AgentRoutingProfile, models: ModelsConfig, defaultAgent
     getSafeLogger()?.warn("routing", "Profile tier resolves only via the default agent across a protocol boundary", {
       profileId: p.id,
       agent: p.target.agent,
-      tier: p.target.model,
+      tier: targetModel,
       defaultAgent,
     });
   }
-  return { agent: p.target.agent, agentProfileId: p.id, profileModelTier: p.target.model };
+  return { agent: p.target.agent, agentProfileId: p.id, profileModelTier: targetModel };
 }
