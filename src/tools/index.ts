@@ -1,4 +1,6 @@
+export { globTool } from "./glob";
 export { compileToolPolicy, resolveWithin } from "./policy";
+export { readTool } from "./read";
 export type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 export {
   _resetRegistryForTest,
