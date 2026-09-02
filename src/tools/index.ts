@@ -1,3 +1,4 @@
+export { editTool } from "./edit";
 export { globTool } from "./glob";
 export { _grepDeps, buildGrepArgv, grepTool } from "./grep";
 export { compileToolPolicy, resolveWithin } from "./policy";
@@ -12,3 +13,4 @@ export {
   registerCodingTool,
 } from "./registry";
 export type { CodingToolName, PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
+export { writeTool } from "./write";
