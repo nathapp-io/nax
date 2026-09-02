@@ -99,9 +99,12 @@ export function buildPreviewRouting(story: UserStory, config: NaxConfig): Routin
   const derivedTier = config.autoMode?.complexityRouting ? complexityToModelTier(complexity, config) : "balanced";
   const { tier } = resolveOperatingTier({
     previousTier: cached?.modelTier,
+    previousAgent: cached?.agent,
     profileTier: cached?.profileModelTier,
+    profileAgent: cached?.initialAgent ?? cached?.agent,
     derivedTier,
     hasEscalationRecords: (story.escalations?.length ?? 0) > 0,
+    tierOrder: config.autoMode?.escalation?.tierOrder,
   });
   return {
     complexity,

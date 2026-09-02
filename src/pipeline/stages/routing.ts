@@ -41,9 +41,15 @@ export const routingStage: PipelineStage = {
     const hasEscalationRecords = (ctx.story.escalations?.length ?? 0) > 0;
     const operating = resolveOperatingTier({
       previousTier: ctx.story.routing?.modelTier,
+      // Escalation persists agent alongside modelTier (tier-escalation.ts) — they travel as a rung.
+      previousAgent: ctx.story.routing?.agent,
       profileTier: ctx.story.routing?.profileModelTier,
+      // initialAgent is the profile-time agent (written once, never moved by escalation);
+      // routing.agent may already be a post-escalation agent.
+      profileAgent: ctx.story.routing?.initialAgent ?? ctx.story.routing?.agent,
       derivedTier: decision.modelTier,
       hasEscalationRecords,
+      tierOrder: ctx.config.autoMode?.escalation?.tierOrder,
     });
     if (operating.unknownPreviousTier) {
       logger?.warn("routing", "Ignoring unknown previousTier — not escalating", {

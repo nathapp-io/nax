@@ -19,6 +19,13 @@ const config = makeNaxConfig({
   },
 });
 
+const CUSTOM_LADDER = [
+  { tier: "cheap", attempts: 3, agent: "native" },
+  { tier: "balanced", attempts: 2, agent: "native" },
+  { tier: "balanced", attempts: 2, agent: "claude" },
+  { tier: "powerful", attempts: 1, agent: "claude" },
+];
+
 function storyWith(routing: Partial<UserStory["routing"]>, escalations: UserStory["escalations"] = []): UserStory {
   return makeStory({
     escalations,
@@ -53,6 +60,29 @@ describe("buildPreviewRouting: tier prediction", () => {
 
     const preview = buildPreviewRouting(story, config);
     expect(preview.complexity).toBe("medium");
+    expect(preview.modelTier).toBe("balanced");
+  });
+
+  test("#1575 parity: preview honours a custom-ladder escalation", () => {
+    const ladderConfig = makeNaxConfig({
+      autoMode: {
+        complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
+        escalation: { tierOrder: CUSTOM_LADDER },
+      },
+    });
+    const story = storyWith(
+      {
+        complexity: "medium",
+        modelTier: "balanced",
+        agent: "claude",
+        profileModelTier: "cheap",
+        initialAgent: "native",
+      },
+      [{ fromTier: "cheap", toTier: "balanced", reason: "budget", timestamp: new Date(0).toISOString() }],
+    );
+
+    const preview = buildPreviewRouting(story, ladderConfig);
+    // record wins; a name-ranked or TIER_RANK preview would discard it
     expect(preview.modelTier).toBe("balanced");
   });
 });
