@@ -323,6 +323,7 @@ export const semanticReviewOp: RunOperationWithHooks<
   name: "semantic-review",
   stage: "review",
   session: { role: "reviewer-semantic", lifetime: "fresh" },
+  tools: ["Read", "Glob", "Grep", "Git"],
   config: reviewConfigSelector,
   model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,

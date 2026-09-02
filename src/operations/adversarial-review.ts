@@ -374,6 +374,7 @@ export const adversarialReviewOp: RunOperationWithHooks<
   name: "adversarial-review",
   stage: "review",
   session: { role: "reviewer-adversarial", lifetime: "fresh" },
+  tools: ["Read", "Glob", "Grep", "Git"],
   config: reviewConfigSelector,
   model: (input) => input.adversarialConfig.model,
   timeoutMs: (input) => input.adversarialConfig.timeoutMs,
