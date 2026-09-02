@@ -6,7 +6,7 @@
  */
 
 import { buildContextToolPreamble, buildRunInteractionHandler } from "../agents/acp/adapter-output";
-import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
+import type { AgentRunRequest, HopKind, IAgentManager } from "../agents/manager-types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { NaxConfig } from "../config";
@@ -111,6 +111,17 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
     internalRoundTrips: r.internalRoundTrips,
     ...(r.adapterFailure ? { adapterFailure: r.adapterFailure } : {}),
   };
+}
+
+/**
+ * The tier a hop should resolve its model at.
+ *
+ * Only a swap, or a start-on-fallback that named one, can carry a tier.
+ * Everything else is the caller's effective tier, which is what every hop did
+ * before tier-aware targets existed.
+ */
+export function hopTier(hopKind: HopKind, effectiveTier: string): string {
+  return "tier" in hopKind ? (hopKind.tier ?? effectiveTier) : effectiveTier;
 }
 
 export function buildHopCallback(
@@ -310,7 +321,9 @@ export function buildHopCallback(
           sessionName,
           attempt: hopKind.attempt,
         });
-        const modelDef = pinnedModelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
+        const modelDef =
+          pinnedModelDef ??
+          resolveModelForAgent(config.models, agentName, hopTier(hopKind, effectiveTier), defaultAgent);
         handle = await sessionManager.openSession(sessionName, {
           agentName,
           role: resolvedRunOptions.sessionRole ?? "implementer",
@@ -322,7 +335,7 @@ export function buildHopCallback(
           // Only report a tier when one actually selected the model. A caller-pinned
           // modelDef bypassed tier resolution, and `effectiveTier` is defaulted, so
           // forwarding it there would record a tier that never applied (#1433).
-          ...(pinnedModelDef !== undefined ? {} : { modelTier: effectiveTier }),
+          ...(pinnedModelDef !== undefined ? {} : { modelTier: hopTier(hopKind, effectiveTier) }),
           timeoutSeconds:
             resolvedRunOptions.timeoutSeconds ??
             config.execution?.sessionTimeoutSeconds ??
@@ -334,10 +347,11 @@ export function buildHopCallback(
       }
     } else {
       const pinned = hopKind.kind === "primary" && pinnedModelDef !== undefined;
+      const tier = hopTier(hopKind, effectiveTier);
       const modelDef =
         hopKind.kind === "primary"
-          ? (pinnedModelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
-          : resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
+          ? (pinnedModelDef ?? resolveModelForAgent(config.models, agentName, tier, defaultAgent))
+          : resolveModelForAgent(config.models, agentName, tier, defaultAgent);
       // openSession errors propagate naturally — no handle, no closeSession needed
       handle = await sessionManager.openSession(sessionName, {
         agentName,
@@ -348,7 +362,7 @@ export function buildHopCallback(
         config,
         modelDef,
         // See the pin rationale above — a pinned modelDef has no meaningful tier.
-        ...(pinned ? {} : { modelTier: effectiveTier }),
+        ...(pinned ? {} : { modelTier: tier }),
         timeoutSeconds:
           resolvedRunOptions.timeoutSeconds ??
           config.execution?.sessionTimeoutSeconds ??

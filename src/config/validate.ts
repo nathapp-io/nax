@@ -99,7 +99,7 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     const fallbackAgents = new Set<string>();
     for (const [primary, candidates] of Object.entries(config.agent.fallback.map)) {
       fallbackAgents.add(primary);
-      for (const c of candidates) fallbackAgents.add(c);
+      for (const c of candidates) fallbackAgents.add(typeof c === "string" ? c : c.agent);
     }
     for (const agent of fallbackAgents) {
       if (!modelKeys.includes(agent)) {

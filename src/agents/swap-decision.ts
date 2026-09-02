@@ -71,6 +71,24 @@ export function decideSwap(
   return fallback.onQualityFailure ? { swap: true } : { swap: false, reason: "quality-failure-declined" };
 }
 
+/** A fallback target, after both config spellings are reduced to one shape. */
+export interface FallbackTarget {
+  readonly agent: string;
+  readonly tier?: string;
+}
+
+export type FallbackMapValue = string | { agent: string; tier: string };
+export type FallbackMap = Record<string, readonly FallbackMapValue[]>;
+
+/**
+ * Both spellings reduce here, and nothing downstream sees the raw union.
+ * A plain string is a target with no tier — which is what every existing
+ * config is, so the no-tier path must stay the untouched one.
+ */
+export function normaliseFallbackTarget(value: FallbackMapValue): FallbackTarget {
+  return typeof value === "string" ? { agent: value } : { agent: value.agent, tier: value.tier };
+}
+
 /**
  * The fallback candidates for `agent`, in map order, minus any the caller excludes.
  *
@@ -81,23 +99,25 @@ export function decideSwap(
  * the next available candidate in order is returned.
  */
 export function availableCandidates(
-  map: Record<string, readonly string[]> | undefined,
+  map: FallbackMap | undefined,
   agent: string,
   isExcluded: (candidate: string) => boolean,
-): string[] {
-  return (map?.[agent] ?? []).filter((candidate) => !isExcluded(candidate));
+): FallbackTarget[] {
+  return (map?.[agent] ?? []).map(normaliseFallbackTarget).filter((candidate) => !isExcluded(candidate.agent));
 }
 
 /**
  * Every agent whose credentials `validateCredentials` must check: the primary, plus
  * both sides of every entry in the fallback map (a `from` key can name an agent that
  * appears in no `to` list, and vice versa).
+ *
+ * Names only — a tier says nothing about credentials.
  */
-export function credentialCandidates(map: Record<string, readonly string[]> | undefined, primary: string): Set<string> {
+export function credentialCandidates(map: FallbackMap | undefined, primary: string): Set<string> {
   const candidates = new Set<string>([primary]);
   for (const [from, tos] of Object.entries(map ?? {})) {
     candidates.add(from);
-    for (const to of tos) candidates.add(to);
+    for (const to of tos) candidates.add(normaliseFallbackTarget(to).agent);
   }
   return candidates;
 }

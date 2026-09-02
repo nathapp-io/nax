@@ -192,7 +192,7 @@ export class AgentManager implements IAgentManager {
 
   private readonly _isExcluded = (c: string): boolean => this._prunedFallback.has(c) || this.isUnavailable(c);
 
-  resolveFallbackChain(agent: string, _failure: AdapterFailure): string[] {
+  resolveFallbackChain(agent: string, _failure: AdapterFailure): import("./swap-decision").FallbackTarget[] {
     return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded);
   }
 
@@ -200,7 +200,7 @@ export class AgentManager implements IAgentManager {
     return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
-  nextCandidate(current: string, _hopsSoFar: number): string | null {
+  nextCandidate(current: string, _hopsSoFar: number): import("./swap-decision").FallbackTarget | null {
     return availableCandidates(this._config.agent?.fallback?.map, current, this._isExcluded)[0] ?? null;
   }
 
@@ -213,7 +213,10 @@ export class AgentManager implements IAgentManager {
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     const storyId = request.runOptions.storyId;
-    let currentAgent = resolveStartAgent(this, primaryAgent, this._config.agent?.fallback?.enabled, storyId, logger);
+    const start = resolveStartAgent(this, primaryAgent, this._config.agent?.fallback?.enabled, storyId, logger);
+    let currentAgent = start.agent;
+    let currentHopKind: import("./manager-types").HopKind =
+      "tier" in start ? { kind: "primary", tier: start.tier } : { kind: "primary" };
     let hopsSoFar = this._budget.spent(storyId);
     let rateLimitRetry = 0;
     let staleRetryAttempts = 0;
@@ -221,7 +224,6 @@ export class AgentManager implements IAgentManager {
     let adapterErrorRetries = 0;
     let currentBundle = request.bundle;
     let currentRunOptions: AgentRunOptions = request.runOptions;
-    let currentHopKind: import("./manager-types").HopKind = { kind: "primary" };
     let finalPrompt: string | undefined;
 
     const _opStartMs = Date.now();
@@ -270,12 +272,12 @@ export class AgentManager implements IAgentManager {
         }
 
         const isFailStale = result.adapterFailure?.outcome === "fail-stale";
-
         const retryState: SameAgentRetryState = {
           staleRetryAttempts,
           timeoutRetryAttempts,
           adapterErrorRetries,
           currentRunOptions,
+          tier: "tier" in currentHopKind ? currentHopKind.tier : undefined,
         };
         const retryDecision = trySameAgentRetry(result, retryState, {
           config: this._config,
@@ -404,15 +406,15 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
         hopsSoFar = this._budget.spend(storyId, hopsSoFar);
-        // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
         rateLimitRetry = 0;
         currentBundle = updatedBundle;
-        currentHopKind = { kind: "swap", failure: adapterFailure };
+        // The tier rides on the hop kind, the per-hop channel the caller already reads, not a parallel variable.
+        currentHopKind = { kind: "swap", failure: adapterFailure, ...("tier" in next ? { tier: next.tier } : {}) };
 
         const hop = buildFallbackRecord({
           storyId: request.runOptions.storyId,
           priorAgent: currentAgent,
-          newAgent: next,
+          newAgent: next.agent,
           hop: hopsSoFar,
           failure: adapterFailure,
           costUsd: result.estimatedCostUsd ?? 0,
@@ -423,12 +425,12 @@ export class AgentManager implements IAgentManager {
         logger?.info("agent-manager", "Agent swap triggered", {
           storyId: request.runOptions.storyId,
           fromAgent: currentAgent,
-          toAgent: next,
+          toAgent: next.agent,
           hop: hopsSoFar,
         });
 
-        _agentChain.push(next);
-        currentAgent = next;
+        _agentChain.push(next.agent);
+        currentAgent = next.agent;
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({
@@ -459,6 +461,7 @@ export class AgentManager implements IAgentManager {
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     // No dead-primary skip (nax#1722); swapped hops re-resolve the model (nax#1739). Hop budget shared with run().
     let currentAgent = primaryAgent;
+    let currentTier: string | undefined;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     const maxStaleRetries = resolveIdleWatchdogSettings(this._config.agent?.idleWatchdog).maxRetryAttempts;
@@ -479,7 +482,7 @@ export class AgentManager implements IAgentManager {
           });
         }
 
-        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent);
+        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent, currentTier);
         let result: CompleteResult;
         try {
           const optionsWithLifecycle: ResolvedCompleteOptions = this._pidRegistry
@@ -501,8 +504,7 @@ export class AgentManager implements IAgentManager {
 
         _totalCostUsd += result.estimatedCostUsd;
 
-        // Synthesize fail-stale when agent returns empty output with no pre-existing failure.
-        // Mirrors sendWithFileOutput synthesis in call.ts for run-kind ops (spec §B2).
+        // Empty output with no failure synthesizes fail-stale; mirrors call.ts sendWithFileOutput (spec §B2).
         if (!result.adapterFailure && !result.output?.trim()) {
           result = {
             ...result,
@@ -518,7 +520,7 @@ export class AgentManager implements IAgentManager {
 
         if (!result.adapterFailure) {
           _finalStatus = "ok";
-          return { result, fallbacks };
+          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
         // fail-stale same-agent retry (mirrors runWithFallback pattern at manager.ts:275-298).
@@ -553,7 +555,7 @@ export class AgentManager implements IAgentManager {
             failure: result.adapterFailure,
           });
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
-          return { result, fallbacks };
+          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
         // Mark unavailable before nextCandidate so the filter excludes the just-failed agent.
@@ -561,7 +563,7 @@ export class AgentManager implements IAgentManager {
         const next = this.nextCandidate(primaryAgent, hopsSoFar);
         if (!next) {
           _finalStatus = "exhausted";
-          return { result, fallbacks };
+          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
         hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);
@@ -569,7 +571,7 @@ export class AgentManager implements IAgentManager {
         const hop = buildFallbackRecord({
           storyId: options.storyId,
           priorAgent: currentAgent,
-          newAgent: next,
+          newAgent: next.agent,
           hop: hopsSoFar,
           failure: result.adapterFailure,
           costUsd: result.estimatedCostUsd,
@@ -580,12 +582,12 @@ export class AgentManager implements IAgentManager {
         logger?.info("agent-manager", "complete() swap triggered", {
           storyId: options.storyId,
           fromAgent: currentAgent,
-          toAgent: next,
+          toAgent: next.agent,
           hop: hopsSoFar,
         });
 
-        _agentChain.push(next);
-        currentAgent = next;
+        _agentChain.push(next.agent);
+        [currentAgent, currentTier] = [next.agent, next.tier];
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({
@@ -728,7 +730,7 @@ export class AgentManager implements IAgentManager {
         sessionName,
         prompt,
         response: outcome.result.output,
-        ...resolveFinalDispatch(augmented, agentName, outcome.fallbacks),
+        ...resolveFinalDispatch(augmented, agentName, outcome.fallbacks, outcome.finalTier),
         stage,
         resolvedPermissions,
         tokenUsage: outcome.result.tokenUsage,

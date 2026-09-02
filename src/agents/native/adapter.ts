@@ -8,6 +8,7 @@
  */
 
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
+import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { NativeSessionUnsupportedError, toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
@@ -21,6 +22,9 @@ function isProtocolStreamError(err: unknown): err is { protocolError: { kind: st
 
 /** The builtin names, used when the adapter is built without config. */
 const DEFAULT_TIERS: readonly string[] = ["fast", "balanced", "powerful"];
+
+/** Test seam, following the _clientDeps precedent. */
+export const _adapterDeps = { listStoredProviders, anyAmbientCredential };
 
 export class NativeAgentAdapter implements AgentAdapter {
   readonly name = NATIVE_AGENT;
@@ -48,36 +52,45 @@ export class NativeAgentAdapter implements AgentAdapter {
     };
   }
 
-  /** Phase A's probe is client construction, not credential resolution — nax-ai resolves keys at call time (ADR-027 §3). */
+  /**
+   * Always true: the native agent runs in-process. There is no binary, so
+   * there is nothing to install, and "not installed" would be a false
+   * answer to a question about presence.
+   *
+   * Deliberately NOT delegating to hasCredentials(). Whether a credential
+   * exists is a different question, and AgentManager.validateCredentials()
+   * is the place that asks it. Conflating them made checkAgentHealth()
+   * report "not installed" for something that is always present.
+   */
   async isInstalled(): Promise<boolean> {
-    return this.hasCredentials();
+    return true;
   }
 
   /**
-   * Reports client construction, not credential resolution — so it is
-   * effectively always true, and AgentManager.validateCredentials() cannot
-   * prune this agent.
+   * Can this agent authenticate to at least one provider?
    *
-   * That is known and deliberate for now. Answering honestly means asking
-   * whether a specific provider resolves, and this method takes no provider:
-   * the registry receives the manager's config slice, and
-   * agentManagerConfigSelector excludes config.models by design under ADR-019.
-   * Probing every provider in the catalog is not an alternative, because
-   * pi's resolve() may execute commands.
+   * Deliberately not "is the provider this run needs satisfied": this method
+   * takes no provider, and it cannot get one. The registry receives the
+   * manager's config slice, and agentManagerConfigSelector excludes
+   * config.models by design (ADR-019). Probing every provider for a specific
+   * answer is not an alternative either — pi's resolve() may execute commands.
    *
-   * The fix belongs to Phase A plan 3, which does model resolution and has a
-   * provider legitimately in scope. Until then a missing or bad credential
-   * surfaces per provider at request time, through the typed mapping from
-   * ProtocolError.kind "auth" to availability / fail-auth.
+   * So this prunes exactly one case: nothing stored anywhere and nothing
+   * ambient. That is the real failure — a user who has never run
+   * `nax auth login` and has no provider environment variables — and every
+   * native call is going to fail anyway. A wrong-provider credential still
+   * surfaces per request, through the typed mapping from ProtocolError.kind
+   * "auth" to availability / fail-auth.
    *
-   * See docs/superpowers/specs/2026-09-01-nax-auth-credentials-design.md §6.
+   * Errors resolve to true. Pruning an agent that would have worked kills a
+   * run; the opposite costs one request-time error that is already handled.
    */
   async hasCredentials(): Promise<boolean> {
     try {
-      await getNativeClient();
-      return true;
+      if ((await _adapterDeps.listStoredProviders()).length > 0) return true;
+      return await _adapterDeps.anyAmbientCredential();
     } catch {
-      return false;
+      return true;
     }
   }
 

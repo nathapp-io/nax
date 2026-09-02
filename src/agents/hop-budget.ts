@@ -15,10 +15,12 @@
  * Lives outside manager.ts because that file is at its grandfathered size limit.
  */
 
+import type { FallbackTarget } from "./swap-decision";
+
 /** The `AgentManager` surface `resolveStartAgent` reads. */
 export interface StartAgentSource {
   isUnavailable(agent: string): boolean;
-  nextCandidate(current: string, hopsSoFar: number): string | null;
+  nextCandidate(current: string, hopsSoFar: number): FallbackTarget | null;
 }
 
 /** Minimal logger surface — `getSafeLogger()` and the manager's override both satisfy it. */
@@ -27,12 +29,14 @@ export interface HopBudgetLogger {
 }
 
 /**
- * The agent an operation should start on: the configured primary, unless it is already
- * marked unavailable and fallback is enabled, in which case the first live candidate.
+ * The fallback target an operation should start on: the configured primary, unless it
+ * is already marked unavailable and fallback is enabled, in which case the first live
+ * candidate — with its named tier, when it has one.
  *
- * Returns the primary unchanged when fallback is off (the toggle must win), when the
- * primary is healthy, or when no candidate is left — the caller then dispatches to the
- * dead primary and fails, which is the same terminal outcome as before.
+ * Returns the primary unchanged (as a tier-less target) when fallback is off (the
+ * toggle must win), when the primary is healthy, or when no candidate is left — the
+ * caller then dispatches to the dead primary and fails, which is the same terminal
+ * outcome as before.
  */
 export function resolveStartAgent(
   source: StartAgentSource,
@@ -40,14 +44,14 @@ export function resolveStartAgent(
   fallbackEnabled: boolean | undefined,
   storyId: string | undefined,
   logger: HopBudgetLogger | null | undefined,
-): string {
-  if (!fallbackEnabled || !source.isUnavailable(primary)) return primary;
+): FallbackTarget {
+  if (!fallbackEnabled || !source.isUnavailable(primary)) return { agent: primary };
   const candidate = source.nextCandidate(primary, 0);
-  if (!candidate) return primary;
+  if (!candidate) return { agent: primary };
   logger?.info("agent-manager", "Primary agent already unavailable — starting on fallback", {
     storyId,
     fromAgent: primary,
-    toAgent: candidate,
+    toAgent: candidate.agent,
   });
   return candidate;
 }

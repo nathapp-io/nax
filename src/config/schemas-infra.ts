@@ -202,9 +202,14 @@ const PromptAuditConfigSchema = z.object({
   dir: z.string().optional(),
 });
 
+const FallbackTargetSchema = z.union([
+  z.string().min(1),
+  z.object({ agent: z.string().min(1), tier: z.string().min(1) }),
+]);
+
 const AgentFallbackConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  map: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
+  map: z.record(z.string().min(1), z.array(FallbackTargetSchema)).default({}),
   maxHopsPerStory: z.number().int().min(1).max(10).default(2),
   onQualityFailure: z.boolean().default(false),
   rebuildContext: z.boolean().default(true),

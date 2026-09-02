@@ -151,7 +151,7 @@ describe("ADR-013 Phase 6 — manager unavailability state threading", () => {
 
     // With codex unavailable: claude→[codex(skip), gemini] → gemini is next.
     manager.markUnavailable("codex", AUTH_FAILURE);
-    expect(manager.nextCandidate("claude", 0)).toBe("gemini");
+    expect(manager.nextCandidate("claude", 0)).toEqual({ agent: "gemini" });
 
     // With both unavailable: no candidate left.
     manager.markUnavailable("gemini", AUTH_FAILURE);

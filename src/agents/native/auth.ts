@@ -9,7 +9,14 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ambientAuthAvailable, type LoginEvent, type LoginInteraction, type LoginPrompt, login } from "@nathapp/nax-ai";
+import {
+  ambientAuthAvailable,
+  defaultProviders,
+  type LoginEvent,
+  type LoginInteraction,
+  type LoginPrompt,
+  login,
+} from "@nathapp/nax-ai";
 import { NaxError } from "@/errors";
 import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt, AuthResult } from "./auth-types";
 import { naxCredentialStore, readStoredEntries, type StoredEntry } from "./credentials";
@@ -39,7 +46,11 @@ export class AuthCancelledError extends Error {
 }
 
 /** Test seam, following the _clientDeps precedent. */
-export const _authDeps = { login, ambientAuthAvailable };
+export const _authDeps = {
+  login,
+  ambientAuthAvailable,
+  providerIds: async (): Promise<string[]> => (await defaultProviders()).map((provider) => provider.id),
+};
 
 /**
  * nax-ai's errors are mapped here rather than in the CLI, so its type names
@@ -243,4 +254,66 @@ export async function ambientShadows(providerIds: readonly string[]): Promise<st
     }),
   );
   return checked.filter((id): id is string => id !== undefined);
+}
+
+/**
+ * How long the whole ambient sweep may take before it gives up and reports
+ * "credentialed".
+ *
+ * Measured today the sweep is ~17ms: the catalog is memoised upstream after a
+ * ~15ms first load, and 39 ambient probes take ~2ms because no bundled pi
+ * provider defines check() and every resolve() reads environment variables and
+ * credential files only. That is a snapshot, not a guarantee — pi's own
+ * contract warns resolve() "may execute commands", and sweeping the catalog
+ * amplifies that across every provider.
+ */
+const AMBIENT_PROBE_TIMEOUT_MS = 2_000;
+
+/**
+ * Is ANY provider satisfied by ambient auth alone?
+ *
+ * Deliberately not "is provider X satisfied": the caller
+ * (NativeAgentAdapter.hasCredentials) has no provider to ask about, because
+ * the model — and so the provider — is chosen per request.
+ *
+ * Expiry resolves TRUE, not false. Pruning an agent that would have worked
+ * kills a run; reporting one that cannot authenticate costs a single
+ * request-time auth error that is already mapped and handled. Where this
+ * cannot answer, it must not guess "no".
+ */
+export async function anyAmbientCredential(): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const sweep = (async (): Promise<boolean> => {
+    const ids = await _authDeps.providerIds();
+    if (ids.length === 0) return false;
+
+    // Resolve on the first success rather than awaiting every probe, so one
+    // satisfied provider does not wait behind a slow one.
+    return new Promise<boolean>((resolve) => {
+      let outstanding = ids.length;
+      const settleOne = (satisfied: boolean): void => {
+        if (satisfied) resolve(true);
+        else if (--outstanding === 0) resolve(false);
+      };
+      for (const id of ids) {
+        _authDeps.ambientAuthAvailable(id).then(
+          (ok) => settleOne(ok),
+          // A probe that throws is not a satisfied provider. It is also not a
+          // reason to fail the sweep: the other providers still count.
+          () => settleOne(false),
+        );
+      }
+    });
+  })();
+
+  const expiry = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(true), AMBIENT_PROBE_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([sweep, expiry]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
