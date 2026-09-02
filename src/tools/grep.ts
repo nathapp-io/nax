@@ -37,7 +37,7 @@ function truncate(body: string, maxBytes: number): string {
 export const grepTool: CodingTool = {
   name: "Grep",
   description:
-    "Search repository file contents for a literal string. Returns 'path:line:text' rows relative to the repository root.",
+    "Search repository file contents for a literal string. Returns 'path:line:text' rows relative to the repository root when no subdirectory target is supplied, absolute when one is (rg prints the target as given).",
   inputSchema: {
     type: "object",
     properties: {
@@ -46,21 +46,22 @@ export const grepTool: CodingTool = {
     },
     required: ["pattern"],
   },
-  // Searching is bounded by cwd, so there is no path to gate; the grant decides
-  // whether Grep runs at all.
-  scope: { pathFields: [] },
+  // The optional `path` is path-bearing and is gated exactly like Read's: the
+  // policy resolves it through resolveWithin, denying escapes as breaches.
+  // `pattern` is not a path and needs no path gating.
+  scope: { pathFields: ["path"] },
 
   async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
     const pattern = input.pattern;
     if (typeof pattern !== "string") return { content: "pattern must be a string", isError: true };
-    const path = typeof input.path === "string" ? input.path : undefined;
 
     const binary: "rg" | "grep" | null = _grepDeps.which("rg") ? "rg" : _grepDeps.which("grep") ? "grep" : null;
     if (binary === null) {
       return { content: "neither ripgrep nor grep is available on this machine", isError: true };
     }
 
-    const proc = _grepDeps.spawn(buildGrepArgv(binary, pattern, path), {
+    const [target] = ctx.resolvedPaths;
+    const proc = _grepDeps.spawn(buildGrepArgv(binary, pattern, target), {
       cwd: ctx.root,
       stdout: "pipe",
       stderr: "pipe",

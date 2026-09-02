@@ -18,8 +18,8 @@ afterEach(() => {
   _grepDeps.which = realWhich;
 });
 
-function ctx(maxBytes = 10_000) {
-  return { root, resolvedPaths: [], maxBytes };
+function ctx(resolvedPaths: readonly string[] = [], maxBytes = 10_000) {
+  return { root, resolvedPaths, maxBytes };
 }
 
 describe("buildGrepArgv", () => {
@@ -71,7 +71,14 @@ describe("grepTool", () => {
     expect(res.content).toMatch(/ripgrep|grep/i);
   });
 
-  test("declares no path field, so it is gated at the tool level", () => {
-    expect(grepTool.scope.pathFields).toEqual([]);
+  test("searches the policy-resolved target, not the raw path input", async () => {
+    const resolved = join(root, "src", "a.ts");
+    const res = await grepTool.run({ pattern: "needle", path: "src/a.ts" }, ctx([resolved]));
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toContain("needle");
+  });
+
+  test("declares the path field, so it is gated through the policy containment seam", () => {
+    expect(grepTool.scope.pathFields).toEqual(["path"]);
   });
 });
