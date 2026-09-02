@@ -123,6 +123,19 @@ export function validateConfig(config: NaxConfig): ValidationResult {
           `autoMode.escalation.tierOrder: tier "${tc.tier}" agent "${tc.agent}" is not a key in models (available: ${modelKeys.join(", ")})`,
         );
       }
+      // Spec §8 (narrowed, revision 3): only AGENTLESS rungs — schemas.ts:512-517 already
+      // hard-errors an agent-qualified rung whose tier is missing under its own agent.
+      // An agentless rung resolves against the default agent's map, and a typo there
+      // otherwise only surfaces mid-run as "budget unbounded" + a failed resolution.
+      if (tc.agent === undefined) {
+        const owner = config.agent?.default ?? "claude";
+        const ownerMap = config.models[owner];
+        if (ownerMap && ownerMap[tc.tier] === undefined) {
+          errors.push(
+            `autoMode.escalation.tierOrder: tier "${tc.tier}" does not resolve under agent "${owner}" (the default agent)`,
+          );
+        }
+      }
     }
   }
 

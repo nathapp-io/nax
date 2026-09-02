@@ -365,3 +365,35 @@ describe("validateConfig — complexityRouting rung-qualified entries (spec §6)
     expect(routingErrors).toHaveLength(0);
   });
 });
+
+describe("agentless tierOrder rungs resolve against the default agent's map (spec §8)", () => {
+  const BUILTINS = { fast: "haiku", balanced: "sonnet", powerful: "opus" };
+  const MODELS = { claude: BUILTINS, native: { cheap: "opencode-go/deepseek-v4-flash" } };
+
+  test("agentless rung whose tier is missing from the default agent's map is an error", () => {
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "cheap", attempts: 2 }] } }, // claude has no "cheap"
+    });
+    const r = validateConfig(config);
+    expect(r.valid).toBe(false);
+    expect(r.errors.join("\n")).toContain('tier "cheap" does not resolve under agent "claude" (the default agent)');
+  });
+
+  test("agentless rung naming a default-agent tier passes", () => {
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "fast", attempts: 2 }] } },
+    });
+    expect(validateConfig(config).valid).toBe(true);
+  });
+
+  test("agent-qualified rung is left to the schema gate (no duplicate error here)", () => {
+    // schemas.ts:512-517 owns this case; validateConfig must not re-report it.
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "cheap", attempts: 3, agent: "native" }] } },
+    });
+    expect(validateConfig(config).valid).toBe(true);
+  });
+});
