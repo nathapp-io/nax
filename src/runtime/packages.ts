@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
 import { mergePackageConfig } from "../config";
 import { getSafeLogger } from "../logger";
@@ -23,6 +23,22 @@ export interface PackageRegistry {
   resolve(packageDir?: string): PackageView;
   repo(): PackageView;
   hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void>;
+}
+
+/**
+ * The absolute directory a PackageView's git and shell commands must run in.
+ *
+ * `packageDir` is "" for the root package of every single-package repo (see
+ * `toRelativeKey`), and passing that straight to a spawn's `cwd` silently means
+ * process.cwd() — the directory nax was launched from, which with `-d` is a
+ * different repository entirely. Callers that need a real directory must route
+ * through here rather than reading `packageDir` directly.
+ */
+export function packageWorkdir(view: Pick<PackageView, "packageDir" | "repoRoot">): string {
+  const { packageDir, repoRoot } = view;
+  if (!packageDir) return repoRoot;
+  if (!repoRoot || isAbsolute(packageDir)) return packageDir;
+  return join(repoRoot, packageDir);
 }
 
 function createPackageView(config: NaxConfig, packageDir: string, repoRoot: string, hasOverride: boolean): PackageView {

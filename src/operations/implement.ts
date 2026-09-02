@@ -1,6 +1,7 @@
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
+import { packageWorkdir } from "../runtime/packages";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { IsolationCheck } from "../tdd/types";
 import { parseSessionJsonOutput } from "./_session-output";
@@ -93,7 +94,11 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
       ctx.packageView.config.execution.smartTestRunner !== null
         ? ctx.packageView.config.execution.smartTestRunner.testFilePatterns
         : undefined;
-    const isolation = await verifyImplementerIsolation(ctx.packageView.packageDir, input.beforeRef, testFilePatterns);
+    const isolation = await verifyImplementerIsolation(
+      packageWorkdir(ctx.packageView),
+      input.beforeRef,
+      testFilePatterns,
+    );
     return { ...parsed, isolation };
   },
 };

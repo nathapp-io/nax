@@ -1,6 +1,7 @@
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
+import { packageWorkdir } from "../runtime/packages";
 import { _isolationDeps, verifyTestWriterIsolation } from "../tdd/isolation";
 import type { IsolationCheck } from "../tdd/types";
 import type { ResolvedTestPatterns } from "../test-runners";
@@ -108,7 +109,7 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
     // own DEFAULT_TEST_FILE_PATTERNS default when absent (legacy / ad-hoc callers).
     const testFilePatterns = input.resolvedTestPatterns?.globs;
     const isolation = await verifyTestWriterIsolation(
-      ctx.packageView.packageDir,
+      packageWorkdir(ctx.packageView),
       input.beforeRef,
       allowedPaths,
       testFilePatterns,

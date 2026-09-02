@@ -44,6 +44,18 @@ async function runGitBounded(
   stderr: string;
   exitCode: number;
 }> {
+  // An empty workdir is rejected, never defaulted. Bun.spawn treats cwd:"" and
+  // cwd:undefined as unset and falls back to process.cwd(), so an unresolved
+  // packageDir (which is "" for every single-package repo — see the root key in
+  // runtime/packages.ts) would run this diff in whatever directory nax was
+  // launched from. Invoked from another repo with `-d`, that silently diffs the
+  // wrong repository and reports "fatal: bad object <sha>" for a SHA that is
+  // perfectly valid in the intended one.
+  if (!workdir) {
+    throw new NaxError(`git ${args.join(" ")} called with an empty workdir`, "GIT_WORKDIR_MISSING", {
+      stage: "tdd-isolation",
+    });
+  }
   const proc = _isolationDeps.spawn(["git", ...args], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
 
   let timedOut = false;
