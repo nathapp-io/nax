@@ -1,8 +1,14 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compileToolPolicy, createCodingToolRuntime } from "@/tools";
+import {
+  _resetBuiltinsForTest,
+  _resetRegistryForTest,
+  compileToolPolicy,
+  createCodingToolRuntime,
+  registerCodingTool,
+} from "@/tools";
 
 let root: string;
 
@@ -84,5 +90,39 @@ describe("advertised", () => {
   test("declaring nothing advertises nothing", () => {
     const rt = runtimeWith([{ tool: "Read", patterns: ["*"] }]);
     expect(rt.advertised([])).toEqual([]);
+  });
+});
+
+// No built-in can throw — every failure path returns isError — so the
+// runtime's catch branch needs a custom tool to be exercised at all.
+describe("a thrown tool", () => {
+  afterEach(() => {
+    _resetRegistryForTest();
+    _resetBuiltinsForTest();
+  });
+
+  test("becomes 'error', never an escaped exception", async () => {
+    registerCodingTool({
+      name: "Thrower",
+      description: "Always throws, to exercise the runtime's containment.",
+      inputSchema: { type: "object", properties: {} },
+      scope: { pathFields: [] },
+      run: async () => {
+        throw new Error("boom from Thrower");
+      },
+    });
+    const rt = runtimeWith([{ tool: "Thrower", patterns: ["*"] }]);
+    const out = await rt.callTool("Thrower", {});
+    expect(out.kind).toBe("error");
+    if (out.kind === "error") expect(out.content).toContain("boom from Thrower");
+  });
+});
+
+describe("after the thrown-tool cleanup", () => {
+  test("built-ins re-register on the next runtime creation", async () => {
+    const rt = runtimeWith([{ tool: "Read", patterns: ["*"] }]);
+    const out = await rt.callTool("Read", { path: "src/a.ts" });
+    expect(out.kind).toBe("ok");
+    if (out.kind === "ok") expect(out.content).toContain("const a = 1;");
   });
 });
