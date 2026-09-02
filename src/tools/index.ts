@@ -1,4 +1,5 @@
 export { globTool } from "./glob";
+export { _grepDeps, buildGrepArgv, grepTool } from "./grep";
 export { compileToolPolicy, resolveWithin } from "./policy";
 export { readTool } from "./read";
 export type { CodingTool, ToolResult, ToolRunContext } from "./registry";
