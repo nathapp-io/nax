@@ -52,8 +52,17 @@ no comparable forcing function.
 
 ### 3. The transcript is a file per session, on disk, adapter-private
 
-One file per session id, under the scratch directory `SessionDescriptor`
-already carries. `SessionDescriptor` gains no message field.
+One file per session. `SessionDescriptor` gains no message field; instead
+`OpenSessionOpts` gains an optional `transcriptDir`, supplied by
+`SessionManager`.
+
+It cannot come from the descriptor: `adapter.openSession` is called at
+`manager.ts:472` and the descriptor is created afterwards at `:492`, so on a
+first open there is no scratch dir yet — and `OpenSessionOpts` carries none
+regardless. The manager computes the path with its existing `sessionScratchDir`
+dependency, keyed by the session name it already has. **An absent
+`transcriptDir` fails loudly**; an adapter that picks its own default path is
+#1794's empty-`packageDir` bug one layer up.
 
 On disk from the start even though no Phase B op resumes across a restart: the
 transcript is the debugging artifact. The plan-4 root cause was recoverable only
@@ -82,26 +91,29 @@ persisted is silent degradation of exactly the kind #1794 removed from the
 pipeline, and a saved error path is a poor trade for reintroducing it into a new
 subsystem.
 
-### 5. Tool execution is reused, not rebuilt
+### 5. Tool execution goes through the existing InteractionHandler seam
 
-`ContextToolRuntime.callTool` already executes these tools, with per-session
-budgets and truncation ceilings. Phase B changes how the model **asks** — from a
-regex-matched text protocol to structured tool-use blocks — and not how nax
-**answers**.
+`InteractionHandler.onInteraction({ kind: "context-tool", name, input })` →
+`{ answer: string }` is already on `SendTurnOpts`, and the ACP adapter already
+uses it (`src/agents/acp/adapter.ts:484-485`). The native adapter uses the same
+seam rather than reaching into `ContextToolRuntime` itself.
 
-### 6. The loop's iteration cap is derived from the tool budget
+Budgets, truncation and the audit trail therefore keep working untouched, and the
+adapter stays free of context-engine imports. Phase B changes how the model
+**asks** — a structured tool-use block instead of a regex-matched text protocol —
+and not how nax **answers**.
 
-`maxCallsPerSession + 3` — 8 with today's default of 5 — and configurable.
+### 6. The loop honours the existing `maxTurns`, and does not add a second cap
 
-The cap is load-bearing rather than defensive. Tool calls are already bounded by
-`PullToolBudget`, but `consume()` throws when the ceiling is already reached
-**without incrementing**, so a rejected call costs no budget. A model that keeps
-asking after exhaustion would loop forever with nothing to stop it.
+`SendTurnOpts.maxTurns` already exists with a default of 10
+(`src/agents/session-types.ts:102-103`). The native loop uses it. A second cap
+derived from the tool budget would put two competing limits on one loop with the
+caller controlling neither reliably.
 
-Derived rather than chosen for two reasons: it tracks `maxCallsPerSession` if
-that is ever raised, and no empirical distribution exists to fit a literal to —
-`internalRoundTrips` reaches `manager-dispatch.ts:91` as `turn` but appears in no
-run artifact.
+The cap is load-bearing rather than defensive: `PullToolBudget.consume()` throws
+when the ceiling is already reached **without incrementing**, so a rejected call
+costs no budget and a model that keeps asking after exhaustion would loop forever.
+`toolChoice` cannot help — it is `"auto" | "none"` with no "required".
 
 ### 7. The prompt preamble is suppressed on the native path
 

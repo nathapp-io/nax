@@ -75,10 +75,17 @@ Everything new lives under `src/agents/native/session/`. `NativeAgentAdapter`
 implements the three methods it currently rejects. `SessionDescriptor`,
 `SessionHandle`, `SessionManager` and the entire ACP path are unchanged.
 
-**Tool execution is not rebuilt.** nax already executes these tools —
-`ContextToolRuntime.callTool` (`src/context/engine/tool-runtime.ts:31`) — and
-Phase B changes only how the model *asks*. The runtime, its per-session budgets
-and its truncation ceilings are reused as they are.
+**Tool execution is not rebuilt, and the adapter does not reach for it.** The
+seam is `InteractionHandler.onInteraction({ kind: "context-tool", name, input })`
+→ `{ answer: string }` (`src/agents/interaction-handler.ts`), already carried on
+`SendTurnOpts`. The ACP adapter uses exactly this
+(`src/agents/acp/adapter.ts:484-485`); the native adapter uses it too.
+
+That keeps budgets, truncation and the audit trail working unchanged, and keeps
+the adapter free of context-engine imports — `ContextToolRuntime` stays behind
+the handler, where the ACP adapter also leaves it. The native path therefore
+differs from ACP in **how a tool call is detected** (structured block vs regex),
+not in how it is executed.
 
 Four files:
 
@@ -90,8 +97,20 @@ Four files:
 
 ## 5. Transcript store
 
-One file per session, under the scratch directory `SessionDescriptor` already
-carries. JSON array of `ConversationMessage`, rewritten on flush.
+One file per session, JSON array of `ConversationMessage`, rewritten on flush.
+
+**Its directory arrives on `OpenSessionOpts`, as a new optional
+`transcriptDir?: string`.** The adapter cannot use the descriptor's `scratchDir`:
+`SessionManager` calls `adapter.openSession` at `manager.ts:472` and only creates
+the descriptor afterwards at `:492`, so on a first open no scratch dir exists yet
+— and `OpenSessionOpts` carries none in any case. `SessionManager` computes the
+path with its existing `sessionScratchDir` dependency (`manager-deps.ts:34`),
+keyed by the session **name** it already holds rather than the id it has not yet
+generated, and passes it in. The ACP adapter ignores the field.
+
+**If `transcriptDir` is absent the native adapter fails loudly** rather than
+choosing a default. An adapter that silently picks its own path is the
+empty-`packageDir` bug fixed in #1794, one layer up.
 
 **On disk from the start, deliberately**, even though no target op can resume
 across a restart. The transcript is the debugging artifact: when a native review
@@ -130,20 +149,20 @@ counts for ACP (`session.prompt()` calls). Token usage accumulates across the
 whole loop, so the returned `TurnResult` describes the turn rather than its last
 leg.
 
-**Iteration cap: `maxCallsPerSession + 3`** (8 by default), configurable. On
-hitting it the turn ends with what it has and records that it did.
+**The cap already exists: `SendTurnOpts.maxTurns`, default 10**
+(`src/agents/session-types.ts:102-103`). The native loop honours it. Inventing a
+second cap derived from the tool budget would put two competing limits on one
+loop, and the caller would control neither reliably.
 
-The cap is load-bearing, not defensive. `PullToolBudget.consume()`
+The cap is load-bearing rather than defensive. `PullToolBudget.consume()`
 (`src/context/engine/pull-tools.ts:326`) throws when the ceiling is already
 reached **without incrementing**, so a rejected call costs no budget — a model
 that keeps asking after exhaustion would loop forever with nothing to stop it.
 `toolChoice` cannot help: it is `"auto" | "none"` with no "required", a pi-ai
 ceiling rather than a nax-ai narrowing.
 
-Derived rather than chosen because it tracks `maxCallsPerSession` if that is
-raised, and because no empirical distribution exists to fit a literal to —
-`internalRoundTrips` reaches `manager-dispatch.ts:91` as `turn` but appears in no
-run artifact.
+On hitting `maxTurns` the turn ends with the output it has and records that it
+did.
 
 ## 7. Suppressing the prompt preamble
 
