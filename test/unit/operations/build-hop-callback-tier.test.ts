@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { resolveModelForAgent } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { hopTier } from "@/operations/build-hop-callback";
 
@@ -34,6 +35,24 @@ describe("hopTier", () => {
 
   test("a swap that named a tier uses it", () => {
     expect(hopTier({ kind: "swap", failure: SWAP_FAILURE, tier: "cheap" }, "balanced")).toBe("cheap");
+  });
+
+  test("a tierless pinned resolution swaps onto the target's balanced rung (spec §7 last resort)", () => {
+    // hop ctx with effectiveTier "balanced" (the call.ts:69 default for a pin, modelTier absent),
+    // swap to an agent with a balanced entry, no fallback-map tier for the candidate.
+    // Assert the dispatched modelDef is the swap target's balanced entry.
+    const tier = hopTier({ kind: "swap", failure: SWAP_FAILURE }, "balanced");
+    expect(tier).toBe("balanced");
+    const modelDef = resolveModelForAgent(
+      {
+        claude: { balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" },
+        native: { cheap: "opencode-go/glm-4-5" },
+      },
+      "claude",
+      tier,
+      "claude",
+    );
+    expect(modelDef.model).toBe("claude-sonnet-4-5");
   });
 
   test("a timeout retry retains its fallback target's tier", () => {

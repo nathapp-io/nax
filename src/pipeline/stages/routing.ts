@@ -61,6 +61,20 @@ export const routingStage: PipelineStage = {
       hasEscalationRecords,
       tierOrder: ctx.config.autoMode?.escalation?.tierOrder,
     });
+    const ladder = ctx.config.autoMode?.escalation?.tierOrder ?? [];
+    if (
+      ctx.story.routing?.profileModelTier !== undefined &&
+      ladder.length > 0 &&
+      !operating.isEscalated &&
+      operating.tier === ctx.story.routing.profileModelTier &&
+      !ladder.some((t) => t.tier === operating.tier)
+    ) {
+      logger?.warn("routing", "Profile targets a rung not on tierOrder — this story will never escalate", {
+        storyId: ctx.story.id,
+        profileTier: ctx.story.routing.profileModelTier,
+        agent: ctx.story.routing?.agent,
+      });
+    }
     if (operating.unknownPreviousTier) {
       logger?.warn("routing", "Ignoring unknown previousTier — not escalating", {
         storyId: ctx.story.id,

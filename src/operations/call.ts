@@ -66,6 +66,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const effectiveModels = config.models ?? DEFAULT_CONFIG.models;
   const resolved = resolveConfiguredModel(effectiveModels, ctx.agentName, opModel, defaultAgent);
   const dispatchAgent = resolved.agent;
+  // Pin default: a pinned (tierless) resolution swaps via "balanced" unless the fallback map names a tier (spec §7).
   const effectiveTier = resolved.modelTier ?? "balanced";
 
   if (op.kind === "complete") {

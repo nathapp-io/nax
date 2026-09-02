@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { assertDefined, makeNaxConfig, makeStory } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeStory, withWarnSpy } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
@@ -627,5 +627,108 @@ describe("routingStage — H3: complexity-rung agent seeding (spec §6)", () => 
     await routingStage.execute(ctx);
 
     expect(ctx.story.routing?.agent).toBe("claude");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H4 — off-ladder profile rung warning (spec §7; persisted PRD state only)
+// ---------------------------------------------------------------------------
+
+describe("routingStage — H4: off-ladder profile rung warning (spec §7)", () => {
+  let origRoutingDeps: typeof RoutingDeps;
+
+  afterEach(() => {
+    if (origRoutingDeps) {
+      const { _routingDeps } = require("@/pipeline/stages/routing");
+      Object.assign(_routingDeps, origRoutingDeps);
+    }
+  });
+
+  function ladderConfig() {
+    return makeNaxConfig({
+      tdd: { greenfieldDetection: false },
+      autoMode: {
+        escalation: {
+          enabled: true,
+          tierOrder: [
+            { tier: "cheap", agent: "native", attempts: 2 },
+            { tier: "balanced", agent: "native", attempts: 2 },
+          ],
+        },
+      },
+    });
+  }
+
+  test("profile tier absent from the ladder ⇒ warning logged (persisted PRD state)", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    // claude/powerful is not a rung on the native-only ladder above — the
+    // persisted profile target will never escalate.
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+        profileModelTier: "powerful",
+      },
+    });
+    const ctx = makeCtx(story, { config: ladderConfig() });
+
+    await withWarnSpy(async (warnSpy) => {
+      await routingStage.execute(ctx);
+
+      const warn = warnSpy.mock.calls.find((c) => c[0] === "routing" && c[1].includes("never escalate"));
+      expect(warn).toBeDefined();
+      const data = warn?.[2] as { profileTier: string } | undefined;
+      expect(data?.profileTier).toBe("powerful");
+    });
+  });
+
+  test("profile tier present on the ladder ⇒ no off-ladder warning", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    // "balanced" IS a ladder rung (tier-name membership is what the warning checks).
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "native",
+        profileModelTier: "balanced",
+      },
+    });
+    const ctx = makeCtx(story, { config: ladderConfig() });
+
+    await withWarnSpy(async (warnSpy) => {
+      await routingStage.execute(ctx);
+
+      expect(ctx.story.routing?.modelTier).toBe("balanced");
+      expect(
+        warnSpy.mock.calls.some((c) => c[0] === "routing" && c[1].includes("Profile targets a rung not on tierOrder")),
+      ).toBe(false);
+    });
   });
 });

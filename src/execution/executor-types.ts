@@ -96,6 +96,7 @@ export function buildPreviewRouting(story: UserStory, config: NaxConfig): Routin
   // This is a display path: a partially-populated config must degrade to the
   // default band, never throw. The schema makes complexityRouting required, so
   // the guard only matters for hand-built configs.
+  // degrade-don't-throw display/last-resort default (plan C spec §7)
   const derivedTier = config.autoMode?.complexityRouting ? complexityToModelTier(complexity, config) : "balanced";
   const { tier } = resolveOperatingTier({
     previousTier: cached?.modelTier,
