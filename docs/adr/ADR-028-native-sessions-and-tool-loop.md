@@ -27,8 +27,18 @@ is what the loop around them looks like, which is most of this decision.
 
 ### 1. Phase B is read-only agentic ops, not a coding agent
 
-The scope is `tdd-verifier`, `review-semantic` and `review-adversarial`: ops that
-are multi-turn and use nax's own **read-only** context pull tools. Coding tools
+The scope is `review-semantic` and `review-adversarial`: ops that are multi-turn
+and use nax's own **read-only** context pull tools.
+
+⚠️ **Corrected 2026-09-02 by measurement.** This section originally listed
+`tdd-verifier` as a third target, on the grounds that it declares no pull tools.
+That was wrong, and the A/B proved it: two models from two providers both failed
+it identically, each inventing a different tool-call syntax to reach a `bash`
+tool. The op's prompt requires Write and filesystem inspection ("Write the
+verdict file at the project root"), which ACP agents provide built-in and Phase B
+deliberately does not — that is Phase C (ADR-029). Declaring no *pull* tools is
+not the same as needing no *agent* tools; the two were conflated. Full evidence:
+`docs/superpowers/specs/2026-09-02-phase-b-results.md`. Coding tools
 (Read/Write/Edit/Bash/Glob/Grep), permission enforcement and the implement and
 rectify ops are Phase C — see ADR-029.
 
