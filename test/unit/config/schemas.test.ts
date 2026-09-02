@@ -474,6 +474,54 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
     expect(issue?.message).toContain("agent-qualify");
     expect(issue?.message).toContain('"tier": "balanced", "agent": "opencode"');
   });
+
+  test("a profile pinning a literal model parses successfully (spec §4 — pins are exempt from rung binding)", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...DEFAULT_CONFIG,
+      models: MODELS,
+      routing: {
+        ...DEFAULT_CONFIG.routing,
+        agents: {
+          enabled: true,
+          strategy: "off",
+          profiles: [{ id: "pin-opus", target: { agent: "claude", model: "claude-opus-5-1" }, strengths: ["impl"] }],
+        },
+      },
+      // DEFAULT_CONFIG tierOrder is tier-only — the literal target can never match a rung,
+      // yet the config must load: a pinned story never escalates by tier.
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("a tier target with no matching rung still errors on an agent-qualified ladder (spec §4)", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...DEFAULT_CONFIG,
+      models: MODELS,
+      routing: {
+        ...DEFAULT_CONFIG.routing,
+        agents: {
+          enabled: true,
+          strategy: "off",
+          profiles: [{ id: "oc-fast", target: { agent: "opencode", model: "fast" }, strengths: ["impl"] }],
+        },
+      },
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        escalation: {
+          ...DEFAULT_CONFIG.autoMode?.escalation,
+          tierOrder: [
+            { tier: "balanced", agent: "opencode", attempts: 3 },
+            { tier: "balanced", agent: "claude", attempts: 2 },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.message.includes("no matching rung"));
+    expect(issue).toBeDefined();
+    expect(issue?.message).toContain('"tier": "fast", "agent": "opencode"');
+  });
 });
 
 describe("autoRoute config foundation (US-001)", () => {

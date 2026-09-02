@@ -389,6 +389,18 @@ describe("mapDecomposedStoriesToUserStories — parent routing inheritance (ADR-
     expect(routing.initialAgent).toBe("opencode");
     expect(routing.initialProfileId).toBe("oc-fast");
   });
+
+  test("a pinned parent carries profileModelPin to substories; modelTier stays the tier-only seed (spec §4)", () => {
+    const subs = mapDecomposedStoriesToUserStories([makeDecomposedStory({ id: "US-001-A" })], "US-001", undefined, {
+      agent: "claude",
+      agentProfileId: "p1",
+      profileModelPin: "claude-opus-5-1",
+    });
+    const routing = subs[0]?.routing;
+    expect(routing?.profileModelPin).toBe("claude-opus-5-1");
+    expect(routing?.profileModelTier).toBeUndefined();
+    expect(routing?.modelTier).toBe("balanced");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

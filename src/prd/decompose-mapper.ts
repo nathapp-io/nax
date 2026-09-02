@@ -31,7 +31,7 @@ export function mapDecomposedStoriesToUserStories(
   parentWorkdir?: string,
   parentRouting?: Pick<
     StoryRouting,
-    "agent" | "agentProfileId" | "profileModelTier" | "initialAgent" | "initialProfileId"
+    "agent" | "agentProfileId" | "profileModelTier" | "profileModelPin" | "initialAgent" | "initialProfileId"
   >,
 ): UserStory[] {
   return stories.map((story, entryIndex) => {
@@ -79,11 +79,13 @@ export function mapDecomposedStoriesToUserStories(
         ...(story.routing?.agent !== undefined && { agent: story.routing.agent }),
         ...(story.routing?.agentProfileId !== undefined && { agentProfileId: story.routing.agentProfileId }),
         ...(story.routing?.profileModelTier !== undefined && { profileModelTier: story.routing.profileModelTier }),
+        ...(story.routing?.profileModelPin !== undefined && { profileModelPin: story.routing.profileModelPin }),
         // ADR-025: parentRouting overrides story.routing fields when the parent story has an
         // assignment (decompose inherits, not re-selects).
         ...(parentRouting?.agent !== undefined && { agent: parentRouting.agent }),
         ...(parentRouting?.agentProfileId !== undefined && { agentProfileId: parentRouting.agentProfileId }),
         ...(parentRouting?.profileModelTier !== undefined && { profileModelTier: parentRouting.profileModelTier }),
+        ...(parentRouting?.profileModelPin !== undefined && { profileModelPin: parentRouting.profileModelPin }),
         ...(parentRouting?.agent !== undefined && {
           initialAgent: parentRouting.initialAgent ?? parentRouting.agent,
         }),

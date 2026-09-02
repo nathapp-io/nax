@@ -18,10 +18,10 @@ import type {
 } from "./runtime-types-execution";
 import type {
   Complexity,
+  ComplexityRung,
   ConfiguredModel,
   LlmRoutingMode,
   ModelsConfig,
-  ModelTier,
   RoutingStrategyName,
   TddStrategy,
 } from "./schema-types";
@@ -35,7 +35,7 @@ export interface EscalationEntry {
 /** Auto mode configuration */
 export interface AutoModeConfig {
   enabled: boolean;
-  complexityRouting: Record<Complexity, ModelTier>; // Model tier per complexity
+  complexityRouting: Record<Complexity, ComplexityRung>; // Rung per complexity; { tier, agent } names a cross-agent rung
   escalation: {
     enabled: boolean;
     tierOrder: Array<{ tier: string; attempts: number; agent?: string }>; // Ordered tier escalation with per-tier attempt budgets

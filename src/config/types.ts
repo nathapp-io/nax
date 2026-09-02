@@ -58,6 +58,7 @@ export type { AutoRouteConfig, AutoRouteDowngradeConfig, AutoRouteUpgradeConfig 
 // Schema types
 export type {
   Complexity,
+  ComplexityRung,
   ConfiguredModel,
   ConfiguredModelObject,
   LlmRoutingMode,
@@ -75,8 +76,10 @@ export type {
 } from "./schema-types";
 export {
   isBuiltinModelTier,
+  isUnrecognizedLiteralModel,
   MODEL_SHORTHAND_TIERS,
   resolveConfiguredModel,
   resolveModel,
   resolveModelForAgent,
+  resolveTierMembership,
 } from "./schema-types";

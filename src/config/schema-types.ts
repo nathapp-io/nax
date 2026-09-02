@@ -5,12 +5,17 @@
  * including model tier definitions and basic enumerations.
  */
 
+import { getSafeLogger } from "../logger";
+
 export type Complexity = "simple" | "medium" | "complex" | "expert";
 export type TestStrategy = "no-test" | "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite";
 export type TddStrategy = "auto" | "strict" | "lite" | "simple" | "off";
 
 /** Model tier names — extensible (TYPE-3 fix: preserve autocomplete for known tiers) */
 export type ModelTier = "fast" | "balanced" | "powerful" | (string & {});
+
+/** A complexityRouting entry: a bare tier on the default agent, or a rung object naming an agent. */
+export type ComplexityRung = ModelTier | { tier: ModelTier; agent?: string };
 
 export interface TokenPricing {
   inputPer1M: number;
@@ -73,6 +78,29 @@ export function isBuiltinModelTier(value: string): value is "fast" | "balanced" 
   return value === "fast" || value === "balanced" || value === "powerful";
 }
 
+export interface TierMembership {
+  isTier: boolean;
+  /** Tier exists only on the default agent's map, not the target agent's. */
+  viaDefaultAgentFallback: boolean;
+}
+
+/** Is `name` a tier for `agent`? Fallback-inclusive: mirrors resolveModelForAgent's two-step lookup. */
+export function resolveTierMembership(
+  models: ModelsConfig,
+  agent: string,
+  name: string,
+  defaultAgent: string,
+): TierMembership {
+  if (models[agent]?.[name] !== undefined) return { isTier: true, viaDefaultAgentFallback: false };
+  if (models[defaultAgent]?.[name] !== undefined) return { isTier: true, viaDefaultAgentFallback: true };
+  return { isTier: false, viaDefaultAgentFallback: false };
+}
+
+/** A literal id resolveModel cannot attribute to a provider and that is not provider-qualified. */
+export function isUnrecognizedLiteralModel(model: string): boolean {
+  return !model.includes("/") && resolveModel(model).provider === "unknown";
+}
+
 /**
  * Resolve a config-level model selector into an effective agent + model definition.
  *
@@ -105,7 +133,15 @@ export function resolveConfiguredModel(
     };
   }
 
-  if (isBuiltinModelTier(selection.model)) {
+  const membership = resolveTierMembership(models, selection.agent, selection.model, defaultAgent);
+  if (membership.isTier) {
+    if (membership.viaDefaultAgentFallback && (selection.agent === "native") !== (defaultAgent === "native")) {
+      getSafeLogger()?.warn("config", "Configured tier resolves via the default agent across a protocol boundary", {
+        agent: selection.agent,
+        tier: selection.model,
+        defaultAgent,
+      });
+    }
     return {
       agent: selection.agent,
       modelDef: resolveModelForAgent(models, selection.agent, selection.model, defaultAgent),
@@ -113,10 +149,20 @@ export function resolveConfiguredModel(
     };
   }
 
-  return {
-    agent: selection.agent,
-    modelDef: resolveModel(selection.model),
-  };
+  if (isUnrecognizedLiteralModel(selection.model)) {
+    // Loud, not fatal: an acp agent may advertise ids no static heuristic recognizes
+    // (spec §2 step 4) — so this cannot throw, but it must not stay silent either.
+    getSafeLogger()?.warn(
+      "config",
+      "Configured model is neither a tier nor a recognizable model id — dispatching as a literal",
+      {
+        agent: selection.agent,
+        model: selection.model,
+        availableTiers: Object.keys(models[selection.agent] ?? models[defaultAgent] ?? {}),
+      },
+    );
+  }
+  return { agent: selection.agent, modelDef: resolveModel(selection.model) };
 }
 
 /** Resolve the correct ModelEntry for a given agent and tier, with defaultAgent fallback */

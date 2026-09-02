@@ -217,6 +217,8 @@ export async function runPlanPipeline(
         projectName,
         agentRouting: config.routing?.agents,
         profileName: config.profile,
+        models: config.models,
+        defaultAgent: config.agent?.default ?? "claude",
         outputPath,
         writeFile: _planDeps.writeFile,
       });

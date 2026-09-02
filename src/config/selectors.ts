@@ -23,7 +23,7 @@ export const reviewConfigSelector = pickSelector(
   "quality",
   "agent",
 );
-export const planConfigSelector = pickSelector("plan", "plan", "debate", "agent", "project", "routing");
+export const planConfigSelector = pickSelector("plan", "plan", "debate", "agent", "models", "project", "routing");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent", "routing");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
 export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance");

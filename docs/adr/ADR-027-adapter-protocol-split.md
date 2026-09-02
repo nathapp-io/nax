@@ -263,6 +263,9 @@ without a tier and could not bind.
 `resolveConfiguredModel` must carry `modelTier` for any tier present in
 `models[agent]`, builtin or not. `isBuiltinModelTier` stays what it is — a
 shorthand test — and stops gating attribution.
+**Implemented by plan C** with two refinements: membership is fallback-inclusive
+(`models[agent]`, else `models[defaultAgent]`), and a non-tier object-form string resolves as a
+literal pin (warned when unrecognizable) rather than throwing.
 
 ### 8. Decisions already settled for Phase A
 

@@ -6,13 +6,18 @@
 import { z } from "zod";
 import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
 
+const ComplexityRungSchema = z.union([
+  ModelTierSchema,
+  z.object({ tier: ModelTierSchema, agent: z.string().min(1, "agent must be non-empty").optional() }),
+]);
+
 const AutoModeConfigSchema = z.object({
   enabled: z.boolean(),
   complexityRouting: z.object({
-    simple: ModelTierSchema,
-    medium: ModelTierSchema,
-    complex: ModelTierSchema,
-    expert: ModelTierSchema,
+    simple: ComplexityRungSchema,
+    medium: ComplexityRungSchema,
+    complex: ComplexityRungSchema,
+    expert: ComplexityRungSchema,
   }),
   escalation: z.object({
     enabled: z.boolean(),

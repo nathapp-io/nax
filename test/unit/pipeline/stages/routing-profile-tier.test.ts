@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { assertDefined, makeNaxConfig, makeStory } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeStory, withWarnSpy } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
@@ -321,6 +321,40 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
     expect(tierAfterFirst).toBe("balanced");
     expect(tierAfterSecond).toBe("balanced");
   });
+
+  test("a profileModelPin does not poison tier selection — derived tier wins (spec §4)", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    // Plan-time finalize recorded the pin (no profileModelTier) — the stage must derive
+    // the starting rung from complexity and never treat "claude-opus-5-1" as a tier name.
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+        agentProfileId: "p1",
+        profileModelPin: "claude-opus-5-1",
+      },
+    });
+    const ctx = makeCtx(story);
+
+    await routingStage.execute(ctx);
+
+    expect(ctx.story.routing?.modelTier).toBe("fast");
+    expect(ctx.story.routing?.modelTier).not.toBe("claude-opus-5-1");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -505,5 +539,230 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
 
     // Origin was "no agent" — escalation's assignment must not be recorded as origin.
     expect(ctx.story.routing?.initialAgent).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H3 — complexity-rung agent seeding (spec §6)
+// ---------------------------------------------------------------------------
+
+describe("routingStage — H3: complexity-rung agent seeding (spec §6)", () => {
+  let origRoutingDeps: typeof RoutingDeps;
+
+  afterEach(() => {
+    if (origRoutingDeps) {
+      const { _routingDeps } = require("@/pipeline/stages/routing");
+      Object.assign(_routingDeps, origRoutingDeps);
+    }
+  });
+
+  function h3Config() {
+    return makeNaxConfig({
+      tdd: { greenfieldDetection: false },
+      models: {
+        claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+        native: { cheap: "opencode-go/deepseek-v4-flash" },
+      },
+      autoMode: {
+        complexityRouting: {
+          simple: { tier: "cheap", agent: "native" },
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+  }
+
+  test("unprofiled story routes to the complexity rung's agent", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "cheap" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const story = makeStory({
+      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "" },
+    });
+    const ctx = makeCtx(story, { config: h3Config() });
+
+    await routingStage.execute(ctx);
+
+    expect(ctx.story.routing?.agent).toBe("native");
+    expect(ctx.story.routing?.modelTier).toBe("cheap");
+  });
+
+  test("profiled story ignores the complexity rung's agent", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "cheap" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+        agentProfileId: "cl-bal",
+      },
+    });
+    const ctx = makeCtx(story, { config: h3Config() });
+
+    await routingStage.execute(ctx);
+
+    expect(ctx.story.routing?.agent).toBe("claude");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H4 — off-ladder profile rung warning (spec §7; persisted PRD state only)
+// ---------------------------------------------------------------------------
+
+describe("routingStage — H4: off-ladder profile rung warning (spec §7)", () => {
+  let origRoutingDeps: typeof RoutingDeps;
+
+  afterEach(() => {
+    if (origRoutingDeps) {
+      const { _routingDeps } = require("@/pipeline/stages/routing");
+      Object.assign(_routingDeps, origRoutingDeps);
+    }
+  });
+
+  function ladderConfig() {
+    return makeNaxConfig({
+      tdd: { greenfieldDetection: false },
+      autoMode: {
+        escalation: {
+          enabled: true,
+          tierOrder: [
+            { tier: "cheap", agent: "native", attempts: 2 },
+            { tier: "balanced", agent: "native", attempts: 2 },
+          ],
+        },
+      },
+    });
+  }
+
+  test("profile tier absent from the ladder ⇒ warning logged (persisted PRD state)", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    // claude/powerful is not a rung on the native-only ladder above — the
+    // persisted profile target will never escalate.
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+        profileModelTier: "powerful",
+      },
+    });
+    const ctx = makeCtx(story, { config: ladderConfig() });
+
+    await withWarnSpy(async (warnSpy) => {
+      await routingStage.execute(ctx);
+
+      const warn = warnSpy.mock.calls.find((c) => c[0] === "routing" && c[1].includes("never escalate"));
+      expect(warn).toBeDefined();
+      const data = warn?.[2] as { profileTier: string } | undefined;
+      expect(data?.profileTier).toBe("powerful");
+    });
+  });
+
+  test("profile tier present on the ladder ⇒ no off-ladder warning", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    // "balanced" IS a ladder rung (tier-name membership is what the warning checks).
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "native",
+        profileModelTier: "balanced",
+      },
+    });
+    const ctx = makeCtx(story, { config: ladderConfig() });
+
+    await withWarnSpy(async (warnSpy) => {
+      await routingStage.execute(ctx);
+
+      expect(ctx.story.routing?.modelTier).toBe("balanced");
+      expect(
+        warnSpy.mock.calls.some((c) => c[0] === "routing" && c[1].includes("Profile targets a rung not on tierOrder")),
+      ).toBe(false);
+    });
+  });
+
+  test("same tier name on a different agent is off-ladder and warns", async () => {
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+        profileModelTier: "balanced",
+      },
+    });
+    const ctx = makeCtx(story, { config: ladderConfig() });
+
+    await withWarnSpy(async (warnSpy) => {
+      await routingStage.execute(ctx);
+
+      expect(
+        warnSpy.mock.calls.some((c) => c[0] === "routing" && c[1].includes("Profile targets a rung not on tierOrder")),
+      ).toBe(true);
+    });
   });
 });

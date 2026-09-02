@@ -185,3 +185,18 @@ describe("_planDeps", () => {
     });
   });
 });
+
+describe("resolvePlanModelSelection unknown-literal guard (spec §3)", () => {
+  test("garbage object-form plan.model self-rescues to default balanced", () => {
+    const config = makeNaxConfig({ plan: { model: { agent: "claude", model: "turbo" } } });
+    const r = resolvePlanModelSelection(config, "claude");
+    expect(r.modelTier).toBe("balanced");
+  });
+
+  test("legitimate provider-qualified pin passes through untouched", () => {
+    const config = makeNaxConfig({ plan: { model: { agent: "claude", model: "opencode-go/qwen-4" } } });
+    const r = resolvePlanModelSelection(config, "claude");
+    expect(r.modelTier).toBeUndefined();
+    expect(r.modelDef.model).toBe("opencode-go/qwen-4");
+  });
+});

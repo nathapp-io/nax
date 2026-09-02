@@ -347,6 +347,25 @@ describe("implementerOp.model — routing-driven", () => {
     );
   });
 
+  test("uses a literal profile pin with its assigned agent", () => {
+    const model = implementerOp.model;
+    const story = makeStory({
+      routing: {
+        complexity: "medium",
+        modelTier: "balanced",
+        testStrategy: "tdd-simple",
+        reasoning: "",
+        agent: "claude",
+        profileModelPin: "claude-opus-5-1",
+      },
+    });
+
+    expect(typeof model === "function" ? model({ story }, buildCtx) : model).toEqual({
+      agent: "claude",
+      model: "claude-opus-5-1",
+    });
+  });
+
   test("returns undefined when routing is absent (callOp then defaults)", () => {
     const model = implementerOp.model;
     expect(typeof model === "function" ? model({ story: storyWithTier(undefined) }, buildCtx) : model).toBeUndefined();

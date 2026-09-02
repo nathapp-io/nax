@@ -285,3 +285,115 @@ describe("validateConfig — combined agent.fallback.map and tierOrder validatio
     expect(agentErrors).toHaveLength(0);
   });
 });
+
+describe("validateConfig — complexityRouting rung-qualified entries (spec §6)", () => {
+  test("string form error message stays byte-identical to the pre-plan-C one", () => {
+    const config = cfg({
+      models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
+      autoMode: {
+        complexityRouting: {
+          simple: "ultra",
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    expect(result.errors).toContain("complexityRouting.simple must be one of: fast, balanced, powerful (got 'ultra')");
+  });
+
+  test("object rung with an unknown agent errors", () => {
+    const config = cfg({
+      models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
+      autoMode: {
+        complexityRouting: {
+          simple: { tier: "cheap", agent: "codex" },
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('complexityRouting.simple: agent "codex" is not a key in models');
+  });
+
+  test("object rung whose tier is missing under its agent errors", () => {
+    const config = cfg({
+      models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
+      autoMode: {
+        complexityRouting: {
+          simple: { tier: "cheap" },
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('complexityRouting.simple: tier "cheap" not found under agent "claude"');
+  });
+
+  test("valid object rung produces no complexityRouting errors", () => {
+    const config = cfg({
+      models: {
+        claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+        native: { cheap: "opencode-go/deepseek-v4-flash" },
+      },
+      autoMode: {
+        complexityRouting: {
+          simple: { tier: "cheap", agent: "native" },
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
+
+    const result = validateConfig(config);
+
+    const routingErrors = result.errors.filter((e) => e.includes("complexityRouting"));
+    expect(routingErrors).toHaveLength(0);
+  });
+});
+
+describe("agentless tierOrder rungs resolve against the default agent's map (spec §8)", () => {
+  const BUILTINS = { fast: "haiku", balanced: "sonnet", powerful: "opus" };
+  const MODELS = { claude: BUILTINS, native: { cheap: "opencode-go/deepseek-v4-flash" } };
+
+  test("agentless rung whose tier is missing from the default agent's map is an error", () => {
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "cheap", attempts: 2 }] } }, // claude has no "cheap"
+    });
+    const r = validateConfig(config);
+    expect(r.valid).toBe(false);
+    expect(r.errors.join("\n")).toContain('tier "cheap" does not resolve under agent "claude" (the default agent)');
+  });
+
+  test("agentless rung naming a default-agent tier passes", () => {
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "fast", attempts: 2 }] } },
+    });
+    expect(validateConfig(config).valid).toBe(true);
+  });
+
+  test("agent-qualified rung is left to the schema gate (no duplicate error here)", () => {
+    // schemas.ts:512-517 owns this case; validateConfig must not re-report it.
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "cheap", attempts: 3, agent: "native" }] } },
+    });
+    expect(validateConfig(config).valid).toBe(true);
+  });
+});

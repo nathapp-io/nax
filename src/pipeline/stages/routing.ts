@@ -14,7 +14,13 @@
 import { isGreenfieldStory } from "@/context";
 import { getLogger } from "@/logger";
 import { savePRD } from "@/prd";
-import { complexityToModelTier, isSecurityCriticalStory, resolveOperatingTier, resolveRouting } from "@/routing";
+import {
+  complexityToModelTier,
+  complexityToRungAgent,
+  isSecurityCriticalStory,
+  resolveOperatingTier,
+  resolveRouting,
+} from "@/routing";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
@@ -39,12 +45,43 @@ export const routingStage: PipelineStage = {
     // The precedence itself lives in resolveOperatingTier so that the executor's
     // pre-classification preview announces the same tier this stage resolves (#1575).
     const hasEscalationRecords = (ctx.story.escalations?.length ?? 0) > 0;
+    // Spec §6: an unprofiled story starts on the rung complexityRouting names.
+    // Precedence: PRD-assigned agent (plan-time profile) > run-time classifier > complexity rung.
+    const rungAgent = complexityToRungAgent(decision.complexity, ctx.config);
     const operating = resolveOperatingTier({
       previousTier: ctx.story.routing?.modelTier,
+      // Escalation persists agent alongside modelTier (tier-escalation.ts) — they travel as a rung.
+      previousAgent: ctx.story.routing?.agent,
       profileTier: ctx.story.routing?.profileModelTier,
+      // initialAgent is the profile-time agent (written once, never moved by escalation);
+      // routing.agent may already be a post-escalation agent.
+      profileAgent: ctx.story.routing?.initialAgent ?? ctx.story.routing?.agent,
       derivedTier: decision.modelTier,
+      derivedAgent: rungAgent,
       hasEscalationRecords,
+      tierOrder: ctx.config.autoMode?.escalation?.tierOrder,
     });
+    const ladder = ctx.config.autoMode?.escalation?.tierOrder ?? [];
+    const profileAgent = ctx.story.routing?.initialAgent ?? ctx.story.routing?.agent;
+    const hasAgentRungs = ladder.some((rung) => rung.agent !== undefined);
+    const profileRungExists = ladder.some((rung) =>
+      hasAgentRungs && profileAgent !== undefined
+        ? rung.tier === ctx.story.routing?.profileModelTier && rung.agent === profileAgent
+        : rung.tier === ctx.story.routing?.profileModelTier,
+    );
+    if (
+      ctx.story.routing?.profileModelTier !== undefined &&
+      ladder.length > 0 &&
+      !operating.isEscalated &&
+      operating.tier === ctx.story.routing.profileModelTier &&
+      !profileRungExists
+    ) {
+      logger?.warn("routing", "Profile targets a rung not on tierOrder — this story will never escalate", {
+        storyId: ctx.story.id,
+        profileTier: ctx.story.routing.profileModelTier,
+        agent: profileAgent,
+      });
+    }
     if (operating.unknownPreviousTier) {
       logger?.warn("routing", "Ignoring unknown previousTier — not escalating", {
         storyId: ctx.story.id,
@@ -57,7 +94,7 @@ export const routingStage: PipelineStage = {
     // PRD-assigned agent wins (plan-time selection, Delta C3). decision.agent is
     // the Part A run-time classifier's choice and applies only when the PRD
     // leaves agent unset — do NOT clobber it unconditionally.
-    const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent ?? decision.agent };
+    const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent ?? decision.agent ?? rungAgent };
 
     // Write routing back to story (for escalation tracking).
     // initialAgent / initialProfileId use the first-write idiom AND require that

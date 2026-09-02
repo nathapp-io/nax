@@ -14,18 +14,42 @@
  * precedence between profile, escalation, and persisted values.
  */
 
-/** Rank used to tell a genuine escalation from a stale leftover tier. */
-const TIER_RANK: Record<string, number> = { fast: 0, balanced: 1, powerful: 2 };
+import type { TierConfig } from "@/config";
+
+/**
+ * Rank = the rung's index in tierOrder. Agent-qualified tuple match when the ladder has agent rungs.
+ *
+ * The tuple-matching rule deliberately mirrors getTierConfig/escalateTier in
+ * src/execution/escalation/escalation.ts:43-60: when agent rungs are present,
+ * find the exact (tier, agent) rung; otherwise (or when the rung carries no
+ * agent) fall back to the first tier-name match.
+ */
+function rankRung(tierOrder: TierConfig[], tier: string, agent: string | undefined): number | undefined {
+  const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
+  const i =
+    hasAgentRungs && agent !== undefined
+      ? tierOrder.findIndex((t) => t.tier === tier && t.agent === agent)
+      : tierOrder.findIndex((t) => t.tier === tier);
+  return i === -1 ? undefined : i;
+}
 
 export interface OperatingTierInput {
   /** Tier persisted on the story by a previous iteration or run, if any. */
   previousTier?: string;
+  /** Agent persisted alongside previousTier — escalation persists both. */
+  previousAgent?: string;
   /** Tier the story's agent profile targets — seeds the starting rung. */
   profileTier?: string;
+  /** The profile assignment's agent, paired with profileTier. */
+  profileAgent?: string;
   /** Tier derived from this story's complexity classification. */
   derivedTier: string;
+  /** Set by rung-qualified complexityRouting (Task 4); callers pass undefined until then. */
+  derivedAgent?: string;
   /** Whether the story carries at least one escalation record. */
   hasEscalationRecords: boolean;
+  /** Escalation ladder; absent/empty ⇒ nothing is rankable; only records keep previousTier. */
+  tierOrder?: TierConfig[];
 }
 
 export interface OperatingTierResult {
@@ -52,11 +76,14 @@ export interface OperatingTierResult {
  *   lower-ranked leftover from an unrelated run does not stick.
  */
 export function resolveOperatingTier(input: OperatingTierInput): OperatingTierResult {
-  const { previousTier, profileTier, derivedTier, hasEscalationRecords } = input;
+  const { previousTier, previousAgent, profileTier, profileAgent, derivedTier, derivedAgent, hasEscalationRecords } =
+    input;
+  const tierOrder = input.tierOrder ?? [];
 
   const candidateTier = profileTier ?? derivedTier;
-  const candidateRank = TIER_RANK[candidateTier];
-  const previousRank = previousTier !== undefined ? TIER_RANK[previousTier] : undefined;
+  const candidateAgent = profileTier !== undefined ? profileAgent : derivedAgent;
+  const candidateRank = rankRung(tierOrder, candidateTier, candidateAgent);
+  const previousRank = previousTier !== undefined ? rankRung(tierOrder, previousTier, previousAgent) : undefined;
 
   const isEscalated =
     previousTier !== undefined &&
