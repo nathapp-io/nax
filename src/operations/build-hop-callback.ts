@@ -406,6 +406,7 @@ export function buildHopCallback(
           signal: resolvedRunOptions.abortSignal,
           contextPullTools,
           contextToolRuntime,
+          codingTools: resolvedRunOptions.codingTools,
           ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
           ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
           ...(interactionHandler ? { interactionHandler } : {}),

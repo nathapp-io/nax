@@ -217,6 +217,8 @@ export interface SendPromptOpts {
    * sendTurn — see SendTurnOpts.contextPullTools. ACP ignores it.
    */
   contextPullTools?: readonly ToolDescriptor[];
+  /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
+  codingTools?: readonly import("@/tools").CodingTool[];
 }
 
 /**
@@ -229,6 +231,8 @@ export interface RunInSessionOpts extends OpenSessionRequest {
   maxTurns?: number;
   /** Native: pull-tool catalogue forwarded to sendPrompt. ACP ignores it. */
   contextPullTools?: readonly ToolDescriptor[];
+  /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
+  codingTools?: readonly import("@/tools").CodingTool[];
 }
 
 /**

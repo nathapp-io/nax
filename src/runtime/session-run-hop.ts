@@ -79,12 +79,14 @@ export function createSessionRunHop(
             // instead), but a future op on the default hop needs its pull-tool
             // catalogue forwarded here too, or it silently gets none.
             contextPullTools: options.contextPullTools,
+            codingTools: options.codingTools,
           })
         : await sessionManager.sendPrompt(handle, prompt, {
             interactionHandler,
             signal: options.abortSignal,
             maxTurns,
             contextPullTools: options.contextPullTools,
+            codingTools: options.codingTools,
           });
 
       return {

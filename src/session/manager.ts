@@ -698,12 +698,11 @@ export class SessionManager implements ISessionManager {
 
     try {
       if (typeof promptOrFnOrRunner === "string") {
-        return await this.sendPrompt(handle, promptOrFnOrRunner, {
-          interactionHandler: opts.interactionHandler,
-          signal: opts.signal,
-          maxTurns: opts.maxTurns,
-          contextPullTools: opts.contextPullTools,
-        });
+        // Forwarded whole: every SendPromptOpts member is optional and present
+        // on RunInSessionOpts, and sendPrompt re-picks fields explicitly — so
+        // new SendPromptOpts fields (e.g. codingTools) cannot be silently
+        // dropped here. manager.ts is past its file-size baseline; do not grow.
+        return await this.sendPrompt(handle, promptOrFnOrRunner, opts);
       }
       return await (promptOrFnOrRunner as (h: SessionHandle) => Promise<unknown>)(handle);
     } finally {

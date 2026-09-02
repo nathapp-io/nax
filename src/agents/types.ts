@@ -161,6 +161,18 @@ export interface AgentRunOptions {
   };
   /** Executes nax's own coding tools; absent means the op declared none. */
   codingToolRuntime?: import("@/tools").CodingToolRuntime;
+  /** Tools this operation declared; resolveDeclaredTools() has already applied the default. */
+  declaredTools?: readonly import("@/tools").CodingToolName[];
+  /**
+   * Permitted root for coding tools.
+   *
+   * Deliberately NOT `workdir`: that is `ctx.packageDir`, which is "" for the
+   * root package of a single-package repo. This carries
+   * packageWorkdir(ctx.packageView), which resolves that to repoRoot.
+   */
+  codingToolRoot?: string;
+  /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
+  codingTools?: readonly import("@/tools").CodingTool[];
   /**
    * Session descriptor from SessionManager (Phase 1 plumbing — optional for backward compat).
    * When provided, the adapter MAY use descriptor.id/role/handle for audit correlation.

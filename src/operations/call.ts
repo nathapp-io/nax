@@ -7,6 +7,7 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { composeSections, join } from "../prompts/compose";
+import { packageWorkdir } from "../runtime/packages";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildHopCallback } from "./build-hop-callback";
@@ -24,6 +25,7 @@ import {
 import { makeVerifyCtx, runPostParse } from "./post-parse";
 import { classifyEmptyOutputFailure, classifyProviderRefusalFailure } from "./turn-failure-classification";
 import type { CallContext, CompleteOperation, DeterministicOperation, Operation, RunOperation } from "./types";
+import { resolveDeclaredTools } from "./types";
 
 /** Injectable deps for testability — mirrors _agentManagerDeps pattern. */
 export const _callOpDeps = {
@@ -207,6 +209,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     featureName: ctx.featureName,
     storyId: ctx.storyId,
     callId,
+    declaredTools: resolveDeclaredTools(runOp),
+    codingToolRoot: packageWorkdir(ctx.packageView),
     // Session reuse defaults from the op lifetime, but ops may override with a
     // resolver when reuse depends on config or invocation context.
     ...(keepOpen ? { keepOpen: true } : {}),
