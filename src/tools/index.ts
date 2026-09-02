@@ -13,5 +13,12 @@ export {
   registerBuiltinTool,
   registerCodingTool,
 } from "./registry";
+export type { CodingToolOutcome, CodingToolRuntime } from "./runtime";
+export {
+  _resetBuiltinsForTest,
+  createCodingToolRuntime,
+  DEFAULT_TOOL_MAX_BYTES,
+  registerBuiltinCodingTools,
+} from "./runtime";
 export type { CodingToolName, PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 export { writeTool } from "./write";
