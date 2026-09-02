@@ -4,7 +4,7 @@ import { pipelineEventBus } from "@/pipeline";
 import { checkCostExceeded, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import { type StoryMetrics, toFallbackHops } from "../metrics";
-import { runPipeline } from "../pipeline/runner";
+import { logPipelineOutcome, runPipeline } from "../pipeline/runner";
 import { postRunPipeline, preRunPipeline } from "../pipeline/stages";
 import { wireEventsWriter } from "../pipeline/subscribers/events-writer";
 import { wireHooks } from "../pipeline/subscribers/hooks";
@@ -667,7 +667,9 @@ export async function executeUnified(
     // Post-run pipeline (acceptance tests) — only when acceptance is configured
     if (ctx.config.acceptance?.enabled) {
       logger?.info("execution", "Running post-run pipeline (acceptance tests)");
-      await runPipeline(
+      // Same defect class as the pre-run call site: discarding this result loses
+      // the only record of the acceptance gate failing to reach its verdict.
+      const postRunResult = await runPipeline(
         postRunPipeline,
         {
           config: ctx.config,
@@ -689,6 +691,7 @@ export async function executeUnified(
         } satisfies PipelineContext,
         ctx.eventEmitter,
       );
+      logPipelineOutcome(postRunResult, "Post-run pipeline (acceptance tests)");
     }
 
     return buildResult("max-iterations");

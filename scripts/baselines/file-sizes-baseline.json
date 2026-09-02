@@ -3,7 +3,7 @@
   "byFile": {
     "src/agents/manager.ts": 786,
     "src/execution/escalation/tier-escalation.ts": 603,
-    "src/execution/unified-executor.ts": 768,
+    "src/execution/unified-executor.ts": 766,
     "src/interaction/plugins/telegram.ts": 613,
     "src/prd/schema.ts": 629,
     "src/prompts/builders/rectifier-builder.ts": 902,

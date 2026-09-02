@@ -33,6 +33,12 @@ export interface PackageRegistry {
  * process.cwd() — the directory nax was launched from, which with `-d` is a
  * different repository entirely. Callers that need a real directory must route
  * through here rather than reading `packageDir` directly.
+ *
+ * Note the resolved path must exist: a spawn against a missing cwd throws
+ * ENOENT, where the previous relative-path behaviour silently fell back to
+ * process.cwd(). For a package directory a story has yet to create, that turns
+ * a silently wrong result into a loud failure — deliberate, but a behaviour
+ * change worth knowing about.
  */
 export function packageWorkdir(view: Pick<PackageView, "packageDir" | "repoRoot">): string {
   const { packageDir, repoRoot } = view;

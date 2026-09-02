@@ -9,26 +9,24 @@
  * nothing about it.
  */
 
-import { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd/types";
 // Leaf imports, not the "@/pipeline" barrel: the barrel reaches back into
 // src/execution and would put this module inside a runtime import cycle.
 import type { PipelineEventEmitter } from "../pipeline/events";
-import { runPipeline } from "../pipeline/runner";
+import { logPipelineOutcome, runPipeline } from "../pipeline/runner";
 import type { PipelineContext, PipelineStage } from "../pipeline/types";
 
-export interface PreRunDeps {
-  readonly config: PipelineContext["config"];
+/**
+ * Derived from PipelineContext with Pick rather than re-declared, so a new
+ * context field cannot silently drift out of sync here.
+ */
+export type PreRunDeps = Pick<
+  PipelineContext,
+  "config" | "featureDir" | "hooks" | "agentGetFn" | "agentManager" | "sessionManager" | "runtime" | "abortSignal"
+> & {
   readonly workdir: string;
-  readonly featureDir: PipelineContext["featureDir"];
-  readonly hooks: PipelineContext["hooks"];
-  readonly agentGetFn: PipelineContext["agentGetFn"];
-  readonly agentManager: PipelineContext["agentManager"];
-  readonly sessionManager: PipelineContext["sessionManager"];
-  readonly runtime: PipelineContext["runtime"];
-  readonly abortSignal: PipelineContext["abortSignal"];
   readonly eventEmitter?: PipelineEventEmitter;
-}
+};
 
 /**
  * Runs acceptance setup and returns the context it produced, so the caller can
@@ -66,12 +64,6 @@ export async function runPreRunPipeline(
   };
 
   const result = await runPipeline(stages, preRunCtx, deps.eventEmitter);
-  if (!result.success) {
-    getSafeLogger()?.error("execution", "Pre-run pipeline (acceptance test setup) failed — continuing without it", {
-      stoppedAtStage: result.stoppedAtStage,
-      finalAction: result.finalAction,
-      reason: result.reason,
-    });
-  }
+  logPipelineOutcome(result, "Pre-run pipeline (acceptance test setup)", prd.userStories[0]?.id);
   return preRunCtx;
 }
