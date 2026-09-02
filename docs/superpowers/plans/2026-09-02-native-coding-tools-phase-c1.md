@@ -50,7 +50,7 @@
 | File | Change |
 |---|---|
 | `src/config/permissions.ts` | `ResolvedPermissions` gains `toolGrants`; `resolveScopedPermissions` becomes real |
-| `src/config/schema.ts` | `execution.permissions` block schema |
+| `src/config/schemas-execution.ts` | `execution.permissions` block schema (schema.ts is a barrel) |
 | `src/config/loader.ts`, `src/config/config-guards.ts` | Both unimplemented-guards removed (Task 13, last) |
 | `src/agents/interaction-handler.ts` | Third `AdapterInteraction` member; denial field on the response |
 | `src/agents/acp/adapter-output.ts` | `buildRunInteractionHandler` removed (moved out) |
@@ -625,7 +625,7 @@ git commit -m "feat(tools): open tool registry with reserved built-in names"
 
 **Files:**
 - Modify: `src/config/permissions.ts`
-- Modify: `src/config/schema.ts` (add `execution.permissions`)
+- Modify: `src/config/schemas-execution.ts` (add `execution.permissions`)
 - Test: `test/unit/config/scoped-permissions.test.ts`
 
 **Interfaces:**
@@ -641,10 +641,14 @@ Create `test/unit/config/scoped-permissions.test.ts`:
 ```typescript
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CODING_TOOLS, resolvePermissions } from "@/config/permissions";
-import type { AgentManagerConfig } from "@/config/selectors";
+import { makeNaxConfig } from "../../helpers/mock-nax-config";
 
-function configWith(execution: Record<string, unknown>): AgentManagerConfig {
-  return { execution } as unknown as AgentManagerConfig;
+// `check:test-as-unknown-as` sits at baseline 0 — a cast here fails the gate.
+// makeNaxConfig is the sanctioned factory; resolvePermissions reads only
+// `execution`, and NaxConfig is structurally assignable to AgentManagerConfig.
+// Mirror the existing idiom in test/unit/config/permissions.test.ts.
+function configWith(execution: Record<string, unknown>) {
+  return makeNaxConfig({ execution } as Parameters<typeof makeNaxConfig>[0]);
 }
 
 describe("resolvePermissions — unrestricted", () => {
@@ -721,7 +725,7 @@ Expected: FAIL — `DEFAULT_CODING_TOOLS` is not exported.
 
 - [ ] **Step 3: Add the config schema**
 
-In `src/config/schema.ts`, beside the other execution schemas, add:
+**`src/config/schema.ts` is a re-export barrel — do not add schemas there.** The execution schema lives in `src/config/schemas-execution.ts`; you will find `permissionProfile` at line 203. Add beside it:
 
 ```typescript
 const PermissionBlockSchema = z
@@ -739,7 +743,7 @@ const PermissionBlockSchema = z
 export const PermissionsBlockSchema = z.record(z.string(), PermissionBlockSchema);
 ```
 
-Add `permissions: PermissionsBlockSchema.optional(),` to the execution config object schema, next to `permissionProfile`.
+Add `permissions: PermissionsBlockSchema.optional(),` to that same object, on the line after `permissionProfile`. Optional, so `DEFAULT_CONFIG` in `src/config/schemas.ts` needs no new entry.
 
 - [ ] **Step 4: Implement the resolver**
 
@@ -1017,7 +1021,7 @@ Create `src/tools/glob.ts`:
  * nothing rather than escaping.
  */
 
-import { relative, sep } from "node:path";
+import { sep } from "node:path";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 import { resolveWithin } from "./policy";
 
@@ -1043,10 +1047,14 @@ export const globTool: CodingTool = {
 
     const matches: string[] = [];
     try {
+      // `absolute: false` is the repo-wide idiom (test-scanner.ts:318,
+      // fragments/store.ts:53, manifest-purge.ts:64) and yields root-relative
+      // paths directly. Each is still re-checked through resolveWithin, because
+      // a pattern that climbs out must produce nothing rather than escape.
       const glob = new Bun.Glob(pattern);
-      for await (const hit of glob.scan({ cwd: ctx.root, onlyFiles: true, absolute: true })) {
+      for await (const hit of glob.scan({ cwd: ctx.root, absolute: false })) {
         if (resolveWithin(ctx.root, hit) === null) continue;
-        matches.push(relative(ctx.root, hit).split(sep).join("/"));
+        matches.push(hit.split(sep).join("/"));
         if (matches.length >= MAX_MATCHES) break;
       }
     } catch (err) {
@@ -2089,10 +2097,11 @@ Create `test/unit/agents/run-interaction-handler.test.ts`:
 
 ```typescript
 import { describe, expect, test } from "bun:test";
-import { buildRunInteractionHandler } from "@/agents/run-interaction-handler";
-import type { AgentRunOptions } from "@/agents/types";
+import { buildRunInteractionHandler, type RunInteractionOptions } from "@/agents/run-interaction-handler";
 import type { CodingToolOutcome, CodingToolRuntime } from "@/tools";
 
+// No casts: the handler takes a NARROWED option type (see Step 4), so a test can
+// construct one honestly. `check:test-as-unknown-as` sits at baseline 0.
 function runtimeReturning(outcome: CodingToolOutcome): CodingToolRuntime {
   return {
     advertised: () => [],
@@ -2100,8 +2109,8 @@ function runtimeReturning(outcome: CodingToolOutcome): CodingToolRuntime {
   };
 }
 
-function optionsWith(runtime: CodingToolRuntime): AgentRunOptions {
-  return { codingToolRuntime: runtime } as unknown as AgentRunOptions;
+function optionsWith(runtime: CodingToolRuntime): RunInteractionOptions {
+  return { codingToolRuntime: runtime };
 }
 
 describe("buildRunInteractionHandler — coding tools", () => {
@@ -2139,7 +2148,7 @@ describe("buildRunInteractionHandler — coding tools", () => {
   });
 
   test("returns null when no coding runtime is configured", async () => {
-    const handler = buildRunInteractionHandler({} as unknown as AgentRunOptions);
+    const handler = buildRunInteractionHandler({});
     expect(await handler.onInteraction({ kind: "coding-tool", name: "Read", input: {} })).toBeNull();
   });
 });
@@ -2178,7 +2187,23 @@ export interface AdapterInteractionResponse {
 
 - [ ] **Step 4: Move the handler and add the branch**
 
-Create `src/agents/run-interaction-handler.ts` with the existing body of `buildRunInteractionHandler` from `src/agents/acp/adapter-output.ts` (including its private `buildContextToolResult` helper), then add the coding-tool branch before the final `return null`:
+Create `src/agents/run-interaction-handler.ts` with the existing body of `buildRunInteractionHandler` from `src/agents/acp/adapter-output.ts` (including its private `buildContextToolResult` helper).
+
+**Narrow the parameter while moving it.** The handler reads four fields of `AgentRunOptions` and nothing else, and a full `AgentRunOptions` has six required fields a test cannot honestly supply — which is what would otherwise force an `as unknown as` cast into `test/`, where the ratchet sits at baseline 0. Declare and export:
+
+```typescript
+/** Exactly what the handler reads. Narrower than AgentRunOptions on purpose. */
+export type RunInteractionOptions = Pick<
+  AgentRunOptions,
+  "contextToolRuntime" | "contextPullTools" | "interactionBridge" | "codingToolRuntime"
+>;
+
+export function buildRunInteractionHandler(options: RunInteractionOptions): InteractionHandler {
+```
+
+`AgentRunOptions` remains assignable to it, so every existing ACP call site compiles unchanged.
+
+Then add the coding-tool branch before the final `return null`:
 
 ```typescript
       if (req.kind === "coding-tool") {
@@ -2345,7 +2370,11 @@ git commit -m "feat(operations): declare per-op coding tools and grant reviews G
 
 **Interfaces:**
 - Consumes: `createCodingToolRuntime`, `compileToolPolicy` (Tasks 1, 8); `ResolvedPermissions.toolGrants` (Task 3); `resolveDeclaredTools` (Task 10).
-- Produces: `interface CodingToolSupport { runtime: CodingToolRuntime; tools: readonly CodingTool[] }`; `function buildCodingToolSupport(args: { cwd?: string; grants?: readonly ToolGrant[]; declared: readonly CodingToolName[] }): CodingToolSupport | undefined`.
+- Produces: `interface CodingToolSupport { runtime: CodingToolRuntime; tools: readonly CodingTool[] }`; `function buildCodingToolSupport(args: { root?: string; grants?: readonly ToolGrant[]; declared: readonly CodingToolName[] }): CodingToolSupport | undefined`.
+
+**Read this before writing any code in this task.** There is no `AgentRunOptions.cwd`. The field is **`workdir`** (`src/agents/types.ts:108`, required `string`), and `src/operations/call.ts:197` sets it to **`ctx.packageDir`** — which is **`""` for the root package of every single-package repo**, exactly as `packageWorkdir`'s docstring in `src/runtime/packages.ts` says. Passing that raw would make the fail-loud guard fire on the *common* case and silently disable coding tools everywhere.
+
+The correct root is `packageWorkdir(ctx.packageView)`, the established idiom at `src/operations/verify.ts:186`, `write-test.ts:112` and `implement.ts:98`. This task therefore adds a dedicated `codingToolRoot` field rather than reusing `workdir`, so no existing ACP behaviour changes.
 
 **This task exists because the plan would otherwise ship unreachable code.** Tasks 8-10 build the runtime, add the `AgentRunOptions` field and add the op declaration; Task 12 dispatches. Without this task nothing ever *constructs* a runtime, so `codingToolRuntime` stays undefined, the handler returns `null`, and every coding tool silently does not exist — while all the other tasks pass review, because each is correct in isolation. That is Phase B's `transcriptDir` defect exactly.
 
@@ -2369,7 +2398,7 @@ beforeAll(() => {
 describe("buildCodingToolSupport", () => {
   test("builds a runtime advertising the intersection of declared and granted", () => {
     const support = buildCodingToolSupport({
-      cwd: root,
+      root,
       grants: [
         { tool: "Read", patterns: ["*"] },
         { tool: "Write", patterns: ["*"] },
@@ -2380,39 +2409,43 @@ describe("buildCodingToolSupport", () => {
   });
 
   test("returns undefined when the op declares no tools", () => {
-    expect(buildCodingToolSupport({ cwd: root, grants: [{ tool: "Read", patterns: ["*"] }], declared: [] })).toBeUndefined();
+    expect(buildCodingToolSupport({ root, grants: [{ tool: "Read", patterns: ["*"] }], declared: [] })).toBeUndefined();
   });
 
   test("returns undefined when the policy grants nothing", () => {
-    expect(buildCodingToolSupport({ cwd: root, grants: [], declared: ["Read"] })).toBeUndefined();
+    expect(buildCodingToolSupport({ root, grants: [], declared: ["Read"] })).toBeUndefined();
   });
 
   test("returns undefined when the intersection is empty", () => {
     const support = buildCodingToolSupport({
-      cwd: root,
+      root,
       grants: [{ tool: "Write", patterns: ["*"] }],
       declared: ["Read"],
     });
     expect(support).toBeUndefined();
   });
 
-  // The #1794 lesson: an empty cwd silently becomes process.cwd(), which with
+  // The #1794 lesson: an empty root silently becomes process.cwd(), which with
   // -d is a different repository entirely. Refuse rather than guess.
-  test("fails loudly rather than defaulting when cwd is missing", () => {
+  //
+  // The CALLER is responsible for never producing an empty root: it passes
+  // packageWorkdir(ctx.packageView), which returns repoRoot when packageDir is
+  // "". These two cases guard the seam, they are not the expected path.
+  test("fails loudly rather than defaulting when the root is missing", () => {
     expect(() =>
-      buildCodingToolSupport({ cwd: undefined, grants: [{ tool: "Read", patterns: ["*"] }], declared: ["Read"] }),
+      buildCodingToolSupport({ root: undefined, grants: [{ tool: "Read", patterns: ["*"] }], declared: ["Read"] }),
     ).toThrow(/root/i);
   });
 
-  test("fails loudly on an empty-string cwd", () => {
+  test("fails loudly on an empty-string root", () => {
     expect(() =>
-      buildCodingToolSupport({ cwd: "", grants: [{ tool: "Read", patterns: ["*"] }], declared: ["Read"] }),
+      buildCodingToolSupport({ root: "", grants: [{ tool: "Read", patterns: ["*"] }], declared: ["Read"] }),
     ).toThrow(/root/i);
   });
 
   test("the runtime it returns enforces the root", async () => {
     const support = buildCodingToolSupport({
-      cwd: root,
+      root,
       grants: [{ tool: "Read", patterns: ["*"] }],
       declared: ["Read"],
     });
@@ -2459,7 +2492,7 @@ export interface CodingToolSupport {
 }
 
 export function buildCodingToolSupport(args: {
-  cwd?: string;
+  root?: string;
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
 }): CodingToolSupport | undefined {
@@ -2467,10 +2500,11 @@ export function buildCodingToolSupport(args: {
   const grants = args.grants ?? [];
   if (grants.length === 0) return undefined;
 
-  // An empty cwd passed to a spawn or a path join silently means
+  // An empty root passed to a spawn or a path join silently means
   // process.cwd() — the directory nax was launched from, which under `-d` is a
-  // different repository. That is the #1794 defect; refuse instead.
-  if (args.cwd === undefined || args.cwd.trim() === "") {
+  // different repository. That is the #1794 defect; refuse instead. Callers
+  // pass packageWorkdir(view), which never yields "".
+  if (args.root === undefined || args.root.trim() === "") {
     throw new NaxError(
       "Cannot enable coding tools: no working directory was supplied, so the permitted root is unknown.",
       "CODING_TOOL_ROOT_MISSING",
@@ -2478,7 +2512,7 @@ export function buildCodingToolSupport(args: {
     );
   }
 
-  const runtime = createCodingToolRuntime({ policy: compileToolPolicy(grants, args.cwd) });
+  const runtime = createCodingToolRuntime({ policy: compileToolPolicy(grants, args.root) });
   const tools = runtime.advertised(args.declared);
   if (tools.length === 0) return undefined;
   return { runtime, tools };
@@ -2490,35 +2524,65 @@ export function buildCodingToolSupport(args: {
 Run: `bun test test/unit/agents/coding-tool-support.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 5: Call it from the run path**
+- [ ] **Step 5: Supply the root and the declaration from callOp**
 
-In `src/session/manager-run.ts`, immediately after the existing `resolvedPermissions` assignment at lines 87-89, add:
+Add two fields to `AgentRunOptions` in `src/agents/types.ts`, beside the existing `contextPullTools` / `contextToolRuntime`:
+
+```typescript
+  /** Tools this operation declared; resolveDeclaredTools() has already applied the default. */
+  declaredTools?: readonly import("@/tools").CodingToolName[];
+  /**
+   * Permitted root for coding tools.
+   *
+   * Deliberately NOT `workdir`: that is `ctx.packageDir`, which is "" for the
+   * root package of a single-package repo. This carries
+   * packageWorkdir(ctx.packageView), which resolves that to repoRoot.
+   */
+  codingToolRoot?: string;
+```
+
+In `src/operations/call.ts`, in the `runOptions` object literal at line 195 (the one whose `workdir: ctx.packageDir` you can see at line 197), add:
+
+```typescript
+    declaredTools: resolveDeclaredTools(runOp),
+    codingToolRoot: packageWorkdir(ctx.packageView),
+```
+
+Import both: `import { packageWorkdir } from "../runtime/packages";` and `resolveDeclaredTools` from `./types`. `packageWorkdir(ctx.packageView)` is the established idiom here — see `src/operations/verify.ts:186`, `write-test.ts:112`, `implement.ts:98`.
+
+- [ ] **Step 6: Call it from the run path — note the ordering**
+
+**`injectedRequest` is constructed at `src/session/manager-run.ts:63`, but `resolvedPermissions` is not computed until line 88.** You cannot spread coding support into an object that was built twenty-five lines earlier. Hoist the permission resolution above the request literal.
+
+Move these two lines from their current position (around line 87-89) to immediately *before* `const callerCallback = ...` at line 62:
+
+```typescript
+  const stage = request.runOptions.pipelineStage ?? "run";
+  const resolvedPermissions =
+    request.runOptions.resolvedPermissions ?? resolvePermissions(request.runOptions.config, stage);
+```
+
+This is a safe hoist: both are pure reads of `request.runOptions`, and nothing between line 62 and line 89 mutates it. Delete the original pair so `stage` and `resolvedPermissions` are declared exactly once — a duplicate `const` is a compile error, which is the desired outcome if the move is done wrongly.
+
+Then, immediately after the hoisted pair, add:
 
 ```typescript
   const codingSupport = buildCodingToolSupport({
-    cwd: request.runOptions.cwd,
+    root: request.runOptions.codingToolRoot,
     grants: resolvedPermissions.toolGrants,
     declared: request.runOptions.declaredTools ?? [],
   });
 ```
 
-Thread it onto the injected request so the adapter and the turn loop both see it:
+And extend the existing `injectedRequest` literal's `runOptions` spread (line 65-67) with:
 
 ```typescript
-  const injectedRequest = {
-    ...request,
-    runOptions: {
-      ...request.runOptions,
       ...(codingSupport ? { codingToolRuntime: codingSupport.runtime, codingTools: codingSupport.tools } : {}),
-    },
-  };
 ```
 
-Add `declaredTools?: readonly CodingToolName[]` to `AgentRunOptions` in `src/agents/types.ts`, populated by `callOp` from `resolveDeclaredTools(op)` where it already builds run options.
+Keep the existing `onSessionEstablished` override in place — add to the object, do not replace it.
 
-Adapt the exact shape to how `injectedRequest` is constructed in this file — read the surrounding 30 lines before editing rather than assuming, since the binding already exists above line 80.
-
-- [ ] **Step 6: Verify the wiring is actually reachable**
+- [ ] **Step 7: Verify the wiring is actually reachable**
 
 ```bash
 bun test test/unit/session
@@ -2532,7 +2596,7 @@ rg -n "codingToolRuntime" src/ || grep -rn "codingToolRuntime" src/
 ```
 Expected: at least three sites — the type, the producer in `manager-run.ts`, and the consumer in `run-interaction-handler.ts`. **If the producer is missing, the feature is unreachable no matter how green the tests are.**
 
-- [ ] **Step 7: Format, typecheck, commit**
+- [ ] **Step 8: Format, typecheck, commit**
 
 ```bash
 bun x biome check --write src/agents src/session test/unit/agents
