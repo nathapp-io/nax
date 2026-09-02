@@ -186,6 +186,17 @@ optional `profileModelPin` / `initialModelPin` fields alongside the existing
 tier fields; both are persisted to `prd.json`. A pin and a tier are mutually
 exclusive on an assignment.
 
+A pin target additionally requires relaxing the profile↔ladder binding gate:
+`NaxConfigSchema.superRefine` (`src/config/schemas.ts:522-534`, ADR-025 §4)
+hard-errors any profile target with no matching `tierOrder` rung, and a literal
+model name can never match one — without the relaxation, a pinning config is
+unloadable. The rung-binding error is kept for targets that name a tier
+(escalation from them needs a defined path) and skipped for pins (a pinned
+story never escalates by tier — nax#1739). **ADR-025 §4 and §5 are amended
+accordingly** (binding scoped to tier targets; the §6 complexity-rung agent
+added to the selection precedence), and ADR-027 §7 gains a one-line
+"implemented by plan C" note.
+
 Downstream semantics of a pin follow nax#1739, which is already implemented
 and stays untouched: a pinned model is dispatched for its own agent
 (`resolved.modelDef`), dies on any agent swap (`pinnedModelAgent`,
@@ -352,8 +363,12 @@ unbounded" (`tier-escalation.ts:165-172`) and `escalateTier` returns `null`
 (`escalation.ts:45`) — no escalation, ever. This is the right semantics for a
 deliberate off-ladder pin and it becomes the documented contract: **on-ladder
 start walks the ladder from its rung; off-ladder start stays put, with a
-default attempt budget and one warning.** Legal, not a validation error —
-§8 warns at config load but does not reject.
+default attempt budget and one warning.** The off-ladder case arises from
+**persisted PRD state** — a rung routed under an older or different config —
+not from a loadable config: an in-config profile target that names a tier is
+already hard-bound to a rung by `schemas.ts:522-534` (ADR-025 §4, kept), and a
+pin target is exempt from binding and from escalation entirely (§4). The
+first-route warning in §8 covers the persisted-state case.
 
 Constraint carried forward verbatim: the `attempts === 0` early return and its
 `@design` guard (`tier-escalation.ts:145-155`, #1575 — a first attempt has no
@@ -396,11 +411,12 @@ which already tuple-checks rung agents against models keys at
 `validate.ts:117-127`, and the schema superRefine that already gates
 `models.native` on `agent.protocol`, `src/config/schemas.ts:546-557`):
 
-- **Every `tierOrder` rung resolves within its own agent's map**:
-  `models[rung.agent ?? defaultAgent][rung.tier]` must exist. Today only the
-  agent key is checked; a missing tier inside it is silently masked at run
-  time by `resolveModelForAgent`'s defaultAgent fallback — a config typo that
-  currently ships. Error, not warning.
+- **Every AGENTLESS `tierOrder` rung resolves in the default agent's map**
+  (error). Corrected against the tree: `schemas.ts:512-517` ALREADY hard-errors
+  an agent-qualified rung whose tier is missing under its own agent — only the
+  agentless rung is unvalidated today, surfacing mid-run as "budget unbounded"
+  plus a failed resolution. Adding the qualified case again in `validateConfig`
+  would be a duplicate gate.
 - **Every profile target that names a tier resolves in its own agent's map**;
   a target satisfiable only via the defaultAgent fallback across a protocol
   boundary warns.

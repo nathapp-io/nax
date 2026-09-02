@@ -10,13 +10,40 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-02-plan-c-tier-or-model-resolution-design.md` — read it first; tasks cite its sections.
 
+> **Revision 2 (2026-09-02)** — reviewed against the working tree at `b2b07335c`. Seven corrections
+> applied: the real file-size gate is 600/800 (no net-zero editing needed anywhere); Task 4's pipeline
+> tests moved to `routing-profile-tier.test.ts` (the file they named does not exist); every test-helper
+> name replaced with the real one (`makeNaxConfig`, `cfg`, `baseConfig`/`withTierOrder`); Task 2 gained
+> the second `finalizeAndWritePrd` call site and a `decompose-mapper.ts` step that keeps a pin from
+> decaying to `"balanced"`; Task 4's validation step moved ahead of its pipeline tests; and the
+> string-form `complexityRouting` error message is now pinned byte-identical.
+> **Revision 3 (2026-09-02)** — second review pass. Three corrections: (1) revision 2's Task 2 Step 7
+> seeded substory `modelTier` with the PIN LITERAL — that re-creates the pin-disguised-as-tier defect
+> at substory level and makes dispatch throw `MODEL_NOT_FOUND` (`resolveModelForAgent` treats
+> `modelTier` as a tier key); the seed stays tier-only and the pin travels via its own fields.
+> (2) The profile↔ladder binding superRefine (`src/config/schemas.ts:522-534`, ADR-025 §4) hard-errors
+> any profile target with no matching rung — a literal-model pin target can NEVER match a rung, so
+> without relaxing it Task 2's pin feature is unloadable; new Step 7b relaxes it (tier targets keep the
+> error, pin targets are exempt) and amends ADR-025 §4/§5. (3) Task 6 was a HALF-DUPLICATE gate:
+> `schemas.ts:512-517` already hard-errors an agent-qualified rung whose tier is missing under its own
+> agent — the genuine gap is only the AGENTLESS rung vs the default agent's map; Task 6 narrowed.
+> Also: Task 5's off-ladder warning covers PERSISTED PRD state (stale/legacy rungs) — an in-config
+> tier-naming profile target can't be off-ladder, the schema rejects it first.
+> Verified-correct and NOT to be re-checked: every `src/` line reference lands; `ModelTier` is
+> `"fast" | "balanced" | "powerful" | (string & {})` so `ComplexityRung` is expressible;
+> `ModelTierSchema` is `z.string().min(1)`, not an enum, so the Zod union is sound; the inline-`require`
+> idiom is at `schema-types.ts:140`; `resolveModel`'s `"unknown"` is at `:158`; all three tier tests in
+> `executor-types.test.ts` survive deleting `TIER_RANK`; the repo's own `.nax/config.json` ladder is
+> agentless, so Task 6's new validation does not break it. `isBuiltinModelTier` becomes an unused
+> export after Task 1 — there is no knip gate, so leave it or delete it, either is fine.
+
 ## Global Constraints
 
 - **No new builtin tier names.** `fast`/`balanced`/`powerful` stay defaults-only; the open keyspace does the rest (spec §1).
 - **Never touch:** `pinnedModelAgent` semantics (`src/operations/build-hop-callback.ts:304-306`), `MODEL_SHORTHAND_TIERS` contents/precedence, `escalateTier`/budget mechanics, the absent-`modelTier`-on-pin design (nax#1739) (spec §9).
 - **The `attempts === 0` early return in `checkPreIterationEscalation` (`src/execution/escalation/tier-escalation.ts:145-155`) must survive verbatim** — its `@design` comment explains why (#1575).
 - **Byte-compatibility bar:** a config using only builtin tiers, no custom tiers, no object-form `complexityRouting` routes every story identically to before (spec §11).
-- Project gates: 400-line file limit (file-size gate refuses ANY growth of an already-over-limit file — `src/config/runtime-types.ts` is 578 lines, so Task 4 edits it **net-zero**); functions ≤30 lines; conventional commits; `bun test <file> --timeout=30000` for targeted runs; `bun run test` + `bun run typecheck` + `bun run lint` before each commit; `bun run test:coverage` after tasks that add test files.
+- Project gates: **file-size ratchet = 600 lines for `src/**`, 800 for `test/**`** (`scripts/check-file-sizes.ts`); already-oversized files are grandfathered in `scripts/baselines/file-sizes-baseline.json` and may not GROW. Among the files this plan touches, only `src/execution/escalation/tier-escalation.ts` (603) is baselined — and this plan does not change it. `src/config/runtime-types.ts` (578) and `src/routing/router.ts` (400) are UNDER the limit and may grow normally; no net-zero editing is required anywhere. Functions ≤30 lines; conventional commits; `bun test <file> --timeout=30000` for targeted runs; `bun run test` + `bun run typecheck` + `bun run lint` before each commit; `bun run test:coverage` after tasks that add test files.
 - Barrel imports (`@/config`, `@/logger`); `.nax/rules/` conventions apply. In `src/config/schema-types.ts` use the existing inline-`require` idiom for cross-module deps (see its `NaxError` require) to avoid import cycles.
 - All tasks run on branch `feat/tier-or-model-resolution` (already created). No worktrees — user preference.
 
@@ -187,13 +214,13 @@ Expected: PASS, including all pre-existing tests in the file (the deleted builti
 ```ts
 describe("resolvePlanModelSelection unknown-literal guard (spec §3)", () => {
   test("garbage object-form plan.model self-rescues to default balanced", () => {
-    const config = makeConfig({ plan: { model: { agent: "claude", model: "turbo" } } }); // use the file's existing config factory
+    const config = makeNaxConfig({ plan: { model: { agent: "claude", model: "turbo" } } });
     const r = resolvePlanModelSelection(config, "claude");
     expect(r.modelTier).toBe("balanced");
   });
 
   test("legitimate provider-qualified pin passes through untouched", () => {
-    const config = makeConfig({ plan: { model: { agent: "claude", model: "opencode-go/qwen-4" } } });
+    const config = makeNaxConfig({ plan: { model: { agent: "claude", model: "opencode-go/qwen-4" } } });
     const r = resolvePlanModelSelection(config, "claude");
     expect(r.modelTier).toBeUndefined();
     expect(r.modelDef.model).toBe("opencode-go/qwen-4");
@@ -201,7 +228,7 @@ describe("resolvePlanModelSelection unknown-literal guard (spec §3)", () => {
 });
 ```
 
-(Adapt `makeConfig` to whatever helper the file already uses to build a `NaxConfig`; do not hand-roll a new one — see `.nax/rules/test-helpers.md`.)
+(`makeNaxConfig` is already imported at `test/unit/cli/plan-runtime.test.ts:9` from `@test/helpers` — use it; do not hand-roll a config, see `.nax/rules/test-helpers.md`.)
 
 - [ ] **Step 6: Verify they fail, then implement the guard in `resolvePlanModelSelection`**
 
@@ -243,8 +270,12 @@ Spec: docs/superpowers/specs/2026-09-02-plan-c-tier-or-model-resolution-design.m
 - Modify: `src/agents/shared/agent-profile-resolver.ts` (whole file — it is 40 lines)
 - Modify: `src/prd/types.ts:116` area (two new `StoryRouting` fields)
 - Modify: `src/plan/strategies/finalize-routing.ts` (signature + threading)
-- Modify: `src/plan/strategies/persist-prd.ts:43` and its args type (thread `models` + `defaultAgent`)
-- Test: `test/unit/agents/shared/agent-profile-resolver.test.ts`, `test/unit/plan/strategies/finalize-routing.test.ts`, `test/unit/pipeline/stages/routing-profile-tier.test.ts`
+- Modify: `src/plan/strategies/persist-prd.ts:43` + `PersistPrdArgs` (thread `models` + `defaultAgent`)
+- Modify: `src/cli/plan-command.ts:213` (the **second** `finalizeAndWritePrd` call site — see Step 6)
+- Modify: `src/prd/decompose-mapper.ts` (param type ~32 + two pin spreads — see Step 7; `modelTier` seed UNCHANGED)
+- Modify: `src/config/schemas.ts:522-534` (binding gate relaxed for pin targets — see Step 7b)
+- Modify: `docs/adr/ADR-025-agent-routing-and-cross-agent-escalation.md` §4/§5, `docs/adr/ADR-027-adapter-protocol-split.md` §7 (amendments — see Step 7b)
+- Test: `test/unit/agents/shared/agent-profile-resolver.test.ts`, `test/unit/plan/strategies/finalize-routing.test.ts`, `test/unit/pipeline/stages/routing-profile-tier.test.ts`, `test/unit/config/schemas.test.ts`, the decompose-mapper suite
 
 **Interfaces:**
 - Consumes: `resolveTierMembership` from Task 1 (via `@/config`).
@@ -374,9 +405,108 @@ In `finalizePrdRouting` (new signature per Interfaces), pass `models, defaultAge
     } as StoryRouting;
 ```
 
-Then fix the one src caller: `src/plan/strategies/persist-prd.ts:43`. Find its args type in the same file, add `models: ModelsConfig; defaultAgent: string;`, and update the call to `finalizePrdRouting({...}, args.agentRouting, args.profileName, args.models, args.defaultAgent)`. Find *its* callers with `grep -rn "persistPrd\|PersistArgs" src --include="*.ts"` and thread `config.models` / `config.agent?.default ?? "claude"` from the `NaxConfig` each already has in scope (the plan strategies all receive config).
+Then fix the one `finalizePrdRouting` call site, `src/plan/strategies/persist-prd.ts:43` (inside
+`finalizeAndWritePrd`). Add `readonly models: ModelsConfig;` and `readonly defaultAgent: string;` to
+**`PersistPrdArgs`** (line ~49 — note the real type name is `PersistPrdArgs`, not `PersistArgs`), and
+update the call to `finalizePrdRouting({...}, args.agentRouting, args.profileName, args.models, args.defaultAgent)`.
 
-- [ ] **Step 7: Write the pipeline regression test** — append to `test/unit/pipeline/stages/routing-profile-tier.test.ts`:
+🚨 **There are TWO entry points that build a `PersistPrdArgs`, not one.** `persistPrd(ctx, prd)` is the
+strategies' wrapper, but `finalizeAndWritePrd` is exported and called directly by the CLI. Find both with:
+
+```bash
+grep -rn "finalizeAndWritePrd\|persistPrd\|PersistPrdArgs" src --include="*.ts"
+```
+
+Expected hits to update (verified on `b2b07335c`):
+- `src/plan/strategies/persist-prd.ts:50` — `persistPrd`: thread `models: ctx.config.models`, `defaultAgent: ctx.config.agent?.default ?? "claude"`.
+- `src/cli/plan-command.ts:213` — direct `finalizeAndWritePrd({...})` call: thread the same two from the `NaxConfig` in scope there.
+
+A grep for `persistPrd` alone will NOT surface `plan-command.ts`, and `PersistArgs` matches nothing.
+
+- [ ] **Step 7: Carry the pin through decompose** — `src/prd/decompose-mapper.ts`
+
+🚨 **Do not skip this.** `mapDecomposedStoriesToUserStories` reads `profileModelTier` in three places.
+Once Step 3 stops writing `profileModelTier` for a literal target, a substory of a **pinned** parent
+would silently drop the pin — the parent's assignment must travel to its substories.
+
+⛔ **The pin must NOT be written into `modelTier`.** `modelTier` is a rung name: dispatch resolves it
+through `resolveModelForAgent(models, agent, tier)` (throws `MODEL_NOT_FOUND` for a literal model id)
+and `resolveOperatingTier` ranks it. Writing the pin there re-creates at substory level exactly the
+defect spec §4 removes. The `modelTier` seed stays **tier-only** (unchanged line ~76:
+`parentRouting?.profileModelTier ?? story.routing?.profileModelTier ?? "balanced"` — a pinned parent's
+substory seeds `"balanced"` and the routing stage derives its real tier from complexity, same as the
+parent, per spec §4 "the pin is applied at model-resolution time, not at rung-selection time").
+
+Widen the `parentRouting` param type (line ~32) and add the pin passthroughs:
+
+```ts
+  parentRouting?: Pick<
+    StoryRouting,
+    "agent" | "agentProfileId" | "profileModelTier" | "profileModelPin" | "initialAgent" | "initialProfileId"
+  >,
+```
+
+Mirror the two existing `profileModelTier` conditional spreads (the `story.routing` baseline one and
+the `parentRouting` override one) with `profileModelPin` ones, in the same override order:
+
+```ts
+        ...(story.routing?.profileModelPin !== undefined && { profileModelPin: story.routing.profileModelPin }),
+        // (next to the parentRouting overrides:)
+        ...(parentRouting?.profileModelPin !== undefined && { profileModelPin: parentRouting.profileModelPin }),
+```
+
+Test: add one case to the decompose-mapper suite — a parent carrying `profileModelPin` and no
+`profileModelTier` produces substories whose `routing.profileModelPin` is the pin and whose
+`routing.modelTier` is `"balanced"` (the tier-only seed), never the pin literal.
+Find the suite with `grep -rln "mapDecomposedStoriesToUserStories" test/`.
+
+- [ ] **Step 7b: Relax the profile↔ladder binding gate for pin targets + amend ADR-025**
+
+🚨 **Without this, the pin feature is unloadable.** `NaxConfigSchema.superRefine`
+(`src/config/schemas.ts:522-534`, implementing ADR-025 §4) hard-errors every profile whose
+`target.(agent, model)` matches no `tierOrder` rung — and a literal-model pin target can never match a
+rung, so any config that pins a model is rejected at load. The binding invariant is right for tier
+targets (escalation from them needs a defined path) and meaningless for pins (a pinned story never
+escalates by tier — nax#1739).
+
+In the superRefine, gate the rung check on the tier question, using Task 1's resolver:
+
+```ts
+    for (const [pi, profile] of profiles.entries()) {
+      const { agent: pAgent, model: pModel } = profile.target;
+      // Plan C (spec §4): a target that names a tier must bind to a rung; a target that names a
+      // literal model is a pin — exempt from binding, and exempt from tier escalation.
+      const namesTier = resolveTierMembership(data.models ?? {}, pAgent, pModel, data.agent?.default ?? "claude").isTier;
+      const hasMatchingRung = tierOrder.some((r) => r.tier === pModel && r.agent === pAgent);
+      if (namesTier && !hasMatchingRung) {
+        // ...existing addIssue unchanged...
+      }
+```
+
+(Apply the shorthand alias first if `MODEL_SHORTHAND_TIERS[pModel.toLowerCase()]` maps — an aliased
+target is a tier target. Keep the agent-exists check below it unconditional.)
+
+Tests (`test/unit/config/schemas.test.ts`, next to the existing binding tests — find them with
+`grep -rn "has no matching rung" test/ src/` and mirror their fixture): a profile pinning
+`claude-opus-5-1` on an agent-qualified ladder parses successfully; a profile targeting a tier with no
+matching rung still errors with the existing message.
+
+Then amend the ADRs (same commit — the code and its governing invariant move together):
+- `docs/adr/ADR-025-agent-routing-and-cross-agent-escalation.md` §4: after the binding bullet, add —
+  "**Amended by plan C (2026-09-02):** the binding invariant applies to targets that name a *tier* for
+  their agent (per the tier-or-model contract in
+  `docs/superpowers/specs/2026-09-02-plan-c-tier-or-model-resolution-design.md` §2). A target that
+  names a literal model is a **pin**: exempt from rung binding, recorded as `profileModelPin` (never as
+  a tier), and excluded from tier escalation (nax#1739)."
+- Same file §5, after the "PRD agent wins" bullet, add — "**Amended by plan C (2026-09-02):** when the
+  PRD leaves agent unset and the classifier abstains, a rung-qualified `complexityRouting` entry may
+  seed the agent (precedence: PRD agent → `decision.agent` → complexity-rung agent → default)."
+- `docs/adr/ADR-027-adapter-protocol-split.md` §7 (custom tiers lose their attribution), append one
+  line — "**Implemented by plan C** with two refinements: membership is fallback-inclusive
+  (`models[agent]`, else `models[defaultAgent]`), and a non-tier object-form string resolves as a
+  literal pin (warned when unrecognizable) rather than throwing."
+
+- [ ] **Step 8: Write the pipeline regression test** — append to `test/unit/pipeline/stages/routing-profile-tier.test.ts`:
 
 ```ts
 test("a profileModelPin does not poison tier selection — derived tier wins (spec §4)", async () => {
@@ -390,15 +520,15 @@ test("a profileModelPin does not poison tier selection — derived tier wins (sp
 
 Write it as a real test against the file's existing harness (it already routes stories with `profileModelTier` fixtures — copy the nearest test and swap the fixture).
 
-- [ ] **Step 8: Run all touched test files + gates**
+- [ ] **Step 9: Run all touched test files + gates**
 
 Run: `bun test test/unit/agents/shared/agent-profile-resolver.test.ts test/unit/plan/strategies/finalize-routing.test.ts test/unit/pipeline/stages/routing-profile-tier.test.ts --timeout=30000 && bun run typecheck && bun run lint`
 Expected: PASS / clean. Also run `bun run test` once here — the signature change ripples through any test constructing these functions.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add src/agents/shared/agent-profile-resolver.ts src/prd/types.ts src/plan/strategies/finalize-routing.ts src/plan/strategies/persist-prd.ts test/unit/agents/shared/agent-profile-resolver.test.ts test/unit/plan/strategies/finalize-routing.test.ts test/unit/pipeline/stages/routing-profile-tier.test.ts
+git add src/agents/shared/agent-profile-resolver.ts src/prd/types.ts src/prd/decompose-mapper.ts src/plan/strategies/finalize-routing.ts src/plan/strategies/persist-prd.ts src/cli/plan-command.ts src/config/schemas.ts docs/adr/ADR-025-agent-routing-and-cross-agent-escalation.md docs/adr/ADR-027-adapter-protocol-split.md test/unit/agents/shared/agent-profile-resolver.test.ts test/unit/plan/strategies/finalize-routing.test.ts test/unit/pipeline/stages/routing-profile-tier.test.ts test/unit/config/schemas.test.ts
 git commit -m "feat(routing): record a profile's literal model as a pin, not a tier
 
 profileModelPin/initialModelPin survive into prd.json under their true name;
@@ -630,12 +760,12 @@ ladders become rankable; both #1575 callers move in lockstep. Spec §5."
 
 **Files:**
 - Modify: `src/config/schemas-execution.ts:11-16` (value schema)
-- Modify: `src/config/runtime-types.ts:38` (**net-zero edit** — the file is 578 lines and the file-size gate refuses growth: change the type on the existing line, declare `ComplexityRung` in `src/config/schema-types.ts` and import it via the existing type-import line if one exists; if a new import line is unavoidable, remove a blank line in the same file to stay net-zero)
+- Modify: `src/config/runtime-types.ts:38` (change the type on the existing line; declare `ComplexityRung` in `src/config/schema-types.ts` and import it. The file is 578 lines against a 600-line limit and is NOT baselined, so a normal import line is fine — do not contort to stay net-zero)
 - Modify: `src/routing/router.ts:100-103` (+ new `complexityToRungAgent`), `src/routing/index.ts` (export)
 - Modify: `src/pipeline/stages/routing.ts` (agent seeding + `derivedAgent`)
 - Modify: `src/execution/executor-types.ts` (`derivedAgent` in the preview)
-- Modify: `src/config/validate.ts:130-138` (object-form validation)
-- Test: `test/unit/config/schemas.test.ts`, `test/unit/routing/routing-core.test.ts`, `test/unit/pipeline/stages/default-agent-routing.test.ts`, `test/unit/config/validate.test.ts`
+- Modify: `src/config/validate.ts:129-138` (object-form validation — do this BEFORE the pipeline tests, see Step 5)
+- Test: `test/unit/config/schemas.test.ts`, `test/unit/routing/routing-core.test.ts`, `test/unit/pipeline/stages/routing-profile-tier.test.ts`, `test/unit/config/validate.test.ts`
 
 **Interfaces:**
 - Consumes: `derivedAgent` input from Task 3.
@@ -650,24 +780,44 @@ ladders become rankable; both #1575 callers move in lockstep. Spec §5."
 
 - [ ] **Step 1: Write the failing schema + router tests**
 
-`test/unit/config/schemas.test.ts` (append, using the file's schema-parse helpers):
+`test/unit/config/schemas.test.ts` — this file has NO generic parse helper. It has
+`baseConfig(models)` (line 17, models only) and a describe-local `withTierOrder()`
+(line ~402). Add a describe-local `withComplexityRouting` in the same shape:
 
 ```ts
-test("complexityRouting accepts rung objects and bare tiers (spec §6)", () => {
-  const parsed = parseConfigWith({ autoMode: { ...base.autoMode, complexityRouting: {
-    simple: { tier: "cheap", agent: "native" },
-    medium: { tier: "balanced", agent: "native" },
-    complex: { tier: "balanced", agent: "claude" },
-    expert: "powerful",
-  }}});
-  expect(parsed.success).toBe(true);
-});
+describe("complexityRouting — rung-qualified entries (spec §6)", () => {
+  const MODELS = {
+    claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+    native: { cheap: "opencode-go/deepseek-v4-flash" },
+  };
 
-test("complexityRouting rung rejects an empty agent", () => {
-  const parsed = parseConfigWith({ autoMode: { ...base.autoMode, complexityRouting: {
-    ...base.autoMode.complexityRouting, simple: { tier: "cheap", agent: "" },
-  }}});
-  expect(parsed.success).toBe(false);
+  function withComplexityRouting(complexityRouting: unknown, models: unknown = MODELS) {
+    return NaxConfigSchema.safeParse({
+      ...DEFAULT_CONFIG,
+      models,
+      autoMode: { ...DEFAULT_CONFIG.autoMode, complexityRouting },
+    });
+  }
+
+  test("accepts rung objects and bare tiers", () => {
+    expect(
+      withComplexityRouting({
+        simple: { tier: "cheap", agent: "native" },
+        medium: { tier: "balanced", agent: "native" },
+        complex: { tier: "balanced", agent: "claude" },
+        expert: "powerful",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects an empty agent on a rung", () => {
+    expect(
+      withComplexityRouting({
+        ...DEFAULT_CONFIG.autoMode.complexityRouting,
+        simple: { tier: "cheap", agent: "" },
+      }).success,
+    ).toBe(false);
+  });
 });
 ```
 
@@ -675,9 +825,10 @@ test("complexityRouting rung rejects an empty agent", () => {
 
 ```ts
 test("complexityToModelTier unwraps rung objects; complexityToRungAgent reads the agent (spec §6)", () => {
-  const config = makeRoutingConfig({ complexityRouting: {
+  // makeNaxConfig is already imported in this file (line 11) from "@test/helpers".
+  const config = makeNaxConfig({ autoMode: { ...DEFAULT_CONFIG.autoMode, complexityRouting: {
     simple: { tier: "cheap", agent: "native" }, medium: "balanced", complex: "balanced", expert: "powerful",
-  }});
+  }}});
   expect(complexityToModelTier("simple", config)).toBe("cheap");
   expect(complexityToRungAgent("simple", config)).toBe("native");
   expect(complexityToModelTier("medium", config)).toBe("balanced");
@@ -699,7 +850,7 @@ const ComplexityRungSchema = z.union([
 // complexityRouting: { simple: ComplexityRungSchema, medium: ..., complex: ..., expert: ... }
 ```
 
-`schema-types.ts`: `export type ComplexityRung = ModelTier | { tier: ModelTier; agent?: string };` (re-export through the config barrels like Task 1's exports). `runtime-types.ts:38` becomes `complexityRouting: Record<Complexity, ComplexityRung>;` — net-zero, see Files note.
+`schema-types.ts`: `export type ComplexityRung = ModelTier | { tier: ModelTier; agent?: string };` (re-export through the config barrels like Task 1's exports). `runtime-types.ts:38` becomes `complexityRouting: Record<Complexity, ComplexityRung>;`.
 
 `router.ts`:
 
@@ -732,26 +883,16 @@ In `src/pipeline/stages/routing.ts`:
 
 and add `derivedAgent: rungAgent` to the `resolveOperatingTier` input (Task 3's call). Hoist `rungAgent` above that call. In `buildPreviewRouting`, pass `derivedAgent: config.autoMode?.complexityRouting ? complexityToRungAgent(complexity, config) : undefined`.
 
-- [ ] **Step 5: Write the failing pipeline test** — append to `test/unit/pipeline/stages/default-agent-routing.test.ts`, mirroring its harness:
+- [ ] **Step 5: Teach `validate.ts` the object form — BEFORE any test uses it**
 
-```ts
-test("unprofiled story routes to the complexity rung's agent (spec §6)", async () => {
-  // config: complexityRouting.simple = { tier: "cheap", agent: "native" }, models.native.cheap defined,
-  // story with NO routing.agent and NO agentProfileId, classified simple.
-  // Assert story.routing.agent === "native" and story.routing.modelTier === "cheap".
-});
+🚨 **Ordering matters.** After Step 3 the schema accepts `{ tier, agent }`, but `validate.ts:129-138`
+still does `configuredTiers.includes(tier)` against what is now an *object* — every object-form config
+fails validation with a bogus "must be one of" error, which would break Step 6's pipeline tests for a
+reason that has nothing to do with routing. Do this step before writing them.
 
-test("profiled story ignores the complexity rung's agent", async () => {
-  // same config; story.routing.agent = "claude" (profile-assigned).
-  // Assert story.routing.agent stays "claude".
-});
-```
-
-- [ ] **Step 6: Verify they fail → wiring from Step 4 makes them pass**
-
-Run: `bun test test/unit/pipeline/stages/default-agent-routing.test.ts --timeout=30000`
-
-- [ ] **Step 7: Validation for the object form** — in `src/config/validate.ts`, extend the existing complexityRouting block (~130-138) to handle both forms:
+Replace the existing complexityRouting block (`src/config/validate.ts:129-138`). The **string form's
+message stays byte-identical** — no test pins it (`grep -rn "must be one of" test/` is empty), but the
+byte-compatibility bar (spec §11) covers user-visible errors too:
 
 ```ts
   const defaultAgentKey = config.agent?.default ?? "claude";
@@ -759,19 +900,62 @@ Run: `bun test test/unit/pipeline/stages/default-agent-routing.test.ts --timeout
   for (const complexity of complexities) {
     const entry = config.autoMode.complexityRouting[complexity];
     if (entry === undefined) continue;
-    const tier = typeof entry === "string" ? entry : entry.tier;
-    const owner = typeof entry === "string" ? defaultAgentKey : (entry.agent ?? defaultAgentKey);
-    if (typeof entry === "object" && entry.agent !== undefined && !config.models[entry.agent]) {
+
+    // String form: message BYTE-IDENTICAL to the pre-plan-C one (spec §11).
+    if (typeof entry === "string") {
+      const configuredTiers = Object.keys(config.models[defaultAgentKey] ?? {});
+      if (!configuredTiers.includes(entry)) {
+        errors.push(`complexityRouting.${complexity} must be one of: ${configuredTiers.join(", ")} (got '${entry}')`);
+      }
+      continue;
+    }
+
+    // Object form: new shape, new messages — nothing pre-existing to preserve.
+    if (entry.agent !== undefined && config.models[entry.agent] === undefined) {
       errors.push(`complexityRouting.${complexity}: agent "${entry.agent}" is not a key in models`);
       continue;
     }
-    if (!Object.keys(config.models[owner] ?? {}).includes(tier)) {
-      errors.push(`complexityRouting.${complexity}: tier "${tier}" not found under agent "${owner}"`);
+    const owner = entry.agent ?? defaultAgentKey;
+    if (!Object.keys(config.models[owner] ?? {}).includes(entry.tier)) {
+      errors.push(`complexityRouting.${complexity}: tier "${entry.tier}" not found under agent "${owner}"`);
     }
   }
 ```
 
-(Adapt to the block's existing error-message style; keep the string-form messages byte-identical if tests pin them.) Add validate tests: object rung with unknown agent → error; object rung whose tier is missing under its agent → error; valid object rung → no error.
+Add validate tests (using `cfg(overrides)` — see Task 6 Step 1 for its real shape): object rung with an
+unknown agent → error; object rung whose tier is missing under its agent → error; valid object rung →
+no error; **and a string-form regression asserting the old message verbatim**.
+
+Run: `bun test test/unit/config/validate.test.ts --timeout=30000` → PASS.
+
+- [ ] **Step 6: Write the failing pipeline tests** — append to `test/unit/pipeline/stages/routing-profile-tier.test.ts`
+
+That file (509 lines, limit 800) already carries the routing-stage harness these need: `makePRD`,
+`makeCtx`, and the `_routingDeps.resolveRouting` / `isGreenfieldStory` stubbing idiom, plus the H2
+describe block covering exactly this precedence ("decision.agent applies when the PRD leaves agent
+unset", "PRD agent still wins"). Add a sibling describe and copy the nearest H2 test's setup:
+
+```ts
+describe("routingStage — H3: complexity-rung agent seeding (spec §6)", () => {
+  test("unprofiled story routes to the complexity rung's agent", async () => {
+    // config: complexityRouting.simple = { tier: "cheap", agent: "native" }, models.native.cheap defined;
+    // story with NO routing.agent and NO agentProfileId, resolveRouting stubbed to complexity "simple".
+    // Assert story.routing.agent === "native" and story.routing.modelTier === "cheap".
+  });
+
+  test("profiled story ignores the complexity rung's agent", async () => {
+    // same config; story.routing.agent = "claude" (profile-assigned).
+    // Assert story.routing.agent stays "claude".
+  });
+});
+```
+
+Write these as real tests against that harness — the comments are the required assertions, not
+placeholders to leave in.
+
+- [ ] **Step 7: Verify they fail → the Step 4 wiring makes them pass**
+
+Run: `bun test test/unit/pipeline/stages/routing-profile-tier.test.ts --timeout=30000`
 
 - [ ] **Step 8: Run all touched suites + gates + full test**
 
@@ -781,7 +965,7 @@ Expected: PASS / clean.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/config/schemas-execution.ts src/config/schema-types.ts src/config/runtime-types.ts src/config/schema.ts src/config/types.ts src/config/index.ts src/routing/router.ts src/routing/index.ts src/pipeline/stages/routing.ts src/execution/executor-types.ts src/config/validate.ts test/unit/config/schemas.test.ts test/unit/config/validate.test.ts test/unit/routing/routing-core.test.ts test/unit/pipeline/stages/default-agent-routing.test.ts
+git add src/config/schemas-execution.ts src/config/schema-types.ts src/config/runtime-types.ts src/config/schema.ts src/config/types.ts src/config/index.ts src/routing/router.ts src/routing/index.ts src/pipeline/stages/routing.ts src/execution/executor-types.ts src/config/validate.ts test/unit/config/schemas.test.ts test/unit/config/validate.test.ts test/unit/routing/routing-core.test.ts test/unit/pipeline/stages/routing-profile-tier.test.ts
 git commit -m "feat(routing): complexityRouting entries may name a cross-agent rung
 
 string form unchanged (defaultAgent); { tier, agent } places unprofiled
@@ -841,7 +1025,12 @@ test("a tierless pinned resolution swaps onto the target's balanced rung (spec �
   - `src/operations/call.ts:69`: `// Pin default: a pinned (tierless) resolution swaps via "balanced" unless the fallback map names a tier (spec §7).`
   - `src/routing/router.ts` `?? "balanced"` and `src/execution/executor-types.ts:99`: `// degrade-don't-throw display/last-resort default (plan C spec §7)` (Task 4 already added router.ts's — verify, don't duplicate).
 
-- [ ] **Step 5: Off-ladder profile warning at first route** — in `src/pipeline/stages/routing.ts`, after the `resolveOperatingTier` call:
+- [ ] **Step 5: Off-ladder profile warning at first route** — in `src/pipeline/stages/routing.ts`, after the `resolveOperatingTier` call.
+
+Scope note (revision 3): this warning exists for **persisted PRD state** — a `profileModelTier` routed
+under an older or different config whose ladder no longer carries that rung. An in-config profile
+target that names a tier can never be off-ladder: the binding superRefine (`schemas.ts:522-534`,
+kept for tier targets by Task 2 Step 7b) rejects the config first.
 
 ```ts
     const ladder = ctx.config.autoMode?.escalation?.tierOrder ?? [];
@@ -882,55 +1071,79 @@ fallback-map tier beats the balanced last resort. Spec §7."
 - Test: `test/unit/config/validate.test.ts`
 
 **Interfaces:**
-- Consumes: nothing new. Produces: two new validation errors; no API change.
+- Consumes: nothing new. Produces: one new validation error; no API change.
 
-- [ ] **Step 1: Write the failing tests** — append to `test/unit/config/validate.test.ts` (reuse its config factory):
+🚨 **Scope (revision 3): agentless rungs only.** `NaxConfigSchema.superRefine`
+(`src/config/schemas.ts:512-517`) ALREADY hard-errors an **agent-qualified** rung whose tier is missing
+under its own agent — adding it again in `validateConfig` would be a duplicate gate
+[[feedback-check-for-a-duplicate-gate-before-calling-one-unwired]]. The genuine gap is the **agentless**
+rung: `{ tier: "typo", attempts: 2 }` is validated by nobody against the default agent's map today and
+only surfaces mid-run as "budget unbounded" + a failed resolution. Spec §8's "today only the agent key
+is checked" is true of `validate.ts` but not of the schema — the spec carries the same correction.
+
+- [ ] **Step 1: Write the failing tests** — append to `test/unit/config/validate.test.ts`. Its
+factory is `cfg(overrides)` (line 18) — a DEFAULT_CONFIG merge that nests `autoMode.escalation`,
+so `tierOrder` goes at `autoMode.escalation.tierOrder`, NOT at the top level:
 
 ```ts
-describe("tierOrder rungs resolve in their own agent's map (spec §8)", () => {
-  test("rung tier missing under its own agent is an error", () => {
-    const config = makeValidConfig({
-      models: { claude: builtinTiers, native: { cheap: "opencode-go/deepseek-v4-flash" } },
-      tierOrder: [{ tier: "balanced", attempts: 2, agent: "native" }], // native has no balanced
+describe("agentless tierOrder rungs resolve against the default agent's map (spec §8)", () => {
+  const BUILTINS = { fast: "haiku", balanced: "sonnet", powerful: "opus" };
+  const MODELS = { claude: BUILTINS, native: { cheap: "opencode-go/deepseek-v4-flash" } };
+
+  test("agentless rung whose tier is missing from the default agent's map is an error", () => {
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "cheap", attempts: 2 }] } }, // claude has no "cheap"
     });
     const r = validateConfig(config);
     expect(r.valid).toBe(false);
-    expect(r.errors.join("\n")).toContain('tier "balanced" does not resolve under agent "native"');
+    expect(r.errors.join("\n")).toContain('tier "cheap" does not resolve under agent "claude"');
   });
 
-  test("agentless rung resolves against the default agent", () => {
-    const config = makeValidConfig({ tierOrder: [{ tier: "fast", attempts: 2 }] });
+  test("agentless rung naming a default-agent tier passes", () => {
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "fast", attempts: 2 }] } },
+    });
     expect(validateConfig(config).valid).toBe(true);
   });
 
-  test("rung resolving in its own agent map passes", () => {
-    const config = makeValidConfig({
-      models: { claude: builtinTiers, native: { cheap: "opencode-go/deepseek-v4-flash" } },
-      tierOrder: [{ tier: "cheap", attempts: 3, agent: "native" }],
+  test("agent-qualified rung is left to the schema gate (no duplicate error here)", () => {
+    // schemas.ts:512-517 owns this case; validateConfig must not re-report it.
+    const config = cfg({
+      models: MODELS,
+      autoMode: { escalation: { tierOrder: [{ tier: "cheap", attempts: 3, agent: "native" }] } },
     });
     expect(validateConfig(config).valid).toBe(true);
   });
 });
 ```
 
+(`cfg` merges over `DEFAULT_CONFIG`, whose `complexityRouting` names the builtin tiers — keep
+`claude` in `models` so the pre-existing complexityRouting validation stays satisfied.)
+
 - [ ] **Step 2: Run to verify the first test fails** (`bun test test/unit/config/validate.test.ts --timeout=30000`)
 
 - [ ] **Step 3: Implement** — inside the existing `tierOrder` validation block (`validate.ts:117-127`), after the agent-key check:
 
 ```ts
-      // Spec §8: a rung must resolve within its OWN agent's map — resolveModelForAgent's
-      // defaultAgent fallback is a runtime safety net, not a rung licence; relying on it
-      // ships a config typo that only surfaces mid-run.
-      const owner = tc.agent ?? (config.agent?.default ?? "claude");
-      const ownerMap = config.models[owner];
-      if (ownerMap && ownerMap[tc.tier] === undefined) {
-        errors.push(
-          `autoMode.escalation.tierOrder: tier "${tc.tier}" does not resolve under agent "${owner}" (its own map)`,
-        );
+      // Spec §8 (narrowed, revision 3): only AGENTLESS rungs — schemas.ts:512-517 already
+      // hard-errors an agent-qualified rung whose tier is missing under its own agent.
+      // An agentless rung resolves against the default agent's map, and a typo there
+      // otherwise only surfaces mid-run as "budget unbounded" + a failed resolution.
+      if (tc.agent === undefined) {
+        const owner = config.agent?.default ?? "claude";
+        const ownerMap = config.models[owner];
+        if (ownerMap && ownerMap[tc.tier] === undefined) {
+          errors.push(
+            `autoMode.escalation.tierOrder: tier "${tc.tier}" does not resolve under agent "${owner}" (the default agent)`,
+          );
+        }
       }
 ```
 
-(When `ownerMap` is absent the existing agent-key error already fired — do not double-report.)
+(When `ownerMap` is absent the existing default-agent models error already fired — do not double-report.
+Update the first test's expected substring to match: `does not resolve under agent "claude" (the default agent)`.)
 
 - [ ] **Step 4: Run + gates + full suite + coverage**
 
@@ -955,3 +1168,7 @@ Spec §8 — the defaultAgent fallback stays a runtime safety net, not a rung li
 - [ ] `bun run test:coverage` — per-file floor holds.
 - [ ] Byte-compatibility spot-check: `grep -rn "TIER_RANK" src/` returns nothing; no test file still references it.
 - [ ] The spec's §9 do-not-touch list: `git diff main --stat` shows no changes to `build-hop-callback.ts` beyond Task 5's comment (if any), none to `escalation.ts`.
+- [ ] `bun scripts/check-file-sizes.ts` — no file newly over 600 (src) / 800 (test), no baselined file grown.
+- [ ] Pin survives decompose: `grep -n "profileModelPin" src/prd/decompose-mapper.ts` returns the param type + two spread sites from Task 2 Step 7 — and `grep -n 'profileModelPin' src/prd/decompose-mapper.ts | grep modelTier` returns NOTHING (the pin never seeds `modelTier`).
+- [ ] Binding gate relaxed: a config with a literal-model profile pin parses (Task 2 Step 7b test), and ADR-025 §4/§5 + ADR-027 §7 carry the amendments.
+- [ ] Both PRD write paths threaded: `grep -rn "finalizeAndWritePrd" src/` shows `plan-command.ts` passing `models` and `defaultAgent`.
