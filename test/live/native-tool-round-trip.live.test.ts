@@ -1,11 +1,27 @@
 // RE-ARCH: keep
-import { describe, expect, test } from "bun:test";
-import { getNativeClient } from "@/agents/native/client";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { _clientDeps, _resetNativeClient, buildNativeClient, getNativeClient } from "@/agents/native/client";
 
 // Live: costs money and needs a credential. Opt in with NAX_LIVE=1.
 const live = process.env.NAX_LIVE === "1" ? test : test.skip;
 
 describe("nax-ai tool round-trip (live)", () => {
+  // test/preload.ts replaces _clientDeps.build with a thrower for the whole
+  // process so no test accidentally builds and memoises a real client. Opt
+  // back into the real builder here, and restore the guard afterward so a
+  // real client does not leak into later test files.
+  let originalBuild: typeof _clientDeps.build;
+
+  beforeAll(() => {
+    originalBuild = _clientDeps.build;
+    _clientDeps.build = buildNativeClient;
+  });
+
+  afterAll(() => {
+    _clientDeps.build = originalBuild;
+    _resetNativeClient();
+  });
+
   live(
     "a tool result fed back produces a coherent continuation",
     async () => {
