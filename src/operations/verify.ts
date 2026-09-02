@@ -1,4 +1,3 @@
-import { isAbsolute, join } from "node:path";
 import { makeParseRetryStrategy, ParseValidationError } from "../agents/retry";
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
@@ -6,6 +5,7 @@ import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { TddPromptBuilder } from "../prompts/builders/tdd-builder";
+import { packageWorkdir } from "../runtime/packages";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { FailureCategory, IsolationCheck } from "../tdd/types";
 import type { VerdictCategorization, VerifierVerdict } from "../tdd/verdict";
@@ -183,10 +183,7 @@ async function runVerifierIsolation(
  * that build a minimal package view without a repo root).
  */
 function resolveAbsolutePackageDir(ctx: VerifyContext<TddConfig>): string {
-  const { repoRoot, packageDir } = ctx.packageView;
-  if (!packageDir) return repoRoot || "";
-  if (!repoRoot || isAbsolute(packageDir)) return packageDir;
-  return join(repoRoot, packageDir);
+  return packageWorkdir(ctx.packageView);
 }
 
 export const verifierOp: RunOperationWithHooks<VerifierInput, VerifierOutput, TddConfig, "verify" | "recover"> = {

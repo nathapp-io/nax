@@ -4,7 +4,7 @@ import { pipelineEventBus } from "@/pipeline";
 import { checkCostExceeded, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import { type StoryMetrics, toFallbackHops } from "../metrics";
-import { runPipeline } from "../pipeline/runner";
+import { logPipelineOutcome, runPipeline } from "../pipeline/runner";
 import { postRunPipeline, preRunPipeline } from "../pipeline/stages";
 import { wireEventsWriter } from "../pipeline/subscribers/events-writer";
 import { wireHooks } from "../pipeline/subscribers/hooks";
@@ -31,6 +31,7 @@ import { recordMergeConflictOutcomes } from "./merge-conflict-outcomes";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
 import { synthesizeParallelStoryMetric } from "./parallel-story-metrics";
 import { handlePipelineFailure } from "./pipeline-result-handler";
+import { runPreRunPipeline } from "./pre-run";
 import { drainQueueAtBatchBoundary } from "./queue-handler";
 import { closeStorySessions } from "./session-manager-runtime";
 import { logStoryStart } from "./story-announce";
@@ -185,26 +186,23 @@ export async function executeUnified(
     let preRunCtx: PipelineContext | undefined;
     if (ctx.config.acceptance?.enabled) {
       logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
-      const naxIgnoreIndex = await getRunNaxIgnoreIndex(prd);
-      preRunCtx = {
-        config: ctx.config,
-        rootConfig: ctx.config,
+      preRunCtx = await runPreRunPipeline(
+        {
+          config: ctx.config,
+          workdir: ctx.workdir,
+          featureDir: ctx.featureDir,
+          hooks: ctx.hooks,
+          agentGetFn: ctx.agentGetFn,
+          agentManager: ctx.agentManager,
+          sessionManager: ctx.sessionManager,
+          runtime: ctx.runtime,
+          abortSignal: ctx.abortSignal,
+          eventEmitter: ctx.eventEmitter,
+        },
         prd,
-        projectDir: ctx.workdir,
-        workdir: ctx.workdir,
-        naxIgnoreIndex,
-        featureDir: ctx.featureDir,
-        story: prd.userStories[0],
-        stories: prd.userStories,
-        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-        hooks: ctx.hooks,
-        agentGetFn: ctx.agentGetFn,
-        agentManager: ctx.agentManager,
-        sessionManager: ctx.sessionManager,
-        runtime: ctx.runtime,
-        abortSignal: ctx.abortSignal,
-      };
-      await runPipeline(preRunPipeline, preRunCtx, ctx.eventEmitter);
+        await getRunNaxIgnoreIndex(prd),
+        preRunPipeline,
+      );
     }
 
     while (iterations < ctx.config.execution.maxIterations) {
@@ -669,7 +667,9 @@ export async function executeUnified(
     // Post-run pipeline (acceptance tests) — only when acceptance is configured
     if (ctx.config.acceptance?.enabled) {
       logger?.info("execution", "Running post-run pipeline (acceptance tests)");
-      await runPipeline(
+      // Same defect class as the pre-run call site: discarding this result loses
+      // the only record of the acceptance gate failing to reach its verdict.
+      const postRunResult = await runPipeline(
         postRunPipeline,
         {
           config: ctx.config,
@@ -691,6 +691,7 @@ export async function executeUnified(
         } satisfies PipelineContext,
         ctx.eventEmitter,
       );
+      logPipelineOutcome(postRunResult, "Post-run pipeline (acceptance tests)");
     }
 
     return buildResult("max-iterations");

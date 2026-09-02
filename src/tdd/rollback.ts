@@ -58,6 +58,16 @@ async function runGitBounded(
   args: string[],
   workdir: string,
 ): Promise<{ exitCode: number; stderr: string; stdout: string; timedOut: boolean; drainFailed: boolean }> {
+  // Symmetric with the guard in src/tdd/isolation.ts. Bun.spawn treats cwd:""
+  // and cwd:undefined as unset and falls back to process.cwd(); here that would
+  // run `git reset --hard` against whatever repository nax was launched from,
+  // which is strictly worse than the wrong-repo diff that motivated the guard.
+  // AC-3 (below): the rollback surface must reject with a plain Error whose
+  // message names the rollback failure, so keep that shape here rather than
+  // introducing a NaxError this path's classification logic would not expect.
+  if (!workdir) {
+    throw new Error(`Git rollback failed: git ${args.join(" ")} called with an empty workdir`); // nax-lint-allow: plain-error
+  }
   const proc = _rollbackDeps.spawn(["git", ...args], {
     cwd: workdir,
     stdout: "pipe",
