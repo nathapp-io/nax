@@ -2,16 +2,19 @@
  * The native AgentAdapter: one-shot completions over nax-ai, no subprocess.
  *
  * Members that describe a process are answered honestly rather than faked:
- * there is no binary, no command and no pid. Session methods throw until
- * Phase B, which is a storage feature rather than a mapping over complete()
+ * there is no binary, no command and no pid. openSession/closeSession are
+ * transcript-file bookkeeping (Phase B); sendTurn still throws until the next
+ * task replaces it with the actual multi-turn mapping over complete()
  * (ADR-027 section 10).
  */
 
+import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { NativeSessionUnsupportedError, toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
+import { closeNativeSession, openNativeSession } from "./session/session";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
 const CONSERVATIVE_CONTEXT_TOKENS = 128_000;
@@ -151,15 +154,17 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
   }
 
-  openSession(): Promise<never> {
-    return Promise.reject(new NativeSessionUnsupportedError("openSession"));
+  openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
+    return openNativeSession(name, opts);
   }
 
   sendTurn(): Promise<never> {
     return Promise.reject(new NativeSessionUnsupportedError("sendTurn"));
   }
 
-  closeSession(): Promise<never> {
-    return Promise.reject(new NativeSessionUnsupportedError("closeSession"));
+  closeSession(handle: SessionHandle): Promise<void> {
+    // The adapter interface has no failure signal, so a close through this path
+    // is a clean one. sendTurn keeps the transcript itself when a turn fails.
+    return closeNativeSession(handle, false);
   }
 }

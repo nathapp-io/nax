@@ -136,9 +136,8 @@ describe("NativeAgentAdapter shape", () => {
     expect(adapter.buildCommand()).toEqual([]);
   });
 
-  test("refuses session methods, naming the phase that adds them", async () => {
+  test("refuses sendTurn, naming the phase that adds it", async () => {
     const adapter = new NativeAgentAdapter();
-    await expect(adapter.openSession()).rejects.toThrow(/Phase B/);
     await expect(adapter.sendTurn()).rejects.toThrow(/Phase B/);
   });
 });
