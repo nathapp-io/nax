@@ -89,6 +89,14 @@ export async function runPipeline(
         action: "fail",
         reason: `Stage "${stage.name}" threw error: ${errorMessage(error)}`,
       };
+      // A throw is logged here, not just returned. Callers may discard the
+      // result — the pre-run acceptance pipeline did — and an unlogged throw
+      // then leaves no trace of why the stage stopped.
+      logger.error("pipeline", "Stage threw error", {
+        stage: stage.name,
+        storyId: context.story?.id,
+        error: errorMessage(error),
+      });
       eventEmitter?.emit("stage:exit", stage.name, failResult);
       return {
         success: false,
