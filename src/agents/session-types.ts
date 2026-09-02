@@ -114,6 +114,8 @@ export interface SendTurnOpts {
    * instead, so that path ignores this.
    */
   contextPullTools?: readonly ToolDescriptor[];
+  /** Coding tools advertised to the model this turn (already policy-filtered). */
+  codingTools?: readonly import("@/tools").CodingTool[];
 }
 
 /** Result returned by sendTurn(). */

@@ -7,6 +7,7 @@ import { nativeTranscriptDirs } from "@/agents/native/session/session";
 import { loadTranscript } from "@/agents/native/session/transcript-store";
 import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
+import type { CodingTool } from "@/tools";
 
 let dir: string;
 const handle = { id: "sess-a", agentName: "native" } as const;
@@ -29,6 +30,16 @@ const opts = (over: Partial<SendTurnOpts> = {}): SendTurnOpts => ({
   interactionHandler: { onInteraction: async () => ({ answer: "tool said hi" }) },
   ...over,
 });
+
+const fakeRead: CodingTool = {
+  name: "Read",
+  description: "Read a file",
+  inputSchema: { type: "object", properties: { path: { type: "string" } } },
+  scope: { pathFields: ["path"] },
+  async run() {
+    return { content: "body" };
+  },
+};
 
 describe("native turn loop", () => {
   test("a reply with no tool calls ends the turn in one round trip", async () => {
@@ -158,5 +169,62 @@ describe("native turn loop", () => {
   test("a session with no known transcript directory fails loudly", async () => {
     nativeTranscriptDirs.delete("sess-a");
     await expect(runNativeTurn(handle, "hi", opts(), { complete: async () => reply() })).rejects.toThrow(/transcript/i);
+  });
+
+  test("a denied coding tool becomes a tool-result that is NOT isError", async () => {
+    const messages: unknown[] = [];
+    let round = 0;
+    await runNativeTurn(
+      handle,
+      "please read",
+      opts({
+        codingTools: [fakeRead],
+        interactionHandler: {
+          onInteraction: async () => ({
+            answer: "Denied: not granted",
+            denied: { reason: "not granted", breach: false },
+          }),
+        },
+      }),
+      {
+        complete: async (msgs) => {
+          messages.push(...msgs);
+          round += 1;
+          return round === 1 ? reply({ toolCalls: [{ id: "c1", name: "Read", input: {} }] }) : reply();
+        },
+      },
+    );
+
+    const toolResult = messages.find((m) => (m as { role?: string }).role === "tool-result") as {
+      isError?: boolean;
+      denied?: unknown;
+    };
+    expect(toolResult.isError).toBeUndefined();
+    expect(toolResult.denied).toEqual({ reason: "not granted", breach: false });
+  });
+
+  test("a named coding tool is routed as the coding-tool kind, not context-tool", async () => {
+    const seen: string[] = [];
+    let round = 0;
+    await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        codingTools: [fakeRead],
+        interactionHandler: {
+          onInteraction: async (r) => {
+            if (r.kind === "coding-tool") seen.push(r.name);
+            return { answer: "body" };
+          },
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          return round === 1 ? reply({ toolCalls: [{ id: "c1", name: "Read", input: {} }] }) : reply();
+        },
+      },
+    );
+    expect(seen).toEqual(["Read"]);
   });
 });

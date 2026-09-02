@@ -12,11 +12,27 @@ import type { TokenUsage } from "@/agents/cost";
 import type { SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { nativeTranscriptDirs } from "./session";
-import { toToolDefinitions } from "./tool-mapping";
+import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 
 /** Matches SendTurnOpts.maxTurns' documented default. */
 const DEFAULT_MAX_TURNS = 10;
+
+/**
+ * The transcript message nax stores: nax-ai's ConversationMessage widened with
+ * the coding-tool denial marker (ADR-029 s5). The marker is structural data the
+ * model must be able to act on — dropping it because the wire type does not
+ * know it yet is exactly the defect this widening exists to prevent.
+ */
+type NativeTranscriptMessage =
+  | ConversationMessage
+  | {
+      readonly role: "tool-result";
+      readonly toolCallId: string;
+      readonly content: string;
+      readonly isError?: boolean;
+      readonly denied?: import("@/agents").AdapterInteractionResponse["denied"];
+    };
 
 export interface NativeTurnResponse {
   readonly text: string;
@@ -46,10 +62,12 @@ export async function runNativeTurn(
     });
   }
 
-  const messages: ConversationMessage[] = [...(await loadTranscript(dir, handle.id))];
+  const messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id))];
   messages.push({ role: "user", content: prompt });
 
-  const tools = toToolDefinitions(opts.contextPullTools ?? []);
+  const codingTools = opts.codingTools ?? [];
+  const codingToolNames = new Set(codingTools.map((t) => t.name));
+  const tools = [...toToolDefinitions(opts.contextPullTools ?? []), ...codingToolsToDefinitions(codingTools)];
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
 
   let roundTrips = 0;
@@ -79,11 +97,24 @@ export async function runNativeTurn(
 
     for (const call of res.toolCalls) {
       try {
-        const answer = await opts.interactionHandler.onInteraction({
-          kind: "context-tool",
-          name: call.name,
-          input: call.input,
-        });
+        const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
+        const answer = await opts.interactionHandler.onInteraction(
+          kind === "coding-tool"
+            ? { kind, name: call.name, input: (call.input ?? {}) as Record<string, unknown> }
+            : { kind, name: call.name, input: call.input },
+        );
+
+        // A denial is data the model can act on, and deliberately NOT isError:
+        // a refused Write is not a crashed Write (ADR-029 s5).
+        if (answer?.denied !== undefined) {
+          messages.push({
+            role: "tool-result",
+            toolCallId: call.id,
+            content: answer.answer,
+            denied: answer.denied,
+          });
+          continue;
+        }
         messages.push({ role: "tool-result", toolCallId: call.id, content: answer?.answer ?? "" });
       } catch (err) {
         // A tool failure is data, not a turn failure: the existing pull-tool

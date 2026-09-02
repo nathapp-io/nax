@@ -613,6 +613,7 @@ export class SessionManager implements ISessionManager {
         signal: opts?.signal,
         maxTurns: opts?.maxTurns,
         contextPullTools: opts?.contextPullTools,
+        codingTools: opts?.codingTools,
       });
       return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {
