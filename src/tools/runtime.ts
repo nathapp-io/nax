@@ -27,6 +27,9 @@ export type CodingToolOutcome =
   | { readonly kind: "error"; readonly content: string }
   | { readonly kind: "denied"; readonly reason: string; readonly breach: boolean };
 
+/** Injectable logger seam, mirroring _pullToolsDeps.getLogger. */
+export const _codingToolDeps = { getLogger: getSafeLogger };
+
 export interface CodingToolRuntime {
   /** Op declaration intersected with policy grants. Both can only narrow. */
   advertised(declared: readonly string[]): readonly CodingTool[];
@@ -49,10 +52,30 @@ export function _resetBuiltinsForTest(): void {
   builtinsRegistered = false;
 }
 
-export function createCodingToolRuntime(opts: { policy: ToolPolicy; maxBytes?: number }): CodingToolRuntime {
+export function createCodingToolRuntime(opts: {
+  policy: ToolPolicy;
+  maxBytes?: number;
+  storyId?: string;
+}): CodingToolRuntime {
   registerBuiltinCodingTools();
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
   const granted = new Set(opts.policy.grantedTools());
+
+  /**
+   * One line per call, mirroring the pull-tool subsystem's `invoked` record.
+   *
+   * Every outcome is logged, denials included: a refused call that leaves no
+   * trace is indistinguishable from a call never made, and telling those two
+   * apart is the whole reason this exists.
+   */
+  function log(tool: string, outcome: CodingToolOutcome["kind"], resultBytes: number): void {
+    _codingToolDeps.getLogger()?.info("coding-tool", "invoked", {
+      storyId: opts.storyId,
+      tool,
+      outcome,
+      resultBytes,
+    });
+  }
 
   return {
     advertised(declared) {
@@ -68,6 +91,7 @@ export function createCodingToolRuntime(opts: { policy: ToolPolicy; maxBytes?: n
     async callTool(name, input) {
       const tool = getCodingTool(name);
       if (tool === undefined) {
+        log(name, "denied", 0);
         return { kind: "denied", reason: `unknown tool "${name}"`, breach: false };
       }
 
@@ -82,6 +106,7 @@ export function createCodingToolRuntime(opts: { policy: ToolPolicy; maxBytes?: n
             root: opts.policy.root,
           });
         }
+        log(name, "denied", verdict.reason.length);
         return { kind: "denied", reason: verdict.reason, breach: verdict.breach };
       }
 
@@ -91,11 +116,13 @@ export function createCodingToolRuntime(opts: { policy: ToolPolicy; maxBytes?: n
           resolvedPaths: verdict.resolvedPaths,
           maxBytes,
         });
-        return result.isError === true
-          ? { kind: "error", content: result.content }
-          : { kind: "ok", content: result.content };
+        const kind = result.isError === true ? "error" : "ok";
+        log(name, kind, result.content.length);
+        return { kind, content: result.content };
       } catch (err) {
-        return { kind: "error", content: err instanceof Error ? err.message : String(err) };
+        const content = err instanceof Error ? err.message : String(err);
+        log(name, "error", content.length);
+        return { kind: "error", content };
       }
     },
   };

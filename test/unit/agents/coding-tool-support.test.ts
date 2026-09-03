@@ -2,7 +2,9 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { _codingToolDeps } from "@/tools";
 
 let root: string;
 
@@ -66,5 +68,37 @@ describe("buildCodingToolSupport", () => {
     });
     const outcome = await support?.runtime.callTool("Read", { path: "../../etc/hosts" });
     expect(outcome?.kind).toBe("denied");
+  });
+});
+
+/**
+ * The runtime's invocation log carries storyId as its first field, per the
+ * structured-log convention. That is only possible if the story reaches the
+ * runtime, so the thread is asserted here rather than assumed.
+ */
+describe("resolveCodingToolSupport — story correlation", () => {
+  test("threads storyId from the run options into the runtime's log", async () => {
+    const logger = makeLogger();
+    const orig = _codingToolDeps.getLogger;
+    _codingToolDeps.getLogger = () => logger;
+    const root = makeTempDir("nax-tool-story-");
+    try {
+      await Bun.write(`${root}/a.ts`, "const a = 1;\n");
+      const support = resolveCodingToolSupport({
+        declaredTools: ["Read"],
+        codingToolRoot: root,
+        pipelineStage: "review",
+        storyId: "US-002",
+        config: makeNaxConfig(),
+      });
+
+      await support?.runtime.callTool("Read", { path: "a.ts" });
+
+      const line = logger.calls.find((c) => c.stage === "coding-tool" && c.message === "invoked");
+      expect(line?.data?.storyId).toBe("US-002");
+    } finally {
+      _codingToolDeps.getLogger = orig;
+      cleanupTempDir(root);
+    }
   });
 });

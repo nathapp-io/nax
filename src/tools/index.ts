@@ -15,6 +15,7 @@ export {
 } from "./registry";
 export type { CodingToolOutcome, CodingToolRuntime } from "./runtime";
 export {
+  _codingToolDeps,
   _resetBuiltinsForTest,
   createCodingToolRuntime,
   DEFAULT_TOOL_MAX_BYTES,

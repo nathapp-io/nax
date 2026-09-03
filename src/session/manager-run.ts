@@ -71,6 +71,7 @@ export async function runTrackedSession(
     root: request.runOptions.codingToolRoot,
     grants: resolvedPermissions.toolGrants,
     declared: request.runOptions.declaredTools ?? [],
+    ...(request.runOptions.storyId !== undefined ? { storyId: request.runOptions.storyId } : {}),
   });
 
   const callerCallback = request.runOptions.onSessionEstablished;

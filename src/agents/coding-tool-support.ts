@@ -30,6 +30,7 @@ export function buildCodingToolSupport(args: {
   root?: string;
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
+  storyId?: string;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -47,7 +48,10 @@ export function buildCodingToolSupport(args: {
     );
   }
 
-  const runtime = createCodingToolRuntime({ policy: compileToolPolicy(grants, args.root) });
+  const runtime = createCodingToolRuntime({
+    policy: compileToolPolicy(grants, args.root),
+    ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
+  });
   const tools = runtime.advertised(args.declared);
   if (tools.length === 0) return undefined;
   return { runtime, tools };
@@ -66,7 +70,7 @@ export function buildCodingToolSupport(args: {
  * invisible until an operation happens to dispatch through the other.
  */
 export function resolveCodingToolSupport(
-  options: Pick<AgentRunOptions, "declaredTools" | "codingToolRoot" | "config" | "pipelineStage">,
+  options: Pick<AgentRunOptions, "declaredTools" | "codingToolRoot" | "config" | "pipelineStage" | "storyId">,
 ): CodingToolSupport | undefined {
   const declared = options.declaredTools ?? [];
   if (declared.length === 0) return undefined;
@@ -75,5 +79,6 @@ export function resolveCodingToolSupport(
     root: options.codingToolRoot,
     grants: resolved.toolGrants,
     declared,
+    ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
   });
 }

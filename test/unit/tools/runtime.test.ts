@@ -1,8 +1,10 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeLogger } from "@test/helpers";
 import {
+  _codingToolDeps,
   _resetBuiltinsForTest,
   _resetRegistryForTest,
   compileToolPolicy,
@@ -171,5 +173,75 @@ describe("after the thrown-tool cleanup", () => {
     const out = await rt.callTool("Read", { path: "src/a.ts" });
     expect(out.kind).toBe("ok");
     if (out.kind === "ok") expect(out.content).toContain("const a = 1;");
+  });
+});
+
+/**
+ * Observability: every coding-tool call is logged.
+ *
+ * Its sibling subsystem logs one `pull-tool`/`invoked` line per call, and that
+ * is how "did the reviewer actually use a tool" gets answered from a run
+ * record. Coding tools logged only policy breaches, so zero calls and zero
+ * tools advertised looked identical — which is precisely how the first Phase C1
+ * A/B was misread as "the model chose not to use its tools" when in fact it had
+ * none. The ADR now requires a parity claim to show tools were invoked; this is
+ * the line it reads.
+ */
+describe("createCodingToolRuntime — invocation logging", () => {
+  let logger: ReturnType<typeof makeLogger>;
+  let orig: typeof _codingToolDeps.getLogger;
+
+  beforeEach(() => {
+    logger = makeLogger();
+    orig = _codingToolDeps.getLogger;
+    _codingToolDeps.getLogger = () => logger;
+  });
+
+  afterEach(() => {
+    _codingToolDeps.getLogger = orig;
+  });
+
+  function invoked() {
+    return logger.calls.filter((c) => c.stage === "coding-tool" && c.message === "invoked");
+  }
+
+  test("logs a successful call with the story, tool and output size", async () => {
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root),
+      storyId: "US-002",
+    });
+
+    const outcome = await rt.callTool("Read", { path: "src/a.ts" });
+
+    expect(outcome.kind).toBe("ok");
+    expect(invoked()).toHaveLength(1);
+    expect(invoked()[0]?.data).toEqual({
+      storyId: "US-002",
+      tool: "Read",
+      outcome: "ok",
+      resultBytes: "const a = 1;\n".length,
+    });
+  });
+
+  test("logs a denial, so a refused call is visible and not silence", async () => {
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root),
+      storyId: "US-002",
+    });
+
+    await rt.callTool("Write", { path: "src/a.ts", content: "x" });
+
+    expect(invoked()[0]?.data).toMatchObject({ tool: "Write", outcome: "denied" });
+  });
+
+  test("storyId is the first key, per the structured-log convention", async () => {
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root),
+      storyId: "US-002",
+    });
+
+    await rt.callTool("Read", { path: "src/a.ts" });
+
+    expect(Object.keys(invoked()[0]?.data ?? {})[0]).toBe("storyId");
   });
 });
