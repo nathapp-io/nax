@@ -934,7 +934,7 @@ git commit -m "test(tools): end-to-end probe for the C2 story loop and its ledge
 | 7 Quoting risk needs an escape-attempting test | Task 2 Step 5 |
 | 8 Exit criterion | Task 6 Step 4 |
 
-**Placeholder scan:** no TBD/TODO. Task 5 Step 1 deliberately instructs the implementer to match the real signature of `buildCodingToolSupport` rather than the sketch, and Step 3 describes wiring against named files and named gates rather than showing code — that is the one place code is not given, because the surrounding function's shape must be read first. Flagged rather than hidden.
+**Placeholder scan:** no TBD/TODO, and no "similar to Task N". Task 5 Steps 4, 5 and 7 describe edits in prose against named files, named symbols and named CI gates rather than showing a full diff, because each modifies an existing function whose surrounding shape must be read first — Step 1 instructs exactly that, and the signatures those steps must match are quoted in the task preamble rather than guessed at.
 
 **Type consistency:** `ToolAuditSink`/`ToolCallRecord` (Task 4) are used unchanged in Tasks 5 and 6. `createRunCommandTool(declared: ReadonlyMap<string, string>)` (Task 2) is called with a map built in Task 5. `buildCommitArgvs` returns `{ add, commit } | { error }` and every caller narrows on `"error" in built`. `CodingToolName` gains exactly three members across Tasks 1-3, and each task adds it to `RESERVED_TOOL_NAMES` in the same step.
 
