@@ -353,7 +353,7 @@ grandfathered; the verifier and test-writer leave the baseline next."
 
 **Files:**
 - Modify: `src/operations/verify.ts` (add `tools:` to `verifierOp`, after the `config:` line)
-- Test: `test/unit/operations/op-tool-declarations.test.ts`
+- Test: `test/unit/operations/tdd-session-op-tools.test.ts`
 
 **Interfaces:**
 - Consumes: `REQUIRED_TOOLS_BY_ROLE` from Task 1 (the gate that makes this required).
@@ -361,7 +361,7 @@ grandfathered; the verifier and test-writer leave the baseline next."
 
 - [ ] **Step 1: Write the failing test**
 
-Create `test/unit/operations/op-tool-declarations.test.ts`:
+Create `test/unit/operations/tdd-session-op-tools.test.ts`:
 
 ```typescript
 /**
@@ -398,7 +398,7 @@ describe("verifierOp tools", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/unit/operations/op-tool-declarations.test.ts`
+Run: `bun test test/unit/operations/tdd-session-op-tools.test.ts`
 Expected: FAIL on the first two — the resolved set is `["Read","Glob","Grep"]`, so `RunCommand` and `Git` are absent. The third test PASSES already; it guards a property that must be preserved.
 
 - [ ] **Step 3: Add the declaration**
@@ -418,7 +418,7 @@ In `src/operations/verify.ts`, inside `verifierOp`, immediately after the `confi
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/unit/operations/op-tool-declarations.test.ts`
+Run: `bun test test/unit/operations/tdd-session-op-tools.test.ts`
 Expected: PASS, all 3 tests.
 
 - [ ] **Step 5: Lower the baseline — the commit fails without this**
@@ -437,7 +437,7 @@ remains until Task 3.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/operations/verify.ts scripts/baselines/op-tool-capability-baseline.json test/unit/operations/op-tool-declarations.test.ts
+git add src/operations/verify.ts scripts/baselines/op-tool-capability-baseline.json test/unit/operations/tdd-session-op-tools.test.ts
 git commit -m "feat(verify): declare the verifier's tools
 
 Its role says 'Run ONLY the story's scoped test files' and 'check whether the
@@ -458,7 +458,7 @@ Baseline drops from nine to eight."
 **Files:**
 - Modify: `src/operations/write-test.ts` (add `tools:` to `testWriterOp`)
 - Modify: `scripts/baselines/op-tool-capability-baseline.json`
-- Test: `test/unit/operations/op-tool-declarations.test.ts` (extend the file from Task 2)
+- Test: `test/unit/operations/tdd-session-op-tools.test.ts` (extend the file from Task 2)
 
 **Interfaces:**
 - Consumes: the test file and `resolveDeclaredTools` import from Task 2.
@@ -467,7 +467,7 @@ Baseline drops from nine to eight."
 - [ ] **Step 1: Add the import, then write the failing test**
 
 FIRST add `testWriterOp` to the imports at the top of
-`test/unit/operations/op-tool-declarations.test.ts`, keeping biome's ordering
+`test/unit/operations/tdd-session-op-tools.test.ts`, keeping biome's ordering
 (`@/operations/types`, then `@/operations/verify`, then `@/operations/write-test`):
 
 ```typescript
@@ -502,7 +502,7 @@ describe("testWriterOp tools", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/unit/operations/op-tool-declarations.test.ts`
+Run: `bun test test/unit/operations/tdd-session-op-tools.test.ts`
 Expected: FAIL on all three new tests — resolved set is `["Read","Glob","Grep"]`.
 
 - [ ] **Step 3: Add the declaration**
@@ -521,7 +521,7 @@ In `src/operations/write-test.ts`, inside `testWriterOp`, immediately after its 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/unit/operations/op-tool-declarations.test.ts`
+Run: `bun test test/unit/operations/tdd-session-op-tools.test.ts`
 Expected: PASS, all 6 tests.
 
 - [ ] **Step 5: Lower the baseline and confirm it holds exactly seven ops**
@@ -544,7 +544,7 @@ Expected: both exit 0, and the lint output ends with `OK: 25 run op(s) checked, 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/operations/write-test.ts scripts/baselines/op-tool-capability-baseline.json test/unit/operations/op-tool-declarations.test.ts
+git add src/operations/write-test.ts scripts/baselines/op-tool-capability-baseline.json test/unit/operations/tdd-session-op-tools.test.ts
 git commit -m "feat(write-test): declare the test-writer's tools
 
 Write/Edit to create tests and stubs, RunCommand because the role must confirm
