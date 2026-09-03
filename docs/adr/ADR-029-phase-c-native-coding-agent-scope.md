@@ -5,7 +5,9 @@
 **Author:** William Khoo, Claude
 **Builds on:** ADR-027 (adapter-protocol split), ADR-028 (native sessions and the pull-tool loop)
 **Related:** #374 (scoped tool allowlists, PERM-002 Phase 2), the "Nax Native LLM Harness" feasibility analysis §9, §10, §11
-**Implementation:** none, and none planned until its entry conditions are met.
+**Implementation:** Phase C1 (filesystem tools + read-only Git; Bash severed) is
+implemented on `feat/native-coding-tools-phase-c1`, under an explicit override of
+the §2 entry condition — see the parity status appended to §2.
 
 ---
 
@@ -68,6 +70,49 @@ implementation quality. That is acceptable **only** because the target is cheap
 API-key models for implementation work, not replacing Claude. If A and B have not
 demonstrated parity on easier ops, that premise is unproven and C is a bet rather
 than a step.
+
+#### Parity status (updated 2026-09-03)
+
+**Cost: demonstrated.** Phase B measured native at roughly a tenth of acpx's
+per-op cost on the review ops. That result has not been retracted, but note it
+has not reproduced at the same magnitude: the Phase C1 A/B measured native ~2.1x
+cheaper on a whole run, not ~10x.
+
+**Quality: partially demonstrated, and not by the method this section names.**
+
+Phase B could not demonstrate it. Native reviewed the diff only, and the fixture
+carried no planted defect, so "both arms clean" was uninformative.
+
+The Phase C1 A/B used a fixture with a cross-file regression invisible in the
+diff: a signature swap breaking an unchanged caller, with no test covering it.
+Result, n=1: the native reviewer found it and acpx did not. The finding cites the
+file by name with a `verifiedBy.command` of `Read`, and the file appears nowhere
+in the reviewer's prompt — so the tools, not the prompt, are what produced it.
+
+This is one defect class, one model, one fixture. It is direct evidence that
+native tool use closes the specific gap Phase B left open. It is **not** evidence
+of general review-quality parity, and this section should not be read as
+satisfied.
+
+**Two cautions attached to that result:**
+
+1. It was obtained only after fixing a wiring defect that had made coding tools
+   unreachable on the real dispatch path — every native review op declared four
+   tools, was granted four, and was advertised none. The first A/B run measured
+   a capability that was not connected. Any future parity claim must confirm
+   from the run record that tools were actually invoked, never that they were
+   configured.
+2. The regression was reported as `warning`, not `error`, because no acceptance
+   criterion names the affected symbol and the prompt's AC-grounding rule forbids
+   blocking on it. It was corrected only because rectification acts on advisory
+   findings. A real regression that provably cannot block a story is a separate
+   design problem, in review grounding rather than in Phase C.
+
+**Entry condition disposition.** The condition above was **overridden by the
+project owner** for Phase C1, with unproven quality parity accepted as a known
+risk. The override is recorded here so the gap between "the rule" and "what
+happened" is not left to be rediscovered. The condition still stands, unmet as
+written, for any Phase C work beyond C1 — in particular for Bash (§3).
 
 ### 3. Sandboxing bash is a security responsibility nax has never carried
 
@@ -133,3 +178,8 @@ This ADR is expected to be superseded by a full Phase C design once its entry
 conditions (§2) are met. Until then it exists to keep the boundary honest: Phases
 A and B may not quietly acquire a coding tool, and Phase C may not quietly start
 without the parity evidence that justifies it.
+
+Phase C1 started under an explicit, recorded override rather than quietly — which
+is the outcome this section was written to force. Open questions 1, 2 and 4 are
+answered by the C1 design; 3 (bash sandboxing) and 5 (whether the gate is
+provider-shaped) remain open and gate any Phase C work beyond C1.
