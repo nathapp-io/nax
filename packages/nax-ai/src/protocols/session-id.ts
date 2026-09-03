@@ -41,6 +41,10 @@ export function vendorSessionHeaders(
   sessionId: string | undefined,
 ): Readonly<Record<string, string>> | undefined {
   if (sessionId === undefined || sessionId === "") return undefined;
+  // Own properties only: a plain object literal inherits `constructor`,
+  // `toString` and friends, and indexing it with one of those provider names
+  // would produce a header named after a function body.
+  if (!Object.hasOwn(VENDOR_SESSION_HEADERS, provider)) return undefined;
   const header = VENDOR_SESSION_HEADERS[provider];
   if (header === undefined) return undefined;
   return { [header]: sessionId };

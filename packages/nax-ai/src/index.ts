@@ -4,9 +4,16 @@
  * Status: pre-1.0, API unstable. Published under the `next` dist-tag.
  *
  * Scope boundary: this package speaks a generic LLM vocabulary — models,
- * messages, tool calls, usage, credentials. It deliberately knows nothing
- * about any consumer's domain concepts (stories, operations, sessions,
- * permission policy). Consumers map onto their own types at their boundary.
+ * messages, tool calls, usage, credentials, and the opaque session id
+ * providers route and cache by. It deliberately knows nothing about any
+ * consumer's domain concepts (stories, operations, permission policy, or what
+ * a session consists of). Consumers map onto their own types at their
+ * boundary.
+ *
+ * "Sessions" was once listed among those exclusions. The distinction that
+ * replaced it: carrying an id a provider recognises is wire knowledge, and
+ * belongs here alongside the per-model affinity and prompt-cache mapping it
+ * drives; deciding what a session *is* remains the consumer's.
  * Keeping that direction one-way is what allows the implementation beneath
  * this surface to be replaced — provider by provider — without consumers
  * noticing.

@@ -192,3 +192,45 @@ describe("request headers", () => {
     expect(reached).toBe(false);
   });
 });
+
+describe("request validation is eager and covers the session id", () => {
+  it("throws from stream() itself, not on first iteration", async () => {
+    const client = makeClient();
+    const model = await client.model("deepseek", "deepseek-chat");
+
+    // No await, no iteration: an async generator would defer the throw.
+    expect(() => client.stream(model, { messages: [], headers: { "bad name": "v" } })).toThrow(/name/i);
+  });
+
+  it("rejects a session id that would splice a header", async () => {
+    const client = makeClient();
+    const model = await client.model("deepseek", "deepseek-chat");
+
+    await expect(client.complete(model, { messages: [], sessionId: "s-1\r\nx-injected: 1" })).rejects.toThrow(
+      /sessionId/,
+    );
+  });
+
+  it("passes a valid session id through to the protocol", async () => {
+    let seen: string | undefined;
+    const client = createClient({
+      providers: PROVIDERS,
+      protocols: {
+        "openai-completions": {
+          pi: async () => ({
+            name: "openai-completions",
+            async *stream(req) {
+              seen = req.sessionId;
+              for (const event of OK) yield event;
+            },
+          }),
+        },
+      },
+    });
+    const model = await client.model("deepseek", "deepseek-chat");
+
+    await client.complete(model, { messages: [], sessionId: "s-1" });
+
+    expect(seen).toBe("s-1");
+  });
+});

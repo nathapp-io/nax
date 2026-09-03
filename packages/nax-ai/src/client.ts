@@ -8,7 +8,7 @@
 
 import { collectStream } from "./protocols/collect.ts";
 import { type BackendSelection, createRegistry, type ProtocolEntries } from "./protocols/registry.ts";
-import { assertValidHeaders } from "./protocols/request-headers.ts";
+import { assertValidHeaders, assertValidSessionId } from "./protocols/request-headers.ts";
 import { retryTransportFaults } from "./protocols/retry.ts";
 import { clampThinkingLevel } from "./protocols/thinking.ts";
 import type { ProtocolEvent, ProtocolRequest } from "./protocols/types.ts";
@@ -56,11 +56,21 @@ export function createClient(options: ClientOptions): Client {
     throw new Error(`transportRetries must be >= 0, got ${transportRetries}.`);
   }
 
-  async function* streamFrom(model: ResolvedModel, req: ClientRequest): AsyncIterable<ProtocolEvent> {
-    // Before the protocol is resolved, so a malformed header is a caller error
-    // reported here rather than a transport failure from inside a provider SDK.
+  /**
+   * Called by stream() and complete() before either returns, not from inside
+   * the generator: a caller error should surface at the call, and an async
+   * generator defers its body until the first next(). complete() collected
+   * immediately and so already looked eager; stream() did not, and returned a
+   * lazy iterable that only failed once someone pulled from it.
+   */
+  function validateRequest(req: ClientRequest): void {
     assertValidHeaders(req.headers);
+    // A session id becomes a header value downstream — in the vendor header
+    // here and in pi-ai's own affinity headers — so it gets the same check.
+    assertValidSessionId(req.sessionId);
+  }
 
+  async function* streamFrom(model: ResolvedModel, req: ClientRequest): AsyncIterable<ProtocolEvent> {
     const protocol = await registry.resolve(model.protocol);
     const thinking = req.thinking !== undefined ? clampThinkingLevel(req.thinking, model.thinkingLevels) : undefined;
 
@@ -96,10 +106,15 @@ export function createClient(options: ClientOptions): Client {
     },
 
     stream(model, req) {
+      validateRequest(req);
       return streamFrom(model, req);
     },
 
-    complete(model, req) {
+    // `async` deliberately: validateRequest throws, and an async function turns
+    // that into a rejected promise. A synchronous throw from a promise-returning
+    // method would break every caller using .catch() rather than try/await.
+    async complete(model, req) {
+      validateRequest(req);
       return collectStream(streamFrom(model, req));
     },
 

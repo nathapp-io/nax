@@ -24,11 +24,12 @@ import type {
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
+import type { AuthResolver } from "../auth/resolver.ts";
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { classifyHttpError, classifyThrown, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
-import { mergeRequestHeaders } from "./request-headers.ts";
+import { assertValidHeaders, assertValidSessionId, mergeRequestHeaders, withoutEmpty } from "./request-headers.ts";
 import { vendorSessionHeaders } from "./session-id.ts";
 import { createToolArgAccumulator, parseToolArgs } from "./tool-args.ts";
 import type {
@@ -187,7 +188,9 @@ export function toPiOptions(req: ProtocolRequest): SimpleStreamOptions {
     ...(req.cacheRetention !== undefined ? { cacheRetention: req.cacheRetention } : {}),
     ...(req.signal !== undefined ? { signal: req.signal } : {}),
     ...(req.headers !== undefined ? { headers: { ...req.headers } } : {}),
-    ...(req.sessionId !== undefined ? { sessionId: req.sessionId } : {}),
+    // Empty is treated as absent, matching vendorSessionHeaders: an id that
+    // cannot identify anything should not reach pi as though it could.
+    ...(req.sessionId !== undefined && req.sessionId !== "" ? { sessionId: req.sessionId } : {}),
     // pi-ai's scale has no "off": the absence of the field is how thinking is
     // disabled, so mapping "off" to a value would silently enable it.
     ...(req.thinking !== undefined && req.thinking !== "off" ? { reasoning: req.thinking } : {}),
@@ -399,7 +402,17 @@ type StreamSimple = (
   options?: SimpleStreamOptions,
 ) => AsyncIterable<AssistantMessageEvent>;
 
-export function createPiDeps(options: PiProtocolOptions = {}, streamSimple?: StreamSimple): PiDeps {
+export function createPiDeps(
+  options: PiProtocolOptions = {},
+  streamSimple?: StreamSimple,
+  /**
+   * Test seam, following `streamSimple`. Without it `auth.headers` is
+   * `undefined` for every provider unless a credential store is configured, so
+   * a test cannot reach the auth/request header merge at all — which is how the
+   * merge shipped with a regression test that passed against the bug.
+   */
+  authResolver?: AuthResolver,
+): PiDeps {
   const store = options.credentials;
   let models: MutableModels;
   if (store === undefined) {
@@ -409,7 +422,7 @@ export function createPiDeps(options: PiProtocolOptions = {}, streamSimple?: Str
     credentialed.set(store, models);
   }
 
-  const resolver = createPiAuthResolver(models);
+  const resolver = authResolver ?? createPiAuthResolver(models);
 
   return {
     resolveModel: async (modelId, provider) => {
@@ -437,11 +450,26 @@ export function createPiDeps(options: PiProtocolOptions = {}, streamSimple?: Str
       // rather than merely exported.
       const auth = await resolver.resolve({ provider: model.provider, model: model.id });
       // The vendor header goes under the caller's own headers, so an explicit
-      // one still wins; auth stays last and wins over both.
-      const mergedHeaders = mergeRequestHeaders(
-        { ...vendorSessionHeaders(model.provider, options_?.sessionId), ...options_?.headers },
-        auth.headers,
-      );
+      // one still wins; auth stays last and wins over both. Left undefined when
+      // there is nothing on the request side, so mergeRequestHeaders can return
+      // undefined and the option stays absent rather than being set to `{}`.
+      const requestHeaders = withoutEmpty({
+        ...vendorSessionHeaders(model.provider, options_?.sessionId),
+        ...options_?.headers,
+      });
+      // Validated here rather than only at the client boundary: this is where
+      // headers reach the wire, and a protocol-direct caller never passes
+      // through the client. The vendor header is included because it is added
+      // after that earlier check.
+      assertValidHeaders(requestHeaders);
+      // Separately, and not covered by the line above: the header check only
+      // sees the id once vendorSessionHeaders has embedded it, which happens
+      // for opencode alone. Every other provider carries it in options.sessionId
+      // and pi-ai turns it into x-session-id / session_id / x-client-request-id
+      // / x-session-affinity — so without this the id is unchecked precisely
+      // where it does the most work.
+      assertValidSessionId(options_?.sessionId);
+      const mergedHeaders = mergeRequestHeaders(requestHeaders, auth.headers);
       const stream = streamSimple ?? models.streamSimple.bind(models);
       yield* stream(model, context, {
         // Construction-time first, so a per-request option could still override

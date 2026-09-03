@@ -26,7 +26,8 @@ These are settled and this design assumes them:
 
 - **Tool execution.** nax-ai emits tool calls and accepts tool results. Executing a tool requires permission policy, which belongs to the consumer.
 - **Cost computation.** nax-ai supplies pricing rates; the consumer computes cost. See §7.
-- **Agent loop, sessions, rate-limit policy.** The consumer owns orchestration. nax-ai retries transport faults only — see §10.1.
+- **Agent loop, session semantics, rate-limit policy.** The consumer owns orchestration. nax-ai retries transport faults only — see §10.1.
+  - Amended 2026-09-03: an opaque `sessionId` on a request is in scope, because providers route and cache by it and the spelling is selected per model (see `src/protocols/session-id.ts`). What a session *consists of* remains the consumer's; only the id crosses the boundary.
 - **Hand-rolling auth or the model catalog.** Explicitly out of scope permanently — see §8.
 
 ## 2. Decisions

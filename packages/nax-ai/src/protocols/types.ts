@@ -152,13 +152,16 @@ export interface ProtocolRequest {
   /**
    * Extra headers for this request.
    *
-   * Deliberately an opaque map rather than a named concept. This package knows
-   * nothing about consumer sessions, so a provider that wants a session
-   * affinity header (opencode-go's `x-opencode-session`, say) is served by the
-   * consumer putting it here — without nax-ai learning that vendor's
-   * vocabulary, which its scope statement forbids.
+   * The escape hatch for anything this package does not model. Session affinity
+   * is modelled — see `sessionId` — so it does not need to go here.
    *
-   * Auth headers win a name collision; see mergeRequestHeaders.
+   * A resolved auth header wins a name collision, case-insensitively. That is
+   * narrower than it sounds and is NOT an auth boundary: when no credential
+   * resolves there is nothing to win, and pi treats a caller-supplied
+   * `authorization` / `x-api-key` / `cf-aig-authorization` as satisfying auth,
+   * so a header set here can authenticate a request without the credential
+   * store being consulted at all. That is intended — it is how a bring-your-own
+   * gateway works — but it means this map is trusted input.
    */
   readonly headers?: Readonly<Record<string, string>>;
   /**

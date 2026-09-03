@@ -97,3 +97,69 @@ describe("createPiDeps session wiring", () => {
     expect(seen?.sessionId).toBe("s-1");
   });
 });
+
+describe("vendorSessionHeaders edge cases", () => {
+  it("treats an empty id as absent", () => {
+    expect(vendorSessionHeaders("opencode-go", "")).toBeUndefined();
+  });
+
+  it.each(["constructor", "__proto__", "toString"])("does not resolve %s off the prototype", (provider) => {
+    expect(vendorSessionHeaders(provider, "s-1")).toBeUndefined();
+  });
+});
+
+describe("header precedence against the vendor header", () => {
+  it("lets an explicit request header override the vendor spelling", async () => {
+    let seen: SimpleStreamOptions | undefined;
+    const deps = createPiDeps({}, (_m, _c, options) => {
+      seen = options;
+      return emptyStream();
+    });
+    const model = await deps.resolveModel("deepseek-v4-flash", "opencode-go");
+
+    for await (const _ of deps.stream(
+      model,
+      { messages: [] },
+      { sessionId: "s-1", headers: { "x-opencode-session": "explicit" } },
+      () => {},
+    )) {
+      // drain
+    }
+
+    expect(seen?.headers?.["x-opencode-session"]).toBe("explicit");
+  });
+});
+
+/**
+ * The gap the vendor-header check hides.
+ *
+ * `assertValidHeaders` sees the session id only once `vendorSessionHeaders` has
+ * embedded it, which happens for opencode alone. Every other provider carries
+ * it in `options.sessionId`, where pi-ai turns it into `x-session-id`,
+ * `session_id`, `x-client-request-id` or `x-session-affinity` — so validating
+ * the header map alone leaves the id unchecked exactly where it does the most
+ * work.
+ */
+describe("session id validation at the wire", () => {
+  const badId = "s-1\r\nx-injected: 1";
+
+  async function drain(provider: string, model: string, sessionId: string) {
+    const deps = createPiDeps({}, () => emptyStream());
+    const resolved = await deps.resolveModel(model, provider);
+    for await (const _ of deps.stream(resolved, { messages: [] }, { sessionId }, () => {})) {
+      // drain
+    }
+  }
+
+  it("rejects a spliceable id for a non-opencode provider, which no header check covers", async () => {
+    await expect(drain("openai-codex", "gpt-5.4", badId)).rejects.toThrow(/sessionId/);
+  });
+
+  it("rejects it for an opencode provider too", async () => {
+    await expect(drain("opencode-go", "deepseek-v4-flash", badId)).rejects.toThrow();
+  });
+
+  it("still accepts an ordinary id", async () => {
+    await expect(drain("openai-codex", "gpt-5.4", "s-1")).resolves.toBeUndefined();
+  });
+});
