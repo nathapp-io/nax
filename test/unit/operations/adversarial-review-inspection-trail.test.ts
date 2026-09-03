@@ -122,3 +122,40 @@ describe("adversarialReviewOp.hopBody — inspection-trail guard (#3A)", () => {
     expect(result.output).toBe(RUBBER_STAMP);
   });
 });
+
+/**
+ * Corroboration (2026-09-03). Reproduces the verdict observed in the Phase C1
+ * A/B run: the reviewer wrote "I have no file/shell access tool in this
+ * environment", then returned `passed:true` with
+ * `inspectedFiles: ["src/calc.ts", "src/calc.test.ts"]` — files it had just
+ * said it could not open. The guard believed the list and let it through.
+ */
+describe("adversarialReviewOp.hopBody — inspection trail corroborated against tool use", () => {
+  const DECLARED = JSON.stringify({
+    passed: true,
+    inspectedFiles: ["src/calc.ts", "src/calc.test.ts"],
+    findings: [],
+  });
+
+  async function sendCount(codingToolUse: { advertised: number; called: string[] } | undefined) {
+    const mockSend = mock(async () => ({ ...turn(DECLARED), ...(codingToolUse ? { codingToolUse } : {}) }));
+    await adversarialReviewOp.hopBody("initial prompt", {
+      send: mockSend,
+      sendWithParseRetry: mockSend,
+      input: { workdir: "/tmp", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, mode: "ref" },
+    } satisfies HopBodyContext<AdversarialReviewInput>);
+    return mockSend.mock.calls.length;
+  }
+
+  test("re-prompts when tools were advertised and the reviewer called none", async () => {
+    expect(await sendCount({ advertised: 4, called: [] })).toBe(2);
+  });
+
+  test("accepts the verdict when the reviewer actually called a tool", async () => {
+    expect(await sendCount({ advertised: 4, called: ["Git", "Read"] })).toBe(1);
+  });
+
+  test("falls back to the self-report when no tools were advertised", async () => {
+    expect(await sendCount(undefined)).toBe(1);
+  });
+});

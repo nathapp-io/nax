@@ -2,9 +2,16 @@ import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import type { ConfigSelector, ConfiguredModel, NaxConfig, TestStrategy } from "../config";
 import type { PipelineStage } from "../config/permissions";
+import { DEFAULT_CODING_TOOLS } from "../config/permissions";
 import type { ComposeInput } from "../prompts/compose";
 import type { NaxRuntime, PackageView } from "../runtime";
 import type { SessionRole } from "../session/types";
+import type { CodingToolName } from "../tools";
+
+/** Absent means the default read set; `[]` means none. The two differ. */
+export function resolveDeclaredTools(op: { tools?: readonly CodingToolName[] }): readonly CodingToolName[] {
+  return op.tools ?? DEFAULT_CODING_TOOLS;
+}
 
 export interface BuildContext<C> {
   readonly packageView: PackageView;
@@ -239,6 +246,17 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
     readonly role: SessionRole;
     readonly lifetime: "fresh" | "warm";
   };
+  /**
+   * Coding tools this operation needs.
+   *
+   * Advertised = this declaration INTERSECTED with what the permission policy
+   * grants. Both axes can only narrow: a reviewer that never declares Write
+   * cannot receive it even under `unrestricted`, because "should a reviewer
+   * write files" is a capability question, not a permission one.
+   *
+   * Omit to receive DEFAULT_CODING_TOOLS. Use `[]` to opt out explicitly.
+   */
+  readonly tools?: readonly CodingToolName[];
   /**
    * Optional resolver for whether the session should remain open after the
    * turn. When omitted, callOp derives this from `session.lifetime`

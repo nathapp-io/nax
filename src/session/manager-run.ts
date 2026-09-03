@@ -6,6 +6,7 @@
  * to avoid circular imports.
  */
 
+import { buildCodingToolSupport } from "../agents/coding-tool-support";
 import type { AgentResult } from "../agents/types";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
@@ -59,6 +60,20 @@ export async function runTrackedSession(
     state.transition(id, "RUNNING");
   }
 
+  const stage = request.runOptions.pipelineStage ?? "run";
+  const resolvedPermissions =
+    request.runOptions.resolvedPermissions ?? resolvePermissions(request.runOptions.config, stage);
+
+  // The seam that makes coding tools reachable: turn the op's declared tools
+  // plus the resolved grants into a live runtime. Must run before
+  // injectedRequest below, which spreads the result into runOptions.
+  const codingSupport = buildCodingToolSupport({
+    root: request.runOptions.codingToolRoot,
+    grants: resolvedPermissions.toolGrants,
+    declared: request.runOptions.declaredTools ?? [],
+    ...(request.runOptions.storyId !== undefined ? { storyId: request.runOptions.storyId } : {}),
+  });
+
   const callerCallback = request.runOptions.onSessionEstablished;
   const injectedRequest: SessionManagedRunRequest = {
     ...request,
@@ -76,6 +91,7 @@ export async function runTrackedSession(
         }
         callerCallback?.(protocolIds, sessionName);
       },
+      ...(codingSupport ? { codingToolRuntime: codingSupport.runtime, codingTools: codingSupport.tools } : {}),
     },
   };
 
@@ -83,10 +99,6 @@ export async function runTrackedSession(
   const maxRetriable = config?.execution?.sessionErrorRetryableMaxRetries ?? 3;
   const maxNonRetriable = config?.execution?.sessionErrorMaxRetries ?? 1;
   let sessionRetries = 0;
-
-  const stage = request.runOptions.pipelineStage ?? "run";
-  const resolvedPermissions =
-    request.runOptions.resolvedPermissions ?? resolvePermissions(request.runOptions.config, stage);
 
   let result: AgentResult;
   while (true) {

@@ -50,6 +50,32 @@ export function hasInspectionTrail(raw: Record<string, unknown> | null | undefin
 }
 
 /**
+ * The same question, answered from behaviour rather than self-report where that
+ * is possible.
+ *
+ * `inspectedFiles` is the reviewer's own account of what it opened, and a model
+ * will write one whether or not it opened anything: a native reviewer with no
+ * tools wired up returned `passed:true` naming two files it had, in the same
+ * response, said it could not read. Where coding tools were advertised the turn
+ * reports which were actually invoked, so the claim can be checked.
+ *
+ * Where none were advertised there is nothing to check against — the acpx path,
+ * whose tool use nax does not observe — so the self-report stands. That
+ * fallback is deliberate: demanding evidence nobody can produce would re-prompt
+ * every honest reviewer on that path.
+ *
+ * This is corroboration, not proof. A reviewer that opens one file and then
+ * rubber-stamps still passes; the hole it closes is the one actually observed.
+ */
+export function hasCorroboratedInspectionTrail(
+  raw: Record<string, unknown> | null | undefined,
+  codingToolUse?: { readonly advertised: number; readonly called: readonly string[] },
+): boolean {
+  if (codingToolUse !== undefined && codingToolUse.advertised > 0) return codingToolUse.called.length > 0;
+  return hasInspectionTrail(raw);
+}
+
+/**
  * Per-finding adversarial evidence substantiation.
  * Extracted from src/review/adversarial.ts:393-409.
  * Blocking findings whose verifiedBy.observed does not match HEAD are downgraded to

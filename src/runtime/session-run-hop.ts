@@ -1,4 +1,5 @@
 import { buildRunInteractionHandler } from "../agents/acp/adapter";
+import { resolveCodingToolSupport } from "../agents/coding-tool-support";
 import type { IAgentManager } from "../agents/manager-types";
 import { promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
@@ -56,7 +57,14 @@ export function createSessionRunHop(
           ? (options.maxInteractionTurns ?? 10)
           : (options.maxInteractionTurns ?? 1);
 
-      const interactionHandler = buildRunInteractionHandler(options);
+      // Resolved per hop, not per run: a swap changes the agent and the grants
+      // are stage-scoped, so a runtime captured earlier would outlive its
+      // dispatch. Mirrors build-hop-callback.ts — the two must not drift.
+      const codingSupport = resolveCodingToolSupport(options);
+      const interactionHandler = buildRunInteractionHandler({
+        ...options,
+        ...(codingSupport ? { codingToolRuntime: codingSupport.runtime } : {}),
+      });
       const am = getAgentManager?.();
       // Route through agentManager.runAsSession when available so dispatch
       // events are emitted and captured by the prompt auditor. Falls back to
@@ -79,12 +87,14 @@ export function createSessionRunHop(
             // instead), but a future op on the default hop needs its pull-tool
             // catalogue forwarded here too, or it silently gets none.
             contextPullTools: options.contextPullTools,
+            codingTools: codingSupport?.tools,
           })
         : await sessionManager.sendPrompt(handle, prompt, {
             interactionHandler,
             signal: options.abortSignal,
             maxTurns,
             contextPullTools: options.contextPullTools,
+            codingTools: codingSupport?.tools,
           });
 
       return {

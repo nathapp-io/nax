@@ -180,6 +180,21 @@ const MutationCheckConfigSchema = z.object({
   timeoutSeconds: z.number().int().min(5).max(600).default(60),
 });
 
+const PermissionBlockSchema = z
+  .object({
+    // Declares the vocabulary the SSOT resolver reads; decides nothing.
+    mode: z.enum(["approve-all", "approve-reads", "scoped"]).optional(), // nax-permission-mode-allow: schema declares the field's accepted values, resolvePermissions decides
+    allowedTools: z.array(z.string()).optional(),
+    inherit: z.string().optional(),
+  })
+  .strict();
+
+/**
+ * Per-stage tool policy (GitHub #374). Keys are pipeline stages plus "default".
+ * Read by resolveScopedPermissions; enforced by src/tools/.
+ */
+export const PermissionsBlockSchema = z.record(z.string(), PermissionBlockSchema);
+
 export const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
@@ -201,11 +216,7 @@ export const ExecutionConfigSchema = z.object({
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
-  // NOTE: the Phase 2 `permissions` block (per-stage overrides) deliberately has
-  // no schema entry. It was accepted and validated here while nothing in src/
-  // read it, so a user could state a permission policy and get no enforcement.
-  // `rejectUnimplementedPermissionsBlock` now fails the load instead. Re-add
-  // this alongside the resolver when GitHub #374 lands.
+  permissions: PermissionsBlockSchema.optional(),
   smartTestRunner: smartTestRunnerFieldSchema,
   worktreeDependencies: WorktreeDependenciesConfigSchema.default({
     mode: "off",

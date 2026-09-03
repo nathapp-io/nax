@@ -128,8 +128,16 @@ export interface ExecutionConfig {
   typecheckCommand?: string | null;
   /** Permission profile for the agent (default: "unrestricted") */
   permissionProfile?: "unrestricted" | "safe" | "scoped";
-  // NOTE: the Phase 2 per-stage `permissions` block is intentionally absent —
-  // it is rejected at config load until GitHub #374 lands. See schemas-execution.ts.
+  /** Per-stage tool policy (GitHub #374). Read by resolveScopedPermissions; enforced by src/tools/. */
+  permissions?: Record<
+    string,
+    {
+      // Declares the vocabulary the SSOT resolver reads; decides nothing.
+      mode?: "approve-all" | "approve-reads" | "scoped"; // nax-permission-mode-allow: type declares the field's accepted values, resolvePermissions decides
+      allowedTools?: string[];
+      inherit?: string;
+    }
+  >;
   /** Enable smart test runner to scope test runs to changed files (default: true).
    * Accepts boolean for backward compat or a SmartTestRunnerConfig object. */
   smartTestRunner?: boolean | SmartTestRunnerConfig;

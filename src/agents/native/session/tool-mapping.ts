@@ -8,11 +8,26 @@
 
 import type { ToolDefinition } from "@nathapp/nax-ai";
 import type { ToolDescriptor } from "@/context/engine";
+import type { CodingTool } from "@/tools";
 
 export function toToolDefinitions(descriptors: readonly ToolDescriptor[]): ToolDefinition[] {
   return descriptors.map((d) => ({
     name: d.name,
     description: d.description,
     inputSchema: d.inputSchema,
+  }));
+}
+
+/**
+ * CodingTool -> ToolDefinition.
+ *
+ * `scope` and `run` stay behind for the same reason the pull tools' budget
+ * fields do: nax executes these, so they mean nothing to a provider.
+ */
+export function codingToolsToDefinitions(tools: readonly CodingTool[]): ToolDefinition[] {
+  return tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: t.inputSchema,
   }));
 }

@@ -125,6 +125,8 @@ export interface RunAsSessionOpts {
   contextPullTools?: import("../context/engine").ToolDescriptor[];
   /** Server-side runtime for resolving context-engine pull tool calls. */
   contextToolRuntime?: { callTool(name: string, input: unknown): Promise<string> };
+  /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
+  codingTools?: readonly import("@/tools").CodingTool[];
   /** Per-callOp invocation id forwarded to dispatch events. */
   readonly callId?: string;
   /** Caller-supplied region id forwarded to dispatch events. */

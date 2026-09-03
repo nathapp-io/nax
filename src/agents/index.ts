@@ -39,7 +39,7 @@ export {
   MODEL_PRICING,
   resolvePricingSource,
 } from "./cost";
-export type { InteractionHandler } from "./interaction-handler";
+export type { AdapterInteractionResponse, InteractionHandler } from "./interaction-handler";
 export { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 export { _agentManagerDeps, AgentManager } from "./manager";
 export type {

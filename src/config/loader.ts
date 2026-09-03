@@ -19,9 +19,8 @@ import {
   rejectDeadQualityFlags,
   rejectLegacyAgentKeys,
   rejectLegacyRectificationKeys,
-  rejectUnimplementedPermissionsBlock,
-  rejectUnimplementedScopedProfile,
   stripRemovedNoOpKeys,
+  validatePermissionsBlock,
 } from "./config-guards";
 import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
 import { mergePackageConfig } from "./merge";
@@ -236,12 +235,8 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   // unification. Same Zod-strip rationale.
   rejectLegacyRectificationKeys(rawConfig);
   rejectDeadQualityFlags(rawConfig);
-  // Fail fast on the not-yet-implemented scoped permission profile (GitHub #374)
-  // rather than letting it silently degrade to "safe".
-  rejectUnimplementedScopedProfile(rawConfig);
-  // Same feature, same treatment: the per-stage policy block is read by nothing,
-  // so accepting it would silently provide no enforcement.
-  rejectUnimplementedPermissionsBlock(rawConfig);
+  // The block is enforced now, so validate it rather than reject it.
+  validatePermissionsBlock(rawConfig);
   // Strip the four inert no-op keys (warn-and-strip, not throw — see
   // config-guards.ts for the divergence rationale). Runs AFTER the reject guards
   // and BEFORE safeParse, so the removed key is gone before the schema sees it.
@@ -538,17 +533,15 @@ export async function loadConfigForWorkdir(
 
   // BUG-05: guards + safeParse must cover EVERY per-package overlay, not just
   // ones that also apply a package-level profile — an overlay with no profile
-  // previously returned `merged` here unvalidated, letting a legacy key or the
-  // not-yet-implemented "scoped" permissionProfile sail through unchecked.
-  // ADR-012 Phase 6 — legacy-key guard applies to per-package overlays too.
+  // previously returned `merged` here unvalidated, letting a legacy key sail
+  // through unchecked. ADR-012 Phase 6 — legacy-key guard applies to
+  // per-package overlays too.
   rejectLegacyAgentKeys(rawMerged);
   rejectLegacyRectificationKeys(rawMerged);
   rejectDeadQualityFlags(rawMerged);
-  rejectUnimplementedScopedProfile(rawMerged);
-  // CFG-1: same guard as the root chain — without it, a per-package
-  // `execution.permissions` block sails through and is silently stripped by
-  // Zod's `.strip()`, giving the user no error and no enforcement.
-  rejectUnimplementedPermissionsBlock(rawMerged);
+  // CFG-1: same validation as the root chain — a per-package
+  // `execution.permissions` block is now enforced, so validate it here too.
+  validatePermissionsBlock(rawMerged);
   // Strip the four inert no-op keys again post-profile-overlay (a package
   // profile can reintroduce one). Runs after the reject guards and before
   // safeParse, mirroring the root chain. Post-merge placement yields one
