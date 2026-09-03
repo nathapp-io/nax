@@ -12,8 +12,8 @@ they already require**.
 
 `resolveDeclaredTools` (`src/operations/types.ts:11-14`) is `op.tools ?? DEFAULT_CODING_TOOLS`,
 and `DEFAULT_CODING_TOOLS` is `["Read", "Glob", "Grep"]` (`src/config/permissions.ts:96`).
-Of 39 run operations, **three declare `tools:`** — `implementer`, `semantic-review`,
-`adversarial-review`. The other 36 silently receive read-only.
+Of **25** run operations reachable through the operations barrel, **three declare `tools:`** —
+`implementer`, `semantic-review`, `adversarial-review`. The other 22 silently receive read-only.
 
 That default is why this went unnoticed for so long. It is not obviously wrong: read-only is
 a sensible thing for most ops, and the doc comment on `tools` argues correctly that capability
@@ -29,6 +29,7 @@ Eight agent-dispatching ops need more than the read set and declare nothing:
 | `test-writer` | `test-writer`, `autofix-test-writer` | write, run, commit |
 | `verifier` | `verifier` | read, run — **not** write |
 | `source-fix` | `acceptance-fix-source` | write, run |
+| `test-fix` | `acceptance-fix-test` | write, run |
 | `finish-fix` | `finish-fix` | write |
 
 `acceptance-generate` is deliberately absent: it returns `testCode` and *nax* writes the file
@@ -166,6 +167,24 @@ Evidence is read from `~/.nax/<project>/tool-audit/<feature>/`, not from the ver
 ADR-029's first caution, a parity claim must confirm from the run record that tools were
 *invoked*, never that they were configured — the C1 A/B measured a capability that was not
 connected, and only the ledger caught it.
+
+**Two corrections to how that run must be set up, both found by review rather than by
+reading the config schema.**
+
+`tdd.sessionTiers.implementer` **is not consumed.** `src/config/schemas-execution.ts:376-378`
+says so outright — *"implementer is routing-driven (story.routing.modelTier + escalation); this
+field is intentionally NOT consumed"* — and `implementerOp.model` reads `story.routing`. Pinning
+the implementer through `sessionTiers` would leave it silently on acpx while the run reported
+three native roles. The fixture therefore sets `agent.protocol: "native"` with
+`agent.default: "native"`, which routes every session natively and needs no per-role pin at all.
+
+**The ledger cannot currently attribute a row to a role.**
+`src/agents/coding-tool-support.ts:125` names each session `options.storyId ?? featureName ??
+"unattached"`, so all three roles in one story write files named for the *story*. The evidence
+this section calls for — "`RunCommand` rows for the verifier, `Write` rows for the
+test-writer" — is not derivable from that artifact. `AgentRunOptions` already carries
+`sessionRole`; it is simply absent from the `Pick` this function accepts. Folding the role into
+the session name is a precondition of this verification, not an optional extra.
 
 Specifically: `RunCommand` rows attributable to the verifier; `Write`/`Edit` rows for the
 test-writer; and `RequestCapability` rows across all three, whose count is the ADR-029 section 3
