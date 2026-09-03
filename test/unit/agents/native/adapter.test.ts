@@ -11,10 +11,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Client, ResolvedModel } from "@nathapp/nax-ai";
+import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
 import { waitForCondition } from "@test/helpers";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
+import { nativeSessionId } from "@/agents/native/session-affinity";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 
 const REAL_BUILD = _clientDeps.build;
@@ -283,5 +284,109 @@ describe("hasCredentials", () => {
 
     // Fail open: an unreadable store is "unknown", not "no credentials".
     expect(await new NativeAgentAdapter().hasCredentials()).toBe(true);
+  });
+});
+
+/**
+ * Session-affinity headers reaching the wire.
+ *
+ * Asserted on what arrives at client.complete(), not on the helper — the helper
+ * has its own tests, and a helper nothing calls is the failure mode this repo
+ * keeps hitting (nax#1744, transcriptDir).
+ */
+describe("NativeAgentAdapter session identity", () => {
+  const OPENCODE_MODEL = { ...MODEL, id: "deepseek-v4-flash", provider: "opencode-go" } satisfies ResolvedModel;
+
+  function capturingClient(model: ResolvedModel): { client: Client; seen: ClientRequest[] } {
+    const seen: ClientRequest[] = [];
+    const client = fakeClient({
+      model: async () => model,
+      complete: async (_m: ResolvedModel, req: ClientRequest) => {
+        seen.push(req);
+        return { text: "ok", usage: { inputTokens: 1, outputTokens: 0 }, stopReason: "stop" };
+      },
+    });
+    return { client, seen };
+  }
+
+  test("complete sends a session id, which nax-ai maps onto each provider's wire", async () => {
+    const { client, seen } = capturingClient(OPENCODE_MODEL);
+    _clientDeps.build = async () => client;
+
+    const opts = options();
+    opts.modelDef = { provider: "unknown", model: "opencode-go/deepseek-v4-flash" };
+    await new NativeAgentAdapter().complete("hi", opts);
+
+    expect(seen[0]?.sessionId).toEqual(expect.any(String));
+    // The vendor header is nax-ai's job; nax must not assemble one itself.
+    expect(seen[0]?.headers).toBeUndefined();
+  });
+
+  test("one-shots within one run share a key, so their cache affinity holds", async () => {
+    const { client, seen } = capturingClient(OPENCODE_MODEL);
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+
+    const opts = () => {
+      const o = options();
+      o.modelDef = { provider: "unknown", model: "opencode-go/deepseek-v4-flash" };
+      return o;
+    };
+    await adapter.complete("one", opts());
+    await adapter.complete("two", opts());
+
+    expect(seen[0]?.headers?.["x-opencode-session"]).toBe(seen[1]?.headers?.["x-opencode-session"] as string);
+  });
+
+  test("separate runs do not share a key, since they are unrelated work", async () => {
+    const { client, seen } = capturingClient(OPENCODE_MODEL);
+    _clientDeps.build = async () => client;
+
+    const opts = () => {
+      const o = options();
+      o.modelDef = { provider: "unknown", model: "opencode-go/deepseek-v4-flash" };
+      return o;
+    };
+    // The registry caches one adapter per run (createAgentRegistry is called
+    // from createRuntime), so a second instance stands in for a second run.
+    await new NativeAgentAdapter().complete("one", opts());
+    await new NativeAgentAdapter().complete("two", opts());
+
+    expect(seen[0]?.sessionId).not.toBe(seen[1]?.sessionId as string);
+  });
+
+  test("sends the id for every provider, not just the ones with a named header", async () => {
+    const { client, seen } = capturingClient(MODEL);
+    _clientDeps.build = async () => client;
+
+    await new NativeAgentAdapter().complete("hi", options());
+
+    // openai-format providers were unreachable while nax owned the mapping:
+    // their header comes from a per-model property nax-ai does not expose.
+    expect(seen[0]?.sessionId).toEqual(expect.any(String));
+  });
+
+  test("sendTurn derives the header from the session, so it is stable across turns", async () => {
+    const { client, seen } = capturingClient(OPENCODE_MODEL);
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession("sess-affinity", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "opencode-go/deepseek-v4-flash" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-affinity-")),
+    });
+
+    const turn = { interactionHandler: { onInteraction: async () => ({ answer: "" }) } };
+    await adapter.sendTurn(handle, "one", turn);
+    await adapter.sendTurn(handle, "two", turn);
+
+    const first = seen[0]?.sessionId;
+    const second = seen[1]?.sessionId;
+    expect(first).toBeDefined();
+    expect(first).toBe(second as string);
+    expect(first).toBe(nativeSessionId(handle.id));
   });
 });
