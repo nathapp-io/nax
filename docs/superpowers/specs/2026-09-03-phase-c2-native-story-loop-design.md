@@ -83,10 +83,31 @@ a key the project has declared (in this repository those are `test`, `testScoped
 `typecheck`, `lint` and `build`; the set is per-project, not fixed by nax) and supplies
 values for the declared template variables; nax substitutes and builds the argv.
 
-This is deliberately not a shell, and the distinction is the same one `src/tools/git.ts`
-already draws in prose: the model supplies structure, never a command string. There is no
-metacharacter handling because there is no string to interpret. A repository that declares
-nothing grants nothing.
+A correction to an earlier draft of this section, which claimed the tool uses no shell. It
+does. `src/quality/runner.ts` executes every configured command through one, and its own
+comment says why: "Execute via shell to preserve quoting semantics of configured commands."
+The claim was not merely imprecise but unimplementable — this repository's `testScoped` is
+`CI=1 bun test --timeout=60000 {{files}}`, and `CI=1` is a shell environment assignment, not
+a binary. There is no argv for it to be.
+
+So `RunCommand` reuses `runQualityCommand` rather than building a second execution path. The
+same command then behaves identically whether nax runs it or an agent does, which is worth
+more than a purity claim.
+
+The property that survives is narrower and should be stated as such: **the model does not
+author the command string.** It names a declared key and supplies values for declared
+placeholders. Those values are the entire injection surface, and they are quoted with
+`shellQuoteArg` from `src/verification/shell-quote.ts` — the same helper
+`src/quality/command-resolver.ts:77` already applies to `{{package}}`.
+
+This is a weaker guarantee than the `Git` tool's, which genuinely constructs an argv and
+never reaches a shell. The difference is recorded rather than smoothed over: `Git` is safe
+by construction, `RunCommand` is safe by quoting, and quoting is a thing that can be got
+wrong. Section 7 carries the corresponding risk.
+
+`QualityCommandOptions.stripEnvVars` is passed for agent-invoked commands, so a command an
+agent runs need not inherit secrets that nax's own invocation would. A repository that
+declares nothing grants nothing.
 
 The power of the tool is therefore a property of the project's own configuration rather than
 of the tool, which also means a project can widen or narrow it without a nax change.
@@ -200,6 +221,10 @@ story is one nobody had to fight. The ledger it produces is therefore a lower bo
   empty ledger is still informative but is weak evidence, and must not be reported as
   "nothing was needed".
 - **A fixture understates need**, per section 5.
+- **`RunCommand` is safe by quoting, not by construction.** Unlike `Git`, it reaches a
+  shell, so a substitution value that escapes `shellQuoteArg` is a command-injection vector.
+  This is the single highest-severity defect this phase can ship and needs a test that
+  attempts the escape rather than one that asserts the helper was called.
 - **Mutation inside the root is a real widening.** It is small and bounded, but a `commit`
   is the first native tool that changes state the user keeps.
 - **Two arms, one observable.** Every quantitative claim comparing native to acpx after this
