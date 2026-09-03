@@ -166,8 +166,11 @@ function resolveScopedPermissions(config: AgentManagerConfig | undefined, stage:
   let key: string | undefined = stage;
   let block = blocks[stage];
 
-  // Bounded inherit chain: a cycle or a dangling target falls through to
-  // `default` rather than looping or throwing mid-run.
+  // Bounded inherit chain. validatePermissionsBlock refuses both a cycle and a
+  // dangling target at load, so neither should reach here -- this stays as the
+  // backstop for a config that never went through the loader, and because
+  // falling through to `default` is the right failure even then: fewer grants,
+  // never more, and never a throw mid-run.
   while (block?.inherit !== undefined && key !== undefined && !seen.has(key)) {
     seen.add(key);
     key = block.inherit;

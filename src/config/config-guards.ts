@@ -293,6 +293,35 @@ export function validatePermissionsBlock(conf: Record<string, unknown>): void {
         { stage: "config" },
       );
     }
+
+    // A cycle is not a security hole -- resolveScopedPermissions walks with its
+    // own seen-set and falls through to `default`, so a cycle yields FEWER
+    // grants, never more. It is refused because of how it fails: the stage
+    // silently receives the default block's grants instead of the ones its
+    // author wrote, and the symptom is a mid-run permission denial with
+    // nothing pointing back at the config.
+    //
+    // The seen-set is per-walk, not shared across stages: two stages inheriting
+    // the same target is convergence, not a cycle.
+    const seen = new Set<string>([stage]);
+    const path = [stage];
+    let cursor = block?.inherit;
+    while (typeof cursor === "string") {
+      path.push(cursor);
+      if (seen.has(cursor)) {
+        throw new NaxError(
+          [
+            `Invalid configuration — execution.permissions has an inherit cycle: ${path.join(" -> ")}.`,
+            "A cycle resolves to the default block rather than the grants written here,",
+            "so the stage would be denied something the config appears to permit.",
+          ].join("\n"),
+          "CONFIG_PERMISSIONS_INHERIT_CYCLE",
+          { stage: "config" },
+        );
+      }
+      seen.add(cursor);
+      cursor = blocks[cursor]?.inherit;
+    }
     if (block?.allowedTools === undefined) continue;
     if (!Array.isArray(block.allowedTools)) continue;
     for (const expression of block.allowedTools) {
