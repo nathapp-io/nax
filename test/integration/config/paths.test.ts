@@ -95,13 +95,26 @@ describe("config/paths", () => {
 
   describe("toolAuditDir (tool-audit tree anchor)", () => {
     const root = "/path/to/project";
+    const outputDir = "/home/dev/.nax/my-project";
 
-    test("returns <root>/.nax/tool-audit when no featureId is given", () => {
-      expect(toolAuditDir(root)).toBe(join(root, ".nax", "tool-audit"));
+    test("prefers the run output dir, mirroring prompt-audit and review-audit", () => {
+      expect(toolAuditDir({ root, outputDir })).toBe(join(outputDir, "tool-audit"));
     });
 
-    test("returns <root>/.nax/tool-audit/<featureId> when one is given", () => {
-      expect(toolAuditDir(root, "auth-system")).toBe(join(root, ".nax", "tool-audit", "auth-system"));
+    test("appends the featureId under the output dir", () => {
+      expect(toolAuditDir({ root, outputDir }, "auth-system")).toBe(join(outputDir, "tool-audit", "auth-system"));
+    });
+
+    test("falls back to <root>/.nax/tool-audit when no output dir is supplied", () => {
+      expect(toolAuditDir({ root })).toBe(join(root, ".nax", "tool-audit"));
+    });
+
+    test("falls back with the featureId appended", () => {
+      expect(toolAuditDir({ root }, "auth-system")).toBe(join(root, ".nax", "tool-audit", "auth-system"));
+    });
+
+    test("treats a blank output dir as absent rather than joining onto nothing", () => {
+      expect(toolAuditDir({ root, outputDir: "   " })).toBe(join(root, ".nax", "tool-audit"));
     });
   });
 });

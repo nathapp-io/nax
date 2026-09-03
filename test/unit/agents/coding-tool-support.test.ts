@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
@@ -76,6 +76,69 @@ describe("buildCodingToolSupport", () => {
  * structured-log convention. That is only possible if the story reaches the
  * runtime, so the thread is asserted here rather than assumed.
  */
+/**
+ * Where the ledger lands, asserted by writing one and reading it back off disk.
+ *
+ * Not a path-shape assertion on a helper: C2's bug was that the seam never
+ * consulted the run's output dir at all, so every unit test on the path helper
+ * would have stayed green. The only thing that proves the wiring is a flushed
+ * file in the directory a run would actually keep.
+ */
+describe("resolveCodingToolSupport — ledger location", () => {
+  test("writes the ledger under the run's output dir, not the (ephemeral) tool root", async () => {
+    const root = makeTempDir("nax-audit-root-");
+    const outputDir = makeTempDir("nax-audit-out-");
+    try {
+      await Bun.write(`${root}/a.ts`, "const a = 1;\n");
+      const support = resolveCodingToolSupport({
+        declaredTools: ["Read"],
+        codingToolRoot: root,
+        outputDir,
+        pipelineStage: "review",
+        storyId: "US-002",
+        featureName: "auth-system",
+        config: makeNaxConfig(),
+      });
+
+      await support?.runtime.callTool("Read", { path: "a.ts" });
+      await support?.auditSink.flush();
+
+      const written = [...new Bun.Glob("**/*.json").scanSync(join(outputDir, "tool-audit", "auth-system"))];
+      expect(written.length).toBe(1);
+      // Nothing at all under the tool root: the fallback tree is never created
+      // when a run supplies an output dir, so the worktree removal that follows
+      // a story cannot take the ledger with it.
+      expect(existsSync(join(root, ".nax"))).toBe(false);
+    } finally {
+      cleanupTempDir(root);
+      cleanupTempDir(outputDir);
+    }
+  });
+
+  test("still falls back to the tool root when a run supplies no output dir", async () => {
+    const root = makeTempDir("nax-audit-fallback-");
+    try {
+      await Bun.write(`${root}/a.ts`, "const a = 1;\n");
+      const support = resolveCodingToolSupport({
+        declaredTools: ["Read"],
+        codingToolRoot: root,
+        pipelineStage: "review",
+        storyId: "US-002",
+        featureName: "auth-system",
+        config: makeNaxConfig(),
+      });
+
+      await support?.runtime.callTool("Read", { path: "a.ts" });
+      await support?.auditSink.flush();
+
+      const written = [...new Bun.Glob("*.json").scanSync(join(root, ".nax", "tool-audit", "auth-system"))];
+      expect(written.length).toBe(1);
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
+});
+
 describe("resolveCodingToolSupport — story correlation", () => {
   test("threads storyId from the run options into the runtime's log", async () => {
     const logger = makeLogger();
