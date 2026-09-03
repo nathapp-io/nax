@@ -71,6 +71,12 @@ export const NAX_GITIGNORE_ENTRIES = [
   // it into the feature branch. Kept in sync with `journalDir()` in
   // src/verification/mutation/journal.ts.
   ".nax/mutation-journal/",
+  // Only reached when a run has no outputDir — the tool-audit ledger normally
+  // writes under `~/.nax/<project>/tool-audit/`, beside prompt-audit and
+  // review-audit. Same reasoning as finish-audit above: the fallback lands in
+  // the story's worktree, where the flow's `git add -A` would otherwise sweep
+  // it into the feature branch.
+  ".nax/tool-audit/",
 ];
 
 /**

@@ -171,6 +171,21 @@ export interface AgentRunOptions {
    * packageWorkdir(ctx.packageView), which resolves that to repoRoot.
    */
   codingToolRoot?: string;
+  /**
+   * The run's output directory (`~/.nax/<project>` by default), where durable
+   * run artifacts live. Carried here so the tool-audit ledger lands beside
+   * prompt-audit and review-audit rather than inside `codingToolRoot`.
+   *
+   * It must be threaded rather than re-derived: the runtime's key is
+   * `config.name?.trim() || basename(workdir)`, and `codingToolRoot` is a
+   * package workdir inside the story's git worktree, so `basename` of it would
+   * silently disagree with the runtime whenever `config.name` is unset.
+   *
+   * PRODUCER: src/operations/call.ts (`outputDir: ctx.runtime.outputDir`).
+   * A field with no producer is the nax#1744 / transcriptDir shape — every seam
+   * passes its own test while the chain is dead end to end.
+   */
+  outputDir?: string;
   /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
   codingTools?: readonly import("@/tools").CodingTool[];
   /**

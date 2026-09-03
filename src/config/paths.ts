@@ -119,10 +119,38 @@ export function featureDir(root: string, featureId: string): string {
   return join(featuresDir(root), featureId);
 }
 
+/** Where a tool-audit ledger may be anchored, in precedence order. */
+export interface ToolAuditAnchor {
+  /**
+   * The run's output directory (`~/.nax/<project>` by default, see
+   * `projectOutputDir`). Preferred whenever a run supplies one.
+   */
+  outputDir?: string;
+  /** The permitted tool root. Used only as the no-output-dir fallback. */
+  root: string;
+}
+
 /**
- * Absolute path to the tool-audit tree (`<root>/.nax/tool-audit[/<featureId>]`).
+ * Absolute path to the tool-audit tree.
+ *
+ * Precedence deliberately mirrors its two siblings — prompt-audit
+ * (`src/runtime/index.ts`, `join(outputDir, "prompt-audit")`) and review-audit
+ * (`src/review/review-audit.ts`, `join(entry.outputDir, "review-audit", ...)`).
+ * The run output dir wins; the repo-local `.nax` path is the fallback for a run
+ * that has none, which is the same thing `NAX_GITIGNORE_ENTRIES` documents for
+ * finish-audit ("Only reached when a run has no outputDir").
+ *
+ * C2 shipped the fallback as the *only* path, and that was not merely
+ * inconsistent: `root` is `codingToolRoot`, i.e. the story's package workdir
+ * inside the git worktree, and `pipeline-result-handler.ts` runs
+ * `git worktree remove --force` on completion. The ledger was therefore deleted
+ * by the very run that produced it — the #1359 false-zero shape this ledger
+ * exists to prevent, reintroduced by its own location.
+ *
  * Feeding Home: src/tools/tool-audit.ts writes one JSON file per session here.
  */
-export function toolAuditDir(root: string, featureId?: string): string {
-  return featureId ? join(root, PROJECT_NAX_DIR, "tool-audit", featureId) : join(root, PROJECT_NAX_DIR, "tool-audit");
+export function toolAuditDir(anchor: ToolAuditAnchor, featureId?: string): string {
+  const outputDir = anchor.outputDir?.trim();
+  const base = outputDir ? join(outputDir, "tool-audit") : join(anchor.root, PROJECT_NAX_DIR, "tool-audit");
+  return featureId ? join(base, featureId) : base;
 }

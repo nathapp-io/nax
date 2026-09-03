@@ -90,7 +90,7 @@ export function buildCodingToolSupport(args: {
 export function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
-    "declaredTools" | "codingToolRoot" | "pipelineStage" | "storyId" | "featureName" | "config"
+    "declaredTools" | "codingToolRoot" | "outputDir" | "pipelineStage" | "storyId" | "featureName" | "config"
   >,
 ): CodingToolSupport | undefined {
   const declared = options.declaredTools ?? [];
@@ -115,7 +115,13 @@ export function resolveCodingToolSupport(
     Object.entries(commands).filter((e): e is [string, string] => typeof e[1] === "string"),
   );
   const root = options.codingToolRoot;
-  const auditDir = root !== undefined && root.trim() !== "" ? toolAuditDir(root, options.featureName) : undefined;
+  const auditDir =
+    root !== undefined && root.trim() !== ""
+      ? toolAuditDir(
+          { root, ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}) },
+          options.featureName,
+        )
+      : undefined;
   const sessionName = options.storyId ?? options.featureName ?? "unattached";
   return buildCodingToolSupport({
     root: options.codingToolRoot,

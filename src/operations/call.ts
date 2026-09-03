@@ -211,6 +211,11 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     callId,
     declaredTools: resolveDeclaredTools(runOp),
     codingToolRoot: packageWorkdir(ctx.packageView),
+    // PRODUCER for AgentRunOptions.outputDir. Durable run artifacts (prompt-audit,
+    // review-audit, and now the tool-audit ledger) anchor here rather than under
+    // codingToolRoot, which is a package workdir inside the story's worktree and
+    // is removed by pipeline-result-handler.ts when the story completes.
+    outputDir: ctx.runtime.outputDir,
     // Session reuse defaults from the op lifetime, but ops may override with a
     // resolver when reuse depends on config or invocation context.
     ...(keepOpen ? { keepOpen: true } : {}),
