@@ -320,6 +320,39 @@ describe("NativeAgentAdapter session affinity", () => {
     expect(seen[0]?.headers).toMatchObject({ "x-opencode-session": expect.any(String) });
   });
 
+  test("one-shots within one run share a key, so their cache affinity holds", async () => {
+    const { client, seen } = capturingClient(OPENCODE_MODEL);
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+
+    const opts = () => {
+      const o = options();
+      o.modelDef = { provider: "unknown", model: "opencode-go/deepseek-v4-flash" };
+      return o;
+    };
+    await adapter.complete("one", opts());
+    await adapter.complete("two", opts());
+
+    expect(seen[0]?.headers?.["x-opencode-session"]).toBe(seen[1]?.headers?.["x-opencode-session"] as string);
+  });
+
+  test("separate runs do not share a key, since they are unrelated work", async () => {
+    const { client, seen } = capturingClient(OPENCODE_MODEL);
+    _clientDeps.build = async () => client;
+
+    const opts = () => {
+      const o = options();
+      o.modelDef = { provider: "unknown", model: "opencode-go/deepseek-v4-flash" };
+      return o;
+    };
+    // The registry caches one adapter per run (createAgentRegistry is called
+    // from createRuntime), so a second instance stands in for a second run.
+    await new NativeAgentAdapter().complete("one", opts());
+    await new NativeAgentAdapter().complete("two", opts());
+
+    expect(seen[0]?.headers?.["x-opencode-session"]).not.toBe(seen[1]?.headers?.["x-opencode-session"] as string);
+  });
+
   test("complete sends no affinity header to a provider that has none", async () => {
     const { client, seen } = capturingClient(MODEL);
     _clientDeps.build = async () => client;

@@ -16,7 +16,7 @@ import { toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
 import { closeNativeSession, nativeSessionTimeouts, openNativeSession } from "./session/session";
 import { runNativeTurn } from "./session/turn-loop";
-import { oneShotSessionKey, sessionAffinityHeaders } from "./session-affinity";
+import { newSessionKey, sessionAffinityHeaders } from "./session-affinity";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
 const CONSERVATIVE_CONTEXT_TOKENS = 128_000;
@@ -47,6 +47,16 @@ export class NativeAgentAdapter implements AgentAdapter {
    * nothing and gets the builtins, matching the approximation the ADR already
    * documents for `getAllAgents`.
    */
+  /**
+   * Session key for the sessionless `complete()` path, per adapter instance.
+   *
+   * The agent registry caches one adapter per agent name for its own
+   * lifetime, and a registry is built once per runtime — so this key's grain is
+   * a run, which is the right one: a run's one-shots share a backend and keep a
+   * cache warm, while two concurrent runs stay distinct.
+   */
+  private readonly oneShotKey = newSessionKey();
+
   constructor(supportedTiers: readonly string[] = DEFAULT_TIERS) {
     this.capabilities = {
       supportedTiers: supportedTiers.length > 0 ? supportedTiers : DEFAULT_TIERS,
@@ -120,7 +130,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     try {
       // resolved.provider, not the parsed one: this is the provider that will
       // actually serve the call, straight from nax-ai's catalog.
-      const affinity = sessionAffinityHeaders(resolved.provider, oneShotSessionKey());
+      const affinity = sessionAffinityHeaders(resolved.provider, this.oneShotKey);
       const result = await client.complete(resolved, {
         messages: [{ role: "user", content: prompt }],
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),

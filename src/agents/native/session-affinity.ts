@@ -38,18 +38,17 @@ export function nativeSessionId(sessionKey: string): string {
 }
 
 /**
- * One key for the whole process, used by the sessionless one-shot path.
+ * A fresh key for a caller that has no session id of its own.
  *
- * `complete()` has no session to name — it is a single call with no successor.
- * A fresh key per call would satisfy the letter of the header and defeat its
- * purpose, since affinity only pays when two requests share an id; a constant
- * would collide across concurrent nax processes. One id per process gives the
- * one-shots of a run a warm cache without pretending they are a conversation.
+ * `complete()` is one call with no successor, so there is nothing to name. A
+ * fresh key per *call* would satisfy the letter of the header and defeat its
+ * purpose, since affinity only pays when two requests share an id. The adapter
+ * therefore holds one of these for its own lifetime, which the agent registry's
+ * adapter cache scopes to a run, so the one-shots of a run share a backend
+ * while unrelated runs do not.
  */
-const PROCESS_SESSION_KEY = randomUUID();
-
-export function oneShotSessionKey(): string {
-  return PROCESS_SESSION_KEY;
+export function newSessionKey(): string {
+  return randomUUID();
 }
 
 /**
