@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-03T12:29:56.833Z",
+  "updatedAt": "2026-09-03T12:35:31.176Z",
   "ops": [
     "acceptance-fix-source",
     "acceptance-fix-test",
@@ -8,7 +8,6 @@
     "finish-fix",
     "full-suite-rectify",
     "rectify",
-    "test-writer",
-    "verifier"
+    "test-writer"
   ]
 }
