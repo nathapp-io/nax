@@ -19,6 +19,48 @@ import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 const PLACEHOLDER = /\{\{([a-zA-Z]+)\}\}/g;
 
+export interface RunCommandToolOptions {
+  /** Secret environment variables excluded from agent-triggered commands. */
+  readonly stripEnvVars?: readonly string[];
+}
+
+function quoteAt(template: string, end: number): "single" | "double" | undefined {
+  let quote: "single" | "double" | undefined;
+  let escaped = false;
+  for (let i = 0; i < end; i += 1) {
+    const char = template[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && quote !== "single") {
+      escaped = true;
+      continue;
+    }
+    if (char === "'" && quote !== "double") quote = quote === "single" ? undefined : "single";
+    if (char === '"' && quote !== "single") quote = quote === "double" ? undefined : "double";
+  }
+  return quote;
+}
+
+function placeholderContextError(template: string): string | undefined {
+  for (const match of template.matchAll(PLACEHOLDER)) {
+    const start = match.index ?? 0;
+    const key = match[1] as string;
+    if (quoteAt(template, start) !== undefined) {
+      return `placeholder {{${key}}} may not appear inside shell quotes`;
+    }
+    const tokenStart = Math.max(template.lastIndexOf(" ", start), template.lastIndexOf("\t", start)) + 1;
+    const tokenEndMatch = /[ \t\r\n]/.exec(template.slice(start));
+    const tokenEnd = tokenEndMatch === null ? template.length : start + tokenEndMatch.index;
+    const token = template.slice(tokenStart, tokenEnd);
+    if (/[$`()]/.test(token)) {
+      return `placeholder {{${key}}} may not appear in a shell expansion`;
+    }
+  }
+  return undefined;
+}
+
 export function substituteCommand(template: string, values: Record<string, string>): string | { error: string } {
   const declared = new Set([...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string));
   for (const key of Object.keys(values)) {
@@ -27,10 +69,15 @@ export function substituteCommand(template: string, values: Record<string, strin
   for (const key of declared) {
     if (values[key] === undefined) return { error: `placeholder {{${key}}} has no value` };
   }
+  const contextError = placeholderContextError(template);
+  if (contextError !== undefined) return { error: contextError };
   return template.replaceAll(PLACEHOLDER, (_m, key: string) => shellQuoteArg(values[key] as string));
 }
 
-export function createRunCommandTool(declared: ReadonlyMap<string, string>): CodingTool {
+export function createRunCommandTool(
+  declared: ReadonlyMap<string, string>,
+  opts: RunCommandToolOptions = {},
+): CodingTool {
   const keys = [...declared.keys()];
   return {
     name: "RunCommand",
@@ -43,7 +90,10 @@ export function createRunCommandTool(declared: ReadonlyMap<string, string>): Cod
       },
       required: ["command"],
     },
-    scope: { pathFields: [], verbField: "command", allowedVerbs: keys },
+    // `{{files}}` is the declared scoped-test path parameter. Keeping it in
+    // the policy's containment seam prevents a quoted-but-otherwise harmless
+    // absolute filename from making the configured command act outside root.
+    scope: { pathFields: ["values.files"], verbField: "command", allowedVerbs: keys },
 
     async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
       const key = typeof input.command === "string" ? input.command : "";
@@ -61,7 +111,7 @@ export function createRunCommandTool(declared: ReadonlyMap<string, string>): Cod
         commandName: key,
         command,
         workdir: ctx.root,
-        stripEnvVars: [],
+        stripEnvVars: [...(opts.stripEnvVars ?? [])],
       });
       const body = `exit ${result.exitCode}\n${result.output}`;
       return { content: body.slice(0, ctx.maxBytes), isError: !result.success };

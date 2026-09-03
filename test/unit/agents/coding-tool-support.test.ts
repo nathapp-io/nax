@@ -135,6 +135,32 @@ describe("buildCodingToolSupport — declared-command seam and audit sink", () =
     expect(support).toBeUndefined();
   });
 
+  test("threads quality.stripEnvVars into the session-local RunCommand", async () => {
+    const secretName = "NAX_C2_SUPPORT_SECRET";
+    const previous = process.env[secretName];
+    process.env[secretName] = "must-not-reach-the-model";
+    try {
+      const support = resolveCodingToolSupport({
+        declaredTools: ["RunCommand"],
+        codingToolRoot: process.cwd(),
+        pipelineStage: "run",
+        config: makeNaxConfig({
+          quality: {
+            commands: { test: `printf '%s' "$${secretName}"` },
+            stripEnvVars: [secretName],
+          },
+        }),
+      });
+      const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+      expect(result?.kind).toBe("ok");
+      if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+      expect(result.content).not.toContain("must-not-reach-the-model");
+    } finally {
+      if (previous === undefined) delete process.env[secretName];
+      else process.env[secretName] = previous;
+    }
+  });
+
   test("exposes an audit sink so calls can be persisted", () => {
     const support = buildCodingToolSupport({
       root: process.cwd(),

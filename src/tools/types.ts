@@ -49,6 +49,10 @@ export interface ToolGrant {
  * and is bounded by the root alone.
  */
 export interface ToolScope {
+  /**
+   * String paths in the input. Dot-separated names address nested object
+   * properties (for example `values.files` in RunCommand).
+   */
   readonly pathFields: readonly string[];
   /** Array-valued fields whose every element is a path. */
   readonly arrayPathFields?: readonly string[];

@@ -38,6 +38,7 @@ export function buildCodingToolSupport(args: {
   declared: readonly CodingToolName[];
   storyId?: string;
   declaredCommands?: ReadonlyMap<string, string>;
+  stripEnvVars?: readonly string[];
   auditDir?: string;
   sessionName?: string;
 }): CodingToolSupport | undefined {
@@ -66,7 +67,8 @@ export function buildCodingToolSupport(args: {
     policy: compileToolPolicy(grants, args.root),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     sink,
-    extraTools: declaredCommands.size > 0 ? [createRunCommandTool(declaredCommands)] : [],
+    extraTools:
+      declaredCommands.size > 0 ? [createRunCommandTool(declaredCommands, { stripEnvVars: args.stripEnvVars })] : [],
   });
   const tools = runtime.advertised(args.declared);
   if (tools.length === 0) return undefined;
@@ -98,9 +100,17 @@ export function resolveCodingToolSupport(
   // (agent/execution/profile), yet both hops source it from configLoader.current(),
   // so it carries the full NaxConfig at runtime — only the type lies. The read is
   // widened locally here; the shared agentManagerConfigSelector stays untouched.
-  const commands =
-    (options.config as { quality?: { commands?: Partial<Record<string, string>> } } | undefined)?.quality?.commands ??
-    {};
+  const quality = (
+    options.config as
+      | {
+          quality?: { commands?: Partial<Record<string, string>>; stripEnvVars?: unknown };
+        }
+      | undefined
+  )?.quality;
+  const commands = quality?.commands ?? {};
+  const stripEnvVars = Array.isArray(quality?.stripEnvVars)
+    ? quality.stripEnvVars.filter((value): value is string => typeof value === "string")
+    : [];
   const declaredCommands = new Map(
     Object.entries(commands).filter((e): e is [string, string] => typeof e[1] === "string"),
   );
@@ -113,6 +123,7 @@ export function resolveCodingToolSupport(
     declared,
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     declaredCommands,
+    stripEnvVars,
     ...(auditDir !== undefined ? { auditDir } : {}),
     sessionName,
   });
