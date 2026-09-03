@@ -228,3 +228,37 @@ describe("native turn loop", () => {
     expect(seen).toEqual(["Read"]);
   });
 });
+
+/**
+ * The rubber-stamp guard corroborates a reviewer's self-declared
+ * `inspectedFiles` against tools it actually invoked, so the turn has to report
+ * what it dispatched. Without this the guard can only trust the model's own
+ * account of its behaviour — which is precisely what it exists to distrust.
+ */
+describe("native turn loop — coding tool use reported on the result", () => {
+  test("records which coding tools were advertised and which were called", async () => {
+    let round = 0;
+    const result = await runNativeTurn(handle, "review it", opts({ codingTools: [fakeRead] }), {
+      complete: async () => {
+        round += 1;
+        return round === 1 ? reply({ toolCalls: [{ id: "c1", name: "Read", input: { path: "a.ts" } }] }) : reply();
+      },
+    });
+
+    expect(result.codingToolUse).toEqual({ advertised: 1, called: ["Read"] });
+  });
+
+  test("reports an empty call list when tools were advertised but never used", async () => {
+    const result = await runNativeTurn(handle, "review it", opts({ codingTools: [fakeRead] }), {
+      complete: async () => reply(),
+    });
+
+    expect(result.codingToolUse).toEqual({ advertised: 1, called: [] });
+  });
+
+  test("omits the report entirely when no coding tools were advertised", async () => {
+    const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
+
+    expect(result.codingToolUse).toBeUndefined();
+  });
+});

@@ -75,6 +75,9 @@ export async function runNativeTurn(
   let outputTokens = 0;
   let costUsd = 0;
   let output = "";
+  // Reported on the result so the review guards can corroborate a reviewer's
+  // self-declared inspection trail against calls it actually made.
+  const codingToolsCalled: string[] = [];
 
   while (roundTrips < maxTurns) {
     const res = await deps.complete(messages, tools);
@@ -98,6 +101,7 @@ export async function runNativeTurn(
     for (const call of res.toolCalls) {
       try {
         const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
+        if (kind === "coding-tool") codingToolsCalled.push(call.name);
         const answer = await opts.interactionHandler.onInteraction(
           kind === "coding-tool"
             ? { kind, name: call.name, input: (call.input ?? {}) as Record<string, unknown> }
@@ -139,5 +143,6 @@ export async function runNativeTurn(
     tokenUsage: { inputTokens, outputTokens },
     estimatedCostUsd: costUsd,
     internalRoundTrips: roundTrips,
+    ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),
   };
 }

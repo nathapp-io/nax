@@ -10,7 +10,7 @@ import {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
   filterByAcGroundingMinimal,
-  hasInspectionTrail,
+  hasCorroboratedInspectionTrail,
   isBlockingSeverity,
   sanitizeRefModeFindings,
   substantiateSemanticEvidence,
@@ -182,7 +182,7 @@ async function maybeRepromptForInspection(
   if (ctx.input.mode !== "ref") return null;
   if (ctx.input.semanticConfig.demandInspectionTrail === false) return null;
   if (!parsed.passed || parsed.findings.length !== 0) return null;
-  if (hasInspectionTrail(rawObject)) return null;
+  if (hasCorroboratedInspectionTrail(rawObject, turn.codingToolUse)) return null;
 
   const secondTurn = await ctx.send(ReviewPromptBuilder.demandInspection());
   const costUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);

@@ -119,3 +119,45 @@ describe("semanticReviewOp.hopBody — inspection-trail guard (#3A)", () => {
     expect(result.output).toBe(RUBBER_STAMP);
   });
 });
+
+/**
+ * Corroboration (2026-09-03). The guard above trusts `inspectedFiles` because
+ * it is the only signal it has. A native reviewer with no tools wired up
+ * returned `passed:true` with two filenames it had, in the same response, said
+ * it could not open — and sailed through.
+ *
+ * When coding tools were advertised the turn reports what was actually called,
+ * so the self-report can be checked rather than believed. When none were
+ * advertised there is nothing to check against and the old rule stands, which
+ * is what keeps the acpx path unchanged.
+ */
+describe("semanticReviewOp.hopBody — inspection trail corroborated against tool use", () => {
+  const DECLARED = JSON.stringify({ passed: true, inspectedFiles: ["src/auth.ts"], findings: [] });
+  const SECOND = JSON.stringify({ passed: true, inspectedFiles: ["src/auth.ts"], findings: [] });
+
+  async function runWithToolUse(codingToolUse: { advertised: number; called: string[] } | undefined) {
+    let n = 0;
+    const mockSend = mock(async () => ({
+      ...turn(n++ === 0 ? DECLARED : SECOND),
+      ...(codingToolUse ? { codingToolUse } : {}),
+    }));
+    await semanticReviewOp.hopBody("initial prompt", {
+      send: mockSend,
+      sendWithParseRetry: mockSend,
+      input: { workdir: "/tmp", story: STORY, semanticConfig: SEMANTIC_CONFIG, mode: "ref" },
+    } satisfies HopBodyContext<SemanticReviewInput>);
+    return mockSend.mock.calls.length;
+  }
+
+  test("re-prompts when tools were advertised and the reviewer called none", async () => {
+    expect(await runWithToolUse({ advertised: 4, called: [] })).toBe(2);
+  });
+
+  test("accepts the verdict when the reviewer actually called a tool", async () => {
+    expect(await runWithToolUse({ advertised: 4, called: ["Read"] })).toBe(1);
+  });
+
+  test("falls back to the self-report when no tools were advertised", async () => {
+    expect(await runWithToolUse(undefined)).toBe(1);
+  });
+});

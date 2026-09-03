@@ -18,7 +18,7 @@ import {
   downgradeUnsubstantiatedFinding,
   filterByAcQuote,
   filterByScopeQuote,
-  hasInspectionTrail,
+  hasCorroboratedInspectionTrail,
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
 import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
@@ -347,7 +347,7 @@ async function maybeRepromptForInspection(
 ): Promise<TurnResult | null> {
   if (ctx.input.adversarialConfig.demandInspectionTrail === false) return null;
   if (!parsed.passed || parsed.findings.length !== 0) return null;
-  if (hasInspectionTrail(rawObject)) return null;
+  if (hasCorroboratedInspectionTrail(rawObject, turn.codingToolUse)) return null;
 
   const secondTurn = await ctx.send(AdversarialReviewPromptBuilder.demandInspection());
   const costUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);

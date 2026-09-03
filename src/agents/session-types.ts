@@ -152,6 +152,15 @@ export interface TurnResult {
    * are NOT recorded here. Surfaced onto DispatchEvent and the prompt audit trail.
    */
   interactions?: readonly InteractionExchange[];
+  /**
+   * Coding tools advertised to this turn, and the ones the model actually
+   * invoked. Present only when coding tools were advertised, so "absent" and
+   * "advertised but unused" stay distinguishable — the review guards treat
+   * those two cases differently.
+   *
+   * A turn-observed fact surfaced to the wiring layer, like `interactions`.
+   */
+  codingToolUse?: { readonly advertised: number; readonly called: readonly string[] };
   /** Protocol-specific IDs for prompt-audit correlation. */
   protocolIds?: ProtocolIds;
   /**
