@@ -10,6 +10,7 @@
  * are one concern (reject-with-migration-hint) and change together.
  */
 
+import { RESERVED_TOOL_NAMES } from "@/tools";
 import { NaxError } from "../errors";
 
 /**
@@ -270,53 +271,52 @@ function rebuildAtPath(
 }
 
 /**
- * @internal Reject `execution.permissionProfile: "scoped"` until Phase 2 lands.
+ * @internal Validate `execution.permissions` at load time.
  *
- * The scoped profile is a valid enum value (Zod accepts it), but its resolver
- * (`resolveScopedPermissions`) is still a stub that silently returns "safe"
- * defaults. A user who sets `"scoped"` would believe they have per-stage tool
- * allowlists while actually running in the weaker `safe` mode — a silent
- * downgrade. Fail fast with a pointer to the tracking issue instead.
- *
- * Remove this guard when scoped permissions are implemented (GitHub #374).
+ * Replaces rejectUnimplementedScopedProfile/rejectUnimplementedPermissionsBlock,
+ * which refused the block outright while it was unenforced. Now that it IS
+ * enforced, the failure mode inverts: a typo in a tool name would silently grant
+ * nothing, which reads as "the policy is working" right up until it is not.
+ * ConfigError at load beats a surprise mid-run.
  */
-export function rejectUnimplementedScopedProfile(conf: Record<string, unknown>): void {
+export function validatePermissionsBlock(conf: Record<string, unknown>): void {
   const execution = conf.execution as Record<string, unknown> | undefined;
-  if (execution?.permissionProfile !== "scoped") return;
+  const blocks = execution?.permissions as Record<string, { allowedTools?: unknown; inherit?: unknown }> | undefined;
+  if (!blocks) return;
 
-  const message = [
-    'Invalid configuration — execution.permissionProfile: "scoped" is not yet implemented.',
-    "The scoped (per-stage tool allowlist) profile is tracked by GitHub #374 and would",
-    'otherwise silently run as "safe", giving you weaker permissions than intended.',
-    'Use "unrestricted" or "safe" for now.',
-  ].join("\n");
-  throw new NaxError(message, "CONFIG_SCOPED_PROFILE_UNIMPLEMENTED", { stage: "config" });
-}
-
-/**
- * @internal Reject the `execution.permissions` policy block until Phase 2 lands.
- *
- * The block is the per-stage counterpart to `permissionProfile: "scoped"` and
- * belongs to the same unimplemented feature (GitHub #374). Zod accepted and
- * validated its whole shape while nothing in `src/` ever read it, so a user
- * could write a per-stage permission policy, get no error, and get no
- * enforcement — believing their agents were constrained while every stage ran
- * under the resolved profile. Silently ignoring a stated security intent is
- * worse than not offering the key, so this fails fast for the same reason the
- * `"scoped"` profile above does.
- *
- * Remove this guard when scoped permissions are implemented (GitHub #374).
- */
-export function rejectUnimplementedPermissionsBlock(conf: Record<string, unknown>): void {
-  const execution = conf.execution as Record<string, unknown> | undefined;
-  if (execution === null || typeof execution !== "object") return;
-  if (!("permissions" in execution)) return;
-
-  const message = [
-    "Invalid configuration — execution.permissions is not yet implemented.",
-    "Per-stage permission policy is tracked by GitHub #374. The block is currently",
-    "read by nothing, so leaving it in place would silently give you no enforcement.",
-    "Remove it and use execution.permissionProfile for now.",
-  ].join("\n");
-  throw new NaxError(message, "CONFIG_PERMISSIONS_BLOCK_UNIMPLEMENTED", { stage: "config" });
+  const known = new Set<string>(RESERVED_TOOL_NAMES);
+  for (const [stage, block] of Object.entries(blocks)) {
+    if (block?.inherit !== undefined && typeof block.inherit === "string" && blocks[block.inherit] === undefined) {
+      throw new NaxError(
+        `Invalid configuration — execution.permissions.${stage}.inherit names "${block.inherit}", which is not a permission block.`,
+        "CONFIG_PERMISSIONS_BAD_INHERIT",
+        { stage: "config" },
+      );
+    }
+    if (block?.allowedTools === undefined) continue;
+    if (!Array.isArray(block.allowedTools)) continue;
+    for (const expression of block.allowedTools) {
+      if (typeof expression !== "string") continue;
+      const open = expression.indexOf("(");
+      const tool = (open === -1 ? expression : expression.slice(0, open)).trim();
+      if (!known.has(tool)) {
+        throw new NaxError(
+          [
+            `Invalid configuration — execution.permissions.${stage} grants unknown tool "${tool}".`,
+            `Known tools: ${[...known].join(", ")}.`,
+            "An unrecognised name would grant nothing while appearing to grant something.",
+          ].join("\n"),
+          "CONFIG_PERMISSIONS_UNKNOWN_TOOL",
+          { stage: "config", tool },
+        );
+      }
+      if (open !== -1 && !expression.trimEnd().endsWith(")")) {
+        throw new NaxError(
+          `Invalid configuration — execution.permissions.${stage} has an unclosed pattern list in "${expression}".`,
+          "CONFIG_PERMISSIONS_BAD_PATTERN",
+          { stage: "config" },
+        );
+      }
+    }
+  }
 }

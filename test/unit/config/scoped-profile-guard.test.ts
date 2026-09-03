@@ -1,16 +1,15 @@
 // test/unit/config/scoped-profile-guard.test.ts
 //
-// Regression guard for the not-yet-implemented "scoped" permission profile
-// (GitHub #374). The scoped resolver is still a stub that returns "safe"
-// defaults, so loading a config with `permissionProfile: "scoped"` must throw
-// fast rather than silently downgrading the user to weaker permissions.
-//
-// Remove this guard (and these tests) when scoped permissions are implemented.
+// The "scoped" permission profile and the `execution.permissions` policy
+// block used to be rejected outright (GitHub #374) while nothing enforced
+// them. Enforcement now exists (see `test/unit/config/scoped-profile-accepted.test.ts`
+// for the acceptance + validator coverage), so this file is left only with
+// the profile values that were never part of the rejected feature.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { loadConfig } from "@/config";
 
 const tempDirs: string[] = [];
@@ -35,21 +34,6 @@ describe("scoped permission profile — unimplemented guard (#374)", () => {
     }
   });
 
-  test('rejects execution.permissionProfile: "scoped" with a pointer to #374', async () => {
-    const root = await writeProjectConfig({
-      execution: { permissionProfile: "scoped" },
-    });
-    try {
-      await loadConfig(root);
-      throw new Error("expected loadConfig to throw");
-    } catch (err) {
-      assertNaxError(err);
-      expect(err.code).toBe("CONFIG_SCOPED_PROFILE_UNIMPLEMENTED");
-      expect(err.message).toContain("#374");
-      expect(err.message).toContain("not yet implemented");
-    }
-  });
-
   test('accepts execution.permissionProfile: "unrestricted"', async () => {
     const root = await writeProjectConfig({
       execution: { permissionProfile: "unrestricted" },
@@ -64,30 +48,6 @@ describe("scoped permission profile — unimplemented guard (#374)", () => {
     });
     const config = await loadConfig(root);
     expect(config.execution.permissionProfile).toBe("safe");
-  });
-
-  // `execution.permissions` is the per-stage policy block belonging to the same
-  // unimplemented feature. The schema accepted and validated it while nothing in
-  // src/ ever read it, so a user could write a permission policy, see no error,
-  // and get no enforcement. Same treatment as the profile value it belongs to.
-  test("rejects the execution.permissions policy block with a pointer to #374", async () => {
-    const root = await writeProjectConfig({
-      execution: { permissions: { run: { mode: "approve-reads", allowedTools: ["read"] } } },
-    });
-    try {
-      await loadConfig(root);
-      throw new Error("expected loadConfig to throw");
-    } catch (err) {
-      assertNaxError(err);
-      expect(err.code).toBe("CONFIG_PERMISSIONS_BLOCK_UNIMPLEMENTED");
-      expect(err.message).toContain("#374");
-      expect(err.message).toContain("execution.permissions");
-    }
-  });
-
-  test("an empty execution.permissions block is still rejected", async () => {
-    const root = await writeProjectConfig({ execution: { permissions: {} } });
-    await expect(loadConfig(root)).rejects.toThrow(/execution\.permissions/);
   });
 
   test("a config with no permissions block loads normally", async () => {

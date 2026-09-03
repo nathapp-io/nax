@@ -273,13 +273,25 @@ Patterns use minimatch-style glob matching:
 
 ### 2.3 Backend mapping
 
-| Profile | CLI Adapter (Claude Code) | ACP Adapter (acpx) |
-|:--------|:--------------------------|:--------------------|
-| `unrestricted` | `--dangerously-skip-permissions` | `--approve-all` |
-| `safe` | *(no flag — default prompt mode)* | *(no flag)* |
-| `scoped` | `--allowedTools "Read,Write(src/**)"` | `--allowed-tools "..."` *(when supported)* |
+Two enforcement models now exist, and they are not variations of each other.
 
-**Note:** Claude Code's `--allowedTools` flag supports this pattern natively. acpx would need an update to support `--allowed-tools` pass-through to the underlying agent.
+**ACP path (acpx) — delegated.** nax resolves a mode and passes a flag; the
+downstream agent enforces it. `unrestricted` maps to `--approve-all`, `safe` to
+the default prompt mode. Scoped allowlists are NOT available here: acpx offers
+approve-all, approve-reads and deny-all, and the ACP specification leaves
+permission granularity to the client by design.
+
+**Native path — enforced by nax.** There is no flag and no downstream agent.
+nax executes each tool itself and gates every call against the compiled policy,
+so `allowedTools` is enforced directly. See
+`docs/superpowers/specs/2026-09-02-native-coding-tools-phase-c1-design.md`.
+
+The original flag-mapping table assumed delegation was the only model and has
+been removed. Sections 2.1, 2.2 and 2.4 are unchanged and describe both paths.
+
+**Still out of scope:** every `Bash(...)` example below. Phase C1 ships no Bash
+tool, so a stage whose allowlist names Bash is accepted by config and simply has
+no Bash to grant.
 
 ### 2.4 Resolver implementation
 

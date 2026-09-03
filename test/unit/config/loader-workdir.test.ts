@@ -230,25 +230,6 @@ describe("loadConfigForWorkdir", () => {
     expect(result.routing?.strategy).toBe("llm");
   });
 
-  // BUG-05: the package-overlay-without-a-profile path previously returned
-  // `merged` unvalidated — no rejectLegacyAgentKeys/rejectDeadQualityFlags/
-  // rejectUnimplementedScopedProfile/NaxConfigSchema.safeParse ran on it. A
-  // package config with the not-yet-implemented "scoped" permission profile
-  // sailed through silently instead of failing fast like the root chain does.
-  test("BUG-05: per-package overlay with no profile still rejects execution.permissionProfile: scoped", async () => {
-    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
-    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
-    writeFileSync(
-      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
-      JSON.stringify({ execution: { permissionProfile: "scoped" } }),
-    );
-
-    const rootConfigPath = join(tempDir, ".nax", "config.json");
-    await expect(loadConfigForWorkdir(rootConfigPath, "packages/api")).rejects.toThrow(
-      /permissionProfile.*not yet implemented|scoped/i,
-    );
-  });
-
   // BUG-05: same gap for the legacy-rectification-key guard on the no-profile
   // path. `quality` is a mergeable (not root-only) section for per-package
   // overlays, so this key actually reaches the merged config, unlike
