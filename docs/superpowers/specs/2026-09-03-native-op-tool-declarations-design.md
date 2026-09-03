@@ -43,8 +43,9 @@ section 3 names the direction explicitly — *"the next widening of the native t
 be more declared commands, not a shell"* — and this is narrower still: no new commands either,
 only ops declaring the tools that already exist.
 
-**It is not the fix-loop ops.** All six of `autofix-implementer`, `autofix-test-writer`,
-`rectify`, `full-suite-rectify`, `acceptance-fix-source` and `finish-fix` stay undeclared and therefore
+**It is not the fix-loop ops.** All seven of `autofix-implementer`, `autofix-test-writer`,
+`rectify`, `full-suite-rectify`, `acceptance-fix-source`, `acceptance-fix-test` and `finish-fix`
+stay undeclared and therefore
 read-only on native. They fire on failure paths, which are hard to trigger deliberately and
 easy to get silently wrong, and they are where a bad native edit actually costs something.
 They get their own arc and their own evidence.
@@ -74,14 +75,23 @@ drift from it. Wired into `lint`, so `check:gate-reachability` proves it runs in
 `SessionRole` (`src/runtime/session-role.ts`) is already the canonical registry and is the
 table's anchor; a role added there without a capability decision is the case this catches.
 
-Exactly nine ops carry a role in the table. One (`implementer`) is already declared, two are
-declared by this design, and six go to the baseline. Three write-capable roles —
-`test-fix`, `repo-scoped-test-fix` and `fix-gen` — have **no operation at all** today; the
-invariant covers them prospectively, so the first op to claim one is forced to decide its
-capability rather than inherit read-only by silence.
+Exactly ten ops carry a role in the table. One (`implementer`) is already declared, two are
+declared by this design, and seven go to the baseline. Two write-capable roles —
+`repo-scoped-test-fix` and `fix-gen` — have **no operation at all** today; the invariant covers
+them prospectively, so the first op to claim one is forced to decide its capability rather than
+inherit read-only by silence.
 
-**The check fails on the six out-of-scope ops today, and that is intended.** It ships with
-those six in an explicit baseline, the same ratchet idiom as `check:nax-error` (90 against a
+Two properties of the barrel the check must handle, both established by probing it rather than
+by reading source. **Ops are exported under aliases**: `implementerOp` and `implementTddOp` are
+the same object, as are `testWriterOp`/`writeTddTestOp` and `verifierOp`/`verifyTddOp`, so
+iterating `Object.entries` double-counts unless it dedupes by object identity. And **a module
+can define more than one op**: `src/operations/acceptance-fix.ts` exports both
+`acceptance-fix-source` and `acceptance-fix-test`, which a per-file scan reading the first
+`name:` silently misses. Both are reasons the check imports the barrel instead of parsing
+files.
+
+**The check fails on the seven out-of-scope ops today, and that is intended.** It ships with
+those seven in an explicit baseline, the same ratchet idiom as `check:nax-error` (90 against a
 baseline of 104) and `check:file-sizes`. The debt becomes a countdown the follow-up arc lowers,
 rather than an omission nothing records.
 
