@@ -397,9 +397,13 @@ test("a metacharacter in a value cannot run a second command", async () => {
 Run: `bun test test/unit/tools/run-command.test.ts`
 Expected: PASS, 7 tests. If `PWNED` appears twice the quoting is broken and the tool must not ship.
 
-- [ ] **Step 6: Register it**
+- [ ] **Step 6: Reserve the name, but do NOT register the instance**
 
-Apply the same four registration edits as Task 1 Step 5, for `"RunCommand"`. The registry's builtin loop takes tool *instances*, but `RunCommand` is built from a map, so it cannot join that loop. Register it in the runtime instead, where the declared map is available — see Task 5, which supplies the map. For now export the factory only:
+`RunCommand` is built from configuration, so it is **per-session**, while `src/tools/registry.ts` is a **process-global** `Map` (its own comment: "the registry is process-global, the runtime is per-session"). Registering a per-session instance globally is silently wrong rather than loudly wrong: `registerBuiltinCodingTools` guards with `if (getCodingTool(tool.name) === undefined)`, so a second session with a different config would keep the **first** session's command map forever, with no error.
+
+So: add `"RunCommand"` to `CodingToolName` and to `RESERVED_TOOL_NAMES` (reserving the name prevents a third party shadowing it), but do **not** add it to the builtin instance loop in `runtime.ts`. Task 5 passes the instance in per session via `extraTools`.
+
+Export the factory only:
 
 ```typescript
 // src/tools/index.ts
@@ -724,80 +728,143 @@ git commit -m "feat(tools): persist every tool outcome to an audit record, not j
 
 **This task exists because of a defect C1 shipped and had to fix twice.** A field was added, an op declared it, the loop dispatched it — and nothing ever constructed the runtime, so every coding tool silently did not exist while all per-task reviews passed, because each task was correct in isolation. The same shape appeared in Phase B with `transcriptDir`. A task that adds a capability must also add its producer, and a step must verify the producer is reached.
 
+**Read `src/agents/coding-tool-support.ts` in full before starting.** It is under 90 lines and the two functions in it are not interchangeable:
+
+- `buildCodingToolSupport({ root?, grants?, declared, storyId? })` — takes **no config**. Do not add one; the grants are already resolved by the time they reach it.
+- `resolveCodingToolSupport(options)` — has `options.config`, and its own comment names it "the single entry point both dispatch hops use", precisely so a tool wired into one hop and not the other cannot go unnoticed.
+
+The declared-command map is therefore built in `resolveCodingToolSupport` and passed down.
+
 **Files:**
-- Modify: `src/agents/coding-tool-support.ts:80` (supply the declared-command map and the sink), `src/config/permissions.ts` (grants for the new tools under `scoped`), `src/operations/types.ts` (op `tools` declarations)
+- Modify: `src/tools/runtime.ts` (accept `extraTools`), `src/agents/coding-tool-support.ts` (build the map, the sink, and widen `CodingToolSupport`), `src/runtime/session-run-hop.ts:63` and `src/operations/build-hop-callback.ts:293` (flush the sink), `src/config/permissions.ts` (grants), `src/operations/types.ts` (op `tools` declarations)
 - Test: `test/unit/agents/coding-tool-support.test.ts`
 
 **Interfaces:**
-- Consumes: `createRunCommandTool` (Task 2), `createToolAuditSink` (Task 4), `gitCommitTool` (Task 1), `requestCapabilityTool` (Task 3).
-- Produces: no new exported symbols; this task connects existing ones.
+- Consumes: `createRunCommandTool` (Task 2), `createToolAuditSink` / `ToolAuditSink` (Task 4), `gitCommitTool` (Task 1), `requestCapabilityTool` (Task 3).
+- Produces: `CodingToolSupport` gains `readonly auditSink: ToolAuditSink`. `createCodingToolRuntime` gains `extraTools?: readonly CodingTool[]`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Let the runtime carry session-local tools**
+
+The global registry cannot hold `RunCommand` (Task 2 Step 6). Give the runtime a session-local layer consulted **before** the registry, in `src/tools/runtime.ts`:
+
+```typescript
+export function createCodingToolRuntime(opts: {
+  policy: ToolPolicy;
+  maxBytes?: number;
+  maxFileBytes?: number;
+  storyId?: string;
+  sink?: ToolAuditSink;
+  extraTools?: readonly CodingTool[];
+}): CodingToolRuntime {
+  registerBuiltinCodingTools();
+  const extra = new Map((opts.extraTools ?? []).map((t) => [t.name, t]));
+  const lookup = (name: string): CodingTool | undefined => extra.get(name) ?? getCodingTool(name);
+```
+
+Replace both `getCodingTool(name)` calls in `advertised` and `callTool` with `lookup(name)`.
+
+- [ ] **Step 2: Write the failing test**
 
 ```typescript
 // test/unit/agents/coding-tool-support.test.ts
 import { expect, test } from "bun:test";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 
-test("supplies a RunCommand built from the config's declared commands", () => {
+const grants = [{ tool: "RunCommand", patterns: ["*"] }, { tool: "GitCommit", patterns: ["*"] }];
+
+test("advertises a RunCommand built from the declared commands", () => {
   const support = buildCodingToolSupport({
-    config: { quality: { commands: { test: "bun run test", testScoped: "bun test {{files}}" } } },
-    stage: "run",
-    workdir: process.cwd(),
-    storyId: "US-1",
+    root: process.cwd(),
+    grants,
+    declared: ["RunCommand"],
+    declaredCommands: new Map([["test", "bun run test"]]),
   });
-  const names = support?.runtime.advertised(["RunCommand"]).map((t) => t.name);
-  expect(names).toContain("RunCommand");
+  expect(support?.tools.map((t) => t.name)).toContain("RunCommand");
 });
 
-test("supplies an audit sink, so calls are persisted", () => {
+test("omits RunCommand when the project declares no commands", () => {
   const support = buildCodingToolSupport({
-    config: { quality: { commands: { test: "bun run test" } } },
-    stage: "run",
-    workdir: process.cwd(),
-    storyId: "US-1",
+    root: process.cwd(),
+    grants,
+    declared: ["RunCommand"],
+    declaredCommands: new Map(),
+  });
+  expect(support).toBeUndefined();
+});
+
+test("exposes an audit sink so calls can be persisted", () => {
+  const support = buildCodingToolSupport({
+    root: process.cwd(),
+    grants,
+    declared: ["GitCommit"],
+    declaredCommands: new Map(),
+    auditDir: "/tmp/c2-audit-test",
+    sessionName: "s1",
   });
   expect(support?.auditSink).toBeDefined();
 });
 ```
 
-Adjust the argument shape to `buildCodingToolSupport`'s real signature — read `src/agents/coding-tool-support.ts` first and match it rather than the sketch above.
-
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 3: Run the test to verify it fails**
 
 Run: `bun test test/unit/agents/coding-tool-support.test.ts`
-Expected: FAIL — `RunCommand` is not advertised, and `auditSink` is undefined.
+Expected: FAIL — `buildCodingToolSupport` does not accept `declaredCommands`.
 
-- [ ] **Step 3: Implement the producer wiring**
+- [ ] **Step 4: Widen `buildCodingToolSupport`**
 
-In `src/agents/coding-tool-support.ts`, build the declared-command map from `config.quality?.commands` (string values only), register the `RunCommand` instance into the runtime, and construct the audit sink rooted at the feature's `.nax/tool-audit/<feature>/` directory. Use `src/config/paths.ts` for the directory — `scripts/check-feature-dir-ssot.ts` forbids open-coded `.nax/features` paths and the same discipline applies here.
+Add `declaredCommands: ReadonlyMap<string, string>`, `auditDir?: string` and `sessionName?: string` to its argument object. Build the sink (`createToolAuditSink` when `auditDir` is given, else `createNoOpToolAuditSink`), build `extraTools` as `declaredCommands.size > 0 ? [createRunCommandTool(declaredCommands)] : []`, pass both into `createCodingToolRuntime`, and return `{ runtime, tools, auditSink }`.
 
-- [ ] **Step 4: Grant the new tools under the scoped profile**
+Keep the existing early returns: `declared.length === 0`, `grants.length === 0`, the empty-root `NaxError`, and `tools.length === 0` all still return `undefined`.
 
-In `src/config/permissions.ts`, the `unrestricted` branch currently grants `[...DEFAULT_CODING_TOOLS, "Write", "Edit", "Git"]`. Extend it with `"GitCommit"`, `"RunCommand"` and `"RequestCapability"`. Do **not** touch `DEFAULT_CODING_TOOLS` itself.
+- [ ] **Step 5: Supply the map from config in `resolveCodingToolSupport`**
 
-- [ ] **Step 5: Declare the tools on the implement op**
+This is the only function with `options.config`. Build the map from `options.config?.quality?.commands`, keeping string values only:
 
-In `src/operations/types.ts`, add to the implement operation's `tools` array: `"Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit", "RequestCapability"`. Advertised is the intersection with policy, so this narrows nothing that policy already denies.
-
-- [ ] **Step 6: Verify the producer is actually reached — grep, do not assume**
-
-```bash
-grep -rn "createRunCommandTool\|createToolAuditSink" src/ | grep -v "src/tools/"
+```typescript
+const commands = options.config?.quality?.commands ?? {};
+const declaredCommands = new Map(
+  Object.entries(commands).filter((e): e is [string, string] => typeof e[1] === "string"),
+);
 ```
 
-Expected: at least one hit in `src/agents/coding-tool-support.ts` for each. **If either has no consumer outside `src/tools/`, this task is not done** — that is precisely the C1 defect this task exists to prevent.
+Pass it, plus `auditDir` and `sessionName`, into `buildCodingToolSupport`. Derive `auditDir` through `src/config/paths.ts` rather than open-coding a `.nax/` path — `scripts/check-feature-dir-ssot.ts` and `scripts/check-no-real-global-nax.ts` are both enforced gates. If no suitable helper exists, add one there.
 
-- [ ] **Step 7: Run the tests**
+- [ ] **Step 6: Flush the sink at both hops**
+
+A sink that is never flushed writes nothing, and that failure is silent — the same shape as the producer bug this task exists to prevent. There are exactly two call sites:
+
+- `src/operations/build-hop-callback.ts:293`
+- `src/runtime/session-run-hop.ts:63`
+
+Both already hold `codingSupport`. After the dispatch completes at each site, `await codingSupport.auditSink.flush()`. Use `try/finally` so a failed dispatch still writes its ledger — a run that fails is exactly the run whose ledger matters most.
+
+- [ ] **Step 7: Grant the new tools**
+
+In `src/config/permissions.ts`, the `unrestricted` branch grants `[...DEFAULT_CODING_TOOLS, "Write", "Edit", "Git"]`. Extend it with `"GitCommit"`, `"RunCommand"` and `"RequestCapability"`. Do **not** touch `DEFAULT_CODING_TOOLS` itself — spec section 4.
+
+- [ ] **Step 8: Declare the tools on the implement op**
+
+In `src/operations/types.ts`, add to the implement operation's `tools` array: `"Read"`, `"Glob"`, `"Grep"`, `"Write"`, `"Edit"`, `"RunCommand"`, `"GitCommit"`, `"RequestCapability"`. Advertised is the intersection with policy, so this cannot widen anything policy denies.
+
+- [ ] **Step 9: Verify the producer is reached, and the sink is flushed — grep, do not assume**
+
+```bash
+grep -rn "createRunCommandTool\|createToolAuditSink" src/ | grep -v "^src/tools/"
+grep -rn "auditSink.flush" src/
+```
+
+Expected: the first finds both in `src/agents/coding-tool-support.ts`; the second finds **two** hits, one per hop. **If either grep comes up short this task is not done** — that is exactly the C1 defect, and a passing unit test will not catch it.
+
+- [ ] **Step 10: Run the tests**
 
 Run: `bun test test/unit/agents/coding-tool-support.test.ts test/unit/tools/`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add src/agents/coding-tool-support.ts src/config/permissions.ts src/operations/types.ts test/unit/agents/coding-tool-support.test.ts
-git commit -m "feat(agents): construct RunCommand and the audit sink on the live dispatch path"
+git add src/tools/runtime.ts src/agents/coding-tool-support.ts src/runtime/session-run-hop.ts src/operations/build-hop-callback.ts src/config/permissions.ts src/operations/types.ts test/unit/agents/coding-tool-support.test.ts
+git commit -m "feat(agents): construct RunCommand and the audit sink on both dispatch hops"
 ```
 
 ---
@@ -871,4 +938,8 @@ git commit -m "test(tools): end-to-end probe for the C2 story loop and its ledge
 
 **Type consistency:** `ToolAuditSink`/`ToolCallRecord` (Task 4) are used unchanged in Tasks 5 and 6. `createRunCommandTool(declared: ReadonlyMap<string, string>)` (Task 2) is called with a map built in Task 5. `buildCommitArgvs` returns `{ add, commit } | { error }` and every caller narrows on `"error" in built`. `CodingToolName` gains exactly three members across Tasks 1-3, and each task adds it to `RESERVED_TOOL_NAMES` in the same step.
 
-**One known gap:** the `RunCommand` instance cannot join `registerBuiltinCodingTools`'s instance loop because it is built from config. Task 2 Step 6 defers its registration to Task 5, and Task 5 Step 6 greps to prove the producer exists. If Tasks 2 and 5 are executed by different workers, that hand-off is the most likely place for this plan to break.
+**Known gaps, flagged rather than hidden:**
+
+1. `RunCommand` is per-session but `src/tools/registry.ts` is process-global, and registering a per-session instance there fails *silently* (the builtin loop guards on absence, so session two would inherit session one's command map). Task 2 Step 6 reserves the name only; Task 5 Step 1 adds the `extraTools` layer. If those two tasks go to different workers, this is the hand-off most likely to break.
+2. The audit sink is useless unless flushed, and nothing type-checks that it was. Task 5 Step 6 flushes at both hops and Step 9 greps for two hits, because a unit test on `buildCodingToolSupport` passes whether or not any caller flushes.
+3. Task 5 Step 5 must derive `auditDir` through `src/config/paths.ts`; two enforced CI gates reject an open-coded `.nax/` path, and the helper may need to be added there first.
