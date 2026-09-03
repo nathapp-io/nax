@@ -18,7 +18,12 @@
 import { gitWithTimeout } from "@/utils/git";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
-/** Read-only verbs. Mutating verbs are not representable in the input type. */
+/**
+ * Read-only verbs. Mutating verbs are not representable in the input type.
+ *
+ * Note what bounds these: the argv shape below, not the verb list. A read-only
+ * verb still spans the whole repository unless its scope is stated.
+ */
 export const GIT_READ_VERBS: readonly string[] = ["diff", "log", "show", "status", "blame"];
 
 /**
@@ -53,13 +58,28 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
     argv.push(ref);
   }
 
-  if (paths.length > 0) {
-    argv.push("--");
-    for (const path of paths) {
-      if (typeof path !== "string") return { error: "paths must be strings" };
-      if (looksLikeFlag(path)) return { error: `path "${path}" may not begin with "-"` };
-      argv.push(path);
-    }
+  // `--` ALWAYS terminates the revision list, even with no paths to follow it.
+  // Without it git disambiguates an argument that is not a valid revision by
+  // checking whether it names a path, and silently reinterprets it as a
+  // pathspec -- so `show ../../outside/secret` read a file outside the root,
+  // never reaching resolveWithin because a colon-less ref was treated as "a
+  // pure revision, nothing to contain". With `--` git rejects it outright.
+  argv.push("--");
+
+  if (paths.length === 0) {
+    // Scope an unrestricted call to the root. A ref names a whole commit, whose
+    // diff spans the entire repository, so `show HEAD` returned outside-root
+    // content without naming a path at all -- nothing in the argv was wrong,
+    // the command's own scope was. `.` is resolved by git against the cwd,
+    // which gitWithTimeout sets to the permitted root.
+    argv.push(".");
+    return argv;
+  }
+
+  for (const path of paths) {
+    if (typeof path !== "string") return { error: "paths must be strings" };
+    if (looksLikeFlag(path)) return { error: `path "${path}" may not begin with "-"` };
+    argv.push(path);
   }
 
   return argv;
