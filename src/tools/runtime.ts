@@ -22,6 +22,20 @@ import { writeTool } from "./write";
 /** Per-call output ceiling, mirroring ToolDescriptor.maxTokensPerCall in spirit. */
 export const DEFAULT_TOOL_MAX_BYTES = 40_000;
 
+/**
+ * Largest file a tool will read whole or write at all.
+ *
+ * Distinct from DEFAULT_TOOL_MAX_BYTES because they answer different questions:
+ * that one is how much the model may be told, this one is how much file a tool
+ * will handle. Edit must read and rewrite a file entirely, so it cannot use the
+ * output ceiling without refusing ordinary source files.
+ *
+ * Generous on purpose. Nothing an LLM legitimately edits approaches it, and a
+ * limit that fires during normal work would be worked around rather than
+ * respected.
+ */
+export const DEFAULT_TOOL_MAX_FILE_BYTES = 2_000_000;
+
 export type CodingToolOutcome =
   | { readonly kind: "ok"; readonly content: string }
   | { readonly kind: "error"; readonly content: string }
@@ -55,10 +69,12 @@ export function _resetBuiltinsForTest(): void {
 export function createCodingToolRuntime(opts: {
   policy: ToolPolicy;
   maxBytes?: number;
+  maxFileBytes?: number;
   storyId?: string;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
+  const maxFileBytes = opts.maxFileBytes ?? DEFAULT_TOOL_MAX_FILE_BYTES;
   const granted = new Set(opts.policy.grantedTools());
 
   /**
@@ -115,6 +131,7 @@ export function createCodingToolRuntime(opts: {
           root: opts.policy.root,
           resolvedPaths: verdict.resolvedPaths,
           maxBytes,
+          maxFileBytes,
         });
         const kind = result.isError === true ? "error" : "ok";
         log(name, kind, result.content.length);

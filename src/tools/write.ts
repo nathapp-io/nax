@@ -29,6 +29,14 @@ export const writeTool: CodingTool = {
     const content = input.content;
     if (typeof content !== "string") return { content: "content must be a string", isError: true };
 
+    const size = Buffer.byteLength(content, "utf8");
+    if (size > ctx.maxFileBytes) {
+      return {
+        content: `content is ${size} bytes, which exceeds the ${ctx.maxFileBytes}-byte file ceiling`,
+        isError: true,
+      };
+    }
+
     try {
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, content, "utf8");

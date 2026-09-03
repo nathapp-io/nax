@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _grepDeps, buildGrepArgv, grepTool } from "@/tools";
+import { _grepDeps, buildGrepArgv, DEFAULT_TOOL_MAX_FILE_BYTES, grepTool } from "@/tools";
 
 let root: string;
 const realWhich = _grepDeps.which;
@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 function ctx(resolvedPaths: readonly string[] = [], maxBytes = 10_000) {
-  return { root, resolvedPaths, maxBytes };
+  return { root, resolvedPaths, maxBytes, maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES };
 }
 
 describe("buildGrepArgv", () => {

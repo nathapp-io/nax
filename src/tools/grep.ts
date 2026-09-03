@@ -11,6 +11,7 @@
  * ripgrep must produce the same matches, not a silent empty result.
  */
 
+import { drainBounded } from "@/utils/bounded-io";
 import { spawn, which } from "@/utils/bun-deps";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
@@ -75,9 +76,12 @@ export const grepTool: CodingTool = {
     }, GREP_TIMEOUT_MS);
 
     // Drain concurrently: a large result set fills the pipe buffer and would
-    // otherwise block the process before it can exit.
-    const stdoutText = new Response(proc.stdout).text().catch(() => "");
-    const stderrText = new Response(proc.stderr).text().catch(() => "");
+    // otherwise block the process before it can exit. Bounded, because the
+    // result is truncated to the same ceiling anyway -- a search matching a
+    // generated file could otherwise buffer far more than is ever returned,
+    // limited only by how much the binary emits before the timeout fires.
+    const stdoutText = drainBounded(proc.stdout, ctx.maxBytes).catch(() => "");
+    const stderrText = drainBounded(proc.stderr, ctx.maxBytes).catch(() => "");
     const exitCode = await proc.exited;
     clearTimeout(timer);
 

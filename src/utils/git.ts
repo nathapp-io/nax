@@ -72,6 +72,7 @@ export async function gitWithTimeout(
   args: string[],
   workdir: string,
   timeoutMs: number = _gitDeps.gitTimeoutMs,
+  maxBytes?: number,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = _gitDeps.spawn(["git", ...args], {
     cwd: workdir,
@@ -95,8 +96,14 @@ export async function gitWithTimeout(
   // `.catch()` is attached eagerly: on the timeout path below we return without
   // awaiting these, and an unawaited rejection (a SIGKILLed process can error its
   // pipes) would surface as an unhandled rejection and take the process down.
-  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
-  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+  // `maxBytes` bounds the WORK, not just the answer: the timeout caps wall
+  // clock, so without it `git log -p` on a large repository can accumulate for
+  // as long as the timeout allows. Optional, and unbounded when absent, so the
+  // callers that read a single ref keep exactly their current behaviour.
+  const drain = (stream: ReadableStream<Uint8Array>): Promise<string> =>
+    (maxBytes === undefined ? new Response(stream).text() : drainBounded(stream, maxBytes)).catch(() => "");
+  const stdoutPromise = drain(proc.stdout);
+  const stderrPromise = drain(proc.stderr);
 
   const exitCode = await proc.exited;
   clearTimeout(timerId);
@@ -249,6 +256,7 @@ export function detectMergeConflict(output: string): boolean {
   );
 }
 
+import { drainBounded } from "./bounded-io";
 /**
  * Re-exports of the porcelain parser for callers that import from
  * `@/utils/git`. The parser itself lives in `./porcelain.ts` to keep the

@@ -19,6 +19,7 @@ export {
   _resetBuiltinsForTest,
   createCodingToolRuntime,
   DEFAULT_TOOL_MAX_BYTES,
+  DEFAULT_TOOL_MAX_FILE_BYTES,
   registerBuiltinCodingTools,
 } from "./runtime";
 export type { CodingToolName, PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
