@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax-ai",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Provider-agnostic LLM client: completions, streaming, tool calls, usage and auth across API-key and OAuth providers.",
   "type": "module",
   "main": "./dist/index.js",
