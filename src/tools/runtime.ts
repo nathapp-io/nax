@@ -12,6 +12,7 @@
 import { getSafeLogger } from "@/logger";
 import { editTool } from "./edit";
 import { gitTool } from "./git";
+import { gitCommitTool } from "./git-commit";
 import { globTool } from "./glob";
 import { grepTool } from "./grep";
 import { readTool } from "./read";
@@ -55,7 +56,7 @@ let builtinsRegistered = false;
 /** Idempotent: the registry is process-global, the runtime is per-session. */
 export function registerBuiltinCodingTools(): void {
   if (builtinsRegistered) return;
-  for (const tool of [readTool, globTool, grepTool, writeTool, editTool, gitTool]) {
+  for (const tool of [readTool, globTool, grepTool, writeTool, editTool, gitTool, gitCommitTool]) {
     if (getCodingTool(tool.name) === undefined) registerBuiltinTool(tool);
   }
   builtinsRegistered = true;
