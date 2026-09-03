@@ -118,6 +118,46 @@ risk. The override is recorded here so the gap between "the rule" and "what
 happened" is not left to be rediscovered. The condition still stands, unmet as
 written, for any Phase C work beyond C1 — in particular for Bash (§3).
 
+**Second override: native op tool declarations (2026-09-03).** The branch
+`feat/native-op-tool-declarations` declared coding tools on two ops that had
+none before it: `verifier` (`Read`, `Glob`, `Grep`, `Git`, `RunCommand`) and
+`test-writer` (adding `Write`, `Edit`, `RunCommand`, and `GitCommit` to the
+`Read` it already held). The `test-writer` grant is write-capable, and
+write-capability is exactly what this section's entry condition guards. That
+puts this branch in the same position C1 was in, not the position C2 was in
+below: C2 proceeded without an override because it was scoped to exclude the
+capability the condition names, and could therefore never come into contact
+with the gate. This branch widens native implementation to a write-capable op
+directly, so it cannot proceed by exclusion, and needs a recorded override in
+the same form and for the same reason as the C1 one above.
+
+The measured outcome, recorded in full at
+`docs/superpowers/specs/2026-09-03-native-tdd-run-results.md`: the `tdd-calc`
+fixture's story passed end to end — 12m 0s, $0.0649, 125 coding-tool calls —
+with every session in the story, test-writer through verifier, running on the
+native transport. The verifier issued `RunCommand{command: "testScoped"}` and
+it succeeded. That retires the Phase B conclusion recorded above that
+`tdd-verifier` "needs Write+fs": what it needed was `RunCommand`, one line of
+declaration, not a filesystem.
+
+That result is a floor, not the parity this section names, and should not be
+read as satisfying it. `tdd-calc`'s acceptance criteria are pinned to exact
+strings, a shape that a weak test-writer can pass as easily as a strong one,
+so the run does not distinguish "the test-writer wrote a correct test" from
+"the test-writer wrote a test the fixture cannot fail." It is also one story,
+one fixture, one model — n=1.
+
+Section 3's reopen triggers did not fire on this run either: `RequestCapability`
+rows were 0 across all 125 tool calls, and none of the three conditions named
+there was met. Per section 3's own caution, a zero row here is the weakest
+entry in the ledger, not proof that nothing was needed — a model given no
+shell does not ask for one, it works around the gap or stops — and this run
+should not be reported as showing that nothing was needed. (Per-role
+attribution in that ledger was itself possible only because this branch
+changed the tool-audit session name to carry the session's role; before it,
+every session in a story shared one name and no per-op distinction could have
+been read back from it.)
+
 Phase C2 proceeded under no override. The condition guards a capability, not a
 phase number, and C2 was scoped to exclude that capability, so it never came into
 contact with the gate. Re-scoping a phase out from under an entry condition is
