@@ -28,6 +28,7 @@ import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { classifyHttpError, classifyThrown, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
+import { mergeRequestHeaders } from "./request-headers.ts";
 import { createToolArgAccumulator, parseToolArgs } from "./tool-args.ts";
 import type {
   ConversationMessage,
@@ -184,6 +185,7 @@ export function toPiOptions(req: ProtocolRequest): SimpleStreamOptions {
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
     ...(req.cacheRetention !== undefined ? { cacheRetention: req.cacheRetention } : {}),
     ...(req.signal !== undefined ? { signal: req.signal } : {}),
+    ...(req.headers !== undefined ? { headers: { ...req.headers } } : {}),
     // pi-ai's scale has no "off": the absence of the field is how thinking is
     // disabled, so mapping "off" to a value would silently enable it.
     ...(req.thinking !== undefined && req.thinking !== "off" ? { reasoning: req.thinking } : {}),
@@ -432,6 +434,7 @@ export function createPiDeps(options: PiProtocolOptions = {}, streamSimple?: Str
       // so the seam a native backend will use is exercised in production
       // rather than merely exported.
       const auth = await resolver.resolve({ provider: model.provider, model: model.id });
+      const mergedHeaders = mergeRequestHeaders(options_?.headers, auth.headers);
       const stream = streamSimple ?? models.streamSimple.bind(models);
       yield* stream(model, context, {
         // Construction-time first, so a per-request option could still override
@@ -439,7 +442,11 @@ export function createPiDeps(options: PiProtocolOptions = {}, streamSimple?: Str
         transport: options.transport ?? DEFAULT_TRANSPORT,
         ...options_,
         ...(auth.apiKey !== undefined ? { apiKey: auth.apiKey } : {}),
-        ...(auth.headers !== undefined ? { headers: { ...auth.headers } } : {}),
+        // Merged, not overwritten. Spreading auth.headers alone discarded any
+        // per-request headers wholesale, so a request header would have been
+        // silently dropped for every credentialed provider — which is every
+        // provider that actually needs one.
+        ...(mergedHeaders !== undefined ? { headers: mergedHeaders } : {}),
         onResponse: (response) => onResponse({ status: response.status, headers: response.headers }),
       });
     },

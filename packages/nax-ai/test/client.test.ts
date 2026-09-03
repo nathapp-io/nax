@@ -136,3 +136,59 @@ describe("client", () => {
     expect(() => client.validate()).toThrow();
   });
 });
+
+describe("request headers", () => {
+  it("passes a request's headers through to the protocol", async () => {
+    let seen: Readonly<Record<string, string>> | undefined;
+    const client = createClient({
+      providers: PROVIDERS,
+      protocols: {
+        "openai-completions": {
+          pi: async () => ({
+            name: "openai-completions",
+            async *stream(req) {
+              seen = req.headers;
+              for (const event of OK) yield event;
+            },
+          }),
+        },
+      },
+    });
+    const model = await client.model("deepseek", "deepseek-chat");
+
+    await client.complete(model, { messages: [], headers: { "x-opencode-session": "s-1" } });
+
+    expect(seen).toEqual({ "x-opencode-session": "s-1" });
+  });
+
+  it("rejects a header that could splice a second header onto the wire", async () => {
+    const client = makeClient();
+    const model = await client.model("deepseek", "deepseek-chat");
+
+    await expect(
+      client.complete(model, { messages: [], headers: { "x-opencode-session": "s-1\r\nx-injected: 1" } }),
+    ).rejects.toThrow(/x-opencode-session/);
+  });
+
+  it("rejects an invalid header name before any request is attempted", async () => {
+    let reached = false;
+    const client = createClient({
+      providers: PROVIDERS,
+      protocols: {
+        "openai-completions": {
+          pi: async () => ({
+            name: "openai-completions",
+            async *stream() {
+              reached = true;
+              for (const event of OK) yield event;
+            },
+          }),
+        },
+      },
+    });
+    const model = await client.model("deepseek", "deepseek-chat");
+
+    await expect(client.complete(model, { messages: [], headers: { "bad name": "v" } })).rejects.toThrow(/name/i);
+    expect(reached).toBe(false);
+  });
+});

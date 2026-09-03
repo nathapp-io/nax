@@ -149,6 +149,18 @@ export interface ProtocolRequest {
   readonly temperature?: number;
   readonly thinking?: ThinkingLevel;
   readonly cacheRetention?: CacheRetention;
+  /**
+   * Extra headers for this request.
+   *
+   * Deliberately an opaque map rather than a named concept. This package knows
+   * nothing about consumer sessions, so a provider that wants a session
+   * affinity header (opencode-go's `x-opencode-session`, say) is served by the
+   * consumer putting it here — without nax-ai learning that vendor's
+   * vocabulary, which its scope statement forbids.
+   *
+   * Auth headers win a name collision; see mergeRequestHeaders.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
   readonly signal?: AbortSignal;
 }
 

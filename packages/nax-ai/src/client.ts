@@ -8,6 +8,7 @@
 
 import { collectStream } from "./protocols/collect.ts";
 import { type BackendSelection, createRegistry, type ProtocolEntries } from "./protocols/registry.ts";
+import { assertValidHeaders } from "./protocols/request-headers.ts";
 import { retryTransportFaults } from "./protocols/retry.ts";
 import { clampThinkingLevel } from "./protocols/thinking.ts";
 import type { ProtocolEvent, ProtocolRequest } from "./protocols/types.ts";
@@ -56,6 +57,10 @@ export function createClient(options: ClientOptions): Client {
   }
 
   async function* streamFrom(model: ResolvedModel, req: ClientRequest): AsyncIterable<ProtocolEvent> {
+    // Before the protocol is resolved, so a malformed header is a caller error
+    // reported here rather than a transport failure from inside a provider SDK.
+    assertValidHeaders(req.headers);
+
     const protocol = await registry.resolve(model.protocol);
     const thinking = req.thinking !== undefined ? clampThinkingLevel(req.thinking, model.thinkingLevels) : undefined;
 
