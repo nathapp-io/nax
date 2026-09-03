@@ -29,6 +29,7 @@ import { toTokenUsage, totalTokens } from "../usage.ts";
 import { classifyHttpError, classifyThrown, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { mergeRequestHeaders } from "./request-headers.ts";
+import { vendorSessionHeaders } from "./session-id.ts";
 import { createToolArgAccumulator, parseToolArgs } from "./tool-args.ts";
 import type {
   ConversationMessage,
@@ -186,6 +187,7 @@ export function toPiOptions(req: ProtocolRequest): SimpleStreamOptions {
     ...(req.cacheRetention !== undefined ? { cacheRetention: req.cacheRetention } : {}),
     ...(req.signal !== undefined ? { signal: req.signal } : {}),
     ...(req.headers !== undefined ? { headers: { ...req.headers } } : {}),
+    ...(req.sessionId !== undefined ? { sessionId: req.sessionId } : {}),
     // pi-ai's scale has no "off": the absence of the field is how thinking is
     // disabled, so mapping "off" to a value would silently enable it.
     ...(req.thinking !== undefined && req.thinking !== "off" ? { reasoning: req.thinking } : {}),
@@ -434,7 +436,12 @@ export function createPiDeps(options: PiProtocolOptions = {}, streamSimple?: Str
       // so the seam a native backend will use is exercised in production
       // rather than merely exported.
       const auth = await resolver.resolve({ provider: model.provider, model: model.id });
-      const mergedHeaders = mergeRequestHeaders(options_?.headers, auth.headers);
+      // The vendor header goes under the caller's own headers, so an explicit
+      // one still wins; auth stays last and wins over both.
+      const mergedHeaders = mergeRequestHeaders(
+        { ...vendorSessionHeaders(model.provider, options_?.sessionId), ...options_?.headers },
+        auth.headers,
+      );
       const stream = streamSimple ?? models.streamSimple.bind(models);
       yield* stream(model, context, {
         // Construction-time first, so a per-request option could still override

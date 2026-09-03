@@ -161,6 +161,15 @@ export interface ProtocolRequest {
    * Auth headers win a name collision; see mergeRequestHeaders.
    */
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * Session identifier, for providers that route or cache by session.
+   *
+   * Supplying it is what enables affinity headers and prompt-cache keying
+   * downstream, each chosen per model rather than per provider. What
+   * constitutes a session is the consumer's decision; this package only
+   * carries the id and adds the one vendor header pi-ai lacks.
+   */
+  readonly sessionId?: string;
   readonly signal?: AbortSignal;
 }
 
