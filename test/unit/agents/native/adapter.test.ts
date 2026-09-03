@@ -294,7 +294,7 @@ describe("hasCredentials", () => {
  * has its own tests, and a helper nothing calls is the failure mode this repo
  * keeps hitting (nax#1744, transcriptDir).
  */
-describe("NativeAgentAdapter session affinity", () => {
+describe("NativeAgentAdapter session identity", () => {
   const OPENCODE_MODEL = { ...MODEL, id: "deepseek-v4-flash", provider: "opencode-go" } satisfies ResolvedModel;
 
   function capturingClient(model: ResolvedModel): { client: Client; seen: ClientRequest[] } {
@@ -309,7 +309,7 @@ describe("NativeAgentAdapter session affinity", () => {
     return { client, seen };
   }
 
-  test("complete sends x-opencode-session to an opencode provider", async () => {
+  test("complete sends a session id, which nax-ai maps onto each provider's wire", async () => {
     const { client, seen } = capturingClient(OPENCODE_MODEL);
     _clientDeps.build = async () => client;
 
@@ -317,7 +317,9 @@ describe("NativeAgentAdapter session affinity", () => {
     opts.modelDef = { provider: "unknown", model: "opencode-go/deepseek-v4-flash" };
     await new NativeAgentAdapter().complete("hi", opts);
 
-    expect(seen[0]?.headers).toMatchObject({ "x-opencode-session": expect.any(String) });
+    expect(seen[0]?.sessionId).toEqual(expect.any(String));
+    // The vendor header is nax-ai's job; nax must not assemble one itself.
+    expect(seen[0]?.headers).toBeUndefined();
   });
 
   test("one-shots within one run share a key, so their cache affinity holds", async () => {
@@ -350,16 +352,18 @@ describe("NativeAgentAdapter session affinity", () => {
     await new NativeAgentAdapter().complete("one", opts());
     await new NativeAgentAdapter().complete("two", opts());
 
-    expect(seen[0]?.headers?.["x-opencode-session"]).not.toBe(seen[1]?.headers?.["x-opencode-session"] as string);
+    expect(seen[0]?.sessionId).not.toBe(seen[1]?.sessionId as string);
   });
 
-  test("complete sends no affinity header to a provider that has none", async () => {
+  test("sends the id for every provider, not just the ones with a named header", async () => {
     const { client, seen } = capturingClient(MODEL);
     _clientDeps.build = async () => client;
 
     await new NativeAgentAdapter().complete("hi", options());
 
-    expect(seen[0]?.headers).toBeUndefined();
+    // openai-format providers were unreachable while nax owned the mapping:
+    // their header comes from a per-model property nax-ai does not expose.
+    expect(seen[0]?.sessionId).toEqual(expect.any(String));
   });
 
   test("sendTurn derives the header from the session, so it is stable across turns", async () => {
@@ -379,10 +383,10 @@ describe("NativeAgentAdapter session affinity", () => {
     await adapter.sendTurn(handle, "one", turn);
     await adapter.sendTurn(handle, "two", turn);
 
-    const first = seen[0]?.headers?.["x-opencode-session"];
-    const second = seen[1]?.headers?.["x-opencode-session"];
+    const first = seen[0]?.sessionId;
+    const second = seen[1]?.sessionId;
     expect(first).toBeDefined();
-    expect(first).toBe(second);
+    expect(first).toBe(second as string);
     expect(first).toBe(nativeSessionId(handle.id));
   });
 });

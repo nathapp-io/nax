@@ -5,7 +5,7 @@
     "": {
       "name": "ngent",
       "dependencies": {
-        "@nathapp/nax-ai": "0.1.5",
+        "@nathapp/nax-ai": "0.1.6",
         "@types/react": "^19.2.14",
         "chalk": "^5.6.2",
         "commander": "^13.1.0",
@@ -102,7 +102,7 @@
 
     "@google/genai": ["@google/genai@1.52.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-gwSvbpiN/17O9TbsqSsE/OzZcpv5Fo4RQjdngGgogtuB9RsyJ8ZHhX5KjHj1bp5N9snN2eK8LDGXSaWW2hof8Q=="],
 
-    "@nathapp/nax-ai": ["@nathapp/nax-ai@0.1.5", "", { "dependencies": { "@earendil-works/pi-ai": "0.84.4", "proper-lockfile": "4.1.2" } }, "sha512-DVjkCLVfcbYi3ohbyDP35mWt7N4ZzkaennrYvi/1VjVdvzrLYistxD1MgQq0o5NvN/7u7no+XewseJgVuab5YQ=="],
+    "@nathapp/nax-ai": ["@nathapp/nax-ai@0.1.6", "", { "dependencies": { "@earendil-works/pi-ai": "0.84.4", "proper-lockfile": "4.1.2" } }, "sha512-b0YU9kn4cwMrQKuCTypRmyNHZ/giU8LdxHhTZz5VwShu+Te1l2lC4PIVum6lj49BA2AHCy7wTF9lRs2fBc/h+g=="],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ=="],
 

@@ -1,24 +1,19 @@
 /**
- * Session affinity for native requests.
+ * Session identity for native requests.
  *
- * Providers route a session's requests to the same backend when they can
- * recognise the session, which is what keeps a prompt cache warm across the
- * turns of one conversation. Nothing beneath us does this today: pi-ai has the
- * machinery but gates it on a `sessionId` nax-ai never passes, and its flag
- * defaults off. So the id is ours to supply.
- *
- * The split here is the point. `nativeSessionId` is provider-agnostic — every
- * native session has one id, derived identically no matter who serves the
- * request. Only the *spelling* is per-vendor, because vendors disagree on the
- * header name. That keeps this from being an opencode special case: supporting
- * another vendor is a row in AFFINITY_HEADERS, not a second concept.
+ * nax owns what a session *is*; nax-ai owns how one reaches a provider. So this
+ * file derives an id and stops there — which header carries it, and for which
+ * vendor, is nax-ai's business (`vendorSessionHeaders`, plus everything pi-ai
+ * already derives from a per-model affinity format and the prompt-cache key).
+ * An earlier revision kept that mapping here, which meant nax had learned a
+ * vendor vocabulary it has no reason to know.
  *
  * The id is a hash, never the session name. nax builds session ids from role,
  * story and feature ("implementer-US-001-auth-system"), so sending one raw
  * would hand a third party the shape of a private repository's work for no
  * gain — a provider needs an opaque token it can match, and nothing else.
- * Hashing also makes the value a legal header value by construction, whatever
- * the id happened to contain.
+ * Hashing also makes the value safe to put on the wire by construction,
+ * whatever the id happened to contain.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -41,51 +36,12 @@ export function nativeSessionId(sessionKey: string): string {
  * A fresh key for a caller that has no session id of its own.
  *
  * `complete()` is one call with no successor, so there is nothing to name. A
- * fresh key per *call* would satisfy the letter of the header and defeat its
- * purpose, since affinity only pays when two requests share an id. The adapter
- * therefore holds one of these for its own lifetime, which the agent registry's
- * adapter cache scopes to a run, so the one-shots of a run share a backend
- * while unrelated runs do not.
+ * fresh key per *call* would satisfy the letter of it and defeat the purpose,
+ * since affinity only pays when two requests share an id. The adapter holds one
+ * of these for its own lifetime, which the agent registry's adapter cache
+ * scopes to a run, so the one-shots of a run share a backend while unrelated
+ * runs do not.
  */
 export function newSessionKey(): string {
   return randomUUID();
-}
-
-/**
- * Header name per provider id.
- *
- * Every entry needs a source; guessing a header name achieves nothing and sends
- * an identifier to a vendor that never asked for one.
- *
- *  - `opencode` (Zen, https://opencode.ai/zen) and `opencode-go`
- *    (https://opencode.ai/zen/go) are separate catalog entries for the same
- *    service. https://opencode.ai/docs/go/ documents `x-opencode-session`, and
- *    OpenCode has said requests without it may start erroring. Both are listed:
- *    gating on the `-go` one alone would leave Zen unheadered.
- *  - `openrouter` takes `x-session-id`, which is what pi-ai sends for it
- *    (`openai-completions.js`, sessionAffinityFormat "openrouter").
- *
- * Absent on purpose: the openai-format providers. pi-ai spells those
- * `session_id` / `x-client-request-id`, but it selects that from a per-MODEL
- * `compat.sessionAffinityFormat`, and nax-ai's ResolvedModel does not expose
- * it. Keying those off a provider id would be a different rule wearing the same
- * name, so they wait for the model property to become visible.
- */
-const AFFINITY_HEADERS: Readonly<Record<string, string>> = {
-  opencode: "x-opencode-session",
-  "opencode-go": "x-opencode-session",
-  openrouter: "x-session-id",
-};
-
-/**
- * Returns undefined — not an empty object — when a provider has no known
- * header, so the caller spreads nothing at all.
- */
-export function sessionAffinityHeaders(
-  provider: string,
-  sessionKey: string,
-): Readonly<Record<string, string>> | undefined {
-  const header = AFFINITY_HEADERS[provider];
-  if (header === undefined) return undefined;
-  return { [header]: nativeSessionId(sessionKey) };
 }

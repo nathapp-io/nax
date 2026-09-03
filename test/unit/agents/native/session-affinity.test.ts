@@ -1,19 +1,15 @@
 /**
- * Session affinity on the native path.
+ * Session identity on the native path.
  *
- * Two separable things, deliberately not one:
- *
- *  - the session id is provider-agnostic. Every native session has one, derived
- *    the same way whoever ends up serving the request.
- *  - which header carries it is per-provider, because vendors disagree on the
- *    name. OpenCode documents `x-opencode-session`; pi-ai sends `x-session-id`
- *    for openrouter.
- *
- * Keeping the id independent is what stops this being an opencode special case:
- * adding a vendor is a row in a table, not a new concept.
+ * nax derives the id and stops. Which header carries it — and the whole
+ * per-model affinity and prompt-cache mapping beneath it — belongs to nax-ai,
+ * which is the layer that knows providers. An earlier revision kept a vendor
+ * table here; that made nax learn a vocabulary it has no reason to know, and
+ * it could not reach the openai-format providers at all, because their header
+ * is chosen from a per-model property nax-ai does not expose.
  */
 import { describe, expect, test } from "bun:test";
-import { nativeSessionId, sessionAffinityHeaders } from "@/agents/native/session-affinity";
+import { nativeSessionId, newSessionKey } from "@/agents/native/session-affinity";
 
 describe("nativeSessionId", () => {
   test("is stable for the same session, which is the whole point of affinity", () => {
@@ -31,34 +27,13 @@ describe("nativeSessionId", () => {
     expect(id).not.toContain("implementer");
   });
 
-  test("is a legal header value whatever the key contained", () => {
+  test("is safe to put on the wire whatever the key contained", () => {
     expect(nativeSessionId("weird\r\nkey: injected")).toMatch(/^[0-9a-f]+$/);
   });
 });
 
-describe("sessionAffinityHeaders", () => {
-  test.each(["opencode", "opencode-go"])("sends x-opencode-session to %s", (provider) => {
-    expect(sessionAffinityHeaders(provider, "s-1")).toEqual({
-      "x-opencode-session": nativeSessionId("s-1"),
-    });
+describe("newSessionKey", () => {
+  test("is fresh each time, so unrelated callers do not collide", () => {
+    expect(newSessionKey()).not.toBe(newSessionKey());
   });
-
-  test("sends openrouter its own spelling of the same id", () => {
-    expect(sessionAffinityHeaders("openrouter", "s-1")).toEqual({
-      "x-session-id": nativeSessionId("s-1"),
-    });
-  });
-
-  test("carries the same id across vendors, differing only in header name", () => {
-    const go = sessionAffinityHeaders("opencode-go", "s-1")?.["x-opencode-session"];
-    const or = sessionAffinityHeaders("openrouter", "s-1")?.["x-session-id"];
-    expect(go).toBe(or);
-  });
-
-  test.each(["anthropic", "openai", "deepseek", "unknown"])(
-    "sends nothing to %s, whose header is a per-model property nax cannot see",
-    (provider) => {
-      expect(sessionAffinityHeaders(provider, "s-1")).toBeUndefined();
-    },
-  );
 });
