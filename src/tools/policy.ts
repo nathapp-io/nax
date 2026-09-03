@@ -11,7 +11,7 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
-import type { PolicyVerdict, ToolGrant, ToolPolicy } from "./types";
+import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 
 /**
  * Absolute, symlink-resolved form of `candidate` if it lies inside `root`.
@@ -26,16 +26,33 @@ export function resolveWithin(root: string, candidate: string): string | null {
   return realOrRaw(absolute);
 }
 
-/** Minimatch-style glob to RegExp: `**` spans separators, `*` does not. */
+/**
+ * Minimatch-style glob to RegExp: `**` spans separators, `*` does not.
+ *
+ * `**` followed by `/` is zero or more COMPLETE directory segments, which is
+ * why it does not simply compile to `.*`. `.*` both spans separators and
+ * matches the empty string, so emitting it and dropping the separator erased
+ * the boundary: `src/**\/config.ts` became `^src\/.*config\.ts$`, and a grant
+ * for files named `config.ts` also admitted `src/legacyconfig.ts`.
+ *
+ * That was never a root escape -- containment runs before any pattern matching
+ * -- but it made a *scoped* grant wider than its author wrote, which is the one
+ * thing a scoped profile exists to prevent.
+ */
 function globToRegExp(pattern: string): RegExp {
   let out = "";
   for (let i = 0; i < pattern.length; i += 1) {
     const char = pattern[i];
     if (char === "*") {
       if (pattern[i + 1] === "*") {
-        out += ".*";
         i += 1;
-        if (pattern[i + 1] === "/") i += 1;
+        if (pattern[i + 1] === "/") {
+          // Optional, so `x/**/y` still matches `x/y` -- minimatch's behaviour.
+          out += "(?:.*/)?";
+          i += 1;
+        } else {
+          out += ".*";
+        }
       } else {
         out += "[^/]*";
       }
@@ -50,21 +67,41 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp(`^${out}$`);
 }
 
-function matchesAny(patterns: readonly RegExp[], value: string): boolean {
-  return patterns.some((re) => re.test(value));
+/** A compiled glob, keeping its source so verb names can be told from paths. */
+interface CompiledPattern {
+  readonly source: string;
+  readonly re: RegExp;
+}
+
+function matchesAny(patterns: readonly CompiledPattern[], value: string): boolean {
+  return patterns.some((p) => p.re.test(value));
 }
 
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
-  const compiled = new Map<string, { unconditional: boolean; matchers: RegExp[]; raw: readonly string[] }>();
+  const compiled = new Map<string, { unconditional: boolean; matchers: CompiledPattern[]; raw: readonly string[] }>();
 
   for (const grant of grants) {
     const unconditional = grant.patterns.includes("*");
     compiled.set(grant.tool, {
       unconditional,
-      matchers: grant.patterns.filter((p) => p !== "*").map(globToRegExp),
+      matchers: grant.patterns.filter((p) => p !== "*").map((source) => ({ source, re: globToRegExp(source) })),
       raw: grant.patterns,
     });
+  }
+
+  /**
+   * The path globs in a grant, which for a verb-gated tool means the patterns
+   * that are not verb names.
+   *
+   * A grant list is overloaded -- verbs for Git, path globs for Write -- so
+   * matching every pattern against a path denied everything for Git, and
+   * matching none left its paths bounded by the root alone. `allowedVerbs` is a
+   * closed set the tool declares, so the two kinds separate without guessing.
+   */
+  function pathMatchers(matchers: CompiledPattern[], scope: ToolScope): CompiledPattern[] {
+    const verbs = scope.allowedVerbs;
+    return verbs === undefined ? matchers : matchers.filter((m) => !verbs.includes(m.source));
   }
 
   function deny(reason: string, breach = false): PolicyVerdict {
@@ -95,6 +132,13 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
         }
       }
 
+      const globs = pathMatchers(grant.matchers, scope);
+      const relativeTo = (resolved: string) => relative(resolvedRoot, resolved).split(sep).join("/");
+      // A verb-only grant declares no path globs. That leaves the root as the
+      // only bound -- unchanged behaviour, but now an authoring choice rather
+      // than something the grant syntax could not express.
+      const restrictPaths = !grant.unconditional && globs.length > 0;
+
       const resolvedPaths: string[] = [];
       for (const field of scope.pathFields) {
         const value = input[field];
@@ -106,11 +150,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
           return deny(`path "${value}" resolves outside the permitted root`, true);
         }
 
-        if (!grant.unconditional) {
-          const rel = relative(resolvedRoot, resolved).split(sep).join("/");
-          if (!matchesAny(grant.matchers, rel)) {
-            return deny(`${tool} is not granted "${rel}" for this stage`);
-          }
+        if (!grant.unconditional && !matchesAny(globs, relativeTo(resolved))) {
+          return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
         }
         resolvedPaths.push(resolved);
       }
@@ -125,6 +166,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
           const resolved = resolveWithin(resolvedRoot, value);
           if (resolved === null) {
             return deny(`"${field}" entry "${value}" resolves outside the permitted root`, true);
+          }
+          if (restrictPaths && !matchesAny(globs, relativeTo(resolved))) {
+            return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
           }
           resolvedPaths.push(resolved);
         }
@@ -145,6 +189,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
           const resolved = resolveWithin(resolvedRoot, candidatePath);
           if (resolved === null) {
             return deny(`"${field}" entry "${value}" resolves outside the permitted root`, true);
+          }
+          if (restrictPaths && !matchesAny(globs, relativeTo(resolved))) {
+            return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
           }
           resolvedPaths.push(resolved);
         }
