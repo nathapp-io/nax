@@ -40,6 +40,9 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
   stage: "run",
   session: { role: "implementer", lifetime: "warm" },
   config: tddConfigSelector,
+  // Declared × granted: advertised is the intersection with the resolved
+  // policy, so this cannot widen anything the profile denies.
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit", "RequestCapability"],
   // Routing-driven: a literal profile pin selects its own agent's exact model;
   // otherwise escalation mutates modelTier in the PRD before re-dispatch.
   // Ad-hoc callers without routing return undefined, so callOp uses its default tier.

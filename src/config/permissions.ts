@@ -130,7 +130,15 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
     case "unrestricted":
       return {
         mode: "approve-all",
-        toolGrants: unconditionalGrants([...DEFAULT_CODING_TOOLS, "Write", "Edit", "Git"]),
+        toolGrants: unconditionalGrants([
+          ...DEFAULT_CODING_TOOLS,
+          "Write",
+          "Edit",
+          "Git",
+          "GitCommit",
+          "RunCommand",
+          "RequestCapability",
+        ]),
       };
     case "safe":
       return { mode: "approve-reads", toolGrants: unconditionalGrants(DEFAULT_CODING_TOOLS) };

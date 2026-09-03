@@ -84,8 +84,13 @@ export function createCodingToolRuntime(opts: {
   maxFileBytes?: number;
   storyId?: string;
   sink?: ToolAuditSink;
+  extraTools?: readonly CodingTool[];
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
+  // The global registry cannot hold session-local tools like RunCommand (its
+  // declared commands are per-project). Consult this layer before the registry.
+  const extra = new Map((opts.extraTools ?? []).map((t) => [t.name, t]));
+  const lookup = (name: string): CodingTool | undefined => extra.get(name) ?? getCodingTool(name);
   const sink = opts.sink ?? createNoOpToolAuditSink();
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
   const maxFileBytes = opts.maxFileBytes ?? DEFAULT_TOOL_MAX_FILE_BYTES;
@@ -130,14 +135,14 @@ export function createCodingToolRuntime(opts: {
       const out: CodingTool[] = [];
       for (const name of declared) {
         if (!granted.has(name)) continue;
-        const tool = getCodingTool(name);
+        const tool = lookup(name);
         if (tool !== undefined) out.push(tool);
       }
       return out;
     },
 
     async callTool(name, input) {
-      const tool = getCodingTool(name);
+      const tool = lookup(name);
       if (tool === undefined) {
         log(name, "denied", 0, input);
         return { kind: "denied", reason: `unknown tool "${name}"`, breach: false };

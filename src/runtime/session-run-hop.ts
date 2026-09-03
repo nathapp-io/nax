@@ -4,6 +4,7 @@ import type { IAgentManager } from "../agents/manager-types";
 import { promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
+import { getSafeLogger } from "../logger";
 import type { ISessionManager } from "../session";
 import { recordAgentHandoff } from "../session";
 
@@ -50,6 +51,12 @@ export function createSessionRunHop(
     // openSession leaves the descriptor's `agent` at the primary. No-op when unchanged.
     recordAgentHandoff(sessionManager, sessionName, agentName, "agent-swap");
 
+    // Resolved per hop, not per run: a swap changes the agent and the grants
+    // are stage-scoped, so a runtime captured earlier would outlive its
+    // dispatch. Mirrors build-hop-callback.ts — the two must not drift.
+    // Declared above the try so the finally block can flush the audit sink.
+    let codingSupport: ReturnType<typeof resolveCodingToolSupport>;
+
     try {
       const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
       const maxTurns =
@@ -57,10 +64,7 @@ export function createSessionRunHop(
           ? (options.maxInteractionTurns ?? 10)
           : (options.maxInteractionTurns ?? 1);
 
-      // Resolved per hop, not per run: a swap changes the agent and the grants
-      // are stage-scoped, so a runtime captured earlier would outlive its
-      // dispatch. Mirrors build-hop-callback.ts — the two must not drift.
-      const codingSupport = resolveCodingToolSupport(options);
+      codingSupport = resolveCodingToolSupport(options);
       const interactionHandler = buildRunInteractionHandler({
         ...options,
         ...(codingSupport ? { codingToolRuntime: codingSupport.runtime } : {}),
@@ -139,6 +143,16 @@ export function createSessionRunHop(
         },
       };
     } finally {
+      // Best-effort ledger write (mirrors review-audit doctrine): a flush
+      // failure logs a warning and never replaces the hop's return value.
+      try {
+        await codingSupport?.auditSink.flush();
+      } catch (flushErr) {
+        getSafeLogger()?.warn("tools", "coding-tool audit flush failed", {
+          storyId: options.storyId,
+          error: flushErr instanceof Error ? flushErr.message : String(flushErr),
+        });
+      }
       if (!options.keepOpen) {
         await sessionManager.closeSession(handle);
       }

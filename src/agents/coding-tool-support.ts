@@ -16,14 +16,20 @@ import {
   type CodingToolRuntime,
   compileToolPolicy,
   createCodingToolRuntime,
+  createNoOpToolAuditSink,
+  createRunCommandTool,
+  createToolAuditSink,
+  type ToolAuditSink,
   type ToolGrant,
 } from "@/tools";
+import { toolAuditDir } from "../config/paths";
 import { resolvePermissions } from "../config/permissions";
 import type { AgentRunOptions } from "./types";
 
 export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
   readonly tools: readonly CodingTool[];
+  readonly auditSink: ToolAuditSink;
 }
 
 export function buildCodingToolSupport(args: {
@@ -31,6 +37,9 @@ export function buildCodingToolSupport(args: {
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
   storyId?: string;
+  declaredCommands?: ReadonlyMap<string, string>;
+  auditDir?: string;
+  sessionName?: string;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -48,13 +57,20 @@ export function buildCodingToolSupport(args: {
     );
   }
 
+  const declaredCommands = args.declaredCommands ?? new Map<string, string>();
+  const sink =
+    args.auditDir !== undefined
+      ? createToolAuditSink({ dir: args.auditDir, sessionName: args.sessionName ?? "unattached" })
+      : createNoOpToolAuditSink();
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(grants, args.root),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
+    sink,
+    extraTools: declaredCommands.size > 0 ? [createRunCommandTool(declaredCommands)] : [],
   });
   const tools = runtime.advertised(args.declared);
   if (tools.length === 0) return undefined;
-  return { runtime, tools };
+  return { runtime, tools, auditSink: sink };
 }
 
 /**
@@ -70,15 +86,34 @@ export function buildCodingToolSupport(args: {
  * invisible until an operation happens to dispatch through the other.
  */
 export function resolveCodingToolSupport(
-  options: Pick<AgentRunOptions, "declaredTools" | "codingToolRoot" | "config" | "pipelineStage" | "storyId">,
+  options: Pick<
+    AgentRunOptions,
+    "declaredTools" | "codingToolRoot" | "pipelineStage" | "storyId" | "featureName" | "config"
+  >,
 ): CodingToolSupport | undefined {
   const declared = options.declaredTools ?? [];
   if (declared.length === 0) return undefined;
   const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
+  // RULING F2: AgentRunOptions['config'] is typed as the agent-manager Pick
+  // (agent/execution/profile), yet both hops source it from configLoader.current(),
+  // so it carries the full NaxConfig at runtime — only the type lies. The read is
+  // widened locally here; the shared agentManagerConfigSelector stays untouched.
+  const commands =
+    (options.config as { quality?: { commands?: Partial<Record<string, string>> } } | undefined)?.quality?.commands ??
+    {};
+  const declaredCommands = new Map(
+    Object.entries(commands).filter((e): e is [string, string] => typeof e[1] === "string"),
+  );
+  const root = options.codingToolRoot;
+  const auditDir = root !== undefined && root.trim() !== "" ? toolAuditDir(root, options.featureName) : undefined;
+  const sessionName = options.storyId ?? options.featureName ?? "unattached";
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     grants: resolved.toolGrants,
     declared,
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
+    declaredCommands,
+    ...(auditDir !== undefined ? { auditDir } : {}),
+    sessionName,
   });
 }
