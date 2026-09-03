@@ -334,6 +334,9 @@ export const planRefineOp: RunOperationWithHooks<PlanRefineInput, PRD, PlanConfi
   name: "plan-refine",
   stage: "plan",
   session: { role: "plan-refine" as SessionRole, lifetime: "fresh" },
+  // Every turn (build/buildRefineContinuation/buildSpecDriftRepair/buildOutOfScopeRepair)
+  // instructs the agent to write the PRD to `outputPath` rather than reply with it.
+  tools: ["Read", "Glob", "Grep", "Write"],
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,

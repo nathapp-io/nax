@@ -53,6 +53,17 @@ export const REQUIRED_TOOLS_BY_ROLE: Record<string, readonly string[]> = {
   "fix-gen": ["Write", "Edit"],
   "finish-fix": ["Write", "Edit"],
   verifier: ["RunCommand"],
+  /**
+   * These four roles never edit an existing file (no Edit requirement) — each
+   * writes ONE fresh output file via a `fileOutput`-style contract ("write JSON
+   * to this path, then reply with a brief confirmation") rather than replying
+   * with the content inline. See docs/superpowers/specs/
+   * 2026-09-03-fileoutput-op-tool-gap-followup.md for the per-op prompt evidence.
+   */
+  plan: ["Write"],
+  "plan-refine": ["Write"],
+  "debate-plan": ["Write"],
+  "acceptance-gen": ["Write"],
 };
 
 export interface OpRow {

@@ -25,6 +25,10 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
   name: "plan-interactive",
   stage: "plan",
   session: { role: "plan", lifetime: "fresh" },
+  // The prompt (PlanPromptBuilder.build / jsonRepair / schemaRepair / citationRepair)
+  // always instructs the agent to write the PRD JSON directly to `outputFilePath`
+  // rather than reply with it — see `fileOutput` below, which reads that file back.
+  tools: ["Read", "Glob", "Grep", "Write"],
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,
