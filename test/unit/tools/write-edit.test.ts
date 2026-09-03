@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { editTool, writeTool } from "@/tools";
+import { DEFAULT_TOOL_MAX_FILE_BYTES, editTool, writeTool } from "@/tools";
 
 let root: string;
 
@@ -13,7 +13,7 @@ beforeEach(() => {
 });
 
 function ctx(paths: string[]) {
-  return { root, resolvedPaths: paths, maxBytes: 10_000 };
+  return { root, resolvedPaths: paths, maxBytes: 10_000, maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES };
 }
 
 describe("writeTool", () => {

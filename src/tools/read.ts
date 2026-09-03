@@ -5,7 +5,7 @@
  * policy produced. That is what keeps containment in one seam.
  */
 
-import { readFile } from "node:fs/promises";
+import { readPrefix } from "@/utils/bounded-io";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 function truncate(body: string, maxBytes: number): string {
@@ -27,7 +27,9 @@ export const readTool: CodingTool = {
     const [target] = ctx.resolvedPaths;
     if (target === undefined) return { content: "no path supplied", isError: true };
     try {
-      return { content: truncate(await readFile(target, "utf8"), ctx.maxBytes) };
+      // A prefix, not the file: the result is truncated to the same ceiling
+      // either way, so reading beyond it was only ever wasted memory.
+      return { content: truncate(await readPrefix(target, ctx.maxBytes), ctx.maxBytes) };
     } catch (err) {
       // An unreadable file is a tool ERROR the model can react to, never a
       // denial: the policy already said yes.

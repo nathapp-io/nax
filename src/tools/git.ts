@@ -121,7 +121,7 @@ export const gitTool: CodingTool = {
     if ("error" in built) return { content: built.error, isError: true };
 
     try {
-      const { stdout, stderr, exitCode } = await gitWithTimeout(built, ctx.root);
+      const { stdout, stderr, exitCode } = await gitWithTimeout(built, ctx.root, undefined, ctx.maxBytes);
       if (exitCode !== 0 && stdout.trim() === "") {
         return { content: stderr.trim() || `git exited ${exitCode}`, isError: true };
       }

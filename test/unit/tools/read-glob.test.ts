@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { globTool, readTool } from "@/tools";
+import { DEFAULT_TOOL_MAX_FILE_BYTES, globTool, readTool } from "@/tools";
 
 let root: string;
 
@@ -15,7 +15,7 @@ beforeAll(() => {
 });
 
 function ctx(paths: string[], maxBytes = 10_000) {
-  return { root, resolvedPaths: paths, maxBytes };
+  return { root, resolvedPaths: paths, maxBytes, maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES };
 }
 
 describe("readTool", () => {

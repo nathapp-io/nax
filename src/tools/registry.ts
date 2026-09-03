@@ -26,6 +26,11 @@ export interface ToolRunContext {
   readonly resolvedPaths: readonly string[];
   /** Output ceiling in bytes; the tool truncates rather than the caller. */
   readonly maxBytes: number;
+  /**
+   * Largest file this tool may read whole or write. Bounds the work, where
+   * maxBytes bounds only what the model is told -- see src/tools/bounded.ts.
+   */
+  readonly maxFileBytes: number;
 }
 
 export interface CodingTool {

@@ -8,7 +8,7 @@
  * Like Write, this has no production consumer in C1.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -44,6 +44,20 @@ export const editTool: CodingTool = {
     const newString = input.new_string;
     if (typeof oldString !== "string" || typeof newString !== "string") {
       return { content: "old_string and new_string must be strings", isError: true };
+    }
+
+    // Checked before reading, not after: Edit must hold the whole file to
+    // replace within it, so the only way to bound the memory is to refuse.
+    try {
+      const { size } = await stat(target);
+      if (size > ctx.maxFileBytes) {
+        return {
+          content: `${target} is ${size} bytes, which exceeds the ${ctx.maxFileBytes}-byte file ceiling`,
+          isError: true,
+        };
+      }
+    } catch (err) {
+      return { content: err instanceof Error ? err.message : String(err), isError: true };
     }
 
     let source: string;
