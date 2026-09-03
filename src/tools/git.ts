@@ -27,6 +27,24 @@ import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 export const GIT_READ_VERBS: readonly string[] = ["diff", "log", "show", "status", "blame"];
 
 /**
+ * Verbs whose output prints "a/<path>"/"b/<path>" diff headers, which git
+ * always frames relative to the repository top-level regardless of cwd
+ * (confirmed independently by the porcelain-path comment in
+ * `src/utils/git.ts`'s `autoCommitIfDirty`). Read/Grep/Glob resolve a path
+ * relative to the permitted root (`ctx.root`), so when that root is a package
+ * subdir the two frames diverge -- issue #1807.
+ *
+ * `--relative` (with no argument, so relative to cwd) makes git itself apply
+ * that offset before it quotes a path, rather than after -- so it also
+ * handles a non-ASCII path (which git quotes and octal-escapes, wrapping the
+ * "a/" prefix) and a path containing a space (which a whitespace-delimited
+ * regex can't span, and after which git appends a trailing tab). `status`
+ * rejects the flag outright; `blame` never emits these headers, so neither
+ * needs it.
+ */
+const GIT_RELATIVE_VERBS: readonly string[] = ["diff", "log", "show"];
+
+/**
  * Flags that escape the repository or execute code.
  *
  * `-c` is included because config injection is a command-execution vector:
@@ -50,6 +68,7 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
   const paths = Array.isArray(input.paths) ? input.paths : [];
 
   const argv: string[] = [subcommand];
+  if (GIT_RELATIVE_VERBS.includes(subcommand)) argv.push("--relative");
   for (const ref of refs) {
     if (typeof ref !== "string") return { error: "refs must be strings" };
     // A ref that begins with "-" would be parsed as an option, which is how an
@@ -99,7 +118,7 @@ export const gitTool: CodingTool = {
     properties: {
       subcommand: { type: "string", enum: [...GIT_READ_VERBS], description: "Read-only git subcommand" },
       refs: { type: "array", items: { type: "string" }, description: "Refs, e.g. ['HEAD~1','HEAD']" },
-      paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the repository root" },
+      paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the permitted root" },
     },
     required: ["subcommand"],
   },
