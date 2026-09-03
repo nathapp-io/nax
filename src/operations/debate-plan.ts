@@ -32,6 +32,9 @@ export const planDebaterOp: RunOperation<DebatePlanInput, DebatePlanOutput, Deba
   name: "debate-plan",
   stage: "plan",
   session: { role: "debate-plan" satisfies SessionRole, lifetime: "fresh" },
+  // Every proposal/rebuttal/patch prompt gets appendFileOutputInstruction()'s
+  // "Write the complete PRD JSON to this file path" appended (runner-plan-helpers.ts).
+  tools: ["Read", "Glob", "Grep", "Write"],
   config: debateConfigSelector,
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
   timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.plan?.timeoutSeconds ?? 600) * 1000,
