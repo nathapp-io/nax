@@ -114,3 +114,54 @@ describe("compileToolPolicy — tool-level gating", () => {
     expect([...policy.grantedTools()].sort()).toEqual(["Git", "Read"]);
   });
 });
+
+/**
+ * `**` must span whole directory segments, not arbitrary characters.
+ *
+ * `**` compiles to `.*`, which already crosses separators, and the `/` that
+ * followed it was consumed without being re-emitted — so the directory boundary
+ * vanished and `src/**\/config.ts` became `^src\/.*config\.ts$`. `.*` then
+ * happily matched `legacy`, and a stage granted "files named config.ts" could
+ * also write `legacyconfig.ts`.
+ *
+ * This never crossed the root (containment runs first), so it is not an escape.
+ * It is a *scoped* grant coming out wider than its author wrote, which is the
+ * one thing a scoped profile exists to prevent.
+ */
+describe("compileToolPolicy — ** spans directory segments, not partial names", () => {
+  function allows(patterns: string[], path: string): boolean {
+    return compileToolPolicy([{ tool: "Write", patterns }], root).check("Write", PATH_SCOPE, { path }).allowed;
+  }
+
+  test("a mid-pattern ** matches whole segments", () => {
+    expect(allows(["src/**/config.ts"], "src/a/config.ts")).toBe(true);
+    expect(allows(["src/**/config.ts"], "src/a/b/config.ts")).toBe(true);
+  });
+
+  test("a mid-pattern ** also matches zero segments, as minimatch does", () => {
+    expect(allows(["src/**/config.ts"], "src/config.ts")).toBe(true);
+  });
+
+  test("a mid-pattern ** does not match a partial filename", () => {
+    expect(allows(["src/**/config.ts"], "src/legacyconfig.ts")).toBe(false);
+    expect(allows(["src/**/config.ts"], "src/a/db_config.ts")).toBe(false);
+  });
+
+  test("a leading ** does not match a partial filename", () => {
+    expect(allows(["**/README.md"], "README.md")).toBe(true);
+    expect(allows(["**/README.md"], "docs/a/README.md")).toBe(true);
+    expect(allows(["**/README.md"], "evilREADME.md")).toBe(false);
+    expect(allows(["**/README.md"], "src/notREADME.md")).toBe(false);
+  });
+
+  test("a trailing ** still matches everything beneath it", () => {
+    expect(allows(["src/**"], "src/a.ts")).toBe(true);
+    expect(allows(["src/**"], "src/a/b/c.ts")).toBe(true);
+    expect(allows(["src/**"], "test/a.ts")).toBe(false);
+  });
+
+  test("a single * still stops at a separator", () => {
+    expect(allows(["src/*.ts"], "src/a.ts")).toBe(true);
+    expect(allows(["src/*.ts"], "src/a/b.ts")).toBe(false);
+  });
+});

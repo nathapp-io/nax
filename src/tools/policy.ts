@@ -26,16 +26,33 @@ export function resolveWithin(root: string, candidate: string): string | null {
   return realOrRaw(absolute);
 }
 
-/** Minimatch-style glob to RegExp: `**` spans separators, `*` does not. */
+/**
+ * Minimatch-style glob to RegExp: `**` spans separators, `*` does not.
+ *
+ * `**` followed by `/` is zero or more COMPLETE directory segments, which is
+ * why it does not simply compile to `.*`. `.*` both spans separators and
+ * matches the empty string, so emitting it and dropping the separator erased
+ * the boundary: `src/**\/config.ts` became `^src\/.*config\.ts$`, and a grant
+ * for files named `config.ts` also admitted `src/legacyconfig.ts`.
+ *
+ * That was never a root escape -- containment runs before any pattern matching
+ * -- but it made a *scoped* grant wider than its author wrote, which is the one
+ * thing a scoped profile exists to prevent.
+ */
 function globToRegExp(pattern: string): RegExp {
   let out = "";
   for (let i = 0; i < pattern.length; i += 1) {
     const char = pattern[i];
     if (char === "*") {
       if (pattern[i + 1] === "*") {
-        out += ".*";
         i += 1;
-        if (pattern[i + 1] === "/") i += 1;
+        if (pattern[i + 1] === "/") {
+          // Optional, so `x/**/y` still matches `x/y` -- minimatch's behaviour.
+          out += "(?:.*/)?";
+          i += 1;
+        } else {
+          out += ".*";
+        }
       } else {
         out += "[^/]*";
       }
