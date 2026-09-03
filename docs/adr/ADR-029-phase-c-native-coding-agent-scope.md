@@ -119,11 +119,15 @@ happened" is not left to be rediscovered. The condition still stands, unmet as
 written, for any Phase C work beyond C1 — in particular for Bash (§3).
 
 **Second override: native op tool declarations (2026-09-03).** The branch
-`feat/native-op-tool-declarations` declared coding tools on two ops that had
-none before it: `verifier` (`Read`, `Glob`, `Grep`, `Git`, `RunCommand`) and
-`test-writer` (adding `Write`, `Edit`, `RunCommand`, and `GitCommit` to the
-`Read` it already held). The `test-writer` grant is write-capable, and
-write-capability is exactly what this section's entry condition guards. That
+`feat/native-op-tool-declarations` gave two ops an explicit tool declaration
+for the first time: `verifier` (`Read`, `Glob`, `Grep`, `Git`, `RunCommand`)
+and `test-writer` (`Read`, `Glob`, `Grep`, `Write`, `Edit`, `RunCommand`,
+`GitCommit`). Neither op held no tools before this branch — an undeclared
+`tools` field resolves to the read-only default (`Read`, `Glob`, `Grep`), so
+both already ran with that in effect. What changed is that `test-writer` now
+declares `Write`, `Edit`, `RunCommand`, and `GitCommit` on top of the
+`Read`/`Glob`/`Grep` it already had by default. That addition is write-capable,
+and write-capability is exactly what this section's entry condition guards. That
 puts this branch in the same position C1 was in, not the position C2 was in
 below: C2 proceeded without an override because it was scoped to exclude the
 capability the condition names, and could therefore never come into contact
@@ -136,9 +140,9 @@ The measured outcome, recorded in full at
 fixture's story passed end to end — 12m 0s, $0.0649, 125 coding-tool calls —
 with every session in the story, test-writer through verifier, running on the
 native transport. The verifier issued `RunCommand{command: "testScoped"}` and
-it succeeded. That retires the Phase B conclusion recorded above that
-`tdd-verifier` "needs Write+fs": what it needed was `RunCommand`, one line of
-declaration, not a filesystem.
+it succeeded. That retires the Phase B conclusion, recorded in the results
+document above, that `tdd-verifier` "needs Write+fs": what it needed was
+`RunCommand`, one line of declaration, not a filesystem.
 
 That result is a floor, not the parity this section names, and should not be
 read as satisfying it. `tdd-calc`'s acceptance criteria are pinned to exact
