@@ -51,6 +51,7 @@ nax.lock
 .nax/prompt-audit/
 .nax/review-audit/
 .nax/review-verdicts/
+.nax/tool-audit/
 .nax/**/semantic-verdicts/
 .nax/**/verdicts/
 .nax/**/sessions/
