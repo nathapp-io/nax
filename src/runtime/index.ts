@@ -137,6 +137,13 @@ export interface NaxRuntime {
   readonly pidRegistry: PidRegistry;
   readonly logger: Logger;
   readonly signal: AbortSignal;
+  /**
+   * True when this run is a `--dry-run`. Run-scoped because the auto-commit
+   * refusal it feeds (nax#1808) is needed at two call sites that share no
+   * arguments -- the completion phase and pre-run acceptance setup -- and both
+   * reach the runtime through DispatchContext.
+   */
+  readonly dryRun: boolean;
   /** Run-scoped flaky-test quarantine memo — shared between the per-story full-suite gate and the deferred regression gate. */
   readonly quarantineMemo: QuarantineMemo;
   /** Run-scoped per-story adversarial-review round history (ADR-022 carry-forward + recurrence-demotion). Keyed by storyId. */
@@ -227,6 +234,8 @@ export interface CreateRuntimeOptions {
    * PidRegistry(workdir). Supply one in tests to control lifecycle.
    */
   pidRegistry?: PidRegistry;
+  /** Marks the run as a dry run; defaults to false. See NaxRuntime.dryRun. */
+  dryRun?: boolean;
   /**
    * Pre-built AgentStreamEventBus. When provided (e.g. from bin/nax.ts so the
    * TUI can subscribe before run() starts), the runtime uses it instead of
@@ -372,6 +381,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     storyFixHistory,
     mutationSummaries,
     dirtyWorktrees,
+    dryRun: opts?.dryRun ?? false,
     routingCache,
 
     get signal() {

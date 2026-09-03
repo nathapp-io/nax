@@ -429,6 +429,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     "run-summary",
     options.feature,
     options.runtime?.dirtyWorktrees,
+    options.runtime?.dryRun,
   );
 
   // Native finish phase (design 4.1). Must precede runtime.close(), whose own

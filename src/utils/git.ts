@@ -304,6 +304,11 @@ export async function getUntrackedPaths(workdir: string): Promise<string[] | nul
  *   account for — currently an unreverted mutation from the mutation spot-check
  *   (`runtime.dirtyWorktrees`). A commit under one of these would capture the
  *   injected defect, so it is refused. Omit when the caller has no runtime.
+ * @param dryRun - When true, refuses outright (nax#1808). A dry run reached the
+ *   completion phase and committed the PRD it had just marked passed, together
+ *   with any unrelated dirty file, because `git add -A` is unscoped. The refusal
+ *   lives here rather than at each call site so a caller added later inherits it
+ *   instead of silently reintroducing the bug. Sourced from `runtime.dryRun`.
  */
 export async function autoCommitIfDirty(
   workdir: string,
@@ -311,8 +316,13 @@ export async function autoCommitIfDirty(
   role: string,
   storyId: string,
   blockedWorktrees?: ReadonlySet<string>,
+  dryRun?: boolean,
 ): Promise<void> {
   const logger = _gitDeps.getSafeLogger();
+  if (dryRun === true) {
+    logger?.debug(stage, "auto-commit: skipped under dry run", { storyId, role });
+    return;
+  }
   try {
     // Guard: only auto-commit if workdir IS the git repository root.
     // Without this, a workdir nested inside another git repo (e.g. a temp dir

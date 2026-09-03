@@ -64,7 +64,6 @@ export async function runIteration(
   if (ctx.dryRun) {
     const dryRunResult = await handleDryRun({
       prd,
-      prdPath: ctx.prdPath,
       storiesToExecute,
       routing,
       statusWriter: ctx.statusWriter,
