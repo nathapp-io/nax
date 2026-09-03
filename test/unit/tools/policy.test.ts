@@ -165,3 +165,65 @@ describe("compileToolPolicy — ** spans directory segments, not partial names",
     expect(allows(["src/*.ts"], "src/a/b.ts")).toBe(false);
   });
 });
+
+/**
+ * A verb-gated tool's grant list is overloaded: it carries verb names, so path
+ * globs could not be matched against it, so array- and ref-valued path fields
+ * got containment ONLY. That made path scoping inexpressible for `Git` — a
+ * stage granted `Git(diff)` could diff anything in the root — and left any
+ * future array-path tool silently unscoped.
+ *
+ * `allowedVerbs` is a closed set the tool declares, so the two kinds are
+ * separable without guessing: a pattern that names a permitted verb is a verb,
+ * anything else is a path glob.
+ */
+const GIT_SCOPE: ToolScope = {
+  pathFields: [],
+  arrayPathFields: ["paths"],
+  refPathFields: ["refs"],
+  verbField: "subcommand",
+  allowedVerbs: ["diff", "log", "show"],
+};
+
+describe("compileToolPolicy — path globs apply to array and ref fields too", () => {
+  function check(patterns: string[], input: Record<string, unknown>) {
+    return compileToolPolicy([{ tool: "Git", patterns }], root).check("Git", GIT_SCOPE, input);
+  }
+
+  test("a path glob beside the verbs restricts array paths", () => {
+    expect(check(["diff", "src/**"], { subcommand: "diff", paths: ["src/a.ts"] }).allowed).toBe(true);
+    expect(check(["diff", "src/**"], { subcommand: "diff", paths: ["test/a.ts"] }).allowed).toBe(false);
+  });
+
+  test("the same glob restricts the path half of a ref", () => {
+    expect(check(["show", "src/**"], { subcommand: "show", refs: ["HEAD:src/a.ts"] }).allowed).toBe(true);
+    expect(check(["show", "src/**"], { subcommand: "show", refs: ["HEAD:test/a.ts"] }).allowed).toBe(false);
+  });
+
+  test("a pure revision carries no path, so a glob cannot reject it", () => {
+    expect(check(["show", "src/**"], { subcommand: "show", refs: ["HEAD"] }).allowed).toBe(true);
+  });
+
+  test("a verb-only grant leaves paths bounded by the root alone", () => {
+    // Unchanged behaviour, now an explicit authoring choice rather than an
+    // inexpressible one: declare a glob if you want the paths narrowed.
+    expect(check(["diff"], { subcommand: "diff", paths: ["test/a.ts"] }).allowed).toBe(true);
+  });
+
+  test("a path glob does not accidentally become a grantable verb", () => {
+    expect(check(["diff", "src/**"], { subcommand: "log", paths: [] }).allowed).toBe(false);
+  });
+
+  test("a tool with no verbs at all glob-scopes its array paths", () => {
+    const scope: ToolScope = { pathFields: [], arrayPathFields: ["paths"] };
+    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["src/**"] }], root);
+    expect(policy.check("Bulk", scope, { paths: ["src/a.ts"] }).allowed).toBe(true);
+    expect(policy.check("Bulk", scope, { paths: ["test/a.ts"] }).allowed).toBe(false);
+  });
+
+  test("containment still outranks any glob", () => {
+    const verdict = check(["diff", "**"], { subcommand: "diff", paths: ["../elsewhere/secret.txt"] });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.breach).toBe(true);
+  });
+});

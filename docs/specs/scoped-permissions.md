@@ -271,6 +271,20 @@ Patterns use minimatch-style glob matching:
 - `Read` — read any file (no restriction)
 - `*` — wildcard (allow everything for that tool)
 
+`**` spans whole directory segments, so `src/**/config.ts` matches
+`src/config.ts` and `src/a/b/config.ts` but not `src/legacyconfig.ts`.
+
+**Verb-gated tools take both kinds in one list.** `Git` gates on a subcommand
+as well as on paths, and the policy separates the two by the tool's own closed
+verb set — a pattern naming a permitted verb is a verb, anything else is a path
+glob:
+- `Git(diff,log)` — those two subcommands, over any path within the root
+- `Git(diff,src/**)` — the `diff` subcommand, restricted to `src/`
+
+A verb-only grant declares no path glob, so the root is the only path bound.
+That is an authoring choice, not an absence of enforcement: containment always
+runs first and no pattern can widen it.
+
 ### 2.3 Backend mapping
 
 Two enforcement models now exist, and they are not variations of each other.
