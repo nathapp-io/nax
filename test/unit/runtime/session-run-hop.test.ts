@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { cleanupTempDir, makeMockAgentManager, makeSessionManager, makeTempDir } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
@@ -180,5 +180,60 @@ describe("createSessionRunHop", () => {
     await hop("claude", { ...makeRunOptions(), contextPullTools: pullTools });
 
     expect(capturedOpts?.contextPullTools).toBe(pullTools);
+  });
+});
+
+/**
+ * The default hop routes no coding-tool op today (the three Phase B ops go
+ * through build-hop-callback.ts), which is exactly why this is asserted here:
+ * the two hops must not drift, or the first op to land on this one silently
+ * gets no tools. Same class of miss as the pull-tool comment at the dispatch
+ * site above.
+ */
+describe("createSessionRunHop — declared coding tools", () => {
+  function makeCodingRunOptions(root: string): AgentRunOptions {
+    return {
+      ...makeRunOptions(),
+      workdir: root,
+      pipelineStage: "review",
+      declaredTools: ["Read", "Glob", "Grep", "Git"],
+      codingToolRoot: root,
+    };
+  }
+
+  test("forwards the advertised tools and a handler that can reach them", async () => {
+    const root = makeTempDir("nax-hop-tools-");
+    try {
+      await Bun.write(`${root}/calc.ts`, "export const divide = (d: number, n: number) => n / d;\n");
+      let seen: SendPromptOpts | undefined;
+      const toolHandle: SessionHandle = { id: "nax-session", agentName: "claude" };
+      const sessionManager = makeSessionManager({
+        nameFor: mock(() => "nax-session"),
+        openSession: mock(async () => toolHandle),
+        sendPrompt: mock(async (_handle: SessionHandle, _prompt: string, opts: SendPromptOpts) => {
+          seen = opts;
+          return {
+            output: "done",
+            tokenUsage: { inputTokens: 1, outputTokens: 1 },
+            estimatedCostUsd: 0,
+            internalRoundTrips: 1,
+          } satisfies TurnResult;
+        }),
+        closeSession: mock(async () => {}),
+      });
+
+      const hop = createSessionRunHop(sessionManager);
+      await hop("claude", makeCodingRunOptions(root));
+
+      expect(seen?.codingTools?.map((t) => t.name).sort()).toEqual(["Git", "Glob", "Grep", "Read"]);
+      const response = await seen?.interactionHandler?.onInteraction({
+        kind: "coding-tool",
+        name: "Read",
+        input: { path: "calc.ts" },
+      });
+      expect(response?.answer).toContain("divide");
+    } finally {
+      cleanupTempDir(root);
+    }
   });
 });

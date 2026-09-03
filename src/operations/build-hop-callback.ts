@@ -6,6 +6,7 @@
  */
 
 import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
+import { resolveCodingToolSupport } from "../agents/coding-tool-support";
 import type { AgentRunRequest, HopKind, IAgentManager } from "../agents/manager-types";
 import { promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
@@ -286,14 +287,23 @@ export function buildHopCallback(
       });
     }
 
+    // Coding tools are resolved per hop rather than per run: a swap changes the
+    // agent, and the grants are stage-scoped, so a runtime captured once above
+    // would outlive the dispatch it was resolved for.
+    const codingSupport = resolveCodingToolSupport(resolvedRunOptions);
+
     // A bridge is no longer required: without a handler, sendPrompt falls back
     // to NO_OP_INTERACTION_HANDLER and a well-formed tool call goes unanswered.
+    // Coding tools join that predicate for the same reason — a review op
+    // declares tools but carries no bridge and often no context bundle, so
+    // gating on those two alone left it with a handler-less session.
     const interactionHandler =
-      interactionBridge || hasContextTools
+      interactionBridge || hasContextTools || codingSupport
         ? buildRunInteractionHandler({
             ...resolvedRunOptions,
             contextToolRuntime,
             contextPullTools,
+            ...(codingSupport ? { codingToolRuntime: codingSupport.runtime } : {}),
             ...(interactionBridge ? { interactionBridge } : {}),
           })
         : undefined;
@@ -406,7 +416,7 @@ export function buildHopCallback(
           signal: resolvedRunOptions.abortSignal,
           contextPullTools,
           contextToolRuntime,
-          codingTools: resolvedRunOptions.codingTools,
+          codingTools: codingSupport?.tools,
           ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
           ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
           ...(interactionHandler ? { interactionHandler } : {}),

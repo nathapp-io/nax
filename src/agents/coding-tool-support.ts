@@ -4,9 +4,9 @@
  * nax-permission-mode-allow: consumes permissions already resolved by
  * resolvePermissions; decides none.
  *
- * This is the seam that makes coding tools reachable at all. It is deliberately
- * one small function with one caller, so "nothing ever supplied it" is a
- * compile-visible question rather than a silent runtime absence.
+ * This is the seam that makes coding tools reachable at all. Callers reach it
+ * through resolveCodingToolSupport() below, which is the single entry point
+ * both dispatch hops use — see its comment for why that matters.
  */
 
 import { NaxError } from "@/errors";
@@ -18,6 +18,8 @@ import {
   createCodingToolRuntime,
   type ToolGrant,
 } from "@/tools";
+import { resolvePermissions } from "../config/permissions";
+import type { AgentRunOptions } from "./types";
 
 export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
@@ -49,4 +51,29 @@ export function buildCodingToolSupport(args: {
   const tools = runtime.advertised(args.declared);
   if (tools.length === 0) return undefined;
   return { runtime, tools };
+}
+
+/**
+ * Resolve coding-tool support for one dispatch, from the run options alone.
+ *
+ * nax-permission-mode-allow: delegates the decision to resolvePermissions();
+ * decides nothing itself.
+ *
+ * Exists because the producer above had exactly one caller, in
+ * `session/manager-run.ts` — a path `callOp` never takes. Both real hops
+ * (`operations/build-hop-callback.ts`, `runtime/session-run-hop.ts`) call this
+ * so the two cannot drift: a tool wired into one hop and not the other is
+ * invisible until an operation happens to dispatch through the other.
+ */
+export function resolveCodingToolSupport(
+  options: Pick<AgentRunOptions, "declaredTools" | "codingToolRoot" | "config" | "pipelineStage">,
+): CodingToolSupport | undefined {
+  const declared = options.declaredTools ?? [];
+  if (declared.length === 0) return undefined;
+  const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
+  return buildCodingToolSupport({
+    root: options.codingToolRoot,
+    grants: resolved.toolGrants,
+    declared,
+  });
 }
