@@ -115,6 +115,41 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
         resolvedPaths.push(resolved);
       }
 
+      for (const field of scope.arrayPathFields ?? []) {
+        const values = input[field];
+        if (values === undefined) continue;
+        if (!Array.isArray(values)) return deny(`"${field}" must be an array of string paths`);
+
+        for (const value of values) {
+          if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
+          const resolved = resolveWithin(resolvedRoot, value);
+          if (resolved === null) {
+            return deny(`"${field}" entry "${value}" resolves outside the permitted root`, true);
+          }
+          resolvedPaths.push(resolved);
+        }
+      }
+
+      for (const field of scope.refPathFields ?? []) {
+        const values = input[field];
+        if (values === undefined) continue;
+        if (!Array.isArray(values)) return deny(`"${field}" must be an array of string refs`);
+
+        for (const value of values) {
+          if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
+          const colonAt = value.indexOf(":");
+          if (colonAt === -1) continue; // pure revision, no path to check
+          const candidatePath = value.slice(colonAt + 1);
+          if (candidatePath === "") continue; // e.g. "HEAD:" — no path to check
+
+          const resolved = resolveWithin(resolvedRoot, candidatePath);
+          if (resolved === null) {
+            return deny(`"${field}" entry "${value}" resolves outside the permitted root`, true);
+          }
+          resolvedPaths.push(resolved);
+        }
+      }
+
       return { allowed: true, resolvedPaths };
     },
   };

@@ -68,7 +68,12 @@ describe("gitTool", () => {
     expect(gitTool.scope.allowedVerbs).toEqual(GIT_READ_VERBS);
   });
 
-  test("declares no path field — pathspecs are validated in the argv builder", () => {
+  test("declares no scalar path field — pathspecs are array-valued and validated by the policy", () => {
     expect(gitTool.scope.pathFields).toEqual([]);
+  });
+
+  test("declares paths and refs as containment-checked array fields", () => {
+    expect(gitTool.scope.arrayPathFields).toEqual(["paths"]);
+    expect(gitTool.scope.refPathFields).toEqual(["refs"]);
   });
 });

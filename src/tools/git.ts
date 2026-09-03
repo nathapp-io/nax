@@ -83,7 +83,18 @@ export const gitTool: CodingTool = {
     },
     required: ["subcommand"],
   },
-  scope: { pathFields: [], verbField: "subcommand", allowedVerbs: GIT_READ_VERBS },
+  // `paths` entries and the path-portion of `refs` entries (git's
+  // "<rev>:<path>" syntax) are checked for containment via arrayPathFields /
+  // refPathFields — see the ToolScope doc comment for why they carry no
+  // pattern matching. The verb gate above is still what bounds which git
+  // subcommands may run at all.
+  scope: {
+    pathFields: [],
+    arrayPathFields: ["paths"],
+    refPathFields: ["refs"],
+    verbField: "subcommand",
+    allowedVerbs: GIT_READ_VERBS,
+  },
 
   async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
     const built = buildGitArgv(input);

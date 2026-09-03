@@ -28,9 +28,26 @@ export interface ToolGrant {
  * no special knowledge of, including one registered by a third party. A tool
  * with no path fields is gated at the tool/verb level instead — the honest
  * expression for something whose arguments are not paths.
+ *
+ * `arrayPathFields` and `refPathFields` extend the same containment seam to
+ * array-valued inputs, for tools whose grant is verb-scoped (not glob-scoped)
+ * — Git is the only current user. Because the grant's `patterns` are verb
+ * names there (`["diff","log"]`), not path globs, elements gated through
+ * these two fields get containment ONLY, never `matchesAny` pattern matching
+ * — that matching is meaningless against a verb list. A future tool that
+ * wants both glob matching AND array-valued paths needs its own field kind.
  */
 export interface ToolScope {
   readonly pathFields: readonly string[];
+  /** Array-valued fields whose every element is a path, checked for containment only. */
+  readonly arrayPathFields?: readonly string[];
+  /**
+   * Array-valued fields whose elements are refs that MAY carry a path after a
+   * `:` (git's `<rev>:<path>` syntax). Only the substring after the first `:`
+   * is checked for containment; an element with no `:`, or an empty path
+   * after it, is a pure revision and is left unchecked.
+   */
+  readonly refPathFields?: readonly string[];
   readonly verbField?: string;
   readonly allowedVerbs?: readonly string[];
 }

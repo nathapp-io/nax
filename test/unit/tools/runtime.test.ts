@@ -9,17 +9,32 @@ import {
   createCodingToolRuntime,
   registerCodingTool,
 } from "@/tools";
+import { _gitDeps } from "@/utils/git";
 
 let root: string;
+let gitRoot: string;
 
-beforeAll(() => {
+beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "nax-runtime-"));
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "a.ts"), "const a = 1;\n");
+
+  // A real git repo, for the Git-tool hard-boundary and no-regression tests
+  // below — status/log/show run for real rather than through a mock, so a
+  // regression in the argv builder would surface as a genuine git failure.
+  gitRoot = mkdtempSync(join(tmpdir(), "nax-runtime-git-"));
+  mkdirSync(join(gitRoot, "src"), { recursive: true });
+  writeFileSync(join(gitRoot, "src", "a.ts"), "const a = 1;\n");
+  const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: gitRoot, stdout: "pipe", stderr: "pipe" });
+  await run(["init", "-q"]).exited;
+  await run(["config", "user.email", "test@example.com"]).exited;
+  await run(["config", "user.name", "Test"]).exited;
+  await run(["add", "-A"]).exited;
+  await run(["commit", "-q", "-m", "initial"]).exited;
 });
 
-function runtimeWith(grants: { tool: string; patterns: string[] }[]) {
-  return createCodingToolRuntime({ policy: compileToolPolicy(grants, root) });
+function runtimeWith(grants: { tool: string; patterns: string[] }[], forRoot: string = root) {
+  return createCodingToolRuntime({ policy: compileToolPolicy(grants, forRoot) });
 }
 
 describe("createCodingToolRuntime", () => {
@@ -90,6 +105,38 @@ describe("advertised", () => {
   test("declaring nothing advertises nothing", () => {
     const rt = runtimeWith([{ tool: "Read", patterns: ["*"] }]);
     expect(rt.advertised([])).toEqual([]);
+  });
+});
+
+describe("Git — paths and refs are contained within the permitted root", () => {
+  test("an escaping paths entry is denied as a breach", async () => {
+    const rt = runtimeWith([{ tool: "Git", patterns: ["*"] }], gitRoot);
+    const out = await rt.callTool("Git", { subcommand: "diff", paths: ["../outside/secret.txt"] });
+    expect(out.kind).toBe("denied");
+    if (out.kind === "denied") expect(out.breach).toBe(true);
+  });
+
+  test("an escaping <rev>:<path> ref is denied as a breach", async () => {
+    const rt = runtimeWith([{ tool: "Git", patterns: ["*"] }], gitRoot);
+    const out = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD:../outside/secret.ts"] });
+    expect(out.kind).toBe("denied");
+    if (out.kind === "denied") expect(out.breach).toBe(true);
+  });
+
+  test("an in-root paths entry and a pure-revision ref are not denied", async () => {
+    const rt = runtimeWith([{ tool: "Git", patterns: ["*"] }], gitRoot);
+    const out = await rt.callTool("Git", { subcommand: "log", refs: ["HEAD"], paths: ["src/a.ts"] });
+    expect(out.kind).not.toBe("denied");
+    expect(out.kind).toBe("ok");
+  });
+
+  test("a ref with an empty path after ':' is treated as no path to check", async () => {
+    const rt = runtimeWith([{ tool: "Git", patterns: ["*"] }], gitRoot);
+    // "HEAD:" (empty path after the colon) refers to the root tree — valid
+    // git syntax, and exactly the "no path to check" case the policy must
+    // not crash on.
+    const out = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD:"] });
+    expect(out.kind).not.toBe("denied");
   });
 });
 
