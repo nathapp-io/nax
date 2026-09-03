@@ -24,6 +24,26 @@ describe("autoCommitIfDirty", () => {
     calls.length = 0;
   });
 
+  // nax#1808: a dry run reached the completion phase and auto-committed the
+  // PRD it had just marked passed, plus any unrelated dirty file, because
+  // `git add -A` is unscoped. The refusal lives here rather than at each call
+  // site so a future caller cannot silently reintroduce it -- the same
+  // reasoning the `blockedWorktrees` guard above is built on.
+  test("refuses to commit under a dry run", async () => {
+    const gitRoot = "/repo";
+    _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {
+      calls.push({ cmd, cwd: opts.cwd as string | undefined });
+      if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
+      if (cmd.includes("status")) return " M src/foo.ts\n";
+      return "";
+    }).spawn;
+
+    await autoCommitIfDirty(gitRoot, "run.complete", "run-summary", "US-001", undefined, true);
+
+    expect(calls.some((c) => c.cmd.includes("add"))).toBe(false);
+    expect(calls.some((c) => c.cmd.includes("commit"))).toBe(false);
+  });
+
   test("commits when workdir is the git root", async () => {
     const gitRoot = "/repo";
     _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {

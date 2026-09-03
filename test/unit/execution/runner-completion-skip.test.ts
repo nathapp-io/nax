@@ -17,6 +17,7 @@ import {
   makeMockRuntime,
   makeNaxConfig,
   makePluginRegistry,
+  makeSpawn,
   makeStatusWriter,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
@@ -27,6 +28,7 @@ import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase
 import type { PostRunStatus } from "@/execution/status-file";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
+import { _gitDeps } from "@/utils/git";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -410,5 +412,64 @@ describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () =>
     // The feature-level status write (SFC-002) is the last call and is authoritative for
     // `nax status` — it must reflect the gating failure, not the cost-limit exitReason.
     expect(statusWriter.setRunStatus).toHaveBeenLastCalledWith("failed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// nax#1808: the completion phase must not auto-commit during a dry run
+// ---------------------------------------------------------------------------
+
+describe("runCompletionPhase - dry run", () => {
+  test("does not run git add or commit when the run is a dry run", async () => {
+    const origSpawn = _gitDeps.spawn;
+    const calls: string[][] = [];
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      calls.push(cmd);
+      if (cmd.includes("rev-parse")) return `${WORKDIR}\n`;
+      if (cmd.includes("status")) return " M src/foo.ts\n";
+      return "";
+    }).spawn;
+    try {
+      const opts = makeOpts(
+        makeConfig(true),
+        makePRD([{ id: "US-001", status: "passed" }]),
+        makeWriter(makePostRunStatus("passed", "passed")),
+      );
+      (opts.runtime as { dryRun: boolean }).dryRun = true;
+
+      await runCompletionPhase(opts);
+
+      expect(calls.some((c) => c.includes("add"))).toBe(false);
+      expect(calls.some((c) => c.includes("commit"))).toBe(false);
+    } finally {
+      _gitDeps.spawn = origSpawn;
+    }
+  });
+
+  // Negative control: without it the assertions above pass vacuously whenever
+  // the completion phase never reaches its auto-commit at all.
+  test("still commits when the run is not a dry run", async () => {
+    const origSpawn = _gitDeps.spawn;
+    const calls: string[][] = [];
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      calls.push(cmd);
+      if (cmd.includes("rev-parse")) return `${WORKDIR}\n`;
+      if (cmd.includes("status")) return " M src/foo.ts\n";
+      return "";
+    }).spawn;
+    try {
+      const opts = makeOpts(
+        makeConfig(true),
+        makePRD([{ id: "US-001", status: "passed" }]),
+        makeWriter(makePostRunStatus("passed", "passed")),
+      );
+      (opts.runtime as { dryRun: boolean }).dryRun = false;
+
+      await runCompletionPhase(opts);
+
+      expect(calls.some((c) => c.includes("commit"))).toBe(true);
+    } finally {
+      _gitDeps.spawn = origSpawn;
+    }
   });
 });

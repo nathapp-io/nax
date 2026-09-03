@@ -240,6 +240,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     agentManager: options.agentManager,
     featureName: options.feature,
     agentStreamEvents: options.agentStreamEvents,
+    // nax#1808: the auto-commit refusal reads runtime.dryRun; without this the
+    // flag never leaves RunSetupOptions and the guard is inert in production.
+    dryRun: options.dryRun,
   });
 
   // 2b: merge per-package .nax/mono/<pkg>/config.json into the runtime registry so

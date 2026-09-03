@@ -399,3 +399,55 @@ describe("setupRun — MEM-1: setup-phase throw cleans up crash handlers + runti
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// nax#1808: the dry-run flag has to reach the runtime, or the auto-commit
+// refusal it feeds is inert in production.
+// ---------------------------------------------------------------------------
+
+describe("runSetup dryRun", () => {
+  test("passes options.dryRun through to createRuntime", async () => {
+    const setupWorkdir = makeTempDir();
+    const seen: Array<boolean | undefined> = [];
+    const created: NaxRuntime[] = [];
+    const origCreateRuntime = _runSetupDeps.createRuntime;
+    _runSetupDeps.createRuntime = (...args: Parameters<typeof origCreateRuntime>) => {
+      seen.push(args[2]?.dryRun);
+      const runtime = origCreateRuntime(...args);
+      created.push(runtime);
+      return runtime;
+    };
+
+    try {
+      const options: RunSetupOptions = {
+        prdPath: join(setupWorkdir, "does-not-exist.json"),
+        workdir: setupWorkdir,
+        config: makeNaxConfig(),
+        hooks: { hooks: {} },
+        feature: "dryrun-test-feature",
+        dryRun: true,
+        statusFile: join(setupWorkdir, "status.json"),
+        runId: "run-dryrun-test",
+        startedAt: new Date().toISOString(),
+        startTime: Date.now(),
+        skipPrecheck: true,
+        headless: true,
+        formatterMode: "quiet",
+        getTotalCost: () => 0,
+        getIterations: () => 0,
+        getStoriesCompleted: () => 0,
+        getTotalStories: () => 0,
+      };
+
+      await setupRun(options).catch(() => {});
+
+      expect(seen).toEqual([true]);
+    } finally {
+      _runSetupDeps.createRuntime = origCreateRuntime;
+      // setupRun throws before it can own the runtime, so this test is the only
+      // thing that can close it (check:runtime-cleanup / #1679).
+      for (const runtime of created) await runtime.close();
+      rmSync(setupWorkdir, { recursive: true, force: true });
+    }
+  });
+});

@@ -7,14 +7,13 @@
 import { pipelineEventBus } from "@/pipeline";
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins";
-import { markStoryPassed, savePRD } from "../prd";
+import { markStoryPassed } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
 import type { StatusWriter } from "./status-writer";
 
 export interface DryRunContext {
   prd: PRD;
-  prdPath: string;
   storiesToExecute: UserStory[];
   routing: ReturnType<typeof routeTask>;
   statusWriter: StatusWriter;
@@ -29,7 +28,7 @@ export interface DryRunResult {
   prdDirty: boolean;
 }
 
-/** Handle dry-run iteration: log what would happen, mark stories passed. */
+/** Handle dry-run iteration: log what would happen, mark stories passed IN MEMORY. */
 export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
   const logger = getSafeLogger();
 
@@ -55,10 +54,16 @@ export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
     });
   }
 
+  // Marked in memory only, and deliberately NOT persisted (nax#1808). The
+  // marks are what let isComplete(prd) end the loop; writing them is what made
+  // a later real run skip the story and execute nothing.
+  //
+  // This is why the returned prdDirty is false: unified-executor answers
+  // prdDirty by reloading the PRD from disk, which would drop these marks and
+  // spin the loop to maxIterations.
   for (const s of ctx.storiesToExecute) {
     markStoryPassed(ctx.prd, s.id);
   }
-  await savePRD(ctx.prd, ctx.prdPath);
 
   for (const s of ctx.storiesToExecute) {
     pipelineEventBus.emit({
@@ -77,5 +82,5 @@ export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
   ctx.statusWriter.setCurrentStory(null);
   await ctx.statusWriter.update(ctx.totalCost, ctx.iterations);
 
-  return { storiesCompletedDelta: ctx.storiesToExecute.length, prdDirty: true };
+  return { storiesCompletedDelta: ctx.storiesToExecute.length, prdDirty: false };
 }

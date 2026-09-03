@@ -248,8 +248,8 @@ export async function executeUnified(
       }
 
       const costLimit = ctx.config.execution.costLimit;
-      // Parallel dispatch: when parallelCount > 0 and batch has more than 1 story
-      if ((ctx.parallelCount ?? 0) > 0) {
+      // Parallel dispatch when parallelCount > 0 and batch > 1 story. Never under a dry run: runIteration owns that short-circuit (nax#1808).
+      if ((ctx.parallelCount ?? 0) > 0 && !ctx.dryRun) {
         const retryStory = resolveRetryCandidate(prd, lastStoryId, ctx.config); // BUG-39: pre-empts selectIndependentBatch too
         const readyStories = getAllReadyStories(prd);
         const selectBatch = _unifiedExecutorDeps.selectIndependentBatch;

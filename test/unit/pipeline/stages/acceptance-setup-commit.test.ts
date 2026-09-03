@@ -121,6 +121,32 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
+// nax#1808: a dry run still reaches pre-run acceptance setup when acceptance is
+// enabled, so guarding only the completion-phase commit left this path able to
+// commit generated files during a run that was supposed to execute nothing.
+describe("acceptance-setup: dry run", () => {
+  test("forwards runtime.dryRun to autoCommitIfDirty", async () => {
+    const dryRunArgs: Array<boolean | undefined> = [];
+    setupGenerationDeps([]);
+    _acceptanceSetupDeps.autoCommitIfDirty = async (
+      _workdir: string,
+      _stage: string,
+      _role: string,
+      _storyId: string,
+      _blocked?: ReadonlySet<string>,
+      dryRun?: boolean,
+    ) => {
+      dryRunArgs.push(dryRun);
+    };
+    const ctx = makeCtx();
+    (ctx.runtime as { dryRun: boolean }).dryRun = true;
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(dryRunArgs).toEqual([true]);
+  });
+});
+
 describe("acceptance-setup: autoCommitIfDirty after generation", () => {
   test("calls autoCommitIfDirty after generating acceptance test files", async () => {
     const commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }> = [];

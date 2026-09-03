@@ -436,6 +436,8 @@ async function runAcceptanceSetup(
       "acceptance-setup",
       "pre-run",
       ctx.prd.feature ?? "feature",
+      undefined,
+      ctx.runtime.dryRun,
     );
   }
 
