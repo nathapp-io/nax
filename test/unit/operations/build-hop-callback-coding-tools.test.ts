@@ -18,6 +18,7 @@ import {
   cleanupTempDir,
   makeContextBundle,
   makeContextManifest,
+  makeLogger,
   makeMockAgentManager,
   makeNaxConfig,
   makeSessionManager,
@@ -28,6 +29,7 @@ import type { AgentRunOptions, HopKind, RunAsSessionOpts, SessionHandle, TurnRes
 import type { ContextBundle } from "@/context/engine";
 import type { BuildHopCallbackContext } from "@/operations";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
+import { _codingToolDeps } from "@/tools";
 
 const SESSION_ID = "sess-c1";
 
@@ -91,6 +93,7 @@ function makeOptions(config: BuildHopCallbackContext["config"]): AgentRunOptions
     // What adversarial-review declares, and the root callOp resolves for it.
     declaredTools: ["Read", "Glob", "Grep", "Git"],
     codingToolRoot: root,
+    storyId: "US-002",
   };
 }
 
@@ -122,6 +125,24 @@ afterEach(() => {
 });
 
 describe("buildHopCallback — declared coding tools reach the agent", () => {
+  test("carries the story into the runtime, so the invocation log is attributable", async () => {
+    await Bun.write(`${root}/calc.ts`, "export const divide = () => 0;\n");
+    const logger = makeLogger();
+    const origLogger = _codingToolDeps.getLogger;
+    _codingToolDeps.getLogger = () => logger;
+    try {
+      const { opts } = await dispatchOnce();
+      await opts.interactionHandler?.onInteraction({ kind: "coding-tool", name: "Read", input: { path: "calc.ts" } });
+
+      const line = logger.calls.find((c) => c.stage === "coding-tool" && c.message === "invoked");
+      // Asserted on the real dispatch path: coding-tool-support.test.ts proves
+      // the helper threads it, not that the hop ever populates it.
+      expect(line?.data?.storyId).toBe("US-002");
+    } finally {
+      _codingToolDeps.getLogger = origLogger;
+    }
+  });
+
   test("advertises the operation's declared tools to the dispatched session", async () => {
     const { opts } = await dispatchOnce();
 

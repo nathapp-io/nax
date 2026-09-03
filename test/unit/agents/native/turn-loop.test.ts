@@ -262,3 +262,45 @@ describe("native turn loop — coding tool use reported on the result", () => {
     expect(result.codingToolUse).toBeUndefined();
   });
 });
+
+/**
+ * What the model is TOLD exists, not merely what it is allowed to call.
+ *
+ * Every other test here scripts the fake model to return a tool call
+ * unconditionally, so it would keep passing if the coding-tool definitions were
+ * dropped from the payload entirely — the model "calls" a tool it was never
+ * offered. That is the branch's own defect class (a capability wired everywhere
+ * except where it is consumed) one hop lower, so the advertisement is asserted
+ * directly.
+ */
+describe("native turn loop — what the model is told exists", () => {
+  test("passes the coding tool's wire definition to the provider", async () => {
+    let advertised: unknown;
+    await runNativeTurn(handle, "hi", opts({ codingTools: [fakeRead] }), {
+      complete: async (_messages, tools) => {
+        advertised = tools;
+        return reply();
+      },
+    });
+
+    expect(advertised).toEqual([
+      {
+        name: "Read",
+        description: "Read a file",
+        inputSchema: { type: "object", properties: { path: { type: "string" } } },
+      },
+    ]);
+  });
+
+  test("advertises nothing when the session was granted no coding tools", async () => {
+    let advertised: unknown;
+    await runNativeTurn(handle, "hi", opts(), {
+      complete: async (_messages, tools) => {
+        advertised = tools;
+        return reply();
+      },
+    });
+
+    expect(advertised).toEqual([]);
+  });
+});
