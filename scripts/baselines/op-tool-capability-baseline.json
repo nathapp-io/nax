@@ -1,0 +1,14 @@
+{
+  "updatedAt": "2026-09-03T12:29:56.833Z",
+  "ops": [
+    "acceptance-fix-source",
+    "acceptance-fix-test",
+    "autofix-implementer",
+    "autofix-test-writer",
+    "finish-fix",
+    "full-suite-rectify",
+    "rectify",
+    "test-writer",
+    "verifier"
+  ]
+}
