@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { CodingTool } from "@/tools";
-import { _resetRegistryForTest, getCodingTool, listCodingTools, registerCodingTool } from "@/tools";
+import {
+  _resetBuiltinsForTest,
+  _resetRegistryForTest,
+  getCodingTool,
+  listCodingTools,
+  registerCodingTool,
+} from "@/tools";
 
 function fakeTool(name: string): CodingTool {
   return {
@@ -16,6 +22,12 @@ function fakeTool(name: string): CodingTool {
 
 afterEach(() => {
   _resetRegistryForTest();
+  // Also reset the builtins-registered flag: it lives in a different module
+  // (src/tools/runtime.ts) than the registry Map this clears, so leaving it
+  // set true after wiping the registry starves any later test file's
+  // createCodingToolRuntime() of the built-in tools it silently assumes are
+  // there — order-dependent, so it can pass locally and fail in CI.
+  _resetBuiltinsForTest();
 });
 
 describe("coding tool registry", () => {
