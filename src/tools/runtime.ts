@@ -18,6 +18,7 @@ import { grepTool } from "./grep";
 import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
+import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
 import type { ToolPolicy } from "./types";
 import { writeTool } from "./write";
 
@@ -82,8 +83,10 @@ export function createCodingToolRuntime(opts: {
   maxBytes?: number;
   maxFileBytes?: number;
   storyId?: string;
+  sink?: ToolAuditSink;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
+  const sink = opts.sink ?? createNoOpToolAuditSink();
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
   const maxFileBytes = opts.maxFileBytes ?? DEFAULT_TOOL_MAX_FILE_BYTES;
   const granted = new Set(opts.policy.grantedTools());
@@ -94,13 +97,31 @@ export function createCodingToolRuntime(opts: {
    * Every outcome is logged, denials included: a refused call that leaves no
    * trace is indistinguishable from a call never made, and telling those two
    * apart is the whole reason this exists.
+   *
+   * The logger keeps its calls for operator visibility. The audit sink is the
+   * durable copy a later decision reads from; the two are not interchangeable.
    */
-  function log(tool: string, outcome: CodingToolOutcome["kind"], resultBytes: number): void {
+  function log(
+    tool: string,
+    outcome: CodingToolOutcome["kind"],
+    resultBytes: number,
+    input: Record<string, unknown>,
+    breach?: boolean,
+  ): void {
     _codingToolDeps.getLogger()?.info("coding-tool", "invoked", {
       storyId: opts.storyId,
       tool,
       outcome,
       resultBytes,
+    });
+    sink.record({
+      tool,
+      outcome,
+      breach,
+      input,
+      resultBytes,
+      storyId: opts.storyId,
+      at: new Date().toISOString(),
     });
   }
 
@@ -118,7 +139,7 @@ export function createCodingToolRuntime(opts: {
     async callTool(name, input) {
       const tool = getCodingTool(name);
       if (tool === undefined) {
-        log(name, "denied", 0);
+        log(name, "denied", 0, input);
         return { kind: "denied", reason: `unknown tool "${name}"`, breach: false };
       }
 
@@ -133,7 +154,7 @@ export function createCodingToolRuntime(opts: {
             root: opts.policy.root,
           });
         }
-        log(name, "denied", verdict.reason.length);
+        log(name, "denied", verdict.reason.length, input, verdict.breach);
         return { kind: "denied", reason: verdict.reason, breach: verdict.breach };
       }
 
@@ -145,11 +166,11 @@ export function createCodingToolRuntime(opts: {
           maxFileBytes,
         });
         const kind = result.isError === true ? "error" : "ok";
-        log(name, kind, result.content.length);
+        log(name, kind, result.content.length, input);
         return { kind, content: result.content };
       } catch (err) {
         const content = err instanceof Error ? err.message : String(err);
-        log(name, "error", content.length);
+        log(name, "error", content.length, input);
         return { kind: "error", content };
       }
     },

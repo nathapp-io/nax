@@ -25,5 +25,7 @@ export {
   DEFAULT_TOOL_MAX_FILE_BYTES,
   registerBuiltinCodingTools,
 } from "./runtime";
+export type { ToolAuditSink, ToolCallRecord } from "./tool-audit";
+export { createNoOpToolAuditSink, createToolAuditSink } from "./tool-audit";
 export type { CodingToolName, PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 export { writeTool } from "./write";
