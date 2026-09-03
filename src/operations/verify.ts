@@ -192,6 +192,15 @@ export const verifierOp: RunOperationWithHooks<VerifierInput, VerifierOutput, Td
   stage: "verify",
   session: { role: "verifier", lifetime: "fresh" },
   config: tddConfigSelector,
+  // Read + run, never write. `RunCommand` because the role's first instruction
+  // is "Run ONLY the story's scoped test files"; `Git` so it can independently
+  // inspect test-file history per its own instruction to "check whether the
+  // implementer modified test files after the test-writer phase" -- separate
+  // from the deterministic `beforeRef` isolation check the orchestrator runs
+  // after this turn. Write/Edit/GitCommit are withheld deliberately: a
+  // verifier that can repair what it judges is not a verifier, and its
+  // isolation check assumes it changed nothing.
+  tools: ["Read", "Glob", "Grep", "Git", "RunCommand"],
   // Verification is a cheap scoped task — follows the configured per-role tier.
   model: (_input, ctx) => ctx.config.tdd?.sessionTiers?.verifier,
   // Mirror semantic-review: maxAttempts=2, in-session re-prompt on parse failure.
