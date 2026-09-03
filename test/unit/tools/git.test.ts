@@ -12,6 +12,12 @@ import {
 } from "@/tools";
 import { _gitDeps } from "@/utils/git";
 
+function contentOf(result: { kind: string; content?: string }): string {
+  if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}: ${JSON.stringify(result)}`);
+  if (result.content === undefined) throw new Error("expected content on an ok result");
+  return result.content;
+}
+
 function argvOf(input: Record<string, unknown>): string[] {
   const built = buildGitArgv(input);
   if ("error" in built) throw new Error(`expected argv, got error: ${built.error}`);
@@ -158,5 +164,71 @@ describe("gitTool — the permitted root bounds the repository view", () => {
 
     expect(result.kind).toBe("ok");
     expect(JSON.stringify(result)).toContain("f.txt");
+  });
+});
+
+/**
+ * #1807 — Git prints paths relative to the repository top-level regardless of
+ * cwd, but Read/Grep/Glob resolve a path relative to the permitted root
+ * (ctx.root). When the permitted root is a package subdir, a path copied out
+ * of Git's own output is framed wrong for every other tool. Git's output must
+ * be re-framed to the permitted root before it reaches the model.
+ */
+describe("gitTool — output paths are framed relative to the permitted root", () => {
+  async function makeRepoWithPackageWorkdir(): Promise<{ repo: string; root: string }> {
+    const repo = mkdtempSync(join(tmpdir(), "nax-git-frame-"));
+    mkdirSync(join(repo, "packages", "pkg-a"), { recursive: true });
+    writeFileSync(join(repo, "packages", "pkg-a", "f.txt"), "one\n");
+    const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    await run(["init", "-q"]).exited;
+    await run(["config", "user.email", "t@e.com"]).exited;
+    await run(["config", "user.name", "T"]).exited;
+    await run(["add", "-A"]).exited;
+    await run(["commit", "-q", "-m", "seed"]).exited;
+    writeFileSync(join(repo, "packages", "pkg-a", "f.txt"), "two\n");
+    return { repo, root: join(repo, "packages", "pkg-a") };
+  }
+
+  test("diff headers are relative to the permitted root, not the repository root", async () => {
+    const { root } = await makeRepoWithPackageWorkdir();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+
+    const result = await rt.callTool("Git", { subcommand: "diff" });
+
+    const content = contentOf(result);
+    expect(content).toContain("a/f.txt");
+    expect(content).toContain("b/f.txt");
+    expect(content).not.toContain("packages/pkg-a");
+  });
+
+  test("show <ref> diff headers are relative to the permitted root, not the repository root", async () => {
+    const { root } = await makeRepoWithPackageWorkdir();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+
+    const result = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD"] });
+
+    const content = contentOf(result);
+    expect(content).toContain("a/f.txt");
+    expect(content).toContain("b/f.txt");
+    expect(content).not.toContain("packages/pkg-a");
+  });
+
+  test("is a no-op when the permitted root is the repository root", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "nax-git-frame-root-"));
+    writeFileSync(join(repo, "f.txt"), "one\n");
+    const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    await run(["init", "-q"]).exited;
+    await run(["config", "user.email", "t@e.com"]).exited;
+    await run(["config", "user.name", "T"]).exited;
+    await run(["add", "-A"]).exited;
+    await run(["commit", "-q", "-m", "seed"]).exited;
+    writeFileSync(join(repo, "f.txt"), "two\n");
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const result = await rt.callTool("Git", { subcommand: "diff" });
+
+    const content = contentOf(result);
+    expect(content).toContain("a/f.txt");
+    expect(content).toContain("b/f.txt");
   });
 });
