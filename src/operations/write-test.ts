@@ -62,9 +62,10 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   // Write/Edit for test files and compile-only stubs. `RunCommand` because step
   // 6 of the role is "Run the new test files. Confirm tests compile AND fail
   // with ASSERTION failures" -- the one distinction the prompt insists on, and
-  // one it cannot make without executing. `GitCommit` so the session commits its
-  // own RED state, which makes the implementer's `beforeRef` a committed
-  // test-only tree rather than whatever an auto-commit happened to sweep up.
+  // one it cannot make without executing. `GitCommit` is declared so the
+  // session CAN commit its own RED state, but no test-writer prompt step
+  // currently directs it to do so -- the committed-boundary benefit for the
+  // implementer's `beforeRef` is not realised until the prompt gains that step.
   tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit"],
   // Test-writing is a cheap scoped task — follows the configured per-role tier.
   // Defaults to "fast" via the schema; undefined only for partial test configs.
