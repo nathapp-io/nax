@@ -472,6 +472,16 @@ export function buildHopCallback(
         prompt,
       };
     } finally {
+      // Best-effort ledger write (mirrors review-audit doctrine): a flush
+      // failure logs a warning and never replaces the hop's return value.
+      try {
+        await codingSupport?.auditSink.flush();
+      } catch (flushErr) {
+        logger.warn("tools", "coding-tool audit flush failed", {
+          storyId: story.id,
+          error: flushErr instanceof Error ? flushErr.message : String(flushErr),
+        });
+      }
       // STALE-RETRY: keep the handle open for the next attempt. The session stays
       // cached in _liveHandles; the subsequent hop (success, swap, or exhaustion)
       // either closes it in its own finally or SessionManager teardown handles it.

@@ -118,3 +118,11 @@ export function featureDir(root: string, featureId: string): string {
   validateFeatureId(featureId);
   return join(featuresDir(root), featureId);
 }
+
+/**
+ * Absolute path to the tool-audit tree (`<root>/.nax/tool-audit[/<featureId>]`).
+ * Feeding Home: src/tools/tool-audit.ts writes one JSON file per session here.
+ */
+export function toolAuditDir(root: string, featureId?: string): string {
+  return featureId ? join(root, PROJECT_NAX_DIR, "tool-audit", featureId) : join(root, PROJECT_NAX_DIR, "tool-audit");
+}

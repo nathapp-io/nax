@@ -77,6 +77,16 @@ function matchesAny(patterns: readonly CompiledPattern[], value: string): boolea
   return patterns.some((p) => p.re.test(value));
 }
 
+/** Read a top-level or dot-addressed path-bearing input field. */
+function pathFieldValue(input: Record<string, unknown>, field: string): unknown {
+  let value: unknown = input;
+  for (const part of field.split(".")) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+    value = (value as Record<string, unknown>)[part];
+  }
+  return value;
+}
+
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
   const compiled = new Map<string, { unconditional: boolean; matchers: CompiledPattern[]; raw: readonly string[] }>();
@@ -141,7 +151,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
 
       const resolvedPaths: string[] = [];
       for (const field of scope.pathFields) {
-        const value = input[field];
+        const value = pathFieldValue(input, field);
         if (value === undefined) continue;
         if (typeof value !== "string") return deny(`"${field}" must be a string path`);
 

@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { assertDefined } from "@test/helpers";
-import { featureDir, globalConfigDir, projectConfigDir } from "@/config/paths";
+import { featureDir, globalConfigDir, projectConfigDir, toolAuditDir } from "@/config/paths";
 
 describe("config/paths", () => {
   describe("globalConfigDir", () => {
@@ -90,6 +90,18 @@ describe("config/paths", () => {
 
     test("rejects a featureId over 64 characters", () => {
       expect(() => featureDir(root, "a".repeat(65))).toThrow("must match pattern");
+    });
+  });
+
+  describe("toolAuditDir (tool-audit tree anchor)", () => {
+    const root = "/path/to/project";
+
+    test("returns <root>/.nax/tool-audit when no featureId is given", () => {
+      expect(toolAuditDir(root)).toBe(join(root, ".nax", "tool-audit"));
+    });
+
+    test("returns <root>/.nax/tool-audit/<featureId> when one is given", () => {
+      expect(toolAuditDir(root, "auth-system")).toBe(join(root, ".nax", "tool-audit", "auth-system"));
     });
   });
 });

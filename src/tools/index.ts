@@ -1,5 +1,6 @@
 export { editTool } from "./edit";
 export { buildGitArgv, GIT_ESCAPE_FLAGS, GIT_READ_VERBS, gitTool } from "./git";
+export { buildCommitArgvs, gitCommitTool } from "./git-commit";
 export { globTool } from "./glob";
 export { _grepDeps, buildGrepArgv, grepTool } from "./grep";
 export { compileToolPolicy, resolveWithin } from "./policy";
@@ -13,6 +14,8 @@ export {
   registerBuiltinTool,
   registerCodingTool,
 } from "./registry";
+export { requestCapabilityTool } from "./request-capability";
+export { createRunCommandTool, substituteCommand } from "./run-command";
 export type { CodingToolOutcome, CodingToolRuntime } from "./runtime";
 export {
   _codingToolDeps,
@@ -22,5 +25,7 @@ export {
   DEFAULT_TOOL_MAX_FILE_BYTES,
   registerBuiltinCodingTools,
 } from "./runtime";
+export type { ToolAuditSink, ToolCallRecord } from "./tool-audit";
+export { createNoOpToolAuditSink, createToolAuditSink } from "./tool-audit";
 export type { CodingToolName, PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 export { writeTool } from "./write";

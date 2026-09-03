@@ -102,3 +102,74 @@ describe("resolveCodingToolSupport — story correlation", () => {
     }
   });
 });
+
+/**
+ * RunCommand cannot live in the global registry (its declared commands are
+ * per-project), so it reaches the runtime through the session-local extraTools
+ * layer. These three tests pin that seam — a producer that is never wired up
+ * leaves every coding tool silently missing while per-task reviews pass.
+ */
+const runCommandGrants = [
+  { tool: "RunCommand", patterns: ["*"] },
+  { tool: "GitCommit", patterns: ["*"] },
+];
+
+describe("buildCodingToolSupport — declared-command seam and audit sink", () => {
+  test("advertises a RunCommand built from the declared commands", () => {
+    const support = buildCodingToolSupport({
+      root: process.cwd(),
+      grants: runCommandGrants,
+      declared: ["RunCommand"],
+      declaredCommands: new Map([["test", "bun run test"]]),
+    });
+    expect(support?.tools.map((t) => t.name)).toContain("RunCommand");
+  });
+
+  test("omits RunCommand when the project declares no commands", () => {
+    const support = buildCodingToolSupport({
+      root: process.cwd(),
+      grants: runCommandGrants,
+      declared: ["RunCommand"],
+      declaredCommands: new Map(),
+    });
+    expect(support).toBeUndefined();
+  });
+
+  test("threads quality.stripEnvVars into the session-local RunCommand", async () => {
+    const secretName = "NAX_C2_SUPPORT_SECRET";
+    const previous = process.env[secretName];
+    process.env[secretName] = "must-not-reach-the-model";
+    try {
+      const support = resolveCodingToolSupport({
+        declaredTools: ["RunCommand"],
+        codingToolRoot: process.cwd(),
+        pipelineStage: "run",
+        config: makeNaxConfig({
+          quality: {
+            commands: { test: `printf '%s' "$${secretName}"` },
+            stripEnvVars: [secretName],
+          },
+        }),
+      });
+      const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+      expect(result?.kind).toBe("ok");
+      if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+      expect(result.content).not.toContain("must-not-reach-the-model");
+    } finally {
+      if (previous === undefined) delete process.env[secretName];
+      else process.env[secretName] = previous;
+    }
+  });
+
+  test("exposes an audit sink so calls can be persisted", () => {
+    const support = buildCodingToolSupport({
+      root: process.cwd(),
+      grants: runCommandGrants,
+      declared: ["GitCommit"],
+      declaredCommands: new Map(),
+      auditDir: "/tmp/c2-audit-test",
+      sessionName: "s1",
+    });
+    expect(support?.auditSink).toBeDefined();
+  });
+});

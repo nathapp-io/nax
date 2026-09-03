@@ -42,7 +42,17 @@ export interface CodingTool {
 }
 
 /** Built-in names may never be re-registered. */
-export const RESERVED_TOOL_NAMES: readonly CodingToolName[] = ["Read", "Glob", "Grep", "Write", "Edit", "Git"];
+export const RESERVED_TOOL_NAMES: readonly CodingToolName[] = [
+  "Read",
+  "Glob",
+  "Grep",
+  "Write",
+  "Edit",
+  "Git",
+  "GitCommit",
+  "RunCommand",
+  "RequestCapability",
+];
 
 const registry = new Map<string, CodingTool>();
 
