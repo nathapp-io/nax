@@ -5,9 +5,13 @@
 **Author:** William Khoo, Claude
 **Builds on:** ADR-027 (adapter-protocol split), ADR-028 (native sessions and the pull-tool loop)
 **Related:** #374 (scoped tool allowlists, PERM-002 Phase 2), the "Nax Native LLM Harness" feasibility analysis §9, §10, §11
-**Implementation:** Phase C1 (filesystem tools + read-only Git; Bash severed) is
-implemented on `feat/native-coding-tools-phase-c1`, under an explicit override of
-the §2 entry condition — see the parity status appended to §2.
+**Implementation:** Phase C1 (filesystem tools + read-only Git; Bash severed)
+shipped in PR #1798, under an explicit override of the §2 entry condition — see
+the parity status appended to §2. Phase C2 (the native story loop: `GitCommit`,
+`RunCommand` over declared commands, `RequestCapability`, and the tool-audit
+ledger; Bash still severed) shipped in PR #1804 without requesting a second
+override, because it excludes the capability the entry condition guards — see the
+amendment appended to §3.
 
 ---
 
@@ -114,6 +118,12 @@ risk. The override is recorded here so the gap between "the rule" and "what
 happened" is not left to be rediscovered. The condition still stands, unmet as
 written, for any Phase C work beyond C1 — in particular for Bash (§3).
 
+Phase C2 proceeded under no override. The condition guards a capability, not a
+phase number, and C2 was scoped to exclude that capability, so it never came into
+contact with the gate. Re-scoping a phase out from under an entry condition is
+legitimate exactly when the condition names what it names; it would not have been
+legitimate had C2 shipped a shell under a different label.
+
 ### 3. Sandboxing bash is a security responsibility nax has never carried
 
 Named here so it is budgeted honestly rather than discovered. The analysis is
@@ -124,6 +134,80 @@ A model-requested shell command executed in-process, in the user's repository,
 with the user's credentials in the environment, is a materially different risk
 from anything nax does today. Whatever gate is designed must be able to say no,
 and must be tested on its ability to say no.
+
+#### Amendment, 2026-09-03: what Phase C2 measured, and why this section stays open
+
+Phase C2 (PR #1804) was built to answer the question this section budgets for:
+does a native run need a shell at all? Rather than assume the answer, it shipped
+the narrowest set that lets a native story reach a commit — `GitCommit`,
+`RunCommand` over commands the project has **already declared** in its own
+configuration, and `RequestCapability`, a tool that grants nothing and exists so
+that an unmet need becomes a recorded row instead of an improvisation. Every tool
+outcome is persisted to a per-story ledger under the run's output directory
+(`~/.nax/<project>/tool-audit/<feature>/`), beside prompt-audit and review-audit.
+
+As first shipped the ledger was written under the coding-tool root instead — the
+story's package workdir, inside the git worktree that `pipeline-result-handler.ts`
+removes on completion. Every real story would have destroyed its own evidence,
+leaving only fixture runs legible, and a later count would have read zero and been
+taken to mean no capability was ever wanted. That is the #1359 false-zero this
+ledger exists to prevent, so the location was corrected before any of the triggers
+below could be relied on.
+
+**What the ledger recorded.** On the `tdd-calc` fixture, a native implement story
+(US-001) reached a commit unaided. The ledger held 93 tool calls attributable to
+the story: `RunCommand` 3 (the declared `testScoped` twice, `typecheck` once),
+`GitCommit` 1, `RequestCapability` 0, and no improvised commands of any kind.
+
+**The verdict, and its exact scope.** On this evidence the demanded surface of an
+implement story is covered by declared commands and git verbs. The next widening
+of the native tool set should therefore be **more declared commands, not a
+shell** — that is a cheaper build, and it preserves the property that nax
+constructs every argv rather than executing a string a model authored.
+
+**This section is deferred, not retired.** The distinction matters and is the
+reason this is an amendment rather than a supersession. Three limits keep the
+question genuinely open:
+
+- **The evidence is a lower bound by construction.** One story, on a fixture. A
+  fixture story is one nobody had to fight, so it exercises the happy path well
+  and the improvised path — the path that reaches for a shell — barely at all.
+- **A zero from `RequestCapability` is the weakest row in the ledger.** A model
+  told it has no shell will not ask for one; it will work around the gap or stop.
+  Absence of a request is not evidence of absence of need, and must never be
+  reported as "nothing was needed".
+- **Only one arm is observable.** ACP ignores `transcriptDir`, so nax still holds
+  no record of what acpx has ever executed. The comparison that would settle this
+  cannot yet be made, and any claim that spans both arms inherits that asymmetry.
+
+Note also that the ledger is a run artifact and is gitignored, so the figures above
+are transcribed from the run recorded in PR #1804 and are not independently
+re-derivable from this repository. Treat them as a reported measurement, not as a
+fixture the test suite reproduces.
+
+**What reopens this section.** The instrument is now permanent, so the trigger is
+measurable rather than a matter of judgement. Any of the following moves bash
+from deferred back to scoped work, and this section's requirements — a gate that
+can say no, tested on its ability to say no, and a written threat model — apply
+in full and unchanged when it does:
+
+1. Ledgers from real (non-fixture) stories show a material rate of
+   `RequestCapability` rows, or of stories that fail for want of a command.
+2. The set of commands a project must declare to keep native stories working
+   grows until "declared commands" is a shell in all but name. A general
+   `RunCommand("bash", ...)` entry in a project's config is that line being
+   crossed, and should be read as this section reopening, not as configuration.
+3. An op that cannot be expressed over declared commands becomes required on the
+   native path.
+
+**One shell-shaped risk has already landed.** `RunCommand` reuses the existing
+quality runner, which reaches a shell, so its safety property is
+**safe-by-quoting, not safe-by-construction** — unlike `Git` and `GitCommit`,
+whose argv nax builds element by element. Its substitution values are shell-quoted
+and the test attempts a real escape rather than asserting the quoting helper was
+called. This does not make the deferral unsound, but it does mean the first
+shell-adjacent surface is in the codebase now, and it is where a future threat
+model should start rather than at a blank page.
 
 ### 4. Permission policy stays in nax
 
@@ -166,6 +250,8 @@ answered honestly.
    compiled once, or something that can pause a turn for human approval (which
    nothing in nax can do today)?
 3. How is bash sandboxed, and what is the threat model it is sandboxed against?
+   Still open, and now deferred on measured evidence rather than assumed need —
+   see the §3 amendment, which also names the conditions that reopen it.
 4. Does the Phase B turn loop extend to coding tools, or does Phase C need its
    own? See §5.
 5. Does the permission gate turn out provider-shaped rather than nax-shaped? If
@@ -181,5 +267,11 @@ without the parity evidence that justifies it.
 
 Phase C1 started under an explicit, recorded override rather than quietly — which
 is the outcome this section was written to force. Open questions 1, 2 and 4 are
-answered by the C1 design; 3 (bash sandboxing) and 5 (whether the gate is
-provider-shaped) remain open and gate any Phase C work beyond C1.
+answered by the C1 design. Question 5 (whether the gate is provider-shaped)
+remains open.
+
+Question 3 (bash sandboxing) also remains open, but no longer gates all Phase C
+work beyond C1: Phase C2 shipped by excluding bash rather than by answering for
+it, and the §3 amendment records both the measurement behind that deferral and
+the conditions under which the question returns. What question 3 still gates is
+bash itself, and anything that amounts to bash.
