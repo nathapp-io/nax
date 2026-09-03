@@ -14,8 +14,7 @@ import { _gitDeps } from "@/utils/git";
 
 function contentOf(result: { kind: string; content?: string }): string {
   if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}: ${JSON.stringify(result)}`);
-  if (result.content === undefined) throw new Error("expected content on an ok result");
-  return result.content;
+  return result.content ?? "";
 }
 
 function argvOf(input: Record<string, unknown>): string[] {
@@ -30,17 +29,31 @@ describe("buildGitArgv", () => {
   // the cwd, which is the permitted root. See the root-boundary tests below for
   // the two escapes this shape closes.
   test("scopes a plain diff to the root and terminates the revision list", () => {
-    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--", "."]);
+    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--relative", "--", "."]);
   });
 
   test("appends refs then paths after a '--' separator", () => {
     expect(argvOf({ subcommand: "diff", refs: ["HEAD~1", "HEAD"], paths: ["src/a.ts"] })).toEqual([
       "diff",
+      "--relative",
       "HEAD~1",
       "HEAD",
       "--",
       "src/a.ts",
     ]);
+  });
+
+  // #1807 — git frames diff-style "a/<path>"/"b/<path>" headers relative to the
+  // repository top-level regardless of cwd, which disagrees with Read/Grep/Glob
+  // whenever the permitted root is a package subdir. `--relative` makes git
+  // apply that offset itself, so it belongs only on the verbs that print those
+  // headers -- `status` rejects the flag outright, and `blame` never prints one.
+  test("adds --relative only to the verbs that print diff-style path headers", () => {
+    expect(argvOf({ subcommand: "diff" })).toContain("--relative");
+    expect(argvOf({ subcommand: "log" })).toContain("--relative");
+    expect(argvOf({ subcommand: "show" })).toContain("--relative");
+    expect(argvOf({ subcommand: "status" })).not.toContain("--relative");
+    expect(argvOf({ subcommand: "blame", paths: ["src/a.ts"] })).not.toContain("--relative");
   });
 
   test("rejects a subcommand outside the read-only verb list", () => {
@@ -175,17 +188,18 @@ describe("gitTool — the permitted root bounds the repository view", () => {
  * be re-framed to the permitted root before it reaches the model.
  */
 describe("gitTool — output paths are framed relative to the permitted root", () => {
-  async function makeRepoWithPackageWorkdir(): Promise<{ repo: string; root: string }> {
+  async function makeRepoWithPackageWorkdir(opts?: { fileName?: string }): Promise<{ repo: string; root: string }> {
+    const fileName = opts?.fileName ?? "f.txt";
     const repo = mkdtempSync(join(tmpdir(), "nax-git-frame-"));
     mkdirSync(join(repo, "packages", "pkg-a"), { recursive: true });
-    writeFileSync(join(repo, "packages", "pkg-a", "f.txt"), "one\n");
+    writeFileSync(join(repo, "packages", "pkg-a", fileName), "one\n");
     const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
     await run(["init", "-q"]).exited;
     await run(["config", "user.email", "t@e.com"]).exited;
     await run(["config", "user.name", "T"]).exited;
     await run(["add", "-A"]).exited;
     await run(["commit", "-q", "-m", "seed"]).exited;
-    writeFileSync(join(repo, "packages", "pkg-a", "f.txt"), "two\n");
+    writeFileSync(join(repo, "packages", "pkg-a", fileName), "two\n");
     return { repo, root: join(repo, "packages", "pkg-a") };
   }
 
@@ -230,5 +244,32 @@ describe("gitTool — output paths are framed relative to the permitted root", (
     const content = contentOf(result);
     expect(content).toContain("a/f.txt");
     expect(content).toContain("b/f.txt");
+  });
+
+  // Git quotes and octal-escapes any non-ASCII path (core.quotePath, on by
+  // default), with the quote wrapping the "a/" prefix itself. A prefix-strip
+  // that assumes an unquoted "a/<path>" shape never matches this line at all.
+  test("diff headers with a non-ASCII path are still relative to the permitted root", async () => {
+    const { root } = await makeRepoWithPackageWorkdir({ fileName: "café.txt" });
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+
+    const result = await rt.callTool("Git", { subcommand: "diff" });
+
+    const content = contentOf(result);
+    expect(content).not.toContain("packages/pkg-a");
+  });
+
+  // A path containing a space defeats a whitespace-delimited token match, and
+  // git appends a trailing tab to the "---"/"+++" lines in that case too.
+  test("diff headers with a space in the path are still relative to the permitted root", async () => {
+    const { root } = await makeRepoWithPackageWorkdir({ fileName: "with space.txt" });
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+
+    const result = await rt.callTool("Git", { subcommand: "diff" });
+
+    const content = contentOf(result);
+    expect(content).toContain("a/with space.txt");
+    expect(content).toContain("b/with space.txt");
+    expect(content).not.toContain("packages/pkg-a");
   });
 });

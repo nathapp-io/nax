@@ -15,8 +15,7 @@
  * 64KB pipe buffer and deadlocks a naive implementation.
  */
 
-import { relative, sep } from "node:path";
-import { getGitRoot, gitWithTimeout } from "@/utils/git";
+import { gitWithTimeout } from "@/utils/git";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 /**
@@ -26,6 +25,24 @@ import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
  * verb still spans the whole repository unless its scope is stated.
  */
 export const GIT_READ_VERBS: readonly string[] = ["diff", "log", "show", "status", "blame"];
+
+/**
+ * Verbs whose output prints "a/<path>"/"b/<path>" diff headers, which git
+ * always frames relative to the repository top-level regardless of cwd
+ * (confirmed independently by the porcelain-path comment in
+ * `src/utils/git.ts`'s `autoCommitIfDirty`). Read/Grep/Glob resolve a path
+ * relative to the permitted root (`ctx.root`), so when that root is a package
+ * subdir the two frames diverge -- issue #1807.
+ *
+ * `--relative` (with no argument, so relative to cwd) makes git itself apply
+ * that offset before it quotes a path, rather than after -- so it also
+ * handles a non-ASCII path (which git quotes and octal-escapes, wrapping the
+ * "a/" prefix) and a path containing a space (which a whitespace-delimited
+ * regex can't span, and after which git appends a trailing tab). `status`
+ * rejects the flag outright; `blame` never emits these headers, so neither
+ * needs it.
+ */
+const GIT_RELATIVE_VERBS: readonly string[] = ["diff", "log", "show"];
 
 /**
  * Flags that escape the repository or execute code.
@@ -51,6 +68,7 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
   const paths = Array.isArray(input.paths) ? input.paths : [];
 
   const argv: string[] = [subcommand];
+  if (GIT_RELATIVE_VERBS.includes(subcommand)) argv.push("--relative");
   for (const ref of refs) {
     if (typeof ref !== "string") return { error: "refs must be strings" };
     // A ref that begins with "-" would be parsed as an option, which is how an
@@ -91,56 +109,6 @@ function truncate(body: string, maxBytes: number): string {
   return `${Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8")}\n... [truncated at ${maxBytes} bytes]`;
 }
 
-/**
- * #1807 — git prints diff-style paths relative to the repository top-level
- * regardless of cwd (confirmed independently by the porcelain-path comment in
- * `src/utils/git.ts`'s `autoCommitIfDirty`), while Read/Grep/Glob resolve a
- * path relative to the permitted root (`ctx.root`). When the permitted root
- * is a package subdir, every path in Git's own output is framed wrong for
- * every other tool. Only the structural path lines that `diff`/`show`/`log -p`
- * emit are rewritten; diff content lines are left untouched.
- */
-const DIFF_GIT_HEADER_RE = /^(diff --git )a\/(\S+) b\/(\S+)$/;
-const OLD_NEW_HEADER_RE = /^(--- |\+\+\+ )(a\/|b\/)(\S+)$/;
-const RENAME_COPY_RE = /^((?:rename|copy) (?:from|to) )(\S+)$/;
-
-function stripPrefix(path: string, prefixWithSlash: string): string {
-  return prefixWithSlash !== "" && path.startsWith(prefixWithSlash) ? path.slice(prefixWithSlash.length) : path;
-}
-
-/** @internal exported for tests */
-export function reframeGitOutput(output: string, repoRoot: string, permittedRoot: string): string {
-  const rel = relative(repoRoot, permittedRoot);
-  // Same root (single-package repos, or a run whose workdir is the repo root)
-  // — the two frames already coincide, so this is a no-op. A leading ".." would
-  // mean the permitted root sits outside the repository, which containment
-  // elsewhere already forbids; leave output untouched rather than guess.
-  if (rel === "" || rel.startsWith("..")) return output;
-  const prefix = `${rel.split(sep).join("/")}/`;
-
-  return output
-    .split("\n")
-    .map((line) => {
-      const diffGit = line.match(DIFF_GIT_HEADER_RE);
-      if (diffGit) {
-        const [, head, a, b] = diffGit;
-        return `${head}a/${stripPrefix(a, prefix)} b/${stripPrefix(b, prefix)}`;
-      }
-      const oldNew = line.match(OLD_NEW_HEADER_RE);
-      if (oldNew) {
-        const [, head, side, path] = oldNew;
-        return `${head}${side}${stripPrefix(path, prefix)}`;
-      }
-      const renameCopy = line.match(RENAME_COPY_RE);
-      if (renameCopy) {
-        const [, head, path] = renameCopy;
-        return `${head}${stripPrefix(path, prefix)}`;
-      }
-      return line;
-    })
-    .join("\n");
-}
-
 export const gitTool: CodingTool = {
   name: "Git",
   description:
@@ -150,7 +118,7 @@ export const gitTool: CodingTool = {
     properties: {
       subcommand: { type: "string", enum: [...GIT_READ_VERBS], description: "Read-only git subcommand" },
       refs: { type: "array", items: { type: "string" }, description: "Refs, e.g. ['HEAD~1','HEAD']" },
-      paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the repository root" },
+      paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the permitted root" },
     },
     required: ["subcommand"],
   },
@@ -176,9 +144,7 @@ export const gitTool: CodingTool = {
       if (exitCode !== 0 && stdout.trim() === "") {
         return { content: stderr.trim() || `git exited ${exitCode}`, isError: true };
       }
-      const repoRoot = await getGitRoot(ctx.root);
-      const framed = repoRoot === null ? stdout : reframeGitOutput(stdout, repoRoot, ctx.root);
-      return { content: truncate(framed.trimEnd(), ctx.maxBytes) || "(no output)" };
+      return { content: truncate(stdout.trimEnd(), ctx.maxBytes) || "(no output)" };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };
     }
