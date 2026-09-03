@@ -26,6 +26,7 @@ export const testWriterRectifyOp: RunOperation<AutofixTestWriterInput, AutofixTe
   // open across rectify iterations instead of `sessions ensure`-ing a cold session each
   // turn. Unconditional, mirroring autofix-implementer.ts (already mid-rectification).
   session: { role: "test-writer", lifetime: "warm" },
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit"],
   config: autofixConfigSelector,
   build(input, _ctx) {
     const prompt = RectifierPromptBuilder.testWriterRectification(input.failedChecks, input.story, {

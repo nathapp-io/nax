@@ -32,6 +32,11 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
   name: "full-suite-rectify",
   stage: "rectification",
   session: { role: "implementer", lifetime: "warm" },
+  // No GitCommit: neither failingTestRectification nor repoScopedRectification
+  // instructs the agent to commit. The repo-scoped strategy attributes changed
+  // files via git diff itself (`_repoScopedFixDeps.captureWorkingTreeChanges`,
+  // full-suite-rectify.ts) rather than trusting a self-reported commit.
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand"],
   config: autofixConfigSelector,
   // The repo-scoped dispatch runs under its own session role and gets a single
   // attempt, so nothing resumes its session — keeping it warm would strand one.

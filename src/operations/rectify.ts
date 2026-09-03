@@ -19,6 +19,7 @@ export const rectifyOp: RunOperation<RectifyInput, RectifyOutput, RectifyConfig>
   name: "rectify",
   stage: "review",
   session: { role: "implementer", lifetime: "fresh" },
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit"],
   config: rectifyConfigSelector,
   build(input, _ctx) {
     const prompt = RectifierPromptBuilder.reviewRectification(input.failedChecks, input.story);

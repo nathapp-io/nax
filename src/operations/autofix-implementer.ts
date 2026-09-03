@@ -29,6 +29,7 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
   name: "autofix-implementer",
   stage: "rectification",
   session: { role: "implementer", lifetime: "warm" },
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit"],
   config: autofixConfigSelector,
   build(input, _ctx) {
     const verifierFindings = input.findings?.filter((f) => f.source === "tdd-verifier");
