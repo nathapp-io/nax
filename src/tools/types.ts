@@ -7,7 +7,7 @@
  */
 
 /** The tools nax ships. Third parties register additional names at runtime. */
-export type CodingToolName = "Read" | "Glob" | "Grep" | "Write" | "Edit" | "Git" | "GitCommit";
+export type CodingToolName = "Read" | "Glob" | "Grep" | "Write" | "Edit" | "Git" | "GitCommit" | "RunCommand";
 
 /**
  * One declarative permission grant, as produced by resolvePermissions.

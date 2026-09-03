@@ -14,6 +14,7 @@ export {
   registerBuiltinTool,
   registerCodingTool,
 } from "./registry";
+export { createRunCommandTool, substituteCommand } from "./run-command";
 export type { CodingToolOutcome, CodingToolRuntime } from "./runtime";
 export {
   _codingToolDeps,
