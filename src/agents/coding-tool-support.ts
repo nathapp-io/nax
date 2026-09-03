@@ -87,10 +87,30 @@ export function buildCodingToolSupport(args: {
  * so the two cannot drift: a tool wired into one hop and not the other is
  * invisible until an operation happens to dispatch through the other.
  */
+/**
+ * Ledger session name.
+ *
+ * Story-only names collide across the three TDD roles, which all write to one
+ * directory -- so a ledger could not answer which session made a call, and that
+ * is the evidence ADR-029 parity claims are read from.
+ */
+export function buildLedgerSessionName(opts: { storyId?: string; sessionRole?: string; featureName?: string }): string {
+  const base = opts.storyId ?? opts.featureName;
+  if (base === undefined) return "unattached";
+  return opts.sessionRole === undefined ? base : `${base}-${opts.sessionRole}`;
+}
+
 export function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
-    "declaredTools" | "codingToolRoot" | "outputDir" | "pipelineStage" | "storyId" | "featureName" | "config"
+    | "declaredTools"
+    | "codingToolRoot"
+    | "outputDir"
+    | "pipelineStage"
+    | "storyId"
+    | "sessionRole"
+    | "featureName"
+    | "config"
   >,
 ): CodingToolSupport | undefined {
   const declared = options.declaredTools ?? [];
@@ -122,7 +142,11 @@ export function resolveCodingToolSupport(
           options.featureName,
         )
       : undefined;
-  const sessionName = options.storyId ?? options.featureName ?? "unattached";
+  const sessionName = buildLedgerSessionName({
+    ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
+    ...(options.sessionRole !== undefined ? { sessionRole: options.sessionRole } : {}),
+    ...(options.featureName !== undefined ? { featureName: options.featureName } : {}),
+  });
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     grants: resolved.toolGrants,
