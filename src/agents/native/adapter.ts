@@ -16,6 +16,7 @@ import { toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
 import { closeNativeSession, nativeSessionTimeouts, openNativeSession } from "./session/session";
 import { runNativeTurn } from "./session/turn-loop";
+import { oneShotSessionKey, sessionAffinityHeaders } from "./session-affinity";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
 const CONSERVATIVE_CONTEXT_TOKENS = 128_000;
@@ -117,9 +118,13 @@ export class NativeAgentAdapter implements AgentAdapter {
     const timer = options.timeoutMs !== undefined ? setTimeout(() => controller.abort(), options.timeoutMs) : undefined;
 
     try {
+      // resolved.provider, not the parsed one: this is the provider that will
+      // actually serve the call, straight from nax-ai's catalog.
+      const affinity = sessionAffinityHeaders(resolved.provider, oneShotSessionKey());
       const result = await client.complete(resolved, {
         messages: [{ role: "user", content: prompt }],
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+        ...(affinity !== undefined ? { headers: affinity } : {}),
         signal: controller.signal,
       });
 
@@ -166,6 +171,9 @@ export class NativeAgentAdapter implements AgentAdapter {
     const catalog = client.pricing(resolved);
     const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer1M: catalog.output };
     const timeoutSeconds = nativeSessionTimeouts.get(handle.id);
+    // Keyed on the session, so every turn of one conversation carries the same
+    // id and the provider can keep its cache warm across them.
+    const affinity = sessionAffinityHeaders(resolved.provider, handle.id);
 
     return runNativeTurn(handle, prompt, opts, {
       complete: async (messages, tools) => {
@@ -184,6 +192,7 @@ export class NativeAgentAdapter implements AgentAdapter {
           const res = await client.complete(resolved, {
             messages,
             ...(tools.length > 0 ? { tools } : {}),
+            ...(affinity !== undefined ? { headers: affinity } : {}),
             signal,
           });
           const usage = toNaxTokenUsage(res.usage);

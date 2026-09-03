@@ -11,10 +11,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Client, ResolvedModel } from "@nathapp/nax-ai";
+import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
 import { waitForCondition } from "@test/helpers";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
+import { nativeSessionId } from "@/agents/native/session-affinity";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 
 const REAL_BUILD = _clientDeps.build;
@@ -283,5 +284,72 @@ describe("hasCredentials", () => {
 
     // Fail open: an unreadable store is "unknown", not "no credentials".
     expect(await new NativeAgentAdapter().hasCredentials()).toBe(true);
+  });
+});
+
+/**
+ * Session-affinity headers reaching the wire.
+ *
+ * Asserted on what arrives at client.complete(), not on the helper — the helper
+ * has its own tests, and a helper nothing calls is the failure mode this repo
+ * keeps hitting (nax#1744, transcriptDir).
+ */
+describe("NativeAgentAdapter session affinity", () => {
+  const OPENCODE_MODEL = { ...MODEL, id: "deepseek-v4-flash", provider: "opencode-go" } satisfies ResolvedModel;
+
+  function capturingClient(model: ResolvedModel): { client: Client; seen: ClientRequest[] } {
+    const seen: ClientRequest[] = [];
+    const client = fakeClient({
+      model: async () => model,
+      complete: async (_m: ResolvedModel, req: ClientRequest) => {
+        seen.push(req);
+        return { text: "ok", usage: { inputTokens: 1, outputTokens: 0 }, stopReason: "stop" };
+      },
+    });
+    return { client, seen };
+  }
+
+  test("complete sends x-opencode-session to an opencode provider", async () => {
+    const { client, seen } = capturingClient(OPENCODE_MODEL);
+    _clientDeps.build = async () => client;
+
+    const opts = options();
+    opts.modelDef = { provider: "unknown", model: "opencode-go/deepseek-v4-flash" };
+    await new NativeAgentAdapter().complete("hi", opts);
+
+    expect(seen[0]?.headers).toMatchObject({ "x-opencode-session": expect.any(String) });
+  });
+
+  test("complete sends no affinity header to a provider that has none", async () => {
+    const { client, seen } = capturingClient(MODEL);
+    _clientDeps.build = async () => client;
+
+    await new NativeAgentAdapter().complete("hi", options());
+
+    expect(seen[0]?.headers).toBeUndefined();
+  });
+
+  test("sendTurn derives the header from the session, so it is stable across turns", async () => {
+    const { client, seen } = capturingClient(OPENCODE_MODEL);
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession("sess-affinity", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "opencode-go/deepseek-v4-flash" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-affinity-")),
+    });
+
+    const turn = { interactionHandler: { onInteraction: async () => ({ answer: "" }) } };
+    await adapter.sendTurn(handle, "one", turn);
+    await adapter.sendTurn(handle, "two", turn);
+
+    const first = seen[0]?.headers?.["x-opencode-session"];
+    const second = seen[1]?.headers?.["x-opencode-session"];
+    expect(first).toBeDefined();
+    expect(first).toBe(second);
+    expect(first).toBe(nativeSessionId(handle.id));
   });
 });
