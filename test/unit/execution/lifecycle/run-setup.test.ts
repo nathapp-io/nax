@@ -409,10 +409,13 @@ describe("runSetup dryRun", () => {
   test("passes options.dryRun through to createRuntime", async () => {
     const setupWorkdir = makeTempDir();
     const seen: Array<boolean | undefined> = [];
+    const created: NaxRuntime[] = [];
     const origCreateRuntime = _runSetupDeps.createRuntime;
     _runSetupDeps.createRuntime = (...args: Parameters<typeof origCreateRuntime>) => {
       seen.push(args[2]?.dryRun);
-      return origCreateRuntime(...args);
+      const runtime = origCreateRuntime(...args);
+      created.push(runtime);
+      return runtime;
     };
 
     try {
@@ -441,6 +444,9 @@ describe("runSetup dryRun", () => {
       expect(seen).toEqual([true]);
     } finally {
       _runSetupDeps.createRuntime = origCreateRuntime;
+      // setupRun throws before it can own the runtime, so this test is the only
+      // thing that can close it (check:runtime-cleanup / #1679).
+      for (const runtime of created) await runtime.close();
       rmSync(setupWorkdir, { recursive: true, force: true });
     }
   });

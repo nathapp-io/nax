@@ -65,7 +65,7 @@ function makePrd(stories: UserStory[]): PRD {
   };
 }
 
-function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutionContext {
+function makeCtx(overrides: { parallelCount?: number; dryRun?: boolean } = {}): SequentialExecutionContext {
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
@@ -179,6 +179,42 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
 
     expect(parallelCalls.length).toBeGreaterThan(0);
     expect(iterationCalls.length).toBe(0);
+  });
+
+  // nax#1808: the dry-run short-circuit lives in runIteration, so the parallel
+  // branch bypassed it entirely -- `--dry-run --parallel N` with two ready
+  // stories dispatched real agents and then persisted the PRD.
+  test("runIteration is called (not runParallelBatch) under a dry run, even with parallelCount > 1", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    const parallelCalls: unknown[] = [];
+    const iterationCalls: unknown[] = [];
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => {
+      parallelCalls.push(true);
+      return {
+        completed: [story1, story2],
+        failed: [],
+        mergeConflicts: [],
+        storyCosts: new Map(),
+        totalCost: 0,
+      };
+    });
+    deps.runIteration = mock(async () => {
+      iterationCalls.push(true);
+      return { prd: makePrd([]), storiesCompletedDelta: 1, costDelta: 0, prdDirty: false };
+    });
+
+    const { executeUnified } = await import("@/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const ctx = makeCtx({ parallelCount: 2, dryRun: true });
+
+    await executeUnified(ctx, prd).catch(() => {});
+
+    expect(parallelCalls.length).toBe(0);
+    expect(iterationCalls.length).toBeGreaterThan(0);
   });
 
   test("runIteration is called (not runParallelBatch) when parallelCount is undefined", async () => {
