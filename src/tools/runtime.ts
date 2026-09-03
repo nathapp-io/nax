@@ -17,6 +17,7 @@ import { globTool } from "./glob";
 import { grepTool } from "./grep";
 import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
+import { requestCapabilityTool } from "./request-capability";
 import type { ToolPolicy } from "./types";
 import { writeTool } from "./write";
 
@@ -56,7 +57,16 @@ let builtinsRegistered = false;
 /** Idempotent: the registry is process-global, the runtime is per-session. */
 export function registerBuiltinCodingTools(): void {
   if (builtinsRegistered) return;
-  for (const tool of [readTool, globTool, grepTool, writeTool, editTool, gitTool, gitCommitTool]) {
+  for (const tool of [
+    readTool,
+    globTool,
+    grepTool,
+    writeTool,
+    editTool,
+    gitTool,
+    gitCommitTool,
+    requestCapabilityTool,
+  ]) {
     if (getCodingTool(tool.name) === undefined) registerBuiltinTool(tool);
   }
   builtinsRegistered = true;
