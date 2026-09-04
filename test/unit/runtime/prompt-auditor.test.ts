@@ -452,7 +452,7 @@ describe("PromptAuditor", () => {
     });
   });
 
-  test("renaming the field did not change the rendered header or suffix", async () => {
+  test("a first turn renders as t01 regardless of its round-trip count", async () => {
     await withTempDir(async (dir) => {
       const written: Array<{ path: string; data: string }> = [];
       const orig = _promptAuditorDeps.write;
@@ -465,8 +465,97 @@ describe("PromptAuditor", () => {
       await aud.flush();
       _promptAuditorDeps.write = orig;
       const txt = written.find((w) => w.path.endsWith(".txt"));
-      expect(txt?.path).toContain("-run-t04.txt");
-      expect(txt?.data).toContain("Turn:       4");
+      expect(txt?.path).toContain("-run-t01.txt");
+      expect(txt?.data).toContain("Turn:       1");
+    });
+  });
+
+  test("numbers turns sequentially within one recordId, across differing session names", async () => {
+    await withTempDir(async (dir) => {
+      const written: Array<{ path: string; data: string }> = [];
+      const orig = _promptAuditorDeps.write;
+      _promptAuditorDeps.write = async (path: string, data: string) => {
+        written.push({ path, data });
+        return 0;
+      };
+      const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+      // Same logical conversation, different display names and stages — this is
+      // the run -> rectification case. Keying on sessionName would restart at 1.
+      aud.record(makeEntry({ callType: "run", sessionName: "sess-a", stage: "run", recordId: "rec-1", roundTrips: 4 }));
+      aud.record(makeEntry({ callType: "run", sessionName: "sess-a", stage: "run", recordId: "rec-1", roundTrips: 1 }));
+      aud.record(
+        makeEntry({ callType: "run", sessionName: "sess-b", stage: "rectification", recordId: "rec-1", roundTrips: 1 }),
+      );
+      await aud.flush();
+      _promptAuditorDeps.write = orig;
+      const txts = written.filter((w) => w.path.endsWith(".txt"));
+      expect(txts[0]?.path).toContain("-run-t01.txt");
+      expect(txts[1]?.path).toContain("-run-t02.txt");
+      expect(txts[2]?.path).toContain("-rectification-t03.txt");
+      expect(txts[0]?.data).toContain("Turn:       1");
+      expect(txts[2]?.data).toContain("Turn:       3");
+    });
+  });
+
+  test("a different recordId restarts the numbering", async () => {
+    await withTempDir(async (dir) => {
+      const written: Array<{ path: string; data: string }> = [];
+      const orig = _promptAuditorDeps.write;
+      _promptAuditorDeps.write = async (path: string, data: string) => {
+        written.push({ path, data });
+        return 0;
+      };
+      const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+      aud.record(makeEntry({ callType: "run", sessionName: "sess-a", recordId: "rec-1", roundTrips: 1 }));
+      aud.record(makeEntry({ callType: "run", sessionName: "sess-a", recordId: "rec-2", roundTrips: 1 }));
+      await aud.flush();
+      _promptAuditorDeps.write = orig;
+      const txts = written.filter((w) => w.path.endsWith(".txt"));
+      expect(txts[0]?.data).toContain("Turn:       1");
+      expect(txts[1]?.data).toContain("Turn:       1");
+    });
+  });
+
+  test("falls back to sessionName when no recordId is present", async () => {
+    await withTempDir(async (dir) => {
+      const written: Array<{ path: string; data: string }> = [];
+      const orig = _promptAuditorDeps.write;
+      _promptAuditorDeps.write = async (path: string, data: string) => {
+        written.push({ path, data });
+        return 0;
+      };
+      const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+      aud.record(makeEntry({ callType: "run", sessionName: "sess-a", roundTrips: 1 }));
+      aud.record(makeEntry({ callType: "run", sessionName: "sess-a", roundTrips: 1 }));
+      await aud.flush();
+      _promptAuditorDeps.write = orig;
+      const txts = written.filter((w) => w.path.endsWith(".txt"));
+      expect(txts[1]?.data).toContain("Turn:       2");
+    });
+  });
+
+  test("renders the round-trip count under a label naming its unit", async () => {
+    await withTempDir(async (dir) => {
+      const written: Array<{ path: string; data: string }> = [];
+      const orig = _promptAuditorDeps.write;
+      _promptAuditorDeps.write = async (path: string, data: string) => {
+        written.push({ path, data });
+        return 0;
+      };
+      const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+      aud.record(
+        makeEntry({ callType: "run", sessionName: "n", recordId: "r-n", roundTrips: 8, roundTripUnit: "model-call" }),
+      );
+      aud.record(
+        makeEntry({ callType: "run", sessionName: "a", recordId: "r-a", roundTrips: 2, roundTripUnit: "agent-run" }),
+      );
+      await aud.flush();
+      _promptAuditorDeps.write = orig;
+      const txts = written.filter((w) => w.path.endsWith(".txt"));
+      expect(txts[0]?.data).toContain("ModelCalls: 8");
+      expect(txts[0]?.data).not.toContain("AgentRuns:");
+      expect(txts[1]?.data).toContain("AgentRuns:  2");
+      expect(txts[1]?.data).not.toContain("ModelCalls:");
     });
   });
 });

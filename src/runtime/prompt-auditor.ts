@@ -54,6 +54,12 @@ export interface PromptAuditEntry {
   readonly roundTrips?: number;
   readonly roundTripUnit?: "model-call" | "agent-run";
   /**
+   * Position of this turn within its logical conversation, assigned by
+   * PromptAuditor — callers do not set it. Distinct from `roundTrips`, which
+   * counts iterations INSIDE one turn.
+   */
+  readonly turn?: number;
+  /**
    * Mid-turn human-in-the-loop Q&A exchanges for this turn (issue #1226).
    * Present only when the agent asked the operator a question that was answered.
    * Appended to the human-readable .txt as an `=== INTERACTIONS ===` section;
@@ -137,9 +143,9 @@ function deriveTxtFilename(entry: PromptAuditEntry): string {
 }
 
 function deriveAuditSuffix(entry: PromptAuditEntry): string | undefined {
-  if (entry.callType === "run" && entry.roundTrips !== undefined) {
+  if (entry.callType === "run" && entry.turn !== undefined) {
     const stage = entry.stage ?? "run";
-    return `${stage}-t${String(entry.roundTrips).padStart(2, "0")}`;
+    return `${stage}-t${String(entry.turn).padStart(2, "0")}`;
   }
   if (entry.callType === "complete") return "complete";
   return entry.stage ?? entry.callType;
@@ -156,7 +162,10 @@ function buildTxtContent(entry: PromptAuditEntry): string {
     `StoryId:    ${entry.storyId ?? "(none)"}`,
     `Feature:    ${entry.featureName ?? "(none)"}`,
     `CallType:   ${entry.callType ?? "(none)"}`,
-    ...(entry.roundTrips !== undefined ? [`Turn:       ${entry.roundTrips}`] : []),
+    ...(entry.turn !== undefined ? [`Turn:       ${entry.turn}`] : []),
+    ...(entry.roundTrips !== undefined
+      ? [entry.roundTripUnit === "agent-run" ? `AgentRuns:  ${entry.roundTrips}` : `ModelCalls: ${entry.roundTrips}`]
+      : []),
     ...(entry.recordId ? [`RecordId:   ${entry.recordId}`] : []),
     ...(entry.sessionId ? [`SessionId:  ${entry.sessionId}`] : []),
     `Permission: ${entry.permissionProfile}`,
@@ -198,6 +207,15 @@ export class PromptAuditor implements IPromptAuditor {
   private _dirCreated = false;
   private readonly _jsonlPath: string;
   private readonly _featureDir: string;
+  /**
+   * recordId (or sessionName when absent) -> turns seen so far.
+   *
+   * Keyed on the protocol's own identity rather than the display name: one
+   * recordId spans separate sendTurn calls and stage changes, so it is what
+   * says "still the same conversation". The map is per-auditor, and an auditor
+   * is per-run, so the numbering's scope matches the audit directory's.
+   */
+  private readonly _turnOrdinals = new Map<string, number>();
 
   constructor(runId: string, flushDir: string, featureName: string) {
     this._featureDir = join(flushDir, featureName);
@@ -205,7 +223,14 @@ export class PromptAuditor implements IPromptAuditor {
   }
 
   record(entry: PromptAuditEntry): void {
-    this._enqueue(entry);
+    this._enqueue(entry.callType === "run" ? { ...entry, turn: this._nextTurn(entry) } : entry);
+  }
+
+  private _nextTurn(entry: PromptAuditEntry): number {
+    const key = entry.recordId ?? entry.sessionName ?? "";
+    const next = (this._turnOrdinals.get(key) ?? 0) + 1;
+    this._turnOrdinals.set(key, next);
+    return next;
   }
 
   recordError(entry: PromptAuditErrorEntry): void {
