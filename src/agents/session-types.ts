@@ -228,6 +228,15 @@ export class SessionTurnError extends Error {
     public readonly tokenUsage?: TokenUsage,
     public readonly estimatedCostUsd?: number,
     public readonly exactCostUsd?: number,
+    /**
+     * nax#1840: the native path throws exactly one class per turn failure, so
+     * classification (normally read off SessionFailureError.adapterFailure)
+     * and cost (read off this class) cannot both be carried unless one class
+     * carries both. Left undefined by the ACP path, which still throws
+     * SessionFailureError for its own classified faults — this field only
+     * ever gets set by native's sendTurn.
+     */
+    public readonly adapterFailure?: AdapterFailure,
   ) {
     super(message);
     this.name = "SessionTurnError";

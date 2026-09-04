@@ -72,6 +72,29 @@ export interface TurnDeps {
 }
 
 /**
+ * nax#1840: round trips completed before a turn fails still spent real money.
+ * `inputTokens`/`outputTokens`/`costUsd` are locals inside runNativeTurn and
+ * reach a caller only through the clean-exit return, so a throw at round trip
+ * N silently drops everything spent on round trips 1..N-1.
+ *
+ * Recorded against the thrown error's own identity (a WeakMap), never by
+ * mutating the error itself: adapter.ts's `isProtocolStreamError` guard and
+ * its "propagate a non-protocol error untouched" rule both depend on the
+ * error's own shape staying exactly what was thrown.
+ */
+export interface NativeTurnFailureUsage {
+  readonly tokenUsage: TokenUsage;
+  readonly costUsd: number;
+}
+
+const failureUsageByError = new WeakMap<object, NativeTurnFailureUsage>();
+
+/** Reads back what the catch block below recorded, if anything did. */
+export function readNativeTurnFailureUsage(err: unknown): NativeTurnFailureUsage | undefined {
+  return typeof err === "object" && err !== null ? failureUsageByError.get(err) : undefined;
+}
+
+/**
  * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
  * here and the kind is what matters.
  */
@@ -382,6 +405,19 @@ export async function runNativeTurn(
         error: saveErr instanceof Error ? saveErr.message : String(saveErr),
       });
     });
+    // nax#1840: attach what was already spent, keyed on the error's own
+    // identity so the error itself is rethrown byte-for-byte unmodified.
+    if (typeof err === "object" && err !== null) {
+      failureUsageByError.set(err, {
+        tokenUsage: {
+          inputTokens,
+          outputTokens,
+          ...(cacheReadInputTokens !== undefined ? { cacheReadInputTokens } : {}),
+          ...(cacheCreationInputTokens !== undefined ? { cacheCreationInputTokens } : {}),
+        },
+        costUsd,
+      });
+    }
     throw err;
   }
 

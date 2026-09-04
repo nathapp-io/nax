@@ -409,6 +409,43 @@ describe("buildHopCallback — failure classification (Finding 3)", () => {
     expect(hop.result.adapterFailure?.message).toBe("missing credentials");
   });
 
+  // nax#1840: native's sendTurn throws SessionTurnError, not SessionFailureError
+  // (it also needs to carry cost, which SessionFailureError has no field for).
+  // The hop callback must still classify correctly by falling back to
+  // turnError?.adapterFailure, AND the cost fields on the same error must
+  // survive alongside the classification — the two facts share one carrier now.
+  test("preserves SessionTurnError.adapterFailure (native's carrier) alongside its cost fields", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-rate-limit",
+      category: "availability",
+      message: "nax-ai rate limit exceeded",
+      retriable: true,
+    };
+    const { SessionTurnError } = await import("@/agents");
+    const turnError = new SessionTurnError(
+      "429 slow down",
+      false,
+      true,
+      { inputTokens: 1_000_000, outputTokens: 400_000 },
+      9,
+      undefined,
+      failure,
+    );
+    const agentManager = makeAgentManagerStub(() => Promise.reject(turnError));
+    const ctx = makeCtx({ agentManager });
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    const hop = await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
+
+    expect(hop.result.success).toBe(false);
+    expect(hop.result.rateLimited).toBe(true);
+    expect(hop.result.adapterFailure?.outcome).toBe("fail-rate-limit");
+    expect(hop.result.estimatedCostUsd).toBe(9);
+    expect(hop.result.tokenUsage?.inputTokens).toBe(1_000_000);
+    expect(hop.result.tokenUsage?.outputTokens).toBe(400_000);
+  });
+
   test("falls back to generic availability/fail-adapter-error for non-typed errors", async () => {
     const agentManager = makeAgentManagerStub(() => Promise.reject(new Error("plain network error")));
     const ctx = makeCtx({ agentManager });

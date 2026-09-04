@@ -452,9 +452,15 @@ export function buildHopCallback(
       // Preserve typed adapter failure on SessionFailureError so runWithFallback's
       // swap policy sees the real outcome (rate-limit, auth, quota) instead of
       // a generic "fail-adapter-error" reclassification. Mirrors session-run-hop.ts.
-      const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
-      timedOut = sessionFailure?.outcome === "fail-timeout";
+      //
+      // nax#1840: native's sendTurn throws SessionTurnError (not
+      // SessionFailureError) so it can also carry the cost fields, so
+      // classification falls back to SessionTurnError.adapterFailure when the
+      // error is not a SessionFailureError.
       const turnError = err instanceof SessionTurnError ? err : undefined;
+      const sessionFailure =
+        (err instanceof SessionFailureError ? err.adapterFailure : undefined) ?? turnError?.adapterFailure;
+      timedOut = sessionFailure?.outcome === "fail-timeout";
       const errMessage = err instanceof Error ? err.message : String(err);
       return {
         result: {

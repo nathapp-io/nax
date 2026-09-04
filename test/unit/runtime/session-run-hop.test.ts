@@ -3,7 +3,7 @@ import { cleanupTempDir, makeMockAgentManager, makeSessionManager, makeTempDir }
 import { SessionTurnError } from "@/agents";
 import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
-import type { ToolDescriptor } from "@/context/engine";
+import type { AdapterFailure, ToolDescriptor } from "@/context/engine";
 import { wrapDiffAccess } from "@/prompts/sections/diff-access";
 import { createSessionRunHop } from "@/runtime/session-run-hop";
 import type { SendPromptOpts } from "@/session/types";
@@ -116,6 +116,47 @@ describe("createSessionRunHop", () => {
     expect(result.result.exactCostUsd).toBe(0.0049);
     expect(result.result.tokenUsage?.inputTokens).toBe(250);
     expect(result.result.tokenUsage?.outputTokens).toBe(90);
+  });
+
+  // nax#1840: native's sendTurn throws SessionTurnError (not SessionFailureError)
+  // so it can carry classification and cost together — SessionTurnError.adapterFailure
+  // must flow through to AgentResult.adapterFailure alongside the cost fields,
+  // mirroring build-hop-callback.ts's equivalent test.
+  test("SessionTurnError's adapterFailure (native's carrier) flows through alongside its cost fields", async () => {
+    const handle: SessionHandle = { id: "nax-session", agentName: "native" };
+    const failure: AdapterFailure = {
+      outcome: "fail-rate-limit",
+      category: "availability",
+      message: "nax-ai rate limit exceeded",
+      retriable: true,
+    };
+    const turnError = new SessionTurnError(
+      "429 slow down",
+      false,
+      true,
+      { inputTokens: 1_000_000, outputTokens: 400_000 },
+      9,
+      undefined,
+      failure,
+    );
+    const sessionManager = makeSessionManager({
+      nameFor: mock(() => "nax-session"),
+      openSession: mock(async () => handle),
+      sendPrompt: mock(async () => {
+        throw turnError;
+      }),
+      closeSession: mock(async () => {}),
+    });
+
+    const hop = createSessionRunHop(sessionManager);
+    const result = await hop("native", makeRunOptions());
+
+    expect(result.result.success).toBe(false);
+    expect(result.result.rateLimited).toBe(true);
+    expect(result.result.adapterFailure?.outcome).toBe("fail-rate-limit");
+    expect(result.result.estimatedCostUsd).toBe(9);
+    expect(result.result.tokenUsage?.inputTokens).toBe(1_000_000);
+    expect(result.result.tokenUsage?.outputTokens).toBe(400_000);
   });
 
   // Finding 3 (whole-branch review, 2026-09-02): both dispatch branches below
