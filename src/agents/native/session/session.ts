@@ -45,6 +45,29 @@ export const nativeSessionStreamHooks = new Map<
   }
 >();
 
+/**
+ * Session names whose most recent turn failed.
+ *
+ * `AgentAdapter.closeSession(handle)` carries no failure signal, so the close
+ * cannot tell a finished session from a broken one and passed `failed: false`
+ * for both -- deleting the transcript of exactly the session whose history the
+ * retry needs and a human would read (nax#1838). Rather than widen the adapter
+ * interface for one transport, the turn records what it knows here and the
+ * close reads it. Same lifecycle as the maps above: written per turn, cleared
+ * on close.
+ *
+ * A later successful turn clears the mark. "Failed" describes the session's
+ * current state, not whether it ever stumbled -- a session that recovered and
+ * finished is still cleaned up.
+ */
+export const nativeSessionFailed = new Set<string>();
+
+/** Records how the session's latest turn ended, for `closeNativeSession`. */
+export function markNativeTurnOutcome(sessionName: string, failed: boolean): void {
+  if (failed) nativeSessionFailed.add(sessionName);
+  else nativeSessionFailed.delete(sessionName);
+}
+
 export async function openNativeSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
   // Never defaulted. An adapter that picks its own path writes a transcript
   // somewhere nobody looks, which is #1794's empty-packageDir bug one layer up.
@@ -79,10 +102,13 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
  * set is otherwise unbounded, so a failed close also prunes the feature's
  * `sessions/` directory down to `MAX_RETAINED_TRANSCRIPTS` (ADR-028 section 3).
  */
-export async function closeNativeSession(handle: SessionHandle, failed: boolean): Promise<void> {
+export async function closeNativeSession(handle: SessionHandle, failed?: boolean): Promise<void> {
   const dir = nativeTranscriptDirs.get(handle.id);
+  // An explicit argument wins; otherwise the last turn's own verdict decides.
+  // The adapter passes nothing, because its interface has no failure signal.
+  const treatAsFailed = failed ?? nativeSessionFailed.has(handle.id);
   if (dir !== undefined) {
-    if (failed) {
+    if (treatAsFailed) {
       await pruneRetainedTranscripts(dir);
     } else {
       await deleteTranscript(dir, handle.id);
@@ -91,4 +117,5 @@ export async function closeNativeSession(handle: SessionHandle, failed: boolean)
   nativeTranscriptDirs.delete(handle.id);
   nativeSessionTimeouts.delete(handle.id);
   nativeSessionStreamHooks.delete(handle.id);
+  nativeSessionFailed.delete(handle.id);
 }

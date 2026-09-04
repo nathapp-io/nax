@@ -13,12 +13,16 @@ import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import { getSafeLogger } from "@/logger";
 import { createTurnDeadline } from "../turn-deadline";
+// Value import via the sibling path, matching acp/adapter.ts: the parent barrel
+// would close an import cycle (agents/index -> registry -> native/index -> here).
+import { SessionFailureError } from "../types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage, toThinkingLevel } from "./models";
 import {
   closeNativeSession,
+  markNativeTurnOutcome,
   nativeSessionStreamHooks,
   nativeSessionTimeouts,
   openNativeSession,
@@ -284,6 +288,18 @@ export class NativeAgentAdapter implements AgentAdapter {
         status: turnController.signal.aborted ? "cancelled" : "error",
         timestamp: Date.now(),
       });
+      markNativeTurnOutcome(handle.id, true);
+      // The same treatment complete() gives a protocol fault, on the path that
+      // was missing it (nax#1838). Rethrowing untouched left build-hop-callback
+      // to synthesise a generic fail-adapter-error, which cost a rate limit its
+      // backoff and an auth failure its unavailable mark. SessionFailureError is
+      // the carrier that catch already reads.
+      //
+      // Only a protocol fault is wrapped. A TypeError from our own code is not a
+      // vendor failure, and dressing it as one would hide the bug.
+      if (isProtocolStreamError(err)) {
+        throw new SessionFailureError(err.protocolError.message, toAdapterFailure(err.protocolError.kind));
+      }
       throw err;
     }
 
@@ -293,12 +309,15 @@ export class NativeAgentAdapter implements AgentAdapter {
       status: result.timedOut === true ? "timeout" : turnController.signal.aborted ? "cancelled" : "success",
       timestamp: Date.now(),
     });
+    markNativeTurnOutcome(handle.id, false);
     return result;
   }
 
   closeSession(handle: SessionHandle): Promise<void> {
-    // The adapter interface has no failure signal, so a close through this path
-    // is a clean one. sendTurn keeps the transcript itself when a turn fails.
-    return closeNativeSession(handle, false);
+    // The adapter interface has no failure signal, so the verdict comes from the
+    // session's last turn (markNativeTurnOutcome) rather than from this call.
+    // Passing a literal false here is what deleted the transcript of a failed
+    // session -- the one the retry reloads and a human reads (nax#1838).
+    return closeNativeSession(handle);
   }
 }
