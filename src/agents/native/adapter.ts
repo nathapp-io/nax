@@ -10,6 +10,7 @@
 
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
+import { createTurnDeadline } from "../turn-deadline";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
@@ -182,16 +183,20 @@ export class NativeAgentAdapter implements AgentAdapter {
     // id and the provider can keep its cache warm across them.
     const sessionId = nativeSessionId(handle.id);
 
+    // One budget for the whole turn, not one per round-trip. Created here
+    // because this is where `timeoutSeconds` is known; consulted by the loop.
+    const deadline = createTurnDeadline(timeoutSeconds);
+
     return runNativeTurn(handle, prompt, opts, {
+      deadline,
       complete: async (messages, tools) => {
-        // Finding 4 (whole-branch review): maxTurns bounds round-trip COUNT,
-        // not duration — a hung provider call would otherwise hang the turn
-        // forever. Same AbortController + deadline shape as complete() above,
+        // The controller is armed with what is LEFT of the turn, so N
+        // round-trips can no longer add up to N x timeoutSeconds. Still
         // combined with any caller-supplied opts.signal via AbortSignal.any so
         // either can end the call.
+        const remainingMs = deadline.remainingMs();
         const controller = new AbortController();
-        const timer =
-          timeoutSeconds !== undefined ? setTimeout(() => controller.abort(), timeoutSeconds * 1000) : undefined;
+        const timer = remainingMs !== undefined ? setTimeout(() => controller.abort(), remainingMs) : undefined;
         const signal =
           opts.signal !== undefined ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
 

@@ -190,9 +190,13 @@ describe("NativeAgentAdapter shape", () => {
       workdir: process.cwd(),
       resolvedPermissions: { mode: "approve-all" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
-      // Effectively immediate — the assertion polls for the deadline timer to
-      // fire rather than sleeping a fixed duration for it.
-      timeoutSeconds: 0.001,
+      // Short, but not so short it races the turn loop's own pre-flight
+      // `deadline.expired()` check (turn-deadline-arc task 2): that check runs
+      // before the first round-trip starts, and a sub-millisecond budget can
+      // already be spent by the time it runs, skipping complete() entirely.
+      // 50ms comfortably survives that setup while still firing well inside
+      // the assertion's poll window.
+      timeoutSeconds: 0.05,
       transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-deadline-")),
     });
 

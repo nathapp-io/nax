@@ -16,6 +16,7 @@ import { getSafeLogger } from "@/logger";
 import type { ProtocolIds } from "@/runtime/protocol-types";
 import type { ITokenUsageMapper, TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
+import { createTurnDeadline } from "../turn-deadline";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -39,6 +40,7 @@ import {
   raceWithAbort,
   runSessionPrompt,
   throwIfAborted,
+  warnWallClockTimeout,
 } from "./adapter-lifecycle";
 import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
 import { resolveRegistryEntry } from "./agent-entries";
@@ -394,6 +396,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     let sessionRecreated = false;
     const { interactionHandler, signal } = opts;
     const MAX_TURNS = opts.maxTurns ?? 10;
+    const turnDeadline = createTurnDeadline(timeoutSeconds);
 
     let totalTokenUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
     let totalExactCostUsd: number | undefined;
@@ -416,18 +419,19 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     while (turnCount < MAX_TURNS) {
+      if (turnDeadline.expired()) {
+        timedOut = true;
+        warnWallClockTimeout(sessionName, timeoutSeconds);
+        break;
+      }
       turnCount++;
       getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
-      const turnResult = await runSessionPrompt(impl._session, currentPrompt, timeoutSeconds * 1000, signal);
+      const turnResult = await runSessionPrompt(impl._session, currentPrompt, turnDeadline.remainingMs() ?? 0, signal);
 
       if (turnResult.timedOut) {
         timedOut = true;
-        // Explicit log to distinguish wall-clock timeout from idle watchdog (fail-stale).
-        getSafeLogger()?.warn("acp-adapter", "wall-clock timeout exceeded — session terminated", {
-          sessionName,
-          timeoutSeconds,
-        });
+        warnWallClockTimeout(sessionName, timeoutSeconds);
         break;
       }
       if (turnResult.aborted) {

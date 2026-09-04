@@ -10,6 +10,7 @@
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
 import type { TokenUsage } from "@/agents/cost";
 import type { SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
+import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { nativeTranscriptDirs } from "./session";
@@ -48,6 +49,11 @@ export interface TurnDeps {
     messages: readonly ConversationMessage[],
     tools: ReturnType<typeof toToolDefinitions>,
   ): Promise<NativeTurnResponse>;
+  /**
+   * Whole-turn wall-clock budget. Absent means unbounded — the adapter always
+   * supplies one for a real session; tests may omit it.
+   */
+  deadline?: TurnDeadline;
 }
 
 export async function runNativeTurn(
@@ -83,8 +89,16 @@ export async function runNativeTurn(
   // Every other way out of the loop (today the cap; later the deadline or an
   // abort) leaves work the model asked for unexecuted.
   let completedNormally = false;
+  let timedOut = false;
 
   while (roundTrips < maxTurns) {
+    // Checked before starting a round-trip rather than after finishing one:
+    // starting a call we know cannot finish inside the budget spends money for
+    // an answer we will discard.
+    if (deps.deadline?.expired() === true) {
+      timedOut = true;
+      break;
+    }
     const res = await deps.complete(messages, tools);
     roundTrips += 1;
     inputTokens += res.usage.inputTokens;
@@ -149,6 +163,7 @@ export async function runNativeTurn(
       sessionName: handle.id,
       roundTrips,
       maxTurns,
+      timedOut,
     });
   }
 
@@ -164,5 +179,6 @@ export async function runNativeTurn(
     internalRoundTrips: roundTrips,
     ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),
     ...(completedNormally ? {} : { turnIncomplete: true }),
+    ...(timedOut ? { timedOut: true } : {}),
   };
 }

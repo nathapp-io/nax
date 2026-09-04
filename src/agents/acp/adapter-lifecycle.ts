@@ -251,6 +251,18 @@ export async function runSessionPrompt(
 }
 
 /**
+ * Explicit log to distinguish a wall-clock timeout from the idle watchdog
+ * (fail-stale). Shared by sendTurn's pre-flight deadline check and its
+ * per-turn `runSessionPrompt` timeout branch.
+ */
+export function warnWallClockTimeout(sessionName: string, timeoutSeconds: number): void {
+  getSafeLogger()?.warn("acp-adapter", "wall-clock timeout exceeded — session terminated", {
+    sessionName,
+    timeoutSeconds,
+  });
+}
+
+/**
  * Close an ACP session — best-effort, swallows errors.
  */
 export async function closeAcpSession(session: AcpSession): Promise<void> {

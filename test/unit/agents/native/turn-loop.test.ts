@@ -7,6 +7,7 @@ import { nativeTranscriptDirs } from "@/agents/native/session/session";
 import { loadTranscript } from "@/agents/native/session/transcript-store";
 import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
+import { createTurnDeadline } from "@/agents/turn-deadline";
 import type { CodingTool } from "@/tools";
 
 let dir: string;
@@ -321,5 +322,38 @@ describe("native turn loop — what the model is told exists", () => {
     });
 
     expect(advertised).toEqual([]);
+  });
+
+  test("stops on the whole-turn deadline and reports it as a transport fact", async () => {
+    let now = 0;
+    const deadline = createTurnDeadline(30, () => now);
+    let calls = 0;
+    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 50 }), {
+      deadline,
+      complete: async () => {
+        calls += 1;
+        now += 20_000; // two round-trips fit; the third must not start
+        return reply({ text: "partial progress", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] });
+      },
+    });
+    expect(calls).toBe(2);
+    expect(result.timedOut).toBe(true);
+    expect(result.turnIncomplete).toBe(true);
+    // Non-empty on both sides: the budget ran out mid-work, with prose present.
+    expect(result.output).toBe("partial progress");
+  });
+
+  test("an unbounded turn is never stopped by the deadline", async () => {
+    let round = 0;
+    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 5 }), {
+      complete: async () => {
+        round += 1;
+        return round < 3
+          ? reply({ text: "working", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] })
+          : reply({ text: "finished" });
+      },
+    });
+    expect(result.output).toBe("finished");
+    expect(result.timedOut).toBeUndefined();
   });
 });
