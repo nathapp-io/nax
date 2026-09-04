@@ -19,7 +19,14 @@ import { SessionTurnError } from "../types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
-import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage, toThinkingLevel } from "./models";
+import {
+  buildRateCard,
+  estimateCostUsd,
+  NATIVE_AGENT,
+  parseNativeModel,
+  toNaxTokenUsage,
+  toThinkingLevel,
+} from "./models";
 import {
   closeNativeSession,
   markNativeTurnOutcome,
@@ -176,10 +183,7 @@ export class NativeAgentAdapter implements AgentAdapter {
 
       const tokenUsage = toNaxTokenUsage(result.usage);
       const catalog = client.pricing(resolved);
-      const rates = options.modelDef.pricing ?? {
-        inputPer1M: catalog.input,
-        outputPer1M: catalog.output,
-      };
+      const rates = buildRateCard(catalog, options.modelDef.pricing);
 
       return {
         output: result.text,
@@ -216,7 +220,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     const client = await getNativeClient();
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
-    const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer1M: catalog.output };
+    const rates = buildRateCard(catalog, handle.modelDef?.pricing);
     const storedTimeoutSeconds = nativeSessionTimeouts.get(handle.id);
     if (storedTimeoutSeconds === undefined) {
       getSafeLogger()?.warn("native-adapter", "session has no recorded timeout; falling back to the default budget", {

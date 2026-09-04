@@ -32,6 +32,30 @@ export interface TokenPricing {
    * vendors typically charge writes a premium over plain input.
    */
   cacheCreationPer1M?: number;
+  /**
+   * Threshold-based rate overrides (nax#1847), mirroring nax-ai's
+   * `Pricing.tiers?: readonly PricingTier[]`. 22 of 1290 catalogued native
+   * models price this way. `TokenPricingTier` cannot itself carry a `tiers`
+   * field (nax-ai's `PricingTier extends PricingRates`, not `Pricing` —
+   * tiers do not nest), and this array lets a config override express the
+   * same shape the catalog does.
+   */
+  tiers?: TokenPricingTier[];
+}
+
+/**
+ * One threshold-based rate override. The greatest `inputTokensAbove` that a
+ * request's total input-class usage exceeds applies to the WHOLE request —
+ * not just the tokens above the threshold. See `estimateCostUsd` in
+ * `src/agents/native/models.ts` for the selection rule.
+ */
+export interface TokenPricingTier {
+  inputPer1M: number;
+  outputPer1M: number;
+  cacheReadPer1M?: number;
+  cacheCreationPer1M?: number;
+  /** Applies when total input-class usage exceeds this token count. */
+  inputTokensAbove: number;
 }
 
 export interface ModelDef {
