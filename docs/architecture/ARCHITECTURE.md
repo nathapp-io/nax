@@ -45,6 +45,13 @@ How agents are configured, permissioned, and organized.
 - **§15 Test Strategy Resolution** — `resolveTestStrategy()`, available strategies, shared prompt fragments
 - **§16 Agent Adapter Conventions** — Folder structure, `shared/` contents, ACP cost alignment
 
+### [nax-ai-surface.md](nax-ai-surface.md) — The nax-ai Surface the Native Adapter Consumes
+
+Reference for `@nathapp/nax-ai`, so native-path work does not start by reading `node_modules/`.
+Pricing rates and tiers, context windows and the provider-override seam, the provider catalog,
+error kinds, cache retention. Every figure probed against the real catalog, with the probe script
+included so it can be re-derived after a version bump.
+
 ### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§51)
 
 Deep reference for each subsystem — consult when working on a specific module.

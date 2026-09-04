@@ -1,9 +1,3 @@
----
-priority: 60
-appliesTo:
-  - "src/agents/native/**/*.ts"
----
-
 # The nax-ai surface the native adapter consumes
 
 Reference for `@nathapp/nax-ai` (pinned at **0.1.7**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
