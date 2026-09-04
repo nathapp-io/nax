@@ -433,6 +433,37 @@ describe("native turn loop — what the model is told exists", () => {
     expect(result.output).toBe("done asking");
   });
 
+  test("an unset budget refuses an ask_human call made anyway", async () => {
+    let asked = 0;
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      // No maxTurns: the budget is unset, so ask_human is never advertised.
+      opts({
+        interactionHandler: {
+          onInteraction: async (r) => {
+            if (r.kind === "question") asked += 1;
+            return { answer: "should never be reached" };
+          },
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          // Calls the unadvertised tool anyway, which is the case under test.
+          return round === 1
+            ? reply({ text: "asking", toolCalls: [{ id: "q1", name: "ask_human", input: { text: "anyone there?" } }] })
+            : reply({ text: "carried on alone" });
+        },
+      },
+    );
+    // The handler must never be consulted, and no exchange may be recorded.
+    expect(asked).toBe(0);
+    expect(result.interactions).toBeUndefined();
+    expect(result.output).toBe("carried on alone");
+  });
+
   test("an unanswerable question consumes no budget and records no exchange", async () => {
     let round = 0;
     const result = await runNativeTurn(

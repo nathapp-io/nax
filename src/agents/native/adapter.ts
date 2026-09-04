@@ -11,6 +11,7 @@
 import { randomUUID } from "node:crypto";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
+import { getSafeLogger } from "@/logger";
 import { createTurnDeadline } from "../turn-deadline";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
@@ -28,6 +29,16 @@ import { nativeSessionId, newSessionKey } from "./session-affinity";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
 const CONSERVATIVE_CONTEXT_TOKENS = 128_000;
+
+/**
+ * Fallback whole-turn budget when a session's timeout entry is missing.
+ *
+ * Matches `execution.sessionTimeoutSeconds`' own default. The turn MUST stay
+ * bounded: an absent entry previously degraded to an unbounded deadline with
+ * no per-call timer either, silently removing the guard this module exists to
+ * apply. Bounded-and-logged beats unbounded-and-quiet.
+ */
+const FALLBACK_TURN_TIMEOUT_SECONDS = 3600;
 
 function isProtocolStreamError(err: unknown): err is { protocolError: { kind: string; message: string } } {
   return typeof err === "object" && err !== null && "protocolError" in err;
@@ -185,7 +196,14 @@ export class NativeAgentAdapter implements AgentAdapter {
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
     const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer1M: catalog.output };
-    const timeoutSeconds = nativeSessionTimeouts.get(handle.id);
+    const storedTimeoutSeconds = nativeSessionTimeouts.get(handle.id);
+    if (storedTimeoutSeconds === undefined) {
+      getSafeLogger()?.warn("native-adapter", "session has no recorded timeout; falling back to the default budget", {
+        sessionName: handle.id,
+        fallbackTimeoutSeconds: FALLBACK_TURN_TIMEOUT_SECONDS,
+      });
+    }
+    const timeoutSeconds = storedTimeoutSeconds ?? FALLBACK_TURN_TIMEOUT_SECONDS;
     // Keyed on the session, so every turn of one conversation carries the same
     // id and the provider can keep its cache warm across them.
     const sessionId = nativeSessionId(handle.id);
@@ -210,7 +228,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       ...eventBase,
       kind: "agent.call_started",
       model: handle.modelDef?.model ?? "",
-      timeoutSeconds: timeoutSeconds ?? 0,
+      timeoutSeconds,
       timestamp: Date.now(),
     });
 
