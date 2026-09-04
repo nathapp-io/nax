@@ -1,7 +1,7 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { applyDiffAccessForAgent, promptWithToolPreamble } from "@/agents/tool-preamble";
+import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "@/agents/tool-preamble";
 import type { AgentRunOptions } from "@/agents/types";
 import { wrapDiffAccess } from "@/prompts/diff-access";
 
@@ -54,25 +54,25 @@ describe("promptWithToolPreamble", () => {
  * `operations/call.ts:55` joins the prompt before `:69` resolves the dispatch
  * agent, and a fallback swap can change the protocol afterwards.
  */
-describe("applyDiffAccessForAgent", () => {
+describe("applyDiffAccessForAgentProtocol", () => {
   const region = wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n");
   const prompt = `head\n${region}tail`;
 
   test("renders tool-shaped instructions for native", () => {
-    const out = applyDiffAccessForAgent("native", prompt);
+    const out = applyDiffAccessForAgentProtocol("native", prompt);
     expect(out).toContain('"subcommand":"diff"');
     expect(out).not.toContain("SHELL BODY");
   });
 
   test("keeps the shell body for an ACP agent", () => {
-    const out = applyDiffAccessForAgent("claude", prompt);
+    const out = applyDiffAccessForAgentProtocol("claude", prompt);
     expect(out).toContain("SHELL BODY");
     expect(out).not.toContain('"subcommand":"diff"');
   });
 
   test("strips the markers on both paths, so neither agent ever sees one", () => {
     for (const agent of ["native", "claude"]) {
-      expect(applyDiffAccessForAgent(agent, prompt)).not.toContain("nax:diff-access");
+      expect(applyDiffAccessForAgentProtocol(agent, prompt)).not.toContain("nax:diff-access");
     }
   });
 });

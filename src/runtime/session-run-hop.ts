@@ -1,7 +1,7 @@
 import { buildRunInteractionHandler } from "../agents/acp/adapter";
 import { resolveCodingToolSupport } from "../agents/coding-tool-support";
 import type { IAgentManager } from "../agents/manager-types";
-import { applyDiffAccessForAgent, promptWithToolPreamble } from "../agents/tool-preamble";
+import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import { getSafeLogger } from "../logger";
@@ -21,7 +21,7 @@ export function createSessionRunHop(
 ): SessionRunHopFn {
   return async (agentName: string, options: AgentRunOptions): Promise<SessionRunHopResult> => {
     const startMs = Date.now();
-    const prompt = applyDiffAccessForAgent(agentName, promptWithToolPreamble(agentName, options));
+    const prompt = applyDiffAccessForAgentProtocol(agentName, promptWithToolPreamble(agentName, options));
     const sessionName =
       options.sessionHandle ??
       sessionManager.nameFor({

@@ -8,7 +8,7 @@
 import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import { resolveCodingToolSupport } from "../agents/coding-tool-support";
 import type { AgentRunRequest, HopKind, IAgentManager } from "../agents/manager-types";
-import { applyDiffAccessForAgent, promptWithToolPreamble } from "../agents/tool-preamble";
+import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { NaxConfig } from "../config";
@@ -293,7 +293,7 @@ export function buildHopCallback(
     // the preamble for the same reason the preamble is placed after the swap
     // rewrites — those replace the prompt wholesale, and a region rendered
     // before one would be discarded.
-    prompt = applyDiffAccessForAgent(agentName, prompt);
+    prompt = applyDiffAccessForAgentProtocol(agentName, prompt);
 
     // Coding tools are resolved per hop rather than per run: a swap changes the
     // agent, and the grants are stage-scoped, so a runtime captured once above

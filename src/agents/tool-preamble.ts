@@ -39,7 +39,12 @@ export function promptWithToolPreamble(agentName: string, options: AgentRunOptio
  * the markers stripped even though it keeps the body, so an agent never sees
  * one. Its two call sites must not drift, which is why it is a helper here
  * rather than a condition written out at each.
+ *
+ * Named for the protocol, not the agent: the agent name is only how the
+ * protocol is derived. Every ACP agent gets the same rendering, so nothing here
+ * varies with agent identity, and a future transport would extend the protocol
+ * branch rather than add an agent to a list.
  */
-export function applyDiffAccessForAgent(agentName: string, prompt: string): string {
+export function applyDiffAccessForAgentProtocol(agentName: string, prompt: string): string {
   return applyDiffAccess(prompt, agentName === NATIVE_AGENT ? "native" : "acp");
 }
