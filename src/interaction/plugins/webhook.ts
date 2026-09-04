@@ -10,17 +10,12 @@ import type { Server } from "node:http";
 import { z } from "zod";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { sleep } from "@/utils/bun-deps";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 import { PayloadTooLargeError, readBodyWithLimit } from "./webhook-body-limit";
+import { _webhookPluginDeps } from "./webhook-deps";
 import { installServePortZeroCompat } from "./webhook-serve-compat";
 
-/** Injectable sleep — kept for backward compat with tests; unused by receive() (event-driven delivery). @internal */
-export const _webhookPluginDeps = {
-  sleep,
-  /** Injectable clock for the rate limiter (SEC-8); tests advance it to exercise fixed-window rollover. */
-  now: () => Date.now(),
-};
+export { _webhookPluginDeps } from "./webhook-deps";
 
 /** Webhook plugin configuration */
 interface WebhookConfig {
@@ -273,7 +268,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), WEBHOOK_SEND_TIMEOUT_MS);
     try {
-      const response = await fetch(this.config.url, {
+      const response = await _webhookPluginDeps.fetch(this.config.url, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),

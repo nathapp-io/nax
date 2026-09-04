@@ -15,6 +15,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mockFetch } from "@test/helpers";
 import {
   _resetServePortZeroCompatForTests,
   installServePortZeroCompat,
@@ -259,6 +260,73 @@ describe("the in-memory fallback server — edge branches", () => {
     expect(Bun.serve).not.toBe(throwingServe);
     secondRestore();
     expect(Bun.serve).toBe(throwingServe);
+  });
+
+  test("the patched fetch delegates inputs it cannot parse instead of rejecting them itself", async () => {
+    // The shim used to build a throwaway `new Request(input, init)` just to
+    // read `.url`. That constructor is stricter than the fetch it fronts, so
+    // an input the underlying fetch would have accepted -- a relative URL,
+    // which a polyfill or a test double can resolve against its own base --
+    // was rejected by the shim before the real fetch ever saw it. The shim's
+    // job is to intercept nax's own callback route, not to police URLs.
+    const seen: string[] = [];
+    globalThis.fetch = mockFetch(async (input) => {
+      seen.push(String(input));
+      return new Response("resolved-by-the-original");
+    });
+
+    (Bun as { serve: typeof Bun.serve }).serve = (() => {
+      throw new Error("no network permission");
+    }) as typeof Bun.serve;
+
+    const restore = installServePortZeroCompat();
+    try {
+      const response = await fetch("/not/an/absolute/url");
+      expect(await response.text()).toBe("resolved-by-the-original");
+      expect(seen).toEqual(["/not/an/absolute/url"]);
+    } finally {
+      restore();
+    }
+  });
+
+  test("restore does NOT clobber a globalThis.fetch installed after the shim was installed", async () => {
+    // Regression guard. The restore used to reinstate the captured pre-install
+    // global unconditionally. That made this sequence -- which is exactly what
+    // a plugin test doing "stub fetch -> send() -> unstub fetch -> destroy()"
+    // performs -- resurrect a dead stub over the live fetch, for the rest of
+    // the process: `bun test` runs every file in one process, so every later
+    // fetch in every later file failed with the stub's error, surfacing as an
+    // unhandled rejection blamed on whichever unrelated test was running.
+    const stub = mockFetch(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+
+    globalThis.fetch = stub;
+    // Install while the stub is live, so the stub is what gets captured as
+    // "the original" -- the precondition for the old clobber.
+    const restore = installServePortZeroCompat();
+
+    // Something else puts a different fetch back before the restore runs.
+    const replacement = mockFetch(async () => new Response("live"));
+    globalThis.fetch = replacement;
+
+    restore();
+
+    // The replacement survives; the stale stub is not resurrected.
+    expect(globalThis.fetch).toBe(replacement);
+    expect(await (await globalThis.fetch("http://localhost:45126/x")).text()).toBe("live");
+  });
+
+  test("_resetServePortZeroCompatForTests also leaves a post-install globalThis.fetch alone", () => {
+    globalThis.fetch = mockFetch(async () => new Response("captured-at-install"));
+    installServePortZeroCompat();
+
+    const replacement = mockFetch(async () => new Response("live"));
+    globalThis.fetch = replacement;
+
+    _resetServePortZeroCompatForTests();
+
+    expect(globalThis.fetch).toBe(replacement);
   });
 
   test("_resetServePortZeroCompatForTests is a no-op when nothing is installed", () => {
