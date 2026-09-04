@@ -42,10 +42,22 @@ export interface PromptAuditEntry {
   readonly workdir?: string;
   readonly projectDir?: string;
   readonly featureName?: string;
-  /** ACP-specific session correlation fields. */
+  /**
+   * Session correlation fields, populated by any transport that has a session
+   * identity. `recordId` is the stable logical record; `sessionId` is the
+   * physical one, which can change on reconnect. They were assumed ACP-only,
+   * which is why native records carried neither (#1825).
+   */
   readonly sessionName?: string;
   readonly recordId?: string | null;
   readonly sessionId?: string | null;
+  readonly roundTrips?: number;
+  readonly roundTripUnit?: "model-call" | "agent-run";
+  /**
+   * Position of this turn within its logical conversation, assigned by
+   * PromptAuditor — callers do not set it. Distinct from `roundTrips`, which
+   * counts iterations INSIDE one turn.
+   */
   readonly turn?: number;
   /**
    * Mid-turn human-in-the-loop Q&A exchanges for this turn (issue #1226).
@@ -151,6 +163,9 @@ function buildTxtContent(entry: PromptAuditEntry): string {
     `Feature:    ${entry.featureName ?? "(none)"}`,
     `CallType:   ${entry.callType ?? "(none)"}`,
     ...(entry.turn !== undefined ? [`Turn:       ${entry.turn}`] : []),
+    ...(entry.roundTrips !== undefined
+      ? [entry.roundTripUnit === "agent-run" ? `AgentRuns:  ${entry.roundTrips}` : `ModelCalls: ${entry.roundTrips}`]
+      : []),
     ...(entry.recordId ? [`RecordId:   ${entry.recordId}`] : []),
     ...(entry.sessionId ? [`SessionId:  ${entry.sessionId}`] : []),
     `Permission: ${entry.permissionProfile}`,
@@ -192,6 +207,15 @@ export class PromptAuditor implements IPromptAuditor {
   private _dirCreated = false;
   private readonly _jsonlPath: string;
   private readonly _featureDir: string;
+  /**
+   * recordId (or sessionName when absent) -> turns seen so far.
+   *
+   * Keyed on the protocol's own identity rather than the display name: one
+   * recordId spans separate sendTurn calls and stage changes, so it is what
+   * says "still the same conversation". The map is per-auditor, and an auditor
+   * is per-run, so the numbering's scope matches the audit directory's.
+   */
+  private readonly _turnOrdinals = new Map<string, number>();
 
   constructor(runId: string, flushDir: string, featureName: string) {
     this._featureDir = join(flushDir, featureName);
@@ -199,7 +223,14 @@ export class PromptAuditor implements IPromptAuditor {
   }
 
   record(entry: PromptAuditEntry): void {
-    this._enqueue(entry);
+    this._enqueue(entry.callType === "run" ? { ...entry, turn: this._nextTurn(entry) } : entry);
+  }
+
+  private _nextTurn(entry: PromptAuditEntry): number {
+    const key = entry.recordId ?? entry.sessionName ?? "";
+    const next = (this._turnOrdinals.get(key) ?? 0) + 1;
+    this._turnOrdinals.set(key, next);
+    return next;
   }
 
   recordError(entry: PromptAuditErrorEntry): void {

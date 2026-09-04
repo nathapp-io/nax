@@ -20,7 +20,8 @@ function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {})
     workdir: "/tmp/w",
     projectDir: "/tmp/p",
     resolvedPermissions: PERMS,
-    turn: 2,
+    roundTrips: 2,
+    roundTripUnit: "agent-run",
     protocolIds: { sessionId: "sess-1", recordId: "rec-1" },
     origin: "runAsSession",
     durationMs: 150,
@@ -81,7 +82,8 @@ describe("attachAuditSubscriber", () => {
     expect(recorded[0].sessionName).toBe("nax-abc-feat-s1-main");
     expect(recorded[0].sessionId).toBe("sess-1");
     expect(recorded[0].recordId).toBe("rec-1");
-    expect(recorded[0].turn).toBe(2);
+    expect(recorded[0].roundTrips).toBe(2);
+    expect(recorded[0].roundTripUnit).toBe("agent-run");
     expect(recorded[0].permissionProfile).toBe("approve-reads");
     expect(recorded[0].durationMs).toBe(150);
     expect(recorded[0].agentName).toBe("claude");
@@ -136,7 +138,7 @@ describe("attachAuditSubscriber", () => {
     expect(recorded[0].prompt).toBe("Plan this");
     expect(recorded[0].response).toBe("Planned");
     expect(recorded[0].sessionName).toBe("nax-abc-feat-s1-plan");
-    expect(recorded[0].turn).toBeUndefined();
+    expect(recorded[0].roundTrips).toBeUndefined();
     expect(recorded[0].sessionId).toBeUndefined();
     expect(recorded[0].recordId).toBeUndefined();
   });
@@ -195,5 +197,19 @@ describe("attachAuditSubscriber", () => {
     unsub();
     bus.emitDispatch(makeSessionTurnEvent());
     expect(recorded).toHaveLength(1);
+  });
+
+  test("forwards the round-trip count and its unit onto the audit entry", () => {
+    const bus = new DispatchEventBus();
+    const recorded: PromptAuditEntry[] = [];
+    const off = attachAuditSubscriber(
+      bus,
+      { record: (e) => recorded.push(e), recordError: () => {}, flush: async () => {} },
+      "r-001",
+    );
+    bus.emitDispatch(makeSessionTurnEvent({ roundTrips: 4, roundTripUnit: "model-call" }));
+    off();
+    expect(recorded[0]?.roundTrips).toBe(4);
+    expect(recorded[0]?.roundTripUnit).toBe("model-call");
   });
 });

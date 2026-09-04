@@ -28,7 +28,7 @@ import type { SessionRole } from "@/runtime/session-role";
 
 const PERMS = { mode: "approve-reads" as const };
 
-function makeTddTurnEvent(role: SessionRole, turn = 1): SessionTurnDispatchEvent {
+function makeTddTurnEvent(role: SessionRole, roundTrips = 1): SessionTurnDispatchEvent {
   const sessionName = `nax-abcd1234-tdd-calc-US-001-${role}`;
   return {
     kind: "session-turn",
@@ -41,7 +41,8 @@ function makeTddTurnEvent(role: SessionRole, turn = 1): SessionTurnDispatchEvent
     storyId: "US-001",
     featureName: "tdd-calc",
     resolvedPermissions: PERMS,
-    turn,
+    roundTrips,
+    roundTripUnit: "agent-run",
     protocolIds: { sessionId: null },
     origin: "runTrackedSession",
     durationMs: 200,

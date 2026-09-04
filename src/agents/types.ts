@@ -93,7 +93,7 @@ export interface AgentResult {
   /**
    * Number of internal round-trips (session.prompt() calls) made by the adapter.
    * Populated by ACP adapter via TurnResult.internalRoundTrips when AgentResult
-   * is derived from a session turn. Used by DispatchEvent.turn field.
+   * is derived from a session turn. Used by DispatchEvent.roundTrips field.
    */
   internalRoundTrips?: number;
 }

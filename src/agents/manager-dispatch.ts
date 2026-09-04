@@ -21,6 +21,7 @@ import type { SessionRole } from "../runtime/session-role";
 import { errorMessage } from "../utils/errors";
 import { parseModelSpec } from "./acp/model-spec";
 import type { AgentFallbackRecord, RunAsSessionOpts } from "./manager-types";
+import { NATIVE_AGENT } from "./native/models";
 import type { CompleteOptions, ResolvedCompleteOptions, SessionHandle, TurnResult } from "./types";
 
 /**
@@ -88,7 +89,12 @@ export function buildSessionTurnEvent(input: {
     exactCostUsd: result.exactCostUsd,
     durationMs: Date.now() - startedAt,
     timestamp: Date.now(),
-    turn: result.internalRoundTrips ?? 1,
+    // `internalRoundTrips` counts a complete delegated agent run on ACP and a
+    // single model call on native — nax owns the conversation loop there. The
+    // unit travels with the number so nothing downstream has to infer it from
+    // the agent name, and so the two are never compared as if they were alike.
+    roundTrips: result.internalRoundTrips ?? 1,
+    roundTripUnit: input.agentName === NATIVE_AGENT ? "model-call" : "agent-run",
     protocolIds: {
       sessionId: handle.protocolIds?.sessionId ?? null,
       recordId: handle.protocolIds?.recordId ?? null,
