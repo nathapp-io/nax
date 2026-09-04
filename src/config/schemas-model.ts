@@ -37,7 +37,7 @@ const ModelDefSchema = z.object({
   // field Zod strips it silently at config load (the exact failure mode
   // #1847 shipped for pricing.tiers), and the override never reaches
   // src/agents/native/models.ts#resolveContextWindow.
-  contextWindow: z.number().positive().optional(),
+  contextWindow: z.number().int().positive().optional(),
   env: z.record(z.string(), z.string()).optional(),
 });
 

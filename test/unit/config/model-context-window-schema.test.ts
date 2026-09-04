@@ -48,4 +48,10 @@ describe("models.<agent>.<tier>.contextWindow", () => {
   test("rejects a non-numeric contextWindow", () => {
     expect(() => parseContextWindow("20000")).toThrow();
   });
+
+  test("rejects a fractional window", () => {
+    // A context window is a token count. `.int()` matches the sibling
+    // `inputTokensAbove` rule rather than letting 20000.5 through.
+    expect(() => parseContextWindow(20_000.5)).toThrow();
+  });
 });
