@@ -14,26 +14,11 @@ import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
+import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
 import { nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import type { NativeTurnActivity } from "./turn-events";
-
-/**
- * The transcript message nax stores: nax-ai's ConversationMessage widened with
- * the coding-tool denial marker (ADR-029 s5). The marker is structural data the
- * model must be able to act on — dropping it because the wire type does not
- * know it yet is exactly the defect this widening exists to prevent.
- */
-type NativeTranscriptMessage =
-  | ConversationMessage
-  | {
-      readonly role: "tool-result";
-      readonly toolCallId: string;
-      readonly content: string;
-      readonly isError?: boolean;
-      readonly denied?: import("@/agents").AdapterInteractionResponse["denied"];
-    };
 
 export interface NativeTurnResponse {
   readonly text: string;
