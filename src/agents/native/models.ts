@@ -126,11 +126,22 @@ const PER_MILLION = 1_000_000;
  * Both sides express rates per 1M tokens (nax-ai's PricingRates is documented
  * so, and nax's TokenPricing is inputPer1M), so there is no unit conversion.
  *
- * Cache tokens bill at the input rate. Phase A does not model separate
- * cache-read / cache-write rates, and over-reporting a cache read as full input
- * is the safer direction of error.
+ * Cache reads and cache writes each bill at their own optional rate
+ * (`cacheReadPer1M` / `cacheCreationPer1M`) when the rate card supplies one.
+ * When a rate is absent, that class of token falls back to `inputPer1M` --
+ * the old behaviour, kept as the fallback so `execution.costLimit` stays
+ * protective for every rate card that has not been extended with cache rates.
+ * Cache writes are priced separately from reads rather than folded into the
+ * same sum: vendors typically charge a write a premium over plain input, so
+ * billing it at the input (or read) rate would under-report in the opposite
+ * direction from the over-report this function used to make on reads.
  */
 export function estimateCostUsd(usage: TokenUsage, rates: TokenPricing): number {
-  const input = usage.inputTokens + (usage.cacheReadInputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0);
-  return (input / PER_MILLION) * rates.inputPer1M + (usage.outputTokens / PER_MILLION) * rates.outputPer1M;
+  const cacheReadRate = rates.cacheReadPer1M ?? rates.inputPer1M;
+  const cacheCreationRate = rates.cacheCreationPer1M ?? rates.inputPer1M;
+  const inputCost = (usage.inputTokens / PER_MILLION) * rates.inputPer1M;
+  const cacheReadCost = ((usage.cacheReadInputTokens ?? 0) / PER_MILLION) * cacheReadRate;
+  const cacheCreationCost = ((usage.cacheCreationInputTokens ?? 0) / PER_MILLION) * cacheCreationRate;
+  const outputCost = (usage.outputTokens / PER_MILLION) * rates.outputPer1M;
+  return inputCost + cacheReadCost + cacheCreationCost + outputCost;
 }

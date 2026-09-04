@@ -113,11 +113,44 @@ describe("estimateCostUsd", () => {
     expect(cost).toBeCloseTo(3 + 7.5, 6);
   });
 
-  test("counts cache tokens as input when present", () => {
+  test("falls back to the input rate for cache tokens when no cache rate is configured", () => {
     const cost = estimateCostUsd(
-      { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 1_000_000 },
+      { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 1_000_000, cacheCreationInputTokens: 1_000_000 },
       { inputPer1M: 3, outputPer1M: 15 },
     );
-    expect(cost).toBeGreaterThan(0);
+    // Both cache classes fall back to inputPer1M (3): 1M read + 1M write = $6.
+    expect(cost).toBeCloseTo(6, 6);
+  });
+
+  test("bills cache reads at cacheReadPer1M when the rate card supplies one", () => {
+    const cost = estimateCostUsd(
+      { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 1_000_000 },
+      { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3 },
+    );
+    // The over-report this fixes: at the old behaviour this would have been $3.
+    expect(cost).toBeCloseTo(0.3, 6);
+  });
+
+  test("bills cache writes at cacheCreationPer1M when the rate card supplies one", () => {
+    const cost = estimateCostUsd(
+      { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 1_000_000 },
+      { inputPer1M: 3, outputPer1M: 15, cacheCreationPer1M: 3.75 },
+    );
+    // The under-report this fixes: at the old behaviour this would have been $3
+    // even though a cache write costs MORE than plain input, not the same.
+    expect(cost).toBeCloseTo(3.75, 6);
+  });
+
+  test("prices reads and writes independently in the same call", () => {
+    const cost = estimateCostUsd(
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        cacheReadInputTokens: 1_000_000,
+        cacheCreationInputTokens: 1_000_000,
+      },
+      { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3, cacheCreationPer1M: 3.75 },
+    );
+    expect(cost).toBeCloseTo(3 + 15 + 0.3 + 3.75, 6);
   });
 });

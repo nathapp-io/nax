@@ -20,6 +20,18 @@ export type ComplexityRung = ModelTier | { tier: ModelTier; agent?: string };
 export interface TokenPricing {
   inputPer1M: number;
   outputPer1M: number;
+  /**
+   * Rate for cache-read tokens, per 1M. Optional: absent means the rate card
+   * has not been extended, and cache reads fall back to `inputPer1M` — the
+   * conservative default that keeps `execution.costLimit` protective.
+   */
+  cacheReadPer1M?: number;
+  /**
+   * Rate for cache-creation (cache-write) tokens, per 1M. Optional, same
+   * fallback as `cacheReadPer1M`. Priced separately from cache reads because
+   * vendors typically charge writes a premium over plain input.
+   */
+  cacheCreationPer1M?: number;
 }
 
 export interface ModelDef {
