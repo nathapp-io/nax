@@ -375,4 +375,86 @@ describe("native turn loop — what the model is told exists", () => {
     expect(seen.filter((k) => k === "tool")).toHaveLength(1);
     expect(seen).toContain("message");
   });
+
+  test("routes an ask_human call to the interaction handler and records the exchange", async () => {
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        interactionHandler: {
+          onInteraction: async (r) => (r.kind === "question" ? { answer: "use postgres" } : { answer: "" }),
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          return round === 1
+            ? reply({ text: "", toolCalls: [{ id: "q1", name: "ask_human", input: { text: "which database?" } }] })
+            : reply({ text: "using postgres" });
+        },
+      },
+    );
+    expect(result.output).toBe("using postgres");
+    expect(result.interactions).toEqual([{ turnIndex: 1, question: "which database?", reply: "use postgres" }]);
+  });
+
+  test("stops asking once maxInteractionTurns is spent, and says so", async () => {
+    let asked = 0;
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        maxTurns: 2,
+        interactionHandler: {
+          onInteraction: async (r) => {
+            if (r.kind === "question") asked += 1;
+            return { answer: "yes" };
+          },
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          // Asks five times, so only the budget — not the fixture — can stop it
+          // at two. Terminates on its own so the test can never hang.
+          return round <= 5
+            ? reply({ text: "asking", toolCalls: [{ id: `q${round}`, name: "ask_human", input: { text: "again?" } }] })
+            : reply({ text: "done asking" });
+        },
+      },
+    );
+    // Exactly two, not "at most two": an off-by-one or a missing check must fail.
+    expect(asked).toBe(2);
+    expect(result.interactions).toHaveLength(2);
+    // Calls past the budget are refused as data the model can act on, not dropped.
+    expect(result.output).toBe("done asking");
+  });
+
+  test("an unanswerable question consumes no budget and records no exchange", async () => {
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        maxTurns: 2,
+        // Mirrors run-interaction-handler.ts: kind "question" returns null when
+        // no interactionBridge is configured for the run.
+        interactionHandler: { onInteraction: async () => null },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          return round <= 3
+            ? reply({ text: "asking", toolCalls: [{ id: `q${round}`, name: "ask_human", input: { text: "hello?" } }] })
+            : reply({ text: "gave up asking" });
+        },
+      },
+    );
+    // Three asks against a budget of two: if a null answer consumed budget, the
+    // third would have been refused for the wrong reason and this would be 2.
+    expect(result.interactions).toBeUndefined();
+    expect(result.output).toBe("gave up asking");
+  });
 });

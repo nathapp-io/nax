@@ -9,10 +9,11 @@
 
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
 import type { TokenUsage } from "@/agents/cost";
-import type { SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
+import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
+import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
 import { nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
@@ -78,7 +79,14 @@ export async function runNativeTurn(
 
   const codingTools = opts.codingTools ?? [];
   const codingToolNames = new Set(codingTools.map((t) => t.name));
-  const tools = [...toToolDefinitions(opts.contextPullTools ?? []), ...codingToolsToDefinitions(codingTools)];
+  // Advertised only while the Q&A budget can still be spent; a tool the model
+  // cannot successfully call is worse than no tool.
+  const maxInteractions = opts.maxTurns ?? 0;
+  const tools = [
+    ...toToolDefinitions(opts.contextPullTools ?? []),
+    ...codingToolsToDefinitions(codingTools),
+    ...(maxInteractions > 0 ? [askHumanToolDefinition] : []),
+  ];
 
   let roundTrips = 0;
   let inputTokens = 0;
@@ -93,6 +101,7 @@ export async function runNativeTurn(
   // the model asked for unexecuted.
   let completedNormally = false;
   let timedOut = false;
+  const interactions: InteractionExchange[] = [];
 
   // Deliberately unbounded by count. A coding agent working a story is bounded
   // by wall clock (deps.deadline) and by the idle watchdog, never by how many
@@ -144,6 +153,38 @@ export async function runNativeTurn(
     for (const call of res.toolCalls) {
       deps.onActivity?.({ kind: "tool", toolName: call.name });
       try {
+        if (call.name === ASK_HUMAN_TOOL_NAME) {
+          const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
+          // maxInteractions === 0 means "no budget was ever configured" (opts.maxTurns
+          // unset), which keeps the tool unadvertised above but must not refuse a call
+          // the model makes anyway — only an explicit, exhausted budget refuses.
+          if (maxInteractions > 0 && interactions.length >= maxInteractions) {
+            messages.push({
+              role: "tool-result",
+              toolCallId: call.id,
+              content: "The human Q&A budget for this turn is spent. Proceed on your best judgement.",
+              isError: true,
+            });
+            continue;
+          }
+          const answer = await opts.interactionHandler.onInteraction({ kind: "question", text: question });
+          // A null answer means no operator is reachable — run-interaction-handler
+          // returns null for kind:"question" when no interactionBridge is
+          // configured. That is not an exchange: it must not consume budget and
+          // must not be recorded as a question the operator answered with "".
+          if (answer === null) {
+            messages.push({
+              role: "tool-result",
+              toolCallId: call.id,
+              content: "No human operator is available for this run. Proceed on your best judgement.",
+              isError: true,
+            });
+            continue;
+          }
+          interactions.push({ turnIndex: roundTrips, question, reply: answer.answer });
+          messages.push({ role: "tool-result", toolCallId: call.id, content: answer.answer });
+          continue;
+        }
         const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
         if (kind === "coding-tool") codingToolsCalled.push(call.name);
         const answer = await opts.interactionHandler.onInteraction(
@@ -201,5 +242,6 @@ export async function runNativeTurn(
     ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),
     ...(completedNormally ? {} : { turnIncomplete: true }),
     ...(timedOut ? { timedOut: true } : {}),
+    ...(interactions.length > 0 ? { interactions } : {}),
   };
 }
