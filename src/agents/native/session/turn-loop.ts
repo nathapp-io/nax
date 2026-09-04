@@ -155,10 +155,10 @@ export async function runNativeTurn(
       try {
         if (call.name === ASK_HUMAN_TOOL_NAME) {
           const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
-          // maxInteractions === 0 means "no budget was ever configured" (opts.maxTurns
-          // unset), which keeps the tool unadvertised above but must not refuse a call
-          // the model makes anyway — only an explicit, exhausted budget refuses.
-          if (maxInteractions > 0 && interactions.length >= maxInteractions) {
+          // An unset budget (maxTurns undefined -> 0) keeps the tool unadvertised
+          // above AND refuses a call made anyway. "No budget configured" must not
+          // read as "unlimited" — that inverts the property this budget provides.
+          if (interactions.length >= maxInteractions) {
             messages.push({
               role: "tool-result",
               toolCallId: call.id,

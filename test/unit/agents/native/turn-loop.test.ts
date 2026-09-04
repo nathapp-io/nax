@@ -382,6 +382,7 @@ describe("native turn loop — what the model is told exists", () => {
       handle,
       "hi",
       opts({
+        maxTurns: 1,
         interactionHandler: {
           onInteraction: async (r) => (r.kind === "question" ? { answer: "use postgres" } : { answer: "" }),
         },
