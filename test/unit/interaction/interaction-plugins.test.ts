@@ -70,78 +70,98 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
     };
   }
 
-  // Retried, not fixed at the code level: investigated as a CI-only flake
-  // ("Failed to send webhook request: The operation was aborted." at the real
-  // fetch() to a local Bun.serve target, 3ms into the test -- far short of
-  // both the 30s WEBHOOK_SEND_TIMEOUT_MS in send() and the 5s bunfig default).
-  // Could not reproduce locally: not in isolation, not alongside every other
-  // webhook/Bun.serve test file, not on the full suite at default or CI-like
-  // (ulimit -n 256) file-descriptor limits. CI history over the prior ~100
-  // runs shows 12 failures, each via --bail on a DIFFERENT, unrelated test
-  // (createCodingToolRuntime, NativeAgentAdapter.complete,
-  // runPrecheckValidation, createContextToolRuntime, a coverage-floor gate on
-  // this same file, ...) -- a repo-wide scheduling/resource-contention
-  // pattern under CI's shared runner, not a webhook.ts defect this test could
-  // catch. `retry` is Bun 1.4's native per-test option; it survives a
-  // transient environmental abort without masking a real, reproducible
-  // failure, which would still fail on the retry.
-  test(
-    "send() POSTs payload with correct Content-Type",
-    async () => {
-      // Start a local server to capture the outgoing request
-      const captured: { contentType: string | null; body: unknown } = { contentType: null, body: null };
-
-      const testServer = Bun.serve({
-        port: 0, // OS assigns an available port — avoids conflicts on rerun
-        fetch: async (req) => {
-          captured.contentType = req.headers.get("content-type");
-          captured.body = await req.json();
-          return new Response("OK", { status: 200 });
-        },
-      });
-
-      const plugin = new WebhookInteractionPlugin();
-      try {
-        await plugin.init({ url: `http://localhost:${testServer.port}/hook`, requireSecret: false });
-
-        await plugin.send(makeWebhookRequest("wh-send-1"));
-
-        expect(captured.contentType).toBe("application/json");
-        expect((captured.body as { id: string }).id).toBe("wh-send-1");
-        // callbackUrl is injected by send()
-        expect(typeof (captured.body as { callbackUrl: string }).callbackUrl).toBe("string");
-      } finally {
-        testServer.stop(true);
-        await plugin.destroy();
-      }
-    },
-    { retry: 2 },
-  );
-
-  test("send() includes X-Nax-Signature header when secret is configured", async () => {
-    const captured: { signature: string | null; body: string } = { signature: null, body: "" };
-
-    const testServer = Bun.serve({
-      port: 0, // OS assigns an available port — avoids conflicts on rerun
-      fetch: async (req) => {
-        captured.signature = req.headers.get("x-nax-signature");
-        captured.body = await req.text();
-        return new Response("OK", { status: 200 });
+  /**
+   * Captures what send() hands to the outbound fetch, without a socket.
+   *
+   * These two tests used to POST to a real `Bun.serve` target over loopback.
+   * That made them fail on CI with "Failed to send webhook request: The
+   * operation was aborted." milliseconds in — far short of both the 30s
+   * WEBHOOK_SEND_TIMEOUT_MS in send() and the 5s bunfig default — and it was
+   * never reproducible locally: not in isolation, not alongside every other
+   * webhook/Bun.serve test file, not at CI-like file-descriptor limits. It was
+   * papered over with `retry: 2` and then failed on all three attempts.
+   *
+   * The contract under test is what send() BUILDS — method, headers, signature,
+   * payload — not that a socket carries it. Stubbing `_webhookPluginDeps.fetch`
+   * asserts exactly that contract, deterministically, and leaves the transport
+   * to the tests that exist for it.
+   */
+  function captureSend(): {
+    calls: { url: string; init: RequestInit }[];
+    restore: () => void;
+  } {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const original = _webhookPluginDeps.fetch;
+    _webhookPluginDeps.fetch = async (input, init) => {
+      calls.push({ url: String(input), init: init ?? {} });
+      return new Response("OK", { status: 200 });
+    };
+    return {
+      calls,
+      restore: () => {
+        _webhookPluginDeps.fetch = original;
       },
-    });
+    };
+  }
 
+  /** Header lookup that tolerates either a plain object or a Headers instance. */
+  function headerOf(init: RequestInit, name: string): string | null {
+    const headers = new Headers(init.headers);
+    return headers.get(name);
+  }
+
+  test("send() POSTs payload with correct Content-Type", async () => {
+    const { calls, restore } = captureSend();
     const plugin = new WebhookInteractionPlugin();
     try {
-      await plugin.init({ url: `http://localhost:${testServer.port}/hook`, secret: "my-secret" });
+      await plugin.init({
+        url: "https://example.com/hook",
+        requireSecret: false,
+        callbackPort: 0, // OS assigns an available port — avoids conflicts on rerun
+      });
+
+      await plugin.send(makeWebhookRequest("wh-send-1"));
+
+      expect(calls).toHaveLength(1);
+      const [call] = calls;
+      assertDefined(call, "outbound fetch call");
+      expect(call.url).toBe("https://example.com/hook");
+      expect(call.init.method).toBe("POST");
+      expect(headerOf(call.init, "content-type")).toBe("application/json");
+
+      const body = JSON.parse(String(call.init.body)) as { id: string; callbackUrl: string };
+      expect(body.id).toBe("wh-send-1");
+      // callbackUrl is injected by send()
+      expect(typeof body.callbackUrl).toBe("string");
+    } finally {
+      restore();
+      await plugin.destroy();
+    }
+  });
+
+  test("send() includes X-Nax-Signature header when secret is configured", async () => {
+    const { calls, restore } = captureSend();
+    const plugin = new WebhookInteractionPlugin();
+    try {
+      await plugin.init({
+        url: "https://example.com/hook",
+        secret: "my-secret",
+        callbackPort: 0, // OS assigns an available port — avoids conflicts on rerun
+      });
 
       await plugin.send(makeWebhookRequest("wh-sig-1"));
 
-      expect(captured.signature).not.toBeNull();
-      // Verify the signature matches expected HMAC
-      const expected = createHmac("sha256", "my-secret").update(captured.body).digest("hex");
-      expect(captured.signature).toBe(expected);
+      expect(calls).toHaveLength(1);
+      const [call] = calls;
+      assertDefined(call, "outbound fetch call");
+
+      const signature = headerOf(call.init, "x-nax-signature");
+      expect(signature).not.toBeNull();
+      // The signature must cover the exact bytes that go on the wire.
+      const expected = createHmac("sha256", "my-secret").update(String(call.init.body)).digest("hex");
+      expect(signature).toBe(expected);
     } finally {
-      testServer.stop(true);
+      restore();
       await plugin.destroy();
     }
   });

@@ -44,12 +44,58 @@ let servePortZeroOriginalServe: typeof Bun.serve;
 let servePortZeroOriginalFetch: typeof globalThis.fetch;
 
 /**
+ * The patched functions this module installed, kept so a restore can tell
+ * "the global is still ours" from "something replaced it after we installed".
+ */
+let servePortZeroPatchedServe: typeof Bun.serve | undefined;
+let servePortZeroPatchedFetch: typeof globalThis.fetch | undefined;
+
+/**
+ * Reinstate a captured pre-install global ONLY if the current value is still
+ * the function this module installed.
+ *
+ * Restoring unconditionally is a global clobber: if anything replaced the
+ * global between install and restore, the assignment discards that newer
+ * function and resurrects whatever happened to be live at install time. That
+ * is not hypothetical — it is how a test double for `globalThis.fetch` used
+ * to escape its own test. A plugin test would set `globalThis.fetch` to a stub,
+ * call `send()` (which installs the shim, capturing the STUB as "original"),
+ * put the real fetch back, and then call `destroy()`; destroy's restore
+ * reinstated the stub over the real fetch, and every subsequent fetch in the
+ * process — in that file and every file after it — failed with the stub's
+ * error. Under `bun test`'s one-process-per-run model that surfaced as an
+ * unhandled rejection attributed to whichever unrelated test happened to be
+ * running, which is exactly the shape of a CI-only flake.
+ *
+ * Leaving a foreign patch in place loses this module's ability to unwind, but
+ * that is strictly better than silently undoing someone else's install.
+ */
+function restoreIfUnchanged<T>(current: T, patched: T | undefined, original: T): T {
+  return patched !== undefined && current === patched ? original : current;
+}
+
+/**
  * SEC-06(b): the counter previously wrapped unconditionally after
  * PORT_ZERO_COMPAT_SPAN cycles and could reassign a port still held by a
  * live in-memory server (a long-running process with many webhook
  * start/stop cycles). Skip forward past any port still in inMemoryServers
  * instead of blindly overwriting it.
  */
+/**
+ * The request URL, or null when it does not parse as an absolute URL. A URL
+ * this module cannot parse can never name an in-memory compat server, so it
+ * is a pass-through: the decision of whether to reject it belongs to the fetch
+ * being fronted, not to the shim in front of it.
+ */
+function parseUrl(input: Request | string | URL): URL | null {
+  if (input instanceof URL) return input;
+  try {
+    return new URL(input instanceof Request ? input.url : input);
+  } catch {
+    return null;
+  }
+}
+
 function nextCompatPort(): number {
   for (let i = 0; i < PORT_ZERO_COMPAT_SPAN; i++) {
     const port = PORT_ZERO_COMPAT_BASE + (servePortZeroCounter % PORT_ZERO_COMPAT_SPAN);
@@ -148,12 +194,21 @@ export function installServePortZeroCompat(): () => void {
     }) as typeof Bun.serve;
 
     (Bun as { serve: typeof Bun.serve }).serve = patchedServe;
-    globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
-      const request =
-        input instanceof Request ? input : new Request(input instanceof URL ? input.toString() : input, init);
-      const url = new URL(request.url);
-      const port = Number.parseInt(url.port, 10);
+    servePortZeroPatchedServe = patchedServe;
+    const patchedFetch = (async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
+      // Route on the URL alone, and build a Request only on the branch that
+      // needs one. This used to construct a throwaway `new Request(input, init)`
+      // up front purely to read `.url`, on EVERY in-process fetch made while any
+      // webhook server was live -- including the pass-through branch, which then
+      // handed the very same `init` to the real fetch and discarded the object.
+      // Besides the wasted allocation, that construction is stricter than the
+      // fetch it fronts: it rejects inputs the underlying fetch may well accept
+      // (a relative URL, say, which a polyfill or a test double can resolve), so
+      // the shim threw on requests it has no business intercepting.
+      const url = parseUrl(input);
+      const port = url ? Number.parseInt(url.port, 10) : Number.NaN;
       if (
+        url &&
         (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
         url.pathname.startsWith(CALLBACK_PATH_PREFIX) &&
         inMemoryServers.has(port)
@@ -162,10 +217,13 @@ export function installServePortZeroCompat(): () => void {
         if (!server) {
           return new Response("Not Found", { status: 404 });
         }
-        return await server.fetch(request);
+        return await server.fetch(input instanceof Request ? input : new Request(url.toString(), init));
       }
       return boundOriginalFetch(input instanceof URL ? input.toString() : input, init);
     }) as typeof globalThis.fetch;
+
+    globalThis.fetch = patchedFetch;
+    servePortZeroPatchedFetch = patchedFetch;
     servePortZeroCompatInstalled = true;
     servePortZeroCompatRefCount = 1;
   }
@@ -180,8 +238,14 @@ export function installServePortZeroCompat(): () => void {
     servePortZeroCompatInstalled = false;
     // Restore the exact function objects captured before the patch, and clear the
     // installation flag so the shim can be reinstalled on the next server start.
-    (Bun as { serve: typeof Bun.serve }).serve = servePortZeroOriginalServe;
-    globalThis.fetch = servePortZeroOriginalFetch;
+    (Bun as { serve: typeof Bun.serve }).serve = restoreIfUnchanged(
+      Bun.serve,
+      servePortZeroPatchedServe,
+      servePortZeroOriginalServe,
+    );
+    globalThis.fetch = restoreIfUnchanged(globalThis.fetch, servePortZeroPatchedFetch, servePortZeroOriginalFetch);
+    servePortZeroPatchedServe = undefined;
+    servePortZeroPatchedFetch = undefined;
   };
 }
 
@@ -200,9 +264,15 @@ export function installServePortZeroCompat(): () => void {
  */
 export function _resetServePortZeroCompatForTests(): void {
   if (servePortZeroCompatInstalled) {
-    (Bun as { serve: typeof Bun.serve }).serve = servePortZeroOriginalServe;
-    globalThis.fetch = servePortZeroOriginalFetch;
+    (Bun as { serve: typeof Bun.serve }).serve = restoreIfUnchanged(
+      Bun.serve,
+      servePortZeroPatchedServe,
+      servePortZeroOriginalServe,
+    );
+    globalThis.fetch = restoreIfUnchanged(globalThis.fetch, servePortZeroPatchedFetch, servePortZeroOriginalFetch);
   }
+  servePortZeroPatchedServe = undefined;
+  servePortZeroPatchedFetch = undefined;
   servePortZeroCompatInstalled = false;
   servePortZeroCompatRefCount = 0;
 }

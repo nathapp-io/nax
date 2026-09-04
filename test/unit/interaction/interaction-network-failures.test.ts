@@ -5,7 +5,7 @@
  * Tests network error handling, exponential backoff, payload limits, and malformed input.
  */
 
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mockFetch, telegramInternals, webhookInternals } from "@test/helpers";
 import type { InteractionRequest } from "@/interaction";
 import { _telegramPluginDeps, TelegramInteractionPlugin } from "@/interaction/plugins/telegram";
@@ -188,15 +188,28 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
 });
 
 describe("WebhookInteractionPlugin - Network Failures", () => {
+  // Restore the outbound-fetch seam unconditionally, not on each test's happy
+  // path. A stub left behind by a test that threw mid-way is precisely the
+  // failure this file's subject matter is about — a leaked fetch double breaks
+  // every later test in the process, in this file and every file after it.
+  const realWebhookFetch = _webhookPluginDeps.fetch;
+  afterEach(() => {
+    _webhookPluginDeps.fetch = realWebhookFetch;
+  });
+
   test("should handle network error in send()", async () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
-    // Mock fetch to throw network error
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = mockFetch(async () => {
+    // Stub the plugin's own outbound fetch rather than globalThis.fetch.
+    // Patching the global around send() collides with the port-0 compat shim,
+    // which startServer() installs mid-send: the shim captures whatever the
+    // global holds at install time as "the original", and destroy()'s restore
+    // then reinstates this stub over the real fetch for the rest of the
+    // process. See _webhookPluginDeps.fetch and restoreIfUnchanged().
+    _webhookPluginDeps.fetch = async () => {
       throw new Error("ECONNREFUSED");
-    });
+    };
 
     const request: InteractionRequest = {
       id: "test-network-error",
@@ -210,8 +223,6 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     await expect(plugin.send(request)).rejects.toThrow("Failed to send webhook request");
 
-    // Restore
-    globalThis.fetch = originalFetch;
     await plugin.destroy();
   });
 
@@ -219,11 +230,9 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
-    // Mock fetch to return 503 error
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = mockFetch(async () => {
-      return new Response("Service Unavailable", { status: 503 });
-    });
+    // Stub the plugin's own outbound fetch — see the note above on why the
+    // global must not be patched across a send()/destroy() pair.
+    _webhookPluginDeps.fetch = async () => new Response("Service Unavailable", { status: 503 });
 
     const request: InteractionRequest = {
       id: "test-http-error",
@@ -237,8 +246,6 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     await expect(plugin.send(request)).rejects.toThrow("Webhook POST failed (503)");
 
-    // Restore
-    globalThis.fetch = originalFetch;
     await plugin.destroy();
   });
 
@@ -252,11 +259,10 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     let capturedSignal: AbortSignal | undefined;
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = mockFetch(async (_input, init) => {
+    _webhookPluginDeps.fetch = async (_input, init) => {
       capturedSignal = init?.signal ?? undefined;
       return new Response("{}", { status: 200 });
-    });
+    };
 
     const request: InteractionRequest = {
       id: "test-abort-signal",
@@ -273,7 +279,6 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     expect(capturedSignal).toBeInstanceOf(AbortSignal);
     expect(capturedSignal?.aborted).toBe(false);
 
-    globalThis.fetch = originalFetch;
     await plugin.destroy();
   });
 
@@ -281,12 +286,11 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
-    const originalFetch = globalThis.fetch;
     // Simulate what happens when WEBHOOK_SEND_TIMEOUT_MS fires and aborts the
     // in-flight fetch — real fetch() rejects with an AbortError in that case.
-    globalThis.fetch = mockFetch(async () => {
+    _webhookPluginDeps.fetch = async () => {
       throw new DOMException("The operation was aborted.", "AbortError");
-    });
+    };
 
     const request: InteractionRequest = {
       id: "test-abort-rejects",
@@ -300,7 +304,6 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
 
     await expect(plugin.send(request)).rejects.toThrow("Failed to send webhook request");
 
-    globalThis.fetch = originalFetch;
     await plugin.destroy();
   });
 
