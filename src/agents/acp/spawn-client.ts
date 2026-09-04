@@ -12,8 +12,8 @@
 import type { AcpClient, AcpClientOptions, AcpSession } from "@/agents";
 import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent } from "@/runtime";
+import { parseModelSpec } from "../model-spec";
 import { buildAllowedEnv } from "../shared/env";
-import { parseModelSpec } from "./model-spec";
 import { applyReasoningEffort } from "./reasoning-effort";
 import { parseSessionIds } from "./session-ids";
 import { _spawnClientDeps } from "./spawn-client-deps";

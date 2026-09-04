@@ -13,8 +13,6 @@ export {
 } from "./adapter";
 export { computeAcpHandle } from "./adapter-lifecycle";
 export type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
-export type { ModelSpec } from "./model-spec";
-export { parseModelSpec } from "./model-spec";
 export { parseAgentError } from "./parse-agent-error";
 export type {
   AcpxLineActivity as AcpLineActivity,
