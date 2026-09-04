@@ -49,6 +49,46 @@ describe("native turn loop", () => {
     expect(result.internalRoundTrips).toBe(1);
   });
 
+  // nax#1838: saveTranscript was the last statement of the function, so a turn
+  // that threw wrote nothing. Combined with a close that always deleted, the
+  // retry resumed from an empty conversation and the model silently lost every
+  // message it had been working from.
+  test("persists the conversation when the model call throws, not only on the clean exit", async () => {
+    await expect(
+      runNativeTurn(handle, "hi", opts(), {
+        complete: async () => {
+          throw new Error("upstream exploded");
+        },
+      }),
+    ).rejects.toThrow("upstream exploded");
+
+    const saved = await loadTranscript(dir, "sess-a");
+    expect(saved).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  test("keeps the work already done when a later round trip throws", async () => {
+    let calls = 0;
+    await expect(
+      runNativeTurn(handle, "hi", opts(), {
+        complete: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return reply({ text: "thinking about it", toolCalls: [{ id: "c1", name: "Read", input: { path: "a" } }] });
+          }
+          throw new Error("upstream exploded");
+        },
+        // Read is granted so the first round trip's tool call resolves.
+      }),
+    ).rejects.toThrow("upstream exploded");
+
+    const saved = await loadTranscript(dir, "sess-a");
+    // The user prompt, the assistant turn that asked for a tool, and the tool
+    // result. Losing these is what made the retry look like a fresh session.
+    expect(saved.length).toBeGreaterThanOrEqual(2);
+    expect(saved[0]).toEqual({ role: "user", content: "hi" });
+    expect(saved[1]).toMatchObject({ role: "assistant", content: "thinking about it" });
+  });
+
   test("persists the conversation, including thinking blocks", async () => {
     await runNativeTurn(handle, "hi", opts(), {
       complete: async () => reply({ thinking: [{ text: "hmm", signature: "sig-1" }] }),

@@ -113,125 +113,142 @@ export async function runNativeTurn(
   let timedOut = false;
   const interactions: InteractionExchange[] = [];
 
-  // Deliberately unbounded by count. A coding agent working a story is bounded
-  // by wall clock (deps.deadline) and by the idle watchdog, never by how many
-  // times it needed to call a tool. `agent.maxInteractionTurns` is NOT this
-  // budget — it bounds human Q&A exchanges, which are counted separately.
-  while (true) {
-    // Checked before starting a round-trip rather than after finishing one:
-    // starting a call we know cannot finish inside the budget spends money for
-    // an answer we will discard.
-    if (deps.deadline?.expired() === true) {
-      timedOut = true;
-      break;
-    }
-    const res = await deps.complete(messages, tools);
-    roundTrips += 1;
-    inputTokens += res.usage.inputTokens;
-    outputTokens += res.usage.outputTokens;
-    if (res.usage.cacheReadInputTokens !== undefined) {
-      cacheReadInputTokens = (cacheReadInputTokens ?? 0) + res.usage.cacheReadInputTokens;
-    }
-    if (res.usage.cacheCreationInputTokens !== undefined) {
-      cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + res.usage.cacheCreationInputTokens;
-    }
-    costUsd += res.costUsd;
-    output = res.text;
+  // nax#1838: the save below the loop is the clean exit's alone. A turn that
+  // throws must persist too — the retry reopens the same deterministic session
+  // name, so an unsaved conversation is one the model silently resumes without.
+  try {
+    // Deliberately unbounded by count. A coding agent working a story is bounded
+    // by wall clock (deps.deadline) and by the idle watchdog, never by how many
+    // times it needed to call a tool. `agent.maxInteractionTurns` is NOT this
+    // budget — it bounds human Q&A exchanges, which are counted separately.
+    while (true) {
+      // Checked before starting a round-trip rather than after finishing one:
+      // starting a call we know cannot finish inside the budget spends money for
+      // an answer we will discard.
+      if (deps.deadline?.expired() === true) {
+        timedOut = true;
+        break;
+      }
+      const res = await deps.complete(messages, tools);
+      roundTrips += 1;
+      inputTokens += res.usage.inputTokens;
+      outputTokens += res.usage.outputTokens;
+      if (res.usage.cacheReadInputTokens !== undefined) {
+        cacheReadInputTokens = (cacheReadInputTokens ?? 0) + res.usage.cacheReadInputTokens;
+      }
+      if (res.usage.cacheCreationInputTokens !== undefined) {
+        cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + res.usage.cacheCreationInputTokens;
+      }
+      costUsd += res.costUsd;
+      output = res.text;
 
-    deps.onActivity?.({
-      kind: "usage",
-      inputTokens: res.usage.inputTokens,
-      outputTokens: res.usage.outputTokens,
-      costUsd: res.costUsd,
-    });
-    if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
-    if (res.thinking !== undefined && res.thinking.length > 0) {
       deps.onActivity?.({
-        kind: "thinking",
-        bytes: res.thinking.reduce((n, t) => n + t.text.length, 0),
+        kind: "usage",
+        inputTokens: res.usage.inputTokens,
+        outputTokens: res.usage.outputTokens,
+        costUsd: res.costUsd,
       });
-    }
+      if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
+      if (res.thinking !== undefined && res.thinking.length > 0) {
+        deps.onActivity?.({
+          kind: "thinking",
+          bytes: res.thinking.reduce((n, t) => n + t.text.length, 0),
+        });
+      }
 
-    // Thinking blocks are appended, not merely representable: Anthropic needs
-    // the exact block back to continue a thinking conversation (ADR-028 s8).
-    messages.push({
-      role: "assistant",
-      content: res.text,
-      ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
-      ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
-    });
+      // Thinking blocks are appended, not merely representable: Anthropic needs
+      // the exact block back to continue a thinking conversation (ADR-028 s8).
+      messages.push({
+        role: "assistant",
+        content: res.text,
+        ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
+        ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
+      });
 
-    if (res.toolCalls === undefined || res.toolCalls.length === 0) {
-      completedNormally = true;
-      break;
-    }
+      if (res.toolCalls === undefined || res.toolCalls.length === 0) {
+        completedNormally = true;
+        break;
+      }
 
-    for (const call of res.toolCalls) {
-      deps.onActivity?.({ kind: "tool", toolName: call.name });
-      try {
-        if (call.name === ASK_HUMAN_TOOL_NAME) {
-          const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
-          // An unset budget (maxInteractions undefined -> 0) keeps the tool unadvertised
-          // above AND refuses a call made anyway. "No budget configured" must not
-          // read as "unlimited" — that inverts the property this budget provides.
-          if (interactions.length >= maxInteractions) {
+      for (const call of res.toolCalls) {
+        deps.onActivity?.({ kind: "tool", toolName: call.name });
+        try {
+          if (call.name === ASK_HUMAN_TOOL_NAME) {
+            const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
+            // An unset budget (maxInteractions undefined -> 0) keeps the tool unadvertised
+            // above AND refuses a call made anyway. "No budget configured" must not
+            // read as "unlimited" — that inverts the property this budget provides.
+            if (interactions.length >= maxInteractions) {
+              messages.push({
+                role: "tool-result",
+                toolCallId: call.id,
+                content: "The human Q&A budget for this turn is spent. Proceed on your best judgement.",
+                isError: true,
+              });
+              continue;
+            }
+            const answer = await opts.interactionHandler.onInteraction({ kind: "question", text: question });
+            // A null answer means no operator is reachable — run-interaction-handler
+            // returns null for kind:"question" when no interactionBridge is
+            // configured. That is not an exchange: it must not consume budget and
+            // must not be recorded as a question the operator answered with "".
+            if (answer === null) {
+              messages.push({
+                role: "tool-result",
+                toolCallId: call.id,
+                content: "No human operator is available for this run. Proceed on your best judgement.",
+                isError: true,
+              });
+              continue;
+            }
+            interactions.push({ turnIndex: roundTrips, question, reply: answer.answer });
+            messages.push({ role: "tool-result", toolCallId: call.id, content: answer.answer });
+            continue;
+          }
+          const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
+          if (kind === "coding-tool") codingToolsCalled.push(call.name);
+          const answer = await opts.interactionHandler.onInteraction(
+            kind === "coding-tool"
+              ? { kind, name: call.name, input: (call.input ?? {}) as Record<string, unknown> }
+              : { kind, name: call.name, input: call.input },
+          );
+
+          // A denial is data the model can act on, and deliberately NOT isError:
+          // a refused Write is not a crashed Write (ADR-029 s5).
+          if (answer?.denied !== undefined) {
             messages.push({
               role: "tool-result",
               toolCallId: call.id,
-              content: "The human Q&A budget for this turn is spent. Proceed on your best judgement.",
-              isError: true,
+              content: answer.answer,
+              denied: answer.denied,
             });
             continue;
           }
-          const answer = await opts.interactionHandler.onInteraction({ kind: "question", text: question });
-          // A null answer means no operator is reachable — run-interaction-handler
-          // returns null for kind:"question" when no interactionBridge is
-          // configured. That is not an exchange: it must not consume budget and
-          // must not be recorded as a question the operator answered with "".
-          if (answer === null) {
-            messages.push({
-              role: "tool-result",
-              toolCallId: call.id,
-              content: "No human operator is available for this run. Proceed on your best judgement.",
-              isError: true,
-            });
-            continue;
-          }
-          interactions.push({ turnIndex: roundTrips, question, reply: answer.answer });
-          messages.push({ role: "tool-result", toolCallId: call.id, content: answer.answer });
-          continue;
-        }
-        const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
-        if (kind === "coding-tool") codingToolsCalled.push(call.name);
-        const answer = await opts.interactionHandler.onInteraction(
-          kind === "coding-tool"
-            ? { kind, name: call.name, input: (call.input ?? {}) as Record<string, unknown> }
-            : { kind, name: call.name, input: call.input },
-        );
-
-        // A denial is data the model can act on, and deliberately NOT isError:
-        // a refused Write is not a crashed Write (ADR-029 s5).
-        if (answer?.denied !== undefined) {
+          messages.push({ role: "tool-result", toolCallId: call.id, content: answer?.answer ?? "" });
+        } catch (err) {
+          // A tool failure is data, not a turn failure: the existing pull-tool
+          // contract already surfaces a handler throw as status "error".
           messages.push({
             role: "tool-result",
             toolCallId: call.id,
-            content: answer.answer,
-            denied: answer.denied,
+            content: err instanceof Error ? err.message : String(err),
+            isError: true,
           });
-          continue;
         }
-        messages.push({ role: "tool-result", toolCallId: call.id, content: answer?.answer ?? "" });
-      } catch (err) {
-        // A tool failure is data, not a turn failure: the existing pull-tool
-        // contract already surfaces a handler throw as status "error".
-        messages.push({
-          role: "tool-result",
-          toolCallId: call.id,
-          content: err instanceof Error ? err.message : String(err),
-          isError: true,
-        });
       }
     }
+  } catch (err) {
+    // Best-effort, and deliberately unlike the clean-exit save: there a write
+    // failure fails the turn, because continuing on unstored history is silent
+    // degradation. Here a failure is already in flight, and masking it with a
+    // write error would lose the cause.
+    await saveTranscript(dir, handle.id, messages).catch((saveErr: unknown) => {
+      getSafeLogger()?.warn("native-adapter", "could not persist the transcript of a failed turn", {
+        sessionName: handle.id,
+        error: saveErr instanceof Error ? saveErr.message : String(saveErr),
+      });
+    });
+    throw err;
   }
 
   // Parity with acp/adapter.ts:555, which warns in exactly this situation. A

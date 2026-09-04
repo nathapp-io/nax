@@ -15,8 +15,9 @@ import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
 import { waitForCondition } from "@test/helpers";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
+import { loadTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
-import type { ResolvedCompleteOptions } from "@/agents/types";
+import { type ResolvedCompleteOptions, SessionFailureError } from "@/agents/types";
 
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;
@@ -119,6 +120,193 @@ describe("NativeAgentAdapter.complete", () => {
     expect(result.adapterFailure?.category).toBe("availability");
     expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
     expect(result.output).toBe("");
+  });
+});
+
+/**
+ * nax#1838: sendTurn rethrew nax-ai's error untouched, so the run path lost the
+ * typed kind and build-hop-callback reclassified every native failure as a
+ * generic fail-adapter-error -- rate limits lost their backoff, auth failures
+ * stopped sticking to the unavailable mark, and an overflow was indistinguishable
+ * from a crash. complete() had carried the typed failure all along; this is the
+ * same treatment on the session path, using the carrier build-hop-callback
+ * already reads.
+ */
+describe("NativeAgentAdapter.sendTurn failure classification", () => {
+  class ProtocolStreamError extends Error {
+    constructor(readonly protocolError: { kind: string; message: string }) {
+      super(protocolError.message);
+      this.name = "ProtocolStreamError";
+    }
+  }
+
+  async function openTurnSession(name: string) {
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession(name, {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), `nax-adapter-${name}-`)),
+    });
+    return { adapter, handle };
+  }
+
+  const send = (adapter: NativeAgentAdapter, handle: Awaited<ReturnType<NativeAgentAdapter["openSession"]>>) =>
+    adapter.sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
+
+  /** Narrows by throwing, so the assertions below need no cast. */
+  async function failureFrom(turn: Promise<unknown>): Promise<SessionFailureError> {
+    const err = await turn.catch((e: unknown) => e);
+    if (!(err instanceof SessionFailureError)) {
+      throw new Error(`expected a SessionFailureError, got ${err instanceof Error ? err.name : String(err)}`);
+    }
+    return err;
+  }
+
+  test("carries a rate limit up as a typed failure, so the backoff written for it can fire", async () => {
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async () => {
+          throw new ProtocolStreamError({ kind: "rate-limit", message: "429 slow down" });
+        },
+      });
+    const { adapter, handle } = await openTurnSession("sess-ratelimit");
+
+    const err = await failureFrom(send(adapter, handle));
+
+    expect(err.adapterFailure.outcome).toBe("fail-rate-limit");
+    expect(err.adapterFailure.category).toBe("availability");
+  });
+
+  test("keeps the upstream message, which is the only description of what happened", async () => {
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async () => {
+          throw new ProtocolStreamError({ kind: "auth", message: "401 invalid key" });
+        },
+      });
+    const { adapter, handle } = await openTurnSession("sess-auth");
+
+    const err = await failureFrom(send(adapter, handle));
+
+    expect(err.adapterFailure.outcome).toBe("fail-auth");
+    expect(err.message).toContain("401 invalid key");
+  });
+
+  test("classifies a context overflow as swappable rather than as a crash", async () => {
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async () => {
+          throw new ProtocolStreamError({ kind: "context-overflow", message: "prompt is too long" });
+        },
+      });
+    const { adapter, handle } = await openTurnSession("sess-overflow");
+
+    const err = await failureFrom(send(adapter, handle));
+
+    expect(err.adapterFailure.category).toBe("availability");
+    expect(err.adapterFailure.message).toContain("context window");
+  });
+
+  test("leaves an error that is not a protocol fault exactly as thrown", async () => {
+    // The other side of the classification: wrapping everything would make a
+    // programming error look like a vendor failure and hide its stack.
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async () => {
+          throw new TypeError("undefined is not a function");
+        },
+      });
+    const { adapter, handle } = await openTurnSession("sess-bug");
+
+    const err = await send(adapter, handle).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(TypeError);
+    expect(err).not.toBeInstanceOf(SessionFailureError);
+  });
+});
+
+/**
+ * nax#1838: AgentAdapter.closeSession carries no failure signal, so the native
+ * adapter passed failed:false unconditionally and every close deleted the
+ * transcript -- including the close that follows a failed turn, which is exactly
+ * the one whose history the retry needs and whose contents a human would read.
+ */
+describe("NativeAgentAdapter.closeSession after a failed turn", () => {
+  test("keeps the transcript when the last turn failed", async () => {
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async () => {
+          throw new Error("upstream exploded");
+        },
+      });
+    const adapter = new NativeAgentAdapter();
+    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-keep-"));
+    const handle = await adapter.openSession("sess-keep", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir,
+    });
+
+    await adapter
+      .sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } })
+      .catch(() => {});
+    await adapter.closeSession(handle);
+
+    expect(await loadTranscript(transcriptDir, "sess-keep")).toHaveLength(1);
+  });
+
+  test("still deletes it when every turn succeeded", async () => {
+    _clientDeps.build = async () => fakeClient();
+    const adapter = new NativeAgentAdapter();
+    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-drop-"));
+    const handle = await adapter.openSession("sess-drop", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir,
+    });
+
+    await adapter.sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
+    await adapter.closeSession(handle);
+
+    expect(await loadTranscript(transcriptDir, "sess-drop")).toEqual([]);
+  });
+
+  test("a turn that recovers clears the mark, so a finished session is still cleaned up", async () => {
+    let calls = 0;
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error("transient");
+          return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
+        },
+      });
+    const adapter = new NativeAgentAdapter();
+    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-recover-"));
+    const handle = await adapter.openSession("sess-recover", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir,
+    });
+
+    const turn = { interactionHandler: { onInteraction: async () => ({ answer: "" }) } };
+    await adapter.sendTurn(handle, "hi", turn).catch(() => {});
+    await adapter.sendTurn(handle, "again", turn);
+    await adapter.closeSession(handle);
+
+    expect(await loadTranscript(transcriptDir, "sess-recover")).toEqual([]);
   });
 });
 
