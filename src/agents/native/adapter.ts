@@ -309,6 +309,17 @@ export class NativeAgentAdapter implements AgentAdapter {
               sessionId,
               signal,
               ...(thinking !== undefined ? { thinking } : {}),
+              // nax#1835: "short" is fixed, not config-driven (this repo's
+              // precedent -- the compaction design -- rejects knobs added
+              // before evidence). The turn loop's round trips are seconds
+              // apart, so "short" already hits; "long" would only pay off for
+              // a later turn and bills more at write time for a window this
+              // turn does not need. Only this round-trip closure sets it: the
+              // one-shot complete() and the summarize closure below have no
+              // successor turn (or, for summarize, a shape unlikely to repeat)
+              // to reuse the entry, so a cache write there costs more than it
+              // saves.
+              cacheRetention: "short",
             });
             const usage = toNaxTokenUsage(res.usage);
             return {
