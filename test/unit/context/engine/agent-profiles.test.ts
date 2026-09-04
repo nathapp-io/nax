@@ -7,6 +7,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
+import { NATIVE_AGENT } from "@/agents/native/models";
 import { AGENT_PROFILES, CONSERVATIVE_DEFAULT_PROFILE, getAgentProfile } from "@/context/engine/agent-profiles";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,5 +119,25 @@ describe("AGENT_PROFILES — #508-H6 AC-27 built-in profiles", () => {
   test("local toolSchemaDialect is none and supportsToolCalls is false", () => {
     expect(AGENT_PROFILES.local?.caps.toolSchemaDialect).toBe("none");
     expect(AGENT_PROFILES.local?.caps.supportsToolCalls).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// native agent profile — the native transport was falling back to
+// CONSERVATIVE_DEFAULT_PROFILE (no pull tools, 8k prompt budget, plain
+// rendering) because no AGENT_PROFILES entry existed for it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AGENT_PROFILES — native profile", () => {
+  test("getAgentProfile('native') returns isDefault: false and supportsToolCalls: true", () => {
+    const { profile, isDefault } = getAgentProfile("native");
+    expect(isDefault).toBe(false);
+    expect(profile.caps.supportsToolCalls).toBe(true);
+  });
+
+  // Binds the profile to the transport's own constant rather than a hardcoded
+  // string, so the agent id and its profile cannot drift apart silently.
+  test("AGENT_PROFILES is keyed by the native transport's own NATIVE_AGENT constant", () => {
+    expect(AGENT_PROFILES[NATIVE_AGENT]).toBeDefined();
   });
 });

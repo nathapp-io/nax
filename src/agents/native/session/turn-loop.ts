@@ -95,6 +95,12 @@ export async function runNativeTurn(
   let roundTrips = 0;
   let inputTokens = 0;
   let outputTokens = 0;
+  // Undefined until the first round trip reports cache data, then a running
+  // sum from there. Staying undefined when nothing ever reports it preserves
+  // the absent/zero distinction toNaxTokenUsage establishes: "no cache data"
+  // and "zero cache tokens" must stay distinguishable downstream.
+  let cacheReadInputTokens: number | undefined;
+  let cacheCreationInputTokens: number | undefined;
   let costUsd = 0;
   let output = "";
   // Reported on the result so the review guards can corroborate a reviewer's
@@ -123,6 +129,12 @@ export async function runNativeTurn(
     roundTrips += 1;
     inputTokens += res.usage.inputTokens;
     outputTokens += res.usage.outputTokens;
+    if (res.usage.cacheReadInputTokens !== undefined) {
+      cacheReadInputTokens = (cacheReadInputTokens ?? 0) + res.usage.cacheReadInputTokens;
+    }
+    if (res.usage.cacheCreationInputTokens !== undefined) {
+      cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + res.usage.cacheCreationInputTokens;
+    }
     costUsd += res.costUsd;
     output = res.text;
 
@@ -240,7 +252,12 @@ export async function runNativeTurn(
 
   return {
     output,
-    tokenUsage: { inputTokens, outputTokens },
+    tokenUsage: {
+      inputTokens,
+      outputTokens,
+      ...(cacheReadInputTokens !== undefined ? { cacheReadInputTokens } : {}),
+      ...(cacheCreationInputTokens !== undefined ? { cacheCreationInputTokens } : {}),
+    },
     estimatedCostUsd: costUsd,
     internalRoundTrips: roundTrips,
     ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),

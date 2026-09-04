@@ -5,7 +5,7 @@
  * The orchestrator uses these when calling renderForAgent() to produce
  * push markdown that fits the target agent's conventions.
  *
- * Built-in profiles: claude, codex.
+ * Built-in profiles: claude, codex, gemini, cursor, opencode, pi, local, native.
  * Unknown agent ids fall back to CONSERVATIVE_DEFAULT_PROFILE with a
  * manifest warning — they still get a bundle, just with the safest
  * rendering defaults (plain text, no tool calls).
@@ -161,6 +161,24 @@ export const AGENT_PROFILES: Record<string, AgentProfile> = {
       supportsMarkdown: true,
       systemPromptStyle: "plain",
       toolSchemaDialect: "none",
+    },
+  },
+  // "native" is src/agents/native's NATIVE_AGENT id (src/agents/native/models.ts).
+  // Like opencode and pi, native is multi-provider — the model string names the
+  // provider (ADR-027 s1) — so there is no single vendor tool dialect to name
+  // here either. nax-ai normalizes tool schemas per provider inside
+  // client.complete, so toolSchemaDialect: "openai" follows the same
+  // multi-provider precedent as opencode/pi rather than claiming one vendor's
+  // format. This field has no consumer today (declarative only).
+  native: {
+    caps: {
+      maxContextTokens: 200_000,
+      preferredPromptTokens: 16_000,
+      supportsToolCalls: true,
+      supportsSystemPrompt: true,
+      supportsMarkdown: true,
+      systemPromptStyle: "markdown-sections",
+      toolSchemaDialect: "openai",
     },
   },
 };

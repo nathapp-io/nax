@@ -376,6 +376,51 @@ describe("native turn loop — what the model is told exists", () => {
     expect(seen).toContain("message");
   });
 
+  test("sums cache token counts across round trips when every response reports them", async () => {
+    let round = 0;
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      complete: async () => {
+        round += 1;
+        return round === 1
+          ? reply({
+              toolCalls: [{ id: "c1", name: "t", input: {} }],
+              usage: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+            })
+          : reply({
+              usage: { inputTokens: 3, outputTokens: 2, cacheReadInputTokens: 40, cacheCreationInputTokens: 8 },
+            });
+      },
+    });
+    expect(result.tokenUsage.cacheReadInputTokens).toBe(140);
+    expect(result.tokenUsage.cacheCreationInputTokens).toBe(28);
+  });
+
+  test("omits cache fields entirely when no round trip reported cache data", async () => {
+    const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
+    expect("cacheReadInputTokens" in result.tokenUsage).toBe(false);
+    expect("cacheCreationInputTokens" in result.tokenUsage).toBe(false);
+  });
+
+  test("sums cache tokens across a mix of round trips that do and do not report them", async () => {
+    let round = 0;
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      complete: async () => {
+        round += 1;
+        if (round === 1) {
+          return reply({
+            toolCalls: [{ id: "c1", name: "t", input: {} }],
+            usage: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+          });
+        }
+        // Second round trip reports no cache data at all — must count as 0, not
+        // wipe out the first round trip's totals.
+        return reply({ usage: { inputTokens: 3, outputTokens: 2 } });
+      },
+    });
+    expect(result.tokenUsage.cacheReadInputTokens).toBe(100);
+    expect(result.tokenUsage.cacheCreationInputTokens).toBe(20);
+  });
+
   test("routes an ask_human call to the interaction handler and records the exchange", async () => {
     let round = 0;
     const result = await runNativeTurn(
