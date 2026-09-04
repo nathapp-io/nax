@@ -573,42 +573,46 @@ Implements spec story S3. This is the change that actually closes the silent cla
 
 Append to `test/unit/operations/turn-failure-classification.test.ts` (match the file's existing import of `classifyEmptyOutputFailure` and its `TurnResult` fixture style):
 
+The file already has a `makeTurnResult(overrides)` helper and groups tests in `describe`
+blocks; use both rather than raw object literals. Add a new block at the end:
+
 ```ts
+describe("classifyEmptyOutputFailure — transport facts outrank non-empty output", () => {
   test("a timed-out turn WITH prose is a failure, not a success", () => {
-    const failure = classifyEmptyOutputFailure({
-      output: "All green. Let me verify the final state of the file:",
-      tokenUsage: { inputTokens: 1, outputTokens: 1 },
-      estimatedCostUsd: 0,
-      internalRoundTrips: 4,
-      timedOut: true,
-    });
+    const failure = classifyEmptyOutputFailure(
+      makeTurnResult({
+        output: "All green. Let me verify the final state of the file:",
+        internalRoundTrips: 4,
+        timedOut: true,
+      }),
+    );
     expect(failure).not.toBeNull();
     expect(failure?.outcome).toBe("fail-timeout");
     expect(failure?.reason).toBe("wall-clock-timeout");
   });
 
   test("an incomplete turn WITH prose classifies as quality, never fail-stale", () => {
-    const failure = classifyEmptyOutputFailure({
-      output: "still working on it",
-      tokenUsage: { inputTokens: 1, outputTokens: 1 },
-      estimatedCostUsd: 0,
-      internalRoundTrips: 10,
-      turnIncomplete: true,
-    });
+    const failure = classifyEmptyOutputFailure(
+      makeTurnResult({ output: "still working on it", internalRoundTrips: 10, turnIncomplete: true }),
+    );
     expect(failure?.category).toBe("quality");
     expect(failure?.outcome).toBe("fail-quality");
     expect(failure?.reason).toBe("turn-incomplete");
   });
 
   test("a complete turn with output is still a success", () => {
-    const failure = classifyEmptyOutputFailure({
-      output: "done",
-      tokenUsage: { inputTokens: 1, outputTokens: 1 },
-      estimatedCostUsd: 0,
-      internalRoundTrips: 2,
-    });
+    const failure = classifyEmptyOutputFailure(makeTurnResult({ output: "done", internalRoundTrips: 2 }));
     expect(failure).toBeNull();
   });
+
+  test("an existing adapterFailure still wins over both facts", () => {
+    const existing = { category: "availability", outcome: "fail-quota", retriable: true, message: "m" } as const;
+    const failure = classifyEmptyOutputFailure(
+      makeTurnResult({ output: "text", timedOut: true, adapterFailure: existing }),
+    );
+    expect(failure).toBe(existing);
+  });
+});
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -1003,9 +1007,33 @@ Include the turn controller in the per-call signal. Replace the `const signal = 
         );
 ```
 
-Finally, wrap the `return runNativeTurn(...)` so `agent.call_ended` always fires — this is what depopulates the watchdog registry (`manager.ts` subscribes to `agent.call_ended` for exactly this). Assign the call to `const result = await runNativeTurn(...)` and add before returning it:
+Finally, make `agent.call_ended` fire on **every** exit path — it is what depopulates the
+watchdog registry (`manager.ts` subscribes to `agent.call_ended` for exactly this, and the
+ACP client emits it synchronously even when the prompt throws). A turn that throws must not
+leave a registry entry behind forever, so this needs `try`/`catch`, not a plain trailing call:
 
 ```ts
+    let result: TurnResult;
+    try {
+      result = await runNativeTurn(handle, prompt, opts, {
+        deadline,
+        onActivity: (activity) => {
+          hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));
+        },
+        complete: async (messages, tools) => {
+          /* body from Task 2 Step 9, with the turnController added to the signal */
+        },
+      });
+    } catch (err) {
+      hooks?.onStreamActivity?.({
+        ...eventBase,
+        kind: "agent.call_ended",
+        status: turnController.signal.aborted ? "cancelled" : "error",
+        timestamp: Date.now(),
+      });
+      throw err;
+    }
+
     hooks?.onStreamActivity?.({
       ...eventBase,
       kind: "agent.call_ended",
@@ -1015,7 +1043,10 @@ Finally, wrap the `return runNativeTurn(...)` so `agent.call_ended` always fires
     return result;
 ```
 
-Note `sendTurn` must already be `async` for this — it is.
+A `finally` would be shorter but cannot distinguish the four statuses, and the status is the
+part the watchdog and the prompt audit actually read. `sendTurn` is already `async`. Keep the
+`complete` body exactly as Task 2 Step 9 left it, with the `turnController` added to its
+signal as described above — it is elided here only to keep this step readable.
 
 - [ ] **Step 11: Backfill `runId` in the runtime**
 
@@ -1141,25 +1172,21 @@ Remove `maxTurns` from the warn context object added in Task 1, leaving:
 
 - [ ] **Step 4: Stop feeding the Q&A budget to the round-trip cap**
 
-In `src/runtime/session-run-hop.ts`, replace lines 62-65:
-
-```ts
-      const maxTurns =
-        options.interactionBridge || hasContextTools
-          ? (options.maxInteractionTurns ?? 10)
-          : (options.maxInteractionTurns ?? 1);
-```
-
-with:
+In `src/runtime/session-run-hop.ts`, **change the comment only — do NOT change the value.**
+Leave lines 62-65 computing exactly what they compute today and add above them:
 
 ```ts
       // `maxInteractionTurns` is the human Q&A budget (config-descriptions.ts),
-      // not an agent round-trip cap. It is forwarded as-is; each adapter decides
-      // what it bounds — acpx's iterations ARE interaction turns, native's are
-      // LLM calls and are bounded by time instead.
-      const maxTurns =
-        options.interactionBridge || hasContextTools ? (options.maxInteractionTurns ?? 10) : options.maxInteractionTurns;
+      // not an agent round-trip cap. Forwarded unchanged: acpx's iterations ARE
+      // interaction turns and it still consumes this as its loop bound, while
+      // the native loop no longer reads it for round-trips at all (it is bounded
+      // by time) and spends it only on ask_human exchanges.
 ```
+
+**Do not drop the `?? 1` fallback.** It is what keeps a bridge-less, context-tool-less acpx
+call single-turn. Removing it lets `maxTurns` reach the adapter as `undefined`, where
+`acp/adapter.ts`'s `opts.maxTurns ?? 10` turns a deliberate 1-turn call into a 10-turn one —
+a live behaviour change on the busiest transport, entirely unrelated to this arc.
 
 In `src/operations/build-hop-callback.ts`, replace lines 425-430's conditional spread:
 
@@ -1300,6 +1327,32 @@ Append to `test/unit/agents/native/turn-loop.test.ts`:
     // Calls past the budget are refused as data the model can act on, not dropped.
     expect(result.output).toBe("done asking");
   });
+
+  test("an unanswerable question consumes no budget and records no exchange", async () => {
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        maxTurns: 2,
+        // Mirrors run-interaction-handler.ts: kind "question" returns null when
+        // no interactionBridge is configured for the run.
+        interactionHandler: { onInteraction: async () => null },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          return round <= 3
+            ? reply({ text: "asking", toolCalls: [{ id: `q${round}`, name: "ask_human", input: { text: "hello?" } }] })
+            : reply({ text: "gave up asking" });
+        },
+      },
+    );
+    // Three asks against a budget of two: if a null answer consumed budget, the
+    // third would have been refused for the wrong reason and this would be 2.
+    expect(result.interactions).toBeUndefined();
+    expect(result.output).toBe("gave up asking");
+  });
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -1393,9 +1446,21 @@ is still real tool activity and must keep emitting its watchdog event. Add:
             continue;
           }
           const answer = await opts.interactionHandler.onInteraction({ kind: "question", text: question });
-          const replyText = answer?.answer ?? "";
-          interactions.push({ turnIndex: roundTrips, question, reply: replyText });
-          messages.push({ role: "tool-result", toolCallId: call.id, content: replyText });
+          // A null answer means no operator is reachable — run-interaction-handler
+          // returns null for kind:"question" when no interactionBridge is
+          // configured. That is not an exchange: it must not consume budget and
+          // must not be recorded as a question the operator answered with "".
+          if (answer === null) {
+            messages.push({
+              role: "tool-result",
+              toolCallId: call.id,
+              content: "No human operator is available for this run. Proceed on your best judgement.",
+              isError: true,
+            });
+            continue;
+          }
+          interactions.push({ turnIndex: roundTrips, question, reply: answer.answer });
+          messages.push({ role: "tool-result", toolCallId: call.id, content: answer.answer });
           continue;
         }
 ```
