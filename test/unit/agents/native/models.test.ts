@@ -10,10 +10,12 @@ import {
   buildRateCard,
   estimateCostUsd,
   parseNativeModel,
+  resolveContextWindow,
   toNaxTokenUsage,
   toThinkingLevel,
 } from "@/agents/native/models";
 import type { TokenPricing } from "@/config/schema-types";
+import { NaxError } from "@/errors";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 
 describe("parseNativeModel", () => {
@@ -261,5 +263,38 @@ describe("buildRateCard", () => {
     const rates = buildRateCard(catalog, override);
     expect(rates).toBe(override);
     expect(rates.cacheReadPer1M).toBeUndefined();
+  });
+});
+
+/**
+ * nax#1848: ModelDef.contextWindow overrides nax-ai's ResolvedModel.contextWindow.
+ * Mirrors buildRateCard's override-then-fallback pattern, but with a direction
+ * guard buildRateCard has no equivalent of: only lowering the window is safe
+ * (it never reaches the provider, feeding only shouldCompact/keepBudget), so an
+ * override above the real window is rejected rather than clamped.
+ */
+describe("resolveContextWindow", () => {
+  test("an override below the real window wins", () => {
+    expect(resolveContextWindow(20_000, 128_000)).toBe(20_000);
+  });
+
+  test("no override falls back to the real window", () => {
+    expect(resolveContextWindow(undefined, 128_000)).toBe(128_000);
+  });
+
+  test("an override above the real window is rejected, naming both numbers", () => {
+    expect(() => resolveContextWindow(200_000, 128_000)).toThrow(NaxError);
+    try {
+      resolveContextWindow(200_000, 128_000);
+      throw new Error("expected resolveContextWindow to throw");
+    } catch (err) {
+      if (!(err instanceof NaxError)) throw err;
+      expect(err.message).toContain("200000");
+      expect(err.message).toContain("128000");
+    }
+  });
+
+  test("an override exactly equal to the real window is accepted, not rejected", () => {
+    expect(resolveContextWindow(128_000, 128_000)).toBe(128_000);
   });
 });

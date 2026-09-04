@@ -62,6 +62,18 @@ export interface ModelDef {
   provider: string;
   model: string;
   pricing?: TokenPricing;
+  /**
+   * Overrides nax-ai's `ResolvedModel.contextWindow` (nax#1848). Never sent
+   * to the provider -- it feeds only the native path's own
+   * `shouldCompact` / `keepBudget` math (`src/agents/native/models.ts`,
+   * `resolveContextWindow`), which is what makes lowering it a way to force
+   * compaction to actually fire: `execution.compaction.compactAtPercent`
+   * floors at 50, and real windows (`claude-sonnet-5` is 1,000,000) put that
+   * floor at hundreds of thousands of tokens a normal run never reaches. A
+   * value above the real window is rejected at the adapter, not clamped --
+   * see `resolveContextWindow`.
+   */
+  contextWindow?: number;
   env?: Record<string, string>;
 }
 

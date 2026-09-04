@@ -221,3 +221,30 @@ export function buildRateCard(catalog: Pricing, override: TokenPricing | undefin
       : {}),
   };
 }
+
+/**
+ * Resolve the context window `runNativeTurn` compacts against: an explicit
+ * `ModelDef.contextWindow` override, falling back to nax-ai's
+ * `ResolvedModel.contextWindow` (nax#1848). Same override-then-fallback shape
+ * as `buildRateCard`, but with a direction guard that has no pricing
+ * equivalent: the window never reaches the provider, so it feeds only
+ * `shouldCompact` / `keepBudget` (`session/turn-loop.ts`). Lowering it is
+ * therefore safe -- compaction just fires earlier against an otherwise real
+ * request. Raising it above the real window would defeat compaction and
+ * reintroduce the overflow it exists to prevent, so that direction is
+ * rejected outright rather than clamped: this is a deliberate testing / cost
+ * lever, not a value set by accident, and a wrong value should be loud. An
+ * override equal to the real window is accepted -- it changes nothing.
+ */
+export function resolveContextWindow(override: number | undefined, realWindow: number): number {
+  if (override === undefined) return realWindow;
+  if (override > realWindow) {
+    throw new NaxError(
+      `configured contextWindow (${override}) exceeds the model's real context window (${realWindow}); ` +
+        "raising it above the real window would defeat compaction and risk a provider overflow",
+      "CONTEXT_WINDOW_OVERRIDE_EXCEEDS_REAL_WINDOW",
+      { configuredContextWindow: override, realContextWindow: realWindow },
+    );
+  }
+  return override;
+}
