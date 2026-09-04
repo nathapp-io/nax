@@ -100,3 +100,135 @@ describe("keepBudget", () => {
     }
   });
 });
+
+import {
+  applyCompaction,
+  COMPACTION_SUMMARY_PREFIX,
+  findCutPoint,
+  prepareCompaction,
+} from "@/agents/native/session/compaction";
+
+/** A user/assistant/tool-result triple of a known size, for building transcripts. */
+function exchange(id: string, size: number): TranscriptMessage[] {
+  return [
+    { role: "assistant", content: "a".repeat(size), toolCalls: [{ id, name: "Read", input: { path: id } }] },
+    { role: "tool-result", toolCallId: id, content: "r".repeat(size) },
+  ];
+}
+
+describe("findCutPoint", () => {
+  test("never cuts at a tool-result, because that orphans it from its tool call", () => {
+    const messages: TranscriptMessage[] = [
+      { role: "user", content: "task" },
+      ...exchange("c1", 4000),
+      ...exchange("c2", 4000),
+    ];
+    // A budget that lands mid-exchange would naively cut at the tool-result.
+    const cut = findCutPoint(messages, 1, 1000);
+    expect(messages[cut].role).not.toBe("tool-result");
+  });
+
+  test("refuses every cut that would orphan a result, across every budget", () => {
+    const messages: TranscriptMessage[] = [
+      { role: "user", content: "task" },
+      ...exchange("c1", 400),
+      ...exchange("c2", 400),
+      ...exchange("c3", 400),
+    ];
+    for (let budget = 1; budget < 2000; budget += 37) {
+      expect(messages[findCutPoint(messages, 1, budget)].role).not.toBe("tool-result");
+    }
+  });
+
+  test("keeps an assistant message whole, so a thinking block keeps its signature", () => {
+    // ADR-028 s8: Anthropic requires the exact thinking block, text plus
+    // signature, replayed on the next turn. Cutting inside an assistant message
+    // is the only way to break that, so the cut index must always name a
+    // message boundary.
+    const messages: TranscriptMessage[] = [
+      { role: "user", content: "task" },
+      { role: "assistant", content: "x".repeat(4000), thinking: [{ text: "why", signature: "sig-1" }] },
+      { role: "user", content: "next" },
+    ];
+    const cut = findCutPoint(messages, 1, 100);
+    expect(Number.isInteger(cut)).toBe(true);
+    const kept = messages.slice(cut);
+    for (const m of kept) {
+      if (m.role === "assistant" && m.thinking) expect(m.thinking[0].signature).toBe("sig-1");
+    }
+  });
+});
+
+/**
+ * Four small exchanges with a keep budget of 250 tokens. Sizes are chosen so a
+ * cut genuinely lands mid-transcript: with two 1000-token exchanges and a
+ * 1000-token budget the walk reaches its budget on the very first message it
+ * visits, `findCutPoint` returns the earliest valid cut, and prepareCompaction
+ * correctly reports "nothing to do" — which would make every assertion below
+ * vacuous.
+ */
+const KEEP = 250;
+const fourExchanges: TranscriptMessage[] = [
+  { role: "user", content: "the task" },
+  ...exchange("c1", 400),
+  ...exchange("c2", 400),
+  ...exchange("c3", 400),
+  ...exchange("c4", 400),
+];
+
+describe("prepareCompaction", () => {
+  test("returns undefined when there is nothing between the pin and the cut", () => {
+    const messages: TranscriptMessage[] = [
+      { role: "user", content: "task" },
+      { role: "assistant", content: "short" },
+    ];
+    expect(prepareCompaction(messages, 100_000)).toBeUndefined();
+  });
+
+  test("never includes the pinned first message in the span to summarize", () => {
+    const plan = prepareCompaction(fourExchanges, KEEP);
+    expect(plan).toBeDefined();
+    expect(plan?.toSummarize).not.toContain(fourExchanges[0]);
+  });
+});
+
+describe("applyCompaction", () => {
+  const messages = fourExchanges;
+
+  test("leaves the pinned message byte-identical, so its cache prefix survives", () => {
+    const plan = prepareCompaction(messages, KEEP);
+    if (!plan) throw new Error("expected a plan");
+    const out = applyCompaction(messages, plan, "what happened");
+    expect(out[0]).toEqual(messages[0]);
+  });
+
+  test("places the summary immediately after the pin, carrying the prefix", () => {
+    const plan = prepareCompaction(messages, KEEP);
+    if (!plan) throw new Error("expected a plan");
+    const out = applyCompaction(messages, plan, "what happened");
+    expect(out[1].role).toBe("user");
+    expect(out[1].role === "user" && out[1].content.startsWith(COMPACTION_SUMMARY_PREFIX)).toBe(true);
+    expect(out[1].role === "user" && out[1].content.includes("what happened")).toBe(true);
+  });
+
+  test("shrinks the transcript", () => {
+    const plan = prepareCompaction(messages, KEEP);
+    if (!plan) throw new Error("expected a plan");
+    expect(applyCompaction(messages, plan, "s").length).toBeLessThan(messages.length);
+  });
+
+  test("replaces the previous summary rather than stacking a second one", () => {
+    const first = prepareCompaction(messages, KEEP);
+    if (!first) throw new Error("expected a plan");
+    const already = applyCompaction(messages, first, "first summary");
+    const grown: TranscriptMessage[] = [...already, ...exchange("c5", 400), ...exchange("c6", 400)];
+    const plan = prepareCompaction(grown, 1000);
+    if (!plan) throw new Error("expected a plan");
+    expect(plan.previousSummary).toBe("first summary");
+
+    const out = applyCompaction(grown, plan, "merged summary");
+    const summaries = out.filter((m) => m.role === "user" && m.content.startsWith(COMPACTION_SUMMARY_PREFIX));
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].role === "user" && summaries[0].content.includes("merged summary")).toBe(true);
+  });
+});

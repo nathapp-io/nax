@@ -109,3 +109,103 @@ export function keepBudget(window: number, cfg: ResolvedCompaction, aggressive =
   const budget = Math.floor(window * (cfg.keepRecentPercent / 100));
   return aggressive ? Math.floor(budget / 2) : budget;
 }
+
+/**
+ * Marks the summary message. The summary carries no marker FIELD: transcript
+ * messages reach nax-ai structurally, so an extra property would travel to the
+ * wire (the existing `denied` marker already does). Position plus this prefix
+ * is how a later compaction finds the summary it must replace.
+ */
+export const COMPACTION_SUMMARY_PREFIX =
+  "The conversation history before this point was compacted into the following summary:\n\n<summary>\n";
+export const COMPACTION_SUMMARY_SUFFIX = "\n</summary>\n";
+
+/** Index of the pinned first message; never summarized, never dropped. */
+const PIN_INDEX = 0;
+/** Where the summary sits once written. */
+const SUMMARY_INDEX = 1;
+
+/**
+ * Valid cut points are user or assistant messages, NEVER a tool-result.
+ *
+ * That one rule carries both hard constraints: a tool-result can never become
+ * the first kept message (orphaning it from its tool_use, which the provider
+ * rejects), and cuts land between messages rather than inside an assistant
+ * message, so a kept thinking block keeps its exact text and signature.
+ */
+function isValidCut(message: TranscriptMessage): boolean {
+  return message.role === "user" || message.role === "assistant";
+}
+
+/**
+ * Walk backwards accumulating estimated size; once `keepTokens` is reached, take
+ * the nearest valid cut at or after that point.
+ *
+ * Two passes on purpose. A single backwards pass that remembers the last valid
+ * index it saw returns `messages.length` whenever trailing tool-results consume
+ * the whole budget before any valid cut appears — an out-of-range index the
+ * caller then dereferences. Collecting the valid cuts first makes "the nearest
+ * cut at or after i" answerable without that hole, and `cuts[0]` is the honest
+ * default: keep everything, which `prepareCompaction` reads as "no plan".
+ */
+export function findCutPoint(messages: readonly TranscriptMessage[], startIndex: number, keepTokens: number): number {
+  const cuts: number[] = [];
+  for (let i = startIndex; i < messages.length; i++) {
+    if (isValidCut(messages[i] as TranscriptMessage)) cuts.push(i);
+  }
+  if (cuts.length === 0) return messages.length;
+
+  let candidate = cuts[0] as number;
+  let accumulated = 0;
+  for (let i = messages.length - 1; i >= startIndex; i--) {
+    accumulated += estimateTokens(messages[i] as TranscriptMessage);
+    if (accumulated >= keepTokens) {
+      const at = cuts.find((c) => c >= i);
+      if (at !== undefined) candidate = at;
+      break;
+    }
+  }
+  return candidate;
+}
+
+export interface CompactionPlan {
+  readonly cutIndex: number;
+  readonly toSummarize: readonly TranscriptMessage[];
+  readonly previousSummary?: string;
+}
+
+/** Reads a previous summary out of the message at SUMMARY_INDEX, if one is there. */
+function readPreviousSummary(messages: readonly TranscriptMessage[]): string | undefined {
+  const candidate = messages[SUMMARY_INDEX];
+  if (candidate === undefined || candidate.role !== "user") return undefined;
+  if (!candidate.content.startsWith(COMPACTION_SUMMARY_PREFIX)) return undefined;
+  return candidate.content.slice(COMPACTION_SUMMARY_PREFIX.length, -COMPACTION_SUMMARY_SUFFIX.length);
+}
+
+export function prepareCompaction(
+  messages: readonly TranscriptMessage[],
+  keepTokens: number,
+): CompactionPlan | undefined {
+  const previousSummary = readPreviousSummary(messages);
+  // Everything from here is fair game; the pin, and any existing summary, are not.
+  const spanStart = previousSummary === undefined ? PIN_INDEX + 1 : SUMMARY_INDEX + 1;
+  const cutIndex = findCutPoint(messages, spanStart, keepTokens);
+  if (previousSummary === undefined && cutIndex <= spanStart) return undefined;
+  return {
+    cutIndex,
+    toSummarize: messages.slice(spanStart, cutIndex),
+    ...(previousSummary !== undefined ? { previousSummary } : {}),
+  };
+}
+
+export function applyCompaction(
+  messages: readonly TranscriptMessage[],
+  plan: CompactionPlan,
+  summary: string,
+): TranscriptMessage[] {
+  return [
+    messages[PIN_INDEX] as TranscriptMessage,
+    { role: "user", content: COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX },
+    ...messages.slice(plan.cutIndex),
+  ];
+}
