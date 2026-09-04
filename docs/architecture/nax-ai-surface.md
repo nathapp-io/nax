@@ -1,0 +1,115 @@
+# The nax-ai surface the native adapter consumes
+
+Reference for `@nathapp/nax-ai` (pinned at **0.1.7**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
+
+`src/agents/native/client.ts` and its siblings are the ONLY files in `src/` permitted to import nax-ai (`scripts/check-nax-ai-imports.ts` enforces it).
+
+## Pricing: rates, cache rates, and tiers
+
+`client.pricing(resolved)` returns `Pricing`, and the cache rates are **required fields, always present**:
+
+```ts
+interface PricingRates {
+  readonly input: number;      // $ per 1M
+  readonly output: number;
+  readonly cacheRead: number;  // NOT optional
+  readonly cacheWrite: number; // NOT optional
+}
+interface PricingTier extends PricingRates {
+  /** Applies when total input usage exceeds this token count. */
+  readonly inputTokensAbove: number;
+}
+interface Pricing extends PricingRates {
+  readonly tiers?: readonly PricingTier[];
+}
+```
+
+Two live probes:
+
+```
+openai/gpt-5.6-terra       window=272000    {input:2, output:12, cacheRead:0.2, cacheWrite:2.5,
+                                             tiers:[{inputTokensAbove:272000, input:4, output:18,
+                                                     cacheRead:0.4, cacheWrite:5}]}
+anthropic/claude-sonnet-5  window=1000000   {input:2, output:10, cacheRead:0.2, cacheWrite:2.5}
+```
+
+**Do not claim nax-ai has no cache rates.** It does, per model, and `cacheRead` is typically 10% of `input` — a real number, not the heuristic `input * 0.1` that `src/agents/cost/pricing.ts` falls back to on the acpx path.
+
+### Tiers are real and nax currently ignores them
+
+Exactly **22 of 1290** catalogued models price in tiers. `git grep "inputTokensAbove" -- src` finds nothing, so long-context native runs under-report today. nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."*
+
+Every tiered model, with its threshold:
+
+| threshold | models |
+|---|---|
+| 200000 | `github-copilot/`: `gemini-3.1-pro-preview`, `gpt-5.6-luna`, `grok-4.5`, `grok-4.6` |
+| 272000 | `openai/` and `openai-codex/`: `gpt-5.4`, `gpt-5.5`, `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra` (plus `openai/gpt-5.4-pro`, `openai/gpt-5.5-pro`); `github-copilot/`: `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`; `cloudflare-ai-gateway/`: `gpt-5.6-luna`, `gpt-5.6-terra` |
+
+Above the threshold the whole request reprices — `gpt-5.6-terra` doubles input ($2 to $4) and cache-write ($2.50 to $5). Note the same model id tiers at a different threshold depending on provider (`gpt-5.6-luna` is 200k on github-copilot, 272k on openai).
+
+### How the rates reach cost today
+
+`src/agents/native/adapter.ts` builds the rate object as:
+
+```ts
+const catalog = client.pricing(resolved);
+const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer1M: catalog.output };
+```
+
+`catalog.cacheRead`, `catalog.cacheWrite` and `catalog.tiers` are **discarded here**. `TokenPricing` (`src/config/schema-types.ts`) carries optional `cacheReadPer1M` / `cacheCreationPer1M`, which `estimateCostUsd` honours and otherwise falls back to `inputPer1M` for that token class. So cache pricing only takes effect when a config override supplies it, even though the catalog has the real numbers. Tracked in #1843.
+
+## Context window
+
+`ResolvedModel.contextWindow` is the only source, reached via `client.model(provider, model)` — which takes **no override argument**. `contextWindow` appears in exactly two nax files, both native (`adapter.ts` feeding the turn deps, and `session/turn-loop.ts` consuming it); it is not in `src/config` at all.
+
+Windows are large: `claude-sonnet-5` is **1,000,000**, `gpt-5.6-terra` **272,000**. `execution.compaction.compactAtPercent` floors at 50, so on a million-token window compaction cannot fire below 500k tokens — a normal story will never trigger it.
+
+**The override seam exists but is unwired.** `ClientOptions.providerOverrides?: readonly ProviderOverride[]`, where `ProviderOverride.models?: readonly ResolvedModel[]` and `ResolvedModel` carries `contextWindow`. `git grep ProviderOverride -- src` is empty and `buildNativeClient` passes none. nax-ai constrains the type to *"declaration-data overrides only"* — a window value qualifies; behaviour changes do not.
+
+Overriding the window is safe: it never reaches the provider. It feeds only nax's own `shouldCompact` / `keepBudget` math, so lowering it makes compaction fire earlier against an otherwise real request.
+
+## Providers
+
+`defaultProviders()` loads the bundled catalog: **39 providers, 1290 models**. The build is memoised in `client.ts` because that load is not cheap; a *failed* build is deliberately not cached.
+
+```
+amazon-bedrock ant-ling anthropic azure-openai-responses baseten cerebras
+cloudflare-ai-gateway cloudflare-workers-ai deepseek fireworks github-copilot
+google google-vertex groq huggingface kimi-coding minimax minimax-cn mistral
+moonshotai moonshotai-cn nvidia openai openai-codex opencode opencode-go
+openrouter qwen-token-plan qwen-token-plan-cn qwen-token-plan-individual
+together vercel-ai-gateway xai xiaomi xiaomi-token-plan-ams
+xiaomi-token-plan-cn xiaomi-token-plan-sgp zai zai-coding-cn
+```
+
+Credentials reach nax-ai through one inlet only — the `credentials` option on `defaultProtocols({...})` in `buildNativeClient`. `ClientOptions` once had a `credentials` field that `createClient` never read; nax-ai 0.1.4 removed it for that reason. Do not reintroduce that shape.
+
+## Error kinds
+
+```
+rate-limit | auth | overloaded | bad-request | context-overflow | transport | unknown
+```
+
+`context-overflow` is a refinement of `bad-request`, added in 0.1.7 (nax-ai#26). `src/agents/native/errors.ts` maps it to `category: "availability"` so an overflow is swap-eligible rather than terminal. `PROTOCOL_ERROR_KINDS` and `ProtocolErrorKind` are **not** re-exported from the barrel — reach the union as `ProtocolError["kind"]`.
+
+Overflow marker phrasings inside nax-ai come from provider documentation, not live captures, so a reworded provider error can silently stop matching. That is why compaction has a proactive threshold and does not rely on the reactive backstop alone.
+
+## Cache retention
+
+`ProtocolRequest.cacheRetention?: "none" | "short" | "long"`, forwarded to pi-ai by `toPiOptions` only when defined. **nax does not control breakpoint placement** — pi-ai decides where `cache_control` goes; this field is just a scalar hint.
+
+Anthropic needs explicit breakpoints, so an absent value means no caching at all. On OpenAI caching is automatic server-side and the field is accepted and ignored. The turn-loop round trip sets `"short"`; the one-shot `complete()` and the compaction `summarize()` closure deliberately set nothing (no successor turn to reuse the entry).
+
+## Re-probing
+
+The catalog changes with each nax-ai release. To re-derive any number above:
+
+```ts
+import { createClient, defaultProtocols, defaultProviders } from "@nathapp/nax-ai";
+const c = createClient({ providers: await defaultProviders(), protocols: defaultProtocols({}) });
+const m = await c.model("openai", "gpt-5.6-terra");
+console.log(m.contextWindow, JSON.stringify(c.pricing(m)));
+```
+
+Run it with `bun`, outside `test/` (the test preload replaces `_clientDeps.build` with a sentinel so no real client is ever built in tests).
