@@ -18,6 +18,7 @@ import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
 import { type ResolvedCompleteOptions, SessionFailureError } from "@/agents/types";
+import type { CodingTool } from "@/tools";
 
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;
@@ -656,6 +657,16 @@ describe("NativeAgentAdapter compaction wiring", () => {
   const SMALL_MODEL = { ...MODEL, contextWindow: 8000 } satisfies ResolvedModel;
   const settings = { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 };
 
+  const fakeReadTool: CodingTool = {
+    name: "Read",
+    description: "Read a file",
+    inputSchema: { type: "object", properties: { path: { type: "string" } } },
+    scope: { pathFields: ["path"] },
+    async run() {
+      return { content: "body" };
+    },
+  };
+
   async function openWithSeededTranscript(name: string, client: Client) {
     _clientDeps.build = async () => client;
     const adapter = new NativeAgentAdapter();
@@ -709,10 +720,18 @@ describe("NativeAgentAdapter compaction wiring", () => {
     });
     const { adapter, handle } = await openWithSeededTranscript("sess-sum", client);
 
-    await adapter.sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
+    await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+      codingTools: [fakeReadTool],
+    });
 
-    // requests[0] is the summary, requests[1] the round trip.
+    // requests[0] is the summary, requests[1] the round trip. Giving the call
+    // a non-empty codingTools list makes this discriminating: the round trip
+    // must carry tools, and the summary must not, so a summarize closure that
+    // wrongly spread tools in (matching complete()'s pattern) would fail this.
     expect(requests[0].tools).toBeUndefined();
+    expect(requests[1].tools).toBeDefined();
+    expect(requests[1].tools?.length).toBeGreaterThan(0);
   });
 
   test("never compacts when the window is large", async () => {
