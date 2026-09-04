@@ -231,4 +231,25 @@ describe("applyCompaction", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0].role === "user" && summaries[0].content.includes("merged summary")).toBe(true);
   });
+
+  test("merges genuine new content with the previous summary rather than emptying toSummarize", () => {
+    // Unlike the test above (whose second-round toSummarize ends up empty because
+    // the appended content fits under a 1000-token budget), this drives a TRUE
+    // merge: a previousSummary is present AND toSummarize is non-empty at the
+    // same time, using the same tight KEEP budget for both compaction rounds.
+    const first = prepareCompaction(fourExchanges, KEEP);
+    if (!first) throw new Error("expected a plan");
+    const already = applyCompaction(fourExchanges, first, "first summary");
+    const grown: TranscriptMessage[] = [...already, ...exchange("c5", 400), ...exchange("c6", 400)];
+
+    const plan = prepareCompaction(grown, KEEP);
+    if (!plan) throw new Error("expected a plan");
+    expect(plan.previousSummary).toBe("first summary");
+    expect(plan.toSummarize.length).toBeGreaterThan(0);
+
+    const out = applyCompaction(grown, plan, "merged summary");
+    const summaries = out.filter((m) => m.role === "user" && m.content.startsWith(COMPACTION_SUMMARY_PREFIX));
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].role === "user" && summaries[0].content.includes("merged summary")).toBe(true);
+  });
 });
