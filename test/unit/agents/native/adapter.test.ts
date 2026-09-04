@@ -370,6 +370,30 @@ describe("NativeAgentAdapter session identity", () => {
     expect(seen[0]?.sessionId).toEqual(expect.any(String));
   });
 
+  // The one-shot complete() call site. Missing this is the likeliest defect:
+  // there are two client.complete() call sites in this file (the other is
+  // sendTurn's, covered below) and each must independently thread the
+  // effort suffix through as nax-ai's `thinking` field.
+  test("complete() forwards a valid effort suffix as thinking", async () => {
+    const { client, seen } = capturingClient(MODEL);
+    _clientDeps.build = async () => client;
+
+    const opts = options();
+    opts.modelDef = { provider: "unknown", model: "openai/gpt-5.4-mini[high]" };
+    await new NativeAgentAdapter().complete("hi", opts);
+
+    expect(seen[0]?.thinking).toBe("high");
+  });
+
+  test("complete() omits thinking entirely when the model carries no effort suffix", async () => {
+    const { client, seen } = capturingClient(MODEL);
+    _clientDeps.build = async () => client;
+
+    await new NativeAgentAdapter().complete("hi", options());
+
+    expect(seen[0] && "thinking" in seen[0]).toBe(false);
+  });
+
   test("sendTurn derives the header from the session, so it is stable across turns", async () => {
     const { client, seen } = capturingClient(OPENCODE_MODEL);
     _clientDeps.build = async () => client;
@@ -392,5 +416,49 @@ describe("NativeAgentAdapter session identity", () => {
     expect(first).toBeDefined();
     expect(first).toBe(second as string);
     expect(first).toBe(nativeSessionId(handle.id));
+  });
+
+  // sendTurn's client.complete() call site — the second of the two in this
+  // file, inside the session turn-loop's `complete` closure. A change that
+  // wires effort into complete() but not here would pass every test above
+  // and still ship the defect the ADR flagged.
+  test("sendTurn forwards a valid effort suffix as thinking", async () => {
+    const { client, seen } = capturingClient(MODEL);
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession("sess-thinking", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini[high]" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-thinking-")),
+    });
+
+    await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+
+    expect(seen[0]?.thinking).toBe("high");
+  });
+
+  test("sendTurn omits thinking entirely when the model carries no effort suffix", async () => {
+    const { client, seen } = capturingClient(MODEL);
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession("sess-no-thinking", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-no-thinking-")),
+    });
+
+    await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+
+    expect(seen[0] && "thinking" in seen[0]).toBe(false);
   });
 });

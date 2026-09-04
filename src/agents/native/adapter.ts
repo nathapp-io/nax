@@ -16,7 +16,7 @@ import { createTurnDeadline } from "../turn-deadline";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
-import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
+import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage, toThinkingLevel } from "./models";
 import {
   closeNativeSession,
   nativeSessionStreamHooks,
@@ -139,7 +139,8 @@ export class NativeAgentAdapter implements AgentAdapter {
     // "unknown"), so it is a guess rather than configuration — and routing a
     // billed call on a guess is what the protocol gate exists to prevent. The
     // string is the only source of truth.
-    const { provider, model } = parseNativeModel(options.modelDef.model);
+    const { provider, model, effort } = parseNativeModel(options.modelDef.model);
+    const thinking = toThinkingLevel(effort);
     const client = await getNativeClient();
     const resolved = await client.model(provider, model);
 
@@ -152,6 +153,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
         sessionId: nativeSessionId(this.oneShotKey),
         signal: controller.signal,
+        ...(thinking !== undefined ? { thinking } : {}),
       });
 
       const tokenUsage = toNaxTokenUsage(result.usage);
@@ -191,7 +193,8 @@ export class NativeAgentAdapter implements AgentAdapter {
   }
 
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
-    const { provider, model } = parseNativeModel(handle.modelDef?.model ?? "");
+    const { provider, model, effort } = parseNativeModel(handle.modelDef?.model ?? "");
+    const thinking = toThinkingLevel(effort);
     const client = await getNativeClient();
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
@@ -259,6 +262,7 @@ export class NativeAgentAdapter implements AgentAdapter {
               ...(tools.length > 0 ? { tools } : {}),
               sessionId,
               signal,
+              ...(thinking !== undefined ? { thinking } : {}),
             });
             const usage = toNaxTokenUsage(res.usage);
             return {
