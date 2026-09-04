@@ -61,7 +61,13 @@ export interface DispatchEventBase {
 
 export interface SessionTurnDispatchEvent extends DispatchEventBase {
   readonly kind: "session-turn";
-  readonly turn: number;
+  /**
+   * Round-trips inside this turn. The UNIT differs by transport, which is why
+   * `roundTripUnit` travels with it: on ACP each round-trip is a complete
+   * delegated agent run, on native each is a single model call.
+   */
+  readonly roundTrips: number;
+  readonly roundTripUnit: "model-call" | "agent-run";
   readonly protocolIds: { sessionId?: string | null; recordId?: string | null; turnId?: string };
   /**
    * Mid-turn human-in-the-loop Q&A exchanges captured during the turn (issue #1226).

@@ -116,7 +116,7 @@ describe("PromptAuditor", () => {
           callType: "run",
           stage: "run",
           sessionName: "nax-abc12345-my-feature-us-000-implementer",
-          turn: 1,
+          roundTrips: 1,
         }),
       );
       await aud.flush();
@@ -233,7 +233,7 @@ describe("PromptAuditor", () => {
             sessionName: "nax-abc-my-feature-us-004-implementer",
             callType: "run",
             stage: "run",
-            turn: 2,
+            roundTrips: 2,
             prompt: "outer prompt",
             response: "the user wants me to raise an escalation",
             interactions: [
@@ -449,6 +449,24 @@ describe("PromptAuditor", () => {
       expect(parsed.errorCode).toBe("TIMEOUT");
       _promptAuditorDeps.appendLine = origAppend;
       _promptAuditorDeps.write = origWrite;
+    });
+  });
+
+  test("renaming the field did not change the rendered header or suffix", async () => {
+    await withTempDir(async (dir) => {
+      const written: Array<{ path: string; data: string }> = [];
+      const orig = _promptAuditorDeps.write;
+      _promptAuditorDeps.write = async (path: string, data: string) => {
+        written.push({ path, data });
+        return 0;
+      };
+      const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
+      aud.record(makeEntry({ callType: "run", sessionName: "sess-a", stage: "run", roundTrips: 4 }));
+      await aud.flush();
+      _promptAuditorDeps.write = orig;
+      const txt = written.find((w) => w.path.endsWith(".txt"));
+      expect(txt?.path).toContain("-run-t04.txt");
+      expect(txt?.data).toContain("Turn:       4");
     });
   });
 });

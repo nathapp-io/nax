@@ -51,7 +51,8 @@ export interface PromptAuditEntry {
   readonly sessionName?: string;
   readonly recordId?: string | null;
   readonly sessionId?: string | null;
-  readonly turn?: number;
+  readonly roundTrips?: number;
+  readonly roundTripUnit?: "model-call" | "agent-run";
   /**
    * Mid-turn human-in-the-loop Q&A exchanges for this turn (issue #1226).
    * Present only when the agent asked the operator a question that was answered.
@@ -136,9 +137,9 @@ function deriveTxtFilename(entry: PromptAuditEntry): string {
 }
 
 function deriveAuditSuffix(entry: PromptAuditEntry): string | undefined {
-  if (entry.callType === "run" && entry.turn !== undefined) {
+  if (entry.callType === "run" && entry.roundTrips !== undefined) {
     const stage = entry.stage ?? "run";
-    return `${stage}-t${String(entry.turn).padStart(2, "0")}`;
+    return `${stage}-t${String(entry.roundTrips).padStart(2, "0")}`;
   }
   if (entry.callType === "complete") return "complete";
   return entry.stage ?? entry.callType;
@@ -155,7 +156,7 @@ function buildTxtContent(entry: PromptAuditEntry): string {
     `StoryId:    ${entry.storyId ?? "(none)"}`,
     `Feature:    ${entry.featureName ?? "(none)"}`,
     `CallType:   ${entry.callType ?? "(none)"}`,
-    ...(entry.turn !== undefined ? [`Turn:       ${entry.turn}`] : []),
+    ...(entry.roundTrips !== undefined ? [`Turn:       ${entry.roundTrips}`] : []),
     ...(entry.recordId ? [`RecordId:   ${entry.recordId}`] : []),
     ...(entry.sessionId ? [`SessionId:  ${entry.sessionId}`] : []),
     `Permission: ${entry.permissionProfile}`,
