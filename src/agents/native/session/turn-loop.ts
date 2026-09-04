@@ -14,8 +14,16 @@ import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
-import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
-import { nativeTranscriptDirs } from "./session";
+import {
+  applyCompaction,
+  estimateContextTokens,
+  keepBudget,
+  type TranscriptMessage as NativeTranscriptMessage,
+  prepareCompaction,
+  type ResolvedCompaction,
+  shouldCompact,
+} from "./compaction";
+import { nativeSessionLastUsage, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import type { NativeTurnActivity } from "./turn-events";
@@ -28,11 +36,28 @@ export interface NativeTurnResponse {
   readonly costUsd: number;
 }
 
+/** What one summarization call returns. Usage and cost are surfaced, not swallowed. */
+export interface NativeSummaryResponse {
+  readonly text: string;
+  readonly usage: TokenUsage;
+  readonly costUsd: number;
+}
+
 export interface TurnDeps {
   complete(
     messages: readonly ConversationMessage[],
     tools: ReturnType<typeof toToolDefinitions>,
   ): Promise<NativeTurnResponse>;
+  /**
+   * One model call, no tools, used only to summarize a dropped span. Separate
+   * from complete() because it must not advertise tools, must not count as a
+   * round trip, and its cost must be attributable.
+   */
+  summarize?(messages: readonly NativeTranscriptMessage[], previousSummary?: string): Promise<NativeSummaryResponse>;
+  /** ResolvedModel.contextWindow. Absent disables compaction. */
+  contextWindow?: number;
+  /** Resolved settings. Absent disables compaction. */
+  compaction?: ResolvedCompaction;
   /**
    * Whole-turn wall-clock budget. Absent means unbounded — the adapter always
    * supplies one for a real session; tests may omit it.
@@ -59,7 +84,7 @@ export async function runNativeTurn(
     });
   }
 
-  const messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id))];
+  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id))];
   messages.push({ role: "user", content: prompt });
 
   const codingTools = opts.codingTools ?? [];
@@ -98,6 +123,10 @@ export async function runNativeTurn(
   let timedOut = false;
   const interactions: InteractionExchange[] = [];
 
+  const anchor = nativeSessionLastUsage.get(handle.id);
+  let lastUsage = anchor?.inputTokens !== undefined ? { inputTokens: anchor.inputTokens } : undefined;
+  let anchorIndex = anchor?.anchorIndex;
+
   // nax#1838: the save below the loop is the clean exit's alone. A turn that
   // throws must persist too — the retry reopens the same deterministic session
   // name, so an unsaved conversation is one the model silently resumes without.
@@ -114,6 +143,48 @@ export async function runNativeTurn(
         timedOut = true;
         break;
       }
+
+      // Compaction runs at most once per round trip. That bound is what stops a
+      // compact-still-over-compact loop when the pinned prompt alone is too large.
+      if (
+        deps.summarize !== undefined &&
+        deps.contextWindow !== undefined &&
+        deps.compaction !== undefined &&
+        shouldCompact(estimateContextTokens(messages, lastUsage, anchorIndex), deps.contextWindow, deps.compaction)
+      ) {
+        const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction));
+        if (plan !== undefined) {
+          try {
+            const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
+            // Rebound, not spliced in place: `messages` is a local accumulator and
+            // rebinding it keeps the compacted array a fresh value.
+            messages = applyCompaction(messages, plan, summary.text);
+            inputTokens += summary.usage.inputTokens;
+            outputTokens += summary.usage.outputTokens;
+            costUsd += summary.costUsd;
+            // Resets the watchdog's lastActivityAt between the summary and the
+            // round trip, so the two silent spans do not add up against one budget.
+            deps.onActivity?.({
+              kind: "usage",
+              inputTokens: summary.usage.inputTokens,
+              outputTokens: summary.usage.outputTokens,
+              costUsd: summary.costUsd,
+            });
+            // The anchor described the pre-compaction array; it is meaningless now.
+            lastUsage = undefined;
+            anchorIndex = undefined;
+          } catch (err) {
+            // Not fatal: the request may still fit, and if it does not it fails
+            // through the path #1837 and #1839 made correct. Killing a story
+            // because a summarizer hiccuped would be worse than the problem.
+            getSafeLogger()?.warn("native-adapter", "compaction summary failed; sending uncompacted", {
+              sessionName: handle.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
+
       const res = await deps.complete(messages, tools);
       roundTrips += 1;
       inputTokens += res.usage.inputTokens;
@@ -126,6 +197,10 @@ export async function runNativeTurn(
       }
       costUsd += res.costUsd;
       output = res.text;
+
+      lastUsage = { inputTokens: res.usage.inputTokens };
+      anchorIndex = messages.length - 1;
+      nativeSessionLastUsage.set(handle.id, { inputTokens: res.usage.inputTokens, anchorIndex });
 
       deps.onActivity?.({
         kind: "usage",
