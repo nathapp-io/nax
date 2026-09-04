@@ -24,6 +24,7 @@ import {
   estimateCostUsd,
   NATIVE_AGENT,
   parseNativeModel,
+  resolveContextWindow,
   toNaxTokenUsage,
   toThinkingLevel,
 } from "./models";
@@ -261,7 +262,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     try {
       result = await runNativeTurn(handle, prompt, opts, {
         deadline,
-        contextWindow: resolved.contextWindow,
+        contextWindow: resolveContextWindow(handle.modelDef?.contextWindow, resolved.contextWindow),
         ...(nativeSessionCompaction.get(handle.id) !== undefined
           ? { compaction: nativeSessionCompaction.get(handle.id) }
           : {}),
