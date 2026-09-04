@@ -22,6 +22,7 @@ import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "@/debat
 import type { Finding } from "@/findings";
 import type { DiffContext } from "@/review/types";
 import type { ComposeInput } from "../compose";
+import { wrapDiffAccess } from "../diff-access";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -442,12 +443,9 @@ function buildDebateDiffSection(ctx: DiffContext): string {
       ...new Set([...(ctx.productionExcludePatterns ?? []), ":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"]),
     ];
     const excludeArgs = excludes.map((p) => `'${p}'`).join(" ");
-    return [
-      "## Changed Files",
-      "```",
-      stat,
-      "```",
-      "",
+    // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
+    // one on the native protocol (src/prompts/diff-access.ts).
+    const shellBody = [
       `## Git Baseline: \`${ref}\``,
       "",
       "To inspect the implementation:",
@@ -456,6 +454,14 @@ function buildDebateDiffSection(ctx: DiffContext): string {
       `- Commit history: \`git log --oneline ${ref}..HEAD\``,
       "",
       "Use these commands to inspect the code. Do NOT rely solely on the file list above.",
+    ].join("\n");
+    return [
+      "## Changed Files",
+      "```",
+      stat,
+      "```",
+      "",
+      wrapDiffAccess({ ref, productionExclude: [".", ...excludes] }, shellBody),
     ].join("\n");
   }
   // embedded mode: emit the diff block

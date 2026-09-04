@@ -6,6 +6,7 @@ import {
   buildGitArgv,
   compileToolPolicy,
   createCodingToolRuntime,
+  GIT_DIFF_FILTERS,
   GIT_ESCAPE_FLAGS,
   GIT_READ_VERBS,
   gitTool,
@@ -93,6 +94,86 @@ describe("buildGitArgv", () => {
     for (const verb of ["commit", "push", "checkout", "reset", "clean"]) {
       expect(GIT_READ_VERBS).not.toContain(verb);
     }
+  });
+});
+
+/**
+ * #1818 — typed flag fields.
+ *
+ * Every flag git needs here is emitted by nax, never supplied by the model: a
+ * boolean or a closed enum in, a fixed string out. That keeps the property the
+ * header comment defends -- the model supplies structure, nax constructs the
+ * argv -- while making `--name-only --diff-filter=A` expressible at all. It is
+ * step 1 of the adversarial reviewer's test-audit workflow, and before this the
+ * only way to ask for it was to put the flags in `refs`/`paths`, where they are
+ * refused. 12 of the 19 Git failures in the tool-audit ledgers are that shape.
+ */
+describe("buildGitArgv — typed flag fields", () => {
+  test("emits --name-only for diff and log", () => {
+    expect(argvOf({ subcommand: "diff", nameOnly: true })).toEqual(["diff", "--relative", "--name-only", "--", "."]);
+    expect(argvOf({ subcommand: "log", nameOnly: true })).toContain("--name-only");
+  });
+
+  test("emits --diff-filter=<value> for diff", () => {
+    expect(argvOf({ subcommand: "diff", diffFilter: "A" })).toContain("--diff-filter=A");
+  });
+
+  test("emits --oneline for log", () => {
+    expect(argvOf({ subcommand: "log", oneline: true })).toContain("--oneline");
+  });
+
+  test("places flags before the refs so they are never read as revisions", () => {
+    expect(argvOf({ subcommand: "diff", nameOnly: true, diffFilter: "A", refs: ["abc..HEAD"], paths: ["."] })).toEqual([
+      "diff",
+      "--relative",
+      "--name-only",
+      "--diff-filter=A",
+      "abc..HEAD",
+      "--",
+      ".",
+    ]);
+  });
+
+  test("a false or omitted boolean emits nothing", () => {
+    expect(argvOf({ subcommand: "diff", nameOnly: false })).toEqual(["diff", "--relative", "--", "."]);
+    expect(argvOf({ subcommand: "log", oneline: false })).not.toContain("--oneline");
+  });
+
+  // The closed enum is the whole safety property: were the value interpolated
+  // as given, `--diff-filter=<anything>` would be a model-authored flag.
+  test("rejects a diffFilter outside the enum", () => {
+    for (const value of ["X", "A;rm -rf /", "", "AM", "--exec-path=/tmp/evil"]) {
+      const built = buildGitArgv({ subcommand: "diff", diffFilter: value });
+      expect("error" in built).toBe(true);
+    }
+  });
+
+  test("rejects a non-boolean nameOnly rather than coercing it", () => {
+    expect("error" in buildGitArgv({ subcommand: "diff", nameOnly: "yes" })).toBe(true);
+  });
+
+  test("rejects a flag field on a subcommand it does not apply to", () => {
+    expect("error" in buildGitArgv({ subcommand: "show", nameOnly: true })).toBe(true);
+    expect("error" in buildGitArgv({ subcommand: "log", diffFilter: "A" })).toBe(true);
+    expect("error" in buildGitArgv({ subcommand: "diff", oneline: true })).toBe(true);
+    expect("error" in buildGitArgv({ subcommand: "status", nameOnly: true })).toBe(true);
+  });
+
+  test("no built argv with flag fields set contains a repo-escape flag", () => {
+    const argv = argvOf({ subcommand: "diff", nameOnly: true, diffFilter: "A" });
+    for (const flag of GIT_ESCAPE_FLAGS) {
+      expect(argv.some((arg) => arg === flag || arg.startsWith(`${flag}=`))).toBe(false);
+    }
+  });
+
+  test("declares the flag fields in the input schema so a model can reach them", () => {
+    expect(gitTool.inputSchema).toMatchObject({
+      properties: {
+        nameOnly: { type: "boolean" },
+        oneline: { type: "boolean" },
+        diffFilter: { enum: GIT_DIFF_FILTERS },
+      },
+    });
   });
 });
 

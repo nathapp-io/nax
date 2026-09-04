@@ -1,5 +1,5 @@
 export { editTool } from "./edit";
-export { buildGitArgv, GIT_ESCAPE_FLAGS, GIT_READ_VERBS, gitTool } from "./git";
+export { buildGitArgv, GIT_DIFF_FILTERS, GIT_ESCAPE_FLAGS, GIT_READ_VERBS, gitTool } from "./git";
 export { buildCommitArgvs, gitCommitTool } from "./git-commit";
 export { globTool } from "./glob";
 export { _grepDeps, buildGrepArgv, grepTool } from "./grep";

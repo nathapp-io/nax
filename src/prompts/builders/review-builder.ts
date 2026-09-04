@@ -19,6 +19,7 @@ import { SEMANTIC_CATEGORY_ENUM_LINE } from "@/review/semantic-categories";
 import type { LLMFinding } from "@/review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 import { wrapJsonPrompt } from "@/utils/llm-json";
+import { wrapDiffAccess } from "../diff-access";
 import { buildReviewOutOfScopeBlock } from "../sections";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
@@ -335,12 +336,9 @@ function buildRefDiffSection(storyGitRef: string, stat: string, excludePatterns:
   const fullDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD`;
   const logCmd = `git log --oneline ${storyGitRef}..HEAD`;
 
-  return `## Changed Files
-\`\`\`
-${stat}
-\`\`\`
-
-## Git Baseline: \`${storyGitRef}\`
+  // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
+  // one on the native protocol (src/prompts/diff-access.ts).
+  const shellBody = `## Git Baseline: \`${storyGitRef}\`
 
 To inspect the implementation:
 - Full production diff: \`${productionDiffCmd}\`
@@ -350,4 +348,11 @@ To inspect the implementation:
 Use these commands to inspect the code. Do NOT rely solely on the file list above — read the actual diff and files to verify each AC.
 
 `;
+
+  return `## Changed Files
+\`\`\`
+${stat}
+\`\`\`
+
+${wrapDiffAccess({ ref: storyGitRef, productionExclude: [".", ...merged] }, shellBody)}`;
 }

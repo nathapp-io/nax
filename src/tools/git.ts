@@ -45,6 +45,50 @@ export const GIT_READ_VERBS: readonly string[] = ["diff", "log", "show", "status
 const GIT_RELATIVE_VERBS: readonly string[] = ["diff", "log", "show"];
 
 /**
+ * Typed flag fields, and the verbs each one is valid on.
+ *
+ * nax emits every one of these flags itself: a boolean or a closed enum comes
+ * in, a fixed string goes out. The model never supplies flag text, so the
+ * property the header comment defends — the model supplies structure, nax
+ * constructs the argv — is unchanged by their existence. That is the whole
+ * reason they are typed fields rather than a passthrough list.
+ *
+ * They exist because `git diff --name-only --diff-filter=A` is step 1 of the
+ * adversarial reviewer's test-audit workflow and was not expressible at all:
+ * the only way to ask for it was to put the flags in `refs`/`paths`, where
+ * `looksLikeFlag` refuses them (#1818). A field is gated to the verbs it
+ * applies to so a wrong pairing is a nax error the model can act on, rather
+ * than a git usage error it has to interpret.
+ */
+export const GIT_DIFF_FILTERS: readonly string[] = ["A", "M", "D", "R"];
+const GIT_NAME_ONLY_VERBS: readonly string[] = ["diff", "log"];
+const GIT_DIFF_FILTER_VERBS: readonly string[] = ["diff"];
+const GIT_ONELINE_VERBS: readonly string[] = ["log"];
+
+/**
+ * A boolean flag field: absent or `false` emits nothing, `true` emits the flag.
+ *
+ * A non-boolean is refused rather than coerced — `nameOnly: "false"` is truthy
+ * in JavaScript, so coercion would turn a model's mistake into the opposite of
+ * what it asked for.
+ */
+function flagFromBoolean(
+  input: Record<string, unknown>,
+  field: string,
+  subcommand: string,
+  validVerbs: readonly string[],
+  flag: string,
+): string | null | { error: string } {
+  const value = input[field];
+  if (value === undefined) return null;
+  if (typeof value !== "boolean") return { error: `"${field}" must be a boolean` };
+  if (!validVerbs.includes(subcommand)) {
+    return { error: `"${field}" is not valid for "${subcommand}" (valid for: ${validVerbs.join(", ")})` };
+  }
+  return value ? flag : null;
+}
+
+/**
  * Flags that escape the repository or execute code.
  *
  * `-c` is included because config injection is a command-execution vector:
@@ -69,6 +113,32 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
 
   const argv: string[] = [subcommand];
   if (GIT_RELATIVE_VERBS.includes(subcommand)) argv.push("--relative");
+
+  // Flags precede the refs. Git accepts them in either position, but a flag
+  // placed after a revision list reads as a pathspec to anyone (model or
+  // human) scanning the argv, and this argv is written into the tool-audit
+  // ledger that #1818 was filed from.
+  const nameOnly = flagFromBoolean(input, "nameOnly", subcommand, GIT_NAME_ONLY_VERBS, "--name-only");
+  if (nameOnly !== null && typeof nameOnly === "object") return nameOnly;
+  if (nameOnly !== null) argv.push(nameOnly);
+
+  const diffFilter = input.diffFilter;
+  if (diffFilter !== undefined) {
+    if (typeof diffFilter !== "string" || !GIT_DIFF_FILTERS.includes(diffFilter)) {
+      return { error: `"diffFilter" must be one of: ${GIT_DIFF_FILTERS.join(", ")}` };
+    }
+    if (!GIT_DIFF_FILTER_VERBS.includes(subcommand)) {
+      return {
+        error: `"diffFilter" is not valid for "${subcommand}" (valid for: ${GIT_DIFF_FILTER_VERBS.join(", ")})`,
+      };
+    }
+    argv.push(`--diff-filter=${diffFilter}`);
+  }
+
+  const oneline = flagFromBoolean(input, "oneline", subcommand, GIT_ONELINE_VERBS, "--oneline");
+  if (oneline !== null && typeof oneline === "object") return oneline;
+  if (oneline !== null) argv.push(oneline);
+
   for (const ref of refs) {
     if (typeof ref !== "string") return { error: "refs must be strings" };
     // A ref that begins with "-" would be parsed as an option, which is how an
@@ -112,13 +182,20 @@ function truncate(body: string, maxBytes: number): string {
 export const gitTool: CodingTool = {
   name: "Git",
   description:
-    "Run a read-only git command (diff, log, show, status, blame) in the repository. Supply refs and pathspecs as arrays, not as a command line.",
+    "Run a read-only git command (diff, log, show, status, blame) in the repository. Supply refs and pathspecs as arrays, not as a command line. Command-line flags are not accepted in any field; use the nameOnly, diffFilter and oneline fields instead.",
   inputSchema: {
     type: "object",
     properties: {
       subcommand: { type: "string", enum: [...GIT_READ_VERBS], description: "Read-only git subcommand" },
       refs: { type: "array", items: { type: "string" }, description: "Refs, e.g. ['HEAD~1','HEAD']" },
       paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the permitted root" },
+      nameOnly: { type: "boolean", description: "List file names only, no content (diff, log)" },
+      diffFilter: {
+        type: "string",
+        enum: [...GIT_DIFF_FILTERS],
+        description: "Select only files Added (A), Modified (M), Deleted (D) or Renamed (R) (diff)",
+      },
+      oneline: { type: "boolean", description: "One line per commit (log)" },
     },
     required: ["subcommand"],
   },
