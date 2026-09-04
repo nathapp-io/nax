@@ -146,6 +146,10 @@ export async function runNativeTurn(
 
       // Compaction runs at most once per round trip. That bound is what stops a
       // compact-still-over-compact loop when the pinned prompt alone is too large.
+      // Deliberately unread here: this is Task 6's overflow-retry backstop
+      // (`canRetry = ... && !summarizeFailed && ...`), which suppresses a
+      // doomed retry after the summarizer has already failed this round trip.
+      let summarizeFailed = false;
       if (
         deps.summarize !== undefined &&
         deps.contextWindow !== undefined &&
@@ -177,6 +181,7 @@ export async function runNativeTurn(
             // Not fatal: the request may still fit, and if it does not it fails
             // through the path #1837 and #1839 made correct. Killing a story
             // because a summarizer hiccuped would be worse than the problem.
+            summarizeFailed = true;
             getSafeLogger()?.warn("native-adapter", "compaction summary failed; sending uncompacted", {
               sessionName: handle.id,
               error: err instanceof Error ? err.message : String(err),
@@ -184,6 +189,9 @@ export async function runNativeTurn(
           }
         }
       }
+      // Not consumed until Task 6's overflow-retry guard lands; this keeps the
+      // flag live for the linter without changing behavior.
+      void summarizeFailed;
 
       const res = await deps.complete(messages, tools);
       roundTrips += 1;
