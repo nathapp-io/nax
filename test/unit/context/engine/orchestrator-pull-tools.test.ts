@@ -126,6 +126,21 @@ describe("Phase 4: pull tools", () => {
     expect(bundle.pullTools).toEqual([]);
   });
 
+  // Regression: the native agent id had no AGENT_PROFILES entry, so it fell
+  // back to CONSERVATIVE_DEFAULT_PROFILE (supportsToolCalls: false) and
+  // received zero pull tools regardless of stage/pullConfig — a real
+  // capability downgrade for the native transport, not just a log warning.
+  test("native agent receives pull tools like any other tool-capable agent", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({
+      ...TDD_IMPLEMENTER_REQUEST,
+      agentId: "native",
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+    });
+    expect(bundle.pullTools.length).toBeGreaterThan(0);
+    expect(bundle.pullTools[0]?.name).toBe("query_neighbor");
+  });
+
   test("rebuildForAgent preserves pullTools from original bundle", async () => {
     const orch = new ContextOrchestrator([]);
     const original = await orch.assemble({
