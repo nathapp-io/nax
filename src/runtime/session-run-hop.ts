@@ -122,8 +122,13 @@ export function createSessionRunHop(
         },
       };
     } catch (err) {
-      const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
+      // nax#1840: native's sendTurn throws SessionTurnError (not
+      // SessionFailureError) so it can also carry the cost fields, so
+      // classification falls back to SessionTurnError.adapterFailure when the
+      // error is not a SessionFailureError. Mirrors build-hop-callback.ts.
       const turnError = err instanceof SessionTurnError ? err : undefined;
+      const sessionFailure =
+        (err instanceof SessionFailureError ? err.adapterFailure : undefined) ?? turnError?.adapterFailure;
       const errMessage = err instanceof Error ? err.message : String(err);
       return {
         prompt,

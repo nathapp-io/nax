@@ -17,7 +17,7 @@ import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
-import { type ResolvedCompleteOptions, SessionFailureError } from "@/agents/types";
+import type { ResolvedCompleteOptions } from "@/agents/types";
 import type { CodingTool } from "@/tools";
 
 const REAL_BUILD = _clientDeps.build;
@@ -124,110 +124,9 @@ describe("NativeAgentAdapter.complete", () => {
   });
 });
 
-/**
- * nax#1838: sendTurn rethrew nax-ai's error untouched, so the run path lost the
- * typed kind and build-hop-callback reclassified every native failure as a
- * generic fail-adapter-error -- rate limits lost their backoff, auth failures
- * stopped sticking to the unavailable mark, and an overflow was indistinguishable
- * from a crash. complete() had carried the typed failure all along; this is the
- * same treatment on the session path, using the carrier build-hop-callback
- * already reads.
- */
-describe("NativeAgentAdapter.sendTurn failure classification", () => {
-  class ProtocolStreamError extends Error {
-    constructor(readonly protocolError: { kind: string; message: string }) {
-      super(protocolError.message);
-      this.name = "ProtocolStreamError";
-    }
-  }
-
-  async function openTurnSession(name: string) {
-    const adapter = new NativeAgentAdapter();
-    const handle = await adapter.openSession(name, {
-      agentName: "native",
-      workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
-      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
-      timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), `nax-adapter-${name}-`)),
-    });
-    return { adapter, handle };
-  }
-
-  const send = (adapter: NativeAgentAdapter, handle: Awaited<ReturnType<NativeAgentAdapter["openSession"]>>) =>
-    adapter.sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
-
-  /** Narrows by throwing, so the assertions below need no cast. */
-  async function failureFrom(turn: Promise<unknown>): Promise<SessionFailureError> {
-    const err = await turn.catch((e: unknown) => e);
-    if (!(err instanceof SessionFailureError)) {
-      throw new Error(`expected a SessionFailureError, got ${err instanceof Error ? err.name : String(err)}`);
-    }
-    return err;
-  }
-
-  test("carries a rate limit up as a typed failure, so the backoff written for it can fire", async () => {
-    _clientDeps.build = async () =>
-      fakeClient({
-        complete: async () => {
-          throw new ProtocolStreamError({ kind: "rate-limit", message: "429 slow down" });
-        },
-      });
-    const { adapter, handle } = await openTurnSession("sess-ratelimit");
-
-    const err = await failureFrom(send(adapter, handle));
-
-    expect(err.adapterFailure.outcome).toBe("fail-rate-limit");
-    expect(err.adapterFailure.category).toBe("availability");
-  });
-
-  test("keeps the upstream message, which is the only description of what happened", async () => {
-    _clientDeps.build = async () =>
-      fakeClient({
-        complete: async () => {
-          throw new ProtocolStreamError({ kind: "auth", message: "401 invalid key" });
-        },
-      });
-    const { adapter, handle } = await openTurnSession("sess-auth");
-
-    const err = await failureFrom(send(adapter, handle));
-
-    expect(err.adapterFailure.outcome).toBe("fail-auth");
-    expect(err.message).toContain("401 invalid key");
-  });
-
-  test("classifies a context overflow as swappable rather than as a crash", async () => {
-    _clientDeps.build = async () =>
-      fakeClient({
-        complete: async () => {
-          throw new ProtocolStreamError({ kind: "context-overflow", message: "prompt is too long" });
-        },
-      });
-    const { adapter, handle } = await openTurnSession("sess-overflow");
-
-    const err = await failureFrom(send(adapter, handle));
-
-    expect(err.adapterFailure.category).toBe("availability");
-    expect(err.adapterFailure.message).toContain("context window");
-  });
-
-  test("leaves an error that is not a protocol fault exactly as thrown", async () => {
-    // The other side of the classification: wrapping everything would make a
-    // programming error look like a vendor failure and hide its stack.
-    _clientDeps.build = async () =>
-      fakeClient({
-        complete: async () => {
-          throw new TypeError("undefined is not a function");
-        },
-      });
-    const { adapter, handle } = await openTurnSession("sess-bug");
-
-    const err = await send(adapter, handle).catch((e: unknown) => e);
-
-    expect(err).toBeInstanceOf(TypeError);
-    expect(err).not.toBeInstanceOf(SessionFailureError);
-  });
-});
+// nax#1838/#1840 sendTurn failure classification and cost-accounting tests
+// live in adapter-turn-classification.test.ts (split by describe block to
+// stay under the 800-line test-file cap).
 
 /**
  * nax#1838: AgentAdapter.closeSession carries no failure signal, so the native

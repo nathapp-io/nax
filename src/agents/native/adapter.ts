@@ -15,7 +15,7 @@ import { getSafeLogger } from "@/logger";
 import { createTurnDeadline } from "../turn-deadline";
 // Value import via the sibling path, matching acp/adapter.ts: the parent barrel
 // would close an import cycle (agents/index -> registry -> native/index -> here).
-import { SessionFailureError } from "../types";
+import { SessionTurnError } from "../types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
@@ -29,7 +29,7 @@ import {
   openNativeSession,
 } from "./session/session";
 import { buildNativeStreamEvent } from "./session/turn-events";
-import { runNativeTurn } from "./session/turn-loop";
+import { readNativeTurnFailureUsage, runNativeTurn } from "./session/turn-loop";
 import { nativeSessionId, newSessionKey } from "./session-affinity";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
@@ -345,13 +345,30 @@ export class NativeAgentAdapter implements AgentAdapter {
       // The same treatment complete() gives a protocol fault, on the path that
       // was missing it (nax#1838). Rethrowing untouched left build-hop-callback
       // to synthesise a generic fail-adapter-error, which cost a rate limit its
-      // backoff and an auth failure its unavailable mark. SessionFailureError is
-      // the carrier that catch already reads.
+      // backoff and an auth failure its unavailable mark.
+      //
+      // nax#1840: classification and cost are read off two different error
+      // classes, and a throw can only be one. SessionTurnError is the carrier
+      // both hop callbacks already read cost off, so it now also carries the
+      // classification (its optional adapterFailure field) — one throw, both
+      // facts. runNativeTurn attaches whatever was already spent on earlier
+      // round trips to this same err before it reaches here; read it back
+      // rather than dropping it as the pre-#1840 SessionFailureError did.
       //
       // Only a protocol fault is wrapped. A TypeError from our own code is not a
       // vendor failure, and dressing it as one would hide the bug.
       if (isProtocolStreamError(err)) {
-        throw new SessionFailureError(err.protocolError.message, toAdapterFailure(err.protocolError.kind));
+        const adapterFailure = toAdapterFailure(err.protocolError.kind);
+        const usage = readNativeTurnFailureUsage(err);
+        throw new SessionTurnError(
+          err.protocolError.message,
+          false,
+          adapterFailure.retriable,
+          usage?.tokenUsage,
+          usage?.costUsd,
+          undefined,
+          adapterFailure,
+        );
       }
       throw err;
     }

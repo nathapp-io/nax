@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nativeTranscriptDirs } from "@/agents/native/session/session";
 import { loadTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn } from "@/agents/native/session/turn-loop";
+import { readNativeTurnFailureUsage, runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
 import { createTurnDeadline } from "@/agents/turn-deadline";
 import type { CodingTool } from "@/tools";
@@ -87,6 +87,42 @@ describe("native turn loop", () => {
     expect(saved.length).toBeGreaterThanOrEqual(2);
     expect(saved[0]).toEqual({ role: "user", content: "hi" });
     expect(saved[1]).toMatchObject({ role: "assistant", content: "thinking about it" });
+  });
+
+  // nax#1840: the totals were locals inside runNativeTurn, reachable only
+  // through the clean-exit return. A throw at round trip N discarded every
+  // token spent on round trips 1..N-1. Two round trips burn real tokens
+  // before the third throws; the accumulated usage must survive the throw,
+  // attached to the rejected error by identity (readNativeTurnFailureUsage),
+  // with the exact numbers a caller would need to record real spend.
+  test("attaches the usage/cost burned on earlier round trips to the thrown error", async () => {
+    let calls = 0;
+    const caught = await runNativeTurn(handle, "hi", opts(), {
+      complete: async () => {
+        calls += 1;
+        if (calls <= 2) {
+          return reply({
+            text: "still working",
+            toolCalls: [{ id: `c${calls}`, name: "Read", input: { path: "a" } }],
+            usage: { inputTokens: 100, outputTokens: 40 },
+            costUsd: 0.02,
+          });
+        }
+        throw new Error("upstream exploded on round trip 3");
+      },
+    }).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(Error);
+    const usage = readNativeTurnFailureUsage(caught);
+    expect(usage).toBeDefined();
+    expect(usage?.tokenUsage.inputTokens).toBe(200);
+    expect(usage?.tokenUsage.outputTokens).toBe(80);
+    expect(usage?.costUsd).toBeCloseTo(0.04, 6);
+  });
+
+  test("readNativeTurnFailureUsage is undefined for an error nothing attached usage to", () => {
+    expect(readNativeTurnFailureUsage(new Error("unrelated"))).toBeUndefined();
+    expect(readNativeTurnFailureUsage("not an object")).toBeUndefined();
   });
 
   test("persists the conversation, including thinking blocks", async () => {
