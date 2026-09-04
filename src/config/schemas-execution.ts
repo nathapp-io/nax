@@ -213,6 +213,22 @@ export const ExecutionConfigSchema = z.object({
     .int()
     .positive({ message: "contextProviderTokenBudget must be > 0" })
     .default(2000),
+  /**
+   * Native context compaction. Percentages of the model's window rather than
+   * absolute token counts: nax-ai's catalog spans 4095 to 3.5M tokens, and an
+   * absolute reserve is negative on the smallest windows — compaction would
+   * fire every round trip and shrink nothing.
+   */
+  compaction: z
+    .object({
+      enabled: z.boolean().default(true),
+      compactAtPercent: z.number().int().min(50).max(99).default(90),
+      keepRecentPercent: z.number().int().min(5).max(70).default(30),
+    })
+    .refine((c) => c.keepRecentPercent <= c.compactAtPercent - 20, {
+      message: "keepRecentPercent must be at least 20 points below compactAtPercent",
+    })
+    .default({ enabled: true, compactAtPercent: 90, keepRecentPercent: 30 }),
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),

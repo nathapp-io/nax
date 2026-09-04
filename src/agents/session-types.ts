@@ -98,6 +98,11 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * scratch dir reaches the adapter otherwise. ACP ignores it.
    */
   transcriptDir?: string;
+  /**
+   * Native: resolved compaction settings. A resolved primitive, never NaxConfig —
+   * src/agents/native/ must not read config (check:adapter-no-config-import).
+   */
+  compaction?: import("./native/session/compaction").ResolvedCompaction;
 }
 
 /** Options for sendTurn(). */

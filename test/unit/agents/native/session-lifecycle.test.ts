@@ -4,7 +4,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeAgentAdapter } from "@test/helpers";
-import { closeNativeSession, openNativeSession } from "@/agents/native/session/session";
+import {
+  closeNativeSession,
+  nativeSessionCompaction,
+  nativeSessionLastUsage,
+  openNativeSession,
+} from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@/agents/session-types";
@@ -276,5 +281,23 @@ describe("SessionManager forwards contextPullTools to the adapter", () => {
 
     expect(capturedSendTurnOpts).toHaveLength(1);
     expect(capturedSendTurnOpts[0].contextPullTools).toBe(pullTools);
+  });
+});
+
+describe("native session compaction settings", () => {
+  const settings = { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 };
+
+  test("openSession records the resolved settings for the turn to read", async () => {
+    const handle = await openNativeSession("sess-cfg", opts({ compaction: settings }));
+    expect(nativeSessionCompaction.get("sess-cfg")).toEqual(settings);
+    await closeNativeSession(handle, false);
+  });
+
+  test("closing clears the settings and the usage anchor, like every other session map", async () => {
+    const handle = await openNativeSession("sess-cfg2", opts({ compaction: settings }));
+    nativeSessionLastUsage.set("sess-cfg2", { inputTokens: 10, anchorIndex: 0 });
+    await closeNativeSession(handle, false);
+    expect(nativeSessionCompaction.has("sess-cfg2")).toBe(false);
+    expect(nativeSessionLastUsage.has("sess-cfg2")).toBe(false);
   });
 });

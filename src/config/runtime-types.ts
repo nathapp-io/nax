@@ -120,6 +120,12 @@ export interface ExecutionConfig {
   regressionGate: RegressionGateConfig;
   /** Token budget for plugin context providers (default: 2000) */
   contextProviderTokenBudget: number;
+  /** Native context compaction settings, resolved as percentages of the model's window. */
+  compaction: {
+    enabled: boolean;
+    compactAtPercent: number;
+    keepRecentPercent: number;
+  };
   /** Test command override (null = disabled, undefined = auto-detect from package.json) */
   testCommand?: string | null;
   /** Lint command override (null = disabled, undefined = auto-detect from package.json) */
