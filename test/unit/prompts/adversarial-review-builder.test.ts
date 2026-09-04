@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeAdversarialReviewConfig } from "@test/helpers";
 import { AdversarialReviewPromptBuilder } from "@/prompts/builders/adversarial-review-builder";
+import { DIFF_ACCESS_MARKER_PREFIX } from "@/prompts/sections/diff-access";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
@@ -462,5 +463,44 @@ describe("adversarial review prompt", () => {
 
   test("omits the block when the story declares no exclusions", () => {
     expect(adversarialPrompt(makeScopeStory())).not.toContain("Out of Scope (feature-level");
+  });
+});
+
+/**
+ * #1800/#1818 — the ref-mode diff instructions are protocol-dependent, so the
+ * builder emits them inside a region that dispatch substitutes. The builder's
+ * own output stays the shell text: that is what ACP receives, and what the
+ * prompt degrades to if substitution never runs.
+ */
+describe("AdversarialReviewPromptBuilder — diff-access region", () => {
+  const prompt = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+
+  test("wraps the ref-mode diff instructions in a substitutable region", () => {
+    expect(prompt).toContain(DIFF_ACCESS_MARKER_PREFIX);
+    expect(prompt).toContain("<!--/nax:diff-access-->");
+  });
+
+  test("the region's spec carries the baseline ref and asks for the test audit", () => {
+    const spec = JSON.parse(/<!--nax:diff-access:\S+ (\{.*?\})-->/.exec(prompt)?.[1] ?? "{}");
+    expect(spec.ref).toBe(STORY_GIT_REF);
+    expect(spec.testAudit).toBe(true);
+    expect(spec.fullExclude).toContain(":!.nax/");
+    expect(spec.productionExclude).toBeDefined();
+  });
+
+  test("exclusion pathspecs reach the spec unquoted, ready for a paths array", () => {
+    const spec = JSON.parse(/<!--nax:diff-access:\S+ (\{.*?\})-->/.exec(prompt)?.[1] ?? "{}");
+    for (const pathspec of spec.fullExclude as string[]) {
+      expect(pathspec.startsWith("'")).toBe(false);
+    }
+  });
+
+  test("embedded mode carries no region — it has no commands to translate", () => {
+    const embedded = builder.buildAdversarialReviewPrompt(
+      STORY,
+      { ...CONFIG, diffMode: "embedded" },
+      { mode: "embedded", diff: DIFF },
+    );
+    expect(embedded).not.toContain("nax:diff-access");
   });
 });

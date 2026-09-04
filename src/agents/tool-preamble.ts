@@ -17,6 +17,7 @@
  * drift, and a third would otherwise be written without the guard.
  */
 
+import { applyDiffAccess } from "../prompts/sections/diff-access";
 import { buildContextToolPreamble } from "./acp/adapter-output";
 import { NATIVE_AGENT } from "./native/models";
 import type { AgentRunOptions } from "./types";
@@ -24,4 +25,26 @@ import type { AgentRunOptions } from "./types";
 export function promptWithToolPreamble(agentName: string, options: AgentRunOptions): string {
   if (agentName === NATIVE_AGENT) return options.prompt;
   return buildContextToolPreamble(options);
+}
+
+/**
+ * Render every diff-access region for the protocol actually being dispatched.
+ *
+ * Sits beside the tool-preamble branch for the same reason it does: this is a
+ * dispatch question, decided after any fallback swap, and the builders that
+ * emit the regions cannot know which protocol will receive their text
+ * (`operations/call.ts:55` joins the prompt; `:69` resolves the agent).
+ *
+ * Unlike the preamble this runs unconditionally on both protocols — ACP needs
+ * the markers stripped even though it keeps the body, so an agent never sees
+ * one. Its two call sites must not drift, which is why it is a helper here
+ * rather than a condition written out at each.
+ *
+ * Named for the protocol, not the agent: the agent name is only how the
+ * protocol is derived. Every ACP agent gets the same rendering, so nothing here
+ * varies with agent identity, and a future transport would extend the protocol
+ * branch rather than add an agent to a list.
+ */
+export function applyDiffAccessForAgentProtocol(agentName: string, prompt: string): string {
+  return applyDiffAccess(prompt, agentName === NATIVE_AGENT ? "native" : "acp");
 }

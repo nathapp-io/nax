@@ -4,6 +4,7 @@ import { SessionTurnError } from "@/agents";
 import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
 import type { ToolDescriptor } from "@/context/engine";
+import { wrapDiffAccess } from "@/prompts/sections/diff-access";
 import { createSessionRunHop } from "@/runtime/session-run-hop";
 import type { SendPromptOpts } from "@/session/types";
 
@@ -290,5 +291,60 @@ describe("createSessionRunHop — interaction budget", () => {
 
   test("forwards an explicit maxInteractionTurns unchanged", async () => {
     expect(await forwardedBudget({ maxInteractionTurns: 3 })).toBe(3);
+  });
+});
+
+/**
+ * #1800 — the substitution has to be wired into the hop, not merely available.
+ *
+ * The precedent this guards against is #1812: every native review op declared
+ * its coding tools, was granted them, and was advertised none, so a capability
+ * that looked configured was never connected. A unit test of the renderer alone
+ * would pass in exactly that state, so this asserts on the prompt the session
+ * actually receives.
+ */
+describe("createSessionRunHop — diff-access substitution", () => {
+  async function promptSentTo(agentName: string): Promise<string> {
+    const sent: string[] = [];
+    const handle: SessionHandle = { id: "nax-session", agentName };
+    const turnResult: TurnResult = {
+      output: "done",
+      tokenUsage: { inputTokens: 1, outputTokens: 1 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+    };
+    const sessionManager = makeSessionManager({
+      nameFor: mock(() => "nax-session"),
+      openSession: mock(async () => handle),
+      sendPrompt: mock(async (_handle: unknown, prompt: string) => {
+        sent.push(prompt);
+        return turnResult;
+      }),
+      closeSession: mock(async () => {}),
+    });
+
+    const options = {
+      ...makeRunOptions(),
+      prompt: `head\n${wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}tail`,
+    };
+    await createSessionRunHop(sessionManager)(agentName, options);
+    return sent[0] ?? "";
+  }
+
+  test("a native session receives tool-shaped diff instructions", async () => {
+    const prompt = await promptSentTo("native");
+    expect(prompt).toContain('"subcommand":"diff"');
+    expect(prompt).not.toContain("SHELL BODY");
+  });
+
+  test("an ACP session receives the shell body unchanged", async () => {
+    const prompt = await promptSentTo("claude");
+    expect(prompt).toContain("SHELL BODY");
+  });
+
+  test("neither agent is ever shown a marker", async () => {
+    for (const agent of ["native", "claude"]) {
+      expect(await promptSentTo(agent)).not.toContain("nax:diff-access");
+    }
   });
 });

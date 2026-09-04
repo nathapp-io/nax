@@ -12,6 +12,7 @@ import type { AcDroppedEntry, AcQuoteRejectionCode } from "@/review/ac-quote-val
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import { buildReviewOutOfScopeBlock } from "../sections";
+import { wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
 export interface TestInventory {
@@ -262,7 +263,13 @@ function buildAdversarialRefDiffSection(
       ? testGlobs.map((glob) => `\`${glob}\``).join(", ")
       : "the resolved project test-file patterns";
 
-  return `${statBlock}## Diff Access
+  // The shell text below is the ACP rendering. Dispatch swaps it for a
+  // tool-shaped one when the story runs on the native protocol, which has no
+  // shell -- see src/prompts/sections/diff-access.ts for why the branch cannot be taken
+  // here. Pathspecs go into the spec unquoted: shell quoting is the ACP
+  // rendering's business, and a quoted pathspec in a `paths` array is a literal
+  // filename.
+  const shellBody = `## Diff Access
 
 You have access to git commands. Fetch the diff yourself — do NOT ask for it to be provided.
 
@@ -292,6 +299,17 @@ cat path/to/file.ts
   \`git diff --unified=3 ${storyGitRef}..HEAD -- . ${productionExcludeArgs}\`
 
 `;
+
+  return `${statBlock}${wrapDiffAccess(
+    {
+      ref: storyGitRef,
+      fullExclude: [".", ...merged],
+      productionExclude: [".", ...productionExcludes],
+      testGlobs: [...testGlobs],
+      testAudit: true,
+    },
+    shellBody,
+  )}`;
 }
 
 /**
