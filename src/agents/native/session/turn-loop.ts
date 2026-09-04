@@ -71,6 +71,16 @@ export interface TurnDeps {
   onActivity?: (activity: NativeTurnActivity) => void;
 }
 
+/**
+ * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
+ * here and the kind is what matters.
+ */
+function isContextOverflow(err: unknown): boolean {
+  if (typeof err !== "object" || err === null || !("protocolError" in err)) return false;
+  const { protocolError } = err as { protocolError?: { kind?: unknown } };
+  return protocolError?.kind === "context-overflow";
+}
+
 export async function runNativeTurn(
   handle: SessionHandle,
   prompt: string,
@@ -146,9 +156,9 @@ export async function runNativeTurn(
 
       // Compaction runs at most once per round trip. That bound is what stops a
       // compact-still-over-compact loop when the pinned prompt alone is too large.
-      // Deliberately unread here: this is Task 6's overflow-retry backstop
-      // (`canRetry = ... && !summarizeFailed && ...`), which suppresses a
-      // doomed retry after the summarizer has already failed this round trip.
+      // Read below by the overflow-retry backstop (`canRetry = ... &&
+      // !summarizeFailed && ...`), which suppresses a doomed retry after the
+      // summarizer has already failed this round trip.
       let summarizeFailed = false;
       if (
         deps.summarize !== undefined &&
@@ -189,11 +199,43 @@ export async function runNativeTurn(
           }
         }
       }
-      // Not consumed until Task 6's overflow-retry guard lands; this keeps the
-      // flag live for the linter without changing behavior.
-      void summarizeFailed;
+      let res: NativeTurnResponse;
+      try {
+        res = await deps.complete(messages, tools);
+      } catch (err) {
+        // Written as one guarded `if` (not a separate `canRetry` boolean) so
+        // TypeScript's narrowing carries deps.summarize/contextWindow/compaction
+        // as defined below — a boolean flag loses that narrowing.
+        if (
+          !isContextOverflow(err) ||
+          summarizeFailed ||
+          deps.summarize === undefined ||
+          deps.contextWindow === undefined ||
+          deps.compaction === undefined
+        ) {
+          throw err;
+        }
 
-      const res = await deps.complete(messages, tools);
+        // Same code path, half the keep budget. Not a second algorithm.
+        const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction, true));
+        if (plan === undefined) throw err;
+        const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
+        messages = applyCompaction(messages, plan, summary.text);
+        inputTokens += summary.usage.inputTokens;
+        outputTokens += summary.usage.outputTokens;
+        costUsd += summary.costUsd;
+        deps.onActivity?.({
+          kind: "usage",
+          inputTokens: summary.usage.inputTokens,
+          outputTokens: summary.usage.outputTokens,
+          costUsd: summary.costUsd,
+        });
+        lastUsage = undefined;
+        anchorIndex = undefined;
+        // Retried once. A second overflow propagates: compacting further would be
+        // guessing, and the failure now carries a correct diagnosis.
+        res = await deps.complete(messages, tools);
+      }
       roundTrips += 1;
       inputTokens += res.usage.inputTokens;
       outputTokens += res.usage.outputTokens;

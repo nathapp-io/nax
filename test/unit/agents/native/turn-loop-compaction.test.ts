@@ -186,3 +186,119 @@ describe("proactive compaction", () => {
     expect(summarizeCalls).toBe(1);
   });
 });
+
+class ProtocolStreamError extends Error {
+  constructor(readonly protocolError: { kind: string; message: string }) {
+    super(protocolError.message);
+    this.name = "ProtocolStreamError";
+  }
+}
+
+/**
+ * A transcript that fits under the proactive threshold but is still large enough
+ * for the aggressive keep budget to find a cut.
+ *
+ * The sizing is load-bearing and was derived, not guessed. At a 20000-token
+ * window the threshold is 15904 (90% capped by headroom) and the aggressive keep
+ * budget is 3000; this transcript is ~8006 tokens, so the proactive check stays
+ * silent and only the backstop can compact. A large window does NOT work here:
+ * at 1_000_000 the aggressive budget is 150_000 tokens, more than the whole
+ * transcript, so prepareCompaction returns undefined and the backstop rethrows.
+ */
+const BACKSTOP_WINDOW = 20_000;
+async function seedModerateTranscript() {
+  await saveTranscript(dir, "sess-c", [
+    { role: "user", content: "the task" },
+    { role: "assistant", content: "a".repeat(16_000) },
+    { role: "user", content: "keep going" },
+    { role: "assistant", content: "b".repeat(16_000) },
+  ]);
+}
+
+describe("reactive backstop", () => {
+  test("compacts and retries once when an overflow gets through", async () => {
+    await seedModerateTranscript();
+    let completes = 0;
+    let summarizeCalls = 0;
+
+    const result = await runNativeTurn(handle, "next", opts(), {
+      contextWindow: BACKSTOP_WINDOW,
+      compaction: cfg,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return { text: "summary", usage, costUsd: 0 };
+      },
+      complete: async () => {
+        completes += 1;
+        if (completes === 1) {
+          throw new ProtocolStreamError({ kind: "context-overflow", message: "prompt is too long" });
+        }
+        return { text: "done", usage, costUsd: 0 };
+      },
+    });
+
+    expect(summarizeCalls).toBe(1);
+    expect(completes).toBe(2);
+    expect(result.output).toBe("done");
+  });
+
+  test("retries once, not repeatedly", async () => {
+    await seedModerateTranscript();
+    let completes = 0;
+
+    await expect(
+      runNativeTurn(handle, "next", opts(), {
+        contextWindow: BACKSTOP_WINDOW,
+        compaction: cfg,
+        summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
+        complete: async () => {
+          completes += 1;
+          throw new ProtocolStreamError({ kind: "context-overflow", message: "prompt is too long" });
+        },
+      }),
+    ).rejects.toThrow("prompt is too long");
+
+    expect(completes).toBe(2);
+  });
+
+  test("does not retry an overflow when the summarizer already failed this round trip", async () => {
+    await seedOversizedTranscript();
+    let completes = 0;
+
+    await expect(
+      runNativeTurn(handle, "next", opts(), {
+        contextWindow: 8000, // proactive fires first, and fails
+        compaction: cfg,
+        summarize: async () => {
+          throw new Error("summarizer unavailable");
+        },
+        complete: async () => {
+          completes += 1;
+          throw new ProtocolStreamError({ kind: "context-overflow", message: "prompt is too long" });
+        },
+      }),
+    ).rejects.toThrow("prompt is too long");
+
+    // One attempt only: paying twice to fail the same way helps nobody.
+    expect(completes).toBe(1);
+  });
+
+  test("leaves a non-overflow protocol error alone", async () => {
+    await seedModerateTranscript();
+    let completes = 0;
+
+    await expect(
+      runNativeTurn(handle, "next", opts(), {
+        contextWindow: BACKSTOP_WINDOW,
+        compaction: cfg,
+        summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
+        complete: async () => {
+          completes += 1;
+          throw new ProtocolStreamError({ kind: "rate-limit", message: "429" });
+        },
+      }),
+    ).rejects.toThrow("429");
+
+    expect(completes).toBe(1);
+  });
+});
