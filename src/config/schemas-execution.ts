@@ -223,7 +223,7 @@ export const ExecutionConfigSchema = z.object({
     .object({
       enabled: z.boolean().default(true),
       compactAtPercent: z.number().int().min(50).max(99).default(90),
-      keepRecentPercent: z.number().int().min(5).max(70).default(30),
+      keepRecentPercent: z.number().int().min(5).max(79).default(30),
     })
     .refine((c) => c.keepRecentPercent <= c.compactAtPercent - 20, {
       message: "keepRecentPercent must be at least 20 points below compactAtPercent",

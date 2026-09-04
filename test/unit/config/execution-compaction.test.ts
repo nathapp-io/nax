@@ -37,6 +37,14 @@ describe("execution.compaction", () => {
     expect(result.success).toBe(true);
   });
 
+  test("accepts keepRecentPercent at 79, the field bound derived from compactAtPercent's max of 99 minus the refine's 20-point floor", () => {
+    const result = ExecutionConfigSchema.safeParse({
+      ...base,
+      compaction: { enabled: true, compactAtPercent: 99, keepRecentPercent: 79 },
+    });
+    expect(result.success).toBe(true);
+  });
+
   test("rejects a trigger above 99, which would leave no headroom", () => {
     const result = ExecutionConfigSchema.safeParse({
       ...base,
