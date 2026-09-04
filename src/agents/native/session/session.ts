@@ -10,6 +10,7 @@
 import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { NATIVE_AGENT } from "../models";
+import { nativeSessionId } from "../session-affinity";
 import { deleteTranscript, pruneRetainedTranscripts } from "./transcript-store";
 
 /**
@@ -61,6 +62,12 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
   return {
     id: name,
     agentName: NATIVE_AGENT,
+    // Both fields carry the same value on purpose. On ACP they differ because a
+    // physical session can be re-established under a stable logical record;
+    // native has no reconnect, so its logical and physical identity genuinely
+    // coincide. `nativeSessionId` is a pure hash of the name and deliberately
+    // not memoised, so this is exactly the id `sendTurn` later puts on the wire.
+    protocolIds: { recordId: nativeSessionId(name), sessionId: nativeSessionId(name) },
     ...(opts.modelDef !== undefined ? { modelDef: opts.modelDef } : {}),
     ...(opts.modelTier !== undefined ? { modelTier: opts.modelTier } : {}),
   };

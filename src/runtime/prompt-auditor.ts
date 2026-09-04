@@ -42,7 +42,12 @@ export interface PromptAuditEntry {
   readonly workdir?: string;
   readonly projectDir?: string;
   readonly featureName?: string;
-  /** ACP-specific session correlation fields. */
+  /**
+   * Session correlation fields, populated by any transport that has a session
+   * identity. `recordId` is the stable logical record; `sessionId` is the
+   * physical one, which can change on reconnect. They were assumed ACP-only,
+   * which is why native records carried neither (#1825).
+   */
   readonly sessionName?: string;
   readonly recordId?: string | null;
   readonly sessionId?: string | null;

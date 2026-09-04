@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { makeAgentAdapter } from "@test/helpers";
 import { closeNativeSession, openNativeSession } from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
+import { nativeSessionId } from "@/agents/native/session-affinity";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@/agents/session-types";
 import { SessionManager } from "@/session/manager";
 import type { OpenSessionRequest } from "@/session/types";
@@ -51,6 +52,23 @@ describe("native session lifecycle", () => {
     await saveTranscript(dir, "sess-a", [{ role: "user", content: "hi" }]);
     await closeNativeSession(handle, true);
     expect(await loadTranscript(dir, "sess-a")).toHaveLength(1);
+  });
+
+  test("opening publishes the session identity it will send to the provider", async () => {
+    const handle = await openNativeSession("sess-ids", opts());
+    // Same value the adapter derives per call, so the audit trail records what
+    // actually went on the wire rather than a parallel id.
+    expect(handle.protocolIds?.recordId).toBe(nativeSessionId("sess-ids"));
+    expect(handle.protocolIds?.sessionId).toBe(nativeSessionId("sess-ids"));
+    await closeNativeSession(handle, false);
+  });
+
+  test("two different session names get different identities", async () => {
+    const a = await openNativeSession("sess-one", opts());
+    const b = await openNativeSession("sess-two", opts());
+    expect(a.protocolIds?.recordId).not.toBe(b.protocolIds?.recordId);
+    await closeNativeSession(a, false);
+    await closeNativeSession(b, false);
   });
 });
 
