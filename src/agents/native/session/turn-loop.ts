@@ -79,9 +79,13 @@ export async function runNativeTurn(
 
   const codingTools = opts.codingTools ?? [];
   const codingToolNames = new Set(codingTools.map((t) => t.name));
+  // Native spends the budget ONLY on ask_human exchanges. Unlike ACP it is
+  // not this loop's bound — the loop is `while (true)`, bounded by the
+  // whole-turn deadline and the idle watchdog (issue #1820).
+  //
   // Advertised only while the Q&A budget can still be spent; a tool the model
   // cannot successfully call is worse than no tool.
-  const maxInteractions = opts.maxTurns ?? 0;
+  const maxInteractions = opts.maxInteractions ?? 0;
   const tools = [
     ...toToolDefinitions(opts.contextPullTools ?? []),
     ...codingToolsToDefinitions(codingTools),
@@ -155,7 +159,7 @@ export async function runNativeTurn(
       try {
         if (call.name === ASK_HUMAN_TOOL_NAME) {
           const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
-          // An unset budget (maxTurns undefined -> 0) keeps the tool unadvertised
+          // An unset budget (maxInteractions undefined -> 0) keeps the tool unadvertised
           // above AND refuses a call made anyway. "No budget configured" must not
           // read as "unlimited" — that inverts the property this budget provides.
           if (interactions.length >= maxInteractions) {

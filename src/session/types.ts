@@ -211,7 +211,7 @@ export interface SendPromptOpts {
   /** Abort signal — mid-turn abort transitions the handle to CANCELLED. */
   signal?: AbortSignal;
   /** Max interaction round-trips per turn (default: 10). */
-  maxTurns?: number;
+  maxInteractions?: number;
   /**
    * Native: pull-tool catalogue for this turn, forwarded to the adapter's
    * sendTurn — see SendTurnOpts.contextPullTools. ACP ignores it.
@@ -228,7 +228,7 @@ export interface RunInSessionOpts extends OpenSessionRequest {
   /** Mid-turn interaction callback forwarded to sendPrompt. */
   interactionHandler?: import("../agents/interaction-handler").InteractionHandler;
   /** Max interaction round-trips per prompt. */
-  maxTurns?: number;
+  maxInteractions?: number;
   /** Native: pull-tool catalogue forwarded to sendPrompt. ACP ignores it. */
   contextPullTools?: readonly ToolDescriptor[];
   /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */

@@ -522,7 +522,7 @@ describe("buildHopCallback — interactionBridge threading (AC6/AC7)", () => {
     expect(opts.interactionHandler).not.toBeNull();
   });
 
-  test("passes maxTurns to runAsSession when ctx.maxInteractionTurns is set", async () => {
+  test("passes maxInteractions to runAsSession when ctx.maxInteractionTurns is set", async () => {
     const agentManager = makeAgentManagerStub();
     const ctx = makeCtx({
       agentManager,
@@ -534,7 +534,7 @@ describe("buildHopCallback — interactionBridge threading (AC6/AC7)", () => {
     await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
 
     const opts = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0]?.[3] as RunAsSessionOpts;
-    expect(opts.maxTurns).toBe(5);
+    expect(opts.maxInteractions).toBe(5);
   });
 });
 

@@ -161,7 +161,7 @@ describe("NativeAgentAdapter shape", () => {
     expect(result.internalRoundTrips).toBe(1);
   });
 
-  // Finding 4 (whole-branch review, 2026-09-02): maxTurns bounds round-trip
+  // Finding 4 (whole-branch review, 2026-09-02): maxInteractions bounds round-trip
   // COUNT, not duration — a hung provider call would otherwise hang the turn
   // forever, since neither OpenSessionOpts.timeoutSeconds nor SendTurnOpts
   // carried a wall-clock bound. sendTurn now derives an AbortController with

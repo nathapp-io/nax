@@ -427,9 +427,9 @@ export function buildHopCallback(
           // the Q&A budget it is documented to be; the native loop no longer
           // spends it on round-trips.
           ...(hasContextTools
-            ? { maxTurns: maxInteractionTurns ?? 10 }
+            ? { maxInteractions: maxInteractionTurns ?? 10 }
             : maxInteractionTurns !== undefined
-              ? { maxTurns: maxInteractionTurns }
+              ? { maxInteractions: maxInteractionTurns }
               : {}),
         });
 

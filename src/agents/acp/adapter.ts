@@ -395,7 +395,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     const { _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
     let sessionRecreated = false;
     const { interactionHandler, signal } = opts;
-    const MAX_TURNS = opts.maxTurns ?? 10;
+    // ACP spends the budget as this loop's bound, which is its intended use:
+    // the sub-agent's own tool calling happens inside one session.prompt(),
+    // so an iteration here is always a nax-side interaction. Native differs.
+    const maxInteractions = opts.maxInteractions ?? 10;
     const turnDeadline = createTurnDeadline(timeoutSeconds);
 
     let totalTokenUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
@@ -418,14 +421,14 @@ export class AcpAgentAdapter implements AgentAdapter {
       };
     }
 
-    while (turnCount < MAX_TURNS) {
+    while (turnCount < maxInteractions) {
       if (turnDeadline.expired()) {
         timedOut = true;
         warnWallClockTimeout(sessionName, timeoutSeconds);
         break;
       }
       turnCount++;
-      getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
+      getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${maxInteractions}`, { sessionName });
 
       const turnResult = await runSessionPrompt(impl._session, currentPrompt, turnDeadline.remainingMs() ?? 0, signal);
 
@@ -555,8 +558,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       break;
     }
 
-    if (turnCount >= MAX_TURNS && !timedOut && !aborted && MAX_TURNS > 1) {
-      getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
+    if (turnCount >= maxInteractions && !timedOut && !aborted && maxInteractions > 1) {
+      getSafeLogger()?.warn("acp-adapter", "Interaction budget spent", { sessionName, maxInteractions });
     }
 
     if (lastResponse?.stopReason === "error") {

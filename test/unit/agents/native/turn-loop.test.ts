@@ -329,7 +329,7 @@ describe("native turn loop — what the model is told exists", () => {
     let now = 0;
     const deadline = createTurnDeadline(30, () => now);
     let calls = 0;
-    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 50 }), {
+    const result = await runNativeTurn(handle, "hi", opts({ maxInteractions: 50 }), {
       deadline,
       complete: async () => {
         calls += 1;
@@ -346,7 +346,7 @@ describe("native turn loop — what the model is told exists", () => {
 
   test("an unbounded turn is never stopped by the deadline", async () => {
     let round = 0;
-    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 5 }), {
+    const result = await runNativeTurn(handle, "hi", opts({ maxInteractions: 5 }), {
       complete: async () => {
         round += 1;
         return round < 3
@@ -382,7 +382,7 @@ describe("native turn loop — what the model is told exists", () => {
       handle,
       "hi",
       opts({
-        maxTurns: 1,
+        maxInteractions: 1,
         interactionHandler: {
           onInteraction: async (r) => (r.kind === "question" ? { answer: "use postgres" } : { answer: "" }),
         },
@@ -407,7 +407,7 @@ describe("native turn loop — what the model is told exists", () => {
       handle,
       "hi",
       opts({
-        maxTurns: 2,
+        maxInteractions: 2,
         interactionHandler: {
           onInteraction: async (r) => {
             if (r.kind === "question") asked += 1;
@@ -439,7 +439,7 @@ describe("native turn loop — what the model is told exists", () => {
     const result = await runNativeTurn(
       handle,
       "hi",
-      // No maxTurns: the budget is unset, so ask_human is never advertised.
+      // No maxInteractions: the budget is unset, so ask_human is never advertised.
       opts({
         interactionHandler: {
           onInteraction: async (r) => {
@@ -470,7 +470,7 @@ describe("native turn loop — what the model is told exists", () => {
       handle,
       "hi",
       opts({
-        maxTurns: 2,
+        maxInteractions: 2,
         // Mirrors run-interaction-handler.ts: kind "question" returns null when
         // no interactionBridge is configured for the run.
         interactionHandler: { onInteraction: async () => null },
