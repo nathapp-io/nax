@@ -134,7 +134,12 @@ export interface AgentRunOptions {
   storyId?: string;
   /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
   sessionRole?: SessionRole;
-  /** Max turns in multi-turn interaction loop when interactionBridge is active (default: 10) */
+  /**
+   * Human/context interaction budget for a turn (default: 10 when the
+   * interaction bridge or a context tool is active, otherwise 1).
+   * Reaches the adapter as `SendTurnOpts.maxInteractions`, which documents
+   * how each transport spends it.
+   */
   maxInteractionTurns?: number;
   /** Pipeline stage this run belongs to — used by resolvePermissions() (default: "run") */
   pipelineStage?: import("../config/permissions").PipelineStage;

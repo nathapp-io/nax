@@ -35,7 +35,7 @@ export interface SessionKeeperOptions {
    */
   readonly retryStrategy?: RetryStrategy;
   readonly signal?: AbortSignal;
-  readonly maxTurns?: number;
+  readonly maxInteractions?: number;
   /**
    * Cost-aggregator scope id. Forwarded on every runAsSession call so the cost
    * middleware attributes turn cost to the caller's scope (e.g. story-orchestrator
@@ -80,7 +80,7 @@ export class SessionKeeper {
       workdir,
       projectDir,
       signal,
-      maxTurns,
+      maxInteractions,
       retryStrategy,
       scopeId,
     } = this.opts;
@@ -115,7 +115,7 @@ export class SessionKeeper {
           pipelineStage,
           sessionRole: role,
           signal,
-          maxTurns,
+          maxInteractions,
           scopeId,
         });
         return turn;

@@ -156,7 +156,7 @@ describe("buildHopCallback — context pull tools reach the agent (nax#1744)", (
     await cb("claude", makeBundle([QUERY_NEIGHBOR]), { kind: "primary" } satisfies HopKind, options);
 
     // Mirrors session-run-hop.ts: a single turn leaves no room to answer a call.
-    expect(only(dispatch).opts.maxTurns).toBe(10);
+    expect(only(dispatch).opts.maxInteractions).toBe(10);
   });
 
   test("returns the advertised prompt so the audit records what the agent saw", async () => {
@@ -200,6 +200,6 @@ describe("buildHopCallback — context pull tools reach the agent (nax#1744)", (
     const { prompt, opts } = only(dispatch);
     expect(prompt).toBe("implement US-001");
     expect(prompt).not.toContain("Context Pull Tools");
-    expect(opts.maxTurns).toBeUndefined();
+    expect(opts.maxInteractions).toBeUndefined();
   });
 });

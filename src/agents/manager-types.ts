@@ -120,7 +120,7 @@ export interface RunAsSessionOpts {
   /** Mid-turn interaction callback (context-tool calls, agent questions). */
   interactionHandler?: import("./interaction-handler").InteractionHandler;
   /** Max interaction round-trips per turn (default: 10). */
-  maxTurns?: number;
+  maxInteractions?: number;
   /** Context-engine pull tools to expose during this turn. */
   contextPullTools?: import("../context/engine").ToolDescriptor[];
   /** Server-side runtime for resolving context-engine pull tool calls. */

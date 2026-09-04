@@ -113,6 +113,14 @@ and not how nax **answers**.
 
 ### 6. The loop honours the existing `maxTurns`, and does not add a second cap
 
+> **Superseded.** Issue #1820 showed this reasoning was wrong for native:
+> `maxTurns` carried the human-interaction budget, not a round-trip cap, so
+> honouring it truncated 44% of native run-path calls mid-work. Issue #1823
+> removed the cap (the loop is now bounded by a whole-turn deadline and the
+> idle watchdog), and issue #1829 renamed the field to
+> `SendTurnOpts.maxInteractions`. The section below is kept as the record of
+> the original decision; it does not describe current behaviour.
+
 `SendTurnOpts.maxTurns` already exists with a default of 10
 (`src/agents/session-types.ts:102-103`). The native loop uses it. A second cap
 derived from the tool budget would put two competing limits on one loop with the

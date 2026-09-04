@@ -237,3 +237,58 @@ describe("createSessionRunHop — declared coding tools", () => {
     }
   });
 });
+
+/**
+ * The hop's `?? 1` fallback looks like removable noise. It is not: dropping it
+ * sends `undefined` to the adapter, where ACP's own `?? 10` silently turns
+ * every deliberate single-interaction call into a ten-iteration one. Issue
+ * #1829 — these assert the exact numbers so that edit fails here.
+ */
+describe("createSessionRunHop — interaction budget", () => {
+  async function forwardedBudget(extra: Partial<AgentRunOptions>): Promise<number | undefined> {
+    let seen: SendPromptOpts | undefined;
+    const handle: SessionHandle = { id: "nax-session", agentName: "claude" };
+    const sessionManager = makeSessionManager({
+      nameFor: mock(() => "nax-session"),
+      openSession: mock(async () => handle),
+      sendPrompt: mock(async (_handle: SessionHandle, _prompt: string, opts: SendPromptOpts) => {
+        seen = opts;
+        return {
+          output: "done",
+          tokenUsage: { inputTokens: 1, outputTokens: 1 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+        } satisfies TurnResult;
+      }),
+      closeSession: mock(async () => {}),
+    });
+
+    const hop = createSessionRunHop(sessionManager);
+    await hop("claude", { ...makeRunOptions(), ...extra });
+    return seen?.maxInteractions;
+  }
+
+  test("defaults to one interaction when nothing needs a second one", async () => {
+    expect(await forwardedBudget({})).toBe(1);
+  });
+
+  test("defaults to the configured ten once context tools are in play", async () => {
+    const budget = await forwardedBudget({
+      contextPullTools: [
+        {
+          name: "query_neighbor",
+          description: "d",
+          inputSchema: { type: "object" },
+          maxCallsPerSession: 5,
+          maxTokensPerCall: 100,
+        },
+      ] satisfies ToolDescriptor[],
+      contextToolRuntime: { callTool: async () => "" },
+    });
+    expect(budget).toBe(10);
+  });
+
+  test("forwards an explicit maxInteractionTurns unchanged", async () => {
+    expect(await forwardedBudget({ maxInteractionTurns: 3 })).toBe(3);
+  });
+});

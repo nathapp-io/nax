@@ -106,8 +106,17 @@ export interface SendTurnOpts {
   interactionHandler: import("./interaction-handler").InteractionHandler;
   /** Abort signal for mid-turn cancellation. */
   signal?: AbortSignal;
-  /** Max turns in multi-turn loop (default: 10). */
-  maxTurns?: number;
+  /**
+   * Human/context interaction budget for this turn, from
+   * `agent.maxInteractionTurns` (default: 10).
+   *
+   * NOT an agent round-trip cap, and the two transports spend it on
+   * different things — see each adapter's read site. It was called
+   * `maxTurns` until issue #1829, which is how issue #1820 happened: the
+   * native loop spent the Q&A budget as its round-trip cap and truncated
+   * real work at 10.
+   */
+  maxInteractions?: number;
   /**
    * Native: pull-tool catalogue for this turn, sent as structured tool
    * definitions. Under ACP the same catalogue is rendered into the prompt

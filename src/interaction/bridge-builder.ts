@@ -34,7 +34,7 @@ const DEFAULT_INTERACTION_TIMEOUT_MS = 120_000;
  *
  * Returns `undefined` when no plugin is available (chain is null/undefined or
  * `getPrimary()` returns null), which causes the ACP adapter to run in single-turn
- * mode (MAX_TURNS = 1).
+ * mode (maxInteractions = 1).
  *
  * @param chain - Initialized InteractionChain (or null/undefined)
  * @param context - Metadata attached to interaction events

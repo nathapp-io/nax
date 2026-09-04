@@ -326,19 +326,19 @@ describe("sendPrompt()", () => {
     expect(resultA.adapterFailure.reason).toBe("idle-watchdog");
   });
 
-  test("forwards maxTurns to adapter.sendTurn", async () => {
-    let capturedMaxTurns: number | undefined;
+  test("forwards maxInteractions to adapter.sendTurn", async () => {
+    let capturedMaxInteractions: number | undefined;
     const adapter = makeAgentAdapter({
       openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
       sendTurn: mock(async (_h: SessionHandle, _p: string, opts: SendTurnOpts) => {
-        capturedMaxTurns = opts.maxTurns;
+        capturedMaxInteractions = opts.maxInteractions;
         return MOCK_TURN;
       }),
     });
     const sm = new SessionManager({ getAdapter: () => adapter });
     const handle = await sm.openSession("nax-maxturn-test", makeOpenRequest());
-    await sm.sendPrompt(handle, "test", { maxTurns: 5 });
-    expect(capturedMaxTurns).toBe(5);
+    await sm.sendPrompt(handle, "test", { maxInteractions: 5 });
+    expect(capturedMaxInteractions).toBe(5);
   });
 });
 

@@ -64,7 +64,7 @@ export function createSessionRunHop(
       // interaction turns and it still consumes this as its loop bound, while
       // the native loop no longer reads it for round-trips at all (it is bounded
       // by time) and spends it only on ask_human exchanges.
-      const maxTurns =
+      const maxInteractions =
         options.interactionBridge || hasContextTools
           ? (options.maxInteractionTurns ?? 10)
           : (options.maxInteractionTurns ?? 1);
@@ -90,7 +90,7 @@ export function createSessionRunHop(
             sessionRole: options.sessionRole,
             signal: options.abortSignal,
             interactionHandler,
-            maxTurns,
+            maxInteractions,
             // Finding 3 (whole-branch review): this hop only routes the three
             // Phase B target ops today (which go through build-hop-callback.ts
             // instead), but a future op on the default hop needs its pull-tool
@@ -101,7 +101,7 @@ export function createSessionRunHop(
         : await sessionManager.sendPrompt(handle, prompt, {
             interactionHandler,
             signal: options.abortSignal,
-            maxTurns,
+            maxInteractions,
             contextPullTools: options.contextPullTools,
             codingTools: codingSupport?.tools,
           });

@@ -92,14 +92,14 @@ export function fakeAgentManager(
         });
         try {
           const hasContextTools = Boolean(opts.contextToolRuntime && (opts.contextPullTools?.length ?? 0) > 0);
-          const maxTurns =
+          const maxInteractions =
             opts.interactionBridge || hasContextTools
               ? (opts.maxInteractionTurns ?? 10)
               : (opts.maxInteractionTurns ?? 1);
           const turnResult = await adapter.sendTurn(handle, buildContextToolPreamble(opts), {
             interactionHandler: buildRunInteractionHandler(opts),
             signal: opts.abortSignal,
-            maxTurns,
+            maxInteractions,
           });
           result = {
             success: true,

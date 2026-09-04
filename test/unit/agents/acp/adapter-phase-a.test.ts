@@ -494,7 +494,7 @@ describe("sendTurn()", () => {
     expect(result.tokenUsage.outputTokens).toBe(100);
   });
 
-  test("max turns exhausted: internalRoundTrips equals maxTurns", async () => {
+  test("max turns exhausted: internalRoundTrips equals maxInteractions", async () => {
     const session = makeSession({
       promptFn: async () => ({
         messages: [{ role: "assistant", content: '<nax_tool_call name="t">\n{}\n</nax_tool_call>' }],
@@ -505,7 +505,7 @@ describe("sendTurn()", () => {
     const handle = await openHandle(session);
 
     const result = await adapter.sendTurn(handle, "prompt", {
-      maxTurns: 3,
+      maxInteractions: 3,
       interactionHandler: {
         async onInteraction() {
           return { answer: "tool result" };
