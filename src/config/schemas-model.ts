@@ -5,11 +5,28 @@
 
 import { z } from "zod";
 
+/**
+ * One threshold-based rate override (nax#1847), mirroring nax-ai's
+ * `PricingTier`. It carries no `tiers` of its own: nax-ai's `PricingTier`
+ * extends `PricingRates` rather than `Pricing`, so tiers do not nest.
+ */
+const TokenPricingTierSchema = z.object({
+  inputPer1M: z.number().min(0),
+  outputPer1M: z.number().min(0),
+  cacheReadPer1M: z.number().min(0).optional(),
+  cacheCreationPer1M: z.number().min(0).optional(),
+  inputTokensAbove: z.number().int().min(0),
+});
+
 const TokenPricingSchema = z.object({
   inputPer1M: z.number().min(0),
   outputPer1M: z.number().min(0),
   cacheReadPer1M: z.number().min(0).optional(),
   cacheCreationPer1M: z.number().min(0).optional(),
+  // Without this the field is not merely unvalidated -- Zod strips unknown
+  // keys, so a configured `tiers` array would be dropped at load with no
+  // error, and the run would silently bill at base rates.
+  tiers: z.array(TokenPricingTierSchema).optional(),
 });
 
 const ModelDefSchema = z.object({
