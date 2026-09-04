@@ -6,7 +6,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { estimateCostUsd, parseNativeModel, toNaxTokenUsage, toThinkingLevel } from "@/agents/native/models";
+import {
+  buildRateCard,
+  estimateCostUsd,
+  parseNativeModel,
+  toNaxTokenUsage,
+  toThinkingLevel,
+} from "@/agents/native/models";
+import type { TokenPricing } from "@/config/schema-types";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 
 describe("parseNativeModel", () => {
@@ -152,5 +159,107 @@ describe("estimateCostUsd", () => {
       { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3, cacheCreationPer1M: 3.75 },
     );
     expect(cost).toBeCloseTo(3 + 15 + 0.3 + 3.75, 6);
+  });
+});
+
+// nax#1847: 22 of 1290 catalogued models price in tiers (Pricing.tiers). The
+// worked example from docs/architecture/nax-ai-surface.md,
+// openai/gpt-5.6-terra: base {input:2, output:12, cacheRead:0.2,
+// cacheWrite:2.5}, tier above 272000 total input-class tokens {input:4,
+// output:18, cacheRead:0.4, cacheWrite:5}.
+describe("estimateCostUsd with pricing tiers", () => {
+  const TIERED_RATES: TokenPricing = {
+    inputPer1M: 2,
+    outputPer1M: 12,
+    cacheReadPer1M: 0.2,
+    cacheCreationPer1M: 2.5,
+    tiers: [{ inputPer1M: 4, outputPer1M: 18, cacheReadPer1M: 0.4, cacheCreationPer1M: 5, inputTokensAbove: 272_000 }],
+  };
+
+  test("below the threshold bills at base rates", () => {
+    const cost = estimateCostUsd({ inputTokens: 100_000, outputTokens: 1_000_000 }, TIERED_RATES);
+    expect(cost).toBeCloseTo((100_000 / 1_000_000) * 2 + (1_000_000 / 1_000_000) * 12, 6);
+  });
+
+  // "the highest matching threshold applies to the whole request" -- output
+  // and both cache classes reprice too, not just the input tokens that
+  // pushed the request over the threshold.
+  test("above the threshold reprices the WHOLE request at tier rates, including output and cache classes", () => {
+    const usage = {
+      inputTokens: 300_000,
+      outputTokens: 1_000_000,
+      cacheReadInputTokens: 100_000,
+      cacheCreationInputTokens: 50_000,
+    };
+    // total input-class usage = 300_000 + 100_000 + 50_000 = 450_000, which
+    // exceeds the 272_000 threshold.
+    const cost = estimateCostUsd(usage, TIERED_RATES);
+    const expected =
+      (300_000 / 1_000_000) * 4 + (1_000_000 / 1_000_000) * 18 + (100_000 / 1_000_000) * 0.4 + (50_000 / 1_000_000) * 5;
+    expect(cost).toBeCloseTo(expected, 6);
+  });
+
+  // Tiers count toward the threshold from cache tokens too, not just fresh
+  // input -- otherwise a heavily-cached long-context request would never
+  // cross it.
+  test("cache-read and cache-creation tokens count toward the threshold, not just fresh input", () => {
+    const usage = { inputTokens: 100_000, outputTokens: 0, cacheReadInputTokens: 172_001 };
+    // 100_000 + 172_001 = 272_001, one token over.
+    const cost = estimateCostUsd(usage, TIERED_RATES);
+    const expected = (100_000 / 1_000_000) * 4 + (172_001 / 1_000_000) * 0.4;
+    expect(cost).toBeCloseTo(expected, 6);
+  });
+
+  // nax-ai's own doc comment: "Applies when total input usage EXCEEDS this
+  // token count." Exceeds is strict, so a request landing exactly on the
+  // threshold does not cross it -- base rates win. Pinned here because the
+  // alternative (>=) would also look plausible to a future reader.
+  test("exactly AT the threshold does not exceed it, so base rates win", () => {
+    const cost = estimateCostUsd({ inputTokens: 272_000, outputTokens: 0 }, TIERED_RATES);
+    expect(cost).toBeCloseTo((272_000 / 1_000_000) * 2, 6);
+  });
+
+  test("one token above the threshold applies the tier", () => {
+    const cost = estimateCostUsd({ inputTokens: 272_001, outputTokens: 0 }, TIERED_RATES);
+    expect(cost).toBeCloseTo((272_001 / 1_000_000) * 4, 6);
+  });
+
+  test("a rate card with no tiers is unaffected", () => {
+    const cost = estimateCostUsd({ inputTokens: 1_000_000, outputTokens: 0 }, { inputPer1M: 3, outputPer1M: 15 });
+    expect(cost).toBeCloseTo(3, 6);
+  });
+});
+
+describe("buildRateCard", () => {
+  test("carries the catalog's cache rates into the rate object instead of discarding them", () => {
+    const catalog = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
+    expect(buildRateCard(catalog, undefined)).toEqual({
+      inputPer1M: 2,
+      outputPer1M: 10,
+      cacheReadPer1M: 0.2,
+      cacheCreationPer1M: 2.5,
+    });
+  });
+
+  test("carries the catalog's tiers into the rate object, translated to nax's field names", () => {
+    const catalog = {
+      input: 2,
+      output: 12,
+      cacheRead: 0.2,
+      cacheWrite: 2.5,
+      tiers: [{ inputTokensAbove: 272_000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5 }],
+    };
+    const rates = buildRateCard(catalog, undefined);
+    expect(rates.tiers).toEqual([
+      { inputPer1M: 4, outputPer1M: 18, cacheReadPer1M: 0.4, cacheCreationPer1M: 5, inputTokensAbove: 272_000 },
+    ]);
+  });
+
+  test("an explicit modelDef.pricing override wins wholesale, not merged with the catalog", () => {
+    const catalog = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
+    const override: TokenPricing = { inputPer1M: 99, outputPer1M: 199 };
+    const rates = buildRateCard(catalog, override);
+    expect(rates).toBe(override);
+    expect(rates.cacheReadPer1M).toBeUndefined();
   });
 });
