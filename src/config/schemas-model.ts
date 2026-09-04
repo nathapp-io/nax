@@ -8,6 +8,8 @@ import { z } from "zod";
 const TokenPricingSchema = z.object({
   inputPer1M: z.number().min(0),
   outputPer1M: z.number().min(0),
+  cacheReadPer1M: z.number().min(0).optional(),
+  cacheCreationPer1M: z.number().min(0).optional(),
 });
 
 const ModelDefSchema = z.object({
