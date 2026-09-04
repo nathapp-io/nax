@@ -16,6 +16,7 @@ import { getSafeLogger } from "@/logger";
 import { nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
+import type { NativeTurnActivity } from "./turn-events";
 
 /** Matches SendTurnOpts.maxTurns' documented default. */
 const DEFAULT_MAX_TURNS = 10;
@@ -54,6 +55,12 @@ export interface TurnDeps {
    * supplies one for a real session; tests may omit it.
    */
   deadline?: TurnDeadline;
+  /**
+   * Per-round-trip observability hook. Absent in unit tests; the adapter
+   * supplies one that forwards onto the runtime stream bus so the idle
+   * watchdog can see native sessions.
+   */
+  onActivity?: (activity: NativeTurnActivity) => void;
 }
 
 export async function runNativeTurn(
@@ -106,6 +113,20 @@ export async function runNativeTurn(
     costUsd += res.costUsd;
     output = res.text;
 
+    deps.onActivity?.({
+      kind: "usage",
+      inputTokens: res.usage.inputTokens,
+      outputTokens: res.usage.outputTokens,
+      costUsd: res.costUsd,
+    });
+    if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
+    if (res.thinking !== undefined && res.thinking.length > 0) {
+      deps.onActivity?.({
+        kind: "thinking",
+        bytes: res.thinking.reduce((n, t) => n + t.text.length, 0),
+      });
+    }
+
     // Thinking blocks are appended, not merely representable: Anthropic needs
     // the exact block back to continue a thinking conversation (ADR-028 s8).
     messages.push({
@@ -121,6 +142,7 @@ export async function runNativeTurn(
     }
 
     for (const call of res.toolCalls) {
+      deps.onActivity?.({ kind: "tool", toolName: call.name });
       try {
         const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
         if (kind === "coding-tool") codingToolsCalled.push(call.name);

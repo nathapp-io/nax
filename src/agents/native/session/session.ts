@@ -30,6 +30,20 @@ export const nativeTranscriptDirs = new Map<string, string>();
  */
 export const nativeSessionTimeouts = new Map<string, number>();
 
+/**
+ * Session name -> the runtime hooks handed to openSession. SessionManager
+ * passes both (manager.ts, openSession) and the native adapter previously
+ * ignored them, which is why the idle watchdog never covered native. Same
+ * lifecycle as `nativeTranscriptDirs`: set on open, cleared on close only.
+ */
+export const nativeSessionStreamHooks = new Map<
+  string,
+  {
+    onStreamActivity?: (event: import("@/runtime").AgentStreamEvent) => void;
+    onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
+  }
+>();
+
 export async function openNativeSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
   // Never defaulted. An adapter that picks its own path writes a transcript
   // somewhere nobody looks, which is #1794's empty-packageDir bug one layer up.
@@ -40,6 +54,10 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
   }
   nativeTranscriptDirs.set(name, opts.transcriptDir);
   nativeSessionTimeouts.set(name, opts.timeoutSeconds);
+  nativeSessionStreamHooks.set(name, {
+    ...(opts.onStreamActivity !== undefined ? { onStreamActivity: opts.onStreamActivity } : {}),
+    ...(opts.onActiveCall !== undefined ? { onActiveCall: opts.onActiveCall } : {}),
+  });
   return {
     id: name,
     agentName: NATIVE_AGENT,
@@ -65,4 +83,5 @@ export async function closeNativeSession(handle: SessionHandle, failed: boolean)
   }
   nativeTranscriptDirs.delete(handle.id);
   nativeSessionTimeouts.delete(handle.id);
+  nativeSessionStreamHooks.delete(handle.id);
 }

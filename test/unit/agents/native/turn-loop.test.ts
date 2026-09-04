@@ -356,4 +356,22 @@ describe("native turn loop — what the model is told exists", () => {
     expect(result.output).toBe("finished");
     expect(result.timedOut).toBeUndefined();
   });
+
+  test("reports usage, message and tool activity for every round trip", async () => {
+    const seen: string[] = [];
+    let round = 0;
+    await runNativeTurn(handle, "hi", opts(), {
+      onActivity: (a) => seen.push(a.kind),
+      complete: async () => {
+        round += 1;
+        return round === 1
+          ? reply({ text: "calling", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] })
+          : reply({ text: "done" });
+      },
+    });
+    // Round 1: usage + message + one tool. Round 2: usage + message.
+    expect(seen.filter((k) => k === "usage")).toHaveLength(2);
+    expect(seen.filter((k) => k === "tool")).toHaveLength(1);
+    expect(seen).toContain("message");
+  });
 });

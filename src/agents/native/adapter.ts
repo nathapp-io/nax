@@ -8,6 +8,7 @@
  * nax-ai's client is stateless (ADR-027 section 10, ADR-028).
  */
 
+import { randomUUID } from "node:crypto";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import { createTurnDeadline } from "../turn-deadline";
@@ -15,7 +16,13 @@ import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
 import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage } from "./models";
-import { closeNativeSession, nativeSessionTimeouts, openNativeSession } from "./session/session";
+import {
+  closeNativeSession,
+  nativeSessionStreamHooks,
+  nativeSessionTimeouts,
+  openNativeSession,
+} from "./session/session";
+import { buildNativeStreamEvent } from "./session/turn-events";
 import { runNativeTurn } from "./session/turn-loop";
 import { nativeSessionId, newSessionKey } from "./session-affinity";
 
@@ -187,39 +194,84 @@ export class NativeAgentAdapter implements AgentAdapter {
     // because this is where `timeoutSeconds` is known; consulted by the loop.
     const deadline = createTurnDeadline(timeoutSeconds);
 
-    return runNativeTurn(handle, prompt, opts, {
-      deadline,
-      complete: async (messages, tools) => {
-        // The controller is armed with what is LEFT of the turn, so N
-        // round-trips can no longer add up to N x timeoutSeconds. Still
-        // combined with any caller-supplied opts.signal via AbortSignal.any so
-        // either can end the call.
-        const remainingMs = deadline.remainingMs();
-        const controller = new AbortController();
-        const timer = remainingMs !== undefined ? setTimeout(() => controller.abort(), remainingMs) : undefined;
-        const signal =
-          opts.signal !== undefined ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
-
-        try {
-          const res = await client.complete(resolved, {
-            messages,
-            ...(tools.length > 0 ? { tools } : {}),
-            sessionId,
-            signal,
-          });
-          const usage = toNaxTokenUsage(res.usage);
-          return {
-            text: res.text,
-            ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
-            ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
-            usage,
-            costUsd: estimateCostUsd(usage, rates),
-          };
-        } finally {
-          if (timer !== undefined) clearTimeout(timer);
-        }
-      },
+    const hooks = nativeSessionStreamHooks.get(handle.id);
+    // One callId per turn, mirroring SpawnAcpSession.prompt(). `runId` is
+    // backfilled by the runtime's forwarding closure, which is the only place
+    // that knows it — see runtime/index.ts.
+    const callId = randomUUID();
+    const eventBase = { callId, runId: "", agentName: handle.agentName, sessionName: handle.id };
+    const turnController = new AbortController();
+    // The watchdog's cancel handle IS the turn controller, so an idle cancel
+    // and the whole-turn deadline end the same in-flight call. Registering
+    // through the hook (rather than a private registry) is what lets
+    // sendPrompt tell a watchdog cancel from an unrelated process kill.
+    hooks?.onActiveCall?.(callId, async () => turnController.abort());
+    hooks?.onStreamActivity?.({
+      ...eventBase,
+      kind: "agent.call_started",
+      model: handle.modelDef?.model ?? "",
+      timeoutSeconds: timeoutSeconds ?? 0,
+      timestamp: Date.now(),
     });
+
+    let result: TurnResult;
+    try {
+      result = await runNativeTurn(handle, prompt, opts, {
+        deadline,
+        onActivity: (activity) => {
+          hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));
+        },
+        complete: async (messages, tools) => {
+          // The controller is armed with what is LEFT of the turn, so N
+          // round-trips can no longer add up to N x timeoutSeconds. Still
+          // combined with any caller-supplied opts.signal via AbortSignal.any so
+          // either can end the call.
+          const remainingMs = deadline.remainingMs();
+          const controller = new AbortController();
+          const timer = remainingMs !== undefined ? setTimeout(() => controller.abort(), remainingMs) : undefined;
+          const signal = AbortSignal.any(
+            opts.signal !== undefined
+              ? [opts.signal, controller.signal, turnController.signal]
+              : [controller.signal, turnController.signal],
+          );
+
+          try {
+            const res = await client.complete(resolved, {
+              messages,
+              ...(tools.length > 0 ? { tools } : {}),
+              sessionId,
+              signal,
+            });
+            const usage = toNaxTokenUsage(res.usage);
+            return {
+              text: res.text,
+              ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
+              ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
+              usage,
+              costUsd: estimateCostUsd(usage, rates),
+            };
+          } finally {
+            if (timer !== undefined) clearTimeout(timer);
+          }
+        },
+      });
+    } catch (err) {
+      hooks?.onStreamActivity?.({
+        ...eventBase,
+        kind: "agent.call_ended",
+        status: turnController.signal.aborted ? "cancelled" : "error",
+        timestamp: Date.now(),
+      });
+      throw err;
+    }
+
+    hooks?.onStreamActivity?.({
+      ...eventBase,
+      kind: "agent.call_ended",
+      status: result.timedOut === true ? "timeout" : turnController.signal.aborted ? "cancelled" : "success",
+      timestamp: Date.now(),
+    });
+    return result;
   }
 
   closeSession(handle: SessionHandle): Promise<void> {
