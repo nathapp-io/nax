@@ -15,7 +15,7 @@ import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
 import { waitForCondition } from "@test/helpers";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
-import { loadTranscript } from "@/agents/native/session/transcript-store";
+import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
 import { type ResolvedCompleteOptions, SessionFailureError } from "@/agents/types";
 
@@ -648,5 +648,86 @@ describe("NativeAgentAdapter session identity", () => {
     });
 
     expect(seen[0] && "thinking" in seen[0]).toBe(false);
+  });
+});
+
+describe("NativeAgentAdapter compaction wiring", () => {
+  /** Small enough that a seeded transcript is already over the threshold. */
+  const SMALL_MODEL = { ...MODEL, contextWindow: 8000 } satisfies ResolvedModel;
+  const settings = { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 };
+
+  async function openWithSeededTranscript(name: string, client: Client) {
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+    const transcriptDir = await mkdtemp(join(tmpdir(), `nax-adapter-${name}-`));
+    const handle = await adapter.openSession(name, {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir,
+      compaction: settings,
+    });
+    await saveTranscript(transcriptDir, name, [
+      { role: "user", content: "the task" },
+      { role: "assistant", content: "a".repeat(20_000) },
+      { role: "user", content: "keep going" },
+      { role: "assistant", content: "b".repeat(20_000) },
+    ]);
+    return { adapter, handle, transcriptDir };
+  }
+
+  test("passes the model's real context window through, so compaction fires on a small one", async () => {
+    // Behavioural rather than a spy: the only way a summarize call happens here
+    // is if SMALL_MODEL.contextWindow (8000) reached the turn loop. A hardcoded
+    // constant, or a dropped wire, produces zero summarize calls.
+    let completeCalls = 0;
+    const client = fakeClient({
+      model: async () => SMALL_MODEL,
+      complete: async () => {
+        completeCalls += 1;
+        return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
+      },
+    });
+    const { adapter, handle } = await openWithSeededTranscript("sess-compact-wire", client);
+
+    await adapter.sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
+
+    // One summarize plus one round trip.
+    expect(completeCalls).toBe(2);
+  });
+
+  test("the summary call advertises no tools", async () => {
+    const requests: ClientRequest[] = [];
+    const client = fakeClient({
+      model: async () => SMALL_MODEL,
+      complete: async (_m: ResolvedModel, req: ClientRequest) => {
+        requests.push(req);
+        return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
+      },
+    });
+    const { adapter, handle } = await openWithSeededTranscript("sess-sum", client);
+
+    await adapter.sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
+
+    // requests[0] is the summary, requests[1] the round trip.
+    expect(requests[0].tools).toBeUndefined();
+  });
+
+  test("never compacts when the window is large", async () => {
+    let completeCalls = 0;
+    const client = fakeClient({
+      complete: async () => {
+        completeCalls += 1;
+        return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
+      },
+    });
+    // MODEL.contextWindow is 128_000; the same seeded transcript fits.
+    const { adapter, handle } = await openWithSeededTranscript("sess-nocompact", client);
+
+    await adapter.sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
+
+    expect(completeCalls).toBe(1);
   });
 });
