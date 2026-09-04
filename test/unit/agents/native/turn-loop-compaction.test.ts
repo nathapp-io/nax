@@ -7,6 +7,8 @@ import { nativeSessionLastUsage, nativeTranscriptDirs } from "@/agents/native/se
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import type { LogEntry } from "@/logger/types";
 
 let dir: string;
 const handle = { id: "sess-c", agentName: "native" } as const;
@@ -184,6 +186,48 @@ describe("proactive compaction", () => {
     });
 
     expect(summarizeCalls).toBe(1);
+  });
+
+  describe("no-progress logging", () => {
+    let logCalls: LogEntry[];
+
+    beforeEach(() => {
+      resetLogger();
+      logCalls = [];
+      initLogger({ level: "silent" });
+      addSink((entry) => logCalls.push(entry));
+    });
+
+    afterEach(() => {
+      resetLogger();
+    });
+
+    test("logs a warning, but still completes, when a compaction makes no size progress", async () => {
+      // Finding 2 (whole-branch review, 2026-09-04): prepareCompaction can
+      // return a plan even when toSummarize is empty, so long as a previous
+      // summary exists (needed for summary-merge scenarios). If the
+      // summarizer then returns text at least as large as what it replaced,
+      // applyCompaction produces an array no smaller than the input — a paid
+      // model call that shrank nothing. This must not be fatal or retried;
+      // it must be logged so a repeating no-op is diagnosable.
+      await seedOversizedTranscript();
+
+      const result = await runNativeTurn(handle, "next", opts(), {
+        contextWindow: 8000,
+        compaction: cfg,
+        summarize: async () => {
+          // Larger than the whole seeded transcript it is replacing —
+          // guarantees the post-compaction estimate is not smaller than the
+          // pre-compaction one.
+          return { text: "s".repeat(60_000), usage, costUsd: 0 };
+        },
+        complete: async () => ({ text: "done", usage, costUsd: 0 }),
+      });
+
+      expect(result.output).toBe("done");
+      const warnings = logCalls.filter((e) => e.level === "warn" && e.message === "compaction made no size progress");
+      expect(warnings.length).toBeGreaterThan(0);
+    });
   });
 });
 

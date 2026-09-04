@@ -166,6 +166,7 @@ export async function runNativeTurn(
         deps.compaction !== undefined &&
         shouldCompact(estimateContextTokens(messages, lastUsage, anchorIndex), deps.contextWindow, deps.compaction)
       ) {
+        const preCompactionTokens = estimateContextTokens(messages, lastUsage, anchorIndex);
         const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction));
         if (plan !== undefined) {
           try {
@@ -173,6 +174,19 @@ export async function runNativeTurn(
             // Rebound, not spliced in place: `messages` is a local accumulator and
             // rebinding it keeps the compacted array a fresh value.
             messages = applyCompaction(messages, plan, summary.text);
+            // Finding 2 (whole-branch review, 2026-09-04): a previous-summary merge
+            // can produce a same-size (or larger) array — a paid model call that
+            // shrank nothing. Not fatal (the reactive backstop is the real safety
+            // net if this repeats into an overflow) but worth surfacing, since it
+            // would otherwise burn a model call every round trip with no signal.
+            const postCompactionTokens = estimateContextTokens(messages, undefined, undefined);
+            if (postCompactionTokens >= preCompactionTokens) {
+              getSafeLogger()?.warn("native-adapter", "compaction made no size progress", {
+                sessionName: handle.id,
+                preCompactionTokens,
+                postCompactionTokens,
+              });
+            }
             inputTokens += summary.usage.inputTokens;
             outputTokens += summary.usage.outputTokens;
             costUsd += summary.costUsd;
