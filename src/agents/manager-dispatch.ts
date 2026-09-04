@@ -19,8 +19,8 @@ import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEven
 import { formatSessionName } from "../runtime/session-name";
 import type { SessionRole } from "../runtime/session-role";
 import { errorMessage } from "../utils/errors";
-import { parseModelSpec } from "./acp/model-spec";
 import type { AgentFallbackRecord, RunAsSessionOpts } from "./manager-types";
+import { parseModelSpec } from "./model-spec";
 import { NATIVE_AGENT } from "./native/models";
 import type { CompleteOptions, ResolvedCompleteOptions, SessionHandle, TurnResult } from "./types";
 

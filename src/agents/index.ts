@@ -6,7 +6,6 @@ export type {
   AcpSession,
   AcpSessionResponse,
   BuildTurnResultInput,
-  ModelSpec,
 } from "./acp";
 export {
   _acpAdapterDeps,
@@ -22,7 +21,6 @@ export {
   MAX_BUFFERED_LINE_BYTES,
   parseAcpxJsonLine,
   parseAcpxJsonOutput,
-  parseModelSpec,
   parseSessionIds,
   readAndParseLines,
   readStreamTail,
@@ -53,6 +51,8 @@ export type {
   IAgentManager,
   RunAsSessionOpts,
 } from "./manager-types";
+export type { ModelSpec } from "./model-spec";
+export { parseModelSpec } from "./model-spec";
 export { checkAgentHealth, getAllAgentNames, getInstalledAgents, KNOWN_AGENT_NAMES } from "./registry";
 export type {
   RetryContext,

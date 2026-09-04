@@ -3,7 +3,7 @@
  */
 
 import type { ModelTier } from "@/config/schema";
-import { parseModelSpec } from "../acp/model-spec";
+import { parseModelSpec } from "../model-spec";
 import { COST_RATES, MODEL_PRICING } from "./pricing";
 import type { CostEstimate, ModelCostRates, TokenUsage } from "./types";
 
