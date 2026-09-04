@@ -23,6 +23,7 @@ import { estimateCostUsd, NATIVE_AGENT, parseNativeModel, toNaxTokenUsage, toThi
 import {
   closeNativeSession,
   markNativeTurnOutcome,
+  nativeSessionCompaction,
   nativeSessionStreamHooks,
   nativeSessionTimeouts,
   openNativeSession,
@@ -46,6 +47,19 @@ const FALLBACK_TURN_TIMEOUT_SECONDS = 3600;
 
 function isProtocolStreamError(err: unknown): err is { protocolError: { kind: string; message: string } } {
   return typeof err === "object" && err !== null && "protocolError" in err;
+}
+
+function summaryPrompt(previousSummary?: string): string {
+  const base =
+    "Summarize the conversation above so it can be dropped from context. " +
+    "Record what was attempted, what was rejected and why, any decisions that still bind, " +
+    "and list the files read and the files modified. Be specific: this summary is the only " +
+    "memory of this work that survives.";
+  if (previousSummary === undefined) return base;
+  return (
+    `${base}\n\nAn earlier summary of still-older history follows. Merge it into your summary ` +
+    `rather than repeating or discarding it:\n\n${previousSummary}`
+  );
 }
 
 /** The builtin names, used when the adapter is built without config. */
@@ -243,8 +257,36 @@ export class NativeAgentAdapter implements AgentAdapter {
     try {
       result = await runNativeTurn(handle, prompt, opts, {
         deadline,
+        contextWindow: resolved.contextWindow,
+        ...(nativeSessionCompaction.get(handle.id) !== undefined
+          ? { compaction: nativeSessionCompaction.get(handle.id) }
+          : {}),
         onActivity: (activity) => {
           hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));
+        },
+        summarize: async (span, previousSummary) => {
+          // Same model, same clock, no tools. The prompt asks for what a coding
+          // agent needs back: what was tried, what was rejected and why, and the
+          // files touched -- without them the agent re-reads what it already read.
+          const remainingMs = deadline.remainingMs();
+          const controller = new AbortController();
+          const timer = remainingMs !== undefined ? setTimeout(() => controller.abort(), remainingMs) : undefined;
+          const signal = AbortSignal.any(
+            opts.signal !== undefined
+              ? [opts.signal, controller.signal, turnController.signal]
+              : [controller.signal, turnController.signal],
+          );
+          try {
+            const res = await client.complete(resolved, {
+              messages: [...span, { role: "user", content: summaryPrompt(previousSummary) }],
+              sessionId,
+              signal,
+            });
+            const summaryUsage = toNaxTokenUsage(res.usage);
+            return { text: res.text, usage: summaryUsage, costUsd: estimateCostUsd(summaryUsage, rates) };
+          } finally {
+            if (timer !== undefined) clearTimeout(timer);
+          }
         },
         complete: async (messages, tools) => {
           // The controller is armed with what is LEFT of the turn, so N

@@ -14,26 +14,19 @@ import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
-import { nativeTranscriptDirs } from "./session";
+import {
+  applyCompaction,
+  estimateContextTokens,
+  keepBudget,
+  type TranscriptMessage as NativeTranscriptMessage,
+  prepareCompaction,
+  type ResolvedCompaction,
+  shouldCompact,
+} from "./compaction";
+import { nativeSessionLastUsage, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import type { NativeTurnActivity } from "./turn-events";
-
-/**
- * The transcript message nax stores: nax-ai's ConversationMessage widened with
- * the coding-tool denial marker (ADR-029 s5). The marker is structural data the
- * model must be able to act on — dropping it because the wire type does not
- * know it yet is exactly the defect this widening exists to prevent.
- */
-type NativeTranscriptMessage =
-  | ConversationMessage
-  | {
-      readonly role: "tool-result";
-      readonly toolCallId: string;
-      readonly content: string;
-      readonly isError?: boolean;
-      readonly denied?: import("@/agents").AdapterInteractionResponse["denied"];
-    };
 
 export interface NativeTurnResponse {
   readonly text: string;
@@ -43,11 +36,28 @@ export interface NativeTurnResponse {
   readonly costUsd: number;
 }
 
+/** What one summarization call returns. Usage and cost are surfaced, not swallowed. */
+export interface NativeSummaryResponse {
+  readonly text: string;
+  readonly usage: TokenUsage;
+  readonly costUsd: number;
+}
+
 export interface TurnDeps {
   complete(
     messages: readonly ConversationMessage[],
     tools: ReturnType<typeof toToolDefinitions>,
   ): Promise<NativeTurnResponse>;
+  /**
+   * One model call, no tools, used only to summarize a dropped span. Separate
+   * from complete() because it must not advertise tools, must not count as a
+   * round trip, and its cost must be attributable.
+   */
+  summarize?(messages: readonly NativeTranscriptMessage[], previousSummary?: string): Promise<NativeSummaryResponse>;
+  /** ResolvedModel.contextWindow. Absent disables compaction. */
+  contextWindow?: number;
+  /** Resolved settings. Absent disables compaction. */
+  compaction?: ResolvedCompaction;
   /**
    * Whole-turn wall-clock budget. Absent means unbounded — the adapter always
    * supplies one for a real session; tests may omit it.
@@ -59,6 +69,16 @@ export interface TurnDeps {
    * watchdog can see native sessions.
    */
   onActivity?: (activity: NativeTurnActivity) => void;
+}
+
+/**
+ * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
+ * here and the kind is what matters.
+ */
+function isContextOverflow(err: unknown): boolean {
+  if (typeof err !== "object" || err === null || !("protocolError" in err)) return false;
+  const { protocolError } = err as { protocolError?: { kind?: unknown } };
+  return protocolError?.kind === "context-overflow";
 }
 
 export async function runNativeTurn(
@@ -74,7 +94,7 @@ export async function runNativeTurn(
     });
   }
 
-  const messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id))];
+  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id))];
   messages.push({ role: "user", content: prompt });
 
   const codingTools = opts.codingTools ?? [];
@@ -113,6 +133,10 @@ export async function runNativeTurn(
   let timedOut = false;
   const interactions: InteractionExchange[] = [];
 
+  const anchor = nativeSessionLastUsage.get(handle.id);
+  let lastUsage = anchor?.inputTokens !== undefined ? { inputTokens: anchor.inputTokens } : undefined;
+  let anchorIndex = anchor?.anchorIndex;
+
   // nax#1838: the save below the loop is the clean exit's alone. A turn that
   // throws must persist too — the retry reopens the same deterministic session
   // name, so an unsaved conversation is one the model silently resumes without.
@@ -129,7 +153,113 @@ export async function runNativeTurn(
         timedOut = true;
         break;
       }
-      const res = await deps.complete(messages, tools);
+
+      // Compaction runs at most once per round trip. That bound is what stops a
+      // compact-still-over-compact loop when the pinned prompt alone is too large.
+      // Read below by the overflow-retry backstop (`canRetry = ... &&
+      // !summarizeFailed && ...`), which suppresses a doomed retry after the
+      // summarizer has already failed this round trip.
+      let summarizeFailed = false;
+      if (
+        deps.summarize !== undefined &&
+        deps.contextWindow !== undefined &&
+        deps.compaction !== undefined &&
+        shouldCompact(estimateContextTokens(messages, lastUsage, anchorIndex), deps.contextWindow, deps.compaction)
+      ) {
+        const preCompactionTokens = estimateContextTokens(messages, lastUsage, anchorIndex);
+        const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction));
+        if (plan !== undefined) {
+          try {
+            const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
+            // Rebound, not spliced in place: `messages` is a local accumulator and
+            // rebinding it keeps the compacted array a fresh value.
+            messages = applyCompaction(messages, plan, summary.text);
+            // Finding 2 (whole-branch review, 2026-09-04): a previous-summary merge
+            // can produce a same-size (or larger) array — a paid model call that
+            // shrank nothing. Not fatal (the reactive backstop is the real safety
+            // net if this repeats into an overflow) but worth surfacing, since it
+            // would otherwise burn a model call every round trip with no signal.
+            const postCompactionTokens = estimateContextTokens(messages, undefined, undefined);
+            if (postCompactionTokens >= preCompactionTokens) {
+              getSafeLogger()?.warn("native-adapter", "compaction made no size progress", {
+                sessionName: handle.id,
+                preCompactionTokens,
+                postCompactionTokens,
+              });
+            }
+            getSafeLogger()?.info("native-adapter", "compaction completed", {
+              sessionName: handle.id,
+              // Keep token counts under the plural `tokens` metric key so the
+              // logger's credential redactor does not mistake them for secrets.
+              tokens: { before: preCompactionTokens, after: postCompactionTokens },
+              messagesDropped: plan.toSummarize.length,
+              summaryLength: summary.text.length,
+            });
+            inputTokens += summary.usage.inputTokens;
+            outputTokens += summary.usage.outputTokens;
+            costUsd += summary.costUsd;
+            // Resets the watchdog's lastActivityAt between the summary and the
+            // round trip, so the two silent spans do not add up against one budget.
+            deps.onActivity?.({
+              kind: "usage",
+              inputTokens: summary.usage.inputTokens,
+              outputTokens: summary.usage.outputTokens,
+              costUsd: summary.costUsd,
+            });
+            // The anchor described the pre-compaction array; it is meaningless now.
+            lastUsage = undefined;
+            anchorIndex = undefined;
+          } catch (err) {
+            if (deps.deadline?.expired() === true || opts.signal?.aborted === true) throw err;
+            // Not fatal: the request may still fit, and if it does not it fails
+            // through the path #1837 and #1839 made correct. Killing a story
+            // because a summarizer hiccuped would be worse than the problem.
+            summarizeFailed = true;
+            getSafeLogger()?.warn("native-adapter", "compaction summary failed; sending uncompacted", {
+              sessionName: handle.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
+      let res: NativeTurnResponse;
+      try {
+        res = await deps.complete(messages, tools);
+      } catch (err) {
+        // Written as one guarded `if` (not a separate `canRetry` boolean) so
+        // TypeScript's narrowing carries deps.summarize/contextWindow/compaction
+        // as defined below — a boolean flag loses that narrowing.
+        if (
+          !isContextOverflow(err) ||
+          summarizeFailed ||
+          deps.summarize === undefined ||
+          deps.contextWindow === undefined ||
+          deps.compaction === undefined ||
+          !deps.compaction.enabled
+        ) {
+          throw err;
+        }
+
+        // Same code path, half the keep budget. Not a second algorithm.
+        const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction, true));
+        if (plan === undefined) throw err;
+        const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
+        messages = applyCompaction(messages, plan, summary.text);
+        inputTokens += summary.usage.inputTokens;
+        outputTokens += summary.usage.outputTokens;
+        costUsd += summary.costUsd;
+        deps.onActivity?.({
+          kind: "usage",
+          inputTokens: summary.usage.inputTokens,
+          outputTokens: summary.usage.outputTokens,
+          costUsd: summary.costUsd,
+        });
+        lastUsage = undefined;
+        anchorIndex = undefined;
+        // Retried once. A second overflow propagates: compacting further would be
+        // guessing, and the failure now carries a correct diagnosis.
+        res = await deps.complete(messages, tools);
+      }
       roundTrips += 1;
       inputTokens += res.usage.inputTokens;
       outputTokens += res.usage.outputTokens;
@@ -141,6 +271,10 @@ export async function runNativeTurn(
       }
       costUsd += res.costUsd;
       output = res.text;
+
+      lastUsage = { inputTokens: res.usage.inputTokens };
+      anchorIndex = messages.length - 1;
+      nativeSessionLastUsage.set(handle.id, { inputTokens: res.usage.inputTokens, anchorIndex });
 
       deps.onActivity?.({
         kind: "usage",

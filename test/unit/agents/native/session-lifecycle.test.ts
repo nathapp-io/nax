@@ -3,8 +3,13 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeAgentAdapter } from "@test/helpers";
-import { closeNativeSession, openNativeSession } from "@/agents/native/session/session";
+import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import {
+  closeNativeSession,
+  nativeSessionCompaction,
+  nativeSessionLastUsage,
+  openNativeSession,
+} from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@/agents/session-types";
@@ -276,5 +281,65 @@ describe("SessionManager forwards contextPullTools to the adapter", () => {
 
     expect(capturedSendTurnOpts).toHaveLength(1);
     expect(capturedSendTurnOpts[0].contextPullTools).toBe(pullTools);
+  });
+});
+
+// ─── SessionManager resolves execution.compaction into the adapter call ────
+//
+// Finding 1 (whole-branch review, 2026-09-04): nativeSessionCompaction can
+// only ever be populated if adapter.openSession is called with a `compaction`
+// field, but the real production path (SessionManager.openSessionImpl) never
+// set it — despite `opts.config ?? this._config` already being in scope one
+// line above for resolvedPermissions. This test exercises the forwarding
+// end-to-end through a fake adapter, mirroring the transcriptDir/
+// contextPullTools wiring tests above: a SessionManager constructed with a
+// config carrying a non-default execution.compaction must produce an
+// adapter.openSession call whose opts.compaction equals that value.
+describe("SessionManager resolves execution.compaction into the adapter call", () => {
+  test("adapter.openSession receives the config's execution.compaction value", async () => {
+    const capturedOpts: OpenSessionOpts[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedOpts.push(opts);
+        return { id: name, agentName: "native-fake" } satisfies SessionHandle;
+      }),
+    });
+
+    const compaction = { enabled: true, compactAtPercent: 77, keepRecentPercent: 15 };
+    const config = makeNaxConfig({ execution: { compaction } });
+
+    const sm = new SessionManager({ getAdapter: () => adapter, config });
+    const request: OpenSessionRequest = {
+      agentName: "native-fake",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
+      timeoutSeconds: 60,
+      transcriptDir: dir,
+    };
+
+    const handle = await sm.openSession("nax-compaction-wiring", request);
+
+    expect(capturedOpts).toHaveLength(1);
+    expect(capturedOpts[0].compaction).toEqual(compaction);
+    expect(handle.id).toBe("nax-compaction-wiring");
+  });
+});
+
+describe("native session compaction settings", () => {
+  const settings = { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 };
+
+  test("openSession records the resolved settings for the turn to read", async () => {
+    const handle = await openNativeSession("sess-cfg", opts({ compaction: settings }));
+    expect(nativeSessionCompaction.get("sess-cfg")).toEqual(settings);
+    await closeNativeSession(handle, false);
+  });
+
+  test("closing clears the settings and the usage anchor, like every other session map", async () => {
+    const handle = await openNativeSession("sess-cfg2", opts({ compaction: settings }));
+    nativeSessionLastUsage.set("sess-cfg2", { inputTokens: 10, anchorIndex: 0 });
+    await closeNativeSession(handle, false);
+    expect(nativeSessionCompaction.has("sess-cfg2")).toBe(false);
+    expect(nativeSessionLastUsage.has("sess-cfg2")).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { NATIVE_AGENT } from "../models";
 import { nativeSessionId } from "../session-affinity";
+import type { ResolvedCompaction } from "./compaction";
 import { deleteTranscript, pruneRetainedTranscripts } from "./transcript-store";
 
 /**
@@ -62,6 +63,20 @@ export const nativeSessionStreamHooks = new Map<
  */
 export const nativeSessionFailed = new Set<string>();
 
+/** Session name -> resolved compaction settings. Same lifecycle as the maps above. */
+export const nativeSessionCompaction = new Map<string, ResolvedCompaction>();
+
+/**
+ * Session name -> the last round trip's reported input tokens and the index it
+ * covers, so the next estimate can anchor on a real number.
+ *
+ * In-memory rather than persisted because runNativeTurn reloads the transcript
+ * from disk on EVERY turn: without this the second turn of every session would
+ * be estimated from scratch. A process restart still loses it, which is the case
+ * the reactive backstop covers.
+ */
+export const nativeSessionLastUsage = new Map<string, { inputTokens: number; anchorIndex: number }>();
+
 /** Records how the session's latest turn ended, for `closeNativeSession`. */
 export function markNativeTurnOutcome(sessionName: string, failed: boolean): void {
   if (failed) nativeSessionFailed.add(sessionName);
@@ -78,6 +93,7 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
   }
   nativeTranscriptDirs.set(name, opts.transcriptDir);
   nativeSessionTimeouts.set(name, opts.timeoutSeconds);
+  if (opts.compaction !== undefined) nativeSessionCompaction.set(name, opts.compaction);
   nativeSessionStreamHooks.set(name, {
     ...(opts.onStreamActivity !== undefined ? { onStreamActivity: opts.onStreamActivity } : {}),
     ...(opts.onActiveCall !== undefined ? { onActiveCall: opts.onActiveCall } : {}),
@@ -118,4 +134,6 @@ export async function closeNativeSession(handle: SessionHandle, failed?: boolean
   nativeSessionTimeouts.delete(handle.id);
   nativeSessionStreamHooks.delete(handle.id);
   nativeSessionFailed.delete(handle.id);
+  nativeSessionCompaction.delete(handle.id);
+  nativeSessionLastUsage.delete(handle.id);
 }
