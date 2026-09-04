@@ -49,6 +49,24 @@ No new files. The ordinal is a private field on the existing `PromptAuditor` cla
 
 Implements spec story S1 and closes #1825 on its own. Independent of the other tasks — landable alone.
 
+**This task has a side effect beyond the audit, and issue #1825 states otherwise.** That issue
+claims "nothing on the native path reads `handle.protocolIds` today". That is wrong: two call
+sites read it and currently short-circuit for native precisely because it is absent —
+`src/session/session-keeper.ts` (`bindProtocolIds`, which returns early on a falsy
+`heldHandle.protocolIds`) and `src/session/manager-run.ts` (`if (result.protocolIds)`, reached
+because `SessionManager.sendPrompt` back-fills a result's ids from the handle).
+
+After this task both fire for native, so a native session descriptor gains real `protocolIds`
+and is persisted where it previously held `NULL_PROTOCOL_IDS`. That is desirable — descriptors
+become correlatable, matching ACP — and both sites are guarded (`session-keeper` wraps
+`bindHandle` in try/catch for the session-not-found case, `manager-run` checks the handle exists
+first), so neither can throw. But it is one extra descriptor write per native turn, and a
+reviewer should know it was intended rather than discovered.
+
+No existing test pins the old behaviour: every fixture that constructs `protocolIds: { recordId:
+null, sessionId: null }` supplies it as its own input rather than obtaining it from
+`openNativeSession`.
+
 **Files:**
 - Modify: `src/agents/native/session/session.ts`
 - Modify: `src/runtime/prompt-auditor.ts` (one comment only)
@@ -618,7 +636,11 @@ Expected: `ModelCalls:` on a native run, `AgentRuns:` on an ACP run, never both 
 
 ## Risks
 
-1. **The filename suffix changes meaning on both transports.** `-tNN` becomes an ordinal. Anything grepping `-t10` to find round-trip-capped calls breaks — that grep is already obsolete since the cap was removed, and no other consumer of the suffix is known.
-2. **`Turn:` changes meaning on ACP**, the incumbent transport, so old and new ACP records are not comparable. Accepted in the spec: leaving ACP alone would keep one field carrying two meanings, which is the defect itself.
-3. **The ordinal is per `PromptAuditor` instance**, so a resumed run restarts numbering. That matches the audit directory's per-run scope.
-4. **Task 2 must not change output.** If its Step 9 assertion fails, the refactor has leaked a behaviour change and should be corrected before Task 3 builds on it.
+1. **Task 1 changes native session descriptors, not just audit records.** See the note in Task 1:
+   `session-keeper.ts` and `manager-run.ts` both read `handle.protocolIds` and currently
+   short-circuit for native. After Task 1 they bind and persist real ids. Guarded on both paths
+   and consistent with #1825's intent, but it is a wider blast radius than that issue claims.
+2. **The filename suffix changes meaning on both transports.** `-tNN` becomes an ordinal. Anything grepping `-t10` to find round-trip-capped calls breaks — that grep is already obsolete since the cap was removed, and no other consumer of the suffix is known.
+3. **`Turn:` changes meaning on ACP**, the incumbent transport, so old and new ACP records are not comparable. Accepted in the spec: leaving ACP alone would keep one field carrying two meanings, which is the defect itself.
+4. **The ordinal is per `PromptAuditor` instance**, so a resumed run restarts numbering. That matches the audit directory's per-run scope.
+5. **Task 2 must not change output.** If its Step 9 assertion fails, the refactor has leaked a behaviour change and should be corrected before Task 3 builds on it.
