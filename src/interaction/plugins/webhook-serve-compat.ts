@@ -195,7 +195,7 @@ export function installServePortZeroCompat(): () => void {
 
     (Bun as { serve: typeof Bun.serve }).serve = patchedServe;
     servePortZeroPatchedServe = patchedServe;
-    globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
+    const patchedFetch = (async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
       // Route on the URL alone, and build a Request only on the branch that
       // needs one. This used to construct a throwaway `new Request(input, init)`
       // up front purely to read `.url`, on EVERY in-process fetch made while any
@@ -221,7 +221,9 @@ export function installServePortZeroCompat(): () => void {
       }
       return boundOriginalFetch(input instanceof URL ? input.toString() : input, init);
     }) as typeof globalThis.fetch;
-    servePortZeroPatchedFetch = globalThis.fetch;
+
+    globalThis.fetch = patchedFetch;
+    servePortZeroPatchedFetch = patchedFetch;
     servePortZeroCompatInstalled = true;
     servePortZeroCompatRefCount = 1;
   }

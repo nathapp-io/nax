@@ -314,7 +314,8 @@ describe("the in-memory fallback server — edge branches", () => {
 
     // The replacement survives; the stale stub is not resurrected.
     expect(globalThis.fetch).toBe(replacement);
-    expect(await (await globalThis.fetch("http://localhost:45126/x")).text()).toBe("live");
+    const response = await globalThis.fetch("http://localhost:45126/x");
+    expect(await response.text()).toBe("live");
   });
 
   test("_resetServePortZeroCompatForTests also leaves a post-install globalThis.fetch alone", () => {
