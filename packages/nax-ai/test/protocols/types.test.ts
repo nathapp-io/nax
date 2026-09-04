@@ -19,12 +19,18 @@ describe("protocol discriminants", () => {
     ]);
   });
 
-  it("declares the six error kinds", () => {
+  it("declares the seven error kinds", () => {
+    // "context-overflow" sits beside "bad-request" because it is a refinement
+    // of it: both arrive as a 4xx, and only the upstream message separates
+    // them. The split exists because the recoveries are opposite: a
+    // malformed request is terminal, an overflow succeeds once the caller
+    // shortens the conversation.
     expect([...PROTOCOL_ERROR_KINDS]).toEqual([
       "rate-limit",
       "auth",
       "overloaded",
       "bad-request",
+      "context-overflow",
       "transport",
       "unknown",
     ]);

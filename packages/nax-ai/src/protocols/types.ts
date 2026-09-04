@@ -39,11 +39,25 @@ export const PROTOCOL_ERROR_KINDS = [
   "auth",
   "overloaded",
   "bad-request",
+  "context-overflow",
   "transport",
   "unknown",
 ] as const;
 export type ProtocolErrorKind = (typeof PROTOCOL_ERROR_KINDS)[number];
 
+/**
+ * `context-overflow` is a refinement of `bad-request`, not a sibling of it:
+ * every provider we speak to reports an oversized prompt as a 4xx, so the two
+ * are indistinguishable by status alone. They are split because the recoveries
+ * are opposite. A malformed request is terminal — rebuilding it produces the
+ * same request. An overflow is not — the same call succeeds once the caller
+ * shortens the conversation, and folding it into `bad-request` tells a
+ * consumer to give up on a fault it could have recovered from.
+ *
+ * What to do about it stays with the consumer, as it does for `rate-limit` and
+ * `overloaded`: the recovery is to rebuild the request, and only the consumer
+ * knows what its conversation may lose.
+ */
 export interface ProtocolError {
   readonly kind: ProtocolErrorKind;
   readonly message: string;

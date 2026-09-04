@@ -27,7 +27,7 @@ import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { AuthResolver } from "../auth/resolver.ts";
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
-import { classifyHttpError, classifyThrown, parseRetryAfter } from "./errors.ts";
+import { classifyProviderError, classifyThrown, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { assertValidHeaders, assertValidSessionId, mergeRequestHeaders, withoutEmpty } from "./request-headers.ts";
 import { vendorSessionHeaders } from "./session-id.ts";
@@ -339,11 +339,15 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               const usage = toTokenUsage(event.error.usage);
               // A failed request that consumed tokens still bills for them.
               if (totalTokens(usage) > 0) yield { type: "usage", usage };
+              const upstreamMessage = event.error.errorMessage;
               yield {
                 type: "error",
                 error: {
-                  kind: classifyHttpError(status),
-                  message: event.error.errorMessage ?? `Upstream stream ended: ${event.reason}.`,
+                  // The status alone cannot separate an overflow from a
+                  // malformed request; the upstream message can, and it is
+                  // already here.
+                  kind: classifyProviderError(status, upstreamMessage),
+                  message: upstreamMessage ?? `Upstream stream ended: ${event.reason}.`,
                   ...(status !== undefined ? { status } : {}),
                   ...(retryAfter !== undefined ? { retryAfter } : {}),
                 },

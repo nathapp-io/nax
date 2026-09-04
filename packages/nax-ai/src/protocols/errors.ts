@@ -19,6 +19,54 @@ export function classifyHttpError(status: number | undefined): ProtocolErrorKind
 }
 
 /**
+ * Substrings that identify a context-window overflow, lowercased.
+ *
+ * Taken from provider documentation and error payloads, not from a live
+ * capture: a passing test here proves the mapping, never that a given provider
+ * still words its message this way. They are upstream wire strings and will
+ * drift, which is why they live in one table with a test per phrasing — a
+ * reworded message shows up as a failing case rather than as a run that
+ * silently gives up on a recoverable fault.
+ *
+ * Matching is deliberately conservative. An unrecognised 4xx stays
+ * `bad-request`: mistaking a genuinely malformed request for an overflow would
+ * send a consumer into an endless shorten-and-retry loop.
+ */
+const CONTEXT_OVERFLOW_MARKERS: readonly string[] = [
+  "context_length_exceeded",
+  "context length exceeded",
+  "maximum context length",
+  "exceed context limit",
+  "prompt is too long",
+  "input is too long",
+  "exceeds the maximum number of tokens",
+  "reduce the length of the messages",
+  "too many tokens",
+];
+
+/**
+ * Classifies a provider error from its status and its upstream message.
+ *
+ * Separate from `classifyHttpError` rather than folded into it: that function
+ * is a pure status table, shared with hand-written backends that may have a
+ * status and no message, and widening it with a second input would make every
+ * caller supply one. This is the message-aware layer above it.
+ *
+ * Only `bad-request` is refined. A status with a verdict of its own keeps it —
+ * a 429 mentioning tokens is a rate limit, and the caller should wait rather
+ * than compact. An absent status stays `unknown` for the same reason: an
+ * overflow always arrives with a response, so declining to guess costs
+ * nothing.
+ */
+export function classifyProviderError(status: number | undefined, message: string | undefined): ProtocolErrorKind {
+  const kind = classifyHttpError(status);
+  if (kind !== "bad-request" || message === undefined) return kind;
+
+  const haystack = message.toLowerCase();
+  return CONTEXT_OVERFLOW_MARKERS.some((marker) => haystack.includes(marker)) ? "context-overflow" : kind;
+}
+
+/**
  * Reads `retry-after` as a delay in seconds.
  *
  * The header may also carry an HTTP-date. That form is deliberately not

@@ -480,6 +480,50 @@ describe("createPiProtocol error path", () => {
     });
   });
 
+  it("classifies a 400 whose message reports an overflowing prompt as context-overflow", async () => {
+    const events = await drainWith(
+      fakePiWithResponse(
+        [
+          {
+            type: "error",
+            reason: "error",
+            error: message({
+              stopReason: "error",
+              errorMessage: "prompt is too long: 205780 tokens > 200000 maximum",
+            }),
+          },
+        ] as AssistantMessageEvent[],
+        { status: 400, headers: {} },
+      ),
+    );
+
+    expect(events.at(-1)).toEqual({
+      type: "error",
+      error: {
+        kind: "context-overflow",
+        message: "prompt is too long: 205780 tokens > 200000 maximum",
+        status: 400,
+      },
+    });
+  });
+
+  it("leaves a 400 with an unrelated message as bad-request", async () => {
+    const events = await drainWith(
+      fakePiWithResponse(
+        [
+          {
+            type: "error",
+            reason: "error",
+            error: message({ stopReason: "error", errorMessage: "tools.0.name: invalid" }),
+          },
+        ] as AssistantMessageEvent[],
+        { status: 400, headers: {} },
+      ),
+    );
+
+    expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "bad-request" } });
+  });
+
   it("falls back to unknown when no response was observed", async () => {
     const events = await drainWith(
       fakePiWithResponse([
