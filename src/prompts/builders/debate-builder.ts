@@ -22,7 +22,7 @@ import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "@/debat
 import type { Finding } from "@/findings";
 import type { DiffContext } from "@/review/types";
 import type { ComposeInput } from "../compose";
-import { wrapDiffAccess } from "../diff-access";
+import { wrapDiffAccess } from "../sections/diff-access";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -444,7 +444,7 @@ function buildDebateDiffSection(ctx: DiffContext): string {
     ];
     const excludeArgs = excludes.map((p) => `'${p}'`).join(" ");
     // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
-    // one on the native protocol (src/prompts/diff-access.ts).
+    // one on the native protocol (src/prompts/sections/diff-access.ts).
     const shellBody = [
       `## Git Baseline: \`${ref}\``,
       "",

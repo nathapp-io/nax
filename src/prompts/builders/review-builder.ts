@@ -19,8 +19,8 @@ import { SEMANTIC_CATEGORY_ENUM_LINE } from "@/review/semantic-categories";
 import type { LLMFinding } from "@/review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 import { wrapJsonPrompt } from "@/utils/llm-json";
-import { wrapDiffAccess } from "../diff-access";
 import { buildReviewOutOfScopeBlock } from "../sections";
+import { wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -337,7 +337,7 @@ function buildRefDiffSection(storyGitRef: string, stat: string, excludePatterns:
   const logCmd = `git log --oneline ${storyGitRef}..HEAD`;
 
   // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
-  // one on the native protocol (src/prompts/diff-access.ts).
+  // one on the native protocol (src/prompts/sections/diff-access.ts).
   const shellBody = `## Git Baseline: \`${storyGitRef}\`
 
 To inspect the implementation:
@@ -346,7 +346,6 @@ To inspect the implementation:
 - Commit history: \`${logCmd}\`
 
 Use these commands to inspect the code. Do NOT rely solely on the file list above — read the actual diff and files to verify each AC.
-
 `;
 
   return `## Changed Files

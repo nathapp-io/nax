@@ -18,10 +18,20 @@
  *
  * Why a delimited region rather than a placeholder token: the body between the
  * markers IS the ACP text, so if substitution never runs the prompt degrades to
- * exactly what shipped before this change. A placeholder would degrade to a
- * prompt with no diff instructions at all, which is the worse failure and the
- * harder one to notice.
+ * the pre-change text plus two visible HTML-comment markers. A placeholder would
+ * degrade to a prompt with no diff instructions at all, which is the worse
+ * failure and the harder one to notice.
+ *
+ * Why the marker carries a per-process nonce: a prompt is not all trusted text.
+ * `buildPriorIterationsBlock` splices LLM-authored findings from earlier
+ * iterations into the same string, ahead of the region, and an embedded diff can
+ * carry the contents of any file in the repository. Without a nonce, one forged
+ * opener in that content captures everything up to the genuine close — deleting
+ * the reviewer's own diff instructions and substituting an attacker-chosen
+ * baseline ref. Content cannot forge a marker it cannot predict.
  */
+
+import { randomUUID } from "node:crypto";
 
 /** Everything the native rendering needs; the ACP rendering is the body itself. */
 export interface DiffAccessSpec {
@@ -39,9 +49,28 @@ export interface DiffAccessSpec {
 
 export type PromptProtocol = "native" | "acp";
 
-const OPEN = "<!--nax:diff-access ";
+/**
+ * Unpredictable per process, and shared by the wrap and the substitution because
+ * both run in the same process: a builder composes the prompt and dispatch
+ * rewrites it a few frames later, never across a process boundary.
+ */
+const NONCE = randomUUID().slice(0, 8);
+const OPEN = `<!--nax:diff-access:${NONCE} `;
 const CLOSE = "<!--/nax:diff-access-->";
-const REGION = /<!--nax:diff-access (\{.*?\})-->\n([\s\S]*?)<!--\/nax:diff-access-->\n?/g;
+
+/**
+ * The body may not span another opener. Belt and braces beside the nonce: it
+ * also contains a genuine marker that some future path echoes back into a
+ * prompt, where the nonce would match and the greedy-across-regions failure
+ * would return.
+ */
+const REGION = new RegExp(
+  `<!--nax:diff-access:${NONCE} (\\{.*?\\})-->\\n((?:(?!<!--nax:diff-access:${NONCE} )[\\s\\S])*?)<!--\\/nax:diff-access-->\\n?`,
+  "g",
+);
+
+/** Any diff-access opener, nonce or not — used to assert none survives dispatch. */
+export const DIFF_ACCESS_MARKER_PREFIX = "<!--nax:diff-access";
 
 /**
  * Wrap the protocol-agnostic body so dispatch can swap it.
@@ -68,6 +97,14 @@ function diffCall(ref: string, paths: readonly string[] | undefined, extra: Reco
   });
 }
 
+/**
+ * ⚠️ The pathspecs recommended below (`:!.nax/` and friends) pass the tool
+ * policy's containment seam — `resolveWithin` reads them as literal filenames
+ * under the root — but they would fail `matchesAny` under a grant that carries
+ * path globs. That is moot today (`scoped` is rejected at config load, #374),
+ * and it becomes live the moment scoped grants land, because this text now
+ * recommends those pathspecs to every reviewer.
+ */
 function renderNative(spec: DiffAccessSpec): string {
   const lines = [
     "## Diff Access",

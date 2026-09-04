@@ -17,7 +17,7 @@ import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionMana
 import type { AgentRunOptions, HopKind, SessionHandle, TurnResult } from "@/agents";
 import type { BuildHopCallbackContext } from "@/operations";
 import { buildHopCallback } from "@/operations";
-import { wrapDiffAccess } from "@/prompts/diff-access";
+import { wrapDiffAccess } from "@/prompts/sections/diff-access";
 
 const WORKDIR = "/repo";
 const PROMPT = `review US-001\n${wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}end`;

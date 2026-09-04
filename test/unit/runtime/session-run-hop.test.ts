@@ -4,7 +4,7 @@ import { SessionTurnError } from "@/agents";
 import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
 import type { ToolDescriptor } from "@/context/engine";
-import { wrapDiffAccess } from "@/prompts/diff-access";
+import { wrapDiffAccess } from "@/prompts/sections/diff-access";
 import { createSessionRunHop } from "@/runtime/session-run-hop";
 import type { SendPromptOpts } from "@/session/types";
 

@@ -11,8 +11,8 @@ import type { Iteration } from "@/findings";
 import type { AcDroppedEntry, AcQuoteRejectionCode } from "@/review/ac-quote-validator";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import { wrapDiffAccess } from "../diff-access";
 import { buildReviewOutOfScopeBlock } from "../sections";
+import { wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
 export interface TestInventory {
@@ -265,7 +265,7 @@ function buildAdversarialRefDiffSection(
 
   // The shell text below is the ACP rendering. Dispatch swaps it for a
   // tool-shaped one when the story runs on the native protocol, which has no
-  // shell -- see src/prompts/diff-access.ts for why the branch cannot be taken
+  // shell -- see src/prompts/sections/diff-access.ts for why the branch cannot be taken
   // here. Pathspecs go into the spec unquoted: shell quoting is the ACP
   // rendering's business, and a quoted pathspec in a `paths` array is a literal
   // filename.

@@ -17,7 +17,7 @@
  * drift, and a third would otherwise be written without the guard.
  */
 
-import { applyDiffAccess } from "../prompts/diff-access";
+import { applyDiffAccess } from "../prompts/sections/diff-access";
 import { buildContextToolPreamble } from "./acp/adapter-output";
 import { NATIVE_AGENT } from "./native/models";
 import type { AgentRunOptions } from "./types";

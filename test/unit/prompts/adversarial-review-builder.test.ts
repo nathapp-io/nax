@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeAdversarialReviewConfig } from "@test/helpers";
 import { AdversarialReviewPromptBuilder } from "@/prompts/builders/adversarial-review-builder";
+import { DIFF_ACCESS_MARKER_PREFIX } from "@/prompts/sections/diff-access";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
@@ -475,12 +476,12 @@ describe("AdversarialReviewPromptBuilder — diff-access region", () => {
   const prompt = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
 
   test("wraps the ref-mode diff instructions in a substitutable region", () => {
-    expect(prompt).toContain("<!--nax:diff-access ");
+    expect(prompt).toContain(DIFF_ACCESS_MARKER_PREFIX);
     expect(prompt).toContain("<!--/nax:diff-access-->");
   });
 
   test("the region's spec carries the baseline ref and asks for the test audit", () => {
-    const spec = JSON.parse(/<!--nax:diff-access (\{.*?\})-->/.exec(prompt)?.[1] ?? "{}");
+    const spec = JSON.parse(/<!--nax:diff-access:\S+ (\{.*?\})-->/.exec(prompt)?.[1] ?? "{}");
     expect(spec.ref).toBe(STORY_GIT_REF);
     expect(spec.testAudit).toBe(true);
     expect(spec.fullExclude).toContain(":!.nax/");
@@ -488,7 +489,7 @@ describe("AdversarialReviewPromptBuilder — diff-access region", () => {
   });
 
   test("exclusion pathspecs reach the spec unquoted, ready for a paths array", () => {
-    const spec = JSON.parse(/<!--nax:diff-access (\{.*?\})-->/.exec(prompt)?.[1] ?? "{}");
+    const spec = JSON.parse(/<!--nax:diff-access:\S+ (\{.*?\})-->/.exec(prompt)?.[1] ?? "{}");
     for (const pathspec of spec.fullExclude as string[]) {
       expect(pathspec.startsWith("'")).toBe(false);
     }

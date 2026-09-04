@@ -6,11 +6,11 @@ import {
   buildGitArgv,
   compileToolPolicy,
   createCodingToolRuntime,
-  GIT_DIFF_FILTERS,
   GIT_ESCAPE_FLAGS,
   GIT_READ_VERBS,
   gitTool,
 } from "@/tools";
+import { GIT_DIFF_FILTERS } from "@/tools/git";
 import { _gitDeps } from "@/utils/git";
 
 function contentOf(result: { kind: string; content?: string }): string {
@@ -114,8 +114,9 @@ describe("buildGitArgv — typed flag fields", () => {
     expect(argvOf({ subcommand: "log", nameOnly: true })).toContain("--name-only");
   });
 
-  test("emits --diff-filter=<value> for diff", () => {
+  test("emits --diff-filter=<value> for diff and log", () => {
     expect(argvOf({ subcommand: "diff", diffFilter: "A" })).toContain("--diff-filter=A");
+    expect(argvOf({ subcommand: "log", diffFilter: "A" })).toContain("--diff-filter=A");
   });
 
   test("emits --oneline for log", () => {
@@ -139,6 +140,13 @@ describe("buildGitArgv — typed flag fields", () => {
     expect(argvOf({ subcommand: "log", oneline: false })).not.toContain("--oneline");
   });
 
+  // `false` asks for nothing, so refusing it for the wrong verb would invent a
+  // refusal — the failure class this change exists to reduce.
+  test("an explicitly-false flag is accepted even on a verb it does not apply to", () => {
+    expect(argvOf({ subcommand: "status", nameOnly: false })).toEqual(["status", "--", "."]);
+    expect(argvOf({ subcommand: "diff", oneline: false })).toEqual(["diff", "--relative", "--", "."]);
+  });
+
   // The closed enum is the whole safety property: were the value interpolated
   // as given, `--diff-filter=<anything>` would be a model-authored flag.
   test("rejects a diffFilter outside the enum", () => {
@@ -153,10 +161,12 @@ describe("buildGitArgv — typed flag fields", () => {
   });
 
   test("rejects a flag field on a subcommand it does not apply to", () => {
-    expect("error" in buildGitArgv({ subcommand: "show", nameOnly: true })).toBe(true);
-    expect("error" in buildGitArgv({ subcommand: "log", diffFilter: "A" })).toBe(true);
     expect("error" in buildGitArgv({ subcommand: "diff", oneline: true })).toBe(true);
     expect("error" in buildGitArgv({ subcommand: "status", nameOnly: true })).toBe(true);
+    // git itself refuses `show --name-only`; refusing it here is the clearer error.
+    expect("error" in buildGitArgv({ subcommand: "show", nameOnly: true })).toBe(true);
+    expect("error" in buildGitArgv({ subcommand: "blame", diffFilter: "A" })).toBe(true);
+    expect("error" in buildGitArgv({ subcommand: "status", oneline: true })).toBe(true);
   });
 
   test("no built argv with flag fields set contains a repo-escape flag", () => {

@@ -61,8 +61,12 @@ const GIT_RELATIVE_VERBS: readonly string[] = ["diff", "log", "show"];
  * than a git usage error it has to interpret.
  */
 export const GIT_DIFF_FILTERS: readonly string[] = ["A", "M", "D", "R"];
+// `show` is deliberately absent: git itself refuses it — "options '--name-only',
+// '--name-status', '--check', and '-s' cannot be used together" (git 2.50.1),
+// because `show` already supplies a conflicting output selector. Verified by
+// running it; a nax-side refusal here is the clearer of the two errors.
 const GIT_NAME_ONLY_VERBS: readonly string[] = ["diff", "log"];
-const GIT_DIFF_FILTER_VERBS: readonly string[] = ["diff"];
+const GIT_DIFF_FILTER_VERBS: readonly string[] = ["diff", "log"];
 const GIT_ONELINE_VERBS: readonly string[] = ["log"];
 
 /**
@@ -82,10 +86,14 @@ function flagFromBoolean(
   const value = input[field];
   if (value === undefined) return null;
   if (typeof value !== "boolean") return { error: `"${field}" must be a boolean` };
+  // Checked before the verb gate: `false` asks for nothing, so refusing it for
+  // the wrong verb would invent a refusal — the failure class this change
+  // exists to reduce.
+  if (!value) return null;
   if (!validVerbs.includes(subcommand)) {
     return { error: `"${field}" is not valid for "${subcommand}" (valid for: ${validVerbs.join(", ")})` };
   }
-  return value ? flag : null;
+  return flag;
 }
 
 /**

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "@/agents/tool-preamble";
 import type { AgentRunOptions } from "@/agents/types";
-import { wrapDiffAccess } from "@/prompts/diff-access";
+import { wrapDiffAccess } from "@/prompts/sections/diff-access";
 
 function makeOptions(overrides: Partial<AgentRunOptions> = {}, prompt = "do the thing"): AgentRunOptions {
   return {
