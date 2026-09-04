@@ -187,6 +187,14 @@ export async function runNativeTurn(
                 postCompactionTokens,
               });
             }
+            getSafeLogger()?.info("native-adapter", "compaction completed", {
+              sessionName: handle.id,
+              // Keep token counts under the plural `tokens` metric key so the
+              // logger's credential redactor does not mistake them for secrets.
+              tokens: { before: preCompactionTokens, after: postCompactionTokens },
+              messagesDropped: plan.toSummarize.length,
+              summaryLength: summary.text.length,
+            });
             inputTokens += summary.usage.inputTokens;
             outputTokens += summary.usage.outputTokens;
             costUsd += summary.costUsd;
@@ -202,6 +210,7 @@ export async function runNativeTurn(
             lastUsage = undefined;
             anchorIndex = undefined;
           } catch (err) {
+            if (deps.deadline?.expired() === true || opts.signal?.aborted === true) throw err;
             // Not fatal: the request may still fit, and if it does not it fails
             // through the path #1837 and #1839 made correct. Killing a story
             // because a summarizer hiccuped would be worse than the problem.
@@ -225,7 +234,8 @@ export async function runNativeTurn(
           summarizeFailed ||
           deps.summarize === undefined ||
           deps.contextWindow === undefined ||
-          deps.compaction === undefined
+          deps.compaction === undefined ||
+          !deps.compaction.enabled
         ) {
           throw err;
         }

@@ -122,6 +122,58 @@ describe("proactive compaction", () => {
     expect(sentToModel).toHaveLength(5); // 4 seeded + the new prompt, nothing dropped
   });
 
+  test("does not start completion when the turn deadline expires during summarization", async () => {
+    await seedOversizedTranscript();
+    let expired = false;
+    let completeCalls = 0;
+
+    await expect(
+      runNativeTurn(handle, "next", opts(), {
+        contextWindow: 8000,
+        compaction: cfg,
+        deadline: { remainingMs: () => (expired ? 0 : 1000), expired: () => expired },
+        summarize: async () => {
+          expired = true;
+          throw new Error("summary deadline exceeded");
+        },
+        complete: async () => {
+          completeCalls += 1;
+          return { text: "done", usage, costUsd: 0 };
+        },
+      }),
+    ).rejects.toThrow("summary deadline exceeded");
+
+    expect(completeCalls).toBe(0);
+  });
+
+  test("does not start completion when the caller aborts during summarization", async () => {
+    await seedOversizedTranscript();
+    const controller = new AbortController();
+    let completeCalls = 0;
+
+    await expect(
+      runNativeTurn(
+        handle,
+        "next",
+        { ...opts(), signal: controller.signal },
+        {
+          contextWindow: 8000,
+          compaction: cfg,
+          summarize: async () => {
+            controller.abort();
+            throw new Error("summary cancelled");
+          },
+          complete: async () => {
+            completeCalls += 1;
+            return { text: "done", usage, costUsd: 0 };
+          },
+        },
+      ),
+    ).rejects.toThrow("summary cancelled");
+
+    expect(completeCalls).toBe(0);
+  });
+
   test("counts the summary's cost but not as a round trip", async () => {
     await seedOversizedTranscript();
 
@@ -194,7 +246,7 @@ describe("proactive compaction", () => {
     beforeEach(() => {
       resetLogger();
       logCalls = [];
-      initLogger({ level: "silent" });
+      initLogger({ level: "info", suppressConsole: true });
       addSink((entry) => logCalls.push(entry));
     });
 
@@ -227,6 +279,28 @@ describe("proactive compaction", () => {
       expect(result.output).toBe("done");
       const warnings = logCalls.filter((e) => e.level === "warn" && e.message === "compaction made no size progress");
       expect(warnings.length).toBeGreaterThan(0);
+    });
+
+    test("logs the audit measurements for every successful compaction", async () => {
+      await seedOversizedTranscript();
+
+      await runNativeTurn(handle, "next", opts(), {
+        contextWindow: 8000,
+        compaction: cfg,
+        summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
+        complete: async () => ({ text: "done", usage, costUsd: 0 }),
+      });
+
+      expect(logCalls.map((entry) => `${entry.level}:${entry.message}`)).toContain("info:compaction completed");
+      const audit = logCalls.find((e) => e.level === "info" && e.message === "compaction completed");
+      expect(audit?.data).toMatchObject({
+        sessionName: "sess-c",
+        messagesDropped: 2,
+        summaryLength: 7,
+      });
+      const tokens = audit?.data?.tokens as { before?: number; after?: number } | undefined;
+      expect(tokens?.before).toBeGreaterThan(0);
+      expect(tokens?.after).toBeGreaterThan(0);
     });
   });
 });
@@ -303,6 +377,30 @@ describe("reactive backstop", () => {
     ).rejects.toThrow("prompt is too long");
 
     expect(completes).toBe(2);
+  });
+
+  test("does not compact or retry an overflow when compaction is disabled", async () => {
+    await seedModerateTranscript();
+    let completes = 0;
+    let summarizeCalls = 0;
+
+    await expect(
+      runNativeTurn(handle, "next", opts(), {
+        contextWindow: BACKSTOP_WINDOW,
+        compaction: { ...cfg, enabled: false },
+        summarize: async () => {
+          summarizeCalls += 1;
+          return { text: "summary", usage, costUsd: 0 };
+        },
+        complete: async () => {
+          completes += 1;
+          throw new ProtocolStreamError({ kind: "context-overflow", message: "prompt is too long" });
+        },
+      }),
+    ).rejects.toThrow("prompt is too long");
+
+    expect(summarizeCalls).toBe(0);
+    expect(completes).toBe(1);
   });
 
   test("does not retry an overflow when the summarizer already failed this round trip", async () => {
