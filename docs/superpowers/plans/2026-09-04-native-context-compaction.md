@@ -382,6 +382,23 @@ describe("findCutPoint", () => {
   });
 });
 
+/**
+ * Four small exchanges with a keep budget of 250 tokens. Sizes are chosen so a
+ * cut genuinely lands mid-transcript: with two 1000-token exchanges and a
+ * 1000-token budget the walk reaches its budget on the very first message it
+ * visits, `findCutPoint` returns the earliest valid cut, and prepareCompaction
+ * correctly reports "nothing to do" — which would make every assertion below
+ * vacuous.
+ */
+const KEEP = 250;
+const fourExchanges: TranscriptMessage[] = [
+  { role: "user", content: "the task" },
+  ...exchange("c1", 400),
+  ...exchange("c2", 400),
+  ...exchange("c3", 400),
+  ...exchange("c4", 400),
+];
+
 describe("prepareCompaction", () => {
   test("returns undefined when there is nothing between the pin and the cut", () => {
     const messages: TranscriptMessage[] = [
@@ -392,33 +409,24 @@ describe("prepareCompaction", () => {
   });
 
   test("never includes the pinned first message in the span to summarize", () => {
-    const messages: TranscriptMessage[] = [
-      { role: "user", content: "the task" },
-      ...exchange("c1", 4000),
-      ...exchange("c2", 4000),
-    ];
-    const plan = prepareCompaction(messages, 1000);
+    const plan = prepareCompaction(fourExchanges, KEEP);
     expect(plan).toBeDefined();
-    expect(plan?.toSummarize).not.toContain(messages[0]);
+    expect(plan?.toSummarize).not.toContain(fourExchanges[0]);
   });
 });
 
 describe("applyCompaction", () => {
-  const messages: TranscriptMessage[] = [
-    { role: "user", content: "the task" },
-    ...exchange("c1", 4000),
-    ...exchange("c2", 4000),
-  ];
+  const messages = fourExchanges;
 
   test("leaves the pinned message byte-identical, so its cache prefix survives", () => {
-    const plan = prepareCompaction(messages, 1000);
+    const plan = prepareCompaction(messages, KEEP);
     if (!plan) throw new Error("expected a plan");
     const out = applyCompaction(messages, plan, "what happened");
     expect(out[0]).toEqual(messages[0]);
   });
 
   test("places the summary immediately after the pin, carrying the prefix", () => {
-    const plan = prepareCompaction(messages, 1000);
+    const plan = prepareCompaction(messages, KEEP);
     if (!plan) throw new Error("expected a plan");
     const out = applyCompaction(messages, plan, "what happened");
     expect(out[1].role).toBe("user");
@@ -427,14 +435,16 @@ describe("applyCompaction", () => {
   });
 
   test("shrinks the transcript", () => {
-    const plan = prepareCompaction(messages, 1000);
+    const plan = prepareCompaction(messages, KEEP);
     if (!plan) throw new Error("expected a plan");
     expect(applyCompaction(messages, plan, "s").length).toBeLessThan(messages.length);
   });
 
   test("replaces the previous summary rather than stacking a second one", () => {
-    const already = applyCompaction(messages, prepareCompaction(messages, 1000)!, "first summary");
-    const grown: TranscriptMessage[] = [...already, ...exchange("c3", 4000), ...exchange("c4", 4000)];
+    const first = prepareCompaction(messages, KEEP);
+    if (!first) throw new Error("expected a plan");
+    const already = applyCompaction(messages, first, "first summary");
+    const grown: TranscriptMessage[] = [...already, ...exchange("c5", 400), ...exchange("c6", 400)];
     const plan = prepareCompaction(grown, 1000);
     if (!plan) throw new Error("expected a plan");
     expect(plan.previousSummary).toBe("first summary");
@@ -486,20 +496,35 @@ function isValidCut(message: TranscriptMessage): boolean {
 
 /**
  * Walk backwards accumulating estimated size; once `keepTokens` is reached, take
- * the nearest valid cut at or after that point. Returns `messages.length` when
- * nothing can be dropped, which callers read as "no plan".
+ * the nearest valid cut at or after that point.
+ *
+ * Two passes on purpose. A single backwards pass that remembers the last valid
+ * index it saw returns `messages.length` whenever trailing tool-results consume
+ * the whole budget before any valid cut appears — an out-of-range index the
+ * caller then dereferences. Collecting the valid cuts first makes "the nearest
+ * cut at or after i" answerable without that hole, and `cuts[0]` is the honest
+ * default: keep everything, which `prepareCompaction` reads as "no plan".
  */
 export function findCutPoint(
   messages: readonly TranscriptMessage[],
   startIndex: number,
   keepTokens: number,
 ): number {
+  const cuts: number[] = [];
+  for (let i = startIndex; i < messages.length; i++) {
+    if (isValidCut(messages[i] as TranscriptMessage)) cuts.push(i);
+  }
+  if (cuts.length === 0) return messages.length;
+
+  let candidate = cuts[0] as number;
   let accumulated = 0;
-  let candidate = messages.length;
   for (let i = messages.length - 1; i >= startIndex; i--) {
     accumulated += estimateTokens(messages[i] as TranscriptMessage);
-    if (isValidCut(messages[i] as TranscriptMessage)) candidate = i;
-    if (accumulated >= keepTokens) break;
+    if (accumulated >= keepTokens) {
+      const at = cuts.find((c) => c >= i);
+      if (at !== undefined) candidate = at;
+      break;
+    }
   }
   return candidate;
 }
@@ -1201,16 +1226,35 @@ class ProtocolStreamError extends Error {
   }
 }
 
+/**
+ * A transcript that fits under the proactive threshold but is still large enough
+ * for the aggressive keep budget to find a cut.
+ *
+ * The sizing is load-bearing and was derived, not guessed. At a 20000-token
+ * window the threshold is 15904 (90% capped by headroom) and the aggressive keep
+ * budget is 3000; this transcript is ~8006 tokens, so the proactive check stays
+ * silent and only the backstop can compact. A large window does NOT work here:
+ * at 1_000_000 the aggressive budget is 150_000 tokens, more than the whole
+ * transcript, so prepareCompaction returns undefined and the backstop rethrows.
+ */
+const BACKSTOP_WINDOW = 20_000;
+async function seedModerateTranscript() {
+  await saveTranscript(dir, "sess-c", [
+    { role: "user", content: "the task" },
+    { role: "assistant", content: "a".repeat(16_000) },
+    { role: "user", content: "keep going" },
+    { role: "assistant", content: "b".repeat(16_000) },
+  ]);
+}
+
 describe("reactive backstop", () => {
   test("compacts and retries once when an overflow gets through", async () => {
-    await seedOversizedTranscript();
+    await seedModerateTranscript();
     let completes = 0;
     let summarizeCalls = 0;
 
     const result = await runNativeTurn(handle, "next", opts(), {
-      // A window large enough that the proactive check does not fire, so only
-      // the backstop can be responsible for the compaction.
-      contextWindow: 1_000_000,
+      contextWindow: BACKSTOP_WINDOW,
       compaction: cfg,
       summarize: async () => {
         summarizeCalls += 1;
@@ -1231,12 +1275,12 @@ describe("reactive backstop", () => {
   });
 
   test("retries once, not repeatedly", async () => {
-    await seedOversizedTranscript();
+    await seedModerateTranscript();
     let completes = 0;
 
     await expect(
       runNativeTurn(handle, "next", opts(), {
-        contextWindow: 1_000_000,
+        contextWindow: BACKSTOP_WINDOW,
         compaction: cfg,
         summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
         complete: async () => {
@@ -1272,12 +1316,12 @@ describe("reactive backstop", () => {
   });
 
   test("leaves a non-overflow protocol error alone", async () => {
-    await seedOversizedTranscript();
+    await seedModerateTranscript();
     let completes = 0;
 
     await expect(
       runNativeTurn(handle, "next", opts(), {
-        contextWindow: 1_000_000,
+        contextWindow: BACKSTOP_WINDOW,
         compaction: cfg,
         summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
         complete: async () => {
@@ -1672,9 +1716,12 @@ git commit -m "test: record the consecutive-user-message probe result"
 
 **One deliberate ordering constraint.** Task 4's gate must land before or with Task 3's config work is merged, because Task 3 is what introduces the temptation to read `NaxConfig` from native. It is placed after Task 3 so the probe in its Step 1 has something real to protect, but the two must ship in the same PR.
 
-**Four defects found in this plan during self-review and fixed inline**, recorded so a reviewer knows they were considered rather than missed:
+**Seven defects found in this plan during review and fixed inline**, recorded so a reviewer knows they were considered rather than missed. The last three were found by *running* the plan's code against the plan's own fixtures in a scratch test, not by reading it — reading had already passed them:
 
 1. Task 5 referenced `nativeSessionLastUsage` without importing it. The import is now an explicit step.
 2. Task 5's "at most once" test used `toolCalls: [] as never[]` — a loose cast the escape-hatch ratchet rejects, and an empty array ends the turn, so the test proved nothing. Replaced with a summary large enough to leave the transcript still over the threshold, asserting exactly one call.
 3. Tasks 5 and 6 mutated `messages` in place (`messages.length = 0; push(...)`). Now rebinds, which needs `const messages` to become `let messages` — called out where it happens.
 4. Task 7's window test was a tautology: it asserted `MODEL.contextWindow === 128_000`, a fact about the fixture, not about the wiring. Replaced with a behavioural test where the only way a summarize call occurs is if the real window reached the turn loop, plus its negative case on a large window.
+5. **`findCutPoint` returned an out-of-range index.** A single backwards pass that remembers the last valid index it saw returns `messages.length` whenever trailing tool-results consume the budget before any valid cut appears. Measured against Task 2's own first test: `cut=5` on a 5-element array, so `messages[cut].role` throws. Replaced with a two-pass version that collects valid cuts first; re-measured, the same test now yields `assistant`, and the all-budgets sweep yields zero tool-result cuts.
+6. **Task 2's `applyCompaction` fixtures produced no plan at all.** With two 1000-token exchanges and a 1000-token keep budget, `prepareCompaction` correctly returns `undefined` — so every assertion in that block was unreachable and `expect(plan).toBeDefined()` would fail. Re-derived to four 100-token exchanges with a 250-token budget, which yields a real cut at index 7 of 9.
+7. **Task 6's backstop could never fire.** At a 1,000,000-token window the aggressive keep budget is 150,000 tokens — more than the entire test transcript — so `prepareCompaction` returns `undefined` and the backstop rethrows instead of retrying. Re-derived to a 20,000-token window (threshold 15,904, aggressive keep 3,000) with an ~8,006-token transcript: below the proactive threshold, above the aggressive budget, so only the backstop can be responsible for the compaction. The reasoning is written into the fixture's comment so nobody "simplifies" the numbers back.
