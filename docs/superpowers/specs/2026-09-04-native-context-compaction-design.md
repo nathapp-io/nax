@@ -216,7 +216,11 @@ The cross-field refine is required, not decorative: the field ranges alone permi
 
 **The summary call respects the turn's clock.** It takes the same remaining-time budget and the same combined `AbortSignal` as a normal round trip. A deadline expiring mid-summary ends the turn as timed-out; compaction gets no exemption from the budget.
 
-**Compaction emits stream activity.** `onActivity` exists so the idle watchdog can see native sessions. A summarization call otherwise emits nothing, and a slow summary over a long transcript is exactly the silence the watchdog cancels. Activity is emitted at start and completion, plus usage. Without this the feature's main observable effect would be getting long sessions killed.
+**Compaction emits usage activity when the summary returns.** `onActivity` exists so the idle watchdog can see native sessions.
+
+The precise risk, having read the watchdog rather than assumed it: `getTimeoutReason` fires on `now - lastActivityAt >= idleTimeoutMs`, default **900s**, whether or not a call is in flight. A summary call alone is unlikely to reach that. What compaction does is *lengthen an already-silent window* — the last activity is the previous round trip's `usage`, and without an emission the next event is the following `complete()` returning, so summary time and completion time add up against one budget.
+
+Emitting `usage` when the summary returns resets `lastActivityAt` between the two, which is the emission that matters. An earlier draft of this spec claimed a slow summary is "exactly the silence the watchdog cancels" and called for a start-of-compaction emission as well; that overstated the risk. There is no start emission, and **no new `NativeTurnActivity` kind** — `usage` already exists, already maps through `buildNativeStreamEvent`, and carries the summary's real token cost, which a bespoke kind would not.
 
 **Degenerate cases terminate.**
 
@@ -256,7 +260,7 @@ Orchestration tests run through `runNativeTurn` with a fake `summarize`:
 
 - summarize throws — turn proceeds, transcript untouched, backstop disarmed for that round trip
 - overflow after a proactive compaction — backstop compacts harder and retries **once**, not twice
-- compaction emits `onActivity` (the watchdog test)
+- compaction emits a `usage` activity when the summary returns (the watchdog test)
 - the summary call does not increment `internalRoundTrips`
 - `contextWindow` absent — never compacts, existing behaviour unchanged
 
