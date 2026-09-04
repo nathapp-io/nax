@@ -471,6 +471,7 @@ export class SessionManager implements ISessionManager {
     }
 
     const resolvedPermissions = resolvePermissions(opts.config ?? this._config, opts.pipelineStage);
+    const compaction = (opts.config ?? this._config)?.execution?.compaction;
     const existingDescriptor = this._findByName(name);
     const resume = existingDescriptor !== undefined;
 
@@ -478,6 +479,7 @@ export class SessionManager implements ISessionManager {
       agentName: opts.agentName,
       workdir: opts.workdir,
       resolvedPermissions,
+      compaction,
       ...selectModel(opts),
       timeoutSeconds: opts.timeoutSeconds,
       onPidSpawned: this._pidRegistry ? (pid) => this._pidRegistry?.register(pid) : undefined,

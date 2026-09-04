@@ -1,22 +1,21 @@
 {
-  "updatedAt": "2026-08-27T11:39:31.094Z",
+  "updatedAt": "2026-09-04T14:13:41.190Z",
   "byFile": {
     "src/agents/manager.ts": 786,
-    "src/execution/escalation/tier-escalation.ts": 603,
     "src/execution/unified-executor.ts": 766,
     "src/interaction/plugins/telegram.ts": 613,
     "src/prd/schema.ts": 629,
     "src/prompts/builders/rectifier-builder.ts": 902,
-    "src/session/manager.ts": 744,
-    "test/unit/agents/acp/spawn-client.test.ts": 817,
-    "test/unit/cli/plan.test.ts": 1203,
+    "src/session/manager.ts": 746,
+    "test/unit/agents/acp/spawn-client.test.ts": 810,
+    "test/unit/cli/plan.test.ts": 1201,
     "test/unit/context/engine/providers/static-rules.test.ts": 803,
     "test/unit/debate/runner-plan.test.ts": 1039,
     "test/unit/execution/escalation/tier-escalation.test.ts": 1025,
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": 849,
     "test/unit/execution/story-orchestrator.test.ts": 1998,
     "test/unit/findings/cycle.test.ts": 933,
-    "test/unit/interaction/plugins/telegram.test.ts": 870,
+    "test/unit/interaction/plugins/telegram.test.ts": 869,
     "test/unit/operations/call.test.ts": 967
   }
 }
