@@ -227,6 +227,25 @@ describe("native turn loop", () => {
     );
     expect(seen).toEqual(["Read"]);
   });
+
+  test("flags an incomplete turn when the cap cuts the loop off mid-work", async () => {
+    // Every completion asks for another tool, so the loop can only end at the cap.
+    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 3 }), {
+      complete: async () =>
+        reply({ text: "still working on it", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] }),
+    });
+    // Both sides non-empty: output IS present, which is exactly why this case
+    // slipped past the empty-output guard.
+    expect(result.output).toBe("still working on it");
+    expect(result.internalRoundTrips).toBe(3);
+    expect(result.turnIncomplete).toBe(true);
+  });
+
+  test("a turn that ends on its own is not flagged incomplete", async () => {
+    const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
+    expect(result.output).toBe("done");
+    expect(result.turnIncomplete).toBeUndefined();
+  });
 });
 
 /**

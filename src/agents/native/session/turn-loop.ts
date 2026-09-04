@@ -11,6 +11,7 @@ import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-
 import type { TokenUsage } from "@/agents/cost";
 import type { SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
 import { nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
@@ -78,6 +79,10 @@ export async function runNativeTurn(
   // Reported on the result so the review guards can corroborate a reviewer's
   // self-declared inspection trail against calls it actually made.
   const codingToolsCalled: string[] = [];
+  // Set ONLY on the clean exit — the model returned no further tool calls.
+  // Every other way out of the loop (today the cap; later the deadline or an
+  // abort) leaves work the model asked for unexecuted.
+  let completedNormally = false;
 
   while (roundTrips < maxTurns) {
     const res = await deps.complete(messages, tools);
@@ -96,7 +101,10 @@ export async function runNativeTurn(
       ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
     });
 
-    if (res.toolCalls === undefined || res.toolCalls.length === 0) break;
+    if (res.toolCalls === undefined || res.toolCalls.length === 0) {
+      completedNormally = true;
+      break;
+    }
 
     for (const call of res.toolCalls) {
       try {
@@ -133,6 +141,17 @@ export async function runNativeTurn(
     }
   }
 
+  // Parity with acp/adapter.ts:555, which warns in exactly this situation. A
+  // native turn that stops here is indistinguishable from a finished one
+  // without this line plus the `turnIncomplete` fact below.
+  if (!completedNormally) {
+    getSafeLogger()?.warn("native-adapter", "turn ended with tool calls outstanding", {
+      sessionName: handle.id,
+      roundTrips,
+      maxTurns,
+    });
+  }
+
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
@@ -144,5 +163,6 @@ export async function runNativeTurn(
     estimatedCostUsd: costUsd,
     internalRoundTrips: roundTrips,
     ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),
+    ...(completedNormally ? {} : { turnIncomplete: true }),
   };
 }
