@@ -304,7 +304,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       defaultAgent,
       pidRegistry,
       watchdogControllerRegistry,
-      onStreamActivity: (event) => agentStreamEvents.emitAgentStream(event),
+      onStreamActivity: (event) => agentStreamEvents.emitAgentStream(event.runId ? event : { ...event, runId }),
       agentStreamEvents,
       // Native session transcripts are written under the run's output dir
       // (a sibling of `runs/`), never the project tree — see

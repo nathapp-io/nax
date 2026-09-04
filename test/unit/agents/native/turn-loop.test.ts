@@ -7,6 +7,7 @@ import { nativeTranscriptDirs } from "@/agents/native/session/session";
 import { loadTranscript } from "@/agents/native/session/transcript-store";
 import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
+import { createTurnDeadline } from "@/agents/turn-deadline";
 import type { CodingTool } from "@/tools";
 
 let dir: string;
@@ -100,20 +101,6 @@ describe("native turn loop", () => {
     });
     expect(result.tokenUsage.inputTokens).toBe(13);
     expect(result.tokenUsage.outputTokens).toBe(7);
-  });
-
-  test("stops at maxTurns when the model keeps calling tools", async () => {
-    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 3 }), {
-      complete: async () => reply({ toolCalls: [{ id: "c1", name: "t", input: {} }] }),
-    });
-    expect(result.internalRoundTrips).toBe(3);
-  });
-
-  test("defaults to 10 turns when maxTurns is unset", async () => {
-    const result = await runNativeTurn(handle, "hi", opts(), {
-      complete: async () => reply({ toolCalls: [{ id: "c1", name: "t", input: {} }] }),
-    });
-    expect(result.internalRoundTrips).toBe(10);
   });
 
   test("a tool failure comes back as an error result and the turn continues", async () => {
@@ -227,6 +214,40 @@ describe("native turn loop", () => {
     );
     expect(seen).toEqual(["Read"]);
   });
+
+  test("flags an incomplete turn when the budget cuts the loop off mid-work", async () => {
+    let now = 0;
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      deadline: createTurnDeadline(10, () => now),
+      complete: async () => {
+        now += 6_000;
+        return reply({ text: "still working on it", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] });
+      },
+    });
+    expect(result.output).toBe("still working on it");
+    expect(result.turnIncomplete).toBe(true);
+  });
+
+  test("a turn that ends on its own is not flagged incomplete", async () => {
+    const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
+    expect(result.output).toBe("done");
+    expect(result.turnIncomplete).toBeUndefined();
+  });
+
+  test("runs past ten round trips when the model keeps working", async () => {
+    let round = 0;
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      complete: async () => {
+        round += 1;
+        return round < 25
+          ? reply({ text: "working", toolCalls: [{ id: `c${round}`, name: "query_neighbor", input: {} }] })
+          : reply({ text: "finished after 25" });
+      },
+    });
+    expect(result.internalRoundTrips).toBe(25);
+    expect(result.output).toBe("finished after 25");
+    expect(result.turnIncomplete).toBeUndefined();
+  });
 });
 
 /**
@@ -302,5 +323,170 @@ describe("native turn loop — what the model is told exists", () => {
     });
 
     expect(advertised).toEqual([]);
+  });
+
+  test("stops on the whole-turn deadline and reports it as a transport fact", async () => {
+    let now = 0;
+    const deadline = createTurnDeadline(30, () => now);
+    let calls = 0;
+    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 50 }), {
+      deadline,
+      complete: async () => {
+        calls += 1;
+        now += 20_000; // two round-trips fit; the third must not start
+        return reply({ text: "partial progress", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] });
+      },
+    });
+    expect(calls).toBe(2);
+    expect(result.timedOut).toBe(true);
+    expect(result.turnIncomplete).toBe(true);
+    // Non-empty on both sides: the budget ran out mid-work, with prose present.
+    expect(result.output).toBe("partial progress");
+  });
+
+  test("an unbounded turn is never stopped by the deadline", async () => {
+    let round = 0;
+    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 5 }), {
+      complete: async () => {
+        round += 1;
+        return round < 3
+          ? reply({ text: "working", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] })
+          : reply({ text: "finished" });
+      },
+    });
+    expect(result.output).toBe("finished");
+    expect(result.timedOut).toBeUndefined();
+  });
+
+  test("reports usage, message and tool activity for every round trip", async () => {
+    const seen: string[] = [];
+    let round = 0;
+    await runNativeTurn(handle, "hi", opts(), {
+      onActivity: (a) => seen.push(a.kind),
+      complete: async () => {
+        round += 1;
+        return round === 1
+          ? reply({ text: "calling", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] })
+          : reply({ text: "done" });
+      },
+    });
+    // Round 1: usage + message + one tool. Round 2: usage + message.
+    expect(seen.filter((k) => k === "usage")).toHaveLength(2);
+    expect(seen.filter((k) => k === "tool")).toHaveLength(1);
+    expect(seen).toContain("message");
+  });
+
+  test("routes an ask_human call to the interaction handler and records the exchange", async () => {
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        maxTurns: 1,
+        interactionHandler: {
+          onInteraction: async (r) => (r.kind === "question" ? { answer: "use postgres" } : { answer: "" }),
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          return round === 1
+            ? reply({ text: "", toolCalls: [{ id: "q1", name: "ask_human", input: { text: "which database?" } }] })
+            : reply({ text: "using postgres" });
+        },
+      },
+    );
+    expect(result.output).toBe("using postgres");
+    expect(result.interactions).toEqual([{ turnIndex: 1, question: "which database?", reply: "use postgres" }]);
+  });
+
+  test("stops asking once maxInteractionTurns is spent, and says so", async () => {
+    let asked = 0;
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        maxTurns: 2,
+        interactionHandler: {
+          onInteraction: async (r) => {
+            if (r.kind === "question") asked += 1;
+            return { answer: "yes" };
+          },
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          // Asks five times, so only the budget — not the fixture — can stop it
+          // at two. Terminates on its own so the test can never hang.
+          return round <= 5
+            ? reply({ text: "asking", toolCalls: [{ id: `q${round}`, name: "ask_human", input: { text: "again?" } }] })
+            : reply({ text: "done asking" });
+        },
+      },
+    );
+    // Exactly two, not "at most two": an off-by-one or a missing check must fail.
+    expect(asked).toBe(2);
+    expect(result.interactions).toHaveLength(2);
+    // Calls past the budget are refused as data the model can act on, not dropped.
+    expect(result.output).toBe("done asking");
+  });
+
+  test("an unset budget refuses an ask_human call made anyway", async () => {
+    let asked = 0;
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      // No maxTurns: the budget is unset, so ask_human is never advertised.
+      opts({
+        interactionHandler: {
+          onInteraction: async (r) => {
+            if (r.kind === "question") asked += 1;
+            return { answer: "should never be reached" };
+          },
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          // Calls the unadvertised tool anyway, which is the case under test.
+          return round === 1
+            ? reply({ text: "asking", toolCalls: [{ id: "q1", name: "ask_human", input: { text: "anyone there?" } }] })
+            : reply({ text: "carried on alone" });
+        },
+      },
+    );
+    // The handler must never be consulted, and no exchange may be recorded.
+    expect(asked).toBe(0);
+    expect(result.interactions).toBeUndefined();
+    expect(result.output).toBe("carried on alone");
+  });
+
+  test("an unanswerable question consumes no budget and records no exchange", async () => {
+    let round = 0;
+    const result = await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        maxTurns: 2,
+        // Mirrors run-interaction-handler.ts: kind "question" returns null when
+        // no interactionBridge is configured for the run.
+        interactionHandler: { onInteraction: async () => null },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          return round <= 3
+            ? reply({ text: "asking", toolCalls: [{ id: `q${round}`, name: "ask_human", input: { text: "hello?" } }] })
+            : reply({ text: "gave up asking" });
+        },
+      },
+    );
+    // Three asks against a budget of two: if a null answer consumed budget, the
+    // third would have been refused for the wrong reason and this would be 2.
+    expect(result.interactions).toBeUndefined();
+    expect(result.output).toBe("gave up asking");
   });
 });

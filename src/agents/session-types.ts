@@ -178,6 +178,17 @@ export interface TurnResult {
    * normally or was aborted.
    */
   timedOut?: boolean;
+  /**
+   * Transport fact: the loop returned while the model still had tool calls
+   * pending — it asked for work that was never executed and never answered.
+   *
+   * Defined by the condition, not by enumerating exits, so its meaning is
+   * stable as the exits change: today the round-trip cap, the whole-turn
+   * deadline and an abort can all produce it; once the cap is removed only the
+   * deadline and abort can. Like `timedOut`, the adapter never classifies WHY —
+   * the wiring layer does (see operations/turn-failure-classification.ts).
+   */
+  turnIncomplete?: boolean;
 }
 
 /**

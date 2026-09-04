@@ -7,10 +7,10 @@
  * Rules (per US-001 design notes):
  *   - When the turn result already carries an adapterFailure, return it
  *     unchanged. Existing failures take precedence (AC9).
- *   - When the trimmed output has length > 0, return null. Only "no usable
- *     output" (empty or whitespace-only) is classified.
- *   - When output is empty (or whitespace-only) and timedOut is true,
- *     synthesise a retriable `quality / fail-timeout` failure (AC4–AC6).
+ *   - When the turn reports a transport fact (`timedOut`, then
+ *     `turnIncomplete`), classify from that fact regardless of output. A
+ *     truncated turn usually HAS prose, so checking output first hid it.
+ *   - Otherwise, when the trimmed output has length > 0, return null.
  *   - When output is empty (or whitespace-only) and timedOut is false or
  *     absent, synthesise a retriable `availability / fail-stale` failure with
  *     `reason: "empty-output"` — verbatim from the original sendWithFileOutput
@@ -26,17 +26,32 @@ import { tryParseLLMJson } from "../utils/llm-json";
 
 export function classifyEmptyOutputFailure(turn: TurnResult): AdapterFailure | null {
   if (turn.adapterFailure) return turn.adapterFailure;
-  if (turn.output && turn.output.trim().length > 0) return null;
 
+  // Transport facts are consulted BEFORE the output check. A turn that ran out
+  // of budget mid-work almost always has prose in `output`, so short-circuiting
+  // on "output is non-empty" classified the common truncation case as a clean
+  // success — the defect that hid it for 44% of native run calls.
   if (turn.timedOut) {
     return {
       category: "quality",
       outcome: "fail-timeout",
       retriable: true,
-      message: "[callOp] agent timed out before producing output",
+      message: "[callOp] agent timed out before completing its turn",
       reason: "wall-clock-timeout",
     };
   }
+
+  if (turn.turnIncomplete) {
+    return {
+      category: "quality",
+      outcome: "fail-quality",
+      retriable: true,
+      message: "[callOp] agent turn ended with tool calls outstanding",
+      reason: "turn-incomplete",
+    };
+  }
+
+  if (turn.output && turn.output.trim().length > 0) return null;
 
   return {
     category: "availability",

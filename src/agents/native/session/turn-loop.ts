@@ -9,14 +9,15 @@
 
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
 import type { TokenUsage } from "@/agents/cost";
-import type { SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
+import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
+import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
+import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
 import { nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
-
-/** Matches SendTurnOpts.maxTurns' documented default. */
-const DEFAULT_MAX_TURNS = 10;
+import type { NativeTurnActivity } from "./turn-events";
 
 /**
  * The transcript message nax stores: nax-ai's ConversationMessage widened with
@@ -47,6 +48,17 @@ export interface TurnDeps {
     messages: readonly ConversationMessage[],
     tools: ReturnType<typeof toToolDefinitions>,
   ): Promise<NativeTurnResponse>;
+  /**
+   * Whole-turn wall-clock budget. Absent means unbounded — the adapter always
+   * supplies one for a real session; tests may omit it.
+   */
+  deadline?: TurnDeadline;
+  /**
+   * Per-round-trip observability hook. Absent in unit tests; the adapter
+   * supplies one that forwards onto the runtime stream bus so the idle
+   * watchdog can see native sessions.
+   */
+  onActivity?: (activity: NativeTurnActivity) => void;
 }
 
 export async function runNativeTurn(
@@ -67,8 +79,14 @@ export async function runNativeTurn(
 
   const codingTools = opts.codingTools ?? [];
   const codingToolNames = new Set(codingTools.map((t) => t.name));
-  const tools = [...toToolDefinitions(opts.contextPullTools ?? []), ...codingToolsToDefinitions(codingTools)];
-  const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
+  // Advertised only while the Q&A budget can still be spent; a tool the model
+  // cannot successfully call is worse than no tool.
+  const maxInteractions = opts.maxTurns ?? 0;
+  const tools = [
+    ...toToolDefinitions(opts.contextPullTools ?? []),
+    ...codingToolsToDefinitions(codingTools),
+    ...(maxInteractions > 0 ? [askHumanToolDefinition] : []),
+  ];
 
   let roundTrips = 0;
   let inputTokens = 0;
@@ -78,14 +96,45 @@ export async function runNativeTurn(
   // Reported on the result so the review guards can corroborate a reviewer's
   // self-declared inspection trail against calls it actually made.
   const codingToolsCalled: string[] = [];
+  // Set ONLY on the clean exit — the model returned no further tool calls.
+  // Every other way out of the loop (the deadline, or an abort) leaves work
+  // the model asked for unexecuted.
+  let completedNormally = false;
+  let timedOut = false;
+  const interactions: InteractionExchange[] = [];
 
-  while (roundTrips < maxTurns) {
+  // Deliberately unbounded by count. A coding agent working a story is bounded
+  // by wall clock (deps.deadline) and by the idle watchdog, never by how many
+  // times it needed to call a tool. `agent.maxInteractionTurns` is NOT this
+  // budget — it bounds human Q&A exchanges, which are counted separately.
+  while (true) {
+    // Checked before starting a round-trip rather than after finishing one:
+    // starting a call we know cannot finish inside the budget spends money for
+    // an answer we will discard.
+    if (deps.deadline?.expired() === true) {
+      timedOut = true;
+      break;
+    }
     const res = await deps.complete(messages, tools);
     roundTrips += 1;
     inputTokens += res.usage.inputTokens;
     outputTokens += res.usage.outputTokens;
     costUsd += res.costUsd;
     output = res.text;
+
+    deps.onActivity?.({
+      kind: "usage",
+      inputTokens: res.usage.inputTokens,
+      outputTokens: res.usage.outputTokens,
+      costUsd: res.costUsd,
+    });
+    if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
+    if (res.thinking !== undefined && res.thinking.length > 0) {
+      deps.onActivity?.({
+        kind: "thinking",
+        bytes: res.thinking.reduce((n, t) => n + t.text.length, 0),
+      });
+    }
 
     // Thinking blocks are appended, not merely representable: Anthropic needs
     // the exact block back to continue a thinking conversation (ADR-028 s8).
@@ -96,10 +145,46 @@ export async function runNativeTurn(
       ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
     });
 
-    if (res.toolCalls === undefined || res.toolCalls.length === 0) break;
+    if (res.toolCalls === undefined || res.toolCalls.length === 0) {
+      completedNormally = true;
+      break;
+    }
 
     for (const call of res.toolCalls) {
+      deps.onActivity?.({ kind: "tool", toolName: call.name });
       try {
+        if (call.name === ASK_HUMAN_TOOL_NAME) {
+          const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
+          // An unset budget (maxTurns undefined -> 0) keeps the tool unadvertised
+          // above AND refuses a call made anyway. "No budget configured" must not
+          // read as "unlimited" — that inverts the property this budget provides.
+          if (interactions.length >= maxInteractions) {
+            messages.push({
+              role: "tool-result",
+              toolCallId: call.id,
+              content: "The human Q&A budget for this turn is spent. Proceed on your best judgement.",
+              isError: true,
+            });
+            continue;
+          }
+          const answer = await opts.interactionHandler.onInteraction({ kind: "question", text: question });
+          // A null answer means no operator is reachable — run-interaction-handler
+          // returns null for kind:"question" when no interactionBridge is
+          // configured. That is not an exchange: it must not consume budget and
+          // must not be recorded as a question the operator answered with "".
+          if (answer === null) {
+            messages.push({
+              role: "tool-result",
+              toolCallId: call.id,
+              content: "No human operator is available for this run. Proceed on your best judgement.",
+              isError: true,
+            });
+            continue;
+          }
+          interactions.push({ turnIndex: roundTrips, question, reply: answer.answer });
+          messages.push({ role: "tool-result", toolCallId: call.id, content: answer.answer });
+          continue;
+        }
         const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
         if (kind === "coding-tool") codingToolsCalled.push(call.name);
         const answer = await opts.interactionHandler.onInteraction(
@@ -133,6 +218,17 @@ export async function runNativeTurn(
     }
   }
 
+  // Parity with acp/adapter.ts:555, which warns in exactly this situation. A
+  // native turn that stops here is indistinguishable from a finished one
+  // without this line plus the `turnIncomplete` fact below.
+  if (!completedNormally) {
+    getSafeLogger()?.warn("native-adapter", "turn ended with tool calls outstanding", {
+      sessionName: handle.id,
+      roundTrips,
+      timedOut,
+    });
+  }
+
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
@@ -144,5 +240,8 @@ export async function runNativeTurn(
     estimatedCostUsd: costUsd,
     internalRoundTrips: roundTrips,
     ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),
+    ...(completedNormally ? {} : { turnIncomplete: true }),
+    ...(timedOut ? { timedOut: true } : {}),
+    ...(interactions.length > 0 ? { interactions } : {}),
   };
 }

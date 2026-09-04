@@ -84,10 +84,48 @@ describe("classifyEmptyOutputFailure — non-empty output", () => {
     expect(failure?.outcome).toBe("fail-stale");
   });
 
-  test("returns null when output is non-empty even if timedOut is true (timeout yields empty output)", () => {
-    // Defensive: when output is non-empty the helper must not synthesise a failure.
+  test("classifies as fail-timeout when output is non-empty but timedOut is true", () => {
+    // Transport facts outrank output emptiness: a truncated turn usually HAS
+    // prose, so `timedOut` must classify as a failure even with content present.
     const failure = classifyEmptyOutputFailure(makeTurnResult({ output: "content", timedOut: true }));
+    expect(failure?.outcome).toBe("fail-timeout");
+  });
+});
+
+describe("classifyEmptyOutputFailure — transport facts outrank non-empty output", () => {
+  test("a timed-out turn WITH prose is a failure, not a success", () => {
+    const failure = classifyEmptyOutputFailure(
+      makeTurnResult({
+        output: "All green. Let me verify the final state of the file:",
+        internalRoundTrips: 4,
+        timedOut: true,
+      }),
+    );
+    expect(failure).not.toBeNull();
+    expect(failure?.outcome).toBe("fail-timeout");
+    expect(failure?.reason).toBe("wall-clock-timeout");
+  });
+
+  test("an incomplete turn WITH prose classifies as quality, never fail-stale", () => {
+    const failure = classifyEmptyOutputFailure(
+      makeTurnResult({ output: "still working on it", internalRoundTrips: 10, turnIncomplete: true }),
+    );
+    expect(failure?.category).toBe("quality");
+    expect(failure?.outcome).toBe("fail-quality");
+    expect(failure?.reason).toBe("turn-incomplete");
+  });
+
+  test("a complete turn with output is still a success", () => {
+    const failure = classifyEmptyOutputFailure(makeTurnResult({ output: "done", internalRoundTrips: 2 }));
     expect(failure).toBeNull();
+  });
+
+  test("an existing adapterFailure still wins over both facts", () => {
+    const existing = { category: "availability", outcome: "fail-quota", retriable: true, message: "m" } as const;
+    const failure = classifyEmptyOutputFailure(
+      makeTurnResult({ output: "text", timedOut: true, adapterFailure: existing }),
+    );
+    expect(failure).toBe(existing);
   });
 });
 
