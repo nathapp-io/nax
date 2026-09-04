@@ -59,6 +59,11 @@ export function createSessionRunHop(
 
     try {
       const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
+      // `maxInteractionTurns` is the human Q&A budget (config-descriptions.ts),
+      // not an agent round-trip cap. Forwarded unchanged: acpx's iterations ARE
+      // interaction turns and it still consumes this as its loop bound, while
+      // the native loop no longer reads it for round-trips at all (it is bounded
+      // by time) and spends it only on ask_human exchanges.
       const maxTurns =
         options.interactionBridge || hasContextTools
           ? (options.maxInteractionTurns ?? 10)

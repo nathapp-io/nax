@@ -18,9 +18,6 @@ import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import type { NativeTurnActivity } from "./turn-events";
 
-/** Matches SendTurnOpts.maxTurns' documented default. */
-const DEFAULT_MAX_TURNS = 10;
-
 /**
  * The transcript message nax stores: nax-ai's ConversationMessage widened with
  * the coding-tool denial marker (ADR-029 s5). The marker is structural data the
@@ -82,7 +79,6 @@ export async function runNativeTurn(
   const codingTools = opts.codingTools ?? [];
   const codingToolNames = new Set(codingTools.map((t) => t.name));
   const tools = [...toToolDefinitions(opts.contextPullTools ?? []), ...codingToolsToDefinitions(codingTools)];
-  const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
 
   let roundTrips = 0;
   let inputTokens = 0;
@@ -93,12 +89,16 @@ export async function runNativeTurn(
   // self-declared inspection trail against calls it actually made.
   const codingToolsCalled: string[] = [];
   // Set ONLY on the clean exit — the model returned no further tool calls.
-  // Every other way out of the loop (today the cap; later the deadline or an
-  // abort) leaves work the model asked for unexecuted.
+  // Every other way out of the loop (the deadline, or an abort) leaves work
+  // the model asked for unexecuted.
   let completedNormally = false;
   let timedOut = false;
 
-  while (roundTrips < maxTurns) {
+  // Deliberately unbounded by count. A coding agent working a story is bounded
+  // by wall clock (deps.deadline) and by the idle watchdog, never by how many
+  // times it needed to call a tool. `agent.maxInteractionTurns` is NOT this
+  // budget — it bounds human Q&A exchanges, which are counted separately.
+  while (true) {
     // Checked before starting a round-trip rather than after finishing one:
     // starting a call we know cannot finish inside the budget spends money for
     // an answer we will discard.
@@ -184,7 +184,6 @@ export async function runNativeTurn(
     getSafeLogger()?.warn("native-adapter", "turn ended with tool calls outstanding", {
       sessionName: handle.id,
       roundTrips,
-      maxTurns,
       timedOut,
     });
   }

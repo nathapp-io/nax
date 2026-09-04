@@ -103,20 +103,6 @@ describe("native turn loop", () => {
     expect(result.tokenUsage.outputTokens).toBe(7);
   });
 
-  test("stops at maxTurns when the model keeps calling tools", async () => {
-    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 3 }), {
-      complete: async () => reply({ toolCalls: [{ id: "c1", name: "t", input: {} }] }),
-    });
-    expect(result.internalRoundTrips).toBe(3);
-  });
-
-  test("defaults to 10 turns when maxTurns is unset", async () => {
-    const result = await runNativeTurn(handle, "hi", opts(), {
-      complete: async () => reply({ toolCalls: [{ id: "c1", name: "t", input: {} }] }),
-    });
-    expect(result.internalRoundTrips).toBe(10);
-  });
-
   test("a tool failure comes back as an error result and the turn continues", async () => {
     let round = 0;
     const result = await runNativeTurn(
@@ -229,22 +215,37 @@ describe("native turn loop", () => {
     expect(seen).toEqual(["Read"]);
   });
 
-  test("flags an incomplete turn when the cap cuts the loop off mid-work", async () => {
-    // Every completion asks for another tool, so the loop can only end at the cap.
-    const result = await runNativeTurn(handle, "hi", opts({ maxTurns: 3 }), {
-      complete: async () =>
-        reply({ text: "still working on it", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] }),
+  test("flags an incomplete turn when the budget cuts the loop off mid-work", async () => {
+    let now = 0;
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      deadline: createTurnDeadline(10, () => now),
+      complete: async () => {
+        now += 6_000;
+        return reply({ text: "still working on it", toolCalls: [{ id: "c1", name: "query_neighbor", input: {} }] });
+      },
     });
-    // Both sides non-empty: output IS present, which is exactly why this case
-    // slipped past the empty-output guard.
     expect(result.output).toBe("still working on it");
-    expect(result.internalRoundTrips).toBe(3);
     expect(result.turnIncomplete).toBe(true);
   });
 
   test("a turn that ends on its own is not flagged incomplete", async () => {
     const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
     expect(result.output).toBe("done");
+    expect(result.turnIncomplete).toBeUndefined();
+  });
+
+  test("runs past ten round trips when the model keeps working", async () => {
+    let round = 0;
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      complete: async () => {
+        round += 1;
+        return round < 25
+          ? reply({ text: "working", toolCalls: [{ id: `c${round}`, name: "query_neighbor", input: {} }] })
+          : reply({ text: "finished after 25" });
+      },
+    });
+    expect(result.internalRoundTrips).toBe(25);
+    expect(result.output).toBe("finished after 25");
     expect(result.turnIncomplete).toBeUndefined();
   });
 });

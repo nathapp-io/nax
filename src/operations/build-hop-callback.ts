@@ -423,6 +423,9 @@ export function buildHopCallback(
           // Context tools need at least one extra round-trip to answer a call;
           // the adapter default of a single turn leaves no room. Mirrors
           // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
+          // Mirrors session-run-hop.ts — the two must not drift. Forwarded as
+          // the Q&A budget it is documented to be; the native loop no longer
+          // spends it on round-trips.
           ...(hasContextTools
             ? { maxTurns: maxInteractionTurns ?? 10 }
             : maxInteractionTurns !== undefined
