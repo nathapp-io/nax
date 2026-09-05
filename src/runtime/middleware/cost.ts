@@ -92,9 +92,15 @@ export function attachCostSubscriber(
       exactCostUsd,
       costUsd: exactCostUsd,
       confidence,
-      // Same MODEL_PRICING predicate the estimator uses, so this names the rate
-      // card that actually produced the number rather than guessing at it.
-      pricingSource: hasWireExactCost ? "wire" : resolvePricingSource(event.model),
+      // US-004: a wire-exact cost still wins; otherwise a pricingSource carried
+      // on the event is used as-is, and `resolvePricingSource(event.model)` is
+      // consulted only when the event carries none. This is the same
+      // producer-supplied-wins precedent the "wire" branch on this line
+      // already sets — the native adapter (US-003) reports its rate card via
+      // CompleteResult.pricingSource / TurnResult.pricingSource, and the
+      // dispatch event forwards it here. The ACP path supplies no value, so
+      // the ACP behaviour is unchanged.
+      pricingSource: hasWireExactCost ? "wire" : (event.pricingSource ?? resolvePricingSource(event.model)),
       durationMs: event.durationMs,
     };
     aggregator.record(costEvent);

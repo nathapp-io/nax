@@ -66,8 +66,23 @@ export interface CostEvent {
    *   only: measured against rows that also had a wire cost, the estimator ran
    *   0.4x in aggregate and up to 21x off per row (#1433).
    * - `unknown-model` — no model was resolved, so the rate card cannot be named.
+   * - `catalog-rates` — priced from nax-ai's catalog (native adapter, US-003).
+   * - `config-override` — an explicit `modelDef.pricing` won wholesale (native
+   *   adapter, US-003).
+   *
+   * The last two are producer-supplied (US-004) and reach the row only when
+   * the dispatch event carries them — the cost subscriber copies them
+   * through rather than re-deriving. The union here is declared
+   * independently of `resolvePricingSource`'s return type; widening only one
+   * of the two would leave the feature half-landed and failing typecheck.
    */
-  readonly pricingSource?: "wire" | "model-rates" | "fallback-rates" | "unknown-model";
+  readonly pricingSource?:
+    | "wire"
+    | "model-rates"
+    | "fallback-rates"
+    | "unknown-model"
+    | "catalog-rates"
+    | "config-override";
   readonly durationMs: number;
 }
 

@@ -735,6 +735,9 @@ export class AgentManager implements IAgentManager {
         profile: this._config.profile,
         startedAt: start,
         sessionId: outcome.result.sessionId,
+        // US-004: forward the producer's rate-card report (US-003) so the cost
+        // subscriber can prefer it over the model-derived default.
+        ...(outcome.result.pricingSource !== undefined ? { pricingSource: outcome.result.pricingSource } : {}),
       });
       this._dispatchEvents.emitDispatch(event);
       return outcome;

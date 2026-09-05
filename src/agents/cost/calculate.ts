@@ -184,11 +184,20 @@ export function estimateCostFromTokenUsage(usage: TokenUsage, model: string): nu
  * on guessed rates distinguishable from one built on the model's real rates
  * (#1433).
  *
+ * The US-004 widening adds `"catalog-rates"` and `"config-override"` so
+ * producer-supplied values from `CompleteResult.pricingSource` /
+ * `TurnResult.pricingSource` type-check through the cost subscriber. The
+ * function itself never returns those values — it only consults
+ * `MODEL_PRICING` — but the union must admit them so the cost row's
+ * `pricingSource` field can carry the producer's report unchanged.
+ *
  * @param model - Resolved model name, or undefined when nothing resolved one
  * @returns `"model-rates"` when priced from the table, `"fallback-rates"` when
  *          priced from the generic card, `"unknown-model"` when no model is known
  */
-export function resolvePricingSource(model: string | undefined): "model-rates" | "fallback-rates" | "unknown-model" {
+export function resolvePricingSource(
+  model: string | undefined,
+): "model-rates" | "fallback-rates" | "unknown-model" | "catalog-rates" | "config-override" {
   if (model === undefined || model === "" || model === "unknown") return "unknown-model";
   // #1464: same normalization as estimateCostFromTokenUsage, so the two stay
   // in agreement about which rate card produced the number.

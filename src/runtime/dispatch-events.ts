@@ -54,6 +54,24 @@ export interface DispatchEventBase {
   readonly exactCostUsd?: number;
   readonly durationMs: number;
   readonly timestamp: number;
+  /**
+   * Which rate card priced the call, reported by the producer
+   * (`CompleteResult.pricingSource` / `TurnResult.pricingSource`, US-003).
+   * Carried on the event so the cost subscriber can prefer the producer's
+   * answer over the model-derived default (`resolvePricingSource(model)`) —
+   * exactly as it already prefers a wire-exact cost over an estimate on the
+   * same line. The ACP path supplies no value, in which case the subscriber
+   * falls back to the model-derived label, preserving pre-US-004 behaviour
+   * exactly. Optional on both kinds because the union deliberately widens
+   * with new producer-supplied values (US-004).
+   */
+  readonly pricingSource?:
+    | "wire"
+    | "model-rates"
+    | "fallback-rates"
+    | "unknown-model"
+    | "catalog-rates"
+    | "config-override";
   /** Per-callOp invocation id, stamped by the operation layer. */
   readonly callId?: string;
   /** Caller-supplied region id forwarded from CallContext.scopeId. */
