@@ -3,7 +3,7 @@
   "feature": "audit-cost-and-grep-fidelity",
   "branchName": "feat/audit-cost-and-grep-fidelity",
   "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T10:25:08.127Z",
+  "updatedAt": "2026-09-05T10:31:15.848Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,7 +28,10 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Single behavioral branch change plus one call-site argument addition, both in existing well-tested modules with no new abstractions."
+        "reasoning": "Single behavioral branch change plus one call-site argument addition, both in existing well-tested modules with no new abstractions.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "src/runtime/index.ts",
@@ -37,6 +40,10 @@
         "src/cli/setup.ts",
         "test/unit/runtime/runtime.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b545a0e77ca7de83a256eb6d0245d179b3aa990d",
       "outOfScope": [
         "emitting a warning when prompt auditing degrades to the no-op auditor is deferred. nax setup has no feature by design and would warn on every invocation"
       ]
@@ -77,15 +84,18 @@
         "src/agents/manager-dispatch.ts",
         "src/agents/native/adapter.ts"
       ],
-      "outOfScope": [
-        "the per-conversation ordinal that run records gained in #1824 is not extended to complete records here; an ordinal for a sessionless path needs its own counter design",
-        "session ids written into audit files are correlation identifiers, not credentials — redaction, rotation, and access control for the prompt-audit directory are out of scope, and the session-turn path already writes them"
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/runtime/prompt-auditor.test.ts",
           "reason": "the test named \"flush() writes legacy session-style complete filename for complete entries\" records a `complete` entry with `stage: \"acceptance\"` and `sessionName: \"nax-abc12345-my-feature-us-000-refine\"`, then asserts the written path is exactly `1234567890000-nax-abc12345-my-feature-us-000-refine-complete.txt`. Under US-002 AC 1 a `complete` entry that has a stage puts that stage in the suffix, so the assertion fails against a correct implementation. US-002 owns updating it to the replacing invariant: the filename is the timestamp, the session name, the stage, then `complete` — `1234567890000-nax-abc12345-my-feature-us-000-refine-acceptance-complete.txt`."
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "the per-conversation ordinal that run records gained in #1824 is not extended to complete records here; an ordinal for a sessionless path needs its own counter design",
+        "session ids written into audit files are correlation identifiers, not credentials — redaction, rotation, and access control for the prompt-audit directory are out of scope, and the session-turn path already writes them"
       ]
     },
     {
@@ -131,7 +141,10 @@
           "path": "test/unit/agents/native/models.test.ts",
           "reason": "the three tests in the `buildRateCard` describe block assert on the function's return value as if it were the rate object itself (`expect(buildRateCard(catalog, undefined)).toEqual({ inputPer1M: 2, ... })`, `rates.tiers` equality, and `expect(rates).toBe(override)`). Under US-003 the function returns the card together with the source discriminant, so all three fail against a correct implementation. US-003 owns updating them to the replacing invariant: each test asserts the same rate values on the returned card, and additionally asserts the reported source is `catalog-rates` for the two catalog cases and `config-override` for the override case."
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -170,6 +183,9 @@
         "src/runtime/cost-aggregator.ts",
         "src/agents/cost/calculate.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "honouring nax-ai's tiered pricing (inputTokensAbove) is out of scope and tracked separately in #1843; this feature changes the pricing label, not the pricing arithmetic",
         "changing the documented meaning of the existing wire, model-rates, fallback-rates and unknown-model values is out of scope; this feature only adds values"
@@ -205,6 +221,9 @@
         "src/tools/registry.ts",
         "test/unit/tools/grep.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "opt-in regex matching for Grep — an input that drops --fixed-strings/-F and accepts a real regex — is deferred; this story makes the existing literal restriction visible in the result, widening the tool schema is a separate decision affecting the 15 operations that hold Grep",
         "auto-detecting a regex-shaped pattern and silently re-running the search as a regex is deferred",
