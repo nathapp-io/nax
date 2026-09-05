@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _grepDeps, buildGrepArgv, DEFAULT_TOOL_MAX_FILE_BYTES, grepTool } from "@/tools";
@@ -109,11 +109,16 @@ describe("grepTool", () => {
 
   test("AC4: match with regex metacharacter pattern does not mention metacharacters", async () => {
     // Create a file with content that matches literally (not as regex)
-    writeFileSync(join(root, "src", "c.ts"), "export.*divide literally in the file\n");
-    const res = await grepTool.run({ pattern: "export.*divide" }, ctx());
-    expect(res.isError).toBeFalsy();
-    expect(res.content).toContain("c.ts");
-    expect(res.content).not.toContain("regex metacharacters");
+    const cPath = join(root, "src", "c.ts");
+    writeFileSync(cPath, "export.*divide literally in the file\n");
+    try {
+      const res = await grepTool.run({ pattern: "export.*divide" }, ctx());
+      expect(res.isError).toBeFalsy();
+      expect(res.content).toContain("c.ts");
+      expect(res.content).not.toContain("regex metacharacters");
+    } finally {
+      unlinkSync(cPath);
+    }
   });
 
   test("AC5: error when neither binary is available is unchanged", async () => {
