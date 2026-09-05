@@ -6,13 +6,12 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { _adversarialDeps, llmFindingsToReviewFindings } from "@/review";
+import { llmFindingsToReviewFindings } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
+import { writeReviewAudit } from "@/review/review-audit";
 import type { ReviewAuditEntry } from "@/runtime";
 import { _reviewAuditDeps } from "@/runtime";
-
-const { writeReviewAudit } = _adversarialDeps;
 
 /** Stand-in for a `resolveTestFilePatterns`-derived classifier (ADR-009 SSOT). */
 const isTestFile = (path: string) => /\.(test|spec)\.tsx?$/.test(path);
