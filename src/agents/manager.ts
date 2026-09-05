@@ -707,11 +707,7 @@ export class AgentManager implements IAgentManager {
     }
   }
 
-  /**
-   * One-shot completion pinned to an agent, surfacing its agent-swap records (nax#1712).
-   * `completeAs` owned this body and dropped `outcome.fallbacks`; the records are result-side,
-   * so they ride a sibling return value (adapter-wiring Rule 6) as `runWithFallback` does.
-   */
+  /** One-shot completion pinned to an agent, surfacing its agent-swap records (nax#1712). */
   async completeAsWithFallback(
     agentName: string,
     prompt: string,
@@ -738,6 +734,7 @@ export class AgentManager implements IAgentManager {
         exactCostUsd: outcome.result.exactCostUsd,
         profile: this._config.profile,
         startedAt: start,
+        sessionId: outcome.result.sessionId,
       });
       this._dispatchEvents.emitDispatch(event);
       return outcome;

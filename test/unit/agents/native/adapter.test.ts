@@ -122,6 +122,50 @@ describe("NativeAgentAdapter.complete", () => {
     expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
     expect(result.output).toBe("");
   });
+
+  // US-002 AC7: the CompleteResult returned by the native adapter's
+  // sessionless complete() path must echo back the same session id it sent
+  // to the nax-ai client, so downstream wiring (audit, dispatch) can stamp
+  // the id on artifacts without having to reach into a private field.
+  test("US-002 AC7: complete() returns a sessionId equal to the one sent to nax-ai", async () => {
+    let seenSessionId: string | undefined;
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async (_m: ResolvedModel, callOpts: { sessionId?: string }) => {
+          seenSessionId = callOpts.sessionId;
+          return { text: "ok", usage: { inputTokens: 1, outputTokens: 0 }, stopReason: "stop" };
+        },
+      });
+
+    const result = await new NativeAgentAdapter().complete("hi", options());
+
+    expect(typeof seenSessionId).toBe("string");
+    expect(seenSessionId?.length).toBeGreaterThan(0);
+    expect(result.sessionId).toBe(seenSessionId);
+  });
+
+  // US-002 AC8: two successive complete() calls on one adapter instance share
+  // the same session id — the whole point of the one-shot key is to keep the
+  // provider's prompt cache warm across a run's one-shots.
+  test("US-002 AC8: successive complete() calls on one adapter return the same non-empty sessionId", async () => {
+    const seen: string[] = [];
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async (_m: ResolvedModel, callOpts: { sessionId?: string }) => {
+          if (callOpts.sessionId !== undefined) seen.push(callOpts.sessionId);
+          return { text: "ok", usage: { inputTokens: 1, outputTokens: 0 }, stopReason: "stop" };
+        },
+      });
+
+    const adapter = new NativeAgentAdapter();
+    const r1 = await adapter.complete("one", options());
+    const r2 = await adapter.complete("two", options());
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(seen[1]);
+    expect(r1.sessionId).toBeDefined();
+    expect(r1.sessionId).toBe(r2.sessionId);
+  });
 });
 
 // nax#1838/#1840 sendTurn failure classification and cost-accounting tests

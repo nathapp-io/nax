@@ -212,4 +212,18 @@ describe("attachAuditSubscriber", () => {
     expect(recorded[0]?.roundTrips).toBe(4);
     expect(recorded[0]?.roundTripUnit).toBe("model-call");
   });
+
+  // US-002 AC6: a complete dispatch event's sessionId reaches the audit entry.
+  test("US-002 AC6: complete dispatch carrying sessionId stamps it onto the audit entry", () => {
+    const recorded: PromptAuditEntry[] = [];
+    const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachAuditSubscriber(bus, auditor, "r-001");
+
+    bus.emitDispatch(makeCompleteEvent({ sessionId: "nax-abc12345" }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].sessionId).toBe("nax-abc12345");
+    expect(recorded[0].callType).toBe("complete");
+  });
 });

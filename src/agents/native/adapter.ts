@@ -174,10 +174,11 @@ export class NativeAgentAdapter implements AgentAdapter {
     const timer = options.timeoutMs !== undefined ? setTimeout(() => controller.abort(), options.timeoutMs) : undefined;
 
     try {
+      const sessionId = nativeSessionId(this.oneShotKey);
       const result = await client.complete(resolved, {
         messages: [{ role: "user", content: prompt }],
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
-        sessionId: nativeSessionId(this.oneShotKey),
+        sessionId,
         signal: controller.signal,
         ...(thinking !== undefined ? { thinking } : {}),
       });
@@ -192,6 +193,10 @@ export class NativeAgentAdapter implements AgentAdapter {
         estimatedCostUsd: estimateCostUsd(tokenUsage, rates),
         // exactCostUsd is deliberately unset: nax-ai supplies rates and
         // computes no cost, so nothing here is exact.
+        // sessionId echoes the one we sent — US-002 lets downstream wiring
+        // (audit, dispatch) stamp it on artifacts without reaching into a
+        // private field.
+        sessionId,
       };
     } catch (err) {
       // Returned, not rethrown: rethrowing routes through

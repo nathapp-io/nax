@@ -82,6 +82,13 @@ export interface SessionTurnDispatchEvent extends DispatchEventBase {
 
 export interface CompleteDispatchEvent extends DispatchEventBase {
   readonly kind: "complete";
+  /**
+   * Backend session id the adapter reported on its `CompleteResult`. Carried
+   * here as a plain field rather than inside the sibling `protocolIds` object
+   * because a one-shot has no record id and no turn id (US-002). Absent when
+   * the adapter does not derive a session id (legacy acpx/Claude one-shots).
+   */
+  readonly sessionId?: string;
 }
 
 export type DispatchEvent = SessionTurnDispatchEvent | CompleteDispatchEvent;

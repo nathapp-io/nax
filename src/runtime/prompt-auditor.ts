@@ -147,7 +147,14 @@ function deriveAuditSuffix(entry: PromptAuditEntry): string | undefined {
     const stage = entry.stage ?? "run";
     return `${stage}-t${String(entry.turn).padStart(2, "0")}`;
   }
-  if (entry.callType === "complete") return "complete";
+  if (entry.callType === "complete") {
+    // US-002: a complete entry that knows its stage puts the stage into the
+    // suffix so the filename distinguishes which stage's one-shot produced it.
+    // Entries without a stage still produce the bare `complete` suffix, so
+    // the previous invariant (`-complete.txt`) is preserved when the stage
+    // is absent.
+    return entry.stage ? `${entry.stage}-complete` : "complete";
+  }
   return entry.stage ?? entry.callType;
 }
 

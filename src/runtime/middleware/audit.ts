@@ -25,6 +25,7 @@ export function attachAuditSubscriber(bus: IDispatchEventBus, auditor: IPromptAu
         roundTripUnit: event.roundTripUnit,
         ...(event.interactions?.length ? { interactions: event.interactions } : {}),
       }),
+      ...(event.kind === "complete" && event.sessionId !== undefined ? { sessionId: event.sessionId } : {}),
     };
     auditor.record(entry);
   });

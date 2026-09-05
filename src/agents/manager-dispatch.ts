@@ -121,6 +121,13 @@ export function buildCompleteEvent(input: {
   /** Resolved profile-chain display string from config; "default" when none. */
   profile?: string;
   startedAt: number;
+  /**
+   * Backend session id the adapter reported on its `CompleteResult`. US-002:
+   * passed through unchanged; the audit subscriber reads it to stamp the
+   * prompt-audit record. One-shots have no record id or turn id, so the
+   * session id travels as a plain field rather than inside `protocolIds`.
+   */
+  sessionId?: string;
 }): CompleteDispatchEvent {
   const { options } = input;
   return {
@@ -142,6 +149,7 @@ export function buildCompleteEvent(input: {
     exactCostUsd: input.exactCostUsd,
     durationMs: Date.now() - input.startedAt,
     timestamp: Date.now(),
+    ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
     ...(options.callId !== undefined ? { callId: options.callId } : {}),
     ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
   };
