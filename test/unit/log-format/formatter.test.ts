@@ -374,3 +374,50 @@ describe("formatLogEntry — ANSI/control-char sanitization (SEC-09)", () => {
     expect(parsed.message).toBe("raw\x1b[2Jvalue");
   });
 });
+
+describe("formatLogEntry — coding-tool call noise (normal mode)", () => {
+  function invoked(outcome: string): LogEntry {
+    return entry({
+      level: "info",
+      stage: "coding-tool",
+      message: "invoked",
+      data: { storyId: "US-001", tool: "Edit", outcome, resultBytes: 107 },
+    });
+  }
+
+  test("a successful call is not displayed", () => {
+    // 700 of 761 such lines in one observed run were outcome "ok" — per-call
+    // console noise with no decision riding on it.
+    expect(formatLogEntry(invoked("ok"), { mode: "normal", useColor: false }).shouldDisplay).toBe(false);
+  });
+
+  test("a denied call is still displayed", () => {
+    // src/tools/runtime.ts logs every outcome precisely so a refused call stays
+    // distinguishable from one never made. Suppressing that would defeat it.
+    expect(formatLogEntry(invoked("denied"), { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
+  });
+
+  test("a failed call is still displayed", () => {
+    expect(formatLogEntry(invoked("error"), { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
+  });
+
+  test("verbose mode still shows successful calls", () => {
+    expect(formatLogEntry(invoked("ok"), { mode: "verbose", useColor: false }).shouldDisplay).toBe(true);
+  });
+
+  test("json mode still shows successful calls", () => {
+    expect(formatLogEntry(invoked("ok"), { mode: "json", useColor: false }).shouldDisplay).toBe(true);
+  });
+
+  test("an unrelated coding-tool message is untouched", () => {
+    const other = entry({ level: "info", stage: "coding-tool", message: "runtime ready" });
+    expect(formatLogEntry(other, { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
+  });
+
+  test("a pull-tool invocation is untouched — the curator parses those", () => {
+    // src/plugins/builtin/curator/collect.ts reads stage "pull-tool" + message
+    // "invoked" back out of the log.
+    const pull = entry({ level: "info", stage: "pull-tool", message: "invoked", data: { outcome: "ok" } });
+    expect(formatLogEntry(pull, { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
+  });
+});

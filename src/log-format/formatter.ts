@@ -79,6 +79,13 @@ function shouldDisplay(entry: LogEntry, mode: string): boolean {
   }
   if (mode === "verbose") return true;
 
+  // A successful coding-tool call is per-call console noise -- one observed run
+  // emitted 761 of these lines, 700 of them "ok". Failures and denials stay:
+  // src/tools/runtime.ts logs every outcome so a refused call cannot be mistaken
+  // for one never made. This gates the console only -- logger.ts writes every
+  // level to the JSONL regardless, and the tool-audit ledger is a separate sink.
+  if (entry.stage === "coding-tool" && entry.message === "invoked" && entry.data?.outcome === "ok") return false;
+
   // Normal mode: filter out debug logs, but always show story.start/iteration.start
   if (entry.stage === "story.start" || entry.stage === "iteration.start") return true;
   return entry.level !== "debug";
