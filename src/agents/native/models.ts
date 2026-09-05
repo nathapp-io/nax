@@ -54,7 +54,13 @@ export function parseNativeModel(raw: string): NativeModelRef {
 
   if (provider === "" || model === "") {
     throw new NaxError(
-      `Native model "${raw}" must be written "provider/model" (e.g. "openai/gpt-5.4-mini"). There is no default provider.`,
+      // Naming the sibling field is the point (nax#1851): a reader looking at
+      // `{ provider: "anthropic", model: "claude-sonnet-5" }` assumes the field
+      // right there is the one being used, and the old message said nothing to
+      // correct that. No suggested id is composed from it — on this path the
+      // value reaching us may be `resolveModel`'s inference rather than
+      // anything configured, and a guessed suggestion is worse than none.
+      `Native model "${raw}" must be written "provider/model" (e.g. "openai/gpt-5.4-mini"). There is no default provider. A "provider" field beside "model" in config is NOT used on the native path — the provider belongs in the model id itself.`,
       "NATIVE_MODEL_MALFORMED",
       { stage: "complete", model: raw },
     );
