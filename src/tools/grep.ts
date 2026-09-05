@@ -17,6 +17,18 @@ import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 const GREP_TIMEOUT_MS = 15_000;
 
+/** @internal */
+const REGEX_METACHARACTERS = /[.*+?^${}()|[\]\\]/;
+
+/**
+ * Returns true when the pattern contains at least one regex metacharacter.
+ * Used to disclose to callers that their search was performed literally.
+ * @internal
+ */
+function containsRegexMetacharacter(pattern: string): boolean {
+  return REGEX_METACHARACTERS.test(pattern);
+}
+
 /** @internal Injectable for tests — exercises the fallback without uninstalling ripgrep. */
 export const _grepDeps = { which, spawn };
 
@@ -87,7 +99,17 @@ export const grepTool: CodingTool = {
 
     const stdout = await stdoutText;
     // Both binaries exit 1 for "no matches" — a normal outcome, not a failure.
-    if (exitCode === 1 && stdout.trim() === "") return { content: `no matches for "${pattern}"` };
+    if (exitCode === 1 && stdout.trim() === "") {
+      const base = `no matches for "${pattern}"`;
+      // Disclose that the search was literal when the pattern contained regex metacharacters,
+      // so callers know their pattern was not interpreted as a regex.
+      if (containsRegexMetacharacter(pattern)) {
+        return {
+          content: `${base}. The search was performed literally and regex metacharacters were not interpreted.`,
+        };
+      }
+      return { content: base };
+    }
     if (exitCode !== 0 && stdout.trim() === "") {
       return { content: (await stderrText).trim() || `${binary} exited ${exitCode}`, isError: true };
     }
