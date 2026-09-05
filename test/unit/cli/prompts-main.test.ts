@@ -187,4 +187,26 @@ describe("promptsCommand — story loop", () => {
 
     expect(closeSpy).toHaveBeenCalledTimes(1);
   });
+
+  test("AC4: calls createRuntime with featureName equal to the feature string", async () => {
+    writePrd(tempDir, "audit-feature");
+    const captured: Array<
+      [
+        Parameters<typeof _promptsMainDeps.createRuntime>[0],
+        Parameters<typeof _promptsMainDeps.createRuntime>[1],
+        Parameters<typeof _promptsMainDeps.createRuntime>[2] | undefined,
+      ]
+    > = [];
+    _promptsMainDeps.createRuntime = (cfg, wd, opts) => {
+      captured.push([cfg, wd, opts]);
+      return makeMockRuntime({ config: cfg, workdir: wd });
+    };
+
+    await promptsCommand({ feature: "audit-feature", workdir: tempDir, config });
+
+    expect(captured).toHaveLength(1);
+    const opts = captured[0]?.[2];
+    expect(opts).toBeDefined();
+    expect(opts?.featureName).toBe("audit-feature");
+  });
 });

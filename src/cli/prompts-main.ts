@@ -78,7 +78,7 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
   const prd = await loadPRD(prdPath);
 
   // Create a minimal runtime for PipelineContext conformance (prompts command doesn't dispatch agents)
-  const runtime = _promptsMainDeps.createRuntime(config, workdir);
+  const runtime = _promptsMainDeps.createRuntime(config, workdir, { featureName: feature });
 
   // BUG-24 — createRuntime was never closed on any path through this
   // function. ACP sessions/streams, auditors, and the idle-watchdog

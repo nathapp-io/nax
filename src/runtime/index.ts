@@ -80,7 +80,6 @@ import { AgentManager } from "../agents/manager";
 import type { AgentFallbackRecord } from "../agents/manager-types";
 import type { ConfigLoader, NaxConfig } from "../config";
 import { createConfigLoader, getProjectKey } from "../config";
-import { NaxError } from "../errors";
 import { PidRegistry } from "../execution/pid-registry";
 import type { ReviewRecurrenceStore } from "../execution/recurrence-store";
 import type { Iteration, StoryFixHistory } from "../findings";
@@ -271,14 +270,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   let promptAuditor: IPromptAuditor;
   if (opts?.promptAuditor) {
     promptAuditor = opts.promptAuditor;
-  } else if (auditEnabled) {
-    if (!opts?.featureName) {
-      throw new NaxError(
-        "createRuntime: featureName is required when promptAudit.enabled is true",
-        "AUDIT_FEATURE_NAME_REQUIRED",
-        { stage: "runtime" },
-      );
-    }
+  } else if (auditEnabled && opts?.featureName) {
     promptAuditor = new PromptAuditor(runId, auditDir, opts.featureName);
   } else {
     promptAuditor = createNoOpPromptAuditor();
