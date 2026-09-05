@@ -185,7 +185,7 @@ export class NativeAgentAdapter implements AgentAdapter {
 
       const tokenUsage = toNaxTokenUsage(result.usage);
       const catalog = client.pricing(resolved);
-      const rates = buildRateCard(catalog, options.modelDef.pricing);
+      const { rates, source: pricingSource } = buildRateCard(catalog, options.modelDef.pricing);
 
       return {
         output: result.text,
@@ -197,6 +197,11 @@ export class NativeAgentAdapter implements AgentAdapter {
         // (audit, dispatch) stamp it on artifacts without reaching into a
         // private field.
         sessionId,
+        // US-003: stamp the branch buildRateCard took so cost rows can tell a
+        // catalog-priced call from a config-overridden one. Single source of
+        // truth — the same override !== undefined predicate the rate card was
+        // chosen on, reported rather than re-derived from MODEL_PRICING.
+        pricingSource,
       };
     } catch (err) {
       // Returned, not rethrown: rethrowing routes through
@@ -226,7 +231,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     const client = await getNativeClient();
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
-    const rates = buildRateCard(catalog, handle.modelDef?.pricing);
+    const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?.pricing);
     const storedTimeoutSeconds = nativeSessionTimeouts.get(handle.id);
     if (storedTimeoutSeconds === undefined) {
       getSafeLogger()?.warn("native-adapter", "session has no recorded timeout; falling back to the default budget", {
@@ -271,6 +276,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         ...(nativeSessionCompaction.get(handle.id) !== undefined
           ? { compaction: nativeSessionCompaction.get(handle.id) }
           : {}),
+        pricingSource,
         onActivity: (activity) => {
           hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));
         },

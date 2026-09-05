@@ -159,6 +159,13 @@ export interface TurnResult {
   /** Number of session.prompt() calls made. */
   internalRoundTrips: number;
   /**
+   * Which rate card priced this turn (US-003, first half of #1817).
+   * `"catalog-rates"` means nax-ai's catalog; `"config-override"` means an
+   * explicit `modelDef.pricing` won wholesale. Set by adapters that split
+   * the decision this way (today: native). Absent otherwise.
+   */
+  pricingSource?: "catalog-rates" | "config-override";
+  /**
    * Mid-turn human-in-the-loop Q&A exchanges captured during the session turn
    * (issue #1226). Each entry pairs the agent's question with the operator's
    * verbatim reply and the internal round-trip index at which it occurred.

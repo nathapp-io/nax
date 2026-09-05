@@ -69,6 +69,13 @@ export interface TurnDeps {
    * watchdog can see native sessions.
    */
   onActivity?: (activity: NativeTurnActivity) => void;
+  /**
+   * Which rate card priced this turn (US-003, first half of #1817). Absent
+   * on tests that build TurnDeps by hand and do not care about the source.
+   * When set, propagates to the returned TurnResult as `pricingSource` so the
+   * dispatch layer can stamp the row without re-deriving from MODEL_PRICING.
+   */
+  pricingSource?: "catalog-rates" | "config-override";
 }
 
 /**
@@ -456,5 +463,6 @@ export async function runNativeTurn(
     ...(completedNormally ? {} : { turnIncomplete: true }),
     ...(timedOut ? { timedOut: true } : {}),
     ...(interactions.length > 0 ? { interactions } : {}),
+    ...(deps.pricingSource !== undefined ? { pricingSource: deps.pricingSource } : {}),
   };
 }
