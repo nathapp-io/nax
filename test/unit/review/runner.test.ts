@@ -7,15 +7,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeConfigSlice, makeMockAgentManager, makeSpawn, makeSpawnResult } from "@test/helpers";
+import { makeConfigSlice, makeSpawn, makeSpawnResult } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _qualityRunnerDeps as _runnerDeps } from "@/quality/runner";
-import {
-  _reviewGitDeps as _deps,
-  _reviewLintDeps as _lintDeps,
-  _reviewSemanticDeps as _semanticDeps,
-  runReview,
-} from "@/review/runner";
+import { _reviewGitDeps as _deps, _reviewLintDeps as _lintDeps, runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 import { _gitDeps } from "@/utils/git";
 
@@ -359,132 +354,43 @@ describe("runReview — build check (BUILD-001)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// AC-9: runReview() calls runSemanticReview() for the 'semantic' check
-// ---------------------------------------------------------------------------
-
-describe("runReview — semantic check integration (AC-9)", () => {
+// #1859: semantic/adversarial are op-path checks (story-orchestrator/run-phase → callOp).
+// runReview (reconciliation) must not dispatch them — they fall through resolveCommand
+// as command-less checks and are skipped.
+describe("runReview — LLM check names are skipped, not dispatched (#1859)", () => {
   let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
-  let originalRunSemanticReview: typeof _semanticDeps.runSemanticReview;
   let originalSpawn: typeof _runnerDeps.spawn;
 
   beforeEach(() => {
     originalGetUncommittedFiles = _deps.getUncommittedFiles;
-    originalRunSemanticReview = _semanticDeps.runSemanticReview;
     originalSpawn = _runnerDeps.spawn;
   });
 
   afterEach(() => {
     mock.restore();
     _deps.getUncommittedFiles = originalGetUncommittedFiles;
-    _semanticDeps.runSemanticReview = originalRunSemanticReview;
     _runnerDeps.spawn = originalSpawn;
   });
 
-  const semanticConfig: ReviewConfig = makeConfigSlice("review", {
-    enabled: true,
-    checks: ["semantic"],
-    commands: {},
-  });
-
-  test("calls runSemanticReview (not spawn); result appears in checks array", async () => {
-    _deps.getUncommittedFiles = mock(async () => []);
+  test("semantic and adversarial in config.checks produce no check results and succeed", async () => {
+    _deps.getUncommittedFiles = mock(async () => []); // RQ-001 guard must not hit real git
     let spawnCalled = false;
     _runnerDeps.spawn = makeSpawn(() => {
       spawnCalled = true;
       return "";
     }).spawn;
-    _semanticDeps.runSemanticReview = mock(async () => ({
-      check: "semantic" as const,
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "all good",
-      durationMs: 10,
-    }));
 
-    const result = await runReview({ config: semanticConfig, workdir: "/tmp/fake-workdir" });
-
-    expect(_semanticDeps.runSemanticReview).toHaveBeenCalled();
-    expect(spawnCalled).toBe(false);
-    expect(result.checks).toHaveLength(1);
-    expect(result.checks[0].check).toBe("semantic");
-  });
-
-  test("runReview returns success=false when runSemanticReview returns success=false", async () => {
-    _deps.getUncommittedFiles = mock(async () => []);
-
-    const failingResult = {
-      check: "semantic" as const,
-      success: false,
-      command: "",
-      exitCode: 1,
-      output: "semantic check found issues",
-      durationMs: 10,
-    };
-    _semanticDeps.runSemanticReview = mock(async () => failingResult);
-
-    const result = await runReview({ config: semanticConfig, workdir: "/tmp/fake-workdir" });
-
-    expect(result.success).toBe(false);
-  });
-
-  test("passes storyGitRef+story to runSemanticReview; passes config.semantic when set", async () => {
-    _deps.getUncommittedFiles = mock(async () => []);
-    const mockResult = {
-      check: "semantic" as const,
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "passed",
-      durationMs: 5,
-    };
-    _semanticDeps.runSemanticReview = mock(async () => mockResult);
-
-    const story = { id: "US-001", title: "My story", description: "Does something", acceptanceCriteria: ["AC1"] };
-    await runReview({
-      config: semanticConfig,
-      workdir: "/tmp/fake-workdir",
-      storyId: "US-001",
-      storyGitRef: "abc1234",
-      story,
-      agentManager: makeMockAgentManager(),
+    const config: ReviewConfig = makeConfigSlice("review", {
+      enabled: true,
+      checks: ["semantic", "adversarial"],
+      commands: {},
     });
-    expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workdir: "/tmp/fake-workdir",
-        storyGitRef: "abc1234",
-        story: expect.objectContaining({ id: "US-001" }),
-      }),
-    );
 
-    _semanticDeps.runSemanticReview = mock(async () => mockResult);
-    const configWithSemantic: ReviewConfig = {
-      ...semanticConfig,
-      semantic: {
-        model: "powerful",
-        rules: ["no stubs"],
-        timeoutMs: 600_000,
-        excludePatterns: [":!test/"],
-        diffMode: "embedded" as const,
-        resetRefOnRerun: false,
-      },
-    };
-    await runReview({ config: configWithSemantic, workdir: "/tmp/fake-workdir" });
-    expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workdir: "/tmp/fake-workdir",
-        storyGitRef: undefined,
-        semanticConfig: {
-          model: "powerful",
-          rules: ["no stubs"],
-          timeoutMs: 600_000,
-          excludePatterns: [":!test/"],
-          diffMode: "embedded",
-          resetRefOnRerun: false,
-        },
-      }),
-    );
+    const result = await runReview({ config, workdir: "/tmp/fake-workdir" });
+
+    expect(result.success).toBe(true);
+    expect(result.checks).toHaveLength(0);
+    expect(spawnCalled).toBe(false);
   });
 });
 

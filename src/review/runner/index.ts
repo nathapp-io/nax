@@ -5,8 +5,6 @@
  */
 
 import type { BunFile } from "bun";
-import type { IAgentManager } from "@/agents";
-import { AdversarialReviewConfigSchema, SemanticReviewConfigSchema } from "@/config";
 import type { ExecutionConfig, QualityConfig } from "@/config/schema";
 import type { ReviewConfig as ReviewNaxConfig } from "@/config/selectors";
 import type { Iteration } from "@/findings";
@@ -15,11 +13,8 @@ import type { UserStory } from "@/prd";
 import { runQualityCommand } from "@/quality";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
-import { runAdversarialReview as _runAdversarialReviewImpl } from "../adversarial";
 import { resolveLanguageCommand } from "../language-commands";
 import { runScopedLintCheck } from "../scoped-lint";
-import type { SemanticStory } from "../semantic";
-import { runSemanticReview as _runSemanticReviewImpl } from "../semantic";
 import { parseTypecheckOutput } from "../typecheck-parsing";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "../types";
 
@@ -33,44 +28,19 @@ export interface RunReviewOptions {
   qualityCommands?: QualityConfig["commands"];
   storyId?: string;
   storyGitRef?: string;
-  story?: SemanticStory;
-  agentManager?: IAgentManager;
+  story?: UserStory;
   naxConfig?: ReviewNaxConfig;
   retrySkipChecks?: Set<string>;
   featureName?: string;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
   priorSemanticIterations?: Iteration[];
   featureContextMarkdown?: string;
-  contextBundles?: {
-    semantic?: import("@/context/engine").ContextBundle;
-    adversarial?: import("@/context/engine").ContextBundle;
-  };
   projectDir?: string;
   env?: Record<string, string | undefined>;
   naxIgnoreIndex?: NaxIgnoreIndex;
   runtime?: import("@/runtime").NaxRuntime;
   priorAdversarialIterations?: Iteration[];
 }
-
-/**
- * Injectable dependency for the semantic review call — allows tests to
- * intercept runSemanticReview() without mock.module() (BUG-035 pattern).
- *
- * @internal
- */
-export const _reviewSemanticDeps = {
-  runSemanticReview: _runSemanticReviewImpl,
-};
-
-/**
- * Injectable dependency for the adversarial review call — allows tests to
- * intercept runAdversarialReview() without mock.module() (BUG-035 pattern).
- *
- * @internal
- */
-export const _reviewAdversarialDeps = {
-  runAdversarialReview: _runAdversarialReviewImpl,
-};
 
 export const _reviewLintDeps = {
   runScopedLintCheck,
@@ -133,7 +103,8 @@ export async function resolveCommand(
   qualityCommands?: QualityConfig["commands"],
   profile?: { language?: string },
 ): Promise<string | null> {
-  // Semantic and adversarial checks are LLM-based — handled separately by the review orchestrator
+  // Semantic and adversarial checks are LLM-based — run by the story orchestrator via
+  // callOp (operations/{semantic,adversarial}-review.ts), never by runReview (#1859).
   if (check === "semantic" || check === "adversarial") {
     return null;
   }
@@ -318,101 +289,6 @@ async function guardUncommittedFiles(
   }
 }
 
-/** Shared story shape both LLM reviewers (semantic, adversarial) build from RunReviewOptions. */
-function buildReviewStory(storyId: string | undefined, story: SemanticStory | undefined): SemanticStory {
-  return {
-    id: storyId ?? "",
-    title: story?.title ?? "",
-    description: story?.description ?? "",
-    acceptanceCriteria: story?.acceptanceCriteria ?? [],
-  };
-}
-
-/** Semantic check: delegate to the LLM-based semantic reviewer instead of a shell command. */
-async function runSemanticCheck(opts: RunReviewOptions): Promise<ReviewCheckResult> {
-  const {
-    workdir,
-    storyGitRef,
-    story,
-    storyId,
-    config,
-    agentManager,
-    naxConfig,
-    featureName,
-    priorSemanticIterations,
-    featureContextMarkdown,
-    contextBundles,
-    projectDir,
-    naxIgnoreIndex,
-    runtime,
-  } = opts;
-  // Derived from the schema's own defaults (SSOT, #1666) rather than hand-copied —
-  // a hand-copied fallback silently stops matching SemanticReviewConfig the moment
-  // the schema gains a new required (`.default()`-ed) field.
-  // excludePatterns stays absent — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009).
-  const semanticCfg = config.semantic ?? SemanticReviewConfigSchema.parse({});
-  const runSemantic = _reviewSemanticDeps.runSemanticReview;
-  return runSemantic({
-    workdir,
-    storyGitRef,
-    story: buildReviewStory(storyId, story),
-    semanticConfig: semanticCfg,
-    agentManager,
-    naxConfig,
-    featureName,
-    priorSemanticIterations,
-    blockingThreshold: config.blockingThreshold,
-    featureContextMarkdown,
-    contextBundle: contextBundles?.semantic,
-    projectDir,
-    naxIgnoreIndex,
-    runtime,
-  });
-}
-
-/** Adversarial check: delegate to the LLM-based adversarial reviewer instead of a shell command. */
-async function runAdversarialCheck(opts: RunReviewOptions): Promise<ReviewCheckResult> {
-  const {
-    workdir,
-    storyGitRef,
-    story,
-    storyId,
-    config,
-    agentManager,
-    naxConfig,
-    featureName,
-    priorFailures,
-    featureContextMarkdown,
-    contextBundles,
-    projectDir,
-    naxIgnoreIndex,
-    runtime,
-    priorAdversarialIterations,
-  } = opts;
-  // Derived from the schema's own defaults (SSOT, #1666) rather than hand-copied —
-  // same reasoning as semanticCfg above.
-  // excludePatterns stays absent — collectDiff always appends ALWAYS_EXCLUDED (.nax/ etc.) (ADR-009).
-  const adversarialCfg = config.adversarial ?? AdversarialReviewConfigSchema.parse({});
-  const runAdversarial = _reviewAdversarialDeps.runAdversarialReview;
-  return runAdversarial({
-    workdir,
-    storyGitRef,
-    story: buildReviewStory(storyId, story),
-    adversarialConfig: adversarialCfg,
-    agentManager,
-    config: naxConfig,
-    featureName,
-    priorFailures,
-    blockingThreshold: config.blockingThreshold,
-    featureContextMarkdown,
-    contextBundle: contextBundles?.adversarial,
-    projectDir,
-    naxIgnoreIndex,
-    runtime,
-    priorAdversarialIterations,
-  });
-}
-
 /**
  * Mechanical check (lint / typecheck / build / ...): resolve its command and run it via
  * runQualityCommand (or the scoped-lint path for "lint"). Returns null when the check is
@@ -455,7 +331,7 @@ async function runMechanicalCheck(
         workdir,
         projectDir,
         storyId,
-        story: story as UserStory | undefined,
+        story,
         storyGitRef,
         env,
         stripEnvVars: naxConfig?.quality?.stripEnvVars ?? [],
@@ -491,24 +367,11 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
       continue;
     }
 
-    if (checkName === "semantic" || checkName === "adversarial") {
-      const result = checkName === "semantic" ? await runSemanticCheck(opts) : await runAdversarialCheck(opts);
-      checks.push(result);
-      if (!result.success && !firstFailure) {
-        firstFailure = `${checkName} failed`;
-      }
-      if (!result.success) {
-        break;
-      }
-      continue;
-    }
-
     const result = await runMechanicalCheck(checkName, opts);
     if (result === null) continue;
     checks.push(result);
 
     // Log outcome of mechanical checks (lint / typecheck / build).
-    // Semantic and adversarial checks log their own outcomes internally.
     if (result.success) {
       logger?.info("review", `${checkName} passed`, {
         storyId,
