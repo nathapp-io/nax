@@ -3,7 +3,7 @@
   "feature": "audit-cost-and-grep-fidelity",
   "branchName": "feat/audit-cost-and-grep-fidelity",
   "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T11:26:05.496Z",
+  "updatedAt": "2026-09-05T11:39:42.650Z",
   "userStories": [
     {
       "id": "US-001",
@@ -175,8 +175,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -226,7 +226,10 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Single-file change adding one private helper and one conditional clause to an existing branch, standard pattern, no new abstractions."
+        "reasoning": "Single-file change adding one private helper and one conditional clause to an existing branch, standard pattern, no new abstractions.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "src/tools/grep.ts",
@@ -236,6 +239,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "b8858b17516bf358209fc3360c7051eb0f437927",
       "outOfScope": [
         "opt-in regex matching for Grep — an input that drops --fixed-strings/-F and accepts a real regex — is deferred; this story makes the existing literal restriction visible in the result, widening the tool schema is a separate decision affecting the 15 operations that hold Grep",
         "auto-detecting a regex-shaped pattern and silently re-running the search as a regex is deferred",
