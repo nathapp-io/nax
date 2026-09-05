@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { formatAdvisorySummary } from "@/log-format/formatter";
+import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
+import { tagCoverageGap } from "@/review/recurrence-demotion";
 import type { ReviewAuditEntry } from "@/review/review-audit";
 import {
   _reviewAuditDeps,
@@ -7,6 +10,7 @@ import {
   toPersistedEntry,
   writeReviewAudit,
 } from "@/review/review-audit";
+import { toReviewFindings } from "@/review/semantic-helpers";
 import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -313,7 +317,16 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       passed: true,
       blockingThreshold: "error",
       result: { passed: true, findings: [] },
-      advisoryFindings: [{ severity: "warning", category: "correctness", file: "src/foo.ts", issue: "off-AC bug" }],
+      advisoryFindings: toAdversarialReviewFindings([
+        {
+          severity: "warning",
+          category: "correctness",
+          file: "src/foo.ts",
+          line: 3,
+          issue: "off-AC bug",
+          suggestion: "",
+        },
+      ]),
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);
@@ -344,8 +357,21 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       blockingThreshold: "error",
       result: { passed: true, findings: [] },
       advisoryFindings: [
-        { severity: "error", category: "assumption", file: "lib/s.ts", issue: "demoted", meta: { coverageGap: true } },
-        { severity: "warning", category: "correctness", file: "lib/s.ts", issue: "ordinary" },
+        ...tagCoverageGap(
+          toAdversarialReviewFindings([
+            { severity: "error", category: "assumption", file: "lib/s.ts", line: 1, issue: "demoted", suggestion: "" },
+          ]),
+        ),
+        ...toAdversarialReviewFindings([
+          {
+            severity: "warning",
+            category: "correctness",
+            file: "lib/s.ts",
+            line: 2,
+            issue: "ordinary",
+            suggestion: "",
+          },
+        ]),
       ],
     });
     await auditor.flush();
@@ -369,10 +395,18 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       passed: true,
       blockingThreshold: "error",
       result: { passed: true, findings: [] },
-      advisoryFindings: [
-        { severity: "warning", category: "out-of-scope", file: "lib/s.ts", issue: "compliance", actionRequired: false },
-        { severity: "warning", category: "correctness", file: "lib/s.ts", issue: "ordinary" },
-      ],
+      advisoryFindings: toAdversarialReviewFindings([
+        {
+          severity: "warning",
+          category: "out-of-scope",
+          file: "lib/s.ts",
+          line: 1,
+          issue: "compliance",
+          suggestion: "",
+          actionRequired: false,
+        },
+        { severity: "warning", category: "correctness", file: "lib/s.ts", line: 2, issue: "ordinary", suggestion: "" },
+      ]),
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);
@@ -381,6 +415,88 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
     // Excluded from the fix pass, still present in the report.
     expect(summary.find((s) => s.issue === "compliance")?.actionRequired).toBe(false);
     expect(summary.find((s) => s.issue === "ordinary")?.actionRequired).toBeUndefined();
+  });
+
+  // #1816 — the summary mapper read `f.issue`, a field NO producer emits, so every
+  // advisory finding rendered as "(no description)" while the audit file held the text.
+  // The bug survived because the fixtures above were hand-authored in a shape that only
+  // the (unreachable, #1859) legacy reviewer path ever produced. These two tests feed the
+  // REAL projection functions instead, so the seam is asserted against what actually flows.
+  test("carries the reviewer's text through from the adversarial producer (#1816)", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-1816-adv", "/tmp/workdir");
+
+    const advisoryFindings = toAdversarialReviewFindings([
+      {
+        severity: "warning",
+        category: "error-path",
+        file: "src/session-token.ts",
+        line: 54,
+        issue: "JSON.parse(decoded) throws a raw SyntaxError on an invalid payload",
+        suggestion: "Wrap the parse and surface a typed error",
+      },
+    ]);
+
+    auditor.recordDecision({
+      reviewer: "adversarial",
+      storyId: "US-001",
+      featureName: "my-feature",
+      parsed: true,
+      passed: true,
+      blockingThreshold: "error",
+      result: { passed: true, findings: [] },
+      advisoryFindings,
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    const summary = auditor.getAdvisoryFindings();
+    expect(summary).toHaveLength(1);
+    expect(summary[0]?.issue).toBe("JSON.parse(decoded) throws a raw SyntaxError on an invalid payload");
+
+    // The rendered block is the actual deliverable — assert the operator sees the text.
+    const rendered = formatAdvisorySummary(summary, { mode: "normal", useColor: false });
+    expect(rendered).toContain("JSON.parse(decoded) throws a raw SyntaxError on an invalid payload");
+    expect(rendered).not.toContain("(no description)");
+  });
+
+  test("carries the reviewer's text through from the semantic producer (#1816)", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-1816-sem", "/tmp/workdir");
+
+    const advisoryFindings = toReviewFindings([
+      {
+        severity: "info",
+        category: "incomplete",
+        file: "src/auth.ts",
+        line: 10,
+        issue: "AC-2's expiry boundary is never exercised",
+        suggestion: "Add a test at exactly expiresAt",
+      },
+    ]);
+
+    auditor.recordDecision({
+      reviewer: "semantic",
+      storyId: "US-002",
+      featureName: "my-feature",
+      parsed: true,
+      passed: true,
+      blockingThreshold: "error",
+      result: { passed: true, findings: [] },
+      advisoryFindings,
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    const summary = auditor.getAdvisoryFindings();
+    expect(summary).toHaveLength(1);
+    expect(summary[0]?.issue).toBe("AC-2's expiry boundary is never exercised");
+
+    const rendered = formatAdvisorySummary(summary, { mode: "normal", useColor: false });
+    expect(rendered).toContain("AC-2's expiry boundary is never exercised");
+    expect(rendered).not.toContain("(no description)");
   });
 
   test("decisions with no advisory findings contribute nothing", async () => {
@@ -412,7 +528,9 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       parsed: true,
       passed: true,
       result: { passed: true, findings: [] },
-      advisoryFindings: [{ severity: "info", issue: "a" }],
+      advisoryFindings: toAdversarialReviewFindings([
+        { severity: "info", category: "input", file: "a.ts", line: 1, issue: "a", suggestion: "" },
+      ]),
     });
     auditor.recordDecision({
       reviewer: "semantic",
@@ -420,10 +538,10 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       parsed: true,
       passed: true,
       result: { passed: true, findings: [] },
-      advisoryFindings: [
-        { severity: "warning", issue: "b" },
-        { severity: "warning", issue: "c" },
-      ],
+      advisoryFindings: toReviewFindings([
+        { severity: "warning", category: "incomplete", file: "b.ts", line: 1, issue: "b", suggestion: "" },
+        { severity: "warning", category: "incomplete", file: "c.ts", line: 1, issue: "c", suggestion: "" },
+      ]),
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);

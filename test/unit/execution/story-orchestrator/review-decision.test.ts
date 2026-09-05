@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { toReviewDecisionPayload } from "@/execution";
+import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
+import { tagCoverageGap } from "@/review/recurrence-demotion";
 
 /**
  * Regression — F3 of `docs/findings/2026-08-01-review-pipeline-gap-analysis.md`.
@@ -18,7 +20,13 @@ describe("toReviewDecisionPayload", () => {
   });
 
   test("forwards advisoryFindings from the op output", () => {
-    const advisory = [{ severity: "warning", file: "a.ts", message: "nit", meta: { coverageGap: true } }];
+    // Real producer output, not a hand-authored literal: #1816 shipped because fixtures
+    // agreed on a shape no producer emits.
+    const advisory = tagCoverageGap(
+      toAdversarialReviewFindings([
+        { severity: "warning", category: "convention", file: "a.ts", line: 1, issue: "nit", suggestion: "" },
+      ]),
+    );
     const payload = toReviewDecisionPayload("adversarial-review", { ...base, advisoryFindings: advisory });
     expect(payload?.parsed).toBe(true);
     expect(payload?.parsed === true && payload.advisoryFindings).toEqual(advisory);

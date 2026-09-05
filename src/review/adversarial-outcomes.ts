@@ -13,6 +13,7 @@ import type { ContextBundle } from "../context/engine";
 import type { Iteration } from "../findings";
 import type { Logger } from "../logger";
 import type { AdversarialReviewOutput } from "../operations/adversarial-review";
+import type { ReviewFinding } from "../plugins/extensions";
 import type { NaxRuntime } from "../runtime";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { extractDiffFiles } from "../utils/diff-files";
@@ -169,7 +170,8 @@ export interface AdversarialClassification {
   testFileMatch: (file: string) => boolean;
   blockingFindings: AdversarialLLMFinding[];
   advisoryFindings: AdversarialLLMFinding[];
-  advisoryReviewFindings: unknown[];
+  /** ReviewFinding projection — what this path persists to the audit (#942). */
+  advisoryReviewFindings: ReviewFinding[];
   advisoryFindingsAsFindings: ReturnType<typeof toAdversarialReviewFindings>;
   acDropped: AdversarialReviewOutput["acDropped"];
   acks: AdversarialReviewOutput["acks"];

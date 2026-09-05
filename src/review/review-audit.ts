@@ -14,12 +14,32 @@
 
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
+import type { ReviewFinding } from "../plugins/extensions";
 import { findNaxProjectRoot } from "../utils/nax-project-root";
 import { NAX_COMMIT, NAX_VERSION } from "../version";
 import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
 import type { Severity } from "./severity";
 import type { ReviewAck } from "./types";
+
+/**
+ * What a reviewer may hand the audit as an advisory finding.
+ *
+ * Two projections legitimately reach here: `Finding` (operations/{adversarial,semantic}-review.ts,
+ * the live op path) and `ReviewFinding` (review/{adversarial,semantic}-outcomes.ts). They share
+ * `message` — the human-readable text — and nothing else load-bearing.
+ *
+ * Typed as this union rather than `unknown[]` because of #1816: the summary mapper read
+ * `f.issue`, a field NEITHER shape has, and a structural cast over `unknown` hid that from
+ * the compiler, so every advisory finding in the run-end report rendered "(no description)".
+ * A wrong field name must not compile.
+ *
+ * The two shapes disagree on more than they should (#942 says the audit persists
+ * `ReviewFinding`; the live path writes `Finding`). Unifying them is a separate on-disk
+ * contract decision — see #1859.
+ */
+export type AdvisoryFinding = Finding | ReviewFinding;
 
 export interface ReviewAuditEntry {
   /** Runtime run ID for correlation with prompt/cost audit. */
@@ -60,7 +80,7 @@ export interface ReviewAuditEntry {
   /** The structured reviewer result. null when parsed is false. */
   result: { passed: boolean; findings: unknown[] } | null;
   /** Findings retained as advisory after threshold handling. */
-  advisoryFindings?: unknown[];
+  advisoryFindings?: readonly AdvisoryFinding[];
   /**
    * Prior findings the reviewer resolved or withdrew this round (#1423).
    * Deliberately NOT part of `result.findings`: an acknowledgement is
@@ -230,30 +250,25 @@ export function createNoOpReviewAuditor(): IReviewAuditor {
   };
 }
 
-/** Flatten a decision's `advisoryFindings` (unknown[] from the reviewer's own shape) into summary entries. */
+/** Flatten a decision's `advisoryFindings` into summary entries. */
 function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSummaryEntry[] {
   if (!entry.advisoryFindings || entry.advisoryFindings.length === 0) return [];
-  return entry.advisoryFindings.map((raw) => {
-    const f = raw as {
-      severity?: Severity;
-      category?: string;
-      file?: string;
-      line?: number;
-      issue?: string;
-      actionRequired?: boolean;
-      meta?: { coverageGap?: boolean };
-    };
+  return entry.advisoryFindings.map((f) => {
     return {
       storyId: entry.storyId,
       featureName: entry.featureName,
       reviewer: entry.reviewer,
-      severity: f.severity ?? "info",
+      severity: f.severity,
       category: f.category,
       file: f.file,
       line: f.line,
-      issue: f.issue ?? "(no description)",
+      // `message` is the human-readable text on BOTH shapes (Finding.message /
+      // ReviewFinding.message). The fallback covers a producer that genuinely left it
+      // empty — it must never be the normal case, which is what #1816 was.
+      issue: f.message || "(no description)",
       coverageGap: f.meta?.coverageGap === true ? true : undefined,
-      actionRequired: f.actionRequired === false ? false : undefined,
+      // Only `Finding` carries this (#1359); `ReviewFinding` has no such field.
+      actionRequired: "actionRequired" in f && f.actionRequired === false ? false : undefined,
     };
   });
 }

@@ -4,6 +4,7 @@
  */
 
 import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
+import type { AdvisoryFinding } from "./review-audit";
 import type { ReviewAck } from "./types";
 
 export interface RecordAdversarialAuditOptions {
@@ -19,7 +20,7 @@ export interface RecordAdversarialAuditOptions {
   passReason?: string;
   blockingThreshold?: "error" | "warning" | "info";
   result: { passed: boolean; findings: unknown[] } | null;
-  advisoryFindings?: unknown[];
+  advisoryFindings?: readonly AdvisoryFinding[];
   /** #1423 — prior findings resolved or withdrawn, recorded outside `result.findings`. */
   acks?: ReviewAck[];
   // Issue #986 — adversarial-only structural counterfactual telemetry.
