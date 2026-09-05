@@ -255,13 +255,15 @@ describe("proactive compaction", () => {
     });
 
     test("logs a warning, but still completes, when a compaction makes no size progress", async () => {
-      // Finding 2 (whole-branch review, 2026-09-04): prepareCompaction can
-      // return a plan even when toSummarize is empty, so long as a previous
-      // summary exists (needed for summary-merge scenarios). If the
-      // summarizer then returns text at least as large as what it replaced,
-      // applyCompaction produces an array no smaller than the input — a paid
-      // model call that shrank nothing. This must not be fatal or retried;
-      // it must be logged so a repeating no-op is diagnosable.
+      // Finding 2 (whole-branch review, 2026-09-04): if the summarizer returns
+      // text at least as large as what it replaced, applyCompaction produces an
+      // array no smaller than the input — a paid model call that shrank nothing.
+      // This must not be fatal or retried; it must be logged so a repeating
+      // no-op is diagnosable.
+      //
+      // The empty-toSummarize route into this state is gone (nax#1842 —
+      // prepareCompaction now returns undefined for an empty span). An
+      // oversized summary still reaches it, which is what this drives.
       await seedOversizedTranscript();
 
       const result = await runNativeTurn(handle, "next", opts(), {

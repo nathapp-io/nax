@@ -195,7 +195,13 @@ export function prepareCompaction(
   // Everything from here is fair game; the pin, and any existing summary, are not.
   const spanStart = previousSummary === undefined ? PIN_INDEX + 1 : SUMMARY_INDEX + 1;
   const cutIndex = findCutPoint(messages, spanStart, keepTokens);
-  if (previousSummary === undefined && cutIndex <= spanStart) return undefined;
+  // An empty span is "nothing to do" whether or not a summary already exists
+  // (nax#1842). A merge plan is still returnable — that needs `previousSummary`
+  // AND new content, which is exactly `cutIndex > spanStart`. With an empty span
+  // there is nothing to fold in: summarize() would be paid to re-summarize the
+  // previous summary alone and applyCompaction would rebuild an array no smaller
+  // than the one it replaced, once per round trip for the rest of the turn.
+  if (cutIndex <= spanStart) return undefined;
   return {
     cutIndex,
     toSummarize: messages.slice(spanStart, cutIndex),

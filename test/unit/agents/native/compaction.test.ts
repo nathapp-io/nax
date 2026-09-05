@@ -190,6 +190,21 @@ describe("prepareCompaction", () => {
     expect(plan).toBeDefined();
     expect(plan?.toSummarize).not.toContain(fourExchanges[0]);
   });
+
+  test("returns undefined when a summary is present but the new span is empty (nax#1842)", () => {
+    // A plan whose toSummarize is empty buys nothing: summarize() would be paid
+    // to re-summarize the previous summary alone, and applyCompaction would
+    // rebuild an array no smaller than the one it replaced. Left unguarded that
+    // is one wasted model call per round trip for the rest of the turn.
+    const first = prepareCompaction(fourExchanges, KEEP);
+    if (!first) throw new Error("expected a plan");
+    const already = applyCompaction(fourExchanges, first, "first summary");
+    const grown: TranscriptMessage[] = [...already, ...exchange("c5", 400), ...exchange("c6", 400)];
+
+    // A budget loose enough to keep everything after the summary verbatim, so
+    // the span between the summary and the cut is empty.
+    expect(prepareCompaction(grown, 1000)).toBeUndefined();
+  });
 });
 
 describe("applyCompaction", () => {
@@ -217,26 +232,12 @@ describe("applyCompaction", () => {
     expect(applyCompaction(messages, plan, "s").length).toBeLessThan(messages.length);
   });
 
-  test("replaces the previous summary rather than stacking a second one", () => {
-    const first = prepareCompaction(messages, KEEP);
-    if (!first) throw new Error("expected a plan");
-    const already = applyCompaction(messages, first, "first summary");
-    const grown: TranscriptMessage[] = [...already, ...exchange("c5", 400), ...exchange("c6", 400)];
-    const plan = prepareCompaction(grown, 1000);
-    if (!plan) throw new Error("expected a plan");
-    expect(plan.previousSummary).toBe("first summary");
-
-    const out = applyCompaction(grown, plan, "merged summary");
-    const summaries = out.filter((m) => m.role === "user" && m.content.startsWith(COMPACTION_SUMMARY_PREFIX));
-    expect(summaries).toHaveLength(1);
-    expect(summaries[0].role === "user" && summaries[0].content.includes("merged summary")).toBe(true);
-  });
-
   test("merges genuine new content with the previous summary rather than emptying toSummarize", () => {
-    // Unlike the test above (whose second-round toSummarize ends up empty because
-    // the appended content fits under a 1000-token budget), this drives a TRUE
-    // merge: a previousSummary is present AND toSummarize is non-empty at the
-    // same time, using the same tight KEEP budget for both compaction rounds.
+    // A TRUE merge: a previousSummary is present AND toSummarize is non-empty at
+    // the same time, using the same tight KEEP budget for both compaction rounds.
+    // The empty-span half of this scenario is no longer reachable — since nax#1842
+    // prepareCompaction returns undefined for it (asserted above) — so a merge
+    // plan that reaches applyCompaction always carries new content to fold in.
     const first = prepareCompaction(fourExchanges, KEEP);
     if (!first) throw new Error("expected a plan");
     const already = applyCompaction(fourExchanges, first, "first summary");
