@@ -165,8 +165,14 @@ function h1RepeatedReviewFinding(observations: Observation[], threshold: number)
     const sites = [...group.sites];
     const files = [...group.files];
     // The description must distinguish one proposal from another on the checkbox
-    // line alone — `nax curator commit` ticks are made against that line, and a
-    // bare category collapse is the #942 defect this must not reintroduce.
+    // line alone — `nax curator commit` ticks are made against that line. #1861
+    // ruled that a bare category-level ruleId (`findingRuleId()`'s fallback to
+    // `category` for LLM findings, which carry no ruleId/rule/checkId) is the
+    // ceiling for prose findings, not a defect to eliminate — see #1863 for
+    // whether finer-grained grouping is achievable. The mitigation already
+    // here is this description/evidence line: it carries category, the file
+    // list, and gist samples of the actual finding text, so two distinct
+    // defects sharing a category still read as distinguishable proposals.
     const gist = group.samples[0] ? truncate(group.samples[0], DESCRIPTION_GIST_CHARS) : "(no description)";
     const categoryLabel = group.category ? `${group.category}: ` : "";
     const fileSection = files.length > 0 ? ` Files: ${files.slice(0, MAX_EVIDENCE_FILES).join(", ")}.` : "";

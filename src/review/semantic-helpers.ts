@@ -56,12 +56,16 @@ export interface LLMResponse {
  * `parse`, both reprompt second-turns, and the debate path all land here.
  *
  * Category normalization happens HERE, not only in `llmFindingToFinding`,
- * because most consumers read the accepted `LLMFinding[]` directly rather than
- * the converted `Finding[]`: `llmFindingToReviewFinding` (which derives
- * `ruleId` from the category and feeds `review-audit/` and the curator) and
- * `classifyRecurrence` (whose `test-gap` carve-out is adversarial-only and must
- * stay unreachable from semantic). Normalizing at the boundary keeps every
- * downstream reader on one canonical vocabulary.
+ * because most consumers read the accepted `LLMFinding[]` directly rather
+ * than the converted `Finding[]`: the raw findings are what
+ * `operations/semantic-review.ts` persists as `ReviewAuditEntry.result.findings`
+ * (#1861 — the review audit persists the raw op shape, not a canonical
+ * projection), and the curator's `findingRuleId()` derives a ruleId from that
+ * raw record's `category` (falling back past `ruleId`/`rule`/`checkId`, none
+ * of which an LLM finding carries). `classifyRecurrence`'s `test-gap`
+ * carve-out is adversarial-only and must stay unreachable from semantic.
+ * Normalizing at the boundary keeps every downstream reader on one canonical
+ * vocabulary.
  */
 export function validateLLMShape(parsed: unknown): LLMResponse | null {
   if (typeof parsed !== "object" || parsed === null) return null;

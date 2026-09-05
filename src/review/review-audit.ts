@@ -16,7 +16,6 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
-import type { ReviewFinding } from "../plugins/extensions";
 import { findNaxProjectRoot } from "../utils/nax-project-root";
 import { NAX_COMMIT, NAX_VERSION } from "../version";
 import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
@@ -24,22 +23,24 @@ import type { Severity } from "./severity";
 import type { ReviewAck } from "./types";
 
 /**
- * What a reviewer may hand the audit as an advisory finding.
+ * What a reviewer hands the audit as an advisory finding.
  *
- * Two projections legitimately reach here: `Finding` (operations/{adversarial,semantic}-review.ts,
- * the live op path) and `ReviewFinding` (review/{adversarial,semantic}-outcomes.ts). They share
- * `message` — the human-readable text — and nothing else load-bearing.
+ * #1861 ruling: the review audit persists `Finding` — the shape
+ * `operations/{adversarial,semantic}-review.ts` (the live op path) actually
+ * writes. #942's canonical-`ReviewFinding` clause is obsolete for LLM
+ * findings: measured over 5,346 real `review-audit/*.json` records, the live
+ * path never wrote `ReviewFinding`, so that clause tested a shape production
+ * never produced. `review/{adversarial,semantic}-outcomes.ts`, the only
+ * would-be `ReviewFinding` producer, was itself an unreachable entry point
+ * (#1859) and is deleted.
  *
- * Typed as this union rather than `unknown[]` because of #1816: the summary mapper read
- * `f.issue`, a field NEITHER shape has, and a structural cast over `unknown` hid that from
- * the compiler, so every advisory finding in the run-end report rendered "(no description)".
- * A wrong field name must not compile.
- *
- * The two shapes disagree on more than they should (#942 says the audit persists
- * `ReviewFinding`; the live path writes `Finding`). Unifying them is a separate on-disk
- * contract decision — see #1859.
+ * Typed as `Finding` rather than `unknown[]` because of #1816: the summary
+ * mapper read `f.issue`, a field `Finding` does not have, and a structural
+ * cast over `unknown` hid that from the compiler, so every advisory finding
+ * in the run-end report rendered "(no description)". A wrong field name must
+ * not compile.
  */
-export type AdvisoryFinding = Finding | ReviewFinding;
+export type AdvisoryFinding = Finding;
 
 export interface ReviewAuditEntry {
   /** Runtime run ID for correlation with prompt/cost audit. */
@@ -262,12 +263,11 @@ function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSu
       category: f.category,
       file: f.file,
       line: f.line,
-      // `message` is the human-readable text on BOTH shapes (Finding.message /
-      // ReviewFinding.message). The fallback covers a producer that genuinely left it
-      // empty — it must never be the normal case, which is what #1816 was.
+      // The fallback covers a producer that genuinely left `message` empty —
+      // it must never be the normal case, which is what #1816 was.
       issue: f.message || "(no description)",
       coverageGap: f.meta?.coverageGap === true ? true : undefined,
-      // Only `Finding` carries this (#1359); `ReviewFinding` has no such field.
+      // #1359 — absent means actionable; only recorded when explicitly false.
       actionRequired: "actionRequired" in f && f.actionRequired === false ? false : undefined,
     };
   });
