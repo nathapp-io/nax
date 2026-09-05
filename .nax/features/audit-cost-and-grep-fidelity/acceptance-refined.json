@@ -2,210 +2,210 @@
   {
     "acId": "AC-1",
     "original": "createRuntime(config, workdir) with agent.promptAudit.enabled set to true and no options argument resolves to a runtime instead of throwing",
-    "refined": "Given a NaxConfig where config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir) with no third argument returns a NaxRuntime object and does not throw; specifically no NaxError with code AUDIT_FEATURE_NAME_REQUIRED is raised, and runtime.promptAuditor is a no-op auditor (createNoOpPromptAuditor instance).",
+    "refined": "Calling createRuntime(config, workdir) where config.agent.promptAudit.enabled === true and opts is undefined returns a NaxRuntime object and does not throw; specifically no NaxError with code 'AUDIT_FEATURE_NAME_REQUIRED' is raised",
     "testable": true,
     "storyId": "US-001"
   },
   {
     "acId": "AC-2",
     "original": "For that same runtime, recording a prompt-audit entry and flushing the auditor writes no file into the configured prompt-audit directory",
-    "refined": "Given the no-op auditor from createRuntime(config, workdir) with agent.promptAudit.enabled === true and no featureName, after recording an audit entry and calling flush(), the directory configured for prompt audit output (config.agent.promptAudit directory) contains exactly zero new/any files — i.e., fs.existsSync on the expected output path returns false or the directory remains empty as before the flush.",
+    "refined": "Given the runtime returned by createRuntime(config, workdir) with agent.promptAudit.enabled === true and no opts, after calling the runtime's prompt auditor record() with a sample entry and then flush(), the directory configured for prompt-audit output (e.g. via a temp dir in config) contains zero files (fs.readdirSync returns an empty array)",
     "testable": true,
     "storyId": "US-001"
   },
   {
     "acId": "AC-3",
     "original": "createRuntime(config, workdir, { featureName: \"demo\" }) with agent.promptAudit.enabled set to true resolves to a runtime whose auditor, after recording an entry and flushing, has written a file under the prompt-audit directory, preserving the enabled-with-feature path unchanged",
-    "refined": "Given config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir, { featureName: \"demo\" }) returns a NaxRuntime with a real (non-no-op) PromptAuditor; after recording one audit entry and calling flush(), at least one file exists under the configured prompt-audit directory whose contents reflect the recorded entry, and the returned auditor is not an instance of the no-op auditor.",
+    "refined": "Calling createRuntime(config, workdir, { featureName: \"demo\" }) where config.agent.promptAudit.enabled === true returns a NaxRuntime whose prompt auditor is a real PromptAuditor (not a no-op); after record() of one entry and flush(), fs.readdirSync(promptAuditDir).length >= 1 and at least one file exists under the configured prompt-audit directory",
     "testable": true,
     "storyId": "US-001"
   },
   {
     "acId": "AC-4",
     "original": "Invoking promptsCommand with feature set to a feature whose prd.json exists calls _promptsMainDeps.createRuntime with a third argument whose featureName equals that same feature string",
-    "refined": "With _promptsMainDeps.createRuntime replaced by a mock/spy, invoking promptsCommand with a feature name F whose prd.json file exists in the working directory results in exactly one call to _promptsMainDeps.createRuntime with arguments (config, workdir, { featureName: F }), where the third argument is an object whose featureName property strictly equals (===) F.",
+    "refined": "With a mocked _promptsMainDeps.createRuntime and a workdir containing <feature>/prd.json for feature 'demo', invoking promptsCommand with the feature option set to 'demo' results in createRuntime being called exactly once with three arguments where the third argument is an options object satisfying options.featureName === 'demo' (matching the shape { featureName: feature } used at src/cli/plan-runtime.ts:83)",
     "testable": true,
     "storyId": "US-001"
   },
   {
     "acId": "AC-5",
     "original": "Recording a complete audit entry with a session name and stage acceptance, then flushing, writes a file whose name ends with -acceptance-complete.txt",
-    "refined": "Given a PromptAuditor with a session name, calling record() with an entry where kind is complete and stage is 'acceptance', then calling flush(), results in exactly one .txt file in the audit directory whose filename matches the regex /-acceptance-complete\\.txt$/",
+    "refined": "Given a PromptAuditor with a session name set, calling record() with an entry whose stage is 'acceptance' and kind is 'complete', then calling flush(), results in exactly one file in the audit directory whose filename matches /-acceptance-complete\\.txt$/ (i.e., ends with '-acceptance-complete.txt').",
     "testable": true,
     "storyId": "US-002"
   },
   {
     "acId": "AC-6",
     "original": "Recording a complete audit entry with a session name and no stage, then flushing, writes a file whose name ends with -complete.txt and contains no empty segment before that suffix",
-    "refined": "Given a PromptAuditor with a session name, calling record() with a complete entry where stage is undefined, then calling flush(), results in a .txt file whose filename matches /-complete\\.txt$/, and the filename contains no double hyphens or hyphen-immediately-before-suffix pattern (i.e., the filename does not match /--|-complete/ preceded by an empty segment; specifically no segment between '-' separators is empty)",
+    "refined": "Given a PromptAuditor with a session name set, calling record() with a complete entry whose stage is undefined, then calling flush(), results in a file whose filename ends with '-complete.txt' and whose name, after removing the timestamp prefix, session name, and '-complete.txt' suffix, contains no empty dash-delimited segment (filename does not contain '--' before '-complete.txt' and does not start a segment with '-').",
     "testable": true,
     "storyId": "US-002"
   },
   {
     "acId": "AC-7",
     "original": "Recording a run audit entry with a session name, stage run and turn 1, then flushing, writes a file whose name ends with -run-t01.txt, preserving the run branch's suffix unchanged by this story",
-    "refined": "Given a PromptAuditor with a session name, calling record() with a run entry where stage is 'run' and turn is 1, then calling flush(), results in a .txt file whose filename ends with exactly '-run-t01.txt' (assert filename.endsWith('-run-t01.txt') is true), verifying the run branch suffix is unchanged",
+    "refined": "Given a PromptAuditor with a session name set, calling record() with a run entry whose stage is 'run' and turn is 1, then calling flush(), results in exactly one file in the audit directory whose filename matches /-run-t01\\.txt$/; the run-branch filename format is byte-for-byte unchanged from its pre-change form.",
     "testable": true,
     "storyId": "US-002"
   },
   {
     "acId": "AC-8",
     "original": "buildCompleteEvent called with a sessionId of nax-abc12345 returns an event whose sessionId is nax-abc12345",
-    "refined": "Calling buildCompleteEvent with an input object containing sessionId: 'nax-abc12345' returns a CompleteDispatchEvent where event.kind === 'complete' and event.sessionId === 'nax-abc12345'",
+    "refined": "Calling buildCompleteEvent with input containing sessionId === 'nax-abc12345' returns a CompleteDispatchEvent object where event.kind === 'complete' and event.sessionId === 'nax-abc12345' (strict equality).",
     "testable": true,
     "storyId": "US-002"
   },
   {
     "acId": "AC-9",
     "original": "buildCompleteEvent called with no sessionId returns an event that has no sessionId property",
-    "refined": "Calling buildCompleteEvent with an input object that has no sessionId property returns an event where Object.prototype.hasOwnProperty.call(event, 'sessionId') === false (the sessionId key is absent, not merely undefined)",
+    "refined": "Calling buildCompleteEvent with input where sessionId is undefined returns a CompleteDispatchEvent for which Object.prototype.hasOwnProperty.call(event, 'sessionId') === false (the sessionId property is absent, not merely undefined-valued).",
     "testable": true,
     "storyId": "US-002"
   },
   {
     "acId": "AC-10",
     "original": "With the audit subscriber attached to a dispatch event bus, emitting a complete dispatch event carrying sessionId nax-abc12345 causes the auditor to receive an entry whose sessionId is nax-abc12345",
-    "refined": "Given attachAuditSubscriber is attached to a dispatch event bus with a mock auditor, emitting a CompleteDispatchEvent with kind 'complete' and sessionId 'nax-abc12345' causes the auditor's record() to be invoked with an entry object where entry.sessionId === 'nax-abc12345'",
+    "refined": "Given attachAuditSubscriber applied to a dispatch event bus with a PromptAuditor (spy-injectable), emitting a CompleteDispatchEvent with kind 'complete' and sessionId 'nax-abc12345' causes the auditor's record() to be invoked with an audit entry whose sessionId property is strictly equal to 'nax-abc12345'; asserting with a recorded entry captured by the spy.",
     "testable": true,
     "storyId": "US-002"
   },
   {
     "acId": "AC-11",
     "original": "NativeAgentAdapter.complete() returns a CompleteResult whose sessionId equals the sessionId the adapter passed to the nax-ai client's complete call",
-    "refined": "With a mocked nax-ai client recording the sessionId argument passed to its complete() call, calling NativeAgentAdapter.complete() returns a CompleteResult where result.sessionId is defined and result.sessionId === the sessionId value captured from the mocked client's complete() call arguments",
+    "refined": "With the nax-ai client mocked to capture its complete() call arguments, calling NativeAgentAdapter.complete() returns a CompleteResult where result.sessionId is a defined, non-empty string strictly equal to the sessionId property (or equivalent field) captured from the mock client's complete() invocation arguments.",
     "testable": true,
     "storyId": "US-002"
   },
   {
     "acId": "AC-12",
     "original": "Two successive NativeAgentAdapter.complete() calls on the same adapter instance return the same non-empty sessionId, because one-shots share a backend to keep the provider's prompt cache warm",
-    "refined": "Calling NativeAgentAdapter.complete() twice on the same adapter instance returns two CompleteResult objects where both result1.sessionId and result2.sessionId are non-empty strings (length > 0) and result1.sessionId === result2.sessionId",
+    "refined": "Calling NativeAgentAdapter.complete() twice on the same adapter instance returns two CompleteResult objects, r1 and r2, where r1.sessionId === r2.sessionId, and the shared value is a non-empty string (value.length > 0); equivalently, nativeSessionId(this.oneShotKey) is deterministic across calls for the same instance.",
     "testable": true,
     "storyId": "US-002"
   },
   {
     "acId": "AC-13",
     "original": "buildRateCard called with a catalog and no override reports its source as catalog-rates, and the rate object it returns carries the catalog's cache-read and cache-write rates",
-    "refined": "Given a Pricing catalog object and override === undefined, buildRateCard(catalog, undefined) returns { source: \"catalog-rates\" } and result.rates.cacheRead equals catalog's cache-read rate and result.rates.cacheWrite equals catalog's cache-write rate",
+    "refined": "Given a Pricing object with cacheRead (e.g. 0.10) and cacheWrite (e.g. 1.25) per-1M token rates and override === undefined, buildRateCard(catalog, undefined) returns { rates, source } where source === \"catalog-rates\", rates.cacheRead === 0.10, and rates.cacheWrite === 1.25",
     "testable": true,
     "storyId": "US-003"
   },
   {
     "acId": "AC-14",
     "original": "buildRateCard called with a catalog and an explicit override reports its source as config-override, and the rate object it returns is the override object itself, not merged with the catalog",
-    "refined": "Given a Pricing catalog object and a TokenPricing override, buildRateCard(catalog, override) returns { source: \"config-override\" } and result.rates === override (same reference identity), and result.rates does not contain any field values originating from the catalog that are absent from the override",
+    "refined": "Given a Pricing catalog with input rate X and a TokenPricing override object O with different rates, buildRateCard(catalog, O) returns { rates: O, source: \"config-override\" } where rates === O by reference identity (toBe) and no fields from catalog appear in rates",
     "testable": true,
     "storyId": "US-003"
   },
   {
     "acId": "AC-15",
     "original": "buildRateCard called with a catalog carrying tiers reports its source as catalog-rates and returns the tiers translated to nax's field names",
-    "refined": "Given a Pricing catalog whose model entry contains tiered rates and override === undefined, buildRateCard returns { source: \"catalog-rates\" } and result.rates exposes the tier data under nax's TokenPricing field names (translated, not passed through under the catalog's raw tier keys)",
+    "refined": "Given a Pricing catalog whose model entry includes a tiers array (in catalog field names, e.g. with catalog tier boundary/rate fields) and override === undefined, buildRateCard(catalog, undefined) returns source === \"catalog-rates\" and rates.tiers is an array of the same length where each tier object uses nax's TokenPricing tier field names (translated values equal the catalog tier values)",
     "testable": true,
     "storyId": "US-003"
   },
   {
     "acId": "AC-16",
     "original": "NativeAgentAdapter.complete() with a modelDef that carries no pricing returns a CompleteResult whose pricingSource is catalog-rates",
-    "refined": "Given a NativeAgentAdapter whose modelDef has no pricing override, calling complete() resolves to a CompleteResult object with pricingSource === \"catalog-rates\"",
+    "refined": "Given a NativeAgentAdapter configured with a modelDef that has no pricing override, calling adapter.complete(...) resolves to a CompleteResult object with result.pricingSource === \"catalog-rates\"",
     "testable": true,
     "storyId": "US-003"
   },
   {
     "acId": "AC-17",
     "original": "NativeAgentAdapter.complete() with a modelDef that carries an explicit pricing override returns a CompleteResult whose pricingSource is config-override",
-    "refined": "Given a NativeAgentAdapter whose modelDef has an explicit pricing override, calling complete() resolves to a CompleteResult object with pricingSource === \"config-override\"",
+    "refined": "Given a NativeAgentAdapter configured with a modelDef carrying an explicit pricing override, calling adapter.complete(...) resolves to a CompleteResult object with result.pricingSource === \"config-override\"",
     "testable": true,
     "storyId": "US-003"
   },
   {
     "acId": "AC-18",
     "original": "A turn sent through NativeAgentAdapter.sendTurn() on a session whose modelDef carries no pricing returns a TurnResult whose pricingSource is catalog-rates",
-    "refined": "Given a session on NativeAgentAdapter whose modelDef has no pricing override, calling sendTurn() resolves to a TurnResult object with pricingSource === \"catalog-rates\"",
+    "refined": "Given a session on a NativeAgentAdapter whose modelDef has no pricing override, calling adapter.sendTurn(...) resolves to a TurnResult object with result.pricingSource === \"catalog-rates\"",
     "testable": true,
     "storyId": "US-003"
   },
   {
     "acId": "AC-19",
     "original": "With the cost subscriber attached to a dispatch event bus, emitting a complete event that carries token usage, no exactCostUsd, and pricingSource catalog-rates records a cost row whose pricingSource is catalog-rates",
-    "refined": "Given attachCostSubscriber is attached to a dispatch event bus, emit a buildCompleteEvent with token usage (e.g. inputTokens/outputTokens > 0), no exactCostUsd, and pricingSource: 'catalog-rates'. The recorded CostEvent row has pricingSource === 'catalog-rates' (the event-carried value is used as-is, not re-derived via resolvePricingSource).",
+    "refined": "Given attachCostSubscriber is attached to a dispatch event bus, when buildCompleteEvent produces a DispatchEventBase with input tokens/output tokens set, exactCostUsd undefined, and pricingSource set to \"catalog-rates\", and the event is emitted, then the recorded CostEvent has pricingSource === \"catalog-rates\" (asserted via the cost aggregator's recorded rows), i.e. the event-carried value is used as-is instead of consulting resolvePricingSource(event.model).",
     "testable": true,
     "storyId": "US-004"
   },
   {
     "acId": "AC-20",
     "original": "Emitting the same event with pricingSource config-override records a cost row whose pricingSource is config-override",
-    "refined": "Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, no exactCostUsd, and pricingSource: 'config-override'. The recorded CostEvent row has pricingSource === 'config-override'.",
+    "refined": "With attachCostSubscriber attached, when a complete event carrying token usage, exactCostUsd undefined, and pricingSource === \"config-override\" is emitted, then the recorded CostEvent has pricingSource === \"config-override\"; this also verifies the widened union on CostEvent.pricingSource typechecks, since \"config-override\" must be assignable to the inline union in src/runtime/cost-aggregator.ts.",
     "testable": true,
     "storyId": "US-004"
   },
   {
     "acId": "AC-21",
-    "original": "Emitting an event that carries token usage and no pricingSource records a cost row whose pricingSource equals what resolvePricingSource returns for that event's model, preserving the ACP path unchanged",
-    "refined": "Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, no exactCostUsd, and pricingSource undefined. The recorded CostEvent row has pricingSource === resolvePricingSource(event.model) for the same model id (e.g. for a model in MODEL_PRICING, pricingSource === 'model-rates').",
+    "original": "Emitting an event that carries token usage and no exactCostUsd and no pricingSource records a cost row whose pricingSource equals what resolvePricingSource returns for that event's model, preserving the ACP path unchanged",
+    "refined": "With attachCostSubscriber attached, when a complete event carrying token usage with exactCostUsd undefined and pricingSource undefined (ACP path) is emitted for a model M, then the recorded CostEvent's pricingSource strictly equals the return value of resolvePricingSource(M) called directly in the test — e.g. for a model present in MODEL_PRICING both are \"model-rates\", and for a model absent from MODEL_PRICING both are \"fallback-rates\".",
     "testable": true,
     "storyId": "US-004"
   },
   {
     "acId": "AC-22",
     "original": "Emitting an event that carries both pricingSource catalog-rates and a finite exactCostUsd records a cost row whose pricingSource is wire",
-    "refined": "Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, exactCostUsd set to a finite number (e.g. 0.05), and pricingSource: 'catalog-rates'. The recorded CostEvent row has pricingSource === 'wire', confirming the wire-exact branch takes precedence over the event-carried pricingSource.",
+    "refined": "With attachCostSubscriber attached, when a complete event carrying token usage, a finite exactCostUsd (e.g. exactCostUsd === 0.05), and pricingSource === \"catalog-rates\" is emitted, then the recorded CostEvent has pricingSource === \"wire\" (not \"catalog-rates\"), asserting the wire-exact-cost branch continues to take precedence over the event-carried pricingSource.",
     "testable": true,
     "storyId": "US-004"
   },
   {
     "acId": "AC-23",
     "original": "resolvePricingSource called with a model id absent from MODEL_PRICING still returns fallback-rates, and called with one present still returns model-rates",
-    "refined": "Call resolvePricingSource(undefined) or resolvePricingSource with a model id not present in MODEL_PRICING; the return value is 'fallback-rates'. Call resolvePricingSource with a model id present in MODEL_PRICING; the return value is 'model-rates'. Neither call throws and both return types satisfy the widened union.",
+    "refined": "In a unit test against src/agents/cost/calculate.ts: calling resolvePricingSource(\"nonexistent-model-id\") returns exactly \"fallback-rates\", and calling resolvePricingSource with a model id present in MODEL_PRICING returns exactly \"model-rates\"; the function's declared return type is the widened union \"model-rates\" | \"fallback-rates\" | \"unknown-model\" | \"catalog-rates\" | \"config-override\" while these baseline behaviors are unchanged.",
     "testable": true,
     "storyId": "US-004"
   },
   {
     "acId": "AC-24",
     "original": "A CostEvent constructed with pricingSource catalog-rates is accepted by the aggregator and read back from the recorded row with that same value, so the aggregator's own union admits the new values",
-    "refined": "Construct a CostEvent with pricingSource: 'catalog-rates' (typechecks against the widened inline union in src/runtime/cost-aggregator.ts without a cast) and pass it through the cost aggregator's recording path; the recorded row's pricingSource === 'catalog-rates' when read back.",
+    "refined": "Constructing a CostEvent literal with pricingSource === \"catalog-rates\" compiles without TypeScript error (proving the inline union in src/runtime/cost-aggregator.ts independently includes \"catalog-rates\" and \"config-override\"), and when passed through the cost aggregator the recorded row reads back pricingSource === \"catalog-rates\" exactly.",
     "testable": true,
     "storyId": "US-004"
   },
   {
     "acId": "AC-25",
     "original": "buildSessionTurnEvent called with a TurnResult whose pricingSource is catalog-rates returns an event whose pricingSource is catalog-rates",
-    "refined": "Call buildSessionTurnEvent with a TurnResult carrying token usage and pricingSource: 'catalog-rates'. The returned session-turn dispatch event has pricingSource === 'catalog-rates' (the readonly pricingSource field on DispatchEventBase is populated from the TurnResult).",
+    "refined": "In a unit test: calling buildSessionTurnEvent with a TurnResult whose pricingSource property is \"catalog-rates\" returns a dispatch event (DispatchEventBase) whose pricingSource property strictly equals \"catalog-rates\"; also calling it with a TurnResult lacking pricingSource returns an event where pricingSource is undefined.",
     "testable": true,
     "storyId": "US-004"
   },
   {
     "acId": "AC-26",
-    "original": "grepTool.run with pattern export.*divide against a tree with no literal occurrence of that string returns content that includes no matches for and the pattern, and additionally states that the search was performed literally and that regex metaracteracters were not interpreted",
-    "refined": "Given a test tree containing no literal occurrence of 'export.*divide', when grepTool.run is called with pattern 'export.*divide', the returned result.content matches the form 'no matches for \"export.*divide\"' followed by a clause containing the phrases 'literally' and a statement that regex metacharacters are not interpreted (e.g. content.includes('no matches for \"export.*divide\"') === true, content.toLowerCase().includes('literally') === true, and content mentions that regex metacharacters are not interpreted).",
+    "original": "grepTool.run with pattern export.*divide against a tree with no literal occurrence of that string returns content that includes no matches for and the pattern, and additionally states that the search was performed literally and that regex metacharacters were not interpreted",
+    "refined": "Given a fixture tree containing no literal occurrence of the string 'export.*divide', when grepTool.run is invoked with pattern 'export.*divide', the returned result has content that (a) includes the substring 'no matches for \"export.*divide\"', (b) includes a clause stating the search was performed literally, and (c) includes a clause stating regex metacharacters are not interpreted. All three assertions hold on a single result object.",
     "testable": true,
     "storyId": "US-005"
   },
   {
     "acId": "AC-27",
     "original": "grepTool.run with pattern divide against a tree with no occurrence returns content that includes no matches for and the pattern, and does not mention regex metacharacters",
-    "refined": "Given a test tree with no occurrence of 'divide', when grepTool.run is called with pattern 'divide' (no regex metacharacters), the returned result.content equals/includes 'no matches for \"divide\"' and does not contain the substring 'regex' (content.includes('no matches for \"divide\"') === true && content.toLowerCase().includes('regex') === false).",
+    "refined": "Given a fixture tree with zero occurrences of the string 'divide', when grepTool.run is invoked with pattern 'divide' (a pattern containing no regex metacharacters), the returned result has content equal to or starting with 'no matches for \"divide\"' and the content string does not match /regex|metacharacter|literally/i. A regex-free zero-match result is byte-identical to the pre-change baseline format.",
     "testable": true,
     "storyId": "US-005"
   },
   {
     "acId": "AC-28",
     "original": "The result returned for a zero-match search on a pattern containing regex metacharacters has no isError set, because a search that genuinely matched nothing is not a failure",
-    "refined": "When grepTool.run is called with a pattern containing at least one regex metacharacter (e.g. 'export.*divide') against a tree with zero matches, the returned result has isError undefined/unset ('isError' in result === false or result.isError === undefined).",
+    "refined": "Given a fixture tree with zero literal occurrences of a pattern containing at least one regex metacharacter (e.g. 'export.*divide'), when grepTool.run is invoked with that pattern, the returned result object has isError undefined (i.e. !('isError' in result) || result.isError === undefined), and content includes 'no matches for'.",
     "testable": true,
     "storyId": "US-005"
   },
   {
     "acId": "AC-29",
     "original": "grepTool.run with a pattern containing regex metacharacters that does produce matching rows returns those rows and does not mention regex metacharacters",
-    "refined": "Given a test tree containing at least one file with content matching a pattern's literal string (e.g. a file containing 'export function divide()'), when grepTool.run is called with a metacharacter-containing pattern (e.g. 'export.*divide'), the returned result.content includes the matching file path and matched line, and does not contain a 'searched literally' / regex-metacharacter disclosure clause (content.toLowerCase().includes('regex') === false and content does not include 'no matches for').",
+    "refined": "Given a fixture tree where at least one file contains the literal string 'export.*divide' (e.g. an occurrence in a comment), when grepTool.run is invoked with pattern 'export.*divide', the returned result (a) is not an error (isError unset), (b) has content containing each expected matching line with its file path, and (c) has content that does not match /regex|metacharacter|literally/i.",
     "testable": true,
     "storyId": "US-005"
   },
   {
     "acId": "AC-30",
     "original": "grepTool.run on a machine where neither rg nor grep resolves returns a result with isError set, unchanged by this story",
-    "refined": "Given an environment where the rg and grep executables are not resolvable (e.g. PATH stubbed/emptied so spawn fails with ENOENT), when grepTool.run is called with any pattern, the returned result has isError === true and the behavior is identical to pre-change behavior (error result unchanged by the metacharacter disclosure logic).",
+    "refined": "Given an environment where the rg and grep binaries are not resolvable (e.g. PATH stubbed/shimmed so spawn/which fails for both), when grepTool.run is invoked with any pattern, the returned result has isError === true and its content is identical to the pre-change error output (asserted via a snapshot or string equality against the baseline error message). This behavior is unchanged by the metacharacter disclosure.",
     "testable": true,
     "storyId": "US-005"
   }

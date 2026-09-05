@@ -1,183 +1,183 @@
 import { describe, test, expect } from "bun:test";
 
 describe("audit-cost-and-grep-fidelity - Acceptance Tests", () => {
-  test("AC-1: Given a NaxConfig where config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir) with no third argument returns a NaxRuntime object and does not throw (specifically, no NaxError with code AUDIT_FEATURE_NAME_REQUIRED is raised); the returned runtime's auditor is the no-op auditor (createNoOpPromptAuditor).", async () => {
+  test("AC-1: Given a NaxConfig where config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir) with no third argument returns a NaxRuntime object and does not throw; specifically no NaxError with code AUDIT_FEATURE_NAME_REQUIRED is raised, and runtime.promptAuditor is a no-op auditor (createNoOpPromptAuditor instance).", async () => {
     // TODO: Implement acceptance test for AC-1
-    // Given a NaxConfig where config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir) with no third argument returns a NaxRuntime object and does not throw (specifically, no NaxError with code AUDIT_FEATURE_NAME_REQUIRED is raised); the returned runtime's auditor is the no-op auditor (createNoOpPromptAuditor).
+    // Given a NaxConfig where config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir) with no third argument returns a NaxRuntime object and does not throw; specifically no NaxError with code AUDIT_FEATURE_NAME_REQUIRED is raised, and runtime.promptAuditor is a no-op auditor (createNoOpPromptAuditor instance).
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-2: Using the runtime from the no-featureName call (promptAudit.enabled === true), record one prompt-audit entry via the runtime's auditor and call flush(); after flush completes, the directory configured as the prompt-audit output directory contains zero files (an existing directory stays empty or a non-existent directory is not created), verified by listing directory contents.", async () => {
+  test("AC-2: Given the no-op auditor from createRuntime(config, workdir) with agent.promptAudit.enabled === true and no featureName, after recording an audit entry and calling flush(), the directory configured for prompt audit output (config.agent.promptAudit directory) contains exactly zero new/any files — i.e., fs.existsSync on the expected output path returns false or the directory remains empty as before the flush.", async () => {
     // TODO: Implement acceptance test for AC-2
-    // Using the runtime from the no-featureName call (promptAudit.enabled === true), record one prompt-audit entry via the runtime's auditor and call flush(); after flush completes, the directory configured as the prompt-audit output directory contains zero files (an existing directory stays empty or a non-existent directory is not created), verified by listing directory contents.
+    // Given the no-op auditor from createRuntime(config, workdir) with agent.promptAudit.enabled === true and no featureName, after recording an audit entry and calling flush(), the directory configured for prompt audit output (config.agent.promptAudit directory) contains exactly zero new/any files — i.e., fs.existsSync on the expected output path returns false or the directory remains empty as before the flush.
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-3: Given config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir, { featureName: \"demo\" }) returns a runtime whose auditor is a real PromptAuditor (not the no-op auditor); after recording one entry and calling flush(), at least one file exists under the configured prompt-audit directory (verified via directory listing), and the runtime object satisfies the same NaxRuntime shape/behavior as before this change (no regression in the enabled-with-feature path).", async () => {
+  test("AC-3: Given config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir, { featureName: \"demo\" }) returns a NaxRuntime with a real (non-no-op) PromptAuditor; after recording one audit entry and calling flush(), at least one file exists under the configured prompt-audit directory whose contents reflect the recorded entry, and the returned auditor is not an instance of the no-op auditor.", async () => {
     // TODO: Implement acceptance test for AC-3
-    // Given config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir, { featureName: "demo" }) returns a runtime whose auditor is a real PromptAuditor (not the no-op auditor); after recording one entry and calling flush(), at least one file exists under the configured prompt-audit directory (verified via directory listing), and the runtime object satisfies the same NaxRuntime shape/behavior as before this change (no regression in the enabled-with-feature path).
+    // Given config.agent.promptAudit.enabled === true, calling createRuntime(config, workdir, { featureName: "demo" }) returns a NaxRuntime with a real (non-no-op) PromptAuditor; after recording one audit entry and calling flush(), at least one file exists under the configured prompt-audit directory whose contents reflect the recorded entry, and the returned auditor is not an instance of the no-op auditor.
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-4: With _promptsMainDeps.createRuntime replaced by a test spy/mock and a fixture workdir containing prd.json for feature F, invoking promptsCommand with the feature option set to F results in exactly one call to the mocked createRuntime with arguments (config, workdir, { featureName: F }), where the third argument's featureName property strictly equals F; assertion made on the spy's recorded call arguments.", async () => {
+  test("AC-4: With _promptsMainDeps.createRuntime replaced by a mock/spy, invoking promptsCommand with a feature name F whose prd.json file exists in the working directory results in exactly one call to _promptsMainDeps.createRuntime with arguments (config, workdir, { featureName: F }), where the third argument is an object whose featureName property strictly equals (===) F.", async () => {
     // TODO: Implement acceptance test for AC-4
-    // With _promptsMainDeps.createRuntime replaced by a test spy/mock and a fixture workdir containing prd.json for feature F, invoking promptsCommand with the feature option set to F results in exactly one call to the mocked createRuntime with arguments (config, workdir, { featureName: F }), where the third argument's featureName property strictly equals F; assertion made on the spy's recorded call arguments.
+    // With _promptsMainDeps.createRuntime replaced by a mock/spy, invoking promptsCommand with a feature name F whose prd.json file exists in the working directory results in exactly one call to _promptsMainDeps.createRuntime with arguments (config, workdir, { featureName: F }), where the third argument is an object whose featureName property strictly equals (===) F.
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-5: Given an auditor with a session name (e.g. 'sess1') and a recorded complete entry with stage='acceptance', after flush() the written file's filename matches /-acceptance-complete\\.txt$/ and equals the session name joined with timestamp, '-acceptance-complete.txt'.", async () => {
+  test("AC-5: Given a PromptAuditor with a session name, calling record() with an entry where kind is complete and stage is 'acceptance', then calling flush(), results in exactly one .txt file in the audit directory whose filename matches the regex /-acceptance-complete\\.txt$/", async () => {
     // TODO: Implement acceptance test for AC-5
-    // Given an auditor with a session name (e.g. 'sess1') and a recorded complete entry with stage='acceptance', after flush() the written file's filename matches /-acceptance-complete\.txt$/ and equals the session name joined with timestamp, '-acceptance-complete.txt'.
+    // Given a PromptAuditor with a session name, calling record() with an entry where kind is complete and stage is 'acceptance', then calling flush(), results in exactly one .txt file in the audit directory whose filename matches the regex /-acceptance-complete\.txt$/
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-6: Given a recorded complete entry with stage undefined, after flush() the written filename ends with '-complete.txt', and the segment immediately preceding '-complete' is a non-empty string (timestamp), verified by asserting filename matches /[^-]-complete\\.txt$/ and does not contain '-complete-complete' or a leading '-'.", async () => {
+  test("AC-6: Given a PromptAuditor with a session name, calling record() with a complete entry where stage is undefined, then calling flush(), results in a .txt file whose filename matches /-complete\\.txt$/, and the filename contains no double hyphens or hyphen-immediately-before-suffix pattern (i.e., the filename does not match /--|-complete/ preceded by an empty segment; specifically no segment between '-' separators is empty)", async () => {
     // TODO: Implement acceptance test for AC-6
-    // Given a recorded complete entry with stage undefined, after flush() the written filename ends with '-complete.txt', and the segment immediately preceding '-complete' is a non-empty string (timestamp), verified by asserting filename matches /[^-]-complete\.txt$/ and does not contain '-complete-complete' or a leading '-'.
+    // Given a PromptAuditor with a session name, calling record() with a complete entry where stage is undefined, then calling flush(), results in a .txt file whose filename matches /-complete\.txt$/, and the filename contains no double hyphens or hyphen-immediately-before-suffix pattern (i.e., the filename does not match /--|-complete/ preceded by an empty segment; specifically no segment between '-' separators is empty)
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-7: Given a recorded run entry with stage='run' and turn=1, after flush() the written filename ends with '-run-t01.txt' (regression guard: this behavior is identical before and after the deriveAuditSuffix change).", async () => {
+  test("AC-7: Given a PromptAuditor with a session name, calling record() with a run entry where stage is 'run' and turn is 1, then calling flush(), results in a .txt file whose filename ends with exactly '-run-t01.txt' (assert filename.endsWith('-run-t01.txt') is true), verifying the run branch suffix is unchanged", async () => {
     // TODO: Implement acceptance test for AC-7
-    // Given a recorded run entry with stage='run' and turn=1, after flush() the written filename ends with '-run-t01.txt' (regression guard: this behavior is identical before and after the deriveAuditSuffix change).
+    // Given a PromptAuditor with a session name, calling record() with a run entry where stage is 'run' and turn is 1, then calling flush(), results in a .txt file whose filename ends with exactly '-run-t01.txt' (assert filename.endsWith('-run-t01.txt') is true), verifying the run branch suffix is unchanged
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-8: Calling buildCompleteEvent with input containing sessionId='nax-abc12345' returns a CompleteDispatchEvent with kind='complete' and event.sessionId === 'nax-abc12345'.", async () => {
+  test("AC-8: Calling buildCompleteEvent with an input object containing sessionId: 'nax-abc12345' returns a CompleteDispatchEvent where event.kind === 'complete' and event.sessionId === 'nax-abc12345'", async () => {
     // TODO: Implement acceptance test for AC-8
-    // Calling buildCompleteEvent with input containing sessionId='nax-abc12345' returns a CompleteDispatchEvent with kind='complete' and event.sessionId === 'nax-abc12345'.
+    // Calling buildCompleteEvent with an input object containing sessionId: 'nax-abc12345' returns a CompleteDispatchEvent where event.kind === 'complete' and event.sessionId === 'nax-abc12345'
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-9: Calling buildCompleteEvent with input lacking sessionId returns an event such that Object.prototype.hasOwnProperty.call(event, 'sessionId') === false (the property is absent, not undefined-and-present).", async () => {
+  test("AC-9: Calling buildCompleteEvent with an input object that has no sessionId property returns an event where Object.prototype.hasOwnProperty.call(event, 'sessionId') === false (the sessionId key is absent, not merely undefined)", async () => {
     // TODO: Implement acceptance test for AC-9
-    // Calling buildCompleteEvent with input lacking sessionId returns an event such that Object.prototype.hasOwnProperty.call(event, 'sessionId') === false (the property is absent, not undefined-and-present).
+    // Calling buildCompleteEvent with an input object that has no sessionId property returns an event where Object.prototype.hasOwnProperty.call(event, 'sessionId') === false (the sessionId key is absent, not merely undefined)
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-10: Given attachAuditSubscriber wired to a dispatch bus with a spy auditor, emitting a CompleteDispatchEvent {kind:'complete', sessionId:'nax-abc12345'} results in the auditor receiving an audit entry with entry.sessionId === 'nax-abc12345'.", async () => {
+  test("AC-10: Given attachAuditSubscriber is attached to a dispatch event bus with a mock auditor, emitting a CompleteDispatchEvent with kind 'complete' and sessionId 'nax-abc12345' causes the auditor's record() to be invoked with an entry object where entry.sessionId === 'nax-abc12345'", async () => {
     // TODO: Implement acceptance test for AC-10
-    // Given attachAuditSubscriber wired to a dispatch bus with a spy auditor, emitting a CompleteDispatchEvent {kind:'complete', sessionId:'nax-abc12345'} results in the auditor receiving an audit entry with entry.sessionId === 'nax-abc12345'.
+    // Given attachAuditSubscriber is attached to a dispatch event bus with a mock auditor, emitting a CompleteDispatchEvent with kind 'complete' and sessionId 'nax-abc12345' causes the auditor's record() to be invoked with an entry object where entry.sessionId === 'nax-abc12345'
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-11: With the nax-ai client stubbed to capture its complete() call arguments, NativeAgentAdapter.complete() resolves to a result where result.sessionId === capturedProviderCallOptions.sessionId === nativeSessionId(this.oneShotKey), and both are non-empty strings.", async () => {
+  test("AC-11: With a mocked nax-ai client recording the sessionId argument passed to its complete() call, calling NativeAgentAdapter.complete() returns a CompleteResult where result.sessionId is defined and result.sessionId === the sessionId value captured from the mocked client's complete() call arguments", async () => {
     // TODO: Implement acceptance test for AC-11
-    // With the nax-ai client stubbed to capture its complete() call arguments, NativeAgentAdapter.complete() resolves to a result where result.sessionId === capturedProviderCallOptions.sessionId === nativeSessionId(this.oneShotKey), and both are non-empty strings.
+    // With a mocked nax-ai client recording the sessionId argument passed to its complete() call, calling NativeAgentAdapter.complete() returns a CompleteResult where result.sessionId is defined and result.sessionId === the sessionId value captured from the mocked client's complete() call arguments
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-12: Calling NativeAgentAdapter.complete() twice on the same adapter instance yields results r1 and r2 with typeof r1.sessionId === 'string', r1.sessionId.length > 0, and r1.sessionId === r2.sessionId; a fresh adapter instance may produce a different sessionId (one-shot key is per-instance).", async () => {
+  test("AC-12: Calling NativeAgentAdapter.complete() twice on the same adapter instance returns two CompleteResult objects where both result1.sessionId and result2.sessionId are non-empty strings (length > 0) and result1.sessionId === result2.sessionId", async () => {
     // TODO: Implement acceptance test for AC-12
-    // Calling NativeAgentAdapter.complete() twice on the same adapter instance yields results r1 and r2 with typeof r1.sessionId === 'string', r1.sessionId.length > 0, and r1.sessionId === r2.sessionId; a fresh adapter instance may produce a different sessionId (one-shot key is per-instance).
+    // Calling NativeAgentAdapter.complete() twice on the same adapter instance returns two CompleteResult objects where both result1.sessionId and result2.sessionId are non-empty strings (length > 0) and result1.sessionId === result2.sessionId
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-13: Given buildRateCard(catalog, undefined), the returned object equals { rates: <card built from catalog>, source: \"catalog-rates\" }; assert result.source === \"catalog-rates\" and result.rates.cacheRead === catalog's cache-read rate and result.rates.cacheWrite === catalog's cache-write rate", async () => {
+  test("AC-13: Given a Pricing catalog object and override === undefined, buildRateCard(catalog, undefined) returns { source: \"catalog-rates\" } and result.rates.cacheRead equals catalog's cache-read rate and result.rates.cacheWrite equals catalog's cache-write rate", async () => {
     // TODO: Implement acceptance test for AC-13
-    // Given buildRateCard(catalog, undefined), the returned object equals { rates: <card built from catalog>, source: "catalog-rates" }; assert result.source === "catalog-rates" and result.rates.cacheRead === catalog's cache-read rate and result.rates.cacheWrite === catalog's cache-write rate
+    // Given a Pricing catalog object and override === undefined, buildRateCard(catalog, undefined) returns { source: "catalog-rates" } and result.rates.cacheRead equals catalog's cache-read rate and result.rates.cacheWrite equals catalog's cache-write rate
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-14: Given buildRateCard(catalog, override) where override is a defined TokenPricing distinct from the catalog, assert result.source === \"config-override\" and result.rates === override (strict reference equality / deep-equal to override), and no catalog fields absent from override appear in result.rates", async () => {
+  test("AC-14: Given a Pricing catalog object and a TokenPricing override, buildRateCard(catalog, override) returns { source: \"config-override\" } and result.rates === override (same reference identity), and result.rates does not contain any field values originating from the catalog that are absent from the override", async () => {
     // TODO: Implement acceptance test for AC-14
-    // Given buildRateCard(catalog, override) where override is a defined TokenPricing distinct from the catalog, assert result.source === "config-override" and result.rates === override (strict reference equality / deep-equal to override), and no catalog fields absent from override appear in result.rates
+    // Given a Pricing catalog object and a TokenPricing override, buildRateCard(catalog, override) returns { source: "config-override" } and result.rates === override (same reference identity), and result.rates does not contain any field values originating from the catalog that are absent from the override
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-15: Given a catalog whose Pricing includes tier entries, buildRateCard(catalog, undefined) returns source === \"catalog-rates\" and result.rates contains tier data mapped to nax's TokenPricing field names (assert via deep-equality against the expected translated tier structure)", async () => {
+  test("AC-15: Given a Pricing catalog whose model entry contains tiered rates and override === undefined, buildRateCard returns { source: \"catalog-rates\" } and result.rates exposes the tier data under nax's TokenPricing field names (translated, not passed through under the catalog's raw tier keys)", async () => {
     // TODO: Implement acceptance test for AC-15
-    // Given a catalog whose Pricing includes tier entries, buildRateCard(catalog, undefined) returns source === "catalog-rates" and result.rates contains tier data mapped to nax's TokenPricing field names (assert via deep-equality against the expected translated tier structure)
+    // Given a Pricing catalog whose model entry contains tiered rates and override === undefined, buildRateCard returns { source: "catalog-rates" } and result.rates exposes the tier data under nax's TokenPricing field names (translated, not passed through under the catalog's raw tier keys)
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-16: Given a NativeAgentAdapter whose modelDef has no pricing override, calling adapter.complete() resolves to a CompleteResult with result.pricingSource === \"catalog-rates\"", async () => {
+  test("AC-16: Given a NativeAgentAdapter whose modelDef has no pricing override, calling complete() resolves to a CompleteResult object with pricingSource === \"catalog-rates\"", async () => {
     // TODO: Implement acceptance test for AC-16
-    // Given a NativeAgentAdapter whose modelDef has no pricing override, calling adapter.complete() resolves to a CompleteResult with result.pricingSource === "catalog-rates"
+    // Given a NativeAgentAdapter whose modelDef has no pricing override, calling complete() resolves to a CompleteResult object with pricingSource === "catalog-rates"
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-17: Given a NativeAgentAdapter whose modelDef has an explicit pricing override, calling adapter.complete() resolves to a CompleteResult with result.pricingSource === \"config-override\"", async () => {
+  test("AC-17: Given a NativeAgentAdapter whose modelDef has an explicit pricing override, calling complete() resolves to a CompleteResult object with pricingSource === \"config-override\"", async () => {
     // TODO: Implement acceptance test for AC-17
-    // Given a NativeAgentAdapter whose modelDef has an explicit pricing override, calling adapter.complete() resolves to a CompleteResult with result.pricingSource === "config-override"
+    // Given a NativeAgentAdapter whose modelDef has an explicit pricing override, calling complete() resolves to a CompleteResult object with pricingSource === "config-override"
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-18: Given a session whose modelDef has no pricing override, calling adapter.sendTurn() resolves to a TurnResult with result.pricingSource === \"catalog-rates\"", async () => {
+  test("AC-18: Given a session on NativeAgentAdapter whose modelDef has no pricing override, calling sendTurn() resolves to a TurnResult object with pricingSource === \"catalog-rates\"", async () => {
     // TODO: Implement acceptance test for AC-18
-    // Given a session whose modelDef has no pricing override, calling adapter.sendTurn() resolves to a TurnResult with result.pricingSource === "catalog-rates"
+    // Given a session on NativeAgentAdapter whose modelDef has no pricing override, calling sendTurn() resolves to a TurnResult object with pricingSource === "catalog-rates"
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-19: Given a dispatch event bus with attachCostSubscriber attached, emit a buildCompleteEvent containing token usage, no exactCostUsd, and pricingSource: \"catalog-rates\"; after the subscriber processes the event, the recorded cost row has pricingSource === \"catalog-rates\" (asserted via the recorded CostEvent).", async () => {
+  test("AC-19: Given attachCostSubscriber is attached to a dispatch event bus, emit a buildCompleteEvent with token usage (e.g. inputTokens/outputTokens > 0), no exactCostUsd, and pricingSource: 'catalog-rates'. The recorded CostEvent row has pricingSource === 'catalog-rates' (the event-carried value is used as-is, not re-derived via resolvePricingSource).", async () => {
     // TODO: Implement acceptance test for AC-19
-    // Given a dispatch event bus with attachCostSubscriber attached, emit a buildCompleteEvent containing token usage, no exactCostUsd, and pricingSource: "catalog-rates"; after the subscriber processes the event, the recorded cost row has pricingSource === "catalog-rates" (asserted via the recorded CostEvent).
+    // Given attachCostSubscriber is attached to a dispatch event bus, emit a buildCompleteEvent with token usage (e.g. inputTokens/outputTokens > 0), no exactCostUsd, and pricingSource: 'catalog-rates'. The recorded CostEvent row has pricingSource === 'catalog-rates' (the event-carried value is used as-is, not re-derived via resolvePricingSource).
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-20: Given a dispatch event bus with the cost subscriber attached, emit a complete event containing token usage, no exactCostUsd, and pricingSource: \"config-override\"; the recorded cost row has pricingSource === \"config-override\".", async () => {
+  test("AC-20: Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, no exactCostUsd, and pricingSource: 'config-override'. The recorded CostEvent row has pricingSource === 'config-override'.", async () => {
     // TODO: Implement acceptance test for AC-20
-    // Given a dispatch event bus with the cost subscriber attached, emit a complete event containing token usage, no exactCostUsd, and pricingSource: "config-override"; the recorded cost row has pricingSource === "config-override".
+    // Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, no exactCostUsd, and pricingSource: 'config-override'. The recorded CostEvent row has pricingSource === 'config-override'.
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-21: Given a dispatch event bus with the cost subscriber attached, emit a complete event containing token usage, model set to a model id present in MODEL_PRICING (e.g. a known model), no exactCostUsd, and pricingSource undefined; the recorded cost row has pricingSource === resolvePricingSource(model), i.e. \"model-rates\". Repeat with a model absent from MODEL_PRICING and assert the recorded row's pricingSource === resolvePricingSource(model) === \"fallback-rates\".", async () => {
+  test("AC-21: Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, no exactCostUsd, and pricingSource undefined. The recorded CostEvent row has pricingSource === resolvePricingSource(event.model) for the same model id (e.g. for a model in MODEL_PRICING, pricingSource === 'model-rates').", async () => {
     // TODO: Implement acceptance test for AC-21
-    // Given a dispatch event bus with the cost subscriber attached, emit a complete event containing token usage, model set to a model id present in MODEL_PRICING (e.g. a known model), no exactCostUsd, and pricingSource undefined; the recorded cost row has pricingSource === resolvePricingSource(model), i.e. "model-rates". Repeat with a model absent from MODEL_PRICING and assert the recorded row's pricingSource === resolvePricingSource(model) === "fallback-rates".
+    // Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, no exactCostUsd, and pricingSource undefined. The recorded CostEvent row has pricingSource === resolvePricingSource(event.model) for the same model id (e.g. for a model in MODEL_PRICING, pricingSource === 'model-rates').
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-22: Given a dispatch event bus with the cost subscriber attached, emit a complete event containing token usage, exactCostUsd set to a finite positive number (e.g. 0.05), and pricingSource: \"catalog-rates\"; the recorded cost row has pricingSource === \"wire\", confirming wire-exact cost takes precedence over the event-carried pricingSource.", async () => {
+  test("AC-22: Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, exactCostUsd set to a finite number (e.g. 0.05), and pricingSource: 'catalog-rates'. The recorded CostEvent row has pricingSource === 'wire', confirming the wire-exact branch takes precedence over the event-carried pricingSource.", async () => {
     // TODO: Implement acceptance test for AC-22
-    // Given a dispatch event bus with the cost subscriber attached, emit a complete event containing token usage, exactCostUsd set to a finite positive number (e.g. 0.05), and pricingSource: "catalog-rates"; the recorded cost row has pricingSource === "wire", confirming wire-exact cost takes precedence over the event-carried pricingSource.
+    // Given attachCostSubscriber is attached to a dispatch event bus, emit a complete event with token usage, exactCostUsd set to a finite number (e.g. 0.05), and pricingSource: 'catalog-rates'. The recorded CostEvent row has pricingSource === 'wire', confirming the wire-exact branch takes precedence over the event-carried pricingSource.
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-23: Calling resolvePricingSource(\"nonexistent-model-xyz\") returns \"fallback-rates\", and calling resolvePricingSource with a model id that exists in MODEL_PRICING returns \"model-rates\". Both call sites typecheck against the widened return union (\"model-rates\" | \"fallback-rates\" | \"unknown-model\" | \"catalog-rates\" | \"config-override\") under tsc.", async () => {
+  test("AC-23: Call resolvePricingSource(undefined) or resolvePricingSource with a model id not present in MODEL_PRICING; the return value is 'fallback-rates'. Call resolvePricingSource with a model id present in MODEL_PRICING; the return value is 'model-rates'. Neither call throws and both return types satisfy the widened union.", async () => {
     // TODO: Implement acceptance test for AC-23
-    // Calling resolvePricingSource("nonexistent-model-xyz") returns "fallback-rates", and calling resolvePricingSource with a model id that exists in MODEL_PRICING returns "model-rates". Both call sites typecheck against the widened return union ("model-rates" | "fallback-rates" | "unknown-model" | "catalog-rates" | "config-override") under tsc.
+    // Call resolvePricingSource(undefined) or resolvePricingSource with a model id not present in MODEL_PRICING; the return value is 'fallback-rates'. Call resolvePricingSource with a model id present in MODEL_PRICING; the return value is 'model-rates'. Neither call throws and both return types satisfy the widened union.
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-24: Construct a CostEvent object literal with pricingSource: \"catalog-rates\" and submit it through the cost aggregator; the aggregator accepts it without type error (tsc typecheck passes against the CostEvent union \"wire\" | \"model-rates\" | \"fallback-rates\" | \"unknown-model\" | \"catalog-rates\" | \"config-override\") and the corresponding recorded row's pricingSource reads back === \"catalog-rates\".", async () => {
+  test("AC-24: Construct a CostEvent with pricingSource: 'catalog-rates' (typechecks against the widened inline union in src/runtime/cost-aggregator.ts without a cast) and pass it through the cost aggregator's recording path; the recorded row's pricingSource === 'catalog-rates' when read back.", async () => {
     // TODO: Implement acceptance test for AC-24
-    // Construct a CostEvent object literal with pricingSource: "catalog-rates" and submit it through the cost aggregator; the aggregator accepts it without type error (tsc typecheck passes against the CostEvent union "wire" | "model-rates" | "fallback-rates" | "unknown-model" | "catalog-rates" | "config-override") and the corresponding recorded row's pricingSource reads back === "catalog-rates".
+    // Construct a CostEvent with pricingSource: 'catalog-rates' (typechecks against the widened inline union in src/runtime/cost-aggregator.ts without a cast) and pass it through the cost aggregator's recording path; the recorded row's pricingSource === 'catalog-rates' when read back.
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-25: Calling buildSessionTurnEvent with a TurnResult having pricingSource: \"catalog-rates\" returns a DispatchEventBase-typed event where event.pricingSource === \"catalog-rates\"; calling it with a TurnResult having no pricingSource returns an event whose pricingSource is undefined (property absent or undefined).", async () => {
+  test("AC-25: Call buildSessionTurnEvent with a TurnResult carrying token usage and pricingSource: 'catalog-rates'. The returned session-turn dispatch event has pricingSource === 'catalog-rates' (the readonly pricingSource field on DispatchEventBase is populated from the TurnResult).", async () => {
     // TODO: Implement acceptance test for AC-25
-    // Calling buildSessionTurnEvent with a TurnResult having pricingSource: "catalog-rates" returns a DispatchEventBase-typed event where event.pricingSource === "catalog-rates"; calling it with a TurnResult having no pricingSource returns an event whose pricingSource is undefined (property absent or undefined).
+    // Call buildSessionTurnEvent with a TurnResult carrying token usage and pricingSource: 'catalog-rates'. The returned session-turn dispatch event has pricingSource === 'catalog-rates' (the readonly pricingSource field on DispatchEventBase is populated from the TurnResult).
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-26: Given a file tree containing no literal occurrence of 'export.*divide', when grepTool.run is called with pattern 'export.*divide', the result's content starts with/contains 'no matches for \"export.*divide\"' and additionally contains a clause stating the search was performed literally and that regex metacharacters were not interpreted; result.isError is undefined", async () => {
+  test("AC-26: Given a test tree containing no literal occurrence of 'export.*divide', when grepTool.run is called with pattern 'export.*divide', the returned result.content matches the form 'no matches for \"export.*divide\"' followed by a clause containing the phrases 'literally' and a statement that regex metacharacters are not interpreted (e.g. content.includes('no matches for \"export.*divide\"') === true, content.toLowerCase().includes('literally') === true, and content mentions that regex metacharacters are not interpreted).", async () => {
     // TODO: Implement acceptance test for AC-26
-    // Given a file tree containing no literal occurrence of 'export.*divide', when grepTool.run is called with pattern 'export.*divide', the result's content starts with/contains 'no matches for "export.*divide"' and additionally contains a clause stating the search was performed literally and that regex metacharacters were not interpreted; result.isError is undefined
+    // Given a test tree containing no literal occurrence of 'export.*divide', when grepTool.run is called with pattern 'export.*divide', the returned result.content matches the form 'no matches for "export.*divide"' followed by a clause containing the phrases 'literally' and a statement that regex metacharacters are not interpreted (e.g. content.includes('no matches for "export.*divide"') === true, content.toLowerCase().includes('literally') === true, and content mentions that regex metacharacters are not interpreted).
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-27: Given a file tree containing no occurrence of 'divide', when grepTool.run is called with pattern 'divide', the result's content equals 'no matches for \"divide\"' (no appended clause); the content does not contain the substrings 'literally' or 'regex'; result.isError is undefined", async () => {
+  test("AC-27: Given a test tree with no occurrence of 'divide', when grepTool.run is called with pattern 'divide' (no regex metacharacters), the returned result.content equals/includes 'no matches for \"divide\"' and does not contain the substring 'regex' (content.includes('no matches for \"divide\"') === true && content.toLowerCase().includes('regex') === false).", async () => {
     // TODO: Implement acceptance test for AC-27
-    // Given a file tree containing no occurrence of 'divide', when grepTool.run is called with pattern 'divide', the result's content equals 'no matches for "divide"' (no appended clause); the content does not contain the substrings 'literally' or 'regex'; result.isError is undefined
+    // Given a test tree with no occurrence of 'divide', when grepTool.run is called with pattern 'divide' (no regex metacharacters), the returned result.content equals/includes 'no matches for "divide"' and does not contain the substring 'regex' (content.includes('no matches for "divide"') === true && content.toLowerCase().includes('regex') === false).
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-28: Given a zero-match search with a pattern containing at least one regex metacharacter (e.g. 'export.*divide'), the returned result object has isError === undefined (property unset, not false and not an error object)", async () => {
+  test("AC-28: When grepTool.run is called with a pattern containing at least one regex metacharacter (e.g. 'export.*divide') against a tree with zero matches, the returned result has isError undefined/unset ('isError' in result === false or result.isError === undefined).", async () => {
     // TODO: Implement acceptance test for AC-28
-    // Given a zero-match search with a pattern containing at least one regex metacharacter (e.g. 'export.*divide'), the returned result object has isError === undefined (property unset, not false and not an error object)
+    // When grepTool.run is called with a pattern containing at least one regex metacharacter (e.g. 'export.*divide') against a tree with zero matches, the returned result has isError undefined/unset ('isError' in result === false or result.isError === undefined).
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-29: Given a file tree where a file contains a literal match for a metacharacter-containing pattern (e.g. 'foo.ts' present and pattern 'foo.ts'), when grepTool.run is called with that pattern, the result's content includes the matching row (file path and matched line) and does not contain the substrings 'literally' or 'regex'; result.isError is undefined", async () => {
+  test("AC-29: Given a test tree containing at least one file with content matching a pattern's literal string (e.g. a file containing 'export function divide()'), when grepTool.run is called with a metacharacter-containing pattern (e.g. 'export.*divide'), the returned result.content includes the matching file path and matched line, and does not contain a 'searched literally' / regex-metacharacter disclosure clause (content.toLowerCase().includes('regex') === false and content does not include 'no matches for').", async () => {
     // TODO: Implement acceptance test for AC-29
-    // Given a file tree where a file contains a literal match for a metacharacter-containing pattern (e.g. 'foo.ts' present and pattern 'foo.ts'), when grepTool.run is called with that pattern, the result's content includes the matching row (file path and matched line) and does not contain the substrings 'literally' or 'regex'; result.isError is undefined
+    // Given a test tree containing at least one file with content matching a pattern's literal string (e.g. a file containing 'export function divide()'), when grepTool.run is called with a metacharacter-containing pattern (e.g. 'export.*divide'), the returned result.content includes the matching file path and matched line, and does not contain a 'searched literally' / regex-metacharacter disclosure clause (content.toLowerCase().includes('regex') === false and content does not include 'no matches for').
     expect(true).toBe(false); // Replace with actual test
   });
 
-  test("AC-30: Given an environment where neither the 'rg' nor 'grep' binary resolves (e.g. PATH stripped or binary lookups stubbed to return null), when grepTool.run is called, the returned result has isError set (truthy) and content describing the missing tool; this behavior is asserted unchanged regardless of whether the pattern contains regex metacharacters", async () => {
+  test("AC-30: Given an environment where the rg and grep executables are not resolvable (e.g. PATH stubbed/emptied so spawn fails with ENOENT), when grepTool.run is called with any pattern, the returned result has isError === true and the behavior is identical to pre-change behavior (error result unchanged by the metacharacter disclosure logic).", async () => {
     // TODO: Implement acceptance test for AC-30
-    // Given an environment where neither the 'rg' nor 'grep' binary resolves (e.g. PATH stripped or binary lookups stubbed to return null), when grepTool.run is called, the returned result has isError set (truthy) and content describing the missing tool; this behavior is asserted unchanged regardless of whether the pattern contains regex metacharacters
+    // Given an environment where the rg and grep executables are not resolvable (e.g. PATH stubbed/emptied so spawn fails with ENOENT), when grepTool.run is called with any pattern, the returned result has isError === true and the behavior is identical to pre-change behavior (error result unchanged by the metacharacter disclosure logic).
     expect(true).toBe(false); // Replace with actual test
   });
 });
