@@ -167,6 +167,19 @@ describe("semanticReviewOp.parse()", () => {
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBeUndefined();
   });
+  test("preserves a valid reprompt telemetry marker", () => {
+    const ctx = makeBuildCtx();
+    const result = semanticReviewOp.parse(
+      JSON.stringify({
+        passed: true,
+        findings: [],
+        _repromptInfo: { dropCount: 2, outcome: "recovered-advisory-only", costUsd: 0.03 },
+      }),
+      SAMPLE_INPUT,
+      ctx,
+    );
+    expect(result.repromptEvent).toEqual({ dropCount: 2, outcome: "recovered-advisory-only", costUsd: 0.03 });
+  });
   test("parse() returns normalizedFindings:[] — advisory split moved to verify()", () => {
     // parse() is no longer responsible for the advisory split or source-tagging.
     // Those responsibilities moved to verify(), which runs the full filter pipeline

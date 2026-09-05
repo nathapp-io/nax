@@ -6,6 +6,9 @@
 
 import type { ConfiguredModel } from "@/config/schema-types";
 
+/** Default stage timeout, matching DebateConfigSchema. */
+export const DEFAULT_DEBATE_TIMEOUT_SECONDS = 600;
+
 /** How the resolver determines the outcome of a debate round */
 export type ResolverType = "synthesis" | "majority-fail-closed" | "majority-fail-open" | "custom";
 

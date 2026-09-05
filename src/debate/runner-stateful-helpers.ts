@@ -29,6 +29,7 @@ export interface ProposalBarrierState {
 
 export interface StatefulCoordinatorCtx {
   readonly storyId: string;
+  readonly timeoutSeconds?: number;
   readonly stage: string;
   readonly workdir: string;
   readonly featureName: string;
@@ -177,6 +178,7 @@ export async function runZeroSuccessFallback(
       proposalBarriers: [barrierState.barrier],
       signal,
       storyId: ctx.storyId,
+      timeoutSeconds: ctx.timeoutSeconds,
       skipRebuttal: true,
     } satisfies DebateStatefulInput);
 

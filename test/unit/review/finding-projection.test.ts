@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { llmFindingToReviewFinding, toAdversarialReviewFindings } from "@/review";
+import type { Finding } from "@/findings";
+import {
+  findingsToReviewFindings,
+  findingToReviewFinding,
+  llmFindingToReviewFinding,
+  toAdversarialReviewFindings,
+} from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 // LLMFinding / AdversarialLLMFinding are import-type only (erased at compile
 // time) so leaf-path imports here do not cause singleton fragmentation.
@@ -200,6 +206,44 @@ describe("llmFindingToReviewFinding", () => {
     const slug = rf.ruleId.split(":")[1] ?? "";
     expect(slug).toBe("a-b-c-d-e-f");
     expect(slug.split("-").length).toBe(6);
+  });
+});
+
+describe("findingToReviewFinding", () => {
+  test("preserves canonical fields and merges audit metadata", () => {
+    const finding: Finding = {
+      source: "semantic-review",
+      severity: "unverifiable",
+      category: "evidence",
+      file: "src/auth.ts",
+      line: 12,
+      message: "Could not verify the claim",
+      suggestion: "Quote the current source",
+      meta: { acId: "AC-1" },
+    };
+    expect(findingToReviewFinding(finding)).toEqual({
+      ruleId: "evidence:could-not-verify-the-claim",
+      severity: "info",
+      category: "evidence",
+      source: "semantic-review",
+      file: "src/auth.ts",
+      line: 12,
+      message: "Could not verify the claim",
+      meta: { acId: "AC-1", suggestion: "Quote the current source", originalSeverity: "unverifiable" },
+    });
+  });
+
+  test("uses explicit rules and source overrides for every projected finding", () => {
+    const finding: Finding = {
+      source: "semantic-review",
+      severity: "warning",
+      category: "test-gap",
+      message: "Missing test",
+      rule: "test-coverage",
+    };
+    expect(findingsToReviewFindings([finding], { source: "review-audit" })).toEqual([
+      expect.objectContaining({ ruleId: "test-coverage", source: "review-audit", file: "", line: 0 }),
+    ]);
   });
 });
 

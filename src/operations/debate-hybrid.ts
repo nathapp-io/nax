@@ -2,7 +2,7 @@ import type { TurnResult } from "../agents/types";
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import { _debateSessionDeps } from "../debate/session-helpers";
-import type { Debater } from "../debate/types";
+import { DEFAULT_DEBATE_TIMEOUT_SECONDS, type Debater } from "../debate/types";
 import { type DebateTurnSemaphore, raceAgainstAbort } from "../debate/utils";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
@@ -17,6 +17,8 @@ export interface DebateHybridInput {
   readonly signal: AbortSignal;
   readonly storyId: string;
   readonly rounds: number;
+  /** Resolved timeout of the active debate stage. */
+  readonly timeoutSeconds?: number;
   readonly turnSemaphore?: DebateTurnSemaphore;
 }
 
@@ -32,7 +34,7 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
   session: { role: "debate-hybrid" satisfies SessionRole, lifetime: "fresh" },
   config: debateConfigSelector,
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
-  timeoutMs: () => 600 * 1000,
+  timeoutMs: (input) => (input.timeoutSeconds ?? DEFAULT_DEBATE_TIMEOUT_SECONDS) * 1_000,
   async hopBody(initialPrompt, ctx) {
     const logger = _debateSessionDeps.getSafeLogger();
     let totalCostUsd = 0;

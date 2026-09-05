@@ -12,7 +12,7 @@
 
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
-import type { Debater, Proposal } from "../debate/types";
+import { DEFAULT_DEBATE_TIMEOUT_SECONDS, type Debater, type Proposal } from "../debate/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 
@@ -27,6 +27,8 @@ export interface DebateRebutInput {
   readonly proposals: Proposal[];
   /** Debaters participating in this debate (with personas already resolved). */
   readonly debaters: Debater[];
+  /** Resolved timeout of the active debate stage. */
+  readonly timeoutSeconds?: number;
 }
 
 /**
@@ -49,7 +51,7 @@ export const debateRebutOp: CompleteOperation<DebateRebutInput, string, DebateCo
     if (!debater) return "fast";
     return { agent: debater.agent, model: debater.model ?? "fast" };
   },
-  timeoutMs: () => 600 * 1000,
+  timeoutMs: (input) => (input.timeoutSeconds ?? DEFAULT_DEBATE_TIMEOUT_SECONDS) * 1_000,
   build(input, _ctx) {
     const builder = new DebatePromptBuilder(
       { taskContext: input.taskContext, outputFormat: "", stage: input.stage },
