@@ -122,6 +122,99 @@ describe("NativeAgentAdapter.complete", () => {
     expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
     expect(result.output).toBe("");
   });
+
+  // US-002 AC7: the CompleteResult returned by the native adapter's
+  // sessionless complete() path must echo back the same session id it sent
+  // to the nax-ai client, so downstream wiring (audit, dispatch) can stamp
+  // the id on artifacts without having to reach into a private field.
+  test("US-002 AC7: complete() returns a sessionId equal to the one sent to nax-ai", async () => {
+    let seenSessionId: string | undefined;
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async (_m: ResolvedModel, callOpts: { sessionId?: string }) => {
+          seenSessionId = callOpts.sessionId;
+          return { text: "ok", usage: { inputTokens: 1, outputTokens: 0 }, stopReason: "stop" };
+        },
+      });
+
+    const result = await new NativeAgentAdapter().complete("hi", options());
+
+    expect(typeof seenSessionId).toBe("string");
+    expect(seenSessionId?.length).toBeGreaterThan(0);
+    expect(result.sessionId).toBe(seenSessionId);
+  });
+
+  // US-002 AC8: two successive complete() calls on one adapter instance share
+  // the same session id — the whole point of the one-shot key is to keep the
+  // provider's prompt cache warm across a run's one-shots.
+  test("US-002 AC8: successive complete() calls on one adapter return the same non-empty sessionId", async () => {
+    const seen: string[] = [];
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async (_m: ResolvedModel, callOpts: { sessionId?: string }) => {
+          if (callOpts.sessionId !== undefined) seen.push(callOpts.sessionId);
+          return { text: "ok", usage: { inputTokens: 1, outputTokens: 0 }, stopReason: "stop" };
+        },
+      });
+
+    const adapter = new NativeAgentAdapter();
+    const r1 = await adapter.complete("one", options());
+    const r2 = await adapter.complete("two", options());
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(seen[1]);
+    expect(r1.sessionId).toBeDefined();
+    expect(r1.sessionId).toBe(r2.sessionId);
+  });
+
+  // US-003 AC4: when modelDef has no pricing override, the cost was computed
+  // from nax-ai's catalog rates, so pricingSource must say so. Operators
+  // filter cost rows by this field (#1817).
+  test("US-003 AC4: complete() with no modelDef.pricing stamps pricingSource=catalog-rates", async () => {
+    _clientDeps.build = async () => fakeClient();
+    const result = await new NativeAgentAdapter().complete("hi", options());
+    expect(result.pricingSource).toBe("catalog-rates");
+  });
+
+  // US-003 AC5: when modelDef carries an explicit pricing override, that
+  // override wins wholesale and pricingSource must say so. Same field, the
+  // override branch — this is the discriminator the cost row records.
+  test("US-003 AC5: complete() with an explicit modelDef.pricing override stamps pricingSource=config-override", async () => {
+    _clientDeps.build = async () => fakeClient();
+    const opts = options();
+    opts.modelDef = {
+      provider: "unknown",
+      model: "openai/gpt-5.4-mini",
+      pricing: { inputPer1M: 99, outputPer1M: 199 },
+    };
+    const result = await new NativeAgentAdapter().complete("hi", opts);
+    expect(result.pricingSource).toBe("config-override");
+  });
+});
+
+// US-003 AC6: sendTurn() stamps pricingSource on TurnResult the same way
+// complete() stamps it on CompleteResult. Asserted on the result, not on
+// buildRateCard — the wiring through runNativeTurn is the part that's new.
+describe("NativeAgentAdapter.sendTurn pricingSource", () => {
+  test("US-003 AC6: sendTurn() with no modelDef.pricing stamps pricingSource=catalog-rates on TurnResult", async () => {
+    _clientDeps.build = async () => fakeClient();
+    const adapter = new NativeAgentAdapter();
+    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-pricing-source-"));
+    const handle = await adapter.openSession("sess-pricing-source", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir,
+    });
+
+    const result = await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+
+    expect(result.pricingSource).toBe("catalog-rates");
+  });
 });
 
 // nax#1838/#1840 sendTurn failure classification and cost-accounting tests

@@ -89,6 +89,13 @@ export function buildSessionTurnEvent(input: {
     exactCostUsd: result.exactCostUsd,
     durationMs: Date.now() - startedAt,
     timestamp: Date.now(),
+    // US-004: native adapter (US-003) stamps the rate card it priced the turn
+    // on onto TurnResult.pricingSource; forward it onto the dispatch event
+    // so the cost subscriber can prefer the producer's answer over the
+    // model-derived default. ACP sets nothing here, so the field stays
+    // absent (not undefined) and the subscriber falls back to
+    // resolvePricingSource(model) — preserving pre-US-004 behaviour exactly.
+    ...(result.pricingSource !== undefined ? { pricingSource: result.pricingSource } : {}),
     // `internalRoundTrips` counts a complete delegated agent run on ACP and a
     // single model call on native — nax owns the conversation loop there. The
     // unit travels with the number so nothing downstream has to infer it from
@@ -121,6 +128,24 @@ export function buildCompleteEvent(input: {
   /** Resolved profile-chain display string from config; "default" when none. */
   profile?: string;
   startedAt: number;
+  /**
+   * Backend session id the adapter reported on its `CompleteResult`. US-002:
+   * passed through unchanged; the audit subscriber reads it to stamp the
+   * prompt-audit record. One-shots have no record id or turn id, so the
+   * session id travels as a plain field rather than inside `protocolIds`.
+   */
+  sessionId?: string;
+  /**
+   * Which rate card priced the call, reported by the producer on
+   * `CompleteResult.pricingSource` (US-003). US-004 forwards it onto the
+   * dispatch event so the cost subscriber can prefer the producer's answer
+   * over the model-derived default. ACP sets nothing here, so the field
+   * stays absent (not undefined) and the subscriber falls back to
+   * `resolvePricingSource(event.model)`. Omitted (not undefined) on purpose
+   * — same omission-not-undefined discipline as the other optional fields
+   * on this event.
+   */
+  pricingSource?: "catalog-rates" | "config-override";
 }): CompleteDispatchEvent {
   const { options } = input;
   return {
@@ -142,6 +167,8 @@ export function buildCompleteEvent(input: {
     exactCostUsd: input.exactCostUsd,
     durationMs: Date.now() - input.startedAt,
     timestamp: Date.now(),
+    ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+    ...(input.pricingSource !== undefined ? { pricingSource: input.pricingSource } : {}),
     ...(options.callId !== undefined ? { callId: options.callId } : {}),
     ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
   };

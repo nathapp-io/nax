@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-09-05T15-03-19-462Z",
+    "feature": "audit-cost-and-grep-fidelity",
+    "startedAt": "2026-09-05T15:03:19.462Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 64496
+  },
+  "progress": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 1.5608996295200004,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 0,
+  "updatedAt": "2026-09-05T15:28:07.040Z",
+  "durationMs": 1487578,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-09-05T15:27:12.017Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-09-05T15:28:05.782Z"
+    }
+  }
+}

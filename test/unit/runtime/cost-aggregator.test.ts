@@ -515,4 +515,46 @@ describe("CostAggregator", () => {
       expect(row.pricingSource).toBe("model-rates");
     });
   });
+
+  // US-004 AC6: the CostEvent union must admit the producer-supplied values
+  // `catalog-rates` and `config-override` (the same widening `resolvePricingSource`
+  // gets). Without it, a row produced by the native adapter would not even
+  // type-check into `record()` — the seam the cost subscriber calls.
+  test("US-004 AC6: aggregator accepts CostEvent carrying pricingSource catalog-rates and reads it back", async () => {
+    await withTempDir(async (dir) => {
+      const drainDir = join(dir, "cost");
+      const drainAgg = new CostAggregator("r-006", drainDir);
+      let captured = "";
+      const origWrite = _costAggDeps.write;
+      _costAggDeps.write = async (_p, data) => {
+        captured = String(data);
+        return 0;
+      };
+      drainAgg.record(makeEvent({ pricingSource: "catalog-rates" }));
+      await drainAgg.drain();
+      _costAggDeps.write = origWrite;
+
+      const row = JSON.parse(captured.trim());
+      expect(row.pricingSource).toBe("catalog-rates");
+    });
+  });
+
+  test("US-004 AC6: aggregator accepts CostEvent carrying pricingSource config-override", async () => {
+    await withTempDir(async (dir) => {
+      const drainDir = join(dir, "cost");
+      const drainAgg = new CostAggregator("r-006", drainDir);
+      let captured = "";
+      const origWrite = _costAggDeps.write;
+      _costAggDeps.write = async (_p, data) => {
+        captured = String(data);
+        return 0;
+      };
+      drainAgg.record(makeEvent({ pricingSource: "config-override" }));
+      await drainAgg.drain();
+      _costAggDeps.write = origWrite;
+
+      const row = JSON.parse(captured.trim());
+      expect(row.pricingSource).toBe("config-override");
+    });
+  });
 });

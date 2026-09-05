@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _grepDeps, buildGrepArgv, DEFAULT_TOOL_MAX_FILE_BYTES, grepTool } from "@/tools";
@@ -80,5 +80,51 @@ describe("grepTool", () => {
 
   test("declares the path field, so it is gated through the policy containment seam", () => {
     expect(grepTool.scope.pathFields).toEqual(["path"]);
+  });
+
+  test("AC1: zero-match with regex metacharacter pattern discloses literal search", async () => {
+    // Pattern "export.*divide" contains metacharacters (. *), no literal occurrence exists
+    const res = await grepTool.run({ pattern: "export.*divide" }, ctx());
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toContain("no matches for");
+    expect(res.content).toContain("export.*divide");
+    expect(res.content).toContain("literally");
+    expect(res.content).toContain("regex metacharacters");
+    expect(res.content).toContain("not interpreted");
+  });
+
+  test("AC2: zero-match without regex metacharacters does not mention metacharacters", async () => {
+    const res = await grepTool.run({ pattern: "zzz-nothing-zzz" }, ctx());
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toContain("no matches for");
+    expect(res.content).toContain("zzz-nothing-zzz");
+    expect(res.content).not.toContain("regex metacharacters");
+    expect(res.content).not.toContain("not interpreted");
+  });
+
+  test("AC3: zero-match with metacharacters has no isError set", async () => {
+    const res = await grepTool.run({ pattern: "export.*divide" }, ctx());
+    expect(res.isError).toBeFalsy();
+  });
+
+  test("AC4: match with regex metacharacter pattern does not mention metacharacters", async () => {
+    // Create a file with content that matches literally (not as regex)
+    const cPath = join(root, "src", "c.ts");
+    writeFileSync(cPath, "export.*divide literally in the file\n");
+    try {
+      const res = await grepTool.run({ pattern: "export.*divide" }, ctx());
+      expect(res.isError).toBeFalsy();
+      expect(res.content).toContain("c.ts");
+      expect(res.content).not.toContain("regex metacharacters");
+    } finally {
+      unlinkSync(cPath);
+    }
+  });
+
+  test("AC5: error when neither binary is available is unchanged", async () => {
+    _grepDeps.which = () => null;
+    const res = await grepTool.run({ pattern: "needle" }, ctx());
+    expect(res.isError).toBe(true);
+    expect(res.content).toMatch(/ripgrep|grep/i);
   });
 });

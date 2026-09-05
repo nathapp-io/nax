@@ -275,6 +275,19 @@ describe("MODEL_PRICING — rate card currency (BUG-15)", () => {
     expect(estimateCostFromTokenUsage(usage, "no-such-model")).toBeCloseTo(18, 6);
   });
 
+  // US-004 AC5: resolvePricingSource must continue to report `model-rates` for a
+  // model that's in MODEL_PRICING and `fallback-rates` for one that isn't —
+  // even after its return union widens to admit the producer-supplied values
+  // (catalog-rates, config-override). The widening is purely additive on the
+  // return-type axis; the predicate the function re-states must not change.
+  test("US-004 AC5: a model present in MODEL_PRICING still resolves to model-rates", () => {
+    expect(resolvePricingSource("haiku")).toBe("model-rates");
+  });
+
+  test("US-004 AC5: a model absent from MODEL_PRICING still resolves to fallback-rates", () => {
+    expect(resolvePricingSource("totally-unknown-model")).toBe("fallback-rates");
+  });
+
   test("gemini-2.5-pro is priced at its real rate, not the 16x-low stale one", () => {
     const usage: TokenUsage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
     expect(estimateCostFromTokenUsage(usage, "gemini-2.5-pro")).toBeCloseTo(11.25, 6);

@@ -205,25 +205,37 @@ export function estimateCostUsd(usage: TokenUsage, rates: TokenPricing): number 
  * `estimateCostUsd`'s own `?? inputPer1M` fallback for cache classes, but
  * catalog values are never merged into an override -- that would silently
  * rewrite rates the user configured on purpose.
+ *
+ * US-003 (#1817): reports which branch it took alongside the card, so the
+ * adapter can stamp `pricingSource` on the result without re-deriving it
+ * from `MODEL_PRICING[bareModel]` (which the catalog was chosen to avoid
+ * maintaining). The card is the rate object; the source is the answer to
+ * "which one did we use".
  */
-export function buildRateCard(catalog: Pricing, override: TokenPricing | undefined): TokenPricing {
-  if (override !== undefined) return override;
+export function buildRateCard(
+  catalog: Pricing,
+  override: TokenPricing | undefined,
+): { rates: TokenPricing; source: "config-override" | "catalog-rates" } {
+  if (override !== undefined) return { rates: override, source: "config-override" };
   return {
-    inputPer1M: catalog.input,
-    outputPer1M: catalog.output,
-    cacheReadPer1M: catalog.cacheRead,
-    cacheCreationPer1M: catalog.cacheWrite,
-    ...(catalog.tiers !== undefined
-      ? {
-          tiers: catalog.tiers.map((tier) => ({
-            inputPer1M: tier.input,
-            outputPer1M: tier.output,
-            cacheReadPer1M: tier.cacheRead,
-            cacheCreationPer1M: tier.cacheWrite,
-            inputTokensAbove: tier.inputTokensAbove,
-          })),
-        }
-      : {}),
+    rates: {
+      inputPer1M: catalog.input,
+      outputPer1M: catalog.output,
+      cacheReadPer1M: catalog.cacheRead,
+      cacheCreationPer1M: catalog.cacheWrite,
+      ...(catalog.tiers !== undefined
+        ? {
+            tiers: catalog.tiers.map((tier) => ({
+              inputPer1M: tier.input,
+              outputPer1M: tier.output,
+              cacheReadPer1M: tier.cacheRead,
+              cacheCreationPer1M: tier.cacheWrite,
+              inputTokensAbove: tier.inputTokensAbove,
+            })),
+          }
+        : {}),
+    },
+    source: "catalog-rates",
   };
 }
 

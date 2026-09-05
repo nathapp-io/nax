@@ -151,9 +151,115 @@ describe("PromptAuditor", () => {
       );
       await aud.flush();
       expect(txtPaths).toHaveLength(1);
+      // US-002 AC1: a complete entry with a stage puts the stage into the
+      // suffix — timestamp, session name, stage, then `complete`.
       expect(txtPaths[0]).toBe(
-        join(flushDir, FEATURE, "1234567890000-nax-abc12345-my-feature-us-000-refine-complete.txt"),
+        join(flushDir, FEATURE, "1234567890000-nax-abc12345-my-feature-us-000-refine-acceptance-complete.txt"),
       );
+      _promptAuditorDeps.write = origWrite;
+      _promptAuditorDeps.appendLine = origAppend;
+    });
+  });
+
+  // US-002 AC1: a complete audit entry with a session name and a stage writes
+  // a file whose name ends with -<stage>-complete.txt.
+  test("US-002 AC1: complete entry with stage acceptance produces -acceptance-complete.txt suffix", async () => {
+    await withTempDir(async (dir) => {
+      const flushDir = join(dir, "audit");
+      const paths: string[] = [];
+      const origWrite = _promptAuditorDeps.write;
+      const origAppend = _promptAuditorDeps.appendLine;
+      _promptAuditorDeps.write = async (p: string) => {
+        paths.push(p);
+        return 0;
+      };
+      _promptAuditorDeps.appendLine = async () => {};
+      const aud = new PromptAuditor("r-002-ac1", flushDir, FEATURE);
+      aud.record(
+        makeEntry({
+          ts: 1234567890000,
+          callType: "complete",
+          stage: "acceptance",
+          sessionName: "nax-abc12345-my-feature-us-000-refine",
+        }),
+      );
+      await aud.flush();
+      expect(paths).toHaveLength(1);
+      expect(paths[0]).toEndWith("-acceptance-complete.txt");
+      _promptAuditorDeps.write = origWrite;
+      _promptAuditorDeps.appendLine = origAppend;
+    });
+  });
+
+  // US-002 AC2: a complete audit entry with a session name and NO stage writes
+  // a file whose name ends with -complete.txt, with no empty segment before
+  // that suffix. So no `-unknown-complete.txt` or similar fallback leakage.
+  test("US-002 AC2: complete entry without stage produces bare -complete.txt suffix", async () => {
+    await withTempDir(async (dir) => {
+      const flushDir = join(dir, "audit");
+      const paths: string[] = [];
+      const origWrite = _promptAuditorDeps.write;
+      const origAppend = _promptAuditorDeps.appendLine;
+      _promptAuditorDeps.write = async (p: string) => {
+        paths.push(p);
+        return 0;
+      };
+      _promptAuditorDeps.appendLine = async () => {};
+      const aud = new PromptAuditor("r-002-ac2", flushDir, FEATURE);
+      aud.record(
+        makeEntry({
+          ts: 1234567890000,
+          callType: "complete",
+          sessionName: "nax-abc12345-my-feature-us-002-naked",
+        }),
+      );
+      await aud.flush();
+      expect(paths).toHaveLength(1);
+      const name = paths[0];
+      expect(name).toBeDefined();
+      expect(name).toEndWith("-complete.txt");
+      // No empty segment before -complete.txt — i.e. there must not be a
+      // dangling "-.txt" or "-complete" left behind from a missing stage.
+      // Strip the timestamp+sessionName+stage path components and assert.
+      const basename = name?.split("/").pop();
+      expect(basename).toBeDefined();
+      const segments = basename?.split("-");
+      expect(segments).toBeDefined();
+      // last segment is "complete.txt", second-to-last is the bare "complete".
+      expect(segments?.[segments.length - 1]).toBe("complete.txt");
+      // The tail of segments must read "complete.txt" with no empty preceding
+      // segment — i.e. there must not be a segment whose value is "".
+      expect(segments?.every((s) => s.length > 0)).toBe(true);
+      _promptAuditorDeps.write = origWrite;
+      _promptAuditorDeps.appendLine = origAppend;
+    });
+  });
+
+  // US-002 AC3: a run audit entry with stage run and turn 1 still produces
+  // -run-t01.txt, preserving the existing run branch's suffix unchanged.
+  test("US-002 AC3: run entry with stage run and turn 1 still produces -run-t01.txt suffix", async () => {
+    await withTempDir(async (dir) => {
+      const flushDir = join(dir, "audit");
+      const paths: string[] = [];
+      const origWrite = _promptAuditorDeps.write;
+      const origAppend = _promptAuditorDeps.appendLine;
+      _promptAuditorDeps.write = async (p: string) => {
+        paths.push(p);
+        return 0;
+      };
+      _promptAuditorDeps.appendLine = async () => {};
+      const aud = new PromptAuditor("r-002-ac3", flushDir, FEATURE);
+      aud.record(
+        makeEntry({
+          ts: 1234567890000,
+          callType: "run",
+          stage: "run",
+          sessionName: "nax-abc12345-my-feature-us-002-implementer",
+        }),
+      );
+      await aud.flush();
+      expect(paths).toHaveLength(1);
+      expect(paths[0]).toEndWith("-run-t01.txt");
       _promptAuditorDeps.write = origWrite;
       _promptAuditorDeps.appendLine = origAppend;
     });

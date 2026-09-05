@@ -536,4 +536,95 @@ describe("attachCostSubscriber", () => {
     expect(recorded[0].schemaVersion).toBe(3);
     expect(COST_ROW_SCHEMA_VERSION).toBe(3);
   });
+
+  // ── US-004: producer-supplied pricingSource wins over the model-derived one ─
+  //
+  // The native adapter (US-003) stamps the rate card it actually used onto
+  // CompleteResult / TurnResult, and the manager propagates that onto the
+  // dispatch event. The cost subscriber must prefer the producer's report
+  // over `resolvePricingSource(model)` — exactly as it already prefers a
+  // wire-exact cost over an estimate on the same row. The ACP path supplies
+  // no value and stays unchanged.
+
+  test("US-004 AC1: producer-supplied catalog-rates survives to the recorded row", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    // A complete event whose token usage forces a recorded row, no wire cost
+    // (so the producer's pricingSource is consulted), and the producer's
+    // catalog-rates report on the event.
+    bus.emitDispatch(
+      makeCompleteEvent({
+        tokenUsage: { inputTokens: 100, outputTokens: 50 },
+        exactCostUsd: undefined,
+        pricingSource: "catalog-rates",
+      }),
+    );
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].pricingSource).toBe("catalog-rates");
+  });
+
+  test("US-004 AC2: producer-supplied config-override survives to the recorded row", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(
+      makeCompleteEvent({
+        tokenUsage: { inputTokens: 100, outputTokens: 50 },
+        exactCostUsd: undefined,
+        pricingSource: "config-override",
+      }),
+    );
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].pricingSource).toBe("config-override");
+  });
+
+  test("US-004 AC3: event without pricingSource falls back to resolvePricingSource(model)", () => {
+    // ACP path: the adapter never stamps a pricingSource, so the cost
+    // subscriber must fall back to deriving it from the model — preserving
+    // pre-US-004 behaviour exactly.
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(
+      makeSessionTurnEvent({
+        model: "haiku",
+        exactCostUsd: undefined,
+        estimatedCostUsd: 0.01,
+      }),
+    );
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].pricingSource).toBe("model-rates");
+  });
+
+  test("US-004 AC4: wire-exact cost still wins over producer-supplied pricingSource", () => {
+    // An exact wire cost outranks any estimated rate card — the producer's
+    // pricingSource is informative, but exactness is what cost-attribution
+    // decisions actually key on, so wire must continue to take precedence.
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(
+      makeCompleteEvent({
+        tokenUsage: { inputTokens: 100, outputTokens: 50 },
+        exactCostUsd: 0.007,
+        pricingSource: "catalog-rates",
+      }),
+    );
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].pricingSource).toBe("wire");
+    expect(recorded[0].confidence).toBe("exact");
+  });
 });

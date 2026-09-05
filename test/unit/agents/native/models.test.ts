@@ -232,10 +232,15 @@ describe("estimateCostUsd with pricing tiers", () => {
   });
 });
 
+// US-003: buildRateCard returns both the rate object AND the source discriminant
+// (config-override when an override was supplied, catalog-rates otherwise). The
+// adapter stamps the source on CompleteResult.pricingSource and TurnResult.pricingSource.
 describe("buildRateCard", () => {
-  test("carries the catalog's cache rates into the rate object instead of discarding them", () => {
+  test("US-003 AC1: catalog with no override returns catalog-rates source and the catalog's cache rates", () => {
     const catalog = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
-    expect(buildRateCard(catalog, undefined)).toEqual({
+    const { rates, source } = buildRateCard(catalog, undefined);
+    expect(source).toBe("catalog-rates");
+    expect(rates).toEqual({
       inputPer1M: 2,
       outputPer1M: 10,
       cacheReadPer1M: 0.2,
@@ -243,7 +248,16 @@ describe("buildRateCard", () => {
     });
   });
 
-  test("carries the catalog's tiers into the rate object, translated to nax's field names", () => {
+  test("US-003 AC2: explicit override returns config-override source and the override object wholesale", () => {
+    const catalog = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
+    const override: TokenPricing = { inputPer1M: 99, outputPer1M: 199 };
+    const { rates, source } = buildRateCard(catalog, override);
+    expect(source).toBe("config-override");
+    expect(rates).toBe(override);
+    expect(rates.cacheReadPer1M).toBeUndefined();
+  });
+
+  test("US-003 AC3: catalog with tiers returns catalog-rates source and tiers translated to nax's field names", () => {
     const catalog = {
       input: 2,
       output: 12,
@@ -251,18 +265,11 @@ describe("buildRateCard", () => {
       cacheWrite: 2.5,
       tiers: [{ inputTokensAbove: 272_000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5 }],
     };
-    const rates = buildRateCard(catalog, undefined);
+    const { rates, source } = buildRateCard(catalog, undefined);
+    expect(source).toBe("catalog-rates");
     expect(rates.tiers).toEqual([
       { inputPer1M: 4, outputPer1M: 18, cacheReadPer1M: 0.4, cacheCreationPer1M: 5, inputTokensAbove: 272_000 },
     ]);
-  });
-
-  test("an explicit modelDef.pricing override wins wholesale, not merged with the catalog", () => {
-    const catalog = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
-    const override: TokenPricing = { inputPer1M: 99, outputPer1M: 199 };
-    const rates = buildRateCard(catalog, override);
-    expect(rates).toBe(override);
-    expect(rates.cacheReadPer1M).toBeUndefined();
   });
 });
 

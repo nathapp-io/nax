@@ -388,6 +388,22 @@ export interface CompleteResult {
   estimatedCostUsd: number;
   /** Exact cost reported by wire protocol (when available). */
   exactCostUsd?: number;
+  /**
+   * Backend session id the adapter assigned for this one-shot call. Set when
+   * the transport has a session identity to report — nax-ai's native client
+   * does, the legacy acpx/Claude one-shots did not (US-002). Same shape as
+   * `AgentResult.protocolIds.sessionId` so audit middleware can stamp it
+   * without knowing which path produced it.
+   */
+  sessionId?: string;
+  /**
+   * Which rate card priced this call (US-003, first half of #1817).
+   * `"catalog-rates"` means nax-ai's catalog; `"config-override"` means an
+   * explicit `modelDef.pricing` won wholesale. Absent on adapters that do
+   * not split the decision this way (e.g. ACP, which prices through
+   * `MODEL_PRICING[bareModel]` and so leaves nothing for the result to say).
+   */
+  pricingSource?: "catalog-rates" | "config-override";
   /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */
   adapterFailure?: AdapterFailure;
   /**

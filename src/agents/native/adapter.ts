@@ -174,17 +174,18 @@ export class NativeAgentAdapter implements AgentAdapter {
     const timer = options.timeoutMs !== undefined ? setTimeout(() => controller.abort(), options.timeoutMs) : undefined;
 
     try {
+      const sessionId = nativeSessionId(this.oneShotKey);
       const result = await client.complete(resolved, {
         messages: [{ role: "user", content: prompt }],
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
-        sessionId: nativeSessionId(this.oneShotKey),
+        sessionId,
         signal: controller.signal,
         ...(thinking !== undefined ? { thinking } : {}),
       });
 
       const tokenUsage = toNaxTokenUsage(result.usage);
       const catalog = client.pricing(resolved);
-      const rates = buildRateCard(catalog, options.modelDef.pricing);
+      const { rates, source: pricingSource } = buildRateCard(catalog, options.modelDef.pricing);
 
       return {
         output: result.text,
@@ -192,6 +193,15 @@ export class NativeAgentAdapter implements AgentAdapter {
         estimatedCostUsd: estimateCostUsd(tokenUsage, rates),
         // exactCostUsd is deliberately unset: nax-ai supplies rates and
         // computes no cost, so nothing here is exact.
+        // sessionId echoes the one we sent — US-002 lets downstream wiring
+        // (audit, dispatch) stamp it on artifacts without reaching into a
+        // private field.
+        sessionId,
+        // US-003: stamp the branch buildRateCard took so cost rows can tell a
+        // catalog-priced call from a config-overridden one. Single source of
+        // truth — the same override !== undefined predicate the rate card was
+        // chosen on, reported rather than re-derived from MODEL_PRICING.
+        pricingSource,
       };
     } catch (err) {
       // Returned, not rethrown: rethrowing routes through
@@ -221,7 +231,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     const client = await getNativeClient();
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
-    const rates = buildRateCard(catalog, handle.modelDef?.pricing);
+    const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?.pricing);
     const storedTimeoutSeconds = nativeSessionTimeouts.get(handle.id);
     if (storedTimeoutSeconds === undefined) {
       getSafeLogger()?.warn("native-adapter", "session has no recorded timeout; falling back to the default budget", {
@@ -266,6 +276,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         ...(nativeSessionCompaction.get(handle.id) !== undefined
           ? { compaction: nativeSessionCompaction.get(handle.id) }
           : {}),
+        pricingSource,
         onActivity: (activity) => {
           hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));
         },

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readdirSync } from "node:fs";
 import path from "node:path";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, withTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG, globalConfigDir, NaxConfigSchema } from "@/config";
 import { createRuntime, type NaxRuntime } from "@/runtime";
 
@@ -113,6 +114,53 @@ describe("createRuntime", () => {
       durationMs: 100,
     });
     expect(rt.costAggregator.snapshot().callCount).toBe(1);
+  });
+
+  test("AC1: createRuntime with promptAudit.enabled=true and no options resolves to a runtime instead of throwing", () => {
+    const config = makeNaxConfig({ agent: { promptAudit: { enabled: true } } });
+    // Must not throw — should resolve to a runtime with a no-op auditor
+    expect(() => makeRuntime(config, "/tmp/test")).not.toThrow();
+  });
+
+  test("AC2: recording and flushing on that runtime writes no file to the audit dir", async () => {
+    await withTempDir(async (dir) => {
+      const config = makeNaxConfig({ agent: { promptAudit: { enabled: true, dir: path.join(dir, "audit") } } });
+      // No featureName — should degrade to no-op auditor
+      const rt = makeRuntime(config, dir);
+      rt.promptAuditor.record({
+        ts: Date.now(),
+        runId: rt.runId,
+        agentName: "claude",
+        permissionProfile: "approve-reads",
+        prompt: "hello",
+        response: "world",
+        durationMs: 50,
+      });
+      await rt.close();
+      // No files should exist under the audit dir at all
+      const auditDir = path.join(dir, "audit");
+      expect(() => readdirSync(auditDir)).toThrow();
+    });
+  });
+
+  test("AC3: createRuntime with featureName resolves to a runtime whose auditor writes to the audit dir after record+flush", async () => {
+    await withTempDir(async (dir) => {
+      const config = makeNaxConfig({ agent: { promptAudit: { enabled: true, dir: path.join(dir, "audit") } } });
+      const rt = makeRuntime(config, dir, { featureName: "demo" });
+      rt.promptAuditor.record({
+        ts: Date.now(),
+        runId: rt.runId,
+        agentName: "claude",
+        permissionProfile: "approve-reads",
+        prompt: "hello",
+        response: "world",
+        durationMs: 50,
+      });
+      await rt.close();
+      const featureDir = path.join(dir, "audit", "demo");
+      const files = readdirSync(featureDir);
+      expect(files.some((f) => f.endsWith(".jsonl"))).toBe(true);
+    });
   });
 
   test("promptAuditor is no-op when agent.promptAudit.enabled is false (default)", () => {
