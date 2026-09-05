@@ -191,6 +191,7 @@ export class DebateRunner {
             debaters: resolved.map((r) => r.debater),
             manifestSection: preDebateManifestSection,
             stageConfig: config,
+            timeoutSeconds: this.timeoutSeconds,
           }).then((output) => ({ debater, agentName, output, cost: 0 }) as SuccessfulProposal);
         }),
         concurrencyLimit,
@@ -251,6 +252,7 @@ export class DebateRunner {
               debaters: [fallbackDebater],
               manifestSection: preDebateManifestSection,
               stageConfig: config,
+              timeoutSeconds: this.timeoutSeconds,
             });
             logger?.info("debate", "debate:result", {
               storyId: this.ctx.storyId,
@@ -287,6 +289,7 @@ export class DebateRunner {
               debaterIndex: i,
               proposals,
               debaters: successful.map((s) => s.debater),
+              timeoutSeconds: this.timeoutSeconds,
             });
           }),
           concurrencyLimit,

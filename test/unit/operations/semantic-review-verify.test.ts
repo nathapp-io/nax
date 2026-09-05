@@ -12,6 +12,7 @@ import type { Iteration } from "@/findings";
 import type { SemanticReviewInput, SemanticReviewOutput } from "@/operations/semantic-review";
 import { semanticReviewOp } from "@/operations/semantic-review";
 import type { NaxRuntime } from "@/runtime";
+import type { ResolvedTestPatterns } from "@/test-runners";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -100,6 +101,39 @@ describe("semanticReviewOp.verify() — short-circuits (AC13)", () => {
 });
 
 describe("semanticReviewOp.verify() — acDropped (AC2/AC3)", () => {
+  test("routes findings in configured test files to the test lane", async () => {
+    const ctx = makeVerifyCtx();
+    const result = await runVerify(
+      makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "test/unit/auth.test.ts",
+            line: 1,
+            issue: "Test is incomplete",
+            suggestion: "cover the error path",
+            acIndex: 1,
+          },
+        ],
+      }),
+      {
+        ...BASE_INPUT,
+        mode: "embedded",
+        resolvedTestPatterns: {
+          globs: ["test/**/*.test.ts"],
+          pathspec: [":!test/**"],
+          regex: [/^test\//],
+          testDirs: ["test"],
+          resolution: "fallback",
+        } satisfies ResolvedTestPatterns,
+      },
+      ctx,
+    );
+    assertDefined(result, "verify() result");
+    expect(result.normalizedFindings[0]?.fixTarget).toBe("test");
+  });
+
   test("acDropped is empty array when no blocking findings are dropped", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx();

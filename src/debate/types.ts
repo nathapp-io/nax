@@ -6,6 +6,9 @@
 
 import type { ConfiguredModel } from "@/config/schema-types";
 
+/** Default stage timeout, matching DebateConfigSchema. */
+export const DEFAULT_DEBATE_TIMEOUT_SECONDS = 600;
+
 /** How the resolver determines the outcome of a debate round */
 export type ResolverType = "synthesis" | "majority-fail-closed" | "majority-fail-open" | "custom";
 
@@ -92,7 +95,7 @@ export interface DebateStageConfig {
       };
   /** Optional post-debate verifier */
   postDebateVerifier?: {
-    kind: "plan-checklist" | "review-grounding-filter" | "custom";
+    kind: "plan-checklist" | "custom";
     onBlocker?: "block" | "tag-expert";
   };
   /** Evidence mode for plan stage only (Phase 2) */
@@ -113,8 +116,6 @@ export interface DebateConfig {
   stages: {
     /** Planning phase debate */
     plan: DebateStageConfig;
-    /** Review phase debate */
-    review: DebateStageConfig;
     /** Acceptance test phase debate */
     acceptance: DebateStageConfig;
     /** Rectification loop debate */

@@ -145,6 +145,17 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
     expect(captured[0]).toContain("tdd.autoVerifyIsolation");
     expect((result.tdd as Record<string, unknown>).autoVerifyIsolation).toBeUndefined();
   });
+
+  test("debate.stages.review is stripped with a warning (#1859)", async () => {
+    const warnings: string[] = [];
+    const stripped = stripRemovedNoOpKeys({ debate: { enabled: true, stages: { review: { enabled: true } } } }, (msg) =>
+      warnings.push(msg),
+    );
+
+    expect((stripped.debate as { stages: Record<string, unknown> }).stages).not.toHaveProperty("review");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("debate.stages.review");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

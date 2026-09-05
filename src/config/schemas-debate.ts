@@ -114,7 +114,7 @@ const makeDebateStageSchema = <E extends z.ZodRawShape>(
     selector: SelectorSchema,
     postDebateVerifier: z
       .object({
-        kind: z.enum(["plan-checklist", "review-grounding-filter", "custom"]),
+        kind: z.enum(["plan-checklist", "custom"]),
         onBlocker: z.enum(["block", "tag-expert"]).optional(),
       })
       .optional(),
@@ -136,15 +136,6 @@ export const DebateConfigSchema = z.preprocess(
         plan: makeDebateStageSchema(
           { enabled: true, resolverType: "synthesis", sessionMode: "stateful", rounds: 3 },
           PlanStageExtensions,
-        ),
-        review: makeDebateStageSchema(
-          {
-            enabled: true,
-            resolverType: "majority-fail-closed",
-            sessionMode: "one-shot",
-            rounds: 2,
-          },
-          NonPlanStageExtensions,
         ),
         acceptance: makeDebateStageSchema(
           {

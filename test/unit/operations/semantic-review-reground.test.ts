@@ -98,6 +98,40 @@ function makeAcceptedFinding(
 }
 
 describe("semanticReviewOp.hopBody — reground AC1: trigger issues exactly one additional send", () => {
+  test("requotes stale blocking evidence and rewrites the adopted output as advisory", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), "export const current = true;\n");
+      const initial = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "stale evidence",
+            suggestion: "refresh it",
+            acIndex: 1,
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "export const old = true;" },
+          },
+        ],
+      });
+      const retry = mock(async () => makeTurnResult({ output: "not a requote response", estimatedCostUsd: 0.01 }));
+      const result = await runHopBody("initial", {
+        sendWithParseRetry: mock(async () => makeTurnResult({ output: initial, estimatedCostUsd: 0.01 })),
+        send: retry,
+        input: {
+          workdir,
+          story: STORY_WITH_AC,
+          semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT, substantiation: { requote: true, maxRequotes: 1 } },
+          mode: "ref",
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
+      expect(retry).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(result.output)).toMatchObject({ passed: true, findings: [{ severity: "unverifiable" }] });
+    });
+  });
+
   test("reprompt fires when first-pass passed:false, zero blocking accepted, dropped.length > 0, acRegroundOnDrop !== false", async () => {
     return withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });

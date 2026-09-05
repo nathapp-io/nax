@@ -64,7 +64,7 @@ export function makeTestRuntime(opts?: TestRuntimeOptions): NaxRuntime {
  *   runWithFallbackFn: async (req) => ({ result: { ... }, fallbacks: [], bundle: req.bundle }),
  * });
  * const runtime = makeMockRuntime({ agentManager });
- * await runSemanticReview({ workdir, storyGitRef: ref, story, semanticConfig: cfg, agentManager, runtime });
+ * const result = await callOp(ctx, semanticReviewOp, input); // ctx built from `runtime`
  * ```
  *
  * - `agentManager` defaults to `makeMockAgentManager()` (no overrides) — supply

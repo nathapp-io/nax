@@ -8,7 +8,6 @@ export * from "./ac-quote-validator";
 export * from "./ac-structural-counterfactual";
 // Review acknowledgements (#1423) — shared read path for both reviewers.
 export { extractAcks, MAX_ACKS } from "./acks";
-export * from "./adversarial";
 // Projection of adversarial LLM findings to the ADR-021 wire format. Already consumed
 // outside src/review (src/operations/adversarial-review.ts); exported here so callers
 // and tests reach it through the barrel rather than the leaf path.
@@ -22,15 +21,8 @@ export { hasInspectionTrail, substantiateAdversarialFindings } from "./finding-f
 export * from "./finding-projection";
 export * from "./prepare-inputs";
 export * from "./recurrence-demotion";
-// `./runner` is NOT re-exported here (deliberately). It pulls in `./semantic`,
-// which imports `ReviewPromptBuilder` from `@/prompts` — and `@/prompts`
-// re-exports `./builders/review-builder`. Import `runReview` from
+// `./runner` is NOT re-exported here (deliberately). Import `runReview` from
 // `@/review/runner` instead.
-//
-// `review-builder.ts` reaches `SEMANTIC_CATEGORY_ENUM_LINE` through the
-// `./semantic-categories` nested barrel rather than this one, which avoids the
-// independent cycles `./adversarial` and `./review-iteration-store` close back
-// through `@/prompts`.
 export * from "./requote-response";
 export * from "./review-iteration-store";
 export * from "./semantic-categories";

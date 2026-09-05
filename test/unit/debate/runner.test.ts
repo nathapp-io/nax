@@ -63,6 +63,34 @@ afterEach(() => {
 });
 
 describe("DebateRunner — one-shot panel mode", () => {
+  test.each([undefined, 1_800])(
+    "decompose forwards its resolved timeout to every turn (override %s)",
+    async (override) => {
+      const timeouts: (number | undefined)[] = [];
+      const agentManager = makeMockAgentManager({
+        completeAsFn: async (_name, _prompt, options) => {
+          timeouts.push(options?.timeoutMs);
+          return { output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+        },
+      });
+      const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+      try {
+        const runner = new DebateRunner({
+          ctx: makeCallCtx({ runtime }),
+          stage: "decompose",
+          stageConfig: makeStageConfig({ rounds: 2, timeoutSeconds: 1_200 }),
+          timeoutSeconds: override,
+          config: DEFAULT_CONFIG,
+          workdir: "/tmp/work",
+        });
+        expect((await runner.run("prompt")).outcome).toBe("passed");
+        expect(timeouts).toEqual(Array(4).fill((override ?? 1_200) * 1_000));
+      } finally {
+        await runtime.close();
+      }
+    },
+  );
+
   test("run() returns passed result when both debaters succeed", async () => {
     const ctx = makeCallCtx();
     const runner = new DebateRunner({

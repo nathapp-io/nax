@@ -168,7 +168,6 @@ function makeConfigWithDebate(debateDecomposeEnabled: boolean) {
       stages: {
         decompose: makeDebateStageConfig(debateDecomposeEnabled),
         plan: makeDebateStageConfig(false),
-        review: makeDebateStageConfig(false),
         acceptance: makeDebateStageConfig(false),
         rectification: makeDebateStageConfig(false),
         escalation: makeDebateStageConfig(false),

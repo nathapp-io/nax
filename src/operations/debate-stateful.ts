@@ -1,6 +1,6 @@
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
-import type { Debater } from "../debate/types";
+import { DEFAULT_DEBATE_TIMEOUT_SECONDS, type Debater } from "../debate/types";
 import { type DebateTurnSemaphore, raceAgainstAbort } from "../debate/utils";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
@@ -13,6 +13,8 @@ export interface DebateStatefulInput {
   readonly proposalBarriers: PromiseWithResolvers<string>[];
   readonly signal: AbortSignal;
   readonly storyId: string;
+  /** Resolved timeout of the active debate stage. */
+  readonly timeoutSeconds?: number;
   readonly skipRebuttal?: boolean;
   readonly turnSemaphore?: DebateTurnSemaphore;
 }
@@ -29,7 +31,7 @@ export const statefulDebaterOp: RunOperation<DebateStatefulInput, DebateStateful
   session: { role: "debate-stateful" satisfies SessionRole, lifetime: "fresh" },
   config: debateConfigSelector,
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
-  timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
+  timeoutMs: (input) => (input.timeoutSeconds ?? DEFAULT_DEBATE_TIMEOUT_SECONDS) * 1_000,
   async hopBody(initialPrompt, ctx) {
     const proposal = ctx.input.turnSemaphore
       ? await ctx.input.turnSemaphore.run(() => ctx.send(initialPrompt))

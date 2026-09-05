@@ -69,5 +69,4 @@ export {
   planChecklistVerifier,
   registerPostDebateVerifier,
   resolvePostDebateVerifier,
-  reviewGroundingFilterVerifier,
 } from "./verifiers";

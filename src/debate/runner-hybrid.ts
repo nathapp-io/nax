@@ -133,6 +133,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
           signal,
           storyId: ctx.storyId,
           rounds,
+          timeoutSeconds: ctx.timeoutSeconds,
         } satisfies DebateHybridInput);
         // If the hop returned a failure result without resolving its barriers (e.g. runAsSession
         // threw inside hopBody, which buildHopCallback caught and turned into a failed AgentResult),

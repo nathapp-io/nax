@@ -4,7 +4,6 @@
 
 import { NaxError } from "@/errors";
 import { planChecklistVerifier } from "./plan-checklist";
-import { reviewGroundingFilterVerifier } from "./review-grounding-filter";
 import type { PostDebateVerifier } from "./types";
 
 const STRATEGIES: Record<string, PostDebateVerifier> = {};
@@ -22,5 +21,4 @@ export function registerPostDebateVerifier(kind: string, strategy: PostDebateVer
 }
 
 // Register built-in verifiers at module load
-registerPostDebateVerifier("review-grounding-filter", reviewGroundingFilterVerifier);
 registerPostDebateVerifier("plan-checklist", planChecklistVerifier);

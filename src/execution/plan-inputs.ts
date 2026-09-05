@@ -318,8 +318,8 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
       : undefined;
 
   // Semantic and adversarial review inputs must carry stat/diff (and for adversarial,
-  // testInventory) so the prompt's "## Changed Files" block is populated. The legacy
-  // runSemanticCheck / runAdversarialReview paths collected these before calling callOp;
+  // testInventory) so the prompt's "## Changed Files" block is populated. The deleted
+  // runReview LLM wrappers (#1859) collected these before callOp;
   // the orchestrator path must do the same or the reviewer LLM falsely concludes
   // "diff is empty" and skips every AC. prepareSemanticReviewInput / prepareAdversarialReviewInput
   // are the shared SSOT for that collection.

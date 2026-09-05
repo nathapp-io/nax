@@ -97,6 +97,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
               proposalBarriers,
               signal,
               storyId: ctx.storyId,
+              timeoutSeconds: ctx.timeoutSeconds,
               skipRebuttal: true,
             } satisfies DebateStatefulInput)
             .then((result) => ({ ...result, resolvedIndex: index })),
@@ -200,6 +201,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
                   proposalBarriers: rebuttalRoundBarriers,
                   signal,
                   storyId: ctx.storyId,
+                  timeoutSeconds: ctx.timeoutSeconds,
                   skipRebuttal: true,
                 } satisfies DebateStatefulInput)
                 .then((result) => ({ ...result, resolvedIndex: proposal.resolvedIndex })),

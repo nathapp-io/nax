@@ -243,7 +243,7 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
 
     const runner = new DebateRunner({
       ctx,
-      stage: "review",
+      stage: "acceptance",
       stageConfig,
       config: DEFAULT_DEBATE_CONFIG,
       workdir: "/tmp/work",
@@ -256,30 +256,6 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
     expect(result.storyId).toBe("US-004");
   });
 
-  test("review-grounding-filter does not turn a failed selector with no findings into pass", async () => {
-    registerSelector("test-failed-empty-selector", async () => ({
-      outcome: "failed",
-      findings: [],
-    }));
-    const ctx = makeCallCtx();
-    const stageConfig = withCustomSelector(
-      makeStageConfig({ postDebateVerifier: { kind: "review-grounding-filter" } }),
-      "test-failed-empty-selector",
-    );
-
-    const runner = new DebateRunner({
-      ctx,
-      stage: "review",
-      stageConfig,
-      config: DEFAULT_DEBATE_CONFIG,
-      workdir: "/tmp/work",
-    });
-
-    const result = await runner.run("test prompt");
-
-    expect(result.outcome).toBe("failed");
-  });
-
   test("when stageConfig.postDebateVerifier is unset, returns selector outcome directly", async () => {
     const ctx = makeCallCtx();
     const stageConfig = makeStageConfig({
@@ -288,7 +264,7 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
 
     const runner = new DebateRunner({
       ctx,
-      stage: "review",
+      stage: "acceptance",
       stageConfig,
       config: DEFAULT_DEBATE_CONFIG,
       workdir: "/tmp/work",
@@ -324,7 +300,7 @@ describe("runPanelOneShot() — behavior preservation (US-004 AC3)", () => {
 
     const runner = new DebateRunner({
       ctx,
-      stage: "review",
+      stage: "acceptance",
       stageConfig,
       config: DEFAULT_DEBATE_CONFIG,
       workdir: "/tmp/work",
@@ -334,7 +310,7 @@ describe("runPanelOneShot() — behavior preservation (US-004 AC3)", () => {
 
     // Result should follow the same contract
     expect(result.storyId).toBe("US-004");
-    expect(result.stage).toBe("review");
+    expect(result.stage).toBe("acceptance");
     expect(result.outcome).toBeDefined();
   });
 
@@ -347,7 +323,7 @@ describe("runPanelOneShot() — behavior preservation (US-004 AC3)", () => {
 
     const runner = new DebateRunner({
       ctx,
-      stage: "review",
+      stage: "acceptance",
       stageConfig,
       config: DEFAULT_DEBATE_CONFIG,
       workdir: "/tmp/work",
@@ -381,7 +357,7 @@ describe("All debate runners — resolveOutcome() integration (US-004 AC6)", () 
 
     const runner = new DebateRunner({
       ctx,
-      stage: "review",
+      stage: "acceptance",
       stageConfig,
       config: DEFAULT_DEBATE_CONFIG,
       workdir: "/tmp/work",

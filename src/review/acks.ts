@@ -18,9 +18,10 @@ import type { ReviewAck } from "./types";
  * Ceiling on retained acknowledgements; the rest are dropped rather than
  * bloating every audit record.
  *
- * Bounds a single reviewer response here, and — exported for it — the merged
- * total in `semantic-debate.ts`, where N debaters' responses are concatenated
- * into one audit entry and would otherwise persist N × this.
+ * Bounds a single reviewer response here. Historically also exported for the
+ * merged total in the deleted `semantic-debate.ts` (#1859), where N debaters'
+ * responses were concatenated into one audit entry and would otherwise have
+ * persisted N × this.
  */
 export const MAX_ACKS = 50;
 /** Ceiling on a single `note`, matching the clipping other reviewer text gets. */

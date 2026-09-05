@@ -114,12 +114,6 @@ const DEBATE_PLAN_ENABLED_CONFIG = makeNaxConfig({
         rounds: 1,
         debaters: [{ agent: "claude" }, { agent: "opencode" }],
       },
-      review: {
-        enabled: false,
-        resolver: { type: "majority-fail-closed" },
-        sessionMode: "one-shot",
-        rounds: 1,
-      },
       acceptance: {
         enabled: false,
         resolver: { type: "majority-fail-closed" },
@@ -148,12 +142,6 @@ const DEBATE_PLAN_STAGE_DISABLED_CONFIG = makeNaxConfig({
     agents: 2,
     stages: {
       plan: {
-        enabled: false,
-        resolver: { type: "majority-fail-closed" },
-        sessionMode: "one-shot",
-        rounds: 1,
-      },
-      review: {
         enabled: false,
         resolver: { type: "majority-fail-closed" },
         sessionMode: "one-shot",

@@ -2,10 +2,10 @@
  * A `DebateRunner` the tests can assert against.
  *
  * `DebateRunner` is a class with eight `private readonly` fields, so the
- * `{ run }` stub the semantic-review tests need can never satisfy it
- * structurally. Every site therefore cast its stub into the dep slot —
- * 15 casts across `semantic-debate.test.ts` and `fidelity-survives-recovery.test.ts`
- * for one missing helper (#1514 §3c-ii, Decision 1).
+ * `{ run }` stub debate tests need can never satisfy it structurally. Every
+ * site therefore cast its stub into the dep slot — 15 casts across former
+ * semantic-review debate tests and `fidelity-survives-recovery.test.ts` for
+ * one missing helper (#1514 §3c-ii, Decision 1).
  *
  * Same shape of fix as `makeLogger` / `makeStatusWriter`: intersect, and keep
  * the one cast here.

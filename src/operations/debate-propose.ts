@@ -11,7 +11,7 @@
 
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
-import type { Debater, DebateStageConfig } from "../debate/types";
+import { DEFAULT_DEBATE_TIMEOUT_SECONDS, type Debater, type DebateStageConfig } from "../debate/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 
@@ -30,6 +30,8 @@ export interface DebateProposeInput {
   readonly manifestSection?: string;
   /** Stage configuration — used to gate citation and file-read instructions. */
   readonly stageConfig?: Pick<DebateStageConfig, "proposers">;
+  /** Resolved timeout of the active debate stage. */
+  readonly timeoutSeconds?: number;
 }
 
 /**
@@ -49,7 +51,7 @@ export const debateProposeOp: CompleteOperation<DebateProposeInput, string, Deba
     if (!debater) return "fast";
     return { agent: debater.agent, model: debater.model ?? "fast" };
   },
-  timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
+  timeoutMs: (input) => (input.timeoutSeconds ?? DEFAULT_DEBATE_TIMEOUT_SECONDS) * 1_000,
   build(input, _ctx) {
     const builder = new DebatePromptBuilder(
       { taskContext: input.taskContext, outputFormat: input.outputFormat, stage: input.stage },

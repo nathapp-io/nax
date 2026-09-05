@@ -1,14 +1,14 @@
 /**
- * Source-side projection of LLM reviewer findings → canonical ReviewFinding.
+ * Source-side projection of reviewer findings → canonical ReviewFinding.
  *
- * Issue #942 — semantic / adversarial / semantic-debate reviewers historically
- * persisted their LLMFinding shape (issue/suggestion, no ruleId/message) to
- * `.nax/review-audit/*.json`, which forced the curator collector to fall back
- * to `category` for ruleId and collapsed H1 buckets to coarse single words
- * ("assumption" / "input" / "unknown" 39×).
+ * Issue #942 — reviewers historically persisted their LLMFinding shape
+ * (issue/suggestion, no ruleId/message) to `.nax/review-audit/*.json`, which
+ * forced the curator collector to fall back to `category` for ruleId and
+ * collapsed H1 buckets to coarse single words ("assumption" / "input" /
+ * "unknown" 39×).
  *
  * This module is the SSOT for the projection. Every audit-write call site
- * must convert LLMFinding[] → ReviewFinding[] through these helpers BEFORE
+ * must convert findings → ReviewFinding[] through these helpers BEFORE
  * persisting to disk so downstream consumers (curator, future review
  * dashboards) only deal with the canonical shape.
  */
@@ -115,8 +115,7 @@ function deriveFixTargetForReviewFinding(
   file: string | undefined,
   isTestFile: ((path: string) => boolean) | undefined,
 ): FixTarget {
-  const base: FixTarget =
-    source === "semantic-review" || source === "semantic-debate-review" ? "source" : categoryToFixTarget(category);
+  const base: FixTarget = source === "semantic-review" ? "source" : categoryToFixTarget(category);
   return resolveFixTarget({ base, file, isTestFile });
 }
 
@@ -139,10 +138,6 @@ export function llmFindingToReviewFinding(f: AnyLLMFinding, opts: ProjectionOpti
   return result;
 }
 
-export function llmFindingsToReviewFindings(findings: AnyLLMFinding[], opts: ProjectionOptions = {}): ReviewFinding[] {
-  return findings.map((f) => llmFindingToReviewFinding(f, opts));
-}
-
 /**
  * Project a unified `Finding` (ADR-021 wire format, e.g. from the
  * dialogue/verdict path) to canonical `ReviewFinding` for audit persistence.
@@ -152,6 +147,9 @@ export function llmFindingsToReviewFindings(findings: AnyLLMFinding[], opts: Pro
  * from `category` + slug of the message when `rule` is absent, and routes
  * any sidecar fields into `meta`.
  */
+// Kept deliberately while #1861 is open: option 1 of that issue routes the live
+// op path's advisoryFindings through this projection before persisting. Do not
+// delete without a ruling on #1861.
 export function findingToReviewFinding(f: Finding, opts: ProjectionOptions = {}): ReviewFinding {
   const narrowed = narrowSeverity(f.severity);
   const ruleId = f.rule?.trim() ? f.rule.trim() : deriveRuleId(f.category, f.message);
@@ -172,6 +170,9 @@ export function findingToReviewFinding(f: Finding, opts: ProjectionOptions = {})
   return result;
 }
 
+// Kept deliberately while #1861 is open: option 1 of that issue routes the live
+// op path's advisoryFindings through this projection before persisting. Do not
+// delete without a ruling on #1861.
 export function findingsToReviewFindings(findings: Finding[], opts: ProjectionOptions = {}): ReviewFinding[] {
   return findings.map((f) => findingToReviewFinding(f, opts));
 }

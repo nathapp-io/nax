@@ -82,7 +82,6 @@ function makePlanDebateConfig(agents = 2): NaxConfig {
       grounder: { model: "fast", timeoutSeconds: 60 },
       stages: {
         plan: makePlanStageConfig(),
-        review: makePlanStageConfig(),
         acceptance: makePlanStageConfig(),
         rectification: makePlanStageConfig(),
         escalation: makePlanStageConfig(),

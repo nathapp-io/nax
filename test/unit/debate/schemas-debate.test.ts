@@ -236,7 +236,9 @@ describe("DebateConfigSchema — evidenceMode (Phase 2 AC3)", () => {
   });
 
   it("throws when evidenceMode is set on non-plan stage (plan-stage-only field)", () => {
-    // evidenceMode is plan-stage-only — review/acceptance/etc. must reject it
-    expect(() => DebateConfigSchema.parse({ stages: { review: { evidenceMode: "asymmetric" } } })).toThrow(z.ZodError);
+    // evidenceMode is plan-stage-only — acceptance/rectification/etc. must reject it
+    expect(() => DebateConfigSchema.parse({ stages: { acceptance: { evidenceMode: "asymmetric" } } })).toThrow(
+      z.ZodError,
+    );
   });
 });

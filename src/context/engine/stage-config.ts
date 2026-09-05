@@ -288,9 +288,9 @@ export const STAGE_CONTEXT_MAP = {
 
   // Review dialogue — reviewer role.
   // Declared but not assembled by any site today — see nax#1743. nax#1758
-  // resolved the pull-tool question: there is no dispatch seam
-  // (src/review/semantic-debate.ts makes no callOp/assembleForStage call —
-  // the debate builder owns those prompts), and query_feature_context is
+  // resolved the pull-tool question: there is no dispatch seam — the review
+  // dialogue path makes no callOp/assembleForStage call (the debate builder
+  // owns those prompts), and query_feature_context is
   // already available to the two review stages that ARE assembled
   // (review-semantic, review-adversarial). Dropped pullToolNames rather
   // than building a dialogue seam for a capability nothing could deliver.

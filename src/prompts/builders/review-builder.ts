@@ -1,7 +1,7 @@
 /**
  * ReviewPromptBuilder — centralises semantic review prompt construction.
  *
- * Owns the prompt for `src/review/semantic.ts:runSemanticReview()`.
+ * Owns the semantic reviewer prompt, consumed by `src/operations/semantic-review.ts` via `callOp`.
  * Extracted from the inline `buildPrompt()` function in semantic.ts.
  *
  * Imports types from src/review/types.ts (not src/review/semantic.ts) to

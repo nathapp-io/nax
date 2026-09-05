@@ -6,13 +6,12 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { _adversarialDeps, llmFindingsToReviewFindings } from "@/review";
+import { llmFindingToReviewFinding } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
+import { writeReviewAudit } from "@/review/review-audit";
 import type { ReviewAuditEntry } from "@/runtime";
 import { _reviewAuditDeps } from "@/runtime";
-
-const { writeReviewAudit } = _adversarialDeps;
 
 /** Stand-in for a `resolveTestFilePatterns`-derived classifier (ADR-009 SSOT). */
 const isTestFile = (path: string) => /\.(test|spec)\.tsx?$/.test(path);
@@ -41,36 +40,36 @@ describe("toAdversarialReviewFindings — fixTarget tagging", () => {
   });
 });
 
-describe("llmFindingsToReviewFindings — fixTarget tagging", () => {
+describe("llmFindingToReviewFinding — fixTarget tagging", () => {
   test('AC3: category "input" with source "adversarial-review" tags fixTarget="source"', () => {
-    const result = llmFindingsToReviewFindings([makeAdversarialFinding({ category: "input" })], {
+    const result = llmFindingToReviewFinding(makeAdversarialFinding({ category: "input" }), {
       source: "adversarial-review",
     });
-    expect(result[0].fixTarget).toBe("source");
+    expect(result.fixTarget).toBe("source");
   });
 
   test('AC5: unrecognized category tags fixTarget="test"', () => {
-    const result = llmFindingsToReviewFindings([makeAdversarialFinding({ category: "some-unrecognized-category" })], {
+    const result = llmFindingToReviewFinding(makeAdversarialFinding({ category: "some-unrecognized-category" }), {
       source: "adversarial-review",
     });
-    expect(result[0].fixTarget).toBe("test");
+    expect(result.fixTarget).toBe("test");
   });
 });
 
 describe("converter parity for fixTarget", () => {
-  test("AC4: same adversarial finding through toAdversarialReviewFindings and llmFindingsToReviewFindings yields matching fixTarget", () => {
+  test("AC4: same adversarial finding through toAdversarialReviewFindings and llmFindingToReviewFinding yields matching fixTarget", () => {
     const finding = makeAdversarialFinding({ category: "abandonment" });
     const cycle = toAdversarialReviewFindings([finding]);
-    const audit = llmFindingsToReviewFindings([finding], { source: "adversarial-review" });
-    expect(cycle[0].fixTarget).toBe(audit[0].fixTarget);
+    const audit = llmFindingToReviewFinding(finding, { source: "adversarial-review" });
+    expect(cycle[0].fixTarget).toBe(audit.fixTarget);
     expect(cycle[0].fixTarget).toBe("source");
   });
 
   test("both converters apply the test-path override identically (#1368)", () => {
     const finding = makeAdversarialFinding({ category: "abandonment", file: "test/app.module.spec.ts" });
     const cycle = toAdversarialReviewFindings([finding], { isTestFile });
-    const audit = llmFindingsToReviewFindings([finding], { source: "adversarial-review", isTestFile });
-    expect(cycle[0].fixTarget).toBe(audit[0].fixTarget);
+    const audit = llmFindingToReviewFinding(finding, { source: "adversarial-review", isTestFile });
+    expect(cycle[0].fixTarget).toBe(audit.fixTarget);
     expect(cycle[0].fixTarget).toBe("test");
   });
 });
@@ -121,9 +120,11 @@ describe("review audit persistence — fixTarget rides through to disk", () => {
       findNaxProjectRoot: async (dir: string) => dir,
     });
 
-    const reviewFindings = llmFindingsToReviewFindings([makeAdversarialFinding({ category: "abandonment" })], {
-      source: "adversarial-review",
-    });
+    const reviewFindings = [
+      llmFindingToReviewFinding(makeAdversarialFinding({ category: "abandonment" }), {
+        source: "adversarial-review",
+      }),
+    ];
     const entry: ReviewAuditEntry = {
       reviewer: "adversarial",
       sessionName: "nax-abc-my-feature-us-001-reviewer-adversarial",

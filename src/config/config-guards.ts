@@ -187,6 +187,8 @@ const REMOVED_NO_OP_KEYS: Readonly<Record<string, string>> = {
   "tdd.autoVerifyIsolation": "this key had no effect — isolation verification is currently unconditional",
   "tdd.autoApproveVerifier": "this key had no effect — verifier auto-approval is currently unconditional",
   "acceptance.generateTests": "use `acceptance.enabled` instead",
+  "debate.stages.review":
+    "configure timeoutSeconds on the active debate stage instead; review-stage debate was removed with the unreachable runReview LLM path (#1859)",
 };
 
 /**

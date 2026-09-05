@@ -2,9 +2,9 @@
  * Prepare review op inputs.
  *
  * Shared collection logic that gathers stat / diff / testInventory for the
- * semantic and adversarial review ops. Called from plan-inputs.ts so the
- * orchestrator path produces the same SemanticReviewInput / AdversarialReviewInput
- * shape that the legacy runSemanticCheck / runAdversarialReview paths produce.
+ * semantic and adversarial review ops. Called from plan-inputs.ts and
+ * run-phase.ts so both produce the same SemanticReviewInput / AdversarialReviewInput
+ * shape the review ops expect.
  *
  * Without this, the orchestrator was constructing inputs with stat/diff/testInventory
  * left undefined, causing the prompt's "## Changed Files" block to render as an
@@ -46,7 +46,7 @@ export interface PrepareReviewInputArgs {
   /**
    * Optional pre-resolved patterns. When supplied, the helper skips the internal
    * `resolveTestFilePatterns` call and uses these directly. Lets callers that have
-   * already resolved patterns (plan-inputs, runReview wrappers) avoid double work.
+   * already resolved patterns (plan-inputs.ts, run-phase.ts) avoid double work.
    */
   resolvedTestPatterns?: ResolvedTestPatterns;
 }
