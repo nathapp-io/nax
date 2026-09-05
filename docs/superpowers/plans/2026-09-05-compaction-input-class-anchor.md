@@ -12,7 +12,10 @@
 
 ## Global Constraints
 
-- **Full suite is `bun run test`, never bare `bun test`.** Bare `bun test` bypasses `scripts/run-tests.ts` and invents failures.
+- **Test commands** (`.nax/rules/testing-commands.md`):
+  - Full suite: `bun run test`. It does **not** accept path arguments — `scripts/run-tests.ts` reads `argv` only for `--bail` and always runs the three fixed phase dirs, so `bun run test -- <path>` silently runs all ~15,800 tests.
+  - Scoped iteration: `timeout 30 bun test <path> --timeout=5000`. The `timeout` wrapper is **mandatory**, not decoration — `--timeout` bounds each test, not the invocation, and Bun's JSC occasionally hangs or SIGABRTs, leaking grandchild processes.
+  - Never an uncapped bare `bun test`.
 - Quality gates: `bun run test`, `bun run typecheck`, `bun run lint`. Note `lint:json` does **not** run `check:file-sizes`; the full `bun run lint` does.
 - File size budget: 600 lines for `src/`, 800 for `test/`. Current: `turn-loop.ts` 455, `calculate.ts` 197, `compaction.ts` 211, `turn-loop-compaction.test.ts` 446, `calculate.test.ts` 287. All have headroom.
 - **Never create standalone bug-fix test files.** Add tests to the existing relevant file (`.nax/rules/test-architecture.md`, Placement Rule 2).
@@ -91,7 +94,7 @@ describe("inputClassTokens", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun run test -- test/unit/agents/cost/calculate.test.ts`
+Run: `timeout 30 bun test test/unit/agents/cost/calculate.test.ts --timeout=5000`
 Expected: FAIL — `inputClassTokens` is not exported from `@/agents/cost`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -133,15 +136,15 @@ export {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun run test -- test/unit/agents/cost/calculate.test.ts`
+Run: `timeout 30 bun test test/unit/agents/cost/calculate.test.ts --timeout=5000`
 Expected: PASS
 
 - [ ] **Step 5: Use the helper in `selectRates`**
 
-In `src/agents/native/models.ts`, line 10 is currently `import type { TokenUsage } from "@/agents/cost";`. Replace it with the repo's merged type+value form (biome runs `organizeImports`, and this is the established style — see `src/tools/runtime.ts:19`, `src/context/engine/rebuild.ts:24`):
+In `src/agents/native/models.ts`, line 10 is currently `import type { TokenUsage } from "@/agents/cost";`. Replace it with the repo's merged type+value form (biome runs `organizeImports`, and this is the established style — see `src/tools/runtime.ts:19`, `src/context/engine/rebuild.ts:24`). **Member order matters:** biome sorts case-insensitively by name and ignores the `type` keyword, so `inputClassTokens` (i) sorts before `TokenUsage` (t). The reverse order fails `bun run lint`:
 
 ```typescript
-import { type TokenUsage, inputClassTokens } from "@/agents/cost";
+import { inputClassTokens, type TokenUsage } from "@/agents/cost";
 ```
 
 **This turns a type-only import into a value import**, adding a real edge to the runtime graph that `check:import-cycles` inspects. It is safe: nothing under `src/agents/cost/` imports from `@/agents/*`, and its one relative import — `calculate.ts:6` → `../model-spec` — is a leaf module with zero imports of its own. `models.ts:14` already depends on `../model-spec` anyway.
@@ -161,7 +164,7 @@ This replaces exactly these two lines:
 
 - [ ] **Step 6: Run the native model tests to confirm no behaviour change**
 
-Run: `bun run test -- test/unit/agents/native/models.test.ts test/unit/agents/cost/calculate.test.ts`
+Run: `timeout 30 bun test test/unit/agents/native/models.test.ts test/unit/agents/cost/calculate.test.ts --timeout=5000`
 Expected: PASS. This is a pure refactor — the expression is byte-identical, so any failure means the extraction is wrong.
 
 - [ ] **Step 7: Commit**
@@ -286,7 +289,7 @@ Write **two** tests. The second is a negative control: same transcript, same eve
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun run test -- test/unit/agents/native/turn-loop-compaction.test.ts`
+Run: `timeout 30 bun test test/unit/agents/native/turn-loop-compaction.test.ts --timeout=5000`
 
 Expected, and both halves matter:
 - `counts cached prompt tokens toward the compaction threshold` → **FAIL**, `expect(summarizeCalls).toBe(1)` receives `0`. Compaction never fires because the anchor reads 16.
@@ -301,7 +304,7 @@ If the *control* fails (summarize was called with no cache tokens), the seeded t
 In `src/agents/native/session/turn-loop.ts`, line 11 is currently `import type { TokenUsage } from "@/agents/cost";`. Replace it with the merged form (same convention as Task 1):
 
 ```typescript
-import { type TokenUsage, inputClassTokens } from "@/agents/cost";
+import { inputClassTokens, type TokenUsage } from "@/agents/cost";
 ```
 
 Replace lines 298-300:
@@ -329,7 +332,7 @@ Leave the running `cacheReadInputTokens` / `cacheCreationInputTokens` accumulato
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun run test -- test/unit/agents/native/turn-loop-compaction.test.ts`
+Run: `timeout 30 bun test test/unit/agents/native/turn-loop-compaction.test.ts --timeout=5000`
 Expected: PASS, all tests in the file.
 
 - [ ] **Step 5: Run the full suite**
@@ -520,4 +523,6 @@ Four defects found reviewing this plan against the code, all fixed above. Record
 1. **Task 2's test could not have passed even with a correct fix.** The original seeded a single tiny message. `prepareCompaction` returns `undefined` when `cutIndex <= spanStart` (`compaction.ts:193`), so the threshold would trip with nothing to summarize and `summarizeCalls` would stay 0. Replaced with a sized transcript and an explicit sizing table.
 2. **No negative control.** The test could have passed on transcript size rather than cache accounting. Added a control asserting the same transcript does *not* compact without cache tokens.
 3. **Import style was wrong.** Two separate imports from one module; the repo uses the merged `import { type X, y }` form and biome runs `organizeImports`.
-4. **A type-only → value import is a real graph edge.** `check:import-cycles` inspects value imports only. Verified safe rather than assumed: nothing under `src/agents/cost/` imports `@/agents/*`, and `calculate.ts:6`'s `../model-spec` is a leaf.
+4. **The plan's scoped test command did not scope.** `bun run test -- <path>` runs the entire ~15,800-test suite: `scripts/run-tests.ts` reads `argv` only for `--bail` and always iterates its three fixed phase dirs. Corrected to `timeout 30 bun test <path> --timeout=5000` throughout, per `.nax/rules/testing-commands.md` — the `timeout` wrapper is mandatory, since `--timeout` bounds each test rather than the invocation. *(Found by the Task 1 implementer, not by me.)*
+5. **Import member order was backwards.** Biome sorts case-insensitively and ignores `type`, so it must be `{ inputClassTokens, type TokenUsage }`. *(Also found by the Task 1 implementer.)*
+6. **A type-only → value import is a real graph edge.** `check:import-cycles` inspects value imports only. Verified safe rather than assumed: nothing under `src/agents/cost/` imports `@/agents/*`, and `calculate.ts:6`'s `../model-spec` is a leaf.
