@@ -291,7 +291,7 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
   // progress even though they are already present in the JSONL.
   const data = entry.data;
   if (data && typeof data === "object") {
-    const meta = buildDefaultMeta(data, mode);
+    const meta = buildDefaultMeta(data, mode, entry.level);
     if (meta.length > 0) {
       output += `  ${c.gray(meta.join("  "))}`;
     }
@@ -299,7 +299,11 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
     // Full data dump only in verbose mode — exclude fields already surfaced
     // above so they are not printed twice.
     if (mode === "verbose") {
-      const filtered = stripConsumedMetaFields(data);
+      // `error` is consumed only when it was actually rendered as a failure
+      // reason. On an info line it was not, so it must stay in the dump — a
+      // blanket entry in CONSUMED_META_KEYS would silently drop it there.
+      const alsoConsumed = readFailureReason(data, mode, entry.level) ? ["error"] : [];
+      const filtered = stripConsumedMetaFields(data, alsoConsumed);
       if (Object.keys(filtered).length > 0) {
         output += `\n${c.gray(JSON.stringify(filtered, null, 2))}`;
       }
@@ -337,7 +341,7 @@ const CONSUMED_META_KEYS = [
  * status/findings → agent-stream activity counts → cost/duration → action/reason.
  * Only present, meaningful fields are emitted, so unrelated lines stay terse.
  */
-function buildDefaultMeta(data: Record<string, unknown>, mode: string): string[] {
+function buildDefaultMeta(data: Record<string, unknown>, mode: string, level: string): string[] {
   const meta: string[] = [];
 
   const identity = [data.agentName, data.model].filter((v): v is string => typeof v === "string" && v.length > 0);
@@ -360,7 +364,39 @@ function buildDefaultMeta(data: Record<string, unknown>, mode: string): string[]
   if (typeof data.action === "string") meta.push(`action: ${data.action}`);
   if (typeof data.reason === "string" && mode !== "quiet") meta.push(stripControlChars(data.reason));
 
+  // Last, because on a failure line it is the thing being read for (nax#1853).
+  const failureReason = readFailureReason(data, mode, level);
+  if (failureReason) meta.push(failureReason);
+
   return meta;
+}
+
+/** An error string longer than this is a stack-shaped dump, not a reason. */
+const MAX_FAILURE_REASON_CHARS = 240;
+
+/**
+ * The `error` field of a warn/error line, rendered for a single terminal line.
+ *
+ * A run that dies on an adapter error used to print "Agent call failed" and
+ * nothing else: the message was already attached at `middleware/logging.ts` and
+ * was only reachable by re-running the whole thing with `--verbose` (nax#1853).
+ * `classifyCompleteException` routes auth failures, malformed model ids and
+ * provider outages to lines that are otherwise identical, so without this an
+ * operator cannot tell them apart at default verbosity.
+ *
+ * Restricted to warn/error levels: `error` on an info line is not a failure
+ * reason, and promoting it would surface unrelated payloads. Whitespace is
+ * collapsed BEFORE control characters are stripped — stripping first deletes
+ * newlines outright and welds the surrounding words together.
+ */
+function readFailureReason(data: Record<string, unknown>, mode: string, level: string): string | null {
+  if (mode === "quiet") return null;
+  if (level !== "warn" && level !== "error") return null;
+  if (typeof data.error !== "string" || data.error.length === 0) return null;
+
+  const oneLine = stripControlChars(data.error.replace(/\s+/g, " ")).trim();
+  if (oneLine.length === 0) return null;
+  return oneLine.length > MAX_FAILURE_REASON_CHARS ? `${oneLine.slice(0, MAX_FAILURE_REASON_CHARS)}…` : oneLine;
 }
 
 /**
@@ -380,10 +416,13 @@ function buildActivityMeta(data: Record<string, unknown>): string | null {
 }
 
 /** Remove fields already rendered inline so the verbose JSON dump shows only the remainder. */
-function stripConsumedMetaFields(data: Record<string, unknown>): Record<string, unknown> {
+function stripConsumedMetaFields(
+  data: Record<string, unknown>,
+  alsoConsumed: readonly string[] = [],
+): Record<string, unknown> {
   const filtered: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
-    if (!(CONSUMED_META_KEYS as readonly string[]).includes(key)) {
+    if (!(CONSUMED_META_KEYS as readonly string[]).includes(key) && !alsoConsumed.includes(key)) {
       filtered[key] = value;
     }
   }
