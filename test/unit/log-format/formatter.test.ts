@@ -118,6 +118,54 @@ describe("formatLogEntry — default line enrichment (normal mode)", () => {
     expect(out).not.toContain("·");
     expect(out).not.toContain("msg ");
   });
+
+  // nax#1853: a run that dies on an adapter error printed "Agent call failed"
+  // and nothing else. The reason was already in the event's `error` field and
+  // was only reachable by re-running the whole thing with --verbose.
+  test("surfaces the failure reason on a warn line", () => {
+    const out = formatNormal(
+      entry({
+        level: "warn",
+        stage: "middleware",
+        message: "Agent call failed",
+        data: { agentName: "native", error: 'Native model "claude-sonnet-5" must be written "provider/model"' },
+      }),
+    );
+    expect(out).toContain("Agent call failed");
+    expect(out).toContain('Native model "claude-sonnet-5" must be written "provider/model"');
+  });
+
+  test("surfaces the failure reason on an error line", () => {
+    const out = formatNormal(entry({ level: "error", stage: "execution", data: { error: "boom" } }));
+    expect(out).toContain("boom");
+  });
+
+  test("collapses newlines in a multi-line failure reason so the line stays scannable", () => {
+    const out = formatNormal(entry({ level: "error", stage: "execution", data: { error: "line one\nline two" } }));
+    expect(out).toContain("line one line two");
+    expect(out).not.toContain("\n");
+  });
+
+  test("truncates an overlong failure reason", () => {
+    const out = formatNormal(entry({ level: "error", stage: "execution", data: { error: "x".repeat(500) } }));
+    expect(out).toContain("…");
+    expect(out.length).toBeLessThan(400);
+  });
+
+  test("does not surface an error field on an info line", () => {
+    // `error` on a non-failure line is not a failure reason; only warn/error
+    // lines are the case this exists for.
+    const out = formatNormal(entry({ level: "info", stage: "execution", data: { error: "not-a-failure" } }));
+    expect(out).not.toContain("not-a-failure");
+  });
+
+  test("is suppressed in quiet mode", () => {
+    const { output } = formatLogEntry(entry({ level: "warn", stage: "middleware", data: { error: "boom" } }), {
+      mode: "quiet",
+      useColor: false,
+    });
+    expect(plain(output)).not.toContain("boom");
+  });
 });
 
 describe("formatLogEntry — story start enrichment", () => {
