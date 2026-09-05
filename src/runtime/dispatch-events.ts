@@ -1,6 +1,7 @@
 import type { TokenUsage } from "../agents/cost";
 import type { PipelineStage, ResolvedPermissions } from "../config/permissions";
 import { getSafeLogger } from "../logger";
+import type { AdvisoryFinding } from "../review/review-audit";
 import { errorMessage } from "../utils/errors";
 import type { SessionRole } from "./session-role";
 
@@ -137,7 +138,7 @@ export interface ReviewDecisionEvent {
   readonly passed?: boolean;
   readonly blockingThreshold?: "error" | "warning" | "info";
   readonly result: { passed: boolean; findings: unknown[] } | null;
-  readonly advisoryFindings?: unknown[];
+  readonly advisoryFindings?: readonly AdvisoryFinding[];
   /**
    * #1423 — prior findings the reviewer resolved or withdrew this round.
    * Carried separately from `result.findings` so acknowledgements are visible

@@ -1,5 +1,6 @@
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
+import type { AdvisoryFinding } from "@/review/review-audit";
 import type { DroppedFindingSummary, ReviewDecisionPayload } from "./types";
 
 export function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
@@ -42,7 +43,13 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
     passed: record.passed,
     result: { passed: record.passed, findings: record.findings },
     acDropped,
-    ...(Array.isArray(record.advisoryFindings) ? { advisoryFindings: record.advisoryFindings } : {}),
+    // Op output crosses this seam untyped (`output: unknown`), so the shape is asserted
+    // rather than checked. Upstream both ops return `Finding[]`
+    // (operations/{adversarial,semantic}-review.ts) and every consumer downstream is now
+    // typed, so this is the single explicit trust point — not an implicit any (#1816).
+    ...(Array.isArray(record.advisoryFindings)
+      ? { advisoryFindings: record.advisoryFindings as readonly AdvisoryFinding[] }
+      : {}),
   };
 }
 

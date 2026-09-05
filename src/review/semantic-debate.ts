@@ -15,6 +15,7 @@ import { filterByAcGroundingMinimal } from "./ac-quote-validator";
 import { MAX_ACKS } from "./acks";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { normalizeIssueText } from "./recurrence-demotion";
+import type { AdvisoryFinding } from "./review-audit";
 import {
   formatFindings,
   isBlockingSeverity,
@@ -34,7 +35,7 @@ function recordSemanticDebateAudit(opts: {
   passed: boolean;
   blockingThreshold?: "error" | "warning" | "info";
   result: { passed: boolean; findings: unknown[] } | null;
-  advisoryFindings?: unknown[];
+  advisoryFindings?: readonly AdvisoryFinding[];
   /** #1423 — prior findings resolved or withdrawn, recorded outside `result.findings`. */
   acks?: ReviewAck[];
 }): void {

@@ -1,6 +1,7 @@
 import type { NonBlockingFixConfig } from "@/config/selectors";
 import type { Finding, FixCycleContext, FixStrategy } from "@/findings";
 import type { DeterministicOperation, RunOperation } from "@/operations";
+import type { AdvisoryFinding } from "@/review/review-audit";
 import type { NbfFlakeTriageTransaction } from "./nbf-flake-triage";
 import type { RepoScopedFixRecord } from "./repo-scoped-fix-record";
 
@@ -118,7 +119,7 @@ export type ReviewDecisionPayload =
       result: { passed: boolean; findings: unknown[] };
       acDropped?: DroppedFindingSummary[];
       /** Sub-threshold findings retained as advisory — carries `meta.coverageGap`. */
-      advisoryFindings?: unknown[];
+      advisoryFindings?: readonly AdvisoryFinding[];
     }
   | {
       reviewer: "semantic" | "adversarial";
