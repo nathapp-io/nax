@@ -337,7 +337,7 @@ describe("native session compaction settings", () => {
 
   test("closing clears the settings and the usage anchor, like every other session map", async () => {
     const handle = await openNativeSession("sess-cfg2", opts({ compaction: settings }));
-    nativeSessionLastUsage.set("sess-cfg2", { inputTokens: 10, anchorIndex: 0 });
+    nativeSessionLastUsage.set("sess-cfg2", { promptTokens: 10, anchorIndex: 0 });
     await closeNativeSession(handle, false);
     expect(nativeSessionCompaction.has("sess-cfg2")).toBe(false);
     expect(nativeSessionLastUsage.has("sess-cfg2")).toBe(false);

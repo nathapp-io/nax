@@ -75,7 +75,7 @@ export const nativeSessionCompaction = new Map<string, ResolvedCompaction>();
  * be estimated from scratch. A process restart still loses it, which is the case
  * the reactive backstop covers.
  */
-export const nativeSessionLastUsage = new Map<string, { inputTokens: number; anchorIndex: number }>();
+export const nativeSessionLastUsage = new Map<string, { promptTokens: number; anchorIndex: number }>();
 
 /** Records how the session's latest turn ended, for `closeNativeSession`. */
 export function markNativeTurnOutcome(sessionName: string, failed: boolean): void {

@@ -43,7 +43,7 @@ describe("estimateContextTokens", () => {
     ];
     // Anchor says the first two messages really cost 50 tokens; only the
     // trailing message is guessed. Without the anchor this would read ~1100.
-    expect(estimateContextTokens(messages, { inputTokens: 50 }, 1)).toBe(150);
+    expect(estimateContextTokens(messages, { promptTokens: 50 }, 1)).toBe(150);
   });
 
   test("estimates every message when there is no anchor", () => {

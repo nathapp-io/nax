@@ -157,7 +157,7 @@ export async function runNativeTurn(
   const interactions: InteractionExchange[] = [];
 
   const anchor = nativeSessionLastUsage.get(handle.id);
-  let lastUsage = anchor?.inputTokens !== undefined ? { inputTokens: anchor.inputTokens } : undefined;
+  let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
   let anchorIndex = anchor?.anchorIndex;
 
   // nax#1838: the save below the loop is the clean exit's alone. A turn that
@@ -300,9 +300,9 @@ export async function runNativeTurn(
       // above always requests) the cached prefix arrives in the cache fields,
       // and counting inputTokens alone reads a 71k-token context as ~16.
       const promptTokens = inputClassTokens(res.usage);
-      lastUsage = { inputTokens: promptTokens };
+      lastUsage = { promptTokens };
       anchorIndex = messages.length - 1;
-      nativeSessionLastUsage.set(handle.id, { inputTokens: promptTokens, anchorIndex });
+      nativeSessionLastUsage.set(handle.id, { promptTokens, anchorIndex });
 
       deps.onActivity?.({
         kind: "usage",

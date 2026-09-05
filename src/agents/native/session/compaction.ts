@@ -68,14 +68,19 @@ export function estimateTokens(message: TranscriptMessage): number {
 /**
  * Anchor on truth, guess only the tail.
  *
- * `lastUsage.inputTokens` is what the provider actually charged for everything
- * up to and including `anchorIndex`, so only messages after it are estimated.
+ * `lastUsage.promptTokens` is every token the provider counted for the prompt
+ * up to and including `anchorIndex` — uncached input plus cache reads plus
+ * cache writes (see `inputClassTokens`). It is deliberately not just the
+ * uncached input: under prompt caching the cached prefix is reported
+ * separately, and anchoring on that one field reads a 71k-token context as
+ * ~16 and silently disables compaction (nax#1852).
+ *
  * With no anchor every message is estimated, which is the case the reactive
  * backstop exists to cover.
  */
 export function estimateContextTokens(
   messages: readonly TranscriptMessage[],
-  lastUsage?: { readonly inputTokens: number },
+  lastUsage?: { readonly promptTokens: number },
   anchorIndex?: number,
 ): number {
   if (lastUsage === undefined || anchorIndex === undefined) {
@@ -83,7 +88,7 @@ export function estimateContextTokens(
   }
   let trailing = 0;
   for (let i = anchorIndex + 1; i < messages.length; i++) trailing += estimateTokens(messages[i] as TranscriptMessage);
-  return lastUsage.inputTokens + trailing;
+  return lastUsage.promptTokens + trailing;
 }
 
 /**
