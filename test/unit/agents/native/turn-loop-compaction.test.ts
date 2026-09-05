@@ -303,6 +303,87 @@ describe("proactive compaction", () => {
       expect(tokens?.after).toBeGreaterThan(0);
     });
   });
+
+  /** Big enough to leave something to summarize, small enough not to trip the
+   *  threshold on its own. See the sizing table in the plan. */
+  async function seedCompactableTranscript() {
+    await saveTranscript(dir, "sess-c", [
+      { role: "user", content: "the task" },
+      { role: "assistant", content: "a".repeat(12_000) },
+      { role: "user", content: "b".repeat(12_000) },
+      { role: "assistant", content: "c".repeat(12_000) },
+    ]);
+  }
+
+  test("counts cached prompt tokens toward the compaction threshold", async () => {
+    // Regression for nax#1852. The provider serves a cached prefix, so it
+    // reports 16 uncached input tokens and 71,755 cache reads. Anchoring on
+    // inputTokens alone reads that 71,771-token prompt as ~16, and compaction
+    // never fires even though the prompt is 4x the window.
+    await seedCompactableTranscript();
+    let summarizeCalls = 0;
+    let completeCalls = 0;
+
+    await runNativeTurn(handle, "next", opts(), {
+      contextWindow: 20_000,
+      compaction: cfg,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return { text: "summary", usage, costUsd: 0 };
+      },
+      complete: async () => {
+        completeCalls += 1;
+        if (completeCalls === 1) {
+          // Sets the anchor. The tool call forces a second round trip, whose
+          // pre-flight check is the assertion point.
+          return {
+            text: "working",
+            toolCalls: [{ id: "c1", name: "t", input: {} }],
+            usage: { inputTokens: 16, outputTokens: 5, cacheReadInputTokens: 71_755 },
+            costUsd: 0,
+          };
+        }
+        return { text: "done", usage, costUsd: 0 };
+      },
+    });
+
+    expect(completeCalls).toBe(2);
+    expect(summarizeCalls).toBe(1);
+  });
+
+  test("does not compact when the same transcript reports no cached tokens", async () => {
+    // Negative control for the test above. Identical in every respect except
+    // that the prompt was not cached, so the anchor is genuinely small. If this
+    // one also compacts, the test above is passing on transcript size rather
+    // than on the cache accounting, and proves nothing.
+    await seedCompactableTranscript();
+    let summarizeCalls = 0;
+    let completeCalls = 0;
+
+    await runNativeTurn(handle, "next", opts(), {
+      contextWindow: 20_000,
+      compaction: cfg,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return { text: "summary", usage, costUsd: 0 };
+      },
+      complete: async () => {
+        completeCalls += 1;
+        if (completeCalls === 1) {
+          return {
+            text: "working",
+            toolCalls: [{ id: "c1", name: "t", input: {} }],
+            usage: { inputTokens: 16, outputTokens: 5 },
+            costUsd: 0,
+          };
+        }
+        return { text: "done", usage, costUsd: 0 };
+      },
+    });
+
+    expect(completeCalls).toBe(2);
+    expect(summarizeCalls).toBe(0);
+  });
 });
 
 class ProtocolStreamError extends Error {
