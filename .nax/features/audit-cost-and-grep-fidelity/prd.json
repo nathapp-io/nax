@@ -1,0 +1,230 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "audit-cost-and-grep-fidelity",
+  "branchName": "feat/audit-cost-and-grep-fidelity",
+  "createdAt": "2026-09-05T00:00:00.000Z",
+  "updatedAt": "2026-09-05T10:25:08.127Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Prompt auditing degrades instead of blocking feature-less commands",
+      "description": "**Goal** — Stop createRuntime from throwing when prompt auditing is enabled but no feature name is available, and make nax prompts supply its already-validated feature so it keeps auditing.\n\n**Motivation** — nax setup and nax prompts never supply a feature name, so both commands exit 1 for anyone who has enabled agent.promptAudit.enabled globally, and the thrown error names promptAudit and featureName, neither of which the user was thinking about.\n\n**Approach** — Baseline: createRuntime (src/runtime/index.ts:274) throws NaxError with code AUDIT_FEATURE_NAME_REQUIRED when config.agent.promptAudit.enabled is true and opts.featureName is absent. Target: that branch no longer throws — with no feature name available it resolves the same no-op auditor the disabled path already resolves (createNoOpPromptAuditor, src/runtime/index.ts:284), and createRuntime returns normally. With a feature name it is unchanged — a real PromptAuditor. promptsCommand (src/cli/prompts-main.ts:81) currently calls `_promptsMainDeps.createRuntime(config, workdir)`; target passes a third argument carrying featureName set to the command's already-validated feature option, so nax prompts audits rather than silently degrading. src/cli/setup.ts needs no change: once the throw is gone, its two-argument call resolves the no-op auditor, which is the correct outcome for a command that has no feature. src/cli/plan-runtime.ts:83 already uses the correct three-argument form `createRuntime(cfg, wd, { featureName })` — mirror that shape at the prompts-main.ts call site.\n\n**Scope** — In: the createRuntime audit branch and the promptsCommand call site. Out: src/cli/setup.ts (deliberately unchanged), warning emission on no-op degradation (feature-level exclusion).\n\n**Interface**\n```typescript\n// src/runtime/index.ts — createRuntime, unchanged signature\nexport function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime\n\n// src/cli/prompts-main.ts — call site gains a third argument\nconst runtime = _promptsMainDeps.createRuntime(config, workdir, { featureName: feature });\n```",
+      "acceptanceCriteria": [
+        "createRuntime(config, workdir) with agent.promptAudit.enabled set to true and no options argument resolves to a runtime instead of throwing",
+        "For that same runtime, recording a prompt-audit entry and flushing the auditor writes no file into the configured prompt-audit directory",
+        "createRuntime(config, workdir, { featureName: \"demo\" }) with agent.promptAudit.enabled set to true resolves to a runtime whose auditor, after recording an entry and flushing, has written a file under the prompt-audit directory, preserving the enabled-with-feature path unchanged",
+        "Invoking promptsCommand with feature set to a feature whose prd.json exists calls _promptsMainDeps.createRuntime with a third argument whose featureName equals that same feature string"
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "runtime"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single behavioral branch change plus one call-site argument addition, both in existing well-tested modules with no new abstractions."
+      },
+      "contextFiles": [
+        "src/runtime/index.ts",
+        "src/cli/prompts-main.ts",
+        "src/cli/plan-runtime.ts",
+        "src/cli/setup.ts",
+        "test/unit/runtime/runtime.test.ts"
+      ],
+      "outOfScope": [
+        "emitting a warning when prompt auditing degrades to the no-op auditor is deferred. nax setup has no feature by design and would warn on every invocation"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Sessionless complete() audit records carry their stage and session id",
+      "description": "**Goal** — Make prompt-audit records produced by the sessionless complete() path name the stage they ran at in their filename and carry the session id the native adapter already sends to the provider.\n\n**Motivation** — Audit records written by the sessionless complete() path carry a constant complete filename suffix that discards the stage the record's own header knows, and carry no session identity even though that path derives a session id and sends it to the provider; within one session the records are distinguishable only by their millisecond timestamp prefix, and correlate to nothing.\n\n**Approach** — Two independent gaps in one story because both are edits to the prompt-audit record for the same call shape. deriveAuditSuffix (src/runtime/prompt-auditor.ts:145): baseline returns the constant \"complete\" for a complete entry. Target: returns the entry's stage joined to complete (acceptance-complete) when entry.stage is set, and the bare \"complete\" when it is not — mirroring the run branch immediately above, which already puts the stage in the name. CompleteResult (src/agents/types.ts:382): add optional sessionId, absent on adapters that do not set it. CompleteDispatchEvent (src/runtime/dispatch-events.ts:83): additionally carries an optional sessionId. It is a plain field rather than the sibling protocolIds object because a one-shot has no record id and no turn id. attachAuditSubscriber (src/runtime/middleware/audit.ts:5): baseline populates sessionId on the audit entry only in the session-turn branch, from event.protocolIds.sessionId. Target: a complete event's sessionId, when present, reaches the audit entry's existing sessionId field. The native adapter's one-shot complete() path already derives nativeSessionId(this.oneShotKey) and sends it to the provider as sessionId (src/agents/native/adapter.ts:180) — it must also return that same value as CompleteResult.sessionId. buildCompleteEvent (src/agents/manager-dispatch.ts) assembles the dispatch event and must carry sessionId through from its input to the returned event.\n\n**Scope** — In: prompt-auditor.ts deriveAuditSuffix, CompleteResult, CompleteDispatchEvent, attachAuditSubscriber, buildCompleteEvent, the native adapter's complete() sessionId plumbing. Out: extending the #1824 per-conversation ordinal to complete records; redaction/rotation/access-control for session ids in the prompt-audit directory.\n\n**Interface**\n```typescript\n// src/agents/types.ts — CompleteResult gains a field\nexport interface CompleteResult {\n  output: string;\n  tokenUsage: TokenUsage;\n  estimatedCostUsd: number;\n  exactCostUsd?: number;\n  sessionId?: string;\n  // ...existing fields unchanged\n}\n\n// src/runtime/dispatch-events.ts — CompleteDispatchEvent gains a field\nexport interface CompleteDispatchEvent extends DispatchEventBase {\n  readonly kind: \"complete\";\n  readonly sessionId?: string;\n}\n```",
+      "acceptanceCriteria": [
+        "Recording a complete audit entry with a session name and stage acceptance, then flushing, writes a file whose name ends with -acceptance-complete.txt",
+        "Recording a complete audit entry with a session name and no stage, then flushing, writes a file whose name ends with -complete.txt and contains no empty segment before that suffix",
+        "Recording a run audit entry with a session name, stage run and turn 1, then flushing, writes a file whose name ends with -run-t01.txt, preserving the run branch's suffix unchanged by this story",
+        "buildCompleteEvent called with a sessionId of nax-abc12345 returns an event whose sessionId is nax-abc12345",
+        "buildCompleteEvent called with no sessionId returns an event that has no sessionId property",
+        "With the audit subscriber attached to a dispatch event bus, emitting a complete dispatch event carrying sessionId nax-abc12345 causes the auditor to receive an entry whose sessionId is nax-abc12345",
+        "NativeAgentAdapter.complete() returns a CompleteResult whose sessionId equals the sessionId the adapter passed to the nax-ai client's complete call",
+        "Two successive NativeAgentAdapter.complete() calls on the same adapter instance return the same non-empty sessionId, because one-shots share a backend to keep the provider's prompt cache warm"
+      ],
+      "tags": [
+        "feature",
+        "runtime",
+        "audit"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Touches five files across a producer-to-consumer chain (adapter -> event -> subscriber -> auditor) with an existing test to update, but uses only standard field-plumbing patterns already established elsewhere (session-turn's protocolIds handling)."
+      },
+      "contextFiles": [
+        "src/runtime/prompt-auditor.ts",
+        "src/runtime/dispatch-events.ts",
+        "src/runtime/middleware/audit.ts",
+        "src/agents/manager-dispatch.ts",
+        "src/agents/native/adapter.ts"
+      ],
+      "outOfScope": [
+        "the per-conversation ordinal that run records gained in #1824 is not extended to complete records here; an ordinal for a sessionless path needs its own counter design",
+        "session ids written into audit files are correlation identifiers, not credentials — redaction, rotation, and access control for the prompt-audit directory are out of scope, and the session-turn path already writes them"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/runtime/prompt-auditor.test.ts",
+          "reason": "the test named \"flush() writes legacy session-style complete filename for complete entries\" records a `complete` entry with `stage: \"acceptance\"` and `sessionName: \"nax-abc12345-my-feature-us-000-refine\"`, then asserts the written path is exactly `1234567890000-nax-abc12345-my-feature-us-000-refine-complete.txt`. Under US-002 AC 1 a `complete` entry that has a stage puts that stage in the suffix, so the assertion fails against a correct implementation. US-002 owns updating it to the replacing invariant: the filename is the timestamp, the session name, the stage, then `complete` — `1234567890000-nax-abc12345-my-feature-us-000-refine-acceptance-complete.txt`."
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "The native adapter reports which rate card priced the call",
+      "description": "**Goal** — Make buildRateCard report which branch it took (config override vs nax-ai catalog) and have the native adapter's complete() and sendTurn() attach that source to their results.\n\n**Motivation** — First half of #1817: on the native transport the cost figure is computed from nax-ai's real catalog rates while the row is stamped pricingSource: \"fallback-rates\", which is documented to mean the number came from a generic $3/$15-per-1M card; the value exists so an operator can tell a guessed estimate from a real one, and on this path it fires on estimates that are not guessed.\n\n**Approach** — buildRateCard (src/agents/native/models.ts:209): baseline `buildRateCard(catalog, override) -> TokenPricing`, returning the override wholesale when present and a card built from the catalog otherwise. Target: returns both the card and the branch it took — the rate object plus a source discriminant that is config-override when an override was supplied and catalog-rates otherwise. Its two call sites are src/agents/native/adapter.ts:187 and :224. Why the pricing source is reported rather than re-derived: resolvePricingSource re-states the MODEL_PRICING[bareModel] predicate that the estimator uses, and that duplication is the defect — on the native path the estimator prices from nax-ai's catalog while the label consults a table the catalog was chosen to avoid maintaining. The fix therefore does not add a second predicate anywhere. buildRateCard already owns the single override !== undefined branch that decides which card is used, so it reports the branch it took, and that value travels with the result to the row (US-004 consumes it). Nothing consumes the field yet in this story.\n\n**Scope** — In: buildRateCard's return shape, its two adapter.ts call sites, CompleteResult.pricingSource, TurnResult.pricingSource. Out: wiring pricingSource into dispatch events or cost rows (US-004); honouring tiered pricing (feature-level exclusion).\n\n**Interface**\n```typescript\n// src/agents/native/models.ts\nexport function buildRateCard(\n  catalog: Pricing,\n  override: TokenPricing | undefined\n): { rates: TokenPricing; source: \"config-override\" | \"catalog-rates\" }\n\n// src/agents/types.ts — CompleteResult gains a field\nexport interface CompleteResult {\n  // ...existing fields (including sessionId from US-002)\n  pricingSource?: string;\n}\n\n// src/agents/session-types.ts — TurnResult gains a field\nexport interface TurnResult {\n  // ...existing fields\n  pricingSource?: string;\n}\n```",
+      "acceptanceCriteria": [
+        "buildRateCard called with a catalog and no override reports its source as catalog-rates, and the rate object it returns carries the catalog's cache-read and cache-write rates",
+        "buildRateCard called with a catalog and an explicit override reports its source as config-override, and the rate object it returns is the override object itself, not merged with the catalog",
+        "buildRateCard called with a catalog carrying tiers reports its source as catalog-rates and returns the tiers translated to nax's field names",
+        "NativeAgentAdapter.complete() with a modelDef that carries no pricing returns a CompleteResult whose pricingSource is catalog-rates",
+        "NativeAgentAdapter.complete() with a modelDef that carries an explicit pricing override returns a CompleteResult whose pricingSource is config-override",
+        "A turn sent through NativeAgentAdapter.sendTurn() on a session whose modelDef carries no pricing returns a TurnResult whose pricingSource is catalog-rates"
+      ],
+      "tags": [
+        "feature",
+        "native",
+        "cost"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Changes a shared function's return shape across two call sites plus two result-type additions, with an existing test file requiring updates — standard patterns, no new abstractions."
+      },
+      "contextFiles": [
+        "src/agents/native/models.ts",
+        "src/agents/native/adapter.ts",
+        "src/agents/types.ts",
+        "src/agents/session-types.ts",
+        "test/unit/agents/native/models.test.ts"
+      ],
+      "suggestedCriteria": [
+        "estimateCostUsd computed from buildRateCard's returned rate card produces the same cost value it produced before this change, for identical catalog and override inputs, so the return-shape change does not alter billed cost math",
+        "buildRateCard called with a catalog whose cacheRead and cacheWrite are undefined returns a rate card with cacheReadPer1M and cacheCreationPer1M left undefined rather than throwing"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/agents/native/models.test.ts",
+          "reason": "the three tests in the `buildRateCard` describe block assert on the function's return value as if it were the rate object itself (`expect(buildRateCard(catalog, undefined)).toEqual({ inputPer1M: 2, ... })`, `rates.tiers` equality, and `expect(rates).toBe(override)`). Under US-003 the function returns the card together with the source discriminant, so all three fail against a correct implementation. US-003 owns updating them to the replacing invariant: each test asserts the same rate values on the returned card, and additionally asserts the reported source is `catalog-rates` for the two catalog cases and `config-override` for the override case."
+        }
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Cost rows record the pricing source their producer reported",
+      "description": "**Goal** — Carry the pricingSource US-003's buildRateCard reports through the dispatch event and have the cost subscriber prefer it over re-deriving from the model string.\n\n**Motivation** — Second half of #1817: the event carries the producer's answer and the cost subscriber prefers it, exactly as it already prefers a wire-exact cost over an estimate on the same line; the ACP path supplies no value and is unaffected.\n\n**Approach** — DispatchEventBase (src/runtime/dispatch-events.ts) target: carries an optional pricingSource, so both event kinds can report the rate card their producer actually used. resolvePricingSource (src/agents/cost/calculate.ts:192): baseline returns \"model-rates\" | \"fallback-rates\" | \"unknown-model\". Target: the same function and the same MODEL_PRICING predicate, with the return union widened to admit \"catalog-rates\" and \"config-override\" so producer-supplied values type-check through it. CostEvent.pricingSource (src/runtime/cost-aggregator.ts:70): baseline an inline union \"wire\" | \"model-rates\" | \"fallback-rates\" | \"unknown-model\", declared independently of resolvePricingSource's return type. Target: the same inline union widened with \"catalog-rates\" and \"config-override\" — this is a second, separate declaration site; widening only one of the two leaves the feature half-landed and failing typecheck. attachCostSubscriber (src/runtime/middleware/cost.ts:97): baseline `pricingSource: hasWireExactCost ? \"wire\" : resolvePricingSource(event.model)`. Target: a wire-exact cost still wins; otherwise a pricingSource carried on the event is used as-is, and resolvePricingSource(event.model) is consulted only when the event carries none — this is the same producer-supplied-wins precedent the \"wire\" branch on that line already sets.\n\n**Scope** — In: DispatchEventBase, buildCompleteEvent, buildSessionTurnEvent, resolvePricingSource's return type, CostEvent.pricingSource, attachCostSubscriber. Out: honouring tiered pricing (#1843, feature-level exclusion); changing the meaning of existing wire/model-rates/fallback-rates/unknown-model values (feature-level exclusion).\n\n**Interface**\n```typescript\n// src/runtime/dispatch-events.ts\nexport interface DispatchEventBase {\n  // ...existing fields\n  readonly pricingSource?: string;\n}\n\n// src/agents/cost/calculate.ts\nexport function resolvePricingSource(\n  model: string | undefined\n): \"model-rates\" | \"fallback-rates\" | \"unknown-model\" | \"catalog-rates\" | \"config-override\"\n\n// src/runtime/cost-aggregator.ts — CostEvent\nreadonly pricingSource?: \"wire\" | \"model-rates\" | \"fallback-rates\" | \"unknown-model\" | \"catalog-rates\" | \"config-override\";\n```",
+      "acceptanceCriteria": [
+        "With the cost subscriber attached to a dispatch event bus, emitting a complete event that carries token usage, no exactCostUsd, and pricingSource catalog-rates records a cost row whose pricingSource is catalog-rates",
+        "Emitting the same event with pricingSource config-override records a cost row whose pricingSource is config-override",
+        "Emitting an event that carries token usage and no pricingSource records a cost row whose pricingSource equals what resolvePricingSource returns for that event's model, preserving the ACP path unchanged",
+        "Emitting an event that carries both pricingSource catalog-rates and a finite exactCostUsd records a cost row whose pricingSource is wire",
+        "resolvePricingSource called with a model id absent from MODEL_PRICING still returns fallback-rates, and called with one present still returns model-rates",
+        "A CostEvent constructed with pricingSource catalog-rates is accepted by the aggregator and read back from the recorded row with that same value, so the aggregator's own union admits the new values",
+        "buildSessionTurnEvent called with a TurnResult whose pricingSource is catalog-rates returns an event whose pricingSource is catalog-rates"
+      ],
+      "tags": [
+        "feature",
+        "cost",
+        "runtime"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Plumbs a new field through five files with two independent union-widening sites that must move together, but every change follows an existing precedent (the wire-wins branch) with no new abstractions."
+      },
+      "contextFiles": [
+        "src/runtime/dispatch-events.ts",
+        "src/agents/manager-dispatch.ts",
+        "src/runtime/middleware/cost.ts",
+        "src/runtime/cost-aggregator.ts",
+        "src/agents/cost/calculate.ts"
+      ],
+      "outOfScope": [
+        "honouring nax-ai's tiered pricing (inputTokensAbove) is out of scope and tracked separately in #1843; this feature changes the pricing label, not the pricing arithmetic",
+        "changing the documented meaning of the existing wire, model-rates, fallback-rates and unknown-model values is out of scope; this feature only adds values"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Grep discloses that a zero-match search was performed literally",
+      "description": "**Goal** — Append an explanatory clause to Grep's zero-match result when the searched pattern contains regex metacharacters, without changing the tool's literal-only matching behavior.\n\n**Motivation** — The Grep coding tool matches literal strings only, and a zero-match search returns an ordinary confident negative with isError unset; an agent that sends a regex is told the symbol does not occur, not that its pattern was matched literally, and a measured instance of this caused a real caller-side regression to ship.\n\n**Approach** — grepTool.run (src/tools/grep.ts:87): baseline a zero-match search returns `{ content: 'no matches for \"<pattern>\"' }`. Target: the same result, with a clause appended when the pattern contains a regex metacharacter, stating that the search was performed literally and that regex metacharacters are not interpreted. isError stays unset in both cases. Regex metacharacter detection: the disclosure fires when the pattern contains at least one regex metacharacter — `.` `*` `+` `?` `(` `)` `[` `]` `{` `}` `^` `$` `\\` or the alternation bar — and the search returned zero matches. Both conditions are required, so a literal pattern that legitimately finds nothing is unaffected, and a metacharacter pattern that does match is unaffected. The false-positive case — a literal search for a filename such as foo.ts that genuinely has no occurrences — receives one extra explanatory clause on an already-failed search, which is an acceptable cost for turning a false negative into a correctable one. Detection is a module-private helper, not a new export.\n\n**Scope** — In: the zero-match branch in grepTool.run and a new module-private detection helper. Out: opt-in regex matching, auto-detecting and silently re-running as regex, rewording the tool's description or pattern property description (all feature-level exclusions).\n\n**Interface**\n```typescript\n// src/tools/grep.ts — module-private, not exported\nfunction containsRegexMetacharacter(pattern: string): boolean\n```",
+      "acceptanceCriteria": [
+        "grepTool.run with pattern export.*divide against a tree with no literal occurrence of that string returns content that includes no matches for and the pattern, and additionally states that the search was performed literally and that regex metacharacters were not interpreted",
+        "grepTool.run with pattern divide against a tree with no occurrence returns content that includes no matches for and the pattern, and does not mention regex metacharacters",
+        "The result returned for a zero-match search on a pattern containing regex metacharacters has no isError set, because a search that genuinely matched nothing is not a failure",
+        "grepTool.run with a pattern containing regex metacharacters that does produce matching rows returns those rows and does not mention regex metacharacters",
+        "grepTool.run on a machine where neither rg nor grep resolves returns a result with isError set, unchanged by this story"
+      ],
+      "tags": [
+        "feature",
+        "tools"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single-file change adding one private helper and one conditional clause to an existing branch, standard pattern, no new abstractions."
+      },
+      "contextFiles": [
+        "src/tools/grep.ts",
+        "src/tools/registry.ts",
+        "test/unit/tools/grep.test.ts"
+      ],
+      "outOfScope": [
+        "opt-in regex matching for Grep — an input that drops --fixed-strings/-F and accepts a real regex — is deferred; this story makes the existing literal restriction visible in the result, widening the tool schema is a separate decision affecting the 15 operations that hold Grep",
+        "auto-detecting a regex-shaped pattern and silently re-running the search as a regex is deferred",
+        "rewording the Grep tool description or its pattern property description is out of scope — both already say \"literal\" and did not deter the failure"
+      ]
+    }
+  ],
+  "analysis": "Four disjoint defects, five stories (US-004 depends on US-003; US-001/US-002/US-005 independent).\n\nUS-001 (src/runtime/index.ts:274-281): createRuntime's audit branch throws NaxError('AUDIT_FEATURE_NAME_REQUIRED') when config.agent.promptAudit.enabled is true and opts.featureName is absent. Fix: when featureName is absent, fall through to `promptAuditor = createNoOpPromptAuditor()` (already imported, used at the disabled-path else branch) instead of throwing. src/cli/prompts-main.ts:81 calls `_promptsMainDeps.createRuntime(config, workdir)` with only two args; needs a third arg `{ featureName: feature }` (the already-validated `feature` option in PromptsCommandOptions, destructured at top of promptsCommand). src/cli/plan-runtime.ts:83 shows the correct pattern: `_planDeps.createRuntime: (cfg, wd, featureName) => createRuntime(cfg, wd, { featureName })` — but that wraps at the deps layer; spec says US-001 wraps at the *call site* in prompts-main.ts directly (passing the object literal), not by adding a wrapping dep. src/cli/setup.ts's two-arg call site is deliberately unchanged (no feature by design).\n\nUS-002: two independent gaps in one story.\n(a) src/runtime/prompt-auditor.ts:145 `deriveAuditSuffix`: for `entry.callType === 'complete'` it hardcodes `return 'complete'`, discarding `entry.stage`. The `run` branch immediately above (lines ~140-143) does `const stage = entry.stage ?? 'run'; return `${stage}-t${...}`;` — mirror that shape: when entry.stage is set, return `${entry.stage}-complete`; when absent, return the bare `'complete'`.\n(b) sessionId correlation: CompleteResult (src/agents/types.ts:382) needs an optional `sessionId?: string`. CompleteDispatchEvent (src/runtime/dispatch-events.ts:83, currently `{ kind: 'complete' }` extending DispatchEventBase) needs an optional `sessionId?: string` field (a plain field, not nested in protocolIds like session-turn's `protocolIds.sessionId` — a one-shot has no record id / turn id). buildCompleteEvent in src/agents/manager-dispatch.ts:110-130ish needs to read `sessionId` from its input and set it on the returned event when present. attachAuditSubscriber in src/runtime/middleware/audit.ts:4-28 currently only sets `sessionId`/`recordId` inside the `event.kind === 'session-turn'` spread; needs a second spread/conditional for `event.kind === 'complete' && event.sessionId` to carry `sessionId` onto the PromptAuditEntry (which already declares `sessionId?: string | null` at prompt-auditor.ts and the txt renderer already prints `SessionId:` when set — only the producer chain is missing). The native adapter's complete() (src/agents/native/adapter.ts:187) already computes `nativeSessionId(this.oneShotKey)` and passes it as `sessionId` to `client.complete()` — it must also put that same value onto the returned CompleteResult.sessionId. Two successive complete() calls on the same adapter instance must return the same non-empty sessionId because nativeSessionId is derived from `this.oneShotKey`, which is stable per-adapter-instance.\n\nUS-003 (src/agents/native/models.ts:209 buildRateCard): currently returns `TokenPricing` directly — `if (override !== undefined) return override; return { ...catalog-derived card... }`. Target: return `{ rates: TokenPricing, source: 'config-override' | 'catalog-rates' }` (or similar shape carrying both) instead of the bare rate object. Its two call sites, src/agents/native/adapter.ts:187 (complete()) and :224 (sendTurn()), both currently do `const rates = buildRateCard(catalog, options.modelDef.pricing);` and pass `rates` straight to `estimateCostUsd`/similar — both need updating to destructure the new return shape, using `.rates` for cost math and `.source` to stamp `pricingSource` on the CompleteResult / TurnResult they build. CompleteResult and TurnResult each need an optional `pricingSource?: string`. Existing test/unit/agents/native/models.test.ts buildRateCard tests assert directly on the old bare-object return shape (`toEqual`, `.tiers`, `.toBe(override)`) — these must be updated in this story per the spec's Modifies section, to assert on `.rates`-equivalent values plus `.source` being 'catalog-rates' or 'config-override'.\n\nUS-004 (depends on US-003): plumbs pricingSource from adapter result -> TurnResult/CompleteResult -> dispatch event -> cost row.\n- DispatchEventBase (src/runtime/dispatch-events.ts, currently ends around line ~58 with scopeId) needs an optional `pricingSource?: string` field so both SessionTurnDispatchEvent and CompleteDispatchEvent inherit it.\n- buildCompleteEvent and buildSessionTurnEvent (src/agents/manager-dispatch.ts:58, :110) need to read `result.pricingSource`/`options...pricingSource` from their inputs and set it on the returned event when present.\n- resolvePricingSource (src/agents/cost/calculate.ts:191-196) currently returns `'model-rates' | 'fallback-rates' | 'unknown-model'`; widen the union to add `'catalog-rates' | 'config-override'`. Function body/predicate (`MODEL_PRICING[bareModel] ? 'model-rates' : 'fallback-rates'`) is unchanged — only the return type signature widens, per spec's explicit 'do not add a second predicate' guidance.\n- CostEvent.pricingSource (src/runtime/cost-aggregator.ts:70, currently the SEPARATE inline union `'wire' | 'model-rates' | 'fallback-rates' | 'unknown-model'`) must independently widen with the same two new values — this is a second declaration site; missing it half-lands the feature and fails typecheck.\n- attachCostSubscriber (src/runtime/middleware/cost.ts:56-97): currently `pricingSource: hasWireExactCost ? 'wire' : resolvePricingSource(event.model)`. Target: `hasWireExactCost` still wins first; otherwise prefer `event.pricingSource` when the event carries one, falling back to `resolvePricingSource(event.model)` only when the event carries none (mirrors the existing wire-wins precedent on the same line).\n\nUS-005 (src/tools/grep.ts): grepTool.run always builds argv with `--fixed-strings` (rg) / `-F` (grep) (buildGrepArgv:22-29) — literal matching is unchanged, out of scope to alter. The miss branch is at line ~87-88: `if (exitCode === 1 && stdout.trim() === '') return { content: 'no matches for \"' + pattern + '\"' };`. Target: add a module-private helper (not exported) that detects at least one regex metacharacter in `pattern` — `.` `*` `+` `?` `(` `)` `[` `]` `{` `}` `^` `$` `\\` or `|` — and when true AND the search returned zero matches, append an explanatory clause stating the search was performed literally and regex metacharacters are not interpreted. `isError` must stay unset for this case (a genuine zero-match result is not a failure) — only the content string changes. A literal pattern with no metacharacters that finds nothing must return the existing bare message unchanged. A metacharacter pattern that DOES match returns the matching rows and must NOT mention regex metacharacters. Machine-has-neither-binary path (line ~61-63, `isError: true`) is unchanged.\n\nRisks: US-004's two separate union-widening sites (calculate.ts resolvePricingSource return type, cost-aggregator.ts CostEvent.pricingSource inline union) are easy to miss one of — both must change together or typecheck fails per spec's explicit warning. US-003's changed buildRateCard return shape requires updating its existing test file per spec Modifies (test/unit/agents/native/models.test.ts) and both of its two call sites in adapter.ts. US-002's existing prompt-auditor.test.ts test asserting the old bare 'complete' filename suffix on a staged entry must be updated per spec Modifies (assert the new '-acceptance-complete.txt' suffix). No migration path needed — no persisted data is backfilled (spec explicitly puts backfilling cost rows out of scope).",
+  "outOfScope": [
+    "US-005 only: opt-in regex matching for Grep — an input that drops --fixed-strings/-F and accepts a real regex — is deferred. This story makes the existing literal restriction visible in the result; widening the tool schema is a separate decision affecting the 15 operations that hold Grep.",
+    "US-005 only: auto-detecting a regex-shaped pattern and silently re-running the search as a regex is deferred.",
+    "US-005 only: rewording the Grep tool description or its pattern property description is out of scope — both already say \"literal\" and did not deter the failure.",
+    "US-001 only: emitting a warning when prompt auditing degrades to the no-op auditor is deferred. nax setup has no feature by design and would warn on every invocation.",
+    "US-002 only: the per-conversation ordinal that run records gained in #1824 is not extended to complete records here; an ordinal for a sessionless path needs its own counter design.",
+    "US-002 only: session ids written into audit files are correlation identifiers, not credentials. Redaction, rotation, and access control for the prompt-audit directory are out of scope, and the session-turn path already writes them.",
+    "US-004 only: honouring nax-ai's tiered pricing (inputTokensAbove) is out of scope and tracked separately in #1843. This feature changes the pricing label, not the pricing arithmetic.",
+    "Adding provider-prefixed model ids to MODEL_PRICING in src/agents/cost/pricing.ts is out of scope; requiring that table to track nax-ai's catalog is the maintenance burden #1817 exists to avoid.",
+    "Changing the documented meaning of the existing wire, model-rates, fallback-rates and unknown-model values is out of scope. This feature only adds values.",
+    "Backfilling pricingSource on cost rows already written to disk is out of scope.",
+    "Changing which stages or operations run on the native transport is out of scope; this feature changes what runs record, not what runs do."
+  ],
+  "routingProfile": "native"
+}
