@@ -8,7 +8,7 @@
  */
 
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
-import type { TokenUsage } from "@/agents/cost";
+import { inputClassTokens, type TokenUsage } from "@/agents/cost";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
@@ -157,7 +157,7 @@ export async function runNativeTurn(
   const interactions: InteractionExchange[] = [];
 
   const anchor = nativeSessionLastUsage.get(handle.id);
-  let lastUsage = anchor?.inputTokens !== undefined ? { inputTokens: anchor.inputTokens } : undefined;
+  let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
   let anchorIndex = anchor?.anchorIndex;
 
   // nax#1838: the save below the loop is the clean exit's alone. A turn that
@@ -295,9 +295,14 @@ export async function runNativeTurn(
       costUsd += res.costUsd;
       output = res.text;
 
-      lastUsage = { inputTokens: res.usage.inputTokens };
+      // nax#1852: the anchor is the whole prompt the provider charged for, not
+      // just its uncached portion. Under prompt caching (which the round trip
+      // above always requests) the cached prefix arrives in the cache fields,
+      // and counting inputTokens alone reads a 71k-token context as ~16.
+      const promptTokens = inputClassTokens(res.usage);
+      lastUsage = { promptTokens };
       anchorIndex = messages.length - 1;
-      nativeSessionLastUsage.set(handle.id, { inputTokens: res.usage.inputTokens, anchorIndex });
+      nativeSessionLastUsage.set(handle.id, { promptTokens, anchorIndex });
 
       deps.onActivity?.({
         kind: "usage",

@@ -4,6 +4,7 @@ export {
   estimateCostByDuration,
   estimateCostFromTokenUsage,
   formatCostWithConfidence,
+  inputClassTokens,
   resolvePricingSource,
 } from "./calculate";
 export { COST_RATES, MODEL_PRICING, RATE_CARD_REVIEWED } from "./pricing";

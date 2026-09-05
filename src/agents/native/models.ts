@@ -7,7 +7,7 @@
  */
 
 import type { Pricing, ThinkingLevel } from "@nathapp/nax-ai";
-import type { TokenUsage } from "@/agents/cost";
+import { inputClassTokens, type TokenUsage } from "@/agents/cost";
 import type { TokenPricing } from "@/config/schema-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
@@ -163,8 +163,7 @@ const PER_MILLION = 1_000_000;
 function selectRates(usage: TokenUsage, rates: TokenPricing): TokenPricing {
   if (rates.tiers === undefined || rates.tiers.length === 0) return rates;
 
-  const totalInputTokens =
-    usage.inputTokens + (usage.cacheReadInputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0);
+  const totalInputTokens = inputClassTokens(usage);
 
   let selected: TokenPricing | undefined;
   let selectedThreshold = -1;

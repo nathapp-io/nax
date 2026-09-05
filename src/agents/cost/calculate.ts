@@ -195,3 +195,18 @@ export function resolvePricingSource(model: string | undefined): "model-rates" |
   const { model: bareModel } = parseModelSpec(model);
   return MODEL_PRICING[bareModel] ? "model-rates" : "fallback-rates";
 }
+
+/**
+ * Tokens the provider counted as part of the prompt.
+ *
+ * Cache reads and writes are prompt tokens that the provider reports
+ * separately because it prices them differently — not tokens that were
+ * absent from the request. Any consumer asking "how big was the prompt"
+ * needs all three; `inputTokens` alone answers a different question and,
+ * under prompt caching, collapses to near zero (nax#1852).
+ *
+ * Output is deliberately excluded: this measures the prompt, not the call.
+ */
+export function inputClassTokens(usage: TokenUsage): number {
+  return usage.inputTokens + (usage.cacheReadInputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0);
+}
