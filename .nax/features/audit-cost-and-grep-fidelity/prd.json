@@ -3,7 +3,7 @@
   "feature": "audit-cost-and-grep-fidelity",
   "branchName": "feat/audit-cost-and-grep-fidelity",
   "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T10:41:09.695Z",
+  "updatedAt": "2026-09-05T11:12:05.230Z",
   "userStories": [
     {
       "id": "US-001",
@@ -68,8 +68,8 @@
         "audit"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -127,7 +127,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Changes a shared function's return shape across two call sites plus two result-type additions, with an existing test file requiring updates — standard patterns, no new abstractions."
+        "reasoning": "Changes a shared function's return shape across two call sites plus two result-type additions, with an existing test file requiring updates — standard patterns, no new abstractions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/native/models.ts",
@@ -148,7 +151,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3a6b057fccb93f1fe238a300bf89055bdbf406d3"
     },
     {
       "id": "US-004",

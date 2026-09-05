@@ -1,1 +1,2 @@
 [2026-09-05T10:41:06.449Z] US-001 — PASSED — Prompt auditing degrades instead of blocking feature-less commands — Cost: $0.9271
+[2026-09-05T11:12:01.965Z] US-002 — PASSED — Sessionless complete() audit records carry their stage and session id — Cost: $1.5789
