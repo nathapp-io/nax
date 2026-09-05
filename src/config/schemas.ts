@@ -354,16 +354,6 @@ export const NaxConfigSchema = z
           autoPersona: false,
           evidenceMode: "current" as const,
         },
-        review: {
-          enabled: true,
-          resolver: { type: "majority-fail-closed" as const },
-          sessionMode: "one-shot" as const,
-          rounds: 2,
-          mode: "panel" as const,
-          timeoutSeconds: 600,
-          autoPersona: false,
-          evidenceMode: undefined,
-        },
         acceptance: {
           enabled: false,
           resolver: { type: "majority-fail-closed" as const },

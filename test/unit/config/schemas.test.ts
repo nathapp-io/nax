@@ -338,7 +338,6 @@ describe("profile field — US-001-A", () => {
 describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
   type DebateStages = {
     plan: { mode: string };
-    review: { mode: string };
     acceptance: { mode: string };
     rectification: { mode: string };
     escalation: { mode: string };
@@ -349,7 +348,7 @@ describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
     return parsed.debate.stages;
   }
 
-  test.each(["plan", "review", "acceptance", "rectification", "escalation"] as const)(
+  test.each(["plan", "acceptance", "rectification", "escalation"] as const)(
     "stages.%s.mode defaults to 'panel'",
     (stage) => {
       expect(getStages()[stage].mode).toBe("panel");

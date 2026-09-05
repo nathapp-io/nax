@@ -92,17 +92,6 @@ describe("debate config schema — AC-1: defaults when debate key is absent", ()
     expect(plan?.enabled).toBe(true);
   });
 
-  test("review stage defaults: one-shot, majority-fail-closed, 2 rounds, enabled", () => {
-    const result = NaxConfigSchema.safeParse(baseConfig);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    const review = result.data.debate?.stages.review;
-    expect(review?.sessionMode).toBe("one-shot");
-    expect(review?.resolver.type).toBe("majority-fail-closed");
-    expect(review?.rounds).toBe(2);
-    expect(review?.enabled).toBe(true);
-  });
-
   test("acceptance stage defaults: one-shot, majority-fail-closed, 1 round, disabled", () => {
     const result = NaxConfigSchema.safeParse(baseConfig);
     expect(result.success).toBe(true);
@@ -300,7 +289,7 @@ describe("DEFAULT_CONFIG includes debate section", () => {
 
   test.each([
     ["plan", "stateful"],
-    ["review", "one-shot"],
+    ["acceptance", "one-shot"],
   ] as const)("%s stage has correct sessionMode", (stage, expected) => {
     expect(DEFAULT_CONFIG.debate?.stages[stage].sessionMode).toBe(expected);
   });
@@ -312,11 +301,31 @@ test("dialogue-verdict is no longer a valid selector kind", () => {
     debate: {
       enabled: true,
       stages: {
-        review: {
+        acceptance: {
           selector: { kind: "dialogue-verdict" },
         },
       },
     },
   });
   expect(result.success).toBe(false);
+});
+
+// #1859: review-stage debate removed with the unreachable runReview LLM cluster.
+// Legacy configs may still carry debate.stages.review — it must parse (Zod
+// strips the unknown key) and must not survive into the resolved config.
+test("a config carrying legacy debate.stages.review still parses and the key is stripped", () => {
+  const result = NaxConfigSchema.safeParse({
+    ...baseConfig,
+    debate: {
+      enabled: true,
+      stages: {
+        review: { enabled: true, rounds: 2 },
+      },
+    },
+  });
+
+  expect(result.success).toBe(true);
+  expect(result.data?.debate?.stages).not.toHaveProperty("review");
+  // untouched stages keep their defaults
+  expect(result.data?.debate?.stages.plan).toBeDefined();
 });

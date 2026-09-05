@@ -27,7 +27,7 @@ export interface SelectorContext {
 export interface SelectorResult {
   readonly outcome: "passed" | "failed" | "skipped";
   readonly output?: string;
-  /** Optional findings from the selector — consumed by post-debate verifiers (e.g. review-grounding-filter). */
+  /** Optional findings from the selector — consumed by post-debate verifiers. */
   readonly findings?: unknown[];
 }
 

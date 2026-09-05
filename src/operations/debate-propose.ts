@@ -49,7 +49,7 @@ export const debateProposeOp: CompleteOperation<DebateProposeInput, string, Deba
     if (!debater) return "fast";
     return { agent: debater.agent, model: debater.model ?? "fast" };
   },
-  timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
+  timeoutMs: () => 600 * 1000,
   build(input, _ctx) {
     const builder = new DebatePromptBuilder(
       { taskContext: input.taskContext, outputFormat: input.outputFormat, stage: input.stage },

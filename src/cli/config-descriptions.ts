@@ -269,8 +269,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "debate.stages": "Per-stage debate configuration",
   "debate.stages.plan":
     "Debate settings for the planning stage (default: stateful, synthesis resolver, 3 rounds, enabled)",
-  "debate.stages.review":
-    "Debate settings for the review stage (default: one-shot, majority-fail-closed, 2 rounds, enabled)",
   "debate.stages.acceptance":
     "Debate settings for the acceptance test stage (default: one-shot, majority-fail-closed, 1 round, disabled)",
   "debate.stages.rectification":
