@@ -1,12 +1,21 @@
 /**
- * Tests for adversarial findings carrying fixTarget through both
- * cycle-facing (Finding) and audit-facing (ReviewFinding) converters.
+ * Tests for adversarial findings carrying fixTarget through
+ * `toAdversarialReviewFindings` — the live op path's LLMFinding -> Finding
+ * converter (`operations/adversarial-review.ts`).
  *
  * US-002 — every AC must be covered by exactly one test.
+ *
+ * #1861: this file used to also cover `llmFindingToReviewFinding`
+ * (`src/review/finding-projection.ts`), a second converter to the canonical
+ * `ReviewFinding` shape that #942 assumed the audit persisted. That module
+ * was deleted — the live op path never called it, it was reachable only from
+ * the dead `runReview` entry point removed in #1859, and #1861 ruled the
+ * audit persists `Finding` (what this file's surviving tests already cover),
+ * not `ReviewFinding`. The former parity-check describe blocks ("`llmFindingToReviewFinding` —
+ * fixTarget tagging" and "converter parity for fixTarget") went with it.
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { llmFindingToReviewFinding } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
 import { writeReviewAudit } from "@/review/review-audit";
@@ -37,40 +46,6 @@ describe("toAdversarialReviewFindings — fixTarget tagging", () => {
   test('AC2: category "test-gap" tags fixTarget="test"', () => {
     const result = toAdversarialReviewFindings([makeAdversarialFinding({ category: "test-gap" })]);
     expect(result[0].fixTarget).toBe("test");
-  });
-});
-
-describe("llmFindingToReviewFinding — fixTarget tagging", () => {
-  test('AC3: category "input" with source "adversarial-review" tags fixTarget="source"', () => {
-    const result = llmFindingToReviewFinding(makeAdversarialFinding({ category: "input" }), {
-      source: "adversarial-review",
-    });
-    expect(result.fixTarget).toBe("source");
-  });
-
-  test('AC5: unrecognized category tags fixTarget="test"', () => {
-    const result = llmFindingToReviewFinding(makeAdversarialFinding({ category: "some-unrecognized-category" }), {
-      source: "adversarial-review",
-    });
-    expect(result.fixTarget).toBe("test");
-  });
-});
-
-describe("converter parity for fixTarget", () => {
-  test("AC4: same adversarial finding through toAdversarialReviewFindings and llmFindingToReviewFinding yields matching fixTarget", () => {
-    const finding = makeAdversarialFinding({ category: "abandonment" });
-    const cycle = toAdversarialReviewFindings([finding]);
-    const audit = llmFindingToReviewFinding(finding, { source: "adversarial-review" });
-    expect(cycle[0].fixTarget).toBe(audit.fixTarget);
-    expect(cycle[0].fixTarget).toBe("source");
-  });
-
-  test("both converters apply the test-path override identically (#1368)", () => {
-    const finding = makeAdversarialFinding({ category: "abandonment", file: "test/app.module.spec.ts" });
-    const cycle = toAdversarialReviewFindings([finding], { isTestFile });
-    const audit = llmFindingToReviewFinding(finding, { source: "adversarial-review", isTestFile });
-    expect(cycle[0].fixTarget).toBe(audit.fixTarget);
-    expect(cycle[0].fixTarget).toBe("test");
   });
 });
 
@@ -120,11 +95,7 @@ describe("review audit persistence — fixTarget rides through to disk", () => {
       findNaxProjectRoot: async (dir: string) => dir,
     });
 
-    const reviewFindings = [
-      llmFindingToReviewFinding(makeAdversarialFinding({ category: "abandonment" }), {
-        source: "adversarial-review",
-      }),
-    ];
+    const reviewFindings = toAdversarialReviewFindings([makeAdversarialFinding({ category: "abandonment" })]);
     const entry: ReviewAuditEntry = {
       reviewer: "adversarial",
       sessionName: "nax-abc-my-feature-us-001-reviewer-adversarial",

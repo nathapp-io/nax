@@ -151,7 +151,11 @@ async function writtenThisRun(filePath: string, runStartedAt: number | undefined
   }
 }
 
-// Prefer canonical Phase-1 fields first; fall back to legacy on-disk variants for pre-normalization audits.
+// #1861 ruling: the live op path (`operations/{adversarial,semantic}-review.ts`)
+// persists the raw LLM finding, which has no `ruleId`/`rule`/`checkId` — so this
+// falls back to `category` as the PRIMARY case for LLM findings, not a legacy
+// compatibility path. `ruleId`/`rule`/`checkId` remain the preferred fields for
+// producers that do carry a real rule identifier (lint, typecheck, plugin findings).
 function findingRuleId(finding: JsonRecord): string {
   return stringValue(finding.ruleId ?? finding.rule ?? finding.checkId ?? finding.category, "unknown");
 }
@@ -159,10 +163,12 @@ function findingRuleId(finding: JsonRecord): string {
 /**
  * Extract a human-readable message from a finding record.
  *
- * Issue #942 Phase 1 normalized semantic/adversarial/debate reviewers to write
- * canonical `ReviewFinding` (with `message`) before persistence. The
- * `issue`/`suggestion` fallback is retained ONLY for legacy on-disk audits
- * written before that change landed (AC-4 transition compatibility).
+ * #1861 ruling: the review audit persists the raw LLM finding shape
+ * (`issue`/`suggestion`, no `message`) for roughly 8,800 of ~9,850 measured
+ * `result.findings` records — that is the PRIMARY path for LLM findings, not
+ * legacy transition compatibility. #942's canonical-`ReviewFinding` clause
+ * (which assumed `message` was always present) is obsolete for LLM findings;
+ * the `issue`/`suggestion` fallback below must be kept.
  */
 function findingMessage(finding: JsonRecord): string {
   const message = stringValue(finding.message);

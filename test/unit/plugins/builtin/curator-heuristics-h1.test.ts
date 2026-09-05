@@ -121,55 +121,20 @@ describe("H1 — sample messages in evidence", () => {
   });
 });
 
-describe("H1 — issue #942 AC-5: ruleId buckets are not single-word collapses", () => {
-  test("findings sharing a category but different issues yield distinct buckets", () => {
-    const observations: Observation[] = [
-      makeReviewFindingObs942(
-        "US-001",
-        "input:listener-arg",
-        "warning",
-        "Listener argument is not validated as a function",
-        "input",
-      ),
-      makeReviewFindingObs942(
-        "US-002",
-        "input:listener-arg",
-        "warning",
-        "Listener argument is not validated as a function",
-        "input",
-      ),
-      makeReviewFindingObs942(
-        "US-003",
-        "input:timeout-bound",
-        "error",
-        "Timeout value has no upper bound and can hang the run",
-        "input",
-      ),
-      makeReviewFindingObs942(
-        "US-004",
-        "input:timeout-bound",
-        "error",
-        "Timeout value has no upper bound and can hang the run",
-        "input",
-      ),
-    ];
-
-    const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
-    const h1s = proposals.filter((p) => p.id === "H1");
-
-    expect(h1s.length).toBe(2);
-    // Buckets are per-defect, not per-category. Both findings carry category
-    // "input", so a category-only description would render them identically —
-    // the #942 collapse. Assert they are actually distinguishable.
-    expect(h1s[0].description).not.toBe(h1s[1].description);
-    for (const p of h1s) {
-      expect(p.description).not.toMatch(/^Recurring across \d+ features — input: ?$/);
-      expect(p.evidence).toContain("Examples:");
-    }
-    expect(h1s.some((p) => p.evidence.includes("Listener argument"))).toBe(true);
-    expect(h1s.some((p) => p.evidence.includes("Timeout value"))).toBe(true);
-  });
-});
+// Retired by #1861. This describe block ("H1 — issue #942 AC-5: ruleId
+// buckets are not single-word collapses") hand-authored ruleIds in the
+// category:slug shape ("input:listener-arg", "input:timeout-bound") that no
+// live producer ever emits — LLM findings on the audit path carry no
+// ruleId/rule/checkId, so `findingRuleId()` falls back to bare `category`
+// ("input" for both), collapsing them to ONE bucket in production. The test
+// was green against a shape production never writes. #1861 rules that a
+// bare-category ruleId is the ceiling for prose findings, not a defect;
+// whether H1 can be made to group more finely is #1863, not this issue.
+// Grouping is still per-defect via `crossFeatureKey(category, message)` (see
+// the `H1 — cross-feature recurrence (#1422)` describe block below), and the
+// per-proposal description/evidence line (category + files + gist samples)
+// still distinguishes two same-category proposals on the checkbox line — see
+// `runHeuristics()`'s H1 comment for the pointer to #1863.
 
 // ─── #1422: cross-feature recurrence ──────────────────────────────────────────
 

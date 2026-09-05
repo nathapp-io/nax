@@ -13,7 +13,6 @@ import type { Iteration } from "@/findings";
 import type { SemanticCategory } from "@/review";
 import {
   classifyRecurrence,
-  llmFindingToReviewFinding,
   normalizeSemanticCategory,
   SEMANTIC_CATEGORIES,
   SEMANTIC_CATEGORY_ENUM_LINE,
@@ -185,11 +184,17 @@ describe("downstream consumers read the normalized category", () => {
 
   test("review-audit / curator ruleId is derived from the canonical category", () => {
     // `Partial` and `partial` must not split into two curator H1 buckets.
-    const upper = llmFindingToReviewFinding(parse("Partial")[0], { source: "semantic-review" });
-    const lower = llmFindingToReviewFinding(parse("partial")[0], { source: "semantic-review" });
+    //
+    // #1861: the review audit persists the raw LLM finding (via
+    // `llmFindingToFinding` on the live op path, `operations/semantic-review.ts`),
+    // which carries no `ruleId`/`rule`/`checkId`. Curator's `findingRuleId()`
+    // (`src/plugins/builtin/curator/collect.ts`) falls back to `category` in
+    // that case — so canonicalising category at the parse boundary is what
+    // keeps the two spellings in one curator bucket.
+    const upper = llmFindingToFinding(parse("Partial")[0]);
+    const lower = llmFindingToFinding(parse("partial")[0]);
     expect(upper.category).toBe("partial");
-    expect(upper.ruleId).toBe(lower.ruleId);
-    expect(upper.ruleId.startsWith("partial:")).toBe(true);
+    expect(upper.category).toBe(lower.category);
   });
 
   test("a stray 'test-gap' cannot reach the adversarial test-gap carve-out in recurrence-demotion", () => {
