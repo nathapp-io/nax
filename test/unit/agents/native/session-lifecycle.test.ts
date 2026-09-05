@@ -1,6 +1,6 @@
 // RE-ARCH: keep
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
@@ -8,6 +8,7 @@ import {
   closeNativeSession,
   nativeSessionCompaction,
   nativeSessionLastUsage,
+  nativeSessionTranscriptOwners,
   openNativeSession,
 } from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
@@ -52,11 +53,37 @@ describe("native session lifecycle", () => {
     expect(await loadTranscript(dir, "sess-a")).toEqual([]);
   });
 
-  test("a failed close keeps the transcript for debugging", async () => {
+  test("a failed close keeps the transcript for debugging, but not for resuming", async () => {
+    // nax#1877: the keep branch used to leave the file at the exact path the
+    // next same-named session reads, so "kept for post-mortem" and "kept to be
+    // resumed" were indistinguishable. It is now retained under a name
+    // loadTranscript cannot reach.
     const handle = await openNativeSession("sess-a", opts());
     await saveTranscript(dir, "sess-a", [{ role: "user", content: "hi" }]);
     await closeNativeSession(handle, true);
-    expect(await loadTranscript(dir, "sess-a")).toHaveLength(1);
+
+    const kept = (await readdir(dir)).filter((n) => n.startsWith("sess-a.transcript.failed-"));
+    expect(kept).toHaveLength(1);
+    expect(await loadTranscript(dir, "sess-a")).toEqual([]);
+  });
+
+  test("opening without resume clears a transcript an earlier session left behind", async () => {
+    await saveTranscript(dir, "sess-a", [{ role: "user", content: "stale" }], "call-1");
+    await openNativeSession("sess-a", opts({ resume: false }));
+    expect(await loadTranscript(dir, "sess-a")).toEqual([]);
+  });
+
+  test("opening with resume keeps the transcript the retry needs", async () => {
+    await saveTranscript(dir, "sess-a", [{ role: "user", content: "keep me" }], "call-1");
+    await openNativeSession("sess-a", opts({ resume: true }));
+    expect(await loadTranscript(dir, "sess-a", "call-1")).toHaveLength(1);
+  });
+
+  test("the transcript owner declared at open is what the turn loop reads back", async () => {
+    const handle = await openNativeSession("sess-a", opts({ transcriptOwner: "call-1" }));
+    expect(nativeSessionTranscriptOwners.get(handle.id)).toBe("call-1");
+    await closeNativeSession(handle, false);
+    expect(nativeSessionTranscriptOwners.has("sess-a")).toBe(false);
   });
 
   test("opening publishes the session identity it will send to the provider", async () => {
@@ -111,6 +138,34 @@ describe("SessionManager forwards transcriptDir to the adapter", () => {
 
     expect(capturedOpts).toHaveLength(1);
     expect(capturedOpts[0].transcriptDir).toBe(dir);
+  });
+
+  // Same reasoning as transcriptDir above: deleting the transcriptOwner
+  // forwarding line in src/session/manager.ts leaves typecheck green and the
+  // ownership check in loadTranscript inert, because every session would then
+  // open with an undefined owner and read whatever is on disk (nax#1877).
+  test("adapter.openSession receives the transcriptOwner passed to SessionManager.openSession", async () => {
+    const capturedOpts: OpenSessionOpts[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedOpts.push(opts);
+        return { id: name, agentName: "native-fake" } satisfies SessionHandle;
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    await sm.openSession("nax-owner-wiring", {
+      agentName: "native-fake",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
+      timeoutSeconds: 60,
+      transcriptDir: dir,
+      transcriptOwner: "call-1",
+    } satisfies OpenSessionRequest);
+
+    expect(capturedOpts).toHaveLength(1);
+    expect(capturedOpts[0].transcriptOwner).toBe("call-1");
   });
 });
 

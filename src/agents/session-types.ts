@@ -99,6 +99,13 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    */
   transcriptDir?: string;
   /**
+   * Native: identity that owns this session's transcript — the op invocation's
+   * `scopeId ?? callId`. Stable across the retries and hops of one invocation,
+   * different for every new stage entry, run and process, which is exactly the
+   * boundary transcript resumption must respect (nax#1877). ACP ignores it.
+   */
+  transcriptOwner?: string;
+  /**
    * Native: resolved compaction settings. A resolved primitive, never NaxConfig —
    * src/agents/native/ must not read config (check:adapter-no-config-import).
    */

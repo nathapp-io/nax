@@ -199,6 +199,11 @@ export interface OpenSessionRequest {
    * (ADR-028 section 3) — never from the project tree.
    */
   transcriptDir?: string;
+  /**
+   * Native: identity that owns the session's transcript, forwarded to the
+   * adapter's openSession — see OpenSessionOpts.transcriptOwner. ACP ignores it.
+   */
+  transcriptOwner?: string;
 }
 
 /**

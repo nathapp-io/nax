@@ -324,6 +324,12 @@ export function buildHopCallback(
       pipelineStage: stage,
     });
 
+    // nax#1877: the transcript's owner. `scopeId` when the caller scopes a
+    // session across stages, else this op invocation's `callId` — either way an
+    // identity that survives this invocation's hops and retries and changes for
+    // the next one, so a stale transcript at this deterministic session name is
+    // recognised as foreign instead of silently resumed.
+    const transcriptOwner = resolvedRunOptions.scopeId ?? resolvedRunOptions.callId;
     // The caller's pinned model is usable only on the agent it was resolved for; any
     // other agent re-resolves from its own tier map (nax#1722 — see pinnedModelAgent).
     const pinnedModelDef =
@@ -366,6 +372,7 @@ export function buildHopCallback(
             DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
           featureName,
           storyId: story.id,
+          ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
           signal: resolvedRunOptions.abortSignal,
         });
       }
@@ -393,6 +400,7 @@ export function buildHopCallback(
           DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
         featureName,
         storyId: story.id,
+        ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
         signal: resolvedRunOptions.abortSignal,
       });
     }

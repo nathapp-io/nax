@@ -10,6 +10,7 @@ import {
   loadTranscript,
   MAX_RETAINED_TRANSCRIPTS,
   pruneRetainedTranscripts,
+  retainTranscript,
   saveTranscript,
   transcriptPath,
 } from "@/agents/native/session/transcript-store";
@@ -58,6 +59,47 @@ describe("transcript store", () => {
     await deleteTranscript(dir, "sess-a"); // must not throw
   });
 
+  test("a transcript loads for the owner that saved it", async () => {
+    await saveTranscript(dir, "sess-a", msgs, "call-1");
+    expect(await loadTranscript(dir, "sess-a", "call-1")).toEqual(msgs);
+  });
+
+  test("a transcript saved by one owner does not load for another (nax#1877)", async () => {
+    // The failure this encodes: an abandoned op invocation leaves a transcript
+    // at the deterministic session name, and the next invocation of the same
+    // name silently resumes 150k tokens of someone else's conversation.
+    await saveTranscript(dir, "sess-a", msgs, "call-1");
+    expect(await loadTranscript(dir, "sess-a", "call-2")).toEqual([]);
+  });
+
+  test("a legacy owner-less transcript is not resumed by an owned session", async () => {
+    // Pre-upgrade transcripts are bare arrays. Unowned history is foreign
+    // history: the safe direction is to drop it, not to inherit it.
+    await writeFile(transcriptPath(dir, "sess-a"), JSON.stringify(msgs), "utf8");
+    expect(await loadTranscript(dir, "sess-a", "call-1")).toEqual([]);
+  });
+
+  test("an owner-less reader still sees an owned transcript", async () => {
+    // Callers that do not thread an owner (tests, non-op paths) keep working;
+    // enforcement applies only when the reader actually declares an identity.
+    await saveTranscript(dir, "sess-a", msgs, "call-1");
+    expect(await loadTranscript(dir, "sess-a")).toEqual(msgs);
+  });
+
+  test("retainTranscript moves the file off the loadable path", async () => {
+    await saveTranscript(dir, "sess-a", msgs, "call-1");
+    await retainTranscript(dir, "sess-a");
+    // Still on disk for a human to read...
+    const kept = (await readdir(dir)).filter((n) => n.startsWith("sess-a.transcript.failed-"));
+    expect(kept).toHaveLength(1);
+    // ...but no longer reachable by the next session of the same name.
+    expect(await loadTranscript(dir, "sess-a", "call-1")).toEqual([]);
+  });
+
+  test("retainTranscript is safe when there is nothing to retain", async () => {
+    await expect(retainTranscript(dir, "sess-none")).resolves.toBeUndefined();
+  });
+
   test("a corrupt transcript throws rather than silently starting over", async () => {
     await writeFile(transcriptPath(dir, "sess-a"), "{not json", "utf8");
     await expect(loadTranscript(dir, "sess-a")).rejects.toThrow();
@@ -104,6 +146,16 @@ describe("pruneRetainedTranscripts", () => {
     const remaining = await readdir(dir);
     expect(remaining).toContain("descriptor.json");
     expect(remaining).not.toContain("sess-a.transcript.json");
+  });
+
+  test("prunes retained (failed) transcripts, which is the set that accumulates", async () => {
+    for (const name of ["sess-a", "sess-b", "sess-c"]) {
+      await saveTranscript(dir, name, msgs, "call-1");
+      await retainTranscript(dir, name);
+    }
+    await pruneRetainedTranscripts(dir, 1);
+    const remaining = (await readdir(dir)).filter((n) => n.includes(".transcript."));
+    expect(remaining).toHaveLength(1);
   });
 
   test("exports the documented default cap", () => {
