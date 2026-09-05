@@ -11,7 +11,13 @@
 
 import { describe, expect, test } from "bun:test";
 import type { TokenUsage } from "@/agents/cost";
-import { addTokenUsage, estimateCostFromTokenUsage, RATE_CARD_REVIEWED, resolvePricingSource } from "@/agents/cost";
+import {
+  addTokenUsage,
+  estimateCostFromTokenUsage,
+  inputClassTokens,
+  RATE_CARD_REVIEWED,
+  resolvePricingSource,
+} from "@/agents/cost";
 
 describe("addTokenUsage", () => {
   test("adds input and output tokens", () => {
@@ -283,5 +289,29 @@ describe("MODEL_PRICING — rate card currency (BUG-15)", () => {
 
   test("RATE_CARD_REVIEWED is an ISO date, so staleness is visible in review", () => {
     expect(RATE_CARD_REVIEWED).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe("inputClassTokens", () => {
+  test("sums input with cache reads and cache writes", () => {
+    expect(
+      inputClassTokens({
+        inputTokens: 16,
+        outputTokens: 900,
+        cacheReadInputTokens: 71_755,
+        cacheCreationInputTokens: 12_368,
+      }),
+    ).toBe(84_139);
+  });
+
+  test("treats absent cache fields as zero", () => {
+    expect(inputClassTokens({ inputTokens: 500, outputTokens: 900 })).toBe(500);
+  });
+
+  test("excludes output tokens", () => {
+    // Output is never part of the prompt the provider charged for. Asserted
+    // explicitly because nax-ai's totalTokens() does include it, and reaching
+    // for that helper here would double-count against the trailing estimate.
+    expect(inputClassTokens({ inputTokens: 10, outputTokens: 10_000 })).toBe(10);
   });
 });
