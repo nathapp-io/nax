@@ -3,7 +3,7 @@
   "feature": "audit-cost-and-grep-fidelity",
   "branchName": "feat/audit-cost-and-grep-fidelity",
   "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T11:12:05.230Z",
+  "updatedAt": "2026-09-05T11:26:05.496Z",
   "userStories": [
     {
       "id": "US-001",
@@ -120,8 +120,8 @@
         "cost"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -182,7 +182,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Plumbs a new field through five files with two independent union-widening sites that must move together, but every change follows an existing precedent (the wire-wins branch) with no new abstractions."
+        "reasoning": "Plumbs a new field through five files with two independent union-widening sites that must move together, but every change follows an existing precedent (the wire-wins branch) with no new abstractions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/dispatch-events.ts",
@@ -194,6 +197,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "15c72510d345c878ab08662296f1e1d1a0877f5c",
       "outOfScope": [
         "honouring nax-ai's tiered pricing (inputTokensAbove) is out of scope and tracked separately in #1843; this feature changes the pricing label, not the pricing arithmetic",
         "changing the documented meaning of the existing wire, model-rates, fallback-rates and unknown-model values is out of scope; this feature only adds values"
