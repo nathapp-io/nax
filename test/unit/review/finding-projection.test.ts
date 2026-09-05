@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { llmFindingsToReviewFindings, llmFindingToReviewFinding, toAdversarialReviewFindings } from "@/review";
+import { llmFindingToReviewFinding, toAdversarialReviewFindings } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 // LLMFinding / AdversarialLLMFinding are import-type only (erased at compile
 // time) so leaf-path imports here do not cause singleton fragmentation.
@@ -200,21 +200,6 @@ describe("llmFindingToReviewFinding", () => {
     const slug = rf.ruleId.split(":")[1] ?? "";
     expect(slug).toBe("a-b-c-d-e-f");
     expect(slug.split("-").length).toBe(6);
-  });
-});
-
-describe("llmFindingsToReviewFindings", () => {
-  test("maps an array preserving order", () => {
-    const fs: LLMFinding[] = [
-      { severity: "error", file: "a.ts", line: 1, issue: "first", suggestion: "" },
-      { severity: "info", file: "b.ts", line: 2, issue: "second", suggestion: "" },
-    ];
-    const rs = llmFindingsToReviewFindings(fs);
-    expect(rs.map((r) => r.message)).toEqual(["first", "second"]);
-  });
-
-  test("returns empty array for empty input", () => {
-    expect(llmFindingsToReviewFindings([])).toEqual([]);
   });
 });
 

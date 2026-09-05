@@ -13,7 +13,7 @@ import type { Iteration } from "@/findings";
 import type { SemanticCategory } from "@/review";
 import {
   classifyRecurrence,
-  llmFindingsToReviewFindings,
+  llmFindingToReviewFinding,
   normalizeSemanticCategory,
   SEMANTIC_CATEGORIES,
   SEMANTIC_CATEGORY_ENUM_LINE,
@@ -185,8 +185,8 @@ describe("downstream consumers read the normalized category", () => {
 
   test("review-audit / curator ruleId is derived from the canonical category", () => {
     // `Partial` and `partial` must not split into two curator H1 buckets.
-    const [upper] = llmFindingsToReviewFindings(parse("Partial"), { source: "semantic-review" });
-    const [lower] = llmFindingsToReviewFindings(parse("partial"), { source: "semantic-review" });
+    const upper = llmFindingToReviewFinding(parse("Partial")[0], { source: "semantic-review" });
+    const lower = llmFindingToReviewFinding(parse("partial")[0], { source: "semantic-review" });
     expect(upper.category).toBe("partial");
     expect(upper.ruleId).toBe(lower.ruleId);
     expect(upper.ruleId.startsWith("partial:")).toBe(true);

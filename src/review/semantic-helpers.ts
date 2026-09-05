@@ -57,7 +57,7 @@ export interface LLMResponse {
  *
  * Category normalization happens HERE, not only in `llmFindingToFinding`,
  * because most consumers read the accepted `LLMFinding[]` directly rather than
- * the converted `Finding[]`: `llmFindingsToReviewFindings` (which derives
+ * the converted `Finding[]`: `llmFindingToReviewFinding` (which derives
  * `ruleId` from the category and feeds `review-audit/` and the curator) and
  * `classifyRecurrence` (whose `test-gap` carve-out is adversarial-only and must
  * stay unreachable from semantic). Normalizing at the boundary keeps every
