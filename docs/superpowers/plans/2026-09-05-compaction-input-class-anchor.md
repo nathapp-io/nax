@@ -61,6 +61,8 @@ The bug is a drift between two places that both need "input-class tokens", only 
 
 Append to `test/unit/agents/cost/calculate.test.ts`. Add `inputClassTokens` to the existing import from `@/agents/cost`.
 
+Two tests, because the helper has two distinct jobs: summing the cache classes, and *not* summing output.
+
 ```typescript
 describe("inputClassTokens", () => {
   test("sums input with cache reads and cache writes", () => {
@@ -113,7 +115,7 @@ export function inputClassTokens(usage: TokenUsage): number {
 }
 ```
 
-`calculate.ts` already imports `TokenUsage`; confirm the import is present and add it to the existing `import type` if not.
+`calculate.ts:8` already imports `TokenUsage` from `./types` — no import change is needed in this file.
 
 Add to the first export block in `src/agents/cost/index.ts`, keeping the list alphabetical:
 
@@ -136,12 +138,13 @@ Expected: PASS
 
 - [ ] **Step 5: Use the helper in `selectRates`**
 
-In `src/agents/native/models.ts`, add `inputClassTokens` to the existing value import from `@/agents/cost` (line 10 currently has `import type { TokenUsage } from "@/agents/cost";` — it needs a separate value import, since `inputClassTokens` is a function, not a type):
+In `src/agents/native/models.ts`, line 10 is currently `import type { TokenUsage } from "@/agents/cost";`. Replace it with the repo's merged type+value form (biome runs `organizeImports`, and this is the established style — see `src/tools/runtime.ts:19`, `src/context/engine/rebuild.ts:24`):
 
 ```typescript
-import { inputClassTokens } from "@/agents/cost";
-import type { TokenUsage } from "@/agents/cost";
+import { type TokenUsage, inputClassTokens } from "@/agents/cost";
 ```
+
+**This turns a type-only import into a value import**, adding a real edge to the runtime graph that `check:import-cycles` inspects. It is safe: nothing under `src/agents/cost/` imports from `@/agents/*`, and its one relative import — `calculate.ts:6` → `../model-spec` — is a leaf module with zero imports of its own. `models.ts:14` already depends on `../model-spec` anyway.
 
 Then replace the inline summation in `selectRates`:
 
@@ -182,17 +185,40 @@ git commit -m "refactor(cost): extract inputClassTokens and use it in selectRate
 
 - [ ] **Step 1: Write the failing test**
 
-Append to the `describe("proactive compaction")` block in `test/unit/agents/native/turn-loop-compaction.test.ts`. The harness, `handle`, `cfg`, `opts`, `dir` and the `afterEach` that clears `nativeSessionLastUsage` already exist at the top of that file — reuse them.
+Append to the `describe("proactive compaction")` block in `test/unit/agents/native/turn-loop-compaction.test.ts`. The harness, `handle`, `cfg`, `opts`, `usage`, `dir` and the `afterEach` that clears `nativeSessionLastUsage` already exist at the top of that file — reuse them.
 
-This test drives two round trips. The first returns a cached-prompt usage shape (the real one observed on the run that found this bug: `inputTokens: 16`, `cacheReadInputTokens: 71_755`), which sets the anchor. The second round trip is where compaction must then trigger.
+**Transcript sizing is load-bearing — read this before writing the test.** Three constraints must hold simultaneously, or the test proves nothing:
+
+| | value | why |
+|---|---|---|
+| threshold | `min(floor(20000×0.90), 20000−4096)` = **15,904** | what the estimate must exceed |
+| `keepBudget` | `floor(20000×0.30)` = **6,000** | recent tokens kept verbatim |
+| seeded transcript | ≈ **9,000** tokens | must be **under** 15,904 so round 1 does *not* compact, and **over** 6,000 so there is something left to cut |
+
+That last column is the trap. `prepareCompaction` returns `undefined` when `cutIndex <= spanStart` (`compaction.ts:193`) — with a near-empty transcript the threshold trips but there is nothing to summarize, `summarizeCalls` stays 0, and the test fails *even against a correct fix*. Three 12,000-character messages (3,000 tokens each) satisfy all three constraints.
+
+Returning `toolCalls` is what forces the second round trip — the established pattern in `turn-loop.test.ts:197,223,256`.
+
+Write **two** tests. The second is a negative control: same transcript, same everything, cache tokens removed. It must show that the transcript alone does not trigger compaction — otherwise the first test could pass for the wrong reason.
 
 ```typescript
+  /** Big enough to leave something to summarize, small enough not to trip the
+   *  threshold on its own. See the sizing table in the plan. */
+  async function seedCompactableTranscript() {
+    await saveTranscript(dir, "sess-c", [
+      { role: "user", content: "the task" },
+      { role: "assistant", content: "a".repeat(12_000) },
+      { role: "user", content: "b".repeat(12_000) },
+      { role: "assistant", content: "c".repeat(12_000) },
+    ]);
+  }
+
   test("counts cached prompt tokens toward the compaction threshold", async () => {
     // Regression for nax#1852. The provider serves a cached prefix, so it
     // reports 16 uncached input tokens and 71,755 cache reads. Anchoring on
-    // inputTokens alone reads the context as ~16 and compaction never fires,
-    // even though the real prompt is 4x the window.
-    await saveTranscript(dir, "sess-c", [{ role: "user", content: "the task" }]);
+    // inputTokens alone reads that 71,771-token prompt as ~16, and compaction
+    // never fires even though the prompt is 4x the window.
+    await seedCompactableTranscript();
     let summarizeCalls = 0;
     let completeCalls = 0;
 
@@ -205,12 +231,12 @@ This test drives two round trips. The first returns a cached-prompt usage shape 
       },
       complete: async () => {
         completeCalls += 1;
-        // First call sets the anchor from a cached prompt; second call is the
-        // one whose pre-flight check must see a 71,771-token context.
         if (completeCalls === 1) {
+          // Sets the anchor. The tool call forces a second round trip, whose
+          // pre-flight check is the assertion point.
           return {
             text: "working",
-            toolCalls: [{ id: "t1", name: "Read", input: { path: "a.ts" } }],
+            toolCalls: [{ id: "c1", name: "t", input: {} }],
             usage: { inputTokens: 16, outputTokens: 5, cacheReadInputTokens: 71_755 },
             costUsd: 0,
           };
@@ -222,24 +248,60 @@ This test drives two round trips. The first returns a cached-prompt usage shape 
     expect(completeCalls).toBe(2);
     expect(summarizeCalls).toBe(1);
   });
-```
 
-If `runNativeTurn` does not execute a `Read` tool call in this harness (no coding tools registered), replace the `toolCalls` entry with whatever tool the neighbouring tests in this file use to force a second round trip, and keep the usage shape unchanged — the usage shape is what this test is about.
+  test("does not compact when the same transcript reports no cached tokens", async () => {
+    // Negative control for the test above. Identical in every respect except
+    // that the prompt was not cached, so the anchor is genuinely small. If this
+    // one also compacts, the test above is passing on transcript size rather
+    // than on the cache accounting, and proves nothing.
+    await seedCompactableTranscript();
+    let summarizeCalls = 0;
+    let completeCalls = 0;
+
+    await runNativeTurn(handle, "next", opts(), {
+      contextWindow: 20_000,
+      compaction: cfg,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return { text: "summary", usage, costUsd: 0 };
+      },
+      complete: async () => {
+        completeCalls += 1;
+        if (completeCalls === 1) {
+          return {
+            text: "working",
+            toolCalls: [{ id: "c1", name: "t", input: {} }],
+            usage: { inputTokens: 16, outputTokens: 5 },
+            costUsd: 0,
+          };
+        }
+        return { text: "done", usage, costUsd: 0 };
+      },
+    });
+
+    expect(completeCalls).toBe(2);
+    expect(summarizeCalls).toBe(0);
+  });
+```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `bun run test -- test/unit/agents/native/turn-loop-compaction.test.ts`
-Expected: FAIL — `expect(summarizeCalls).toBe(1)` receives `0`. Compaction never fires because the anchor reads 16.
 
-**This failure is the whole point of the task.** If it passes before the fix, the test is not exercising the anchor — stop and fix the test.
+Expected, and both halves matter:
+- `counts cached prompt tokens toward the compaction threshold` → **FAIL**, `expect(summarizeCalls).toBe(1)` receives `0`. Compaction never fires because the anchor reads 16.
+- `does not compact when the same transcript reports no cached tokens` → **PASS** already (it asserts 0, which is what current code does).
+
+**The first failure is the whole point of the task.** If it passes before the fix, the test is not exercising the anchor — stop and fix the test rather than proceeding.
+
+If the *control* fails (summarize was called with no cache tokens), the seeded transcript is too large and is tripping the threshold on its own — shrink the three messages until it passes, keeping them above the 6,000-token keep budget.
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `src/agents/native/session/turn-loop.ts`, add the value import alongside the existing type import at line 11:
+In `src/agents/native/session/turn-loop.ts`, line 11 is currently `import type { TokenUsage } from "@/agents/cost";`. Replace it with the merged form (same convention as Task 1):
 
 ```typescript
-import { inputClassTokens } from "@/agents/cost";
-import type { TokenUsage } from "@/agents/cost";
+import { type TokenUsage, inputClassTokens } from "@/agents/cost";
 ```
 
 Replace lines 298-300:
@@ -450,3 +512,12 @@ The PR body should carry the before/after `compaction completed` counts from Ste
 **Placeholder scan.** No TBDs. Every code step carries the literal text to write. The one conditional instruction (Task 2 Step 1, if `Read` does not force a second round trip) names the concrete fallback and states which part must not change.
 
 **Type consistency.** `inputClassTokens(usage: TokenUsage): number` is defined in Task 1 and called in Tasks 1 and 2 under that exact name. Task 3 renames `inputTokens` → `promptTokens` on the anchor only, and updates all five sites plus both tests; `TokenUsage.inputTokens` itself is untouched. Cache field names are the nax spelling (`cacheReadInputTokens`, `cacheCreationInputTokens`) throughout, per Global Constraints.
+
+## Review corrections (2026-09-05)
+
+Four defects found reviewing this plan against the code, all fixed above. Recorded because the first would have cost real time:
+
+1. **Task 2's test could not have passed even with a correct fix.** The original seeded a single tiny message. `prepareCompaction` returns `undefined` when `cutIndex <= spanStart` (`compaction.ts:193`), so the threshold would trip with nothing to summarize and `summarizeCalls` would stay 0. Replaced with a sized transcript and an explicit sizing table.
+2. **No negative control.** The test could have passed on transcript size rather than cache accounting. Added a control asserting the same transcript does *not* compact without cache tokens.
+3. **Import style was wrong.** Two separate imports from one module; the repo uses the merged `import { type X, y }` form and biome runs `organizeImports`.
+4. **A type-only → value import is a real graph edge.** `check:import-cycles` inspects value imports only. Verified safe rather than assumed: nothing under `src/agents/cost/` imports `@/agents/*`, and `calculate.ts:6`'s `../model-spec` is a leaf.
