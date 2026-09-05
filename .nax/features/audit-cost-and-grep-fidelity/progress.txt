@@ -1,0 +1,1 @@
+[2026-09-05T10:41:06.449Z] US-001 — PASSED — Prompt auditing degrades instead of blocking feature-less commands — Cost: $0.9271

@@ -3,7 +3,7 @@
   "feature": "audit-cost-and-grep-fidelity",
   "branchName": "feat/audit-cost-and-grep-fidelity",
   "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T10:31:15.848Z",
+  "updatedAt": "2026-09-05T10:41:09.695Z",
   "userStories": [
     {
       "id": "US-001",
@@ -21,8 +21,8 @@
         "runtime"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -75,7 +75,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Touches five files across a producer-to-consumer chain (adapter -> event -> subscriber -> auditor) with an existing test to update, but uses only standard field-plumbing patterns already established elsewhere (session-turn's protocolIds handling)."
+        "reasoning": "Touches five files across a producer-to-consumer chain (adapter -> event -> subscriber -> auditor) with an existing test to update, but uses only standard field-plumbing patterns already established elsewhere (session-turn's protocolIds handling).",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/prompt-auditor.ts",
@@ -93,6 +96,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "1e8905fda16a5ebf7e15707cd3dddc379d24c0f6",
       "outOfScope": [
         "the per-conversation ordinal that run records gained in #1824 is not extended to complete records here; an ordinal for a sessionless path needs its own counter design",
         "session ids written into audit files are correlation identifiers, not credentials — redaction, rotation, and access control for the prompt-audit directory are out of scope, and the session-turn path already writes them"
