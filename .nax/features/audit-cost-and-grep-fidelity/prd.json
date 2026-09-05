@@ -3,7 +3,7 @@
   "feature": "audit-cost-and-grep-fidelity",
   "branchName": "feat/audit-cost-and-grep-fidelity",
   "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T11:50:04.873Z",
+  "updatedAt": "2026-09-05T15:27:11.833Z",
   "userStories": [
     {
       "id": "US-001",
@@ -112,7 +112,9 @@
         "buildRateCard called with a catalog carrying tiers reports its source as catalog-rates and returns the tiers translated to nax's field names",
         "NativeAgentAdapter.complete() with a modelDef that carries no pricing returns a CompleteResult whose pricingSource is catalog-rates",
         "NativeAgentAdapter.complete() with a modelDef that carries an explicit pricing override returns a CompleteResult whose pricingSource is config-override",
-        "A turn sent through NativeAgentAdapter.sendTurn() on a session whose modelDef carries no pricing returns a TurnResult whose pricingSource is catalog-rates"
+        "A turn sent through NativeAgentAdapter.sendTurn() on a session whose modelDef carries no pricing returns a TurnResult whose pricingSource is catalog-rates",
+        "estimateCostUsd computed from buildRateCard's returned rate card produces the same cost value it produced before this change, for identical catalog and override inputs, so the return-shape change does not alter billed cost math",
+        "buildRateCard called with a catalog whose cacheRead and cacheWrite are undefined returns a rate card with cacheReadPer1M and cacheCreationPer1M left undefined rather than throwing"
       ],
       "tags": [
         "feature",
@@ -138,10 +140,6 @@
         "src/agents/types.ts",
         "src/agents/session-types.ts",
         "test/unit/agents/native/models.test.ts"
-      ],
-      "suggestedCriteria": [
-        "estimateCostUsd computed from buildRateCard's returned rate card produces the same cost value it produced before this change, for identical catalog and override inputs, so the return-shape change does not alter billed cost math",
-        "buildRateCard called with a catalog whose cacheRead and cacheWrite are undefined returns a rate card with cacheReadPer1M and cacheCreationPer1M left undefined rather than throwing"
       ],
       "modifiedFiles": [
         {

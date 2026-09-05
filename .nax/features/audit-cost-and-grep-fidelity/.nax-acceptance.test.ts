@@ -458,7 +458,7 @@ describe("US-002 — complete audit records carry stage and session id", () => {
       complete: async (_prompt: string, opts?: any) => {
         capturedSessionId = opts?.sessionId;
         return { text: "ok", usage: { inputTokens: 10, outputTokens: 5 }, stopReason: "stop" };
-      } as any,
+      },
       validate: () => {},
     });
 
@@ -1096,7 +1096,7 @@ describe("US-005 — Grep discloses literal search", () => {
   // AC-29: Matching pattern with metacharacters includes match results
   test("AC-29: matching pattern with metacharacters returns matches without disclosure", async () => {
     const cPath = join(grepRoot, "src", "c.ts");
-    writeFileSync(cPath, "export.*divide literally in the file\n");
+    writeFileSync(cPath, "export.*divide is in this file\n");
     try {
       const res = await grepTool.run({ pattern: "export.*divide" }, ctx());
       expect(res.isError).toBeFalsy();
