@@ -321,12 +321,18 @@ export const QualityConfigSchema = z.object({
   gracePeriodMs: z.number().int().min(500).max(30000).default(5000),
   drainTimeoutMs: z.number().int().min(0).max(10000).default(2000),
   shell: z.string().default("/bin/sh"),
+  /**
+   * Secret env vars removed before a quality command is spawned.
+   *
+   * Deliberately does NOT include CLAUDECODE / REPL_ID / AGENT. Those are how
+   * an agent-aware runner is told to emit failures-only output (`bun test`
+   * honours all three); stripping them restored a per-test pass roll call that
+   * nothing here reads, at 12x the output on a single file and 241x on a
+   * directory. See verification/executor.ts `AGENT_OUTPUT_MARKERS`.
+   */
   stripEnvVars: z
     .array(z.string())
     .default([
-      "CLAUDECODE",
-      "REPL_ID",
-      "AGENT",
       "GITLAB_ACCESS_TOKEN",
       "GITHUB_TOKEN",
       "GITHUB_ACCESS_TOKEN",
