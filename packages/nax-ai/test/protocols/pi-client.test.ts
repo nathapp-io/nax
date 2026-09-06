@@ -524,15 +524,40 @@ describe("createPiProtocol error path", () => {
     expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "bad-request" } });
   });
 
-  it("falls back to unknown when no response was observed", async () => {
+  // nax#1869: this was "unknown", which is the one kind neither the consumer's
+  // agent swap nor nax-ai's own retry acts on. An error event that arrived
+  // without a failing response is a broken stream, and reads as one now.
+  it("reads an error event with no observed response as transport", async () => {
     const events = await drainWith(
       fakePiWithResponse([
         { type: "error", reason: "error", error: message({ stopReason: "error", errorMessage: "socket hang up" }) },
       ] as AssistantMessageEvent[]),
     );
 
-    expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "unknown", message: "socket hang up" } });
+    expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "transport", message: "socket hang up" } });
     expect(events.at(-1)).not.toHaveProperty("error.status");
+  });
+
+  // The regression #1869 was filed on, end to end through the protocol: a 200
+  // OK SSE body that carries a provider stall as an error event.
+  it("reads a mid-stream stall under a 200 as transport", async () => {
+    const events = await drainWith(
+      fakePiWithResponse(
+        [
+          {
+            type: "error",
+            reason: "error",
+            error: message({ stopReason: "error", errorMessage: "Upstream idle timeout exceeded" }),
+          },
+        ] as AssistantMessageEvent[],
+        { status: 200, headers: {} },
+      ),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: { kind: "transport", message: "Upstream idle timeout exceeded", status: 200 },
+    });
   });
 
   it("emits usage before the error, because a failed call still billed", async () => {

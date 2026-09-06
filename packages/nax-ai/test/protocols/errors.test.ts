@@ -85,23 +85,69 @@ describe("classifyProviderError", () => {
   it("falls back to the status verdict when there is no message", () => {
     expect(classifyProviderError(400, undefined)).toBe("bad-request");
     expect(classifyProviderError(429, undefined)).toBe("rate-limit");
-    expect(classifyProviderError(undefined, undefined)).toBe("unknown");
+    // An absent status is the one case with no status verdict to fall back to;
+    // nax#1869 gives it the broken-stream answer instead. Asserted in
+    // "a stream that broke under a non-failing status" below.
   });
 
-  it("refines only bad-request, so a token-shaped message on another status keeps its kind", () => {
+  it("refines only bad-request, so a token-shaped message on a failing status keeps its kind", () => {
     // A rate limit that mentions tokens is still a rate limit: the caller
     // should wait, not compact.
     expect(classifyProviderError(429, "rate limit reached: too many tokens per minute")).toBe("rate-limit");
     expect(classifyProviderError(500, "prompt is too long")).toBe("transport");
-    // No observed response means no status to refine from. An overflow always
-    // carries one, so declining to guess here costs nothing.
-    expect(classifyProviderError(undefined, "prompt is too long")).toBe("unknown");
+    // Not context-overflow: an overflow always arrives on a failing status, so
+    // declining to guess one from a broken stream still costs nothing.
+    expect(classifyProviderError(undefined, "prompt is too long")).not.toBe("context-overflow");
   });
 
-  it("agrees with classifyHttpError on every status when no message is given", () => {
-    for (const status of [undefined, 400, 401, 403, 404, 429, 500, 502, 503, 529, 200]) {
+  it("agrees with classifyHttpError on every failing status when no message is given", () => {
+    for (const status of [400, 401, 403, 404, 429, 500, 502, 503, 529]) {
       expect(classifyProviderError(status, undefined)).toBe(classifyHttpError(status));
     }
+  });
+
+  // nax#1869. An error event under a status that is not itself a failure means
+  // the response headers were fine and the stream broke afterwards -- the exact
+  // shape OpenRouter's "Upstream idle timeout exceeded" arrives in, inside a
+  // 200 OK SSE body. classifyHttpError sees only the status and must answer
+  // "unknown" for it; that verdict cost a real run its agent swap and nax-ai's
+  // own transport retry, because both are keyed on "transport".
+  describe("a stream that broke under a non-failing status", () => {
+    it.each([200, 201, 204, 301, 399])("classifies an error event on %s as transport", (status) => {
+      expect(classifyProviderError(status, "Upstream idle timeout exceeded")).toBe("transport");
+    });
+
+    it("classifies an error event with no observed response as transport", () => {
+      // The sibling path for the same fault -- a raw throw with no response --
+      // is classifyThrown, which answers "transport". An error event that
+      // arrived without one is the same fault and gets the same answer.
+      expect(classifyProviderError(undefined, "Upstream idle timeout exceeded")).toBe("transport");
+      expect(classifyProviderError(undefined, undefined)).toBe("transport");
+    });
+
+    // nax-ai retries "transport" internally (retry.ts). Rate limits and
+    // overload capacity are consumer policy and must never be retried here
+    // (protocol architecture spec, §10.1), so a mid-stream error that carries
+    // policy content keeps its policy kind even under a 200.
+    it.each([
+      ["rate-limit", "Rate limit exceeded: free-models-per-day"],
+      ["rate-limit", "429 Too Many Requests"],
+      ["rate-limit", "You exceeded your current quota, please check your plan and billing details."],
+      ["overloaded", "The upstream provider is overloaded. Please try again later."],
+      ["overloaded", "Model is currently overloaded_error"],
+    ] as const)("keeps a mid-stream %s payload out of transport", (kind, message) => {
+      expect(classifyProviderError(200, message)).toBe(kind);
+    });
+
+    it("matches policy markers regardless of case", () => {
+      expect(classifyProviderError(200, "RATE LIMIT EXCEEDED")).toBe("rate-limit");
+    });
+
+    it("does not read policy markers from a failing status it already classified", () => {
+      // 503 is overloaded by status; a rate-limit phrase in its body must not
+      // relabel it, because the status is the stronger signal.
+      expect(classifyProviderError(503, "rate limit exceeded")).toBe("overloaded");
+    });
   });
 });
 
