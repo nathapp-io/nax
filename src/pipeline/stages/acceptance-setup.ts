@@ -26,6 +26,7 @@ import { buildAcceptanceRunCommand, generateSkeletonTests, groupStoriesByPackage
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { loadConfigForWorkdir } from "@/config";
+import type { AdapterFailure } from "@/context/engine";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
@@ -373,12 +374,32 @@ async function runAcceptanceSetup(
             : {}),
         },
         groupStoryId,
-      )) as { testCode: string | null };
+      )) as { testCode: string | null; adapterFailure?: AdapterFailure };
 
       // verify+recover already ran inside callOp (ADR-020 Wave 3).
       const testCode = genResult.testCode;
+      // US-002: a falsy testCode accompanied by an adapterFailure means the
+      // dispatch never happened — fabricating a skeleton converts a recoverable
+      // blip into a guaranteed-red gate and a committed stub. Leave the file
+      // unwritten so the acceptance stage routes this package into its
+      // existing missing-target path (US-003).
+      const dispatchFailure: AdapterFailure | undefined = genResult.adapterFailure;
       if (testCode) {
         await _acceptanceSetupDeps.writeFile(testPath, testCode);
+      } else if (dispatchFailure) {
+        // Stage decision: dispatch failed — write nothing. The acceptance
+        // stage will surface this as a missing target, with the failure's
+        // outcome + message carried in the warning for the run log.
+        getSafeLogger()?.warn(
+          "acceptance-setup",
+          `agent dispatch failed (${dispatchFailure.outcome}); not writing acceptance tests`,
+          {
+            storyId: groupStoryId,
+            testPath,
+            outcome: dispatchFailure.outcome,
+            message: dispatchFailure.message,
+          },
+        );
       } else {
         // Stage decision: op exhausted recovery — fall back to skeleton.
         const skeletonCriteria: AcceptanceCriterion[] = groupRefined.map((c, i) => ({
