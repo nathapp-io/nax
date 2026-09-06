@@ -18,8 +18,18 @@
 // Shell metacharacters that would let an argv element break out of "one
 // literal argument" and be reinterpreted by a shell or a naive re-parse
 // downstream — even though this path never invokes a shell itself, nothing
-// downstream may assume these are absent.
-const METACHARACTERS = /[;&|$`()<>\n\r]/;
+// downstream may assume these are absent. Quotes and a backslash are
+// included for the same defense-in-depth reason as the rest of this class:
+// they are the escaping/quoting primitives a shell or re-parser would use
+// to reinterpret the token.
+//
+// Deliberately EXCLUDED: glob and history characters (`* ? [ ] ! #`).
+// `[` and `]` in particular are not a shell-injection vector on their own —
+// blocking them would reject `pkg[extra]`, a legitimate and common Python
+// install specifier (e.g. `uv add "httpx[http2]"`), turning a correct
+// install into a mysterious refusal. Do not "complete the set" by adding
+// these back without re-solving that regression.
+const METACHARACTERS = /[;&|$`()<>\n\r'"\\]/;
 
 export function validateArgv(argv: unknown): string | undefined {
   if (!Array.isArray(argv)) return "argv must be an array of strings";
@@ -48,24 +58,42 @@ export function validateArgv(argv: unknown): string | undefined {
 }
 
 /**
- * Flags that redirect where code comes from or where it lands.
+ * Flags that redirect where code comes from, where it lands, or whether an
+ * untrusted source is accepted at all.
  *
  * Not a general "unsafe flag" list — it is specifically the set a verb gate
  * cannot see. A prefix grant like `npm install*` approves the verb "install
  * a package the model named"; it says nothing about `--registry`,
- * `--index-url`, `-g`/`--global`, `--prefix`, or `--config`/`--userconfig`,
- * each of which can point the installer at a different source or a
- * different filesystem location entirely. `--unsafe-perm` is here for the
- * same reason from the other direction: it removes a safety check on what
- * an installed package's scripts are allowed to do. These are enumerated,
- * not pattern-matched, because the point is precisely that no verb pattern
- * can be trusted to imply their absence.
+ * `--index-url`/`--extra-index-url`, `-g`/`--global`, `--prefix`, or
+ * `--config`/`--userconfig`, each of which can point the installer at a
+ * different source or a different filesystem location entirely.
+ * `--extra-index-url` is included alongside `--index-url` because pip
+ * treats it identically for this purpose: it adds a second, attacker-chosen
+ * index that a dependency can resolve from, it does not merely replace one.
+ * `--trusted-host` (pip) and `--cert` (pip) sit in the same family from the
+ * trust side rather than the source side: they change whether a source is
+ * *accepted* — `--trusted-host` disables TLS/host verification for a given
+ * host, `--cert` swaps the CA bundle used to validate it. `--strict-ssl`
+ * and `--cafile` are the same trust-boundary controls in the npm/yarn/bun
+ * family; `--ca` is npm's inline-certificate sibling of `--cafile` (a CA
+ * cert passed as a string instead of a file path), so it is included for
+ * the same reason. `--unsafe-perm` is here for the same reason from the
+ * other direction: it removes a safety check on what an installed
+ * package's scripts are allowed to do. These are enumerated, not
+ * pattern-matched, because the point is precisely that no verb pattern can
+ * be trusted to imply their absence.
  */
 export const DENIED_FLAGS: readonly string[] = [
   "--registry",
   "--index-url",
+  "--extra-index-url",
   "--index",
   "-i",
+  "--trusted-host",
+  "--cert",
+  "--strict-ssl",
+  "--cafile",
+  "--ca",
   "--config",
   "--userconfig",
   "--global",
@@ -77,8 +105,11 @@ export const DENIED_FLAGS: readonly string[] = [
 export function deniedFlag(argv: readonly string[]): string | undefined {
   for (const element of argv) {
     // Normalize "--flag=value" to "--flag" so the denylist check does not
-    // depend on whether the model wrote the value as a separate token.
-    const name = element.includes("=") ? (element.split("=")[0] as string) : element;
+    // depend on whether the model wrote the value as a separate token, and
+    // lowercase it so a differently-cased spelling (e.g. `--Registry`) can't
+    // slip past a case-sensitive list membership check.
+    const raw = element.includes("=") ? (element.split("=")[0] as string) : element;
+    const name = raw.toLowerCase();
     if (DENIED_FLAGS.includes(name)) return name;
   }
   return undefined;
