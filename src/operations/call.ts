@@ -42,6 +42,25 @@ export const _callOpDeps = {
       .catch(() => null),
 };
 
+/**
+ * US-001: attach `outcome.adapterFailure` to `parsed` when:
+ *   - the outcome carries one
+ *   - `parsed` is a non-null object
+ *   - `parsed` does not already carry its own `adapterFailure`
+ *
+ * Primitive `parsed` values (strings, numbers, null) are returned unchanged —
+ * the spec pins "the same string" for AC8. A producer's own `adapterFailure`
+ * (e.g. synthesised inside `op.verify` or `op.parse`) wins per AC7 — we never
+ * overwrite producer metadata.
+ */
+export function attachOutcomeAdapterFailure<O>(parsed: O, outcomeFailure: AdapterFailure | undefined): O {
+  if (!outcomeFailure) return parsed;
+  if (parsed === null || typeof parsed !== "object") return parsed;
+  const asRecord = parsed as Record<string, unknown>;
+  if (asRecord.adapterFailure !== undefined) return parsed;
+  return { ...asRecord, adapterFailure: outcomeFailure } as O;
+}
+
 export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> {
   // Deterministic ops bypass all LLM dispatch, cost tracking, and session management.
   if (op.kind === "deterministic") {
@@ -507,7 +526,14 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // retry decisions and final output.
   try {
     const parsedRun = op.parse(rawOutput, input, buildCtx);
-    return await runPostParse(op, parsedRun, input, buildCtx);
+    // US-001: attach the run outcome's adapterFailure to a non-null object
+    // parsed value that does not already carry its own. A producer's own
+    // adapterFailure (e.g. synthesised by op.verify) wins; a string or
+    // primitive parse result is returned unchanged. The acceptance generator
+    // is the consumer; other ops that surface adapterFailure on their own
+    // are not affected because their parsed value already carries one.
+    const parsedRunWithFailure = attachOutcomeAdapterFailure(parsedRun, outcome.result.adapterFailure);
+    return await runPostParse(op, parsedRunWithFailure, input, buildCtx);
   } catch (_parseErr) {
     if (maxRetriesExceeded) {
       getSafeLogger()?.error("callop", "Op retry budget exhausted", {

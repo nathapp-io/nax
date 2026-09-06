@@ -420,3 +420,99 @@ describe("buildStatusSnapshot postRun field", () => {
     expect(fullSnap.postRun?.regression.affectedStories).toEqual(["US-001"]);
   });
 });
+
+// ============================================================================
+// buildStatusSnapshot — gates field (US-004)
+// ============================================================================
+
+describe("buildStatusSnapshot gates field (US-004)", () => {
+  test("AC1: gates.acceptance is 'failed' and gates.regression is 'passed' when acceptance.status is 'failed' and regression.status is 'passed'", () => {
+    const postRun: PostRunStatus = {
+      acceptance: { status: "failed", lastRunAt: "2026-04-04T10:00:00.000Z" },
+      regression: { status: "passed", lastRunAt: "2026-04-04T11:00:00.000Z" },
+    };
+    const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
+
+    expect(snapshot.gates?.acceptance).toBe("failed");
+    expect(snapshot.gates?.regression).toBe("passed");
+  });
+
+  test("AC2: snapshot has no gates property when state has no postRun", () => {
+    const snapshot = buildStatusSnapshot(makeRunState());
+
+    expect(Object.hasOwn(snapshot, "gates")).toBe(false);
+  });
+
+  test("AC3: gates.acceptance is 'failed' when acceptance.status is 'passed' and acceptance.skippedPackages is non-empty", () => {
+    const postRun: PostRunStatus = {
+      acceptance: {
+        status: "passed",
+        lastRunAt: "2026-04-04T10:00:00.000Z",
+        skippedPackages: ["packages/api", "packages/web"],
+      },
+      regression: { status: "not-run" },
+    };
+    const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
+
+    expect(snapshot.gates?.acceptance).toBe("failed");
+    expect(snapshot.gates?.regression).toBe("not-run");
+  });
+
+  test("AC4: gates.acceptance is 'passed' when acceptance.status is 'passed' and acceptance.skippedPackages is absent", () => {
+    const postRun: PostRunStatus = {
+      acceptance: { status: "passed", lastRunAt: "2026-04-04T10:00:00.000Z" },
+      regression: { status: "passed", lastRunAt: "2026-04-04T11:00:00.000Z" },
+    };
+    const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
+
+    expect(snapshot.gates?.acceptance).toBe("passed");
+    expect(snapshot.gates?.regression).toBe("passed");
+  });
+
+  test("AC5: snapshot.run.status equals state's runStatus when acceptance.status is 'failed'", () => {
+    const runStatus = "completed";
+    const postRun: PostRunStatus = {
+      acceptance: { status: "failed", lastRunAt: "2026-04-04T10:00:00.000Z" },
+      regression: { status: "passed", lastRunAt: "2026-04-04T11:00:00.000Z" },
+    };
+    const snapshot = buildStatusSnapshot(makeRunState({ runStatus, postRun }));
+
+    // run.status is preserved as-is, not changed by gates
+    expect(snapshot.run.status).toBe(runStatus);
+    expect(snapshot.run.status).toBe("completed");
+  });
+
+  test("AC6: gates.regression is 'not-run' when regression.status is 'not-run'", () => {
+    const postRun: PostRunStatus = {
+      acceptance: { status: "passed", lastRunAt: "2026-04-04T10:00:00.000Z" },
+      regression: { status: "not-run" },
+    };
+    const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
+
+    expect(snapshot.gates?.regression).toBe("not-run");
+  });
+
+  test("AC7: writeStatusFile round-trips gates; parsed gates.acceptance equals the value written", async () => {
+    const tmpDir = makeTempDir("nax-gates-test-");
+    try {
+      const postRun: PostRunStatus = {
+        acceptance: {
+          status: "passed",
+          lastRunAt: "2026-04-04T10:00:00.000Z",
+          skippedPackages: ["packages/api"],
+        },
+        regression: { status: "passed", lastRunAt: "2026-04-04T11:00:00.000Z" },
+      };
+      const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
+      const outPath = join(tmpDir, "status.json");
+
+      await writeStatusFile(outPath, snapshot);
+
+      const parsed = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
+      expect(parsed.gates?.acceptance).toBe("failed"); // overridden due to skippedPackages
+      expect(parsed.gates?.regression).toBe("passed");
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});

@@ -1,10 +1,21 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { TurnResult } from "@/agents/types";
+import type { AdapterFailure } from "@/context/engine";
 import { makeSelfHealStep, runSelfHealChain } from "@/operations";
 import type { HopBodyContext } from "@/operations/types";
 
-function makeTurn(output: string, cost: number): TurnResult {
-  return { output, estimatedCostUsd: cost, internalRoundTrips: 1, tokenUsage: { inputTokens: 0, outputTokens: 0 } };
+function makeTurn(output: string, cost: number, adapterFailure?: AdapterFailure): TurnResult {
+  return {
+    output,
+    estimatedCostUsd: cost,
+    internalRoundTrips: 1,
+    tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    ...(adapterFailure !== undefined ? { adapterFailure } : {}),
+  };
+}
+
+function makeFailure(outcome: AdapterFailure["outcome"], category: AdapterFailure["category"]): AdapterFailure {
+  return { outcome, category, retriable: false, message: `${outcome} test` };
 }
 
 interface Input {
@@ -93,6 +104,126 @@ describe("runSelfHealChain", () => {
     expect(send).toHaveBeenCalledTimes(0);
     expect(result.output).toBe("seed-out");
     expect(result.estimatedCostUsd).toBe(2);
+  });
+
+  // US-001 AC1: seed carries adapterFailure, corrective turn does not —
+  // the seed's failure survives the corrective replacement.
+  test("carries seed adapterFailure onto returned turn when corrective turn has none (AC1)", async () => {
+    const send = mock(async (_p: string) => makeTurn("repair-out", 4));
+    const seedFailure = makeFailure("fail-service-down", "availability");
+    const seed = makeTurn("seed-out", 1, seedFailure);
+    const step = makeSelfHealStep<Input, string>({
+      detect: async () => ["dev-a"],
+      buildRepair: () => "fix",
+    });
+    const result = await runSelfHealChain(makeCtx(send), seed, [step]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(result.output).toBe("repair-out");
+    expect(result.adapterFailure).toEqual(seedFailure);
+    expect(result.adapterFailure?.outcome).toBe("fail-service-down");
+  });
+
+  // US-001 AC2: corrective turn carries its own adapterFailure —
+  // it keeps its own (not overwritten by the seed's).
+  test("preserves corrective turn's own adapterFailure when seed had a different one (AC2)", async () => {
+    const repairFailure = makeFailure("fail-timeout", "quality");
+    const send = mock(async (_p: string) => makeTurn("repair-out", 4, repairFailure));
+    const seed = makeTurn("seed-out", 1, makeFailure("fail-service-down", "availability"));
+    const step = makeSelfHealStep<Input, string>({
+      detect: async () => ["dev-a"],
+      buildRepair: () => "fix",
+    });
+    const result = await runSelfHealChain(makeCtx(send), seed, [step]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(result.output).toBe("repair-out");
+    expect(result.adapterFailure).toEqual(repairFailure);
+    expect(result.adapterFailure?.outcome).toBe("fail-timeout");
+  });
+
+  // US-001 AC3: neither seed nor corrective turn carry adapterFailure —
+  // the returned turn has no adapterFailure property at all.
+  test("returned turn has no adapterFailure property when neither seed nor corrective carry one (AC3)", async () => {
+    const send = mock(async (_p: string) => makeTurn("repair-out", 4));
+    const seed = makeTurn("seed-out", 1);
+    const step = makeSelfHealStep<Input, string>({
+      detect: async () => ["dev-a"],
+      buildRepair: () => "fix",
+    });
+    const result = await runSelfHealChain(makeCtx(send), seed, [step]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(result.output).toBe("repair-out");
+    expect("adapterFailure" in result).toBe(false);
+  });
+
+  // US-001 AC4: seed has adapterFailure, no corrective turn is issued
+  // (step detect returns []), the seed's output AND its adapterFailure are
+  // preserved verbatim on the returned turn.
+  test("returns seed output AND adapterFailure when step detects nothing (AC4)", async () => {
+    const send = mock(async (_p: string) => makeTurn("repair", 5));
+    const seedFailure = makeFailure("fail-service-down", "availability");
+    const seed = makeTurn("seed-out", 2, seedFailure);
+    const step = makeSelfHealStep<Input, string>({
+      detect: async () => [],
+      buildRepair: () => "should-not-be-sent",
+    });
+    const result = await runSelfHealChain(makeCtx(send), seed, [step]);
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(result.output).toBe("seed-out");
+    expect(result.estimatedCostUsd).toBe(2);
+    expect(result.adapterFailure).toEqual(seedFailure);
+    expect(result.adapterFailure?.outcome).toBe("fail-service-down");
+  });
+
+  // Multi-step chains: the carried failure is the most recently observed one, not
+  // the seed's. `planRefineOp` passes two steps whenever specGuard is true, so a
+  // chain longer than one step is reachable today.
+  test("carries a later step's own adapterFailure past a clean final step", async () => {
+    const step1Failure = makeFailure("fail-timeout", "availability");
+    const seed = makeTurn("seed-out", 1);
+    const turns = [makeTurn("step1-out", 2, step1Failure), makeTurn("step2-out", 3)];
+    let call = 0;
+    const send = mock(async (_p: string) => turns[call++]);
+    const steps = [
+      makeSelfHealStep<Input, string>({ detect: async () => ["d1"], buildRepair: () => "fix1" }),
+      makeSelfHealStep<Input, string>({ detect: async () => ["d2"], buildRepair: () => "fix2" }),
+    ];
+    const result = await runSelfHealChain(makeCtx(send), seed, steps);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(result.output).toBe("step2-out");
+    // The step-1 failure survives the clean step-2 turn rather than being dropped.
+    expect(result.adapterFailure).toEqual(step1Failure);
+  });
+
+  test("a later step's own adapterFailure wins over the seed's stale one", async () => {
+    const seedFailure = makeFailure("fail-service-down", "availability");
+    const step1Failure = makeFailure("fail-timeout", "availability");
+    const seed = makeTurn("seed-out", 1, seedFailure);
+    const turns = [makeTurn("step1-out", 2, step1Failure), makeTurn("step2-out", 3)];
+    let call = 0;
+    const send = mock(async (_p: string) => turns[call++]);
+    const steps = [
+      makeSelfHealStep<Input, string>({ detect: async () => ["d1"], buildRepair: () => "fix1" }),
+      makeSelfHealStep<Input, string>({ detect: async () => ["d2"], buildRepair: () => "fix2" }),
+    ];
+    const result = await runSelfHealChain(makeCtx(send), seed, steps);
+    expect(result.output).toBe("step2-out");
+    // The more recent step-1 failure is carried, NOT the seed's stale one.
+    expect(result.adapterFailure).toEqual(step1Failure);
+    expect(result.adapterFailure?.outcome).not.toBe("fail-service-down");
+  });
+
+  test("carries no adapterFailure when neither the seed nor any turn has one", async () => {
+    const seed = makeTurn("seed-out", 1);
+    const turns = [makeTurn("step1-out", 2), makeTurn("step2-out", 3)];
+    let call = 0;
+    const send = mock(async (_p: string) => turns[call++]);
+    const steps = [
+      makeSelfHealStep<Input, string>({ detect: async () => ["d1"], buildRepair: () => "fix1" }),
+      makeSelfHealStep<Input, string>({ detect: async () => ["d2"], buildRepair: () => "fix2" }),
+    ];
+    const result = await runSelfHealChain(makeCtx(send), seed, steps);
+    expect(result.output).toBe("step2-out");
+    expect("adapterFailure" in result).toBe(false);
   });
 });
 

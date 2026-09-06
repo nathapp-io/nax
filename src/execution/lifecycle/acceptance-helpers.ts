@@ -150,6 +150,7 @@ export const _regenerateDeps = {
     const { acceptanceSetupStage } = await import("@/pipeline/stages");
     await acceptanceSetupStage.execute(ctx);
   },
+  getLogger: () => getSafeLogger(),
 };
 
 /**
@@ -161,9 +162,10 @@ export const _regenerateDeps = {
  * 3. Delete acceptance-meta.json (force regeneration)
  * 4. Collect implementation context from git diff
  * 5. Run acceptance-setup stage to regenerate
+ * 6. Check for stub content and report failure if regenerated content is a stub
  */
 export async function regenerateAcceptanceTest(testPath: string, acceptanceContext: PipelineContext): Promise<boolean> {
-  const logger = getSafeLogger();
+  const logger = _regenerateDeps.getLogger();
   const bakPath = `${testPath}.bak`;
 
   const content = await Bun.file(testPath).text();
@@ -241,8 +243,19 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
 
   await _regenerateDeps.acceptanceSetupExecute(contextForSetup as PipelineContext);
 
+  // Check if the file exists after regeneration
   if (!(await Bun.file(testPath).exists())) {
-    logger?.error("acceptance", "Acceptance test regeneration failed — manual intervention required");
+    logger?.error("acceptance", "Acceptance test regeneration failed — file not created");
+    return false;
+  }
+
+  // Check if the regenerated content is a stub (US-003)
+  const regeneratedContent = await _regenerateDeps.readFile(testPath);
+  if (isStubTestFile(regeneratedContent)) {
+    logger?.error(
+      "acceptance",
+      "Acceptance test regeneration produced stub content — regenerator unable to generate real tests",
+    );
     return false;
   }
 

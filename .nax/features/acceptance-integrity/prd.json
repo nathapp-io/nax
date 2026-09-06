@@ -1,0 +1,192 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "acceptance-integrity",
+  "branchName": "feat/acceptance-integrity",
+  "createdAt": "2026-03-10T00:00:00.000Z",
+  "updatedAt": "2026-09-06T05:39:55.879Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Preserve dispatch failure on acceptance operation output",
+      "description": "**Goal** — Carry a failed acceptance-generation dispatch through self-heal and the run-kind operation output.\n\n**Motivation** — Today the signal is destroyed twice over: the path-correction self-heal turn replaces the failed generation turn wholesale, and `callOp` reads the run outcome's `adapterFailure` only to record agent fallbacks before dropping it.\n\n**Approach** — The stage cannot ask whether the dispatch failed — by the time it sees `{ testCode: null }` the turn is gone. The signal exists exactly once, on the turn the adapter failed, and is destroyed at a single known point: `runSelfHealChain` returns the corrective turn in place of the seed. Making the seed's failure survive that replacement is a two-line change at the point of loss, and it is the only point of loss on this path — no second predicate is introduced anywhere, and no caller learns to guess.\n\n**Scope** — In: retain seed failure across corrective replacement; extend acceptance output; attach run outcome metadata after parsing without overriding producer metadata. Out: US-002 consumes the field. US-001 only: carrying an `adapterFailure` through the `complete`-kind branch of `callOp` is out of scope; the acceptance generator is a `run`-kind operation.\n\n**Interface**\n```typescript\nexport interface AcceptanceGenerateOutput {\n  testCode: string | null;\n  adapterFailure?: AdapterFailure;\n}\n```\n\n`runSelfHealChain` returns the same result except a seed `adapterFailure` is carried onto the returned turn when the seed had one and the turn that replaced it did not. A corrective turn that carries its own `adapterFailure` keeps its own. The `callOp` run branch returns the same parsed value carrying the run outcome's `adapterFailure` when the outcome has one and the parsed value does not already carry its own. A parsed value that is not a non-null object is returned unchanged.",
+      "acceptanceCriteria": [
+        "[runSelfHealChain] returns a turn whose adapterFailure.outcome is `fail-service-down` when a seed with that adapterFailure is followed by one corrective turn with no adapterFailure.",
+        "[runSelfHealChain] returns a turn whose adapterFailure.outcome is `fail-timeout` when a seed with `fail-service-down` is followed by one corrective turn with its own `fail-timeout` adapterFailure.",
+        "[runSelfHealChain] returns a turn with no adapterFailure property when a seed with no adapterFailure is followed by one corrective turn also carrying none.",
+        "[runSelfHealChain] returns the seed's output and adapterFailure when a seed carrying adapterFailure has a step that detects nothing and issues no corrective turn.",
+        "[callOp] resolves a run-kind operation to a value with `testCode: null` and adapterFailure.outcome `fail-service-down` when its dispatch outcome carries that failure and parse returns `{ testCode: null }`.",
+        "[callOp] resolves a run-kind operation to the parsed value with no adapterFailure property when its dispatch outcome carries no adapterFailure.",
+        "[callOp] preserves adapterFailure.outcome `fail-quality` when a run-kind dispatch outcome carries `fail-service-down` and parse returns an object already carrying `fail-quality`.",
+        "[callOp] resolves to the same string when a run-kind dispatch outcome carries adapterFailure and parse returns a string."
+      ],
+      "tags": [
+        "feature",
+        "operations",
+        "acceptance"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing modules need small, conventional metadata-preservation changes; existing operation and self-heal seams support focused unit tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/operations/self-heal.ts",
+        "src/operations/call.ts",
+        "src/operations/acceptance-generate.ts",
+        "src/context/engine/types.ts",
+        "test/unit/operations/self-heal.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "32b031155e7d94b43d0f35991dff0dc75e61d780"
+    },
+    {
+      "id": "US-002",
+      "title": "Do not fabricate skeletons for dispatch failures",
+      "description": "**Goal** — Make acceptance setup distinguish failed dispatches from model-quality empty results and leave the target unwritten for the former.\n\n**Motivation** — A skeleton is a reasonable answer to \"the model wrote something unusable\" and the wrong answer to \"the call never happened\", because it converts a recoverable blip into a guaranteed-red gate and a committed stub.\n\n**Approach** — The generation branch becomes three-way: real test code is written as before, a falsy result with no failure attached still gets the skeleton, and a falsy result carrying an `adapterFailure` gets no file and a warning that names the failure. Writing nothing routes the package into the acceptance stage's existing missing-target path, so the run reports one honest missing target instead of thirty fabricated red criteria, and no stub reaches the auto-commit.\n\n**Scope** — In: consume US-001’s optional failure signal and make the three observable write/warning decisions. Out: US-001 produces the signal; retries are deferred. US-002 only: deleting or rolling back an acceptance test file that already exists at the target path when a regeneration dispatch fails is out of scope. The branch writes nothing; it does not remove prior content. US-002 only: propagating the dispatch failure as a thrown error that aborts the run is out of scope. The stage records the failure and lets the existing missing-target path fail the acceptance gate.\n\n**Interface**\n```typescript\nexport interface AcceptanceGenerateOutput {\n  testCode: string | null;\n  adapterFailure?: AdapterFailure;\n}\n```\n\nA truthy `testCode` is written, unchanged. A falsy `testCode` accompanied by an `adapterFailure` writes **nothing** at `testPath` — no skeleton — and warns with a message distinct from the skeleton one, carrying the failure's `outcome` and `message` alongside `storyId` and `testPath`. A falsy `testCode` with no `adapterFailure` keeps today's skeleton behaviour exactly.",
+      "acceptanceCriteria": [
+        "When acceptanceSetupStage receives `{ testCode: null, adapterFailure: { category: \"availability\", outcome: \"fail-service-down\", message: \"Upstream idle timeout exceeded\", retriable: true } }` from `_acceptanceSetupDeps.callOp` for acceptance-generate, then it makes no `_acceptanceSetupDeps.writeFile` call whose path is the group's acceptance test path.",
+        "When acceptanceSetupStage receives that failed generation result, then it emits a warning on the `acceptance-setup` channel whose message differs from `agent did not produce test content; using skeleton` and whose metadata includes outcome `fail-service-down` and `Upstream idle timeout exceeded`.",
+        "When acceptanceSetupStage receives `{ testCode: null }` with no adapterFailure, then it writes skeleton content to the group's acceptance test path and emits `agent did not produce test content; using skeleton`, preserving the model-quality path unchanged.",
+        "When acceptanceSetupStage receives non-empty testCode together with adapterFailure, then it writes that testCode to the group's acceptance test path.",
+        "When acceptanceSetupStage receives the failed generation result while a file already exists at the group's acceptance test path, then that file's content remains unchanged.",
+        "When acceptanceStage executes for a package with no acceptance test file and at least one acceptance-enabled story, then it records the package in the acceptance verdict's `missingTargets`."
+      ],
+      "tags": [
+        "feature",
+        "pipeline",
+        "acceptance"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One existing stage’s injected call and file seams support a contained three-way branch and a protected downstream missing-target behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/acceptance-setup.ts",
+        "src/operations/acceptance-generate.ts",
+        "src/pipeline/stages/acceptance.ts",
+        "test/unit/pipeline/stages/acceptance-setup-agent-file.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0c7da97734eb2b34141f4b1d3f82164853e3eb21"
+    },
+    {
+      "id": "US-003",
+      "title": "Reject stub-only acceptance regenerations",
+      "description": "**Goal** — Make regeneration report failure when setup leaves a stub acceptance test.\n\n**Motivation** — `regenerateAcceptanceTest` decides success by checking only that a file exists at the target path, and the skeleton fallback guarantees one.\n\n**Approach** — `regenerateAcceptanceTest` gains the stub check the acceptance loop already performs one iteration later, so a regeneration that produced only stubs is reported as the failure it is instead of costing a further generation attempt.\n\n**Scope** — In: retain backup and missing-file behavior and reject existing regenerated content classified as a stub. Out: changing retry control. US-003 only: changing `MAX_STUB_REGENS`, the acceptance loop's retry budget, or when the loop decides to regenerate is out of scope. This story changes what a regeneration reports, not how many are attempted. US-003 only: changing the stub-detection predicate itself is out of scope; the existing classifier is used as it stands.\n\n**Interface**\n```typescript\nfunction isStubTestFile(content: string): boolean\nasync function regenerateAcceptanceTest(testPath: string, acceptanceContext: PipelineContext): Promise<boolean>\n```\n\nAfter re-running the acceptance-setup stage, retain the missing-file rejection and add a second rejection: when the file exists but its content is stub content, log at error level with a message distinct from the missing-file one and return `false`. Real regenerated content is unaffected.",
+      "acceptanceCriteria": [
+        "[regenerateAcceptanceTest] returns false when the acceptance-setup stage it invokes leaves stub content at the target path.",
+        "[regenerateAcceptanceTest] returns true when the acceptance-setup stage it invokes leaves real test content at the target path.",
+        "[regenerateAcceptanceTest] returns false when the acceptance-setup stage it invokes leaves no file at the target path.",
+        "When regenerateAcceptanceTest returns false because the target path holds stub content, then it logs at error level on the `acceptance` channel with a message distinct from the error it logs when the file is missing entirely.",
+        "When regenerateAcceptanceTest is invoked, then it writes the target path's pre-existing content to a sibling path ending in `.bak` before invoking acceptance-setup, whichever value it goes on to return."
+      ],
+      "tags": [
+        "feature",
+        "acceptance",
+        "lifecycle"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A single existing helper adds one post-regeneration predicate and error branch while retaining established backup and missing-file behavior.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/acceptance-helpers.ts",
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "test/unit/execution/lifecycle/acceptance-loop.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "949341c556fbf59f3a2bf8acc09e2b0fda4aa47d"
+    },
+    {
+      "id": "US-004",
+      "title": "Add acceptance and regression gate summary to status files",
+      "description": "**Goal** — Emit a top-level status-file gate summary derived from post-run acceptance and regression outcomes.\n\n**Motivation** — `run.status` and `progress` are what a human and any wrapper tooling read first, and they are derived from story completion alone.\n\n**Approach** — `buildStatusSnapshot` is the single place every status file is produced — the periodic run status and the end-of-run feature status both go through it — so a summary derived there cannot disagree with the `postRun` it summarises, and no call site has to remember to set it. `run.status` keeps its current meaning (\"the run reached its end without crashing\"), so nothing that switches on it changes behaviour.\n\n**Scope** — In: add optional gates to NaxStatusFile and derive it centrally, including the skipped-package failure override and file round-trip. Out: altering run status or UI. US-004 only: changing the meaning of `run.status`, adding a new value such as `completed-with-failures`, or changing the values of `PostRunPhaseStatus` is out of scope. This story adds an additive summary field and leaves every existing value alone. US-004 only: including the `finish` phase in `gates` is out of scope — `postRun.finish` is optional and describes what happened after the gates, not a gate.\n\n**Interface**\n```typescript\nexport type PostRunPhaseStatus = \"not-run\" | \"running\" | \"passed\" | \"failed\" | \"skipped\";\n\nexport interface NaxStatusFile {\n  gates?: {\n    acceptance: PostRunPhaseStatus;\n    regression: PostRunPhaseStatus;\n  };\n}\n```\n\nWhen `state.postRun` is present, emit `gates`, mirroring `postRun.acceptance.status` and `postRun.regression.status` — except that `gates.acceptance` is `\"failed\"` whenever `postRun.acceptance.skippedPackages` is non-empty. When postRun is absent, emit no gates key.",
+      "acceptanceCriteria": [
+        "[buildStatusSnapshot] returns gates.acceptance `failed` and gates.regression `passed` when state.postRun has acceptance.status `failed` and regression.status `passed`.",
+        "[buildStatusSnapshot] returns a snapshot with no `gates` property when state has no postRun.",
+        "[buildStatusSnapshot] returns gates.acceptance `failed` when state.postRun has acceptance.status `passed` and non-empty acceptance.skippedPackages.",
+        "[buildStatusSnapshot] returns gates.acceptance `passed` when state.postRun has acceptance.status `passed` and acceptance.skippedPackages is absent.",
+        "[buildStatusSnapshot] preserves snapshot.run.status equal to the state's runStatus when state.postRun has acceptance.status `failed`.",
+        "[buildStatusSnapshot] returns gates.regression `not-run` when state.postRun has regression.status `not-run`.",
+        "When writeStatusFile writes a snapshot carrying gates and the file is read back, then parsed gates.acceptance equals the value written."
+      ],
+      "tags": [
+        "feature",
+        "status",
+        "observability"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The existing centralized snapshot builder needs an additive derived field and its established unit/integration serialization tests cover the behavior.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "src/execution/status-file.ts",
+        "src/execution/status-writer.ts",
+        "test/integration/execution/status-file.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e6b777b35fb8e82ababb8547bf43d1e6f9ff70cf"
+    }
+  ],
+  "analysis": "This is an existing TypeScript feature change. US-001 spans src/operations/self-heal.ts:58, src/operations/call.ts, and src/operations/acceptance-generate.ts. runSelfHealChain currently returns `{ ...last, estimatedCostUsd: totalCost }`, so a corrective TurnResult replaces seed metadata. acceptanceGenerateOp always executes its path-correction self-heal. callOp normalizes the run outcome, records fallbacks, parses output, and returns runPostParse’s result without attaching `outcome.adapterFailure`; the attachment must preserve a parsed object’s own failure and leave non-object parsed values unchanged. call.ts is already 563 lines, so use a small module-private helper at the run tail or move it to existing src/operations/post-parse.ts if needed. AdapterFailure is defined in src/context/engine/types.ts and has four required fields. Existing self-heal coverage is test/unit/operations/self-heal.test.ts; callOp has extensive existing unit fixtures under test/unit/operations/call*.test.ts and run-operation-retry.test.ts.\n\nUS-002 changes the generation loop in src/pipeline/stages/acceptance-setup.ts. Its `_acceptanceSetupDeps.callOp` and `writeFile` are established test seams, exercised by test/unit/pipeline/stages/acceptance-setup-agent-file.test.ts. The current result is locally cast as `{ testCode: string | null }` and all falsy results generate a skeleton. The new branch must not write or delete `testPath` on an adapter failure, but must retain the truthy-code path and current no-failure skeleton warning. src/pipeline/stages/acceptance.ts already detects absent required package test paths, adds packageDir to `missingTargets`, stores `ctx.acceptanceFailures`, and returns fail; protect this seam rather than duplicating it.\n\nUS-003 is localized to src/execution/lifecycle/acceptance-helpers.ts. regenerateAcceptanceTest already backs up pre-existing content to `.bak`, deletes the original, invokes setup through `_regenerateDeps`, and returns false for a missing target. `isStubTestFile` already exists in this file and must be applied to regenerated existing content. Tests in test/unit/execution/lifecycle/acceptance-loop.test.ts use the injectable regeneration dependencies. Do not alter acceptance-loop retry scheduling or MAX_STUB_REGENS.\n\nUS-004 is an additive status schema change in src/execution/status-file.ts. NaxStatusFile already makes postRun optional, and buildStatusSnapshot is the centralized producer for status snapshots. Add optional gates only when `state.postRun` exists; derive acceptance from postRun except that non-empty skippedPackages forces `failed`; preserve `run.status`. Existing serialization and snapshot tests are in test/integration/execution/status-file.test.ts, and status-writer call sites need no migration because derivation is centralized. Old on-disk status files remain readable because gates is optional and is not backfilled.",
+  "outOfScope": [
+    "Retrying or swapping the agent when acceptance generation fails to dispatch is out of scope. Manager-tier retry was settled in #1869 and #1870 and further work is tracked in #1884; this feature changes what a failed dispatch is reported as, not how many times it is attempted.",
+    "US-002 only: deleting or rolling back an acceptance test file that already exists at the target path when a regeneration dispatch fails is out of scope. The branch writes nothing; it does not remove prior content.",
+    "US-002 only: propagating the dispatch failure as a thrown error that aborts the run is out of scope. The stage records the failure and lets the existing missing-target path fail the acceptance gate.",
+    "US-001 only: attaching the run outcome's `adapterFailure` to the outputs of operations other than `acceptance-generate` is a consequence of `callOp` being shared, but no other operation's behaviour is changed to read it here.",
+    "US-001 only: carrying an `adapterFailure` through the `complete`-kind branch of `callOp` is out of scope; the acceptance generator is a `run`-kind operation.",
+    "US-003 only: changing `MAX_STUB_REGENS`, the acceptance loop's retry budget, or when the loop decides to regenerate is out of scope. This story changes what a regeneration reports, not how many are attempted.",
+    "US-003 only: changing the stub-detection predicate itself is out of scope; the existing classifier is used as it stands.",
+    "US-004 only: changing the meaning of `run.status`, adding a new value such as `completed-with-failures`, or changing the values of `PostRunPhaseStatus` is out of scope. This story adds an additive summary field and leaves every existing value alone.",
+    "US-004 only: surfacing `gates` in the TUI, the headless run footer, or the `nax status` command is out of scope; this story writes the field into the status file.",
+    "US-004 only: including the `finish` phase in `gates` is out of scope — `postRun.finish` is optional and describes what happened after the gates, not a gate.",
+    "Backfilling `gates` onto status files already written to disk is out of scope.",
+    "Changing the auto-commit that the acceptance-setup stage performs is out of scope; with US-002 landed there is simply no stub file for it to commit on the dispatch-failure path."
+  ],
+  "routingProfile": "native"
+}
