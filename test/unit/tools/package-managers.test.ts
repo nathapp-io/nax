@@ -150,4 +150,202 @@ describe("isKnownManager", () => {
     }
     expect(isKnownManager("make")).toBe(false);
   });
+
+  test("resolves case and executable-suffix variants to the same entry", () => {
+    expect(isKnownManager("NPM")).toBe(true);
+    expect(isKnownManager("npm.cmd")).toBe(true);
+    expect(isKnownManager("npm.exe")).toBe(true);
+    expect(isKnownManager("npx")).toBe(false);
+  });
+});
+
+// Fix round 1 — Critical finding 1: fail-closed classification against a
+// leading global flag, plus install-verb aliases (addendum finding A).
+describe("classifyExec — install-verb aliases", () => {
+  test("npm/pnpm/bun short aliases classify as install-shaped, same as the canonical verb", () => {
+    expect(classifyExec(["npm", "i", "lodash"])).toBe("install");
+    expect(classifyExec(["npm", "install-test"])).toBe("install");
+    expect(classifyExec(["pnpm", "i", "lodash"])).toBe("install");
+    expect(classifyExec(["bun", "a", "lodash"])).toBe("install");
+  });
+});
+
+describe("classifyExec — fail-closed against a leading global flag", () => {
+  test("a global flag ahead of the verb does not defeat classification", () => {
+    expect(classifyExec(["npm", "--loglevel=silent", "install", "x"])).toBe("install");
+    expect(classifyExec(["yarn", "--silent", "add", "x"])).toBe("install");
+    expect(classifyExec(["bun", "-v", "add", "x"])).toBe("install");
+  });
+
+  test("a flag's own VALUE token is not mistaken for the verb — denied, not generic", () => {
+    // "silent" (the value of --loglevel) is the first non-flag token; branch 1
+    // misses. The real verb "install" appears later in argv, so branch 2
+    // denies rather than letting this fall through to an unhardened install.
+    expect(classifyExec(["npm", "--loglevel", "silent", "install", "x"])).toBe("deny");
+  });
+
+  test("ordinary calls are unaffected: install classifies install, generic classifies generic", () => {
+    expect(classifyExec(["npm", "i", "-D", "x"])).toBe("install");
+    expect(classifyExec(["bun", "x", "tsc", "--noEmit"])).toBe("generic");
+  });
+});
+
+describe("normalizeExec — fail-closed denial surfaces as an error, not a silent install", () => {
+  test("aliased verb still gets scoped and hardened", () => {
+    expect(normalizeExec({ ...base, argv: ["npm", "i", "-D", "bun-types"], target: "package" })).toEqual({
+      argv: ["npm", "-w", "packages/foo", "i", "-D", "bun-types", "--ignore-scripts"],
+      cwd: "/repo",
+    });
+  });
+
+  test("a global flag ahead of the verb still gets scoped and hardened", () => {
+    expect(normalizeExec({ ...base, argv: ["npm", "--loglevel=silent", "install", "x"], target: "repoRoot" })).toEqual({
+      argv: ["npm", "--loglevel=silent", "install", "x", "--ignore-scripts"],
+      cwd: "/repo",
+    });
+  });
+
+  test("the mis-anchored-verb shape denies with a reason naming the verb", () => {
+    const result = normalizeExec({
+      ...base,
+      argv: ["npm", "--loglevel", "silent", "install", "x"],
+      target: "package",
+    });
+    expect(result).toHaveProperty("error");
+    if ("error" in result) {
+      expect(result.error).toContain("install");
+    }
+  });
+});
+
+// Addendum finding B: argv[0] normalization, package runners, and disguised
+// manager invocations via a dlx-style verb.
+describe("classifyExec — wrapper and disguise denial", () => {
+  test("package runners that execute an arbitrary package are denied, not generic", () => {
+    expect(classifyExec(["npx", "cowsay", "hi"])).toBe("deny");
+    expect(classifyExec(["bunx", "cowsay", "hi"])).toBe("deny");
+    expect(classifyExec(["pnpx", "cowsay", "hi"])).toBe("deny");
+  });
+
+  test("a manager invocation laundered through a dlx-style verb is denied", () => {
+    expect(classifyExec(["pnpm", "dlx", "npm", "install", "x"])).toBe("deny");
+    expect(classifyExec(["yarn", "dlx", "bun", "add", "x"])).toBe("deny");
+  });
+
+  test("an ordinary dlx package run (not naming a known manager) stays generic", () => {
+    expect(classifyExec(["pnpm", "dlx", "cowsay", "hello"])).toBe("generic");
+  });
+
+  test("argv[0] case and executable-suffix variants classify the same as the bare name", () => {
+    expect(classifyExec(["npm.cmd", "install", "x"])).toBe("install");
+    expect(classifyExec(["NPM", "install", "x"])).toBe("install");
+  });
+});
+
+describe("normalizeExec — wrapper and disguise denial", () => {
+  test("a package runner is denied", () => {
+    expect(normalizeExec({ ...base, argv: ["npx", "cowsay", "hi"], target: "package" })).toHaveProperty("error");
+  });
+
+  test("a disguised manager invocation via dlx is denied", () => {
+    expect(normalizeExec({ ...base, argv: ["pnpm", "dlx", "npm", "install", "x"], target: "package" })).toHaveProperty(
+      "error",
+    );
+  });
+
+  test("argv[0] executable-suffix variants still get scoped and hardened, argv[0] preserved verbatim", () => {
+    expect(normalizeExec({ ...base, argv: ["npm.cmd", "install", "x"], target: "package" })).toEqual({
+      argv: ["npm.cmd", "-w", "packages/foo", "install", "x", "--ignore-scripts"],
+      cwd: "/repo",
+    });
+  });
+});
+
+// Fix round 1 — Critical finding 2 + addendum C: DENY rather than strip when
+// the incoming argv already carries a workspace-scoping flag or a
+// scripts-control flag.
+describe("normalizeExec — scoping-flag smuggling is denied, not stripped", () => {
+  test("npm -w naming another package is denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["npm", "install", "-w", "other-pkg", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("pnpm --filter naming another path is denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["pnpm", "add", "--filter", "./other", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("pnpm --include-workspace-root and --filter-prod are denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["pnpm", "add", "--include-workspace-root", "x"], target: "package" }),
+    ).toHaveProperty("error");
+    expect(normalizeExec({ ...base, argv: ["pnpm", "add", "--filter-prod", "x"], target: "package" })).toHaveProperty(
+      "error",
+    );
+  });
+
+  test("cargo -p naming another package is denied even when a packageName is resolvable", () => {
+    expect(
+      normalizeExec({ ...base, packageName: "foo", argv: ["cargo", "add", "-p", "other", "serde"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("uv --package and --all-packages are denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["uv", "add", "--package", "other", "httpx"], target: "package" }),
+    ).toHaveProperty("error");
+    expect(normalizeExec({ ...base, argv: ["uv", "sync", "--all-packages"], target: "package" })).toHaveProperty(
+      "error",
+    );
+  });
+
+  test("case- and =-normalized matching catches a differently-spelled flag", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["npm", "install", "--WORKSPACE=other-pkg", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+});
+
+describe("normalizeExec — scripts-control flag smuggling is denied, not stripped", () => {
+  test("a model-supplied --ignore-scripts is denied even though it matches what we'd add ourselves", () => {
+    expect(normalizeExec({ ...base, argv: ["bun", "add", "--ignore-scripts", "x"], target: "package" })).toHaveProperty(
+      "error",
+    );
+  });
+
+  test("a model-supplied --no-ignore-scripts (defeating our hardening) is denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["npm", "install", "--no-ignore-scripts", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("case- and =-normalized matching catches a differently-spelled scripts-control flag", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["npm", "install", "--IGNORE-SCRIPTS=true", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+});
+
+// Important finding 3: uv's packageForm had no coverage.
+describe("normalizeExec — uv packageForm", () => {
+  test("uv add scopes with --package when a name resolves", () => {
+    expect(normalizeExec({ ...base, packageName: "mypkg", argv: ["uv", "add", "httpx"], target: "package" })).toEqual({
+      argv: ["uv", "add", "--package", "mypkg", "httpx"],
+      cwd: "/repo",
+    });
+  });
+
+  test("uv sync scopes with --package when a name resolves", () => {
+    expect(normalizeExec({ ...base, packageName: "mypkg", argv: ["uv", "sync"], target: "package" })).toEqual({
+      argv: ["uv", "sync", "--package", "mypkg"],
+      cwd: "/repo",
+    });
+  });
+
+  test("uv denies when no packageName resolves", () => {
+    const noName: Omit<NormalizeInput, "argv" | "target"> = { ...base, packageName: undefined };
+    expect(normalizeExec({ ...noName, argv: ["uv", "add", "httpx"], target: "package" })).toHaveProperty("error");
+  });
 });

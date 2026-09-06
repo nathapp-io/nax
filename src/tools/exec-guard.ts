@@ -119,14 +119,23 @@ export const DENIED_FLAGS: readonly string[] = [
   "--unsafe-perm",
 ];
 
+/**
+ * Normalizes "--flag=value" to "--flag" so a denylist check does not depend
+ * on whether the model wrote the value as a separate token, and lowercases
+ * it so a differently-cased spelling (e.g. `--Registry`) can't slip past a
+ * case-sensitive list membership check. Shared with `src/tools/package-managers-table.ts`,
+ * which screens for a different flag family (workspace-scoping and
+ * scripts-control flags) using the same normalization — reuse this rather
+ * than writing a second, subtly different matcher.
+ */
+export function normalizeFlagToken(element: string): string {
+  const raw = element.includes("=") ? (element.split("=")[0] as string) : element;
+  return raw.toLowerCase();
+}
+
 export function deniedFlag(argv: readonly string[]): string | undefined {
   for (const element of argv) {
-    // Normalize "--flag=value" to "--flag" so the denylist check does not
-    // depend on whether the model wrote the value as a separate token, and
-    // lowercase it so a differently-cased spelling (e.g. `--Registry`) can't
-    // slip past a case-sensitive list membership check.
-    const raw = element.includes("=") ? (element.split("=")[0] as string) : element;
-    const name = raw.toLowerCase();
+    const name = normalizeFlagToken(element);
     if (DENIED_FLAGS.includes(name)) return name;
   }
   return undefined;
