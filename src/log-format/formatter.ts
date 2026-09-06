@@ -7,16 +7,9 @@
 
 import chalk from "chalk";
 import type { LogEntry } from "../logger/types.js";
-import type { AdvisoryFindingSummaryEntry } from "../review/review-audit.js";
-// Leaf import (not the ../review barrel): the barrel does `export * from "./runner"`,
-// which transitively pulls operations -> implement. Because src/config/loader.ts depends
-// on the logger, which depends on this formatter, a barrel import here closes a circular
-// __esm init cycle in the bundled build that leaves `implementerOp.config` bound to an
-// undefined selector (crash: "undefined is not an object (evaluating 'selector.name')").
-// severity.ts is a dependency-free leaf, so importing it directly breaks the cycle.
-import { SEVERITY_RANK } from "../review/severity.js";
 import { stripControlChars } from "../utils/strip-control-chars.js";
-import { EMOJI, type FormatterOptions, type RunSummary } from "./types.js";
+import { type ChalkLike, createNoopChalk } from "./chalk-like.js";
+import { EMOJI, type FormatterOptions } from "./types.js";
 
 /**
  * Formatted output entry
@@ -79,13 +72,6 @@ function shouldDisplay(entry: LogEntry, mode: string): boolean {
   }
   if (mode === "verbose") return true;
 
-  // A successful coding-tool call is per-call console noise -- one observed run
-  // emitted 761 of these lines, 700 of them "ok". Failures and denials stay:
-  // src/tools/runtime.ts logs every outcome so a refused call cannot be mistaken
-  // for one never made. This gates the console only -- logger.ts writes every
-  // level to the JSONL regardless, and the tool-audit ledger is a separate sink.
-  if (entry.stage === "coding-tool" && entry.message === "invoked" && entry.data?.outcome === "ok") return false;
-
   // Normal mode: filter out debug logs, but always show story.start/iteration.start
   if (entry.stage === "story.start" || entry.stage === "iteration.start") return true;
   return entry.level !== "debug";
@@ -116,7 +102,7 @@ export function formatLogEntry(entry: LogEntry, options: FormatterOptions): Form
   }
 
   const timestamp = formatTimestamp(entry.timestamp);
-  const colorize = useColor ? chalk : createNoopChalk();
+  const colorize: ChalkLike = useColor ? chalk : createNoopChalk();
 
   // Handle special stages with custom formatting
   if (entry.stage === "run.start") {
@@ -303,6 +289,11 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
       output += `  ${c.gray(meta.join("  "))}`;
     }
 
+    const counts = buildNumericTail(data, mode, entry.level);
+    if (counts.length > 0) {
+      output += `  ${c.gray(counts.join(" "))}`;
+    }
+
     // Full data dump only in verbose mode — exclude fields already surfaced
     // above so they are not printed twice.
     if (mode === "verbose") {
@@ -378,6 +369,37 @@ function buildDefaultMeta(data: Record<string, unknown>, mode: string, level: st
   return meta;
 }
 
+/** Cap on inline `k=v` pairs, so a wide record cannot swallow the terminal. */
+const MAX_NUMERIC_TAIL_FIELDS = 6;
+
+/**
+ * Numeric and boolean data fields of a warn/error line, rendered as `k=v`.
+ *
+ * A warning is the operator's cue to act, so withholding the numbers it was
+ * raised about until `--verbose` defeats the point of raising it. `static-rules`
+ * warned 19 times in one observed run that rule sections had been truncated and
+ * never once said how many were dropped, though `droppedCount` sat in the
+ * record throughout.
+ *
+ * Restricted to numbers and booleans: strings in these payloads are commands,
+ * paths and workdirs, which are long and already recoverable from the JSONL.
+ * Fields the meta builder consumed are excluded so nothing prints twice.
+ */
+function buildNumericTail(data: Record<string, unknown>, mode: string, level: string): string[] {
+  if (mode === "quiet") return [];
+  if (level !== "warn" && level !== "error") return [];
+
+  const out: string[] = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (out.length >= MAX_NUMERIC_TAIL_FIELDS) break;
+    if (key === "storyId") continue; // already rendered as a tag
+    if ((CONSUMED_META_KEYS as readonly string[]).includes(key)) continue;
+    if (typeof value === "number" && Number.isFinite(value)) out.push(`${key}=${value}`);
+    else if (typeof value === "boolean") out.push(`${key}=${value}`);
+  }
+  return out;
+}
+
 /** An error string longer than this is a stack-shaped dump, not a reason. */
 const MAX_FAILURE_REASON_CHARS = 240;
 
@@ -434,145 +456,4 @@ function stripConsumedMetaFields(
     }
   }
   return filtered;
-}
-
-/**
- * Format run summary footer
- */
-export function formatRunSummary(summary: RunSummary, options: FormatterOptions): string {
-  const { mode, useColor = true } = options;
-
-  if (mode === "json") {
-    return JSON.stringify(summary);
-  }
-
-  const c = useColor ? chalk : createNoopChalk();
-  const lines: string[] = [];
-
-  lines.push("");
-  lines.push(c.blue("═".repeat(60)));
-  lines.push(c.bold(c.blue(`  ${EMOJI.storyComplete} RUN SUMMARY`)));
-  lines.push(c.blue("═".repeat(60)));
-
-  const successRate = summary.total > 0 ? ((summary.passed / summary.total) * 100).toFixed(1) : "0.0";
-  const statusColor = summary.failed === 0 ? c.green : summary.passed > summary.failed ? c.yellow : c.red;
-
-  lines.push(`  ${c.gray("Total:")}    ${c.bold(summary.total.toString())}`);
-  lines.push(`  ${c.green(`${EMOJI.success} Passed:`)}  ${c.bold(summary.passed.toString())}`);
-
-  if (summary.failed > 0) {
-    lines.push(`  ${c.red(`${EMOJI.failure} Failed:`)}  ${c.bold(summary.failed.toString())}`);
-  }
-
-  if (summary.skipped > 0) {
-    lines.push(`  ${c.yellow(`${EMOJI.skip} Skipped:`)} ${c.bold(summary.skipped.toString())}`);
-  }
-
-  lines.push(`  ${c.gray("Success:")}  ${statusColor(c.bold(`${successRate}%`))}`);
-  lines.push(c.blue("─".repeat(60)));
-  lines.push(`  ${EMOJI.duration} Duration: ${c.bold(formatDuration(summary.durationMs))}`);
-  lines.push(`  ${EMOJI.cost} Cost:     ${c.bold(formatCost(summary.totalCost))}`);
-  lines.push(c.blue("═".repeat(60)));
-  lines.push("");
-
-  return lines.join("\n");
-}
-
-/**
- * Format the run-end advisory (sub-threshold review) findings summary.
- *
- * §2.1 — adversarial/semantic review findings below `blockingThreshold` never
- * block a story and, absent this call, only ever surface in a per-story debug
- * log line and the on-disk `.nax/review-audit/` trail. This renders them as a
- * severity-graded block so real findings are never silently dropped.
- */
-export function formatAdvisorySummary(
-  findings: readonly AdvisoryFindingSummaryEntry[],
-  options: FormatterOptions,
-): string {
-  if (findings.length === 0) return "";
-
-  const { mode, useColor = true } = options;
-
-  if (mode === "json") {
-    return JSON.stringify(findings);
-  }
-
-  const c = useColor ? chalk : createNoopChalk();
-  const rank = SEVERITY_RANK as Record<string, number>;
-  const sorted = [...findings].sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0));
-
-  const lines: string[] = [];
-  lines.push("");
-  lines.push(c.yellow("─".repeat(60)));
-  lines.push(c.bold(c.yellow(`  ${EMOJI.warning} NON-BLOCKING REVIEW FINDINGS (${findings.length})`)));
-  const coverageGapCount = findings.filter((f) => f.coverageGap).length;
-  if (coverageGapCount > 0) {
-    lines.push(
-      c.gray(
-        `  ${coverageGapCount} of ${findings.length} were coverage-gap demotions (recurred past the block limit — candidate for spec/AC review)`,
-      ),
-    );
-  }
-  const noActionCount = findings.filter((f) => f.actionRequired === false).length;
-  if (noActionCount > 0) {
-    lines.push(
-      c.gray(
-        `  ${noActionCount} of ${findings.length} asked for no change (compliance notes — the best-effort fix pass skipped them)`,
-      ),
-    );
-  }
-  lines.push(c.yellow("─".repeat(60)));
-
-  for (const f of sorted) {
-    const location = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : undefined;
-    const parts = [
-      `[${f.severity}]`,
-      f.storyId ?? "unknown",
-      location,
-      f.category,
-      f.coverageGap ? "coverage-gap" : undefined,
-      f.actionRequired === false ? "no-action" : undefined,
-    ].filter((v): v is string => typeof v === "string" && v.length > 0);
-    lines.push(`  ${c.gray(parts.join(" · "))}`);
-    lines.push(`    ${f.issue}`);
-  }
-
-  lines.push(c.yellow("─".repeat(60)));
-  lines.push("");
-
-  return lines.join("\n");
-}
-
-/**
- * Chalk-like interface for no-op mode (no colors)
- */
-interface ChalkLike {
-  bold: (s: string) => string;
-  dim: (s: string) => string;
-  gray: (s: string) => string;
-  red: (s: string) => string;
-  green: (s: string) => string;
-  yellow: (s: string) => string;
-  blue: (s: string) => string;
-  magenta: (s: string) => string;
-  cyan: (s: string) => string;
-}
-
-/**
- * Create a no-op chalk instance (returns strings unchanged)
- */
-function createNoopChalk(): ChalkLike {
-  const noop = (s: string) => s;
-  return {
-    bold: noop,
-    dim: noop,
-    gray: noop,
-    red: noop,
-    green: noop,
-    yellow: noop,
-    blue: noop,
-    magenta: noop,
-    cyan: noop,
-  };
 }

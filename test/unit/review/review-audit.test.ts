@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { formatAdvisorySummary } from "@/log-format/formatter";
+import { formatAdvisorySummary } from "@/log-format/summary";
 import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
 import { tagCoverageGap } from "@/review/recurrence-demotion";
 import type { ReviewAuditEntry } from "@/review/review-audit";

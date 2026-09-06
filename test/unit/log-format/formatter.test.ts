@@ -376,37 +376,56 @@ describe("formatLogEntry — ANSI/control-char sanitization (SEC-09)", () => {
 });
 
 describe("formatLogEntry — coding-tool call noise (normal mode)", () => {
-  function invoked(outcome: string): LogEntry {
+  // The outcome-sniffing special case this block used to pin was removed: the
+  // level now carries the decision (src/tools/runtime.ts picks debug for `ok`
+  // and for a routineErrors tool's error, warn for every other failure, error
+  // for a policy breach), so the generic debug filter does the same job for
+  // every stage rather than for this one by name.
+  function invoked(level: LogEntry["level"], outcome: string): LogEntry {
     return entry({
-      level: "info",
+      level,
       stage: "coding-tool",
-      message: "invoked",
+      message: `Edit ${outcome}`,
       data: { storyId: "US-001", tool: "Edit", outcome, resultBytes: 107 },
     });
   }
 
   test("a successful call is not displayed", () => {
-    // 700 of 761 such lines in one observed run were outcome "ok" — per-call
+    // 1020 of 1165 such calls in one observed run were outcome "ok" — per-call
     // console noise with no decision riding on it.
-    expect(formatLogEntry(invoked("ok"), { mode: "normal", useColor: false }).shouldDisplay).toBe(false);
+    expect(formatLogEntry(invoked("debug", "ok"), { mode: "normal", useColor: false }).shouldDisplay).toBe(false);
   });
 
   test("a denied call is still displayed", () => {
     // src/tools/runtime.ts logs every outcome precisely so a refused call stays
     // distinguishable from one never made. Suppressing that would defeat it.
-    expect(formatLogEntry(invoked("denied"), { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
+    expect(formatLogEntry(invoked("warn", "denied"), { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
   });
 
   test("a failed call is still displayed", () => {
-    expect(formatLogEntry(invoked("error"), { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
+    expect(formatLogEntry(invoked("warn", "error"), { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
+  });
+
+  test("the console line names the tool and the outcome", () => {
+    // Previously every one of these printed as a bare "coding-tool invoked",
+    // so 145 visible failures in one run identified neither tool nor reason.
+    const failed = entry({
+      level: "warn",
+      stage: "coding-tool",
+      message: "GitCommit error",
+      data: { storyId: "US-001", tool: "GitCommit", outcome: "error", resultBytes: 42, error: "nothing to commit" },
+    });
+    const { output } = formatLogEntry(failed, { mode: "normal", useColor: false });
+    expect(output).toContain("GitCommit error");
+    expect(output).toContain("nothing to commit");
   });
 
   test("verbose mode still shows successful calls", () => {
-    expect(formatLogEntry(invoked("ok"), { mode: "verbose", useColor: false }).shouldDisplay).toBe(true);
+    expect(formatLogEntry(invoked("debug", "ok"), { mode: "verbose", useColor: false }).shouldDisplay).toBe(true);
   });
 
   test("json mode still shows successful calls", () => {
-    expect(formatLogEntry(invoked("ok"), { mode: "json", useColor: false }).shouldDisplay).toBe(true);
+    expect(formatLogEntry(invoked("debug", "ok"), { mode: "json", useColor: false }).shouldDisplay).toBe(true);
   });
 
   test("an unrelated coding-tool message is untouched", () => {
