@@ -14,6 +14,24 @@ import { type Client, createClient, defaultProtocols, defaultProviders } from "@
 import { naxCredentialStore } from "./credentials";
 
 /**
+ * How nax names itself to a provider that reports on the calling application.
+ *
+ * nax-ai owns which vendor spells this in which header — OpenRouter reads
+ * `HTTP-Referer` and `X-Title` into the `app_id`, `origin` and `http_referer`
+ * fields of every generation record — and nax owns only the identity. Without
+ * it, the sole identifying header on the wire is pi-ai's hardcoded
+ * `User-Agent: pi (<platform> <release>; <arch>)`, which every pi-ai consumer
+ * sends, so nax traffic cannot be told apart from anything else in the provider
+ * account paying for it.
+ *
+ * A literal rather than a read of package.json: the bundle is built with
+ * `bun build --target bun` and does not carry a package.json to read at
+ * runtime. No version in the name — a display name that changed every release
+ * would split one application into many rows on a provider's dashboard.
+ */
+const NAX_CLIENT_APP = { name: "nax", url: "https://github.com/nathapp-io/nax" } as const;
+
+/**
  * The real builder. Exported on its own — not just as `_clientDeps.build` —
  * because test/preload.ts overwrites `_clientDeps.build` with a sentinel
  * before any test file loads (to stop a real client leaking into the
@@ -31,6 +49,9 @@ export async function buildNativeClient(): Promise<Client> {
       // ClientOptions once carried a `credentials` field that createClient
       // never read, and nax-ai 0.1.4 removed it for exactly that reason.
       credentials: naxCredentialStore(),
+      // Construction-time, like `credentials`: the identity is a constant of
+      // the process, so nax-ai takes it here rather than on every request.
+      clientApp: NAX_CLIENT_APP,
     }),
   });
 }
