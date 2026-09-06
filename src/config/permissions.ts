@@ -10,6 +10,7 @@
 
 import { getSafeLogger } from "@/logger";
 import type { CodingToolName, ToolGrant } from "@/tools";
+import { EXEC_TOOL_NAME } from "@/tools";
 import type { AgentManagerConfig } from "./selectors";
 
 export type PermissionProfile = "unrestricted" | "safe" | "scoped";
@@ -95,9 +96,42 @@ export const SESSION_CLOSE_PERMISSION_MODE: ResolvedPermissions["mode"] = "appro
  */
 export const DEFAULT_CODING_TOOLS: readonly CodingToolName[] = ["Read", "Glob", "Grep"];
 
+/**
+ * What `Exec` may run when a project has written no grant of its own.
+ *
+ * DEFAULT_PERMISSION_PROFILE is `unrestricted`, and unrestricted means "any
+ * tool, any path within the root". Letting it also mean "any command" would
+ * ship a general exec to every run by default, which ADR-029 section 3 forbids.
+ * So Exec is excluded from the blanket grant and given this list instead: the
+ * restore and add forms nax knows how to harden, and nothing else. A project
+ * widens it by writing `Exec(...)` explicitly, which is a human decision
+ * recorded in config — and that expression REPLACES this list rather than
+ * extending it, so a project that writes `Exec(bun x tsc*)` and still wants
+ * installs must name them too.
+ */
+export const BUILT_IN_EXEC_PATTERNS: readonly string[] = [
+  "bun install",
+  "bun add*",
+  "npm ci",
+  "npm install*",
+  "pnpm install*",
+  "pnpm add*",
+  "yarn install*",
+  "yarn add*",
+  "pip install*",
+  "uv sync*",
+  "uv add*",
+  "go mod download",
+  "go get*",
+  "cargo fetch",
+  "cargo add*",
+];
+
 /** Grants for a profile that imposes no per-stage policy. */
 function unconditionalGrants(tools: readonly string[]): ToolGrant[] {
-  return tools.map((tool) => ({ tool, patterns: ["*"] }));
+  return tools.map((tool) =>
+    tool === EXEC_TOOL_NAME ? { tool, patterns: BUILT_IN_EXEC_PATTERNS } : { tool, patterns: ["*"] },
+  );
 }
 
 /**
@@ -138,6 +172,7 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
           "GitCommit",
           "RunCommand",
           "RequestCapability",
+          EXEC_TOOL_NAME,
         ]),
       };
     case "safe":

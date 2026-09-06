@@ -62,6 +62,7 @@ export const RESERVED_TOOL_NAMES: readonly CodingToolName[] = [
   "GitCommit",
   "RunCommand",
   "RequestCapability",
+  "Exec",
 ];
 
 const registry = new Map<string, CodingTool>();
