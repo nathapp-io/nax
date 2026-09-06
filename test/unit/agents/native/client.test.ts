@@ -62,6 +62,28 @@ describe("buildNativeClient", () => {
     expect(typeof client.pricing).toBe("function");
   });
 
+  test("names nax to defaultProtocols, so provider dashboards can attribute its traffic", async () => {
+    const realDefaultProtocols = _clientDeps.defaultProtocols;
+    let seenClientApp: unknown;
+    _clientDeps.defaultProtocols = ((options?: ProtocolOptions) => {
+      seenClientApp = options?.clientApp;
+      return realDefaultProtocols(options);
+    }) as typeof _clientDeps.defaultProtocols;
+
+    try {
+      await buildNativeClient();
+    } finally {
+      _clientDeps.defaultProtocols = realDefaultProtocols;
+    }
+
+    // nax-ai owns which vendor spells this in which header (HTTP-Referer and
+    // X-Title for OpenRouter); nax owns only the identity. Without it every
+    // request carries pi-ai's hardcoded "pi (<platform> ...)" User-Agent and
+    // nothing else, so nax traffic is indistinguishable from any other pi-ai
+    // consumer's in the provider account paying for it.
+    expect(seenClientApp).toEqual({ name: "nax", url: "https://github.com/nathapp-io/nax" });
+  });
+
   test("passes the credential store to defaultProtocols, so a stored credential reaches a run", async () => {
     const realDefaultProtocols = _clientDeps.defaultProtocols;
     let seenCredentials: unknown;
