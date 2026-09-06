@@ -253,6 +253,96 @@ called. This does not make the deferral unsound, but it does mean the first
 shell-adjacent surface is in the codebase now, and it is where a future threat
 model should start rather than at a blank page.
 
+#### Amendment, 2026-09-06: an argv branch for `RunCommand`, and why it is an override
+
+This is not the widening the "more declared commands" verdict above anticipated.
+It grants a model-authored argv, and the entry condition this section and §2
+guard is write-capability reaching the model's own authorship, not the shape of
+the executor. Recording it here follows the same rule the C1 override followed:
+a widening of what a model may cause to run gets recorded as an override, not
+folded silently into an existing deferral.
+
+**What is granted.** A second input branch on `RunCommand`: a model-authored
+argv, executed with `shell: false`, gated by an allowlist that is empty by
+default outside a built-in, nax-controlled install list (the restore and add
+forms for npm, bun, pnpm, yarn, pip, uv, go, and cargo). Two independent gates
+must both pass — an `Exec` marker in the op's `tools` declaration, and an
+`Exec(...)` grant compiled by the existing policy. Neither alone is sufficient:
+a marker without a grant advertises nothing, and a grant without the marker
+cannot be reached because `Exec` is excluded from `unconditionalGrants()`, so
+the default `unrestricted` profile grants the built-in list, never a wildcard.
+
+**Why it is not the shell this section defers.** The model never authors a
+command string that reaches a shell. It supplies an argv — a list of tokens,
+validated before matching and denylisted on install-shaped flags after
+matching — and the grant names what may run, matched token-wise against the
+argv nax itself constructs. There is no interpolation point at which a
+semicolon, a pipe, or a substitution could reach `/bin/sh`, because there is no
+`/bin/sh` in this path.
+
+**What it nonetheless is.** It is the first model-authored execution nax
+performs. Every tool that runs today runs an argv nax built element by element
+— `Git`, `GitCommit`, the declared branch of `RunCommand` — from inputs the
+model supplied as *values*, never as the verb or the flags. The argv branch
+lets the model supply the verb. That is new in kind, not degree, so the entry
+condition in §2 applies to it, and this is recorded as an override of that
+condition rather than a continuation of the "more declared commands" path,
+exactly as the C1 override above was recorded rather than assumed.
+
+**The containment carve-out.** `Exec` is the one tool by which a package-scoped
+story reaches outside its permitted root. Workspace package managers write to
+the repo root by design — `bun add` in a package directory walks up and mutates
+the root lockfile and `node_modules`, pnpm resolves `pnpm-workspace.yaml`
+upward, `cargo add` edits the member manifest while the root `Cargo.lock`
+moves with it. For this tool the permitted root is a cwd choice the model
+names (`target: "package"` or `target: "repoRoot"`), not a sandbox nax
+enforces. The gate carrying the safety property is the allowlist plus the
+no-scripts default nax appends and the model cannot remove, not containment.
+A second, narrower carve-out follows from the first: `GitCommit` may stage a
+manifest or lockfile that an install in the same hop actually touched. That
+allowance is exact-match, hop-scoped, and populated only from installs nax
+itself normalized and ran — never a directory, never a path the model names
+directly.
+
+**The evidence that motivated it.** From the 2026-09-06 `hello-lint` run
+(fixture copy, MiniMax-M3), quoted verbatim from the tool-audit ledger:
+
+```
+RunCommand {"command": "bun add -d bun-types"}      -> denied
+RunCommand {"command": "bun x tsc --noEmit"}        -> denied
+Glob       {"pattern": "/**/bun-types/package.json"} -> error
+RequestCapability                                    -> 0 rows
+```
+
+With no legal way to install and no legal way to run the check directly, the
+model removed `types: ["bun-types"]` from `tsconfig.json` and narrowed
+`include` until the requirement vanished, and the story passed. It did not
+file a `RequestCapability` row; it tried to author a command string through a
+field built to accept only a declared key.
+
+**What would reopen it.** Any denial pattern in the tool-audit ledger showing
+the allowlist is systematically too narrow — install-shaped calls refused
+across multiple real stories for managers or verbs a project legitimately
+needs. And any observed use of `target: "repoRoot"` to add a dependency the
+story did not need — that would mean the root-scoping form is being reached
+for as a way around containment rather than as the only correct place to add a
+workspace-wide dev dependency.
+
+**One coupling worth recording, not designed away.** The built-in install list
+is available under the default `unrestricted` profile, so a project gets the
+observed failure's fix with no configuration. But widening `Exec` to generic
+commands (`bun x tsc*`, `make build`, anything past the install table) requires
+writing an explicit `Exec(...)` expression, and today that expression lives in
+the `scoped` profile's `execution.permissions.<stage>.allowedTools` — there is
+no way to add a scoped grant on top of `unrestricted`. Selecting `scoped` to
+get that grant also switches the permission mode to `approve-reads`, because
+`resolveScopedPermissions` always resolves that mode regardless of what the
+allowlist contains. Nobody chose that coupling for this feature; it falls out
+of where grants happen to live in the existing profile structure. It is
+recorded here as a known sharp edge, not solved: a project that wants a wider
+`Exec` allowlist today accepts a stricter default posture on every other tool
+as a side effect of asking for it.
+
 ### 4. Permission policy stays in nax
 
 nax-ai executes nothing and holds no policy — its own scope statement excludes
