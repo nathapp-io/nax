@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeLogger } from "@test/helpers";
 import { _codingToolDeps, type CodingTool, compileToolPolicy, createCodingToolRuntime } from "@/tools";
+import type { ToolCallRecord } from "@/tools/tool-audit";
 
 let root: string;
 
@@ -169,5 +170,68 @@ describe("coding-tool log levels", () => {
     await rt.callTool("Ok", {});
 
     expect(Object.keys(records()[0]?.data ?? {})[0]).toBe("storyId");
+  });
+});
+
+describe("ledger fields reach the sink, not only the console logger", () => {
+  let logger: ReturnType<typeof makeLogger>;
+  let orig: typeof _codingToolDeps.getLogger;
+  let recorded: ToolCallRecord[];
+  const sink = {
+    record: (entry: ToolCallRecord) => {
+      recorded.push(entry);
+    },
+    flush: async () => {},
+  };
+
+  beforeEach(() => {
+    logger = makeLogger();
+    orig = _codingToolDeps.getLogger;
+    _codingToolDeps.getLogger = () => logger;
+    recorded = [];
+  });
+
+  afterEach(() => {
+    _codingToolDeps.getLogger = orig;
+  });
+
+  test("a denial's reason is not dropped before sink.record -- error: null no longer loses it", async () => {
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["src/**"] }], root),
+      storyId: "US-001",
+      sink,
+    });
+    await rt.callTool("Write", { path: "src/a.ts", content: "x" });
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.outcome).toBe("denied");
+    expect(recorded[0]?.reason).toBeTruthy();
+  });
+
+  test("an argv call's ledger row carries executed and target alongside the requested argv", async () => {
+    const execTool: CodingTool = {
+      name: "RunCommand",
+      description: "RunCommand",
+      inputSchema: { type: "object", properties: {} },
+      scope: { pathFields: [], argvField: "argv" },
+      run: async () => ({
+        content: "exit 0",
+        audit: { executed: ["bun", "install", "--ignore-scripts"], target: "repoRoot" as const },
+      }),
+    };
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Exec", patterns: ["bun *"] }], root),
+      storyId: "US-001",
+      sink,
+      extraTools: [execTool],
+    });
+    await rt.callTool("RunCommand", { argv: ["bun", "install"], target: "repoRoot" });
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.tool).toBe("Exec");
+    const input = recorded[0]?.input as { argv: string[] } | undefined;
+    expect(input?.argv).toEqual(["bun", "install"]);
+    expect(recorded[0]?.executed).toEqual(["bun", "install", "--ignore-scripts"]);
+    expect(recorded[0]?.target).toBe("repoRoot");
   });
 });
