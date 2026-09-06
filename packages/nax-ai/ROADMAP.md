@@ -184,6 +184,22 @@ nax's own phasing lives in the artifact (§9). The dependency runs one way — n
 
 When that time comes, nax's side involves: `NativeAgentAdapter` implementing nax's `AgentAdapter` and mapping to its 7 `AgentStreamEvent` kinds; changing `src/agents/registry.ts` (which currently hard-codes `new AcpAgentAdapter(name)`); deleting `src/agents/cost/pricing.ts` in favour of nax-ai's rates; and a fence gate for `src/agents/native/`.
 
+## Should the pi-ai delegation end?
+
+Assessed 2026-09-06: **not yet — but the trigger has fired.** Native agents are
+doing production code-writing work in nax (ten `implementer` sessions across
+three features in seven days), which was the condition named for revisiting
+this. The blocker is not the seam — seven pi-ai symbols cross it, confined to
+three gated files — but the absence of an oracle: every tool-call fixture was
+recorded *through* pi-ai, so validating a replacement against them is circular.
+
+Recommended order before any hand-roll: diagnose nax#1878, bump pi-ai `0.84.4`
+→ `0.85.1`, build the deferred drift detector against the real traffic corpus,
+then hand-roll `openai-completions` alone in shadow.
+
+Full record, with reproduction probes and the conditions that would reverse it:
+[`docs/2026-09-06-pi-ai-migration-assessment.md`](docs/2026-09-06-pi-ai-migration-assessment.md).
+
 ## Before you design anything new
 
 The spec's §10 records three questions that were resolved against evidence, not preference. They read like open questions and are not:
