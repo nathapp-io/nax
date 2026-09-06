@@ -389,11 +389,14 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // turn failure) under the runtime output dir so the kept-on-failure set
     // never grows past MAX_RETAINED_TRANSCRIPTS. dryRun is threaded through so
     // a --dry-run never deletes.
-    await _runSetupDeps.sweepFeatureTranscripts({
+    const sweptTranscripts = await _runSetupDeps.sweepFeatureTranscripts({
       featureName: options.feature,
       transcriptRoot: runtime.outputDir,
       dryRun: options.dryRun,
     });
+    if (sweptTranscripts > 0) {
+      logger?.info("session", "Swept retained transcripts at run setup", { sweptTranscripts });
+    }
 
     // Acquire lock to prevent concurrent execution
     const lockAcquired = await acquireLock(workdir);
