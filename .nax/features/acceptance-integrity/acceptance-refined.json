@@ -1,0 +1,184 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "[runSelfHealChain] returns a turn whose adapterFailure.outcome is `fail-service-down` when a seed with that adapterFailure is followed by one corrective turn with no adapterFailure.",
+    "refined": "Given a seed turn with adapterFailure set to {outcome: 'fail-service-down'} and a self-heal step that produces exactly one corrective turn with no adapterFailure property, runSelfHealChain returns the corrective turn with adapterFailure.deepEqual the seed's adapterFailure, i.e. result.adapterFailure.outcome === 'fail-service-down'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "[runSelfHealChain] returns a turn whose adapterFailure.outcome is `fail-timeout` when a seed with `fail-service-down` is followed by one corrective turn with its own `fail-timeout` adapterFailure.",
+    "refined": "Given a seed turn with adapterFailure {outcome: 'fail-service-down'} and one corrective turn carrying its own adapterFailure {outcome: 'fail-timeout'}, runSelfHealChain returns the corrective turn with adapterFailure.outcome === 'fail-timeout' (the corrective turn's own adapterFailure is preserved and the seed's is not copied over it).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "[runSelfHealChain] returns a turn with no adapterFailure property when a seed with no adapterFailure is followed by one corrective turn also carrying none.",
+    "refined": "Given a seed turn with no adapterFailure property and one corrective turn with no adapterFailure property, runSelfHealChain returns the corrective turn with adapterFailure === undefined (no adapterFailure property is added).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "[runSelfHealChain] returns the seed's output and adapterFailure when a seed carrying adapterFailure has a step that detects nothing and issues no corrective turn.",
+    "refined": "Given a seed turn carrying adapterFailure and a self-heal step that detects no issues and issues no corrective turn, runSelfHealChain returns the seed turn itself with its output unchanged and adapterFailure unchanged (result.adapterFailure.deepEqual seed.adapterFailure).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "[callOp] resolves a run-kind operation to a value with `testCode: null` and adapterFailure.outcome `fail-service-down` when its dispatch outcome carries that failure and parse returns `{ testCode: null }`.",
+    "refined": "For a run-kind operation whose dispatch outcome has adapterFailure {outcome: 'fail-service-down'} and whose parse step returns {testCode: null}, callOp resolves (does not reject) with a value deepEqual {testCode: null, adapterFailure: {outcome: 'fail-service-down'}}.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "[callOp] resolves a run-kind operation to the parsed value with no adapterFailure property when its dispatch outcome carries no adapterFailure.",
+    "refined": "For a run-kind operation whose dispatch outcome has no adapterFailure and whose parse step returns an object P, callOp resolves with a value deepEqual P and result.adapterFailure === undefined (no adapterFailure property is added to the parsed value).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "[callOp] preserves adapterFailure.outcome `fail-quality` when a run-kind dispatch outcome carries `fail-service-down` and parse returns an object already carrying `fail-quality`.",
+    "refined": "For a run-kind operation whose dispatch outcome has adapterFailure {outcome: 'fail-service-down'} and whose parse step returns an object with adapterFailure {outcome: 'fail-quality'}, callOp resolves with a value whose adapterFailure.outcome === 'fail-quality' (the parsed value's own adapterFailure is not overridden by the dispatch outcome's adapterFailure).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "[callOp] resolves to the same string when a run-kind dispatch outcome carries adapterFailure and parse returns a string.",
+    "refined": "For a run-kind operation whose dispatch outcome carries an adapterFailure and whose parse step returns a string S (a parsed value that is not a non-null object), callOp resolves with exactly S (typeof result === 'string' and result === S) with no adapterFailure property attached.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When acceptanceSetupStage receives `{ testCode: null, adapterFailure: { category: \"availability\", outcome: \"fail-service-down\", message: \"Upstream idle timeout exceeded\", retriable: true } }` from `_acceptanceSetupDeps.callOp` for acceptance-generate, then it makes no `_acceptanceSetupDeps.writeFile` call whose path is the group's acceptance test path.",
+    "refined": "Given _acceptanceSetupDeps.callOp is stubbed to return { testCode: null, adapterFailure: { category: 'availability', outcome: 'fail-service-down', message: 'Upstream idle timeout exceeded', retriable: true } } for op 'acceptance-generate', when acceptanceSetupStage runs, then _acceptanceSetupDeps.writeFile is invoked zero times with path equal to the group's acceptance test path (assert every writeFile call's path !== testPath).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When acceptanceSetupStage receives that failed generation result, then it emits a warning on the `acceptance-setup` channel whose message differs from `agent did not produce test content; using skeleton` and whose metadata includes outcome `fail-service-down` and `Upstream idle timeout exceeded`.",
+    "refined": "Given callOp returns { testCode: null, adapterFailure: { outcome: 'fail-service-down', message: 'Upstream idle timeout exceeded', ... } }, when acceptanceSetupStage runs, then exactly one warning is emitted on channel 'acceptance-setup' whose message !== 'agent did not produce test content; using skeleton' and whose metadata contains { outcome: 'fail-service-down', failureMessage: 'Upstream idle timeout exceeded', storyId: <current storyId>, testPath: <group acceptance test path> }.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When acceptanceSetupStage receives `{ testCode: null }` with no adapterFailure, then it writes skeleton content to the group's acceptance test path and emits `agent did not produce test content; using skeleton`, preserving the model-quality path unchanged.",
+    "refined": "Given callOp returns { testCode: null } with adapterFailure undefined, when acceptanceSetupStage runs, then _acceptanceSetupDeps.writeFile is called once with path equal to the group's acceptance test path and content equal to the existing skeleton content, and a warning containing the exact message 'agent did not produce test content; using skeleton' is emitted.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When acceptanceSetupStage receives non-empty testCode together with adapterFailure, then it writes that testCode to the group's acceptance test path.",
+    "refined": "Given callOp returns { testCode: '<non-empty string>', adapterFailure: <any AdapterFailure> }, when acceptanceSetupStage runs, then _acceptanceSetupDeps.writeFile is called once with path equal to the group's acceptance test path and content exactly equal to the returned testCode.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When acceptanceSetupStage receives the failed generation result while a file already exists at the group's acceptance test path, then that file's content remains unchanged.",
+    "refined": "Given the group's acceptance test path already contains pre-existing content and callOp returns { testCode: null, adapterFailure: { outcome: 'fail-service-down', ... } }, when acceptanceSetupStage runs, then _acceptanceSetupDeps.writeFile is not called for that path and reading the file at the group's acceptance test path afterwards returns the identical pre-existing content.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When acceptanceStage executes for a package with no acceptance test file and at least one acceptance-enabled story, then it records the package in the acceptance verdict's `missingTargets`.",
+    "refined": "Given no file exists at the package's acceptance test path and the package has at least one acceptance-enabled story, when acceptanceStage runs, then the returned acceptance verdict object contains that package's identifier in its missingTargets array (i.e., missingTargets includes the package).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "[regenerateAcceptanceTest] returns false when the acceptance-setup stage it invokes leaves stub content at the target path.",
+    "refined": "Given the acceptance-setup stage invoked by regenerateAcceptanceTest writes content for which isStubTestFile(content) === true to testPath, when regenerateAcceptanceTest(testPath, acceptanceContext) resolves, then the returned Promise resolves to false.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "[regenerateAcceptanceTest] returns true when the acceptance-setup stage it invokes leaves real test content at the target path.",
+    "refined": "Given the acceptance-setup stage invoked by regenerateAcceptanceTest writes content for which isStubTestFile(content) === false to testPath, when regenerateAcceptanceTest(testPath, acceptanceContext) resolves, then the returned Promise resolves to true.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "[regenerateAcceptanceTest] returns false when the acceptance-setup stage it invokes leaves no file at the target path.",
+    "refined": "Given the acceptance-setup stage invoked by regenerateAcceptanceTest does not create a file at testPath, when regenerateAcceptanceTest(testPath, acceptanceContext) resolves, then the returned Promise resolves to false (missing-file behavior retained).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When regenerateAcceptanceTest returns false because the target path holds stub content, then it logs at error level on the `acceptance` channel with a message distinct from the error it logs when the file is missing entirely.",
+    "refined": "When regenerateAcceptanceTest returns false because isStubTestFile(content) === true for the file at testPath, then exactly one error-level log entry is emitted on the 'acceptance' channel, and the message string of that entry is not equal to the message string logged at error level on the 'acceptance' channel in the missing-file case.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When regenerateAcceptanceTest is invoked, then it writes the target path's pre-existing content to a sibling path ending in `.bak` before invoking acceptance-setup, whichever value it goes on to return.",
+    "refined": "When regenerateAcceptanceTest(testPath, acceptanceContext) is invoked with an existing file at testPath, then before the acceptance-setup stage is executed, the exact pre-existing byte content of testPath is written to the sibling path testPath + '.bak'; this holds in all three resolution cases (returns true, returns false due to stub content, returns false due to missing file), verified by reading the .bak file after regenerateAcceptanceTest resolves and asserting equality with the original content.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "[buildStatusSnapshot] returns gates.acceptance `failed` and gates.regression `passed` when state.postRun has acceptance.status `failed` and regression.status `passed`.",
+    "refined": "Given a state whose postRun is present with postRun.acceptance.status === 'failed' and postRun.regression.status === 'passed', when buildStatusSnapshot(state) is called, then result.gates is defined, result.gates.acceptance === 'failed', and result.gates.regression === 'passed'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-21",
+    "original": "[buildStatusSnapshot] returns a snapshot with no `gates` property when state has no postRun.",
+    "refined": "Given a state where state.postRun is undefined, when buildStatusSnapshot(state) is called, then result.gates === undefined and Object.prototype.hasOwnProperty.call(result, 'gates') === false (the 'gates' key is not emitted).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "[buildStatusSnapshot] returns gates.acceptance `failed` when state.postRun has acceptance.status `passed` and non-empty acceptance.skippedPackages.",
+    "refined": "Given a state whose postRun is present with postRun.acceptance.status === 'passed' and postRun.acceptance.skippedPackages.length > 0 (e.g. ['pkg-a']), when buildStatusSnapshot(state) is called, then result.gates is defined and result.gates.acceptance === 'failed', even though postRun.acceptance.status is 'passed'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "[buildStatusSnapshot] returns gates.acceptance `passed` when state.postRun has acceptance.status `passed` and acceptance.skippedPackages is absent.",
+    "refined": "Given a state whose postRun is present with postRun.acceptance.status === 'passed' and postRun.acceptance.skippedPackages undefined, when buildStatusSnapshot(state) is called, then result.gates is defined and result.gates.acceptance === 'passed'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "[buildStatusSnapshot] preserves snapshot.run.status equal to the state's runStatus when state.postRun has acceptance.status `failed`.",
+    "refined": "Given a state whose postRun is present with postRun.acceptance.status === 'failed' and state.runStatus === 'completed', when buildStatusSnapshot(state) is called, then result.run.status === 'completed' (run.status is unchanged by the presence of failed acceptance gates).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "[buildStatusSnapshot] returns gates.regression `not-run` when state.postRun has regression.status `not-run`.",
+    "refined": "Given a state whose postRun is present with postRun.regression.status === 'not-run', when buildStatusSnapshot(state) is called, then result.gates is defined and result.gates.regression === 'not-run'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When writeStatusFile writes a snapshot carrying gates and the file is read back, then parsed gates.acceptance equals the value written.",
+    "refined": "Given a snapshot with gates === { acceptance: 'failed', regression: 'passed' }, when writeStatusFile(path, snapshot) is called and the file at path is subsequently read and parsed, then parsed.gates is defined and parsed.gates.acceptance === 'failed' and parsed.gates.regression === 'passed' (JSON round-trip preserves the gates object).",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

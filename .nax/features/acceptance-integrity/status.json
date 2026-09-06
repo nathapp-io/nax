@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-09-06T04-13-11-091Z",
+    "feature": "acceptance-integrity",
+    "startedAt": "2026-09-06T04:13:11.091Z",
+    "status": "crashed",
+    "dryRun": false,
+    "pid": 90965,
+    "crashedAt": "2026-09-06T04:14:33.456Z",
+    "crashSignal": "SIGTERM"
+  },
+  "progress": {
+    "total": 4,
+    "passed": 0,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 4
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 0,
+  "updatedAt": "2026-09-06T04:14:33.456Z",
+  "durationMs": 82365
+}
