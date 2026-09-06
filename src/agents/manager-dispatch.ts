@@ -22,6 +22,7 @@ import { errorMessage } from "../utils/errors";
 import type { AgentFallbackRecord, RunAsSessionOpts } from "./manager-types";
 import { parseModelSpec } from "./model-spec";
 import { NATIVE_AGENT } from "./native/models";
+import { SessionTurnError } from "./session-types";
 import type { CompleteOptions, ResolvedCompleteOptions, SessionHandle, TurnResult } from "./types";
 
 /**
@@ -190,14 +191,10 @@ export function buildDispatchErrorEvent(input: {
   /**
    * US-001: per-call id and role attribution, bundled so callers can pass
    * the existing options object rather than spelling out each field. When
-   * absent, falls back to the legacy `storyId` / `callId` / `scopeId` fields
-   * above — both call sites will be reshaped to use dispatchOptions only, at
-   * which point the legacy fields become dead and are removed.
-   *
-   * STUB: the option fields are accepted but the function body does not yet
-   * lift SessionTurnError.tokenUsage / cost onto the event or copy
-   * dispatchOptions.sessionRole / dispatchOptions.{storyId,callId,scopeId}
-   * over the legacy fields. The implementer replaces this body.
+   * supplied, its `storyId` / `callId` / `scopeId` / `sessionRole` replace
+   * the legacy positional fields above — both call sites have been reshaped
+   * to pass dispatchOptions, leaving the legacy fields as fallbacks for any
+   * caller that has not migrated yet.
    */
   dispatchOptions?: {
     storyId?: string;
@@ -206,20 +203,38 @@ export function buildDispatchErrorEvent(input: {
     sessionRole?: string;
   };
 }): DispatchErrorEvent {
+  const dispatchOpts = input.dispatchOptions;
+  const storyId = dispatchOpts?.storyId ?? input.storyId;
+  const callId = dispatchOpts?.callId ?? input.callId;
+  const scopeId = dispatchOpts?.scopeId ?? input.scopeId;
+  const sessionRole = dispatchOpts?.sessionRole;
+
+  // US-001: a SessionTurnError carries the BUG-57 usage / cost slots — lift
+  // them onto the event so a run-op whose turn throws still records its
+  // spent usage and role attribution. A plain Error / anything else leaves
+  // them undefined.
+  const tokenUsage = input.error instanceof SessionTurnError ? input.error.tokenUsage : undefined;
+  const estimatedCostUsd = input.error instanceof SessionTurnError ? input.error.estimatedCostUsd : undefined;
+  const exactCostUsd = input.error instanceof SessionTurnError ? input.error.exactCostUsd : undefined;
+
   return {
     kind: "error",
     origin: input.origin,
     agentName: input.agentName,
     stage: input.stage,
-    storyId: input.storyId,
+    storyId,
     errorCode: input.error instanceof NaxError ? input.error.code : "DISPATCH_ERROR",
     errorMessage: errorMessage(input.error),
     prompt: input.prompt,
     durationMs: Date.now() - input.startedAt,
     timestamp: Date.now(),
     resolvedPermissions: input.resolvedPermissions,
-    ...(input.callId !== undefined ? { callId: input.callId } : {}),
-    ...(input.scopeId !== undefined ? { scopeId: input.scopeId } : {}),
+    ...(callId !== undefined ? { callId } : {}),
+    ...(scopeId !== undefined ? { scopeId } : {}),
+    ...(sessionRole !== undefined ? { sessionRole } : {}),
+    ...(tokenUsage !== undefined ? { tokenUsage } : {}),
+    ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
+    ...(exactCostUsd !== undefined ? { exactCostUsd } : {}),
   };
 }
 

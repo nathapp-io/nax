@@ -690,17 +690,17 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatch(event);
       return result;
     } catch (err) {
+      // US-001: pass opts as dispatchOptions so the error event carries the
+      // spent usage / role attribution.
       const errEvent = buildDispatchErrorEvent({
         origin: "runAsSession",
         agentName,
         stage,
-        storyId: opts.storyId,
         error: err,
         prompt,
         resolvedPermissions,
-        callId: opts.callId,
-        scopeId: opts.scopeId,
         startedAt: start,
+        dispatchOptions: opts,
       });
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
@@ -742,17 +742,17 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatch(event);
       return outcome;
     } catch (err) {
+      // US-001: pass options as dispatchOptions so the error event carries
+      // the spent usage / role attribution.
       const errEvent = buildDispatchErrorEvent({
         origin: "completeAs",
         agentName,
         stage,
-        storyId: options.storyId,
         error: err,
         prompt,
         resolvedPermissions,
-        callId: options.callId,
-        scopeId: options.scopeId,
         startedAt: start,
+        dispatchOptions: options,
       });
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
