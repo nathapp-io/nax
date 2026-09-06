@@ -517,3 +517,53 @@ describe("classifyExec / normalizeExec — uv pip nesting is denied", () => {
     });
   });
 });
+
+// Fix round 4, finding 1: a positional path argument to an install verb was
+// never containment-checked — every existing screen in this table covers
+// FLAGS only. A local path install must keep working; anything that
+// resolves outside the permitted root must not.
+describe("normalizeExec — positional path arguments are containment-checked", () => {
+  test("a local relative path install inside the root still passes and normalizes", () => {
+    expect(normalizeExec({ ...base, argv: ["bun", "add", "./vendor/local-types"], target: "package" })).toEqual({
+      argv: ["bun", "add", "./vendor/local-types", "--ignore-scripts"],
+      cwd: "/repo/packages/foo",
+    });
+  });
+
+  test("pip install from an absolute path outside the root is denied, naming the argument", () => {
+    const result = normalizeExec({ ...base, argv: ["pip", "install", "/etc/passwd"], target: "package" });
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toContain("/etc/passwd");
+  });
+
+  test("npm install from a traversal path outside the root is denied, naming the argument", () => {
+    const result = normalizeExec({
+      ...base,
+      argv: ["npm", "install", "../../../elsewhere/x.tgz"],
+      target: "package",
+    });
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toContain("../../../elsewhere/x.tgz");
+  });
+
+  test("a Python extras spec is not path-shaped and is unaffected", () => {
+    expect(normalizeExec({ ...base, argv: ["uv", "add", "httpx[http2]"], target: "package" })).toEqual({
+      argv: ["uv", "add", "--package", "@acme/foo", "httpx[http2]"],
+      cwd: "/repo",
+    });
+  });
+
+  test("a version specifier is not path-shaped and is unaffected", () => {
+    expect(normalizeExec({ ...base, argv: ["npm", "install", "pkg@1.2.3"], target: "package" })).toEqual({
+      argv: ["npm", "-w", "packages/foo", "install", "pkg@1.2.3", "--ignore-scripts"],
+      cwd: "/repo",
+    });
+  });
+
+  test("a dev flag with a bare package name is unaffected", () => {
+    expect(normalizeExec({ ...base, argv: ["bun", "add", "-d", "bun-types"], target: "package" })).toEqual({
+      argv: ["bun", "add", "-d", "bun-types", "--ignore-scripts"],
+      cwd: "/repo/packages/foo",
+    });
+  });
+});
