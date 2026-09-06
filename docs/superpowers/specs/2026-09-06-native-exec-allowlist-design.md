@@ -92,6 +92,32 @@ rather than overloading `patterns` a third way. `types.ts` already documents the
 verb-versus-path overload; a third meaning packed into the same list is how a
 grant comes to mean something its author did not write.
 
+**How `Exec` gates per op.** `createCodingToolRuntime` builds its granted set
+from `policy.grantedTools()`, and `advertised(declared)` intersects the op's
+declared names with it -- both keyed by tool name. A grant named `Exec` is
+therefore invisible to that intersection, and a branch living inside
+`RunCommand` would reach every op that declares `RunCommand`, including
+`verify.ts`. That would silently contradict the rule that the op which judges
+does not install.
+
+So `Exec` is a capability marker in the op's `tools` declaration, not a second
+advertised tool:
+
+- `resolveDeclaredTools` yields `[..., "RunCommand", "Exec"]` for an op that may
+  install.
+- `buildCodingToolSupport` reads the marker and passes `allowExec` into
+  `createRunCommandTool`, which is already constructed per session because its
+  declared commands are per project. The argv branch simply does not exist on a
+  RunCommand built without it.
+- `advertised()` filters the marker before registry lookup, so nothing tries to
+  resolve a tool named `Exec` and drop the call.
+- The policy check for an argv call uses the identity `"Exec"`, so an
+  `Exec(bun add*)` grant gates it while `RunCommand(<keys>)` continues to gate
+  the declared branch.
+
+Both gates must pass: an op without the marker cannot install even under a
+generous grant, and a marker without a grant advertises nothing.
+
 ## Section 2: monorepo
 
 `buildCodingToolSupport` sets the permitted root to `packageWorkdir(view)` --
@@ -224,7 +250,7 @@ edited `tsconfig.json` instead.
 
 ## Section 4: ops wiring and the ledger
 
-**Ops.** `Exec` is declared by ops that already declare `Write`/`Edit`:
+**Ops.** The `Exec` marker is declared by ops that already declare `Write`/`Edit`:
 `implement.ts:45`, `write-test.ts:69`, `rectify.ts:22`,
 `autofix-implementer.ts:32`, `finish-fix.ts:38`, and the sibling autofix and
 full-suite rectify ops (enumerated during implementation). `verify.ts:203` is
@@ -243,8 +269,10 @@ readers (including the `nax-run-telemetry` skill) keep parsing today's files:
   alone is uninformative.
 - `target`: `"package"` or `"repoRoot"`, making a wrong-manifest dependency a
   queryable fact.
-- `reason`: the denial text. Today a denied row carries `error: null`, so there
-  is nothing to read; with an allowlist, why is the entire diagnostic value.
+- `reason`: the denial text. `runtime.ts` already computes it and passes it to
+  the logger, but `sink.record()` omits it, so a denied row carries
+  `error: null` and there is nothing to read. With an allowlist, why is the
+  entire diagnostic value.
 
 ## Section 5: testing
 
