@@ -40,6 +40,10 @@ Spec section 3. `prepareWorktreeDependencies` already spawns argv-style with no 
     readonly cwd: string;
     readonly timeoutMs: number;
     readonly stripEnvVars?: readonly string[];
+    /** Overlay applied on top of process.env, after stripping. Yarn 2+ has no
+     *  --ignore-scripts flag and takes YARN_ENABLE_SCRIPTS instead, so the
+     *  no-scripts mechanism is sometimes an env var rather than an argument. */
+    readonly env?: Readonly<Record<string, string>>;
   }
   export interface ArgvExecResult {
     readonly exitCode: number;
@@ -77,6 +81,16 @@ describe("runArgv", () => {
     const result = await runArgv({ argv: ["sleep", "5"], cwd: process.cwd(), timeoutMs: 250 });
     expect(result.timedOut).toBe(true);
     expect(result.exitCode).not.toBe(0);
+  });
+
+  test("applies the env overlay to the child", async () => {
+    const result = await runArgv({
+      argv: ["sh", "-c", "printenv NAX_TEST_OVERLAY || true"],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+      env: { NAX_TEST_OVERLAY: "on" },
+    });
+    expect(result.stdout.trim()).toBe("on");
   });
 
   test("strips the named environment variables from the child", async () => {
@@ -123,6 +137,15 @@ export interface RunArgvOptions {
   readonly cwd: string;
   readonly timeoutMs: number;
   readonly stripEnvVars?: readonly string[];
+  /**
+   * Overlay applied on top of process.env, after stripping.
+   *
+   * Yarn 2+ has no --ignore-scripts option and honours the enableScripts
+   * setting instead, overridable per invocation by YARN_ENABLE_SCRIPTS. So the
+   * no-scripts mechanism is a flag for some managers and an environment
+   * variable for others, and both must be nax-supplied.
+   */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 export interface ArgvExecResult {
@@ -136,8 +159,9 @@ export interface ArgvExecResult {
 export const _argvExecDeps = { spawn, killProcessGroup };
 
 export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> {
-  const env = { ...process.env };
+  const env: Record<string, string | undefined> = { ...process.env };
   for (const name of options.stripEnvVars ?? []) delete env[name];
+  Object.assign(env, options.env ?? {});
 
   const proc = _argvExecDeps.spawn([...options.argv], {
     cwd: options.cwd,
@@ -170,7 +194,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `bun test test/unit/utils/argv-exec.test.ts --timeout=60000`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Rewrite `provisionDependencies` to use it**
 
@@ -241,14 +265,26 @@ import { resolvePermissions } from "@/config/permissions";
 const baseConfig = { execution: { permissionProfile: "unrestricted" } } as never;
 
 describe("Exec grant", () => {
-  test("unrestricted does not grant Exec", () => {
+  test("unrestricted grants Exec the built-in install list, never a wildcard", () => {
     const resolved = resolvePermissions(baseConfig, "run");
     const execGrant = (resolved.toolGrants ?? []).find((g) => g.tool === "Exec");
-    expect(execGrant).toBeUndefined();
+    expect(execGrant).toBeDefined();
+    // The whole point of the exclusion: unrestricted means "any tool, any path
+    // within the root", and must never come to mean "any command".
+    expect(execGrant?.patterns).not.toContain("*");
+    expect(execGrant?.patterns).toContain("bun add*");
+    expect(execGrant?.patterns).toContain("npm ci");
+  });
+
+  test("the built-in list holds install forms only", () => {
+    const resolved = resolvePermissions(baseConfig, "run");
+    const patterns = (resolved.toolGrants ?? []).find((g) => g.tool === "Exec")?.patterns ?? [];
+    // A generic command is reachable only through a human-written grant.
+    expect(patterns.some((p) => p.startsWith("make") || p.includes(" x "))).toBe(false);
   });
 
   test("unrestricted still grants the ordinary tools", () => {
-    // Both halves non-empty: asserting only the absence above would pass
+    // Both halves non-empty: asserting only the Exec shape above would pass
     // trivially if grant resolution were broken end to end.
     const resolved = resolvePermissions(baseConfig, "run");
     const tools = (resolved.toolGrants ?? []).map((g) => g.tool);
@@ -272,7 +308,7 @@ Before writing it, open `src/config/permissions.ts` and confirm the exact shape 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `bun test test/unit/config/permissions-exec-grant.test.ts --timeout=60000`
-Expected: FAIL — the first test fails because `unconditionalGrants` currently emits every tool name.
+Expected: FAIL — `unconditionalGrants` currently emits `Exec` with `["*"]` like every other tool.
 
 - [ ] **Step 3: Implement**
 
@@ -301,26 +337,47 @@ In `src/config/permissions.ts`:
 
 ```ts
 /**
- * `Exec` runs a model-authored argv, so it is excluded from the blanket grant.
+ * What `Exec` may run when a project has written no grant of its own.
  *
  * DEFAULT_PERMISSION_PROFILE is `unrestricted`, and unrestricted means "any
  * tool, any path within the root". Letting it also mean "any command" would
  * ship a general exec to every run by default, which ADR-029 section 3 forbids.
- * An Exec grant is only ever written explicitly.
+ * So Exec is excluded from the blanket grant and given this list instead: the
+ * restore and add forms nax knows how to harden, and nothing else. A project
+ * widens it by writing `Exec(...)` explicitly, which is a human decision
+ * recorded in config.
  */
-const NEVER_UNCONDITIONAL: readonly string[] = [EXEC_TOOL_NAME];
+export const BUILT_IN_EXEC_PATTERNS: readonly string[] = [
+  "bun install",
+  "bun add*",
+  "npm ci",
+  "npm install*",
+  "pnpm install*",
+  "pnpm add*",
+  "yarn install*",
+  "yarn add*",
+  "pip install*",
+  "uv sync*",
+  "uv add*",
+  "go mod download",
+  "go get*",
+  "cargo fetch",
+  "cargo add*",
+];
 
 function unconditionalGrants(tools: readonly string[]): ToolGrant[] {
-  return tools
-    .filter((tool) => !NEVER_UNCONDITIONAL.includes(tool))
-    .map((tool) => ({ tool, patterns: ["*"] }));
+  return tools.map((tool) =>
+    tool === EXEC_TOOL_NAME ? { tool, patterns: BUILT_IN_EXEC_PATTERNS } : { tool, patterns: ["*"] },
+  );
 }
 ```
+
+An explicit `Exec(...)` expression **replaces** this list rather than adding to it, so a project that writes `Exec(bun x tsc*)` and still wants installs must name them too. Say so in the field's config documentation — a grant that silently kept a hidden default would be the same class of surprise as `unrestricted` meaning "any command".
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `bun test test/unit/config/permissions-exec-grant.test.ts --timeout=60000`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -481,12 +538,15 @@ git commit -m "feat(tools): add argv validation and the registry-flag denylist"
 
 ---
 
-### Task 4: The package-manager table and workspace normalization
+### Task 4: The package-manager table, call classes, and workspace normalization
 
-Spec sections 2 and 3. The table hardens and normalizes; it can never widen. A binary absent from it is denied.
+Spec sections 2 and 3. The table decides which of two classes a call belongs to, then hardens and normalizes install-shaped calls. It can never widen.
+
+**The two classes.** A call is *install-shaped* when `argv[0]` is a known manager AND the verb is one of that manager's install verbs; it must be hardened and normalized. Anything else is *generic*: run as given at the target cwd, no normalization, no no-scripts mechanism, and reachable only through an explicit `Exec(...)` grant. Both directions matter — without the generic class `bun x tsc --noEmit` could never be granted, and without the "known manager plus install verb" test a loosely classified `bun add` could skip its no-scripts flag.
 
 **Files:**
 - Create: `src/tools/package-managers.ts`
+- Create: `src/tools/package-managers-table.ts` (split if the first exceeds 400 lines)
 - Test: `test/unit/tools/package-managers.test.ts`
 
 **Interfaces:**
@@ -499,12 +559,14 @@ Spec sections 2 and 3. The table hardens and normalizes; it can never widen. A b
     readonly target: ExecTarget;
     readonly repoRoot: string;
     readonly packageWorkdir: string;
-    readonly packageRelPath: string;   // "" when the story is the repo root
+    readonly packageRelPath: string;        // "" when the story is the repo root
+    readonly packageName?: string;          // from the member manifest; required by yarn and cargo
     readonly allowScripts: boolean;
   }
   export type NormalizeResult =
-    | { readonly argv: readonly string[]; readonly cwd: string }
+    | { readonly argv: readonly string[]; readonly cwd: string; readonly env?: Readonly<Record<string, string>> }
     | { readonly error: string };
+  export function classifyExec(argv: readonly string[]): "install" | "generic";
   export function normalizeExec(input: NormalizeInput): NormalizeResult;
   export function isKnownManager(binary: string): boolean;
   ```
@@ -514,69 +576,129 @@ Spec sections 2 and 3. The table hardens and normalizes; it can never widen. A b
 ```ts
 // test/unit/tools/package-managers.test.ts
 import { describe, expect, test } from "bun:test";
-import { isKnownManager, normalizeExec } from "@/tools/package-managers";
+import { classifyExec, isKnownManager, normalizeExec } from "@/tools/package-managers";
 
 const base = {
   repoRoot: "/repo",
   packageWorkdir: "/repo/packages/foo",
   packageRelPath: "packages/foo",
+  packageName: "@acme/foo",
   allowScripts: false,
 } as const;
 
-describe("normalizeExec", () => {
+describe("classifyExec", () => {
+  test("a known manager with an install verb is install-shaped", () => {
+    expect(classifyExec(["bun", "add", "x"])).toBe("install");
+    expect(classifyExec(["npm", "ci"])).toBe("install");
+    expect(classifyExec(["go", "mod", "download"])).toBe("install");
+  });
+
+  test("a known manager with a non-install verb is generic", () => {
+    // The second thing the 2026-09-06 run's model reached for. If this is
+    // "install", no grant can ever permit it.
+    expect(classifyExec(["bun", "x", "tsc", "--noEmit"])).toBe("generic");
+    expect(classifyExec(["npm", "run", "build"])).toBe("generic");
+  });
+
+  test("an unknown binary is generic", () => {
+    expect(classifyExec(["make", "build"])).toBe("generic");
+  });
+});
+
+describe("normalizeExec — install-shaped", () => {
   test("appends the no-scripts flag and runs a package-target bun add in the package dir", () => {
-    const result = normalizeExec({ ...base, argv: ["bun", "add", "-d", "bun-types"], target: "package" });
-    expect(result).toEqual({ argv: ["bun", "add", "-d", "bun-types", "--ignore-scripts"], cwd: "/repo/packages/foo" });
+    expect(normalizeExec({ ...base, argv: ["bun", "add", "-d", "bun-types"], target: "package" })).toEqual({
+      argv: ["bun", "add", "-d", "bun-types", "--ignore-scripts"],
+      cwd: "/repo/packages/foo",
+    });
   });
 
   test("runs a repoRoot-target bun add at the repo root", () => {
-    const result = normalizeExec({ ...base, argv: ["bun", "add", "-d", "bun-types"], target: "repoRoot" });
-    expect(result).toEqual({ argv: ["bun", "add", "-d", "bun-types", "--ignore-scripts"], cwd: "/repo" });
+    expect(normalizeExec({ ...base, argv: ["bun", "add", "-d", "bun-types"], target: "repoRoot" })).toEqual({
+      argv: ["bun", "add", "-d", "bun-types", "--ignore-scripts"],
+      cwd: "/repo",
+    });
   });
 
-  test("scopes a package-target pnpm add to this package, from the repo root", () => {
-    const result = normalizeExec({ ...base, argv: ["pnpm", "add", "bun-types"], target: "package" });
-    expect(result).toEqual({ argv: ["pnpm", "--filter", "packages/foo", "add", "bun-types", "--ignore-scripts"], cwd: "/repo" });
+  test("pnpm filters by PATH with the mandatory ./ prefix", () => {
+    // Bare "packages/foo" is parsed by pnpm as a package NAME and silently
+    // selects nothing. The ./ prefix is what makes it a path.
+    expect(normalizeExec({ ...base, argv: ["pnpm", "add", "bun-types"], target: "package" })).toEqual({
+      argv: ["pnpm", "--filter", "./packages/foo", "add", "bun-types", "--ignore-scripts"],
+      cwd: "/repo",
+    });
   });
 
-  test("scopes a package-target npm install with -w", () => {
-    const result = normalizeExec({ ...base, argv: ["npm", "install", "-D", "bun-types"], target: "package" });
-    expect(result).toEqual({ argv: ["npm", "-w", "packages/foo", "install", "-D", "bun-types", "--ignore-scripts"], cwd: "/repo" });
+  test("npm scopes with -w", () => {
+    expect(normalizeExec({ ...base, argv: ["npm", "install", "-D", "bun-types"], target: "package" })).toEqual({
+      argv: ["npm", "-w", "packages/foo", "install", "-D", "bun-types", "--ignore-scripts"],
+      cwd: "/repo",
+    });
   });
 
-  test("omits the no-scripts flag when the project opted in", () => {
-    const result = normalizeExec({ ...base, argv: ["bun", "add", "x"], target: "package", allowScripts: true });
-    expect(result).toEqual({ argv: ["bun", "add", "x"], cwd: "/repo/packages/foo" });
+  test("yarn 1 takes the flag; yarn 2+ takes the environment variable", () => {
+    const classic = normalizeExec({ ...base, argv: ["yarn", "add", "bun-types"], target: "package", yarnMajor: 1 } as never);
+    expect(classic).toEqual({
+      argv: ["yarn", "workspace", "@acme/foo", "add", "bun-types", "--ignore-scripts"],
+      cwd: "/repo",
+    });
+
+    const berry = normalizeExec({ ...base, argv: ["yarn", "add", "bun-types"], target: "package", yarnMajor: 4 } as never);
+    expect(berry).toEqual({
+      argv: ["yarn", "workspace", "@acme/foo", "add", "bun-types"],
+      cwd: "/repo",
+      env: { YARN_ENABLE_SCRIPTS: "false" },
+    });
   });
 
-  test("adds no flag for managers that run no install scripts", () => {
-    // cargo add only edits a manifest; go mod download only downloads. The
-    // empty no-scripts field is deliberate, not an oversight.
-    expect(normalizeExec({ ...base, argv: ["cargo", "add", "serde"], target: "package" })).toEqual({
+  test("yarn and cargo deny when the package name cannot be resolved", () => {
+    const noName = { ...base, packageName: undefined } as const;
+    expect(normalizeExec({ ...noName, argv: ["yarn", "add", "x"], target: "package", yarnMajor: 4 } as never)).toHaveProperty("error");
+    expect(normalizeExec({ ...noName, argv: ["cargo", "add", "serde"], target: "package" })).toHaveProperty("error");
+  });
+
+  test("cargo scopes by NAME, not path", () => {
+    expect(normalizeExec({ ...base, packageName: "foo", argv: ["cargo", "add", "serde"], target: "package" })).toEqual({
       argv: ["cargo", "add", "-p", "foo", "serde"],
       cwd: "/repo",
     });
+  });
+
+  test("adds no mechanism for managers that run no install scripts", () => {
     expect(normalizeExec({ ...base, argv: ["go", "mod", "download"], target: "package" })).toEqual({
       argv: ["go", "mod", "download"],
       cwd: "/repo/packages/foo",
     });
   });
 
-  test("denies a binary that is not in the table", () => {
-    const result = normalizeExec({ ...base, argv: ["yarn", "install"], target: "package" });
-    expect(result).toHaveProperty("error");
-  });
-
-  test("denies a verb the table does not recognise", () => {
-    const result = normalizeExec({ ...base, argv: ["bun", "publish"], target: "package" });
-    expect(result).toHaveProperty("error");
+  test("omits the no-scripts mechanism when the project opted in", () => {
+    expect(normalizeExec({ ...base, argv: ["bun", "add", "x"], target: "package", allowScripts: true })).toEqual({
+      argv: ["bun", "add", "x"],
+      cwd: "/repo/packages/foo",
+    });
   });
 
   test("collapses both targets to one directory in a single-package repo", () => {
     const single = { repoRoot: "/repo", packageWorkdir: "/repo", packageRelPath: "", allowScripts: false } as const;
-    const pkg = normalizeExec({ ...single, argv: ["bun", "add", "x"], target: "package" });
-    const root = normalizeExec({ ...single, argv: ["bun", "add", "x"], target: "repoRoot" });
-    expect(pkg).toEqual(root);
+    expect(normalizeExec({ ...single, argv: ["bun", "add", "x"], target: "package" })).toEqual(
+      normalizeExec({ ...single, argv: ["bun", "add", "x"], target: "repoRoot" }),
+    );
+  });
+});
+
+describe("normalizeExec — generic", () => {
+  test("runs as given at the package dir, with no scoping and no mechanism", () => {
+    expect(normalizeExec({ ...base, argv: ["bun", "x", "tsc", "--noEmit"], target: "package" })).toEqual({
+      argv: ["bun", "x", "tsc", "--noEmit"],
+      cwd: "/repo/packages/foo",
+    });
+  });
+
+  test("runs at the repo root when the target says so", () => {
+    expect(normalizeExec({ ...base, argv: ["make", "build"], target: "repoRoot" })).toEqual({
+      argv: ["make", "build"],
+      cwd: "/repo",
+    });
   });
 });
 
@@ -585,12 +707,12 @@ describe("isKnownManager", () => {
     for (const binary of ["npm", "bun", "pnpm", "yarn", "pip", "uv", "go", "cargo"]) {
       expect(isKnownManager(binary)).toBe(true);
     }
-    expect(isKnownManager("curl")).toBe(false);
+    expect(isKnownManager("make")).toBe(false);
   });
 });
 ```
 
-Note the deliberate tension: `isKnownManager("yarn")` is `true` (yarn is in the table) while `normalizeExec` for `yarn install` returns an error in the test above. Resolve it one way when implementing — either give yarn a full table entry with its own no-scripts flag and normalization forms, in which case change that test to assert the normalized argv, or leave yarn out of the table entirely and drop it from the `isKnownManager` list. Do not ship a half entry.
+The `yarnMajor` casts above are deliberate placeholders for whatever you name the detection input in Step 3 — replace the casts with the real field once it exists, and do not leave `as never` in the committed test.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -599,29 +721,48 @@ Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
 
-Write `src/tools/package-managers.ts` with one entry per manager. Shape each entry as data, not branching logic:
+Shape each entry as data, not branching logic:
 
 ```ts
+type NoScripts = { readonly flag: string } | { readonly env: Readonly<Record<string, string>> } | { readonly none: true };
+
 interface ManagerEntry {
-  /** Verbs this manager may be asked to run. Anything else is denied. */
-  readonly verbs: readonly string[];
-  /** Appended unless the project set install.allowScripts. Empty when the manager runs no install scripts. */
-  readonly noScriptsFlag?: string;
-  /** Rewrites argv+cwd for a package-scoped call in a workspace. */
-  readonly packageForm: (argv: readonly string[], ctx: WorkspaceContext) => { argv: string[]; cwd: string };
-  /** Rewrites argv+cwd for a repo-root-scoped call. */
-  readonly rootForm: (argv: readonly string[], ctx: WorkspaceContext) => { argv: string[]; cwd: string };
+  /** Install verbs. A verb outside this list makes the call generic, not denied. */
+  readonly installVerbs: readonly (readonly string[])[];   // token sequences, so ["mod","download"] is one verb
+  readonly noScripts: (ctx: WorkspaceContext) => NoScripts;
+  /** True when the manager needs the member's manifest NAME rather than its path. */
+  readonly needsPackageName: boolean;
+  readonly packageForm: (argv: readonly string[], ctx: WorkspaceContext) => NormalizeResult;
+  readonly rootForm: (argv: readonly string[], ctx: WorkspaceContext) => NormalizeResult;
 }
 ```
 
+Entries, with the facts each depends on:
+
+| manager | install verbs | no-scripts | package form | root form |
+|---|---|---|---|---|
+| `bun` | `install`, `add` | `--ignore-scripts` | run in the package dir | run at the repo root |
+| `npm` | `install`, `ci` | `--ignore-scripts` | `npm -w <relPath> …` at the root (`-w` accepts a path or a name) | `npm …` at the root |
+| `pnpm` | `install`, `add` | `--ignore-scripts` | `pnpm --filter ./<relPath> …` at the root — **the `./` prefix is mandatory**, bare `packages/foo` is read as a package name and selects nothing | `pnpm add -w …` at the root |
+| `yarn` | `install`, `add` | major 1: `--ignore-scripts`; major 2+: env `YARN_ENABLE_SCRIPTS=false` (no such flag exists on modern Yarn) | `yarn workspace <packageName> …` at the root — **name, not path** | `yarn …` at the root |
+| `pip` | `install` | `--only-binary :all:` is NOT a scripts switch; pip has no ignore-scripts. Deny `pip install` of an sdist by passing `--only-binary :all:` so no `setup.py` executes, and document that this is the closest available equivalent | package dir | repo root |
+| `uv` | `sync`, `add` | `--no-install-project` is unrelated; use `--no-build-isolation` only if a maintainer confirms it, otherwise `{ none: true }` with a comment saying uv installs wheels by default | `uv add --package <packageName>` at the root | `uv add` at the root |
+| `go` | `get`, `mod download` | `{ none: true }` — downloads only, runs nothing | package dir (module dir) | repo root |
+| `cargo` | `add`, `fetch` | `{ none: true }` — `cargo add` edits a manifest, `cargo fetch` downloads | `cargo add -p <packageName> …` at the root — **name, not path** | `cargo add …` at the root |
+
+Yarn version detection: read the root manifest's `packageManager` field first (`yarn@1.22.x` versus `yarn@4.x`); fall back to `.yarnrc.yml` presence, which only Yarn 2+ uses. Default to the Yarn 2+ branch when neither is conclusive — the env variable is inert on Yarn 1, whereas passing `--ignore-scripts` to Yarn 2+ is a hard error. Failing toward the inert option is the safe direction.
+
+For `pip` and `uv`, do not invent a switch. If you cannot confirm the mechanism from the tool's own documentation while implementing, give the entry `{ none: true }` and add a comment naming what you checked — a wrong flag either errors out or, worse, looks like protection that is not there. Raise it rather than guessing.
+
 Rules the implementation must honour, all from spec section 2:
 
-1. A rewrite may change only the cwd and add a scoping flag naming **the story's own package**. It must never name another member and never add a flag from `DENIED_FLAGS`.
-2. `packageRelPath === ""` means the story is the repo root: both targets collapse to `repoRoot`, and no scoping flag is added.
-3. `cargo add -p <name>` takes the package *name*, not its path. Derive it from the manifest, or if that is not available at this layer, take the basename of `packageRelPath` and document the limitation in a comment — do not silently pass a path where a name is required.
-4. Verb matching is on the argv tokens after the binary, longest match first, so `go mod download` matches as one verb rather than as `mod`.
+1. A rewrite may change only the cwd, add a scoping flag naming **the story's own package**, and add the no-scripts mechanism. It must never name another member and never add a flag from `DENIED_FLAGS`.
+2. `packageRelPath === ""` means the story is the repo root: both targets collapse to `repoRoot` and no scoping flag is added.
+3. `needsPackageName` entries deny when `packageName` is undefined. Never pass a path where a name is required — it fails silently in pnpm's case and loudly in yarn's, and silent is worse.
+4. Verb matching is longest-sequence-first, so `go mod download` matches as one verb rather than as `mod`.
+5. Generic calls get cwd from the target and nothing else. No mechanism, no scoping, no rewriting of any argument.
 
-Keep the file under 600 lines. If the per-manager forms push past it, split the table into `src/tools/package-managers-table.ts` and keep `normalizeExec` in the original file.
+Resolve `packageName` in Task 5's caller by reading the member manifest (`package.json#name`, `Cargo.toml` `[package] name`, `pyproject.toml` `[project] name`) at the package workdir, and pass `undefined` when there is none.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -631,8 +772,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tools/package-managers.ts test/unit/tools/package-managers.test.ts
-git commit -m "feat(tools): add the package-manager table and workspace normalization"
+git add src/tools/package-managers.ts src/tools/package-managers-table.ts test/unit/tools/package-managers.test.ts
+git commit -m "feat(tools): add the manager table, call classification and workspace normalization"
 ```
 
 ---
@@ -735,6 +876,24 @@ In `src/agents/coding-tool-support.ts`:
 
 `resolveCodingToolSupport` reads `options.codingToolRepoRoot` and `config.install?.allowScripts` (Task 8 adds the field; until then read it defensively and default to `false`) and forwards both.
 
+It also resolves `packageName`, which yarn and cargo require and cannot be substituted with a path (Task 4, rule 3). Read it from the member manifest at `args.root`, in this order, and pass `undefined` when none is found:
+
+```ts
+async function readPackageName(root: string): Promise<string | undefined> {
+  const pkg = Bun.file(join(root, "package.json"));
+  if (await pkg.exists()) {
+    const parsed = (await pkg.json()) as { name?: unknown };
+    if (typeof parsed.name === "string" && parsed.name.length > 0) return parsed.name;
+  }
+  // Cargo.toml [package] name, pyproject.toml [project] name: match the
+  // first `name = "..."` after the section header rather than the first in
+  // the file, or a [dependencies] entry will be read as the package name.
+  return undefined;
+}
+```
+
+`buildCodingToolSupport` is synchronous today. Either resolve the name in `resolveCodingToolSupport` before calling it, or read the manifest synchronously — do not make the tool seam async for this, since both dispatch hops call it on a hot path.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `bun test test/unit/agents/coding-tool-support-exec.test.ts --timeout=60000`
@@ -788,9 +947,18 @@ describe("RunCommand argv branch", () => {
     expect(result.content).toContain("--registry");
   });
 
-  test("refuses a binary the table does not know", async () => {
+  test("refuses a generic call that no grant permits", async () => {
+    // curl is generic, and the built-in default list holds install forms only,
+    // so nothing admits it. The refusal comes from the grant, not the table.
     const result = await tool().run({ argv: ["curl", "http://evil"] }, ctx as never);
     expect(result.isError).toBe(true);
+  });
+
+  test("an install verb cannot reach the generic path and skip hardening", async () => {
+    const result = await tool().run({ argv: ["bun", "add", "x"] }, ctx as never);
+    // Either it ran hardened or it was denied; what must never happen is a
+    // bun add executed without the no-scripts mechanism.
+    expect(result.content).not.toContain("ran without --ignore-scripts");
   });
 
   test("refuses both branches supplied at once", async () => {
@@ -850,7 +1018,14 @@ async function runExecBranch(input, ctx) {
   const target = input.target === "repoRoot" ? "repoRoot" : "package";
   const normalized = normalizeExec({ argv, target, ...opts.exec, packageRelPath: relative(opts.exec.repoRoot, opts.exec.packageWorkdir) });
   if ("error" in normalized) return { content: normalized.error, isError: true };
-  const result = await runArgv({ argv: normalized.argv, cwd: normalized.cwd, timeoutMs: EXEC_TIMEOUT_MS, stripEnvVars: [...(opts.stripEnvVars ?? [])] });
+  const result = await runArgv({
+    argv: normalized.argv,
+    cwd: normalized.cwd,
+    timeoutMs: EXEC_TIMEOUT_MS,
+    stripEnvVars: [...(opts.stripEnvVars ?? [])],
+    // Yarn 2+ carries its no-scripts mechanism here rather than in the argv.
+    ...(normalized.env !== undefined ? { env: normalized.env } : {}),
+  });
   const body = result.timedOut ? `timed out after ${EXEC_TIMEOUT_MS}ms` : `exit ${result.exitCode}\n${result.stdout}\n${result.stderr}`;
   return {
     content: body.slice(0, ctx.maxBytes),
