@@ -1,29 +1,37 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-09-06T04-13-11-091Z",
+    "id": "run-2026-09-06T04-15-58-810Z",
     "feature": "acceptance-integrity",
-    "startedAt": "2026-09-06T04:13:11.091Z",
-    "status": "crashed",
+    "startedAt": "2026-09-06T04:15:58.810Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 90965,
-    "crashedAt": "2026-09-06T04:14:33.456Z",
-    "crashSignal": "SIGTERM"
+    "pid": 91972
   },
   "progress": {
     "total": 4,
-    "passed": 0,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 0
   },
   "cost": {
-    "spent": 0,
+    "spent": 6.467135106479999,
     "limit": 60
   },
   "current": null,
-  "iterations": 0,
-  "updatedAt": "2026-09-06T04:14:33.456Z",
-  "durationMs": 82365
+  "iterations": 5,
+  "updatedAt": "2026-09-06T05:42:53.161Z",
+  "durationMs": 5214351,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-09-06T05:41:58.065Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-09-06T05:42:51.958Z"
+    }
+  }
 }

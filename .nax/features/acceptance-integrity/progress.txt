@@ -1,3 +1,4 @@
 [2026-09-06T04:52:57.853Z] US-001 — PASSED — Preserve dispatch failure on acceptance operation output — Cost: $2.0237
 [2026-09-06T05:12:26.447Z] US-002 — PASSED — Do not fabricate skeletons for dispatch failures — Cost: $0.9024
 [2026-09-06T05:33:39.281Z] US-003 — PASSED — Reject stub-only acceptance regenerations — Cost: $2.9941
+[2026-09-06T05:39:55.879Z] US-004 — PASSED — Add acceptance and regression gate summary to status files — Cost: $0.4410

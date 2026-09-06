@@ -3,7 +3,7 @@
   "feature": "acceptance-integrity",
   "branchName": "feat/acceptance-integrity",
   "createdAt": "2026-03-10T00:00:00.000Z",
-  "updatedAt": "2026-09-06T05:33:42.525Z",
+  "updatedAt": "2026-09-06T05:39:55.879Z",
   "userStories": [
     {
       "id": "US-001",
@@ -150,8 +150,8 @@
         "observability"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

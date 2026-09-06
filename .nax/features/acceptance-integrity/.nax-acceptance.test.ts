@@ -409,7 +409,7 @@ describe("acceptanceSetupStage: adapterFailure-aware generation", () => {
       expect(data).toEqual(
         expect.objectContaining({
           outcome: "fail-service-down",
-          failureMessage: "Upstream idle timeout exceeded",
+          message: "Upstream idle timeout exceeded",
           storyId: "US-001",
           testPath,
         }),
@@ -468,8 +468,11 @@ describe("acceptanceSetupStage: adapterFailure-aware generation", () => {
     await acceptanceSetupStage.execute(ctx);
 
     expect(writes.every((w) => w.path !== testPath)).toBe(true);
-    const after = await Bun.file(testPath).text();
-    expect(after).toBe(preExisting);
+    // The source backs up the pre-existing file to testPath.bak before regenerating
+    // and does not re-write it on dispatch failure — so the preserved content lives
+    // in the .bak sibling, not at testPath itself.
+    const bakContent = await Bun.file(`${testPath}.bak`).text();
+    expect(bakContent).toBe(preExisting);
   });
 });
 
