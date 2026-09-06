@@ -79,6 +79,34 @@
  * subcommand is not screened here — see the comment on yarn's
  * `scopingConflict` for why that path is already unreachable by
  * construction.
+ *
+ * Directory-redirect CONTAINMENT (fix round 2): `target` is a closed enum
+ * precisely so no path can arrive from the model — `normalizeExec` computes
+ * cwd, the model never supplies one. A directory-redirect flag inside argv
+ * (`bun add --cwd /elsewhere x`) hands that choice straight back, ignoring
+ * whatever cwd this table computed. This is the containment property
+ * itself, not a scoping nicety, so it is screened for EVERY manager entry
+ * via `globalDirectoryFlags`/`installDirectoryFlags`, denied on the same
+ * deny-never-strip basis as scoping/scripts-control flags.
+ *
+ * A flag global to the manager (works with any subcommand, not just an
+ * install verb) is screened for BOTH install-shaped and generic calls —
+ * `normalizeExec` checks it before branching on classification kind at all,
+ * because a generic call (`bun x tsc --cwd /elsewhere`) escapes the same
+ * containment otherwise. An install-specific flag is screened only when the
+ * call is already install-shaped, since it has no effect (or no meaning) on
+ * a generic invocation of that manager.
+ *
+ * | manager | global (`globalDirectoryFlags`) | install-only (`installDirectoryFlags`) |
+ * |---|---|---|
+ * | bun | `--cwd` | — |
+ * | yarn | `--cwd` | — |
+ * | pnpm | `--dir`, `-C` | — |
+ * | npm | — | — (`--prefix` changes npm's effective directory; already denied by `DENIED_FLAGS` in `exec-guard.ts` regardless of manager — not duplicated here) |
+ * | cargo | `--manifest-path` (accepted by nearly every cargo subcommand, `add`/`fetch` included) | — |
+ * | pip | `--python` (a general pip option, valid before or after the subcommand, that redirects which interpreter/environment gets installed into) | `--target`, `--root` (install-destination overrides, meaningful only for `pip install`; `--prefix` is likewise install-scoped but already covered by the same shared `DENIED_FLAGS` entry as npm's, so also not duplicated) |
+ * | uv | `--directory`, `--project` (both are documented as general uv options, accepted ahead of the subcommand, that change what "the project" means for the whole invocation) | — |
+ * | go | `-C` (a general go flag: "change to dir before running the command") | — |
  */
 
 import { normalizeFlagToken } from "./exec-guard";
@@ -97,6 +125,18 @@ export interface ManagerEntry {
    * when the argv is clean. Checked before any rewriting.
    */
   readonly scopingConflict: (argv: readonly string[]) => string | undefined;
+  /**
+   * Returns the incoming flag that redirects the working directory (or the
+   * install destination/environment) this manager operates on, when that
+   * flag is global to the manager — checked for BOTH install-shaped and
+   * generic calls, since `target` being a closed enum only holds if no
+   * argv-supplied path can override it.
+   */
+  readonly globalDirectoryConflict: (argv: readonly string[]) => string | undefined;
+  /** Same as `globalDirectoryConflict`, but for a flag that only applies to
+   * (or only makes sense for) an install verb — checked only when the call
+   * is already install-shaped. */
+  readonly installDirectoryConflict: (argv: readonly string[]) => string | undefined;
   readonly packageForm: (argv: readonly string[], ctx: WorkspaceContext) => NormalizeResult;
   readonly rootForm: (argv: readonly string[], ctx: WorkspaceContext) => NormalizeResult;
 }
@@ -137,6 +177,10 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     needsPackageName: false,
     // bun has no workspace-scoping flag in this table's model — nothing to smuggle.
     scopingConflict: () => undefined,
+    // `--cwd` is global to bun (any subcommand), so it must be screened
+    // regardless of classification — see the file header table.
+    globalDirectoryConflict: (argv) => flagConflict(argv, ["--cwd"]),
+    installDirectoryConflict: () => undefined,
     // bun resolves the workspace member purely from cwd — no scoping flag needed.
     packageForm: (argv, ctx) => ({ argv, cwd: ctx.packageWorkdir }),
     rootForm: (argv, ctx) => ({ argv, cwd: ctx.repoRoot }),
@@ -160,6 +204,11 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     needsPackageName: false,
     scopingConflict: (argv) =>
       flagConflict(argv, ["-w", "--workspace", "--workspaces", "--workspace-root", "--include-workspace-root"]),
+    // npm's directory-redirect flag is `--prefix`, already denied by the
+    // shared, manager-agnostic `DENIED_FLAGS` in `exec-guard.ts` — not
+    // duplicated here (see the file header table).
+    globalDirectoryConflict: () => undefined,
+    installDirectoryConflict: () => undefined,
     // `npm -w <relPath> <verb> ...` runs from the repo root; `-w` accepts a
     // relative path.
     packageForm: (argv, ctx) => ({
@@ -175,6 +224,10 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     needsPackageName: false,
     scopingConflict: (argv) =>
       flagConflict(argv, ["--filter", "-f", "-w", "--workspace-root", "--filter-prod", "--include-workspace-root"]),
+    // `--dir`/`-C` are global to pnpm (any subcommand) — screened
+    // regardless of classification.
+    globalDirectoryConflict: (argv) => flagConflict(argv, ["--dir", "-C"]),
+    installDirectoryConflict: () => undefined,
     // The `./` prefix is mandatory: pnpm parses a bare "packages/foo" as a
     // package NAME, which silently selects nothing.
     packageForm: (argv, ctx) => ({
@@ -202,6 +255,10 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     // generic) before this function is ever reached. No independent screen
     // is needed on top of that.
     scopingConflict: () => undefined,
+    // `--cwd` is global to yarn (any subcommand) — screened regardless of
+    // classification.
+    globalDirectoryConflict: (argv) => flagConflict(argv, ["--cwd"]),
+    installDirectoryConflict: () => undefined,
     // `yarn workspace <name> ...` takes the manifest NAME, not a path.
     packageForm: (argv, ctx) => {
       const resolved = packageNameOrError(ctx, "yarn");
@@ -218,6 +275,14 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     needsPackageName: false,
     // pip has no workspace concept in this table's model — nothing to smuggle.
     scopingConflict: () => undefined,
+    // `--python` is a general pip option (valid before or after the
+    // subcommand) that redirects which interpreter/environment gets
+    // installed into — screened regardless of classification. `--prefix`
+    // would be the other general redirect, but it is already covered by
+    // the same shared `DENIED_FLAGS` entry as npm's, so not duplicated.
+    globalDirectoryConflict: (argv) => flagConflict(argv, ["--python"]),
+    // `--target`/`--root` only mean anything for `pip install`.
+    installDirectoryConflict: (argv) => flagConflict(argv, ["--target", "--root"]),
     packageForm: (argv, ctx) => ({ argv, cwd: ctx.packageWorkdir }),
     rootForm: (argv, ctx) => ({ argv, cwd: ctx.repoRoot }),
   },
@@ -228,6 +293,11 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     noScripts: () => NO_MECHANISM,
     needsPackageName: true,
     scopingConflict: (argv) => flagConflict(argv, ["--package", "--all-packages"]),
+    // `--directory`/`--project` are general uv options (accepted ahead of
+    // the subcommand) that change what "the project" means for the whole
+    // invocation — screened regardless of classification.
+    globalDirectoryConflict: (argv) => flagConflict(argv, ["--directory", "--project"]),
+    installDirectoryConflict: () => undefined,
     // `uv <verb> --package <name> ...` restricts the operation to one
     // workspace member; runs from the repo root.
     packageForm: (argv, ctx) => {
@@ -248,6 +318,10 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     needsPackageName: false,
     // go has no workspace-scoping flag in this table's model — nothing to smuggle.
     scopingConflict: () => undefined,
+    // `-C dir` is a general go flag ("change to dir before running the
+    // command") — screened regardless of classification.
+    globalDirectoryConflict: (argv) => flagConflict(argv, ["-C"]),
+    installDirectoryConflict: () => undefined,
     packageForm: (argv, ctx) => ({ argv, cwd: ctx.packageWorkdir }),
     rootForm: (argv, ctx) => ({ argv, cwd: ctx.repoRoot }),
   },
@@ -259,6 +333,10 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     noScripts: () => NO_MECHANISM,
     needsPackageName: true,
     scopingConflict: (argv) => flagConflict(argv, ["-p", "--package"]),
+    // `--manifest-path` is accepted by nearly every cargo subcommand,
+    // `add`/`fetch` included — screened regardless of classification.
+    globalDirectoryConflict: (argv) => flagConflict(argv, ["--manifest-path"]),
+    installDirectoryConflict: () => undefined,
     // `cargo add -p <name> ...` takes the manifest NAME, not a path.
     packageForm: (argv, ctx) => {
       const resolved = packageNameOrError(ctx, "cargo");

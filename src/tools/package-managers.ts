@@ -46,6 +46,14 @@
  * before every manager lookup; the path-separator form (`./npm`) is already
  * refused upstream by `validateArgv` in `exec-guard.ts` and is not
  * duplicated here.
+ *
+ * A directory-redirect flag (`--cwd`, `--dir`, `--manifest-path`, ...) is
+ * denied on the same basis (fix round 2): `target` is a closed enum
+ * precisely so no path can arrive from the model, and a flag like this
+ * hands that choice straight back. Manager-global redirect flags are
+ * screened for install-shaped AND generic calls alike — see
+ * `package-managers-table.ts`'s file header for the full per-manager table
+ * of which flags are global versus install-only.
  */
 
 import { normalizeFlagToken } from "./exec-guard";
@@ -207,19 +215,43 @@ export function normalizeExec(input: NormalizeInput): NormalizeResult {
   if (classification.kind === "deny") {
     return { error: classification.reason as string };
   }
+
+  const binary = argv[0] as string;
+  const entry = MANAGER_TABLE[normalizeManagerBinary(binary)];
+
+  // Fix round 2: a directory-redirect flag global to the manager hands cwd
+  // control back to the model regardless of whether the call is
+  // install-shaped or generic — `target` is a closed enum precisely so no
+  // path can arrive from the model, and this is the containment property
+  // itself. Checked before branching on classification kind so a generic
+  // call (`bun x tsc --cwd /elsewhere`) cannot escape it either.
+  if (entry) {
+    const globalDirConflict = entry.globalDirectoryConflict(argv);
+    if (globalDirConflict !== undefined) {
+      return {
+        error: `argv already redirects the working directory via "${globalDirConflict}"; this policy computes and controls cwd, never the model-authored argv`,
+      };
+    }
+  }
+
   if (classification.kind === "generic") {
     // Generic calls get cwd from the target and nothing else — no
     // mechanism, no scoping, no rewriting of any argument.
     return { argv, cwd: effectiveTarget === "package" ? input.packageWorkdir : input.repoRoot };
   }
 
-  const binary = argv[0] as string;
-  const entry = MANAGER_TABLE[normalizeManagerBinary(binary)];
   if (!entry) {
     // Unreachable: classify() only returns "install" for a binary that
     // resolved to a MANAGER_TABLE entry. Kept as a defensive fallback
     // rather than a non-null assertion (postfix `!` is banned in this repo).
     return { argv, cwd: effectiveTarget === "package" ? input.packageWorkdir : input.repoRoot };
+  }
+
+  const installDirConflict = entry.installDirectoryConflict(argv);
+  if (installDirConflict !== undefined) {
+    return {
+      error: `argv already redirects the install destination via "${installDirConflict}"; this policy computes and controls cwd, never the model-authored argv`,
+    };
   }
 
   // Fix round 1, Critical finding 2 + addendum C: DENY rather than strip

@@ -349,3 +349,110 @@ describe("normalizeExec — uv packageForm", () => {
     expect(normalizeExec({ ...noName, argv: ["uv", "add", "httpx"], target: "package" })).toHaveProperty("error");
   });
 });
+
+// Fix round 2: directory-redirect flags defeat cwd containment. `target` is
+// a closed enum precisely so no path can arrive from the model — a flag
+// like bun's --cwd hands that choice straight back.
+describe("normalizeExec — directory-redirect flags are denied, global scope", () => {
+  test("bun --cwd is denied on an install-shaped call", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["bun", "add", "--cwd", "/somewhere/else", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("bun --cwd is denied on a GENERIC call too — the containment property, not an install nicety", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["bun", "x", "tsc", "--cwd", "/elsewhere"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("yarn --cwd is denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["yarn", "add", "--cwd", "/elsewhere", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("pnpm --dir and -C are denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["pnpm", "add", "--dir", "/elsewhere", "x"], target: "package" }),
+    ).toHaveProperty("error");
+    expect(
+      normalizeExec({ ...base, argv: ["pnpm", "add", "-C", "/elsewhere", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("cargo --manifest-path is denied", () => {
+    expect(
+      normalizeExec({
+        ...base,
+        packageName: "foo",
+        argv: ["cargo", "add", "--manifest-path", "/elsewhere/Cargo.toml", "serde"],
+        target: "package",
+      }),
+    ).toHaveProperty("error");
+  });
+
+  test("uv --directory and --project are denied", () => {
+    expect(
+      normalizeExec({
+        ...base,
+        packageName: "mypkg",
+        argv: ["uv", "add", "--directory", "/elsewhere", "httpx"],
+        target: "package",
+      }),
+    ).toHaveProperty("error");
+    expect(
+      normalizeExec({
+        ...base,
+        packageName: "mypkg",
+        argv: ["uv", "add", "--project", "/elsewhere", "httpx"],
+        target: "package",
+      }),
+    ).toHaveProperty("error");
+  });
+
+  test("go -C is denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["go", "get", "-C", "/elsewhere", "example.com/pkg"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("case- and =-normalized matching catches a differently-spelled directory-redirect flag", () => {
+    expect(normalizeExec({ ...base, argv: ["bun", "add", "--CWD=/elsewhere", "x"], target: "package" })).toHaveProperty(
+      "error",
+    );
+  });
+});
+
+describe("normalizeExec — directory-redirect flags are denied, install-only scope", () => {
+  test("pip --target and --root are denied on an install call", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["pip", "install", "--target", "/elsewhere", "x"], target: "package" }),
+    ).toHaveProperty("error");
+    expect(
+      normalizeExec({ ...base, argv: ["pip", "install", "--root", "/elsewhere", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+
+  test("pip --python is denied even on a non-install pip call (it is global to pip)", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["pip", "list", "--python", "/other/python"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+});
+
+describe("normalizeExec — directory-redirect denial does not affect ordinary calls (both-sides rule)", () => {
+  test("an ordinary bun add still classifies install-shaped and comes back hardened at the normalized cwd", () => {
+    expect(normalizeExec({ ...base, argv: ["bun", "add", "-d", "x"], target: "package" })).toEqual({
+      argv: ["bun", "add", "-d", "x", "--ignore-scripts"],
+      cwd: "/repo/packages/foo",
+    });
+  });
+
+  test("an ordinary generic bun x call still classifies generic and returns unmodified", () => {
+    expect(normalizeExec({ ...base, argv: ["bun", "x", "tsc", "--noEmit"], target: "package" })).toEqual({
+      argv: ["bun", "x", "tsc", "--noEmit"],
+      cwd: "/repo/packages/foo",
+    });
+  });
+});
