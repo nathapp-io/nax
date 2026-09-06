@@ -2,6 +2,7 @@ import { extractTestCode } from "../acceptance/generator";
 import { hasLikelyTestContent, isStubTestContent } from "../acceptance/heuristics";
 import { acceptanceGenConfigSelector } from "../config";
 import type { AcceptanceGenConfig } from "../config/selectors";
+import type { AdapterFailure } from "../context/engine";
 import { AcceptancePromptBuilder } from "../prompts";
 import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
 import type { RunOperationWithHooks } from "./types";
@@ -16,6 +17,14 @@ export interface AcceptanceGenerateInput {
 
 export interface AcceptanceGenerateOutput {
   testCode: string | null;
+  /**
+   * US-001: when the dispatch itself failed (e.g. service-down, timeout, rate
+   * limit), the run outcome carries an `adapterFailure` that `callOp` attaches
+   * to the parsed value when the parsed value does not already carry one. The
+   * shape mirrors `AdapterFailure` from `@/context/engine` so callers can read
+   * `.outcome` directly.
+   */
+  adapterFailure?: AdapterFailure;
 }
 
 /** Injectable I/O for the hopBody path-correction step (testable without disk). */

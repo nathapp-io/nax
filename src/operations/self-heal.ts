@@ -52,6 +52,13 @@ export function makeSelfHealStep<I, D>(spec: SelfHealSpec<I, D>): SelfHealStep<I
  * accumulated onto the returned TurnResult; the most recent corrective turn (or
  * the seed, if none fired) becomes the returned output.
  *
+ * US-001: a seed carrying `adapterFailure` is the only signal a failed dispatch
+ * left on the chain. The path-correction step replaces the seed wholesale when
+ * it fires, which silently drops that signal — see AC1. We preserve the seed's
+ * `adapterFailure` when the corrective turn does not carry its own; a
+ * corrective turn that does carry one keeps its own. This is the single point of
+ * loss on the path (US-001 spec).
+ *
  * The op's `verify` should re-check the same conditions and warn on residual
  * deviations — see `planRefineOp` for the canonical pairing.
  */
@@ -67,7 +74,15 @@ export async function runSelfHealChain<I>(
       const turn = await step.run(ctx);
       if (turn) {
         totalCost += turn.estimatedCostUsd ?? 0;
-        last = turn;
+        // Carry seed's adapterFailure onto the replacement when the corrective
+        // turn does not carry its own. A corrective turn that already carries
+        // one keeps its own (AC2). The seed's failure is the only signal a
+        // failed dispatch produced — see US-001 AC1.
+        if (!turn.adapterFailure && seed.adapterFailure) {
+          last = { ...turn, adapterFailure: seed.adapterFailure };
+        } else {
+          last = turn;
+        }
       }
     } catch (err) {
       getSafeLogger()?.warn("self-heal", "step threw — skipping", { error: errorMessage(err) });
