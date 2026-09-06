@@ -3,7 +3,7 @@
   "feature": "acceptance-integrity",
   "branchName": "feat/acceptance-integrity",
   "createdAt": "2026-03-10T00:00:00.000Z",
-  "updatedAt": "2026-09-06T05:12:29.742Z",
+  "updatedAt": "2026-09-06T05:33:42.525Z",
   "userStories": [
     {
       "id": "US-001",
@@ -109,8 +109,8 @@
         "lifecycle"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -157,7 +157,10 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "The existing centralized snapshot builder needs an additive derived field and its established unit/integration serialization tests cover the behavior."
+        "reasoning": "The existing centralized snapshot builder needs an additive derived field and its established unit/integration serialization tests cover the behavior.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "src/execution/status-file.ts",
@@ -166,7 +169,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e6b777b35fb8e82ababb8547bf43d1e6f9ff70cf"
     }
   ],
   "analysis": "This is an existing TypeScript feature change. US-001 spans src/operations/self-heal.ts:58, src/operations/call.ts, and src/operations/acceptance-generate.ts. runSelfHealChain currently returns `{ ...last, estimatedCostUsd: totalCost }`, so a corrective TurnResult replaces seed metadata. acceptanceGenerateOp always executes its path-correction self-heal. callOp normalizes the run outcome, records fallbacks, parses output, and returns runPostParse’s result without attaching `outcome.adapterFailure`; the attachment must preserve a parsed object’s own failure and leave non-object parsed values unchanged. call.ts is already 563 lines, so use a small module-private helper at the run tail or move it to existing src/operations/post-parse.ts if needed. AdapterFailure is defined in src/context/engine/types.ts and has four required fields. Existing self-heal coverage is test/unit/operations/self-heal.test.ts; callOp has extensive existing unit fixtures under test/unit/operations/call*.test.ts and run-operation-retry.test.ts.\n\nUS-002 changes the generation loop in src/pipeline/stages/acceptance-setup.ts. Its `_acceptanceSetupDeps.callOp` and `writeFile` are established test seams, exercised by test/unit/pipeline/stages/acceptance-setup-agent-file.test.ts. The current result is locally cast as `{ testCode: string | null }` and all falsy results generate a skeleton. The new branch must not write or delete `testPath` on an adapter failure, but must retain the truthy-code path and current no-failure skeleton warning. src/pipeline/stages/acceptance.ts already detects absent required package test paths, adds packageDir to `missingTargets`, stores `ctx.acceptanceFailures`, and returns fail; protect this seam rather than duplicating it.\n\nUS-003 is localized to src/execution/lifecycle/acceptance-helpers.ts. regenerateAcceptanceTest already backs up pre-existing content to `.bak`, deletes the original, invokes setup through `_regenerateDeps`, and returns false for a missing target. `isStubTestFile` already exists in this file and must be applied to regenerated existing content. Tests in test/unit/execution/lifecycle/acceptance-loop.test.ts use the injectable regeneration dependencies. Do not alter acceptance-loop retry scheduling or MAX_STUB_REGENS.\n\nUS-004 is an additive status schema change in src/execution/status-file.ts. NaxStatusFile already makes postRun optional, and buildStatusSnapshot is the centralized producer for status snapshots. Add optional gates only when `state.postRun` exists; derive acceptance from postRun except that non-empty skippedPackages forces `failed`; preserve `run.status`. Existing serialization and snapshot tests are in test/integration/execution/status-file.test.ts, and status-writer call sites need no migration because derivation is centralized. Old on-disk status files remain readable because gates is optional and is not backfilled.",
