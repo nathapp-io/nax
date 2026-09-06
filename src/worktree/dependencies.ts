@@ -1,15 +1,16 @@
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import { spawn } from "../utils/bun-deps";
+import { _argvExecDeps, runArgv } from "../utils/argv-exec";
 import { parseCommandToArgv } from "../utils/command-argv";
-import { killProcessGroup } from "../utils/process-kill";
 import type { PrepareWorktreeDependenciesOptions, WorktreeDependencyContext } from "./types";
 import { WorktreeDependencyPreparationError } from "./types";
 
-export const _worktreeDependencyDeps = {
-  spawn,
-  killProcessGroup,
-};
+/**
+ * Delegates to `_argvExecDeps` so both names address the same seam. Kept as
+ * its own export because `test/unit/worktree/dependencies.test.ts` injects
+ * through it.
+ */
+export const _worktreeDependencyDeps = _argvExecDeps;
 
 /**
  * Resolve the cwd a story executes from inside its worktree, installing
@@ -58,64 +59,29 @@ async function provisionDependencies(
   }
 
   const timeoutMs = config.execution.worktreeDependencies.timeoutSeconds * 1000;
-  const proc = _worktreeDependencyDeps.spawn(argv, {
+
+  const result = await runArgv({
+    argv,
     // Provisioning must run from the worktree root so workspace/monorepo install
     // commands (bun/pnpm/yarn workspaces) operate on the repo-level manifest.
     // Story execution still happens from the returned resolvedCwd.
     cwd: worktreeRoot,
-    stdout: "pipe",
-    stderr: "pipe",
-    // MEM-4: without this, `proc.kill()` (or killProcessGroup below) reaches only
-    // this direct child — a pnpm/npm postinstall grandchild survives the timeout
-    // and keeps running against a worktree nax is about to delete. `detached`
-    // makes this process a session/group leader via setsid(), so its own pid IS
-    // the real process-group id killProcessGroup(-pid) targets. Matches the
-    // established pattern in verification/executor.ts (ORPHAN-1, bun-deps.ts).
-    detached: true,
+    timeoutMs,
   });
 
-  // BUG-13: unlike every git call (routed through gitWithTimeout), this spawn had
-  // no deadline — a hung install (registry/NFS stall) blocked the story forever.
-  let timedOut = false;
-  const timerId = setTimeout(() => {
-    timedOut = true;
-    // MEM-4: proc.kill() reached only the direct child, orphaning postinstall
-    // grandchildren. killProcessGroup(pid, "SIGKILL") kills the whole group
-    // (negative pid), falling back to the single process on ESRCH.
-    // Borrows verification/executor.ts's group-kill MECHANISM only, not its
-    // shutdown SEQUENCE: that path sends SIGTERM, waits a grace period, then
-    // escalates. Provisioning has already burned its full configured timeout by
-    // the time we get here and the worktree is about to be deleted either way,
-    // so there is nothing for a partially-installed tree to clean up gracefully.
-    _worktreeDependencyDeps.killProcessGroup(proc.pid, "SIGKILL");
-  }, timeoutMs);
-
-  // Drain concurrently with the exit wait — a process that fills a pipe's OS
-  // buffer before being read would otherwise block on the write and never
-  // reach `exited`, defeating the timeout's own SIGKILL.
-  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
-  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
-
-  const exitCode = await proc.exited;
-  clearTimeout(timerId);
-
-  if (timedOut) {
+  if (result.timedOut) {
     throw new WorktreeDependencyPreparationError(
       `[worktree-deps] provision timed out after ${config.execution.worktreeDependencies.timeoutSeconds}s in ${resolvedCwd}`,
       "provision",
     );
   }
-
-  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
-
-  if (exitCode !== 0) {
-    const output = [stdout, stderr].filter(Boolean).join("\n").trim();
+  if (result.exitCode !== 0) {
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
     throw new WorktreeDependencyPreparationError(
       `[worktree-deps] provision failed in ${resolvedCwd}: ${output || "unknown error"}`,
       "provision",
     );
   }
-
   return { cwd: resolvedCwd };
 }
 
