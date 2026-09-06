@@ -2,6 +2,7 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { errorMessage } from "../utils/errors";
 import { parseAgentError } from "./acp";
+import { isTransportFailureMessage } from "./transport-failure-message";
 
 /**
  * Classify an exception thrown out of `adapter.complete()` into an
@@ -58,6 +59,20 @@ export function classifyCompleteException(err: unknown): AdapterFailure {
     case "crash":
       return { category: "quality", outcome: "fail-adapter-error", retriable: false, message };
     default:
-      return { category: "quality", outcome: "fail-unknown", retriable: false, message };
+      // nax#1869: before falling back to "unknown", ask the one further
+      // question parseAgentError will not — is this free text a transport
+      // fault? "Unknown" is the verdict decideSwap declines; a transport fault
+      // is availability, which swaps to a healthy agent. Asked last, so a
+      // structured signal always wins over a phrase.
+      //
+      // fail-service-down, not fail-timeout: decideSwap refuses fail-timeout at
+      // its first gate, so that outcome would leave the swap exactly as
+      // declined as the bug it is meant to fix.
+      //
+      // Read on the full message for the same reason parseAgentError is — a
+      // marker can sit past the truncation point.
+      return isTransportFailureMessage(fullMessage)
+        ? { category: "availability", outcome: "fail-service-down", retriable: true, message }
+        : { category: "quality", outcome: "fail-unknown", retriable: false, message };
   }
 }
