@@ -27,6 +27,7 @@ import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { AuthResolver } from "../auth/resolver.ts";
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
+import { vendorAppHeaders } from "./client-app.ts";
 import { classifyProviderError, classifyThrown, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { assertValidHeaders, assertValidSessionId, mergeRequestHeaders, withoutEmpty } from "./request-headers.ts";
@@ -458,6 +459,10 @@ export function createPiDeps(
       // there is nothing on the request side, so mergeRequestHeaders can return
       // undefined and the option stays absent rather than being set to `{}`.
       const requestHeaders = withoutEmpty({
+        // Both vendor maps sit beneath the caller's own headers, so an explicit
+        // spelling still wins. They cannot collide with each other: one names a
+        // session, the other an application.
+        ...vendorAppHeaders(model.provider, options.clientApp),
         ...vendorSessionHeaders(model.provider, options_?.sessionId),
         ...options_?.headers,
       });

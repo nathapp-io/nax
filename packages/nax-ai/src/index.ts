@@ -50,6 +50,7 @@ export {
   type FileCredentialStoreOptions,
 } from "./credentials/file-store.ts";
 export { createMemoryCredentialStore } from "./credentials/memory-store.ts";
+export type { ClientApp } from "./protocols/client-app.ts";
 export { collectStream, ProtocolStreamError } from "./protocols/collect.ts";
 export {
   DEFAULT_PROTOCOL_NAMES,

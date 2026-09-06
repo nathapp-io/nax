@@ -11,6 +11,7 @@
  */
 
 import type { CredentialStore } from "../types.ts";
+import type { ClientApp } from "./client-app.ts";
 import type { ProtocolEntries } from "./registry.ts";
 import type { Transport } from "./types.ts";
 
@@ -57,6 +58,20 @@ export interface ProtocolOptions {
    * four protocols, and ProtocolRequest is the shared protocol-agnostic type.
    */
   readonly transport?: Transport;
+  /**
+   * How the calling application names itself upstream, for providers that read
+   * one off the request and report on it.
+   *
+   * Construction-time for the opposite reason to `transport`: this is
+   * meaningful to every protocol, but it is a constant of the process rather
+   * than of the work, so repeating it on each request would be noise. Which
+   * header carries it — and for which vendor — is this package's business; see
+   * client-app.ts.
+   *
+   * Omitted means nothing extra is sent, and the request is identified only by
+   * pi-ai's own `User-Agent`.
+   */
+  readonly clientApp?: ClientApp;
 }
 
 /** @deprecated Use {@link ProtocolOptions}. Kept as a non-breaking alias. */

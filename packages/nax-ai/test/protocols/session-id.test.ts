@@ -38,8 +38,43 @@ describe("vendorSessionHeaders", () => {
     expect(vendorSessionHeaders(provider, "s-1")).toEqual({ "x-opencode-session": "s-1" });
   });
 
-  it.each(["openrouter", "openai", "anthropic", "deepseek"])(
-    "adds nothing for %s, whose headers pi-ai already derives from sessionId",
+  it("adds x-session-id for openrouter, whose format pi-ai has but never enables", () => {
+    expect(vendorSessionHeaders("openrouter", "s-1")).toEqual({ "x-session-id": "s-1" });
+  });
+
+  /**
+   * Absent for two different reasons, recorded separately so a later reader
+   * does not generalise the wrong one.
+   *
+   * `openai` (openai-responses) and `openai-codex` (openai-codex-responses)
+   * reach the wire through APIs that do NOT consult
+   * `compat.sendSessionAffinityHeaders`: openai-responses sets `session_id` and
+   * `x-client-request-id` on any truthy id, and codex's `buildSSEHeaders` sets
+   * `session-id` and `x-client-request-id` the same way. Adding either here
+   * would duplicate a header pi-ai already sends. (openai verified with a stub
+   * fetch; codex is a code read — pi refuses to build the request without real
+   * OAuth, so no wire capture backs it.)
+   */
+  it.each(["openai", "openai-codex"])("adds nothing for %s, whose header pi-ai sends ungated", (provider) => {
+    expect(vendorSessionHeaders(provider, "s-1")).toBeUndefined();
+  });
+
+  /**
+   * `minimax`/`minimax-cn`, `vercel-ai-gateway` and `anthropic` itself (all
+   * anthropic-messages) ARE behind the gate, so pi-ai sends them nothing — and
+   * that is correct. None documents a session or affinity header. MiniMax's
+   * Anthropic-compatible endpoint caches through explicit `cache_control`,
+   * exactly as Anthropic does, and that reaches the wire unaffected by any of
+   * this (verified with a stub fetch on MiniMax-M2.7 and on a Vercel gateway
+   * model). Vercel's own routing and cache controls — `order`, `sort`,
+   * `caching`, `cache_ttl`, `cache_anchor_items`, `byok` — are body fields
+   * under `providerOptions.gateway`, not headers, so no header-shaped seam
+   * reaches them and none of them is a session key. A table entry for any of
+   * these would be an invented header, which is the one thing a vendor table
+   * must not hold.
+   */
+  it.each(["minimax", "minimax-cn", "vercel-ai-gateway", "anthropic", "deepseek"])(
+    "adds nothing for %s, which documents no session header to send",
     (provider) => {
       expect(vendorSessionHeaders(provider, "s-1")).toBeUndefined();
     },
@@ -79,6 +114,37 @@ describe("createPiDeps session wiring", () => {
     }
 
     expect(seen?.headers).toMatchObject({ "x-opencode-session": "s-1" });
+  });
+
+  /**
+   * The regression this pair exists for.
+   *
+   * pi-ai reads `x-session-id` out of a per-model `sessionAffinityFormat` of
+   * "openrouter" (dist/api/openai-completions.js), but the branch is guarded by
+   * `compat.sendSessionAffinityHeaders`, which `detectCompat` sets to false and
+   * which not one of the 333 openrouter catalog entries overrides. So the id
+   * was computed, validated and forwarded, then dropped a layer above the
+   * socket: every OpenRouter generation record came back with `session_id:
+   * null` and no sticky routing, and therefore no warm provider cache.
+   * `ProviderOverride` deliberately exposes no `compat`, so the vendor table is
+   * the only lever this package has.
+   */
+  it("adds x-session-id for openrouter, which pi-ai derives but never enables", async () => {
+    let seen: SimpleStreamOptions | undefined;
+    const deps = createPiDeps({}, (_m, _c, options) => {
+      seen = options;
+      return emptyStream();
+    });
+    const model = await deps.resolveModel("z-ai/glm-5.3", "openrouter");
+
+    for await (const _ of deps.stream(model, { messages: [] }, { sessionId: "s-1" }, () => {})) {
+      // drain
+    }
+
+    expect(seen?.headers).toMatchObject({ "x-session-id": "s-1" });
+    // Still forwarded as an option too: that is what keys pi-ai's prompt cache,
+    // and it is what pi would use if a future version flipped the gate.
+    expect(seen?.sessionId).toBe("s-1");
   });
 
   it("leaves a non-opencode provider's headers alone", async () => {
