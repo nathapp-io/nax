@@ -218,11 +218,46 @@ verb, not the payload. Refuse `--registry`, `--index-url`, `-i`, `--index`,
 redirect where code comes from or where it lands -- exactly what a verb gate
 cannot see.
 
-**The table**, keyed by `argv[0]`: recognized verbs, the no-scripts flag, the two
-normalization forms, and whether the manager is workspace-aware. Covers npm, bun,
-pnpm, yarn, pip, uv, go, cargo. A binary absent from the table is denied,
-because nax then knows neither how to harden it nor how to normalize it for a
-workspace.
+**Two classes of call, decided by the table.** A call is *install-shaped* when
+`argv[0]` is a known manager AND the verb is one of that manager's install verbs.
+Install-shaped calls MUST go through hardening and workspace normalization.
+Everything else is *generic*: run as given, at the target cwd, with no
+normalization and no no-scripts flag.
+
+The split matters in both directions. Without a generic class, `bun x tsc
+--noEmit` -- the second thing the observed run's model reached for -- is denied
+forever, because `bun` is a known manager and `x` is not an install verb, and no
+grant could rescue it. Without the "known manager plus install verb" test, a
+generic path would let `bun add` skip the no-scripts flag by being classified
+loosely. Neither class can borrow the other's treatment.
+
+A generic call is reachable only through an explicit `Exec(...)` grant. The
+built-in default list contains install forms only, so nothing generic runs
+unless a human wrote the grant.
+
+**The table**, keyed by `argv[0]`: install verbs, the no-scripts mechanism, the
+two normalization forms, and whether the manager is workspace-aware. Covers npm,
+bun, pnpm, yarn, pip, uv, go, cargo.
+
+**Workspace scoping needs the package NAME, not its path, for some managers.**
+`yarn workspace <name> add` and `cargo add -p <name>` take the manifest name;
+`pnpm --filter` accepts either a name or a path, but a path must be written
+`./packages/foo` -- bare `packages/foo` is parsed as a package name and silently
+selects nothing. So normalization reads the member manifest for its name, and a
+manager that requires a name denies the call when none can be resolved rather
+than passing a path where a name is expected.
+
+**Yarn's no-scripts mechanism is not a flag on modern Yarn.** Yarn 1 takes
+`--ignore-scripts`; Yarn 2+ has no such option and instead honours the
+`enableScripts` setting, overridable per-invocation by the `YARN_ENABLE_SCRIPTS`
+environment variable. So the table's hardening field is a *mechanism* (a flag or
+an environment variable), not a flag string, and the executor accepts an env
+overlay. The property that matters is preserved either way: nax supplies it, so
+it is not part of what the allowlist matched and the model cannot remove it.
+Detection is by `.yarnrc.yml` presence or the root manifest's `packageManager`
+field. Note Yarn 2+ already disables third-party postinstall scripts by default;
+setting the variable makes that explicit rather than relying on a default a
+project may have flipped.
 
 The no-scripts field is deliberately empty for some entries rather than missing
 by oversight: `cargo add` only edits a manifest, and `cargo fetch` and
