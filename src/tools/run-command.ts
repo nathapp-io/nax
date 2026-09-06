@@ -19,9 +19,27 @@ import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 const PLACEHOLDER = /\{\{([a-zA-Z]+)\}\}/g;
 
+/**
+ * Context for RunCommand's allowlisted, model-authored argv branch (`Exec`).
+ *
+ * Populated only when the operation declared the `Exec` marker
+ * (`buildCodingToolSupport` in `src/agents/coding-tool-support.ts`). This
+ * type carries the plumbing Task 6's argv branch needs; `run()` below does
+ * not read it yet — Task 6 adds the branch that does.
+ */
+export interface RunCommandExecOptions {
+  readonly repoRoot: string;
+  readonly packageWorkdir: string;
+  /** Manifest name, required by yarn/cargo's package-scoping form; absent when unresolvable. */
+  readonly packageName?: string;
+  readonly allowScripts: boolean;
+}
+
 export interface RunCommandToolOptions {
   /** Secret environment variables excluded from agent-triggered commands. */
   readonly stripEnvVars?: readonly string[];
+  /** See `RunCommandExecOptions`. */
+  readonly exec?: RunCommandExecOptions;
 }
 
 function quoteAt(template: string, end: number): "single" | "double" | undefined {

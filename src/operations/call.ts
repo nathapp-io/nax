@@ -230,6 +230,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     callId,
     declaredTools: resolveDeclaredTools(runOp),
     codingToolRoot: packageWorkdir(ctx.packageView),
+    codingToolRepoRoot: ctx.packageView.repoRoot,
     // PRODUCER for AgentRunOptions.outputDir. Durable run artifacts (prompt-audit,
     // review-audit, and now the tool-audit ledger) anchor here rather than under
     // codingToolRoot, which is a package workdir inside the story's worktree and

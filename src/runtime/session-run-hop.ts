@@ -58,7 +58,7 @@ export function createSessionRunHop(
     // are stage-scoped, so a runtime captured earlier would outlive its
     // dispatch. Mirrors build-hop-callback.ts — the two must not drift.
     // Declared above the try so the finally block can flush the audit sink.
-    let codingSupport: ReturnType<typeof resolveCodingToolSupport>;
+    let codingSupport: Awaited<ReturnType<typeof resolveCodingToolSupport>>;
 
     try {
       const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
@@ -72,7 +72,7 @@ export function createSessionRunHop(
           ? (options.maxInteractionTurns ?? 10)
           : (options.maxInteractionTurns ?? 1);
 
-      codingSupport = resolveCodingToolSupport(options);
+      codingSupport = await resolveCodingToolSupport(options);
       const interactionHandler = buildRunInteractionHandler({
         ...options,
         ...(codingSupport ? { codingToolRuntime: codingSupport.runtime } : {}),
