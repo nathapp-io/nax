@@ -5,7 +5,8 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
-import { formatDuration, formatLogEntry, formatRunSummary } from "../log-format/formatter";
+import { formatDuration, formatLogEntry } from "../log-format/formatter";
+import { formatRunSummary } from "../log-format/summary";
 import type { LogEntry, LogLevel } from "../logger/types";
 
 export { formatDuration };

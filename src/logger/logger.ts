@@ -71,6 +71,12 @@ export class Logger {
   /** Registered redacted-entry consumers. Order is preserved so dispatch is deterministic. */
   private readonly sinkRegistry = new SinkRegistry();
 
+  /**
+   * Stage|message keys already warned about, and how many times each has been
+   * seen. Backs {@link warnOnce}; per-instance, so it resets with the run.
+   */
+  private readonly warnOnceSeen = new Map<string, number>();
+
   constructor(options: LoggerOptions) {
     this.level = options.level;
     this.filePath = options.filePath;
@@ -273,6 +279,31 @@ export class Logger {
    */
   warn(stage: string, message: string, data?: Record<string, unknown>): void {
     this.log("warn", stage, message, data);
+  }
+
+  /**
+   * Warn on the first occurrence of a standing condition; demote the rest.
+   *
+   * For conditions that are re-evaluated on every agent call and therefore
+   * re-emit on every agent call — canonical rules over the static-rules budget,
+   * floor chunks over a stage budget. The text never changes, so repeating it
+   * costs the operator's attention without informing them: one observed run
+   * carried 40 such lines against ~100 lines of real signal.
+   *
+   * Repeats go to debug with an `occurrence` ordinal rather than being dropped,
+   * so the JSONL keeps the full tally for telemetry. The ledger is per Logger
+   * instance, which is per run.
+   */
+  warnOnce(stage: string, message: string, data?: Record<string, unknown>): void {
+    const key = `${stage}|${message}`;
+    const seen = (this.warnOnceSeen.get(key) ?? 0) + 1;
+    this.warnOnceSeen.set(key, seen);
+
+    if (seen === 1) {
+      this.warn(stage, message, data);
+      return;
+    }
+    this.debug(stage, message, { ...data, occurrence: seen });
   }
 
   /**

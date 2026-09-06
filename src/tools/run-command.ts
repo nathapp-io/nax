@@ -81,6 +81,8 @@ export function createRunCommandTool(
   const keys = [...declared.keys()];
   return {
     name: "RunCommand",
+    // A non-zero exit here is the agent's red/green loop, not a fault.
+    routineErrors: true,
     description: `Run one of this project's declared commands: ${keys.join(", ")}. Supply values for its placeholders; you cannot write a command of your own.`,
     inputSchema: {
       type: "object",
@@ -112,6 +114,10 @@ export function createRunCommandTool(
         command,
         workdir: ctx.root,
         stripEnvVars: [...(opts.stripEnvVars ?? [])],
+        // The agent's own iteration loop, not a harness gate: kept in the JSONL
+        // at debug, off the console. Its outcome reaches the agent through the
+        // returned content, and the harness reports its own gates separately.
+        origin: "agent-tool",
       });
       const body = `exit ${result.exitCode}\n${result.output}`;
       return { content: body.slice(0, ctx.maxBytes), isError: !result.success };

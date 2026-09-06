@@ -400,7 +400,7 @@ export class ContextOrchestrator {
     // `effectiveBudget` value reported here is the post-`availableBudgetTokens`
     // ceiling packChunks actually used — never the pre-ceiling request budget.
     if (floorOverageIds.length > 0) {
-      logger.warn("context-v2", "Floor-budget overage — floor chunks pushed bundle past effective budget", {
+      logger.warnOnce("context-v2", "Floor-budget overage — floor chunks pushed bundle past effective budget", {
         storyId: request.storyId,
         stage: request.stage,
         effectiveBudget,
@@ -451,7 +451,7 @@ export class ContextOrchestrator {
       const byCost = overageIds
         .map((id) => ({ id, tokens: manifest.chunkTokens?.[id] ?? 0 }))
         .sort((a, b) => b.tokens - a.tokens || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      logger.warn("context-v2", "Stage budget exceeded by floor items", {
+      logger.warnOnce("context-v2", "Stage budget exceeded by floor items", {
         storyId: request.storyId,
         stage: request.stage,
         usedTokens: manifest.usedTokens,

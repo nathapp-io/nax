@@ -7,16 +7,16 @@
  * the `LogEntry` records consumed here.
  */
 
+export { type ChalkLike, createNoopChalk } from "./chalk-like.js";
 export {
   type FormattedEntry,
-  formatAdvisorySummary,
   formatCost,
   formatDuration,
   formatLogEntry,
-  formatRunSummary,
   formatTimestamp,
 } from "./formatter.js";
 export { formatMutationSummary } from "./mutation-summary.js";
+export { formatAdvisorySummary, formatRunSummary } from "./summary.js";
 export {
   EMOJI,
   type FormatterOptions,
