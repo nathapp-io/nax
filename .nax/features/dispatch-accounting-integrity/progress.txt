@@ -1,1 +1,2 @@
 [2026-09-06T08:39:23.963Z] US-001 — PASSED — Failed dispatches record spent usage — Cost: $7.3973
+[2026-09-06T09:50:38.266Z] US-004 — PASSED — Claim project identity before plan dispatch — Cost: $0.5059
