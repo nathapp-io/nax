@@ -54,6 +54,17 @@
  * screened for install-shaped AND generic calls alike — see
  * `package-managers-table.ts`'s file header for the full per-manager table
  * of which flags are global versus install-only.
+ *
+ * `uv pip <anything>` is also denied at classification time (fix round 3,
+ * finding 3) — see `isNestedPipInvocation` for why nesting is rejected in
+ * favor of a flat denial.
+ *
+ * None of the fix-round-3 gaps (pip's `-t` alias, yarn's `-C`, `uv pip`
+ * nesting) is reachable under the built-in default allowlist, which is
+ * install-only and contains neither `uv pip *`, a bare `pip install`, nor
+ * a yarn form with `-C`. They become reachable only when a project writes
+ * a widening `Exec(...)` grant by hand — defense-in-depth, not a live hole
+ * under the shipped default.
  */
 
 import { normalizeFlagToken } from "./exec-guard";
@@ -103,6 +114,34 @@ function disguisedManagerToken(argv: readonly string[]): string | undefined {
 }
 
 /**
+ * `uv pip <anything>` (fix round 3, finding 3): uv's install verbs are
+ * `sync`/`add`, so `["uv","pip","install","--target","/elsewhere","x"]`
+ * matches no uv verb and contains no bare token equal to one — it would
+ * otherwise fall through to generic, with no directory screen and no
+ * no-scripts mechanism, even though `pip install` is exactly the
+ * install-shaped call this table exists to harden.
+ *
+ * Ruling: DENY, don't recognize `uv pip install` as install-shaped and
+ * borrow pip's screens for it. That would make one manager entry reach
+ * into another's semantics — a general nesting mechanism this table does
+ * not otherwise have — for a shape the built-in allowlist never permits
+ * anyway (its patterns are `uv sync*`/`uv add*`, not `uv pip *`). Denying
+ * costs a capability that already requires a hand-written `Exec(...)`
+ * grant to reach at all, and keeps every entry independent. If a project
+ * ever needs `uv pip` normalized instead of denied, that is the tradeoff
+ * to revisit — recorded here so the choice is visible.
+ *
+ * Uses the same first-non-flag-token search as branch 1 of `classify`, so
+ * a global flag ahead of `pip` (`uv --quiet pip install x`) does not
+ * defeat this either.
+ */
+function isNestedPipInvocation(rawBinary: string, argv: readonly string[]): boolean {
+  if (normalizeManagerBinary(rawBinary) !== "uv") return false;
+  const firstNonFlagIndex = argv.findIndex((token, i) => i > 0 && !token.startsWith("-"));
+  return firstNonFlagIndex !== -1 && (argv[firstNonFlagIndex] as string).toLowerCase() === "pip";
+}
+
+/**
  * Longest-sequence-first so a multi-token verb like `["mod", "download"]`
  * matches as one verb rather than being pre-empted by a shorter prefix.
  */
@@ -139,6 +178,13 @@ function classify(argv: readonly string[]): Classification {
       return {
         kind: "deny",
         reason: `"${rawBinary} ${argv[1]}" runs "${disguised}" — a disguised manager invocation via a dlx-style verb`,
+      };
+    }
+
+    if (isNestedPipInvocation(rawBinary, argv)) {
+      return {
+        kind: "deny",
+        reason: `"${rawBinary} pip" nests pip inside another manager; not classifiable as install-shaped (uv's install verbs are sync/add, not pip) and not safely generic (pip's own directory/scripts screens would not apply)`,
       };
     }
   }

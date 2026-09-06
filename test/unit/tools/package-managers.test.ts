@@ -456,3 +456,64 @@ describe("normalizeExec — directory-redirect denial does not affect ordinary c
     });
   });
 });
+
+// Fix round 3, finding 1: pip's -t short alias for --target was unscreened.
+describe("normalizeExec — pip -t short alias is denied", () => {
+  test("pip install -t is denied like --target", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["pip", "install", "-t", "/elsewhere", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+});
+
+// Fix round 3, finding 2: yarn's global screen missed -C (added for
+// symmetry with pnpm; not confirmed as documented yarn syntax, but an
+// over-denial is the safe direction).
+describe("normalizeExec — yarn -C is denied for symmetry with pnpm", () => {
+  test("yarn -C is denied", () => {
+    expect(
+      normalizeExec({ ...base, argv: ["yarn", "add", "-C", "/elsewhere", "x"], target: "package" }),
+    ).toHaveProperty("error");
+  });
+});
+
+// Fix round 3, finding 3: uv pip <anything> is a manager nested inside a
+// manager — denied at classification time rather than falling through to
+// generic (no directory screen, no no-scripts mechanism) or being
+// recognized as install-shaped by borrowing pip's semantics.
+describe("classifyExec / normalizeExec — uv pip nesting is denied", () => {
+  test("uv pip install is denied, not generic", () => {
+    expect(classifyExec(["uv", "pip", "install", "--target", "/elsewhere", "x"])).toBe("deny");
+    expect(
+      normalizeExec({
+        ...base,
+        argv: ["uv", "pip", "install", "--target", "/elsewhere", "x"],
+        target: "package",
+      }),
+    ).toHaveProperty("error");
+  });
+
+  test("a global flag ahead of the nested pip does not defeat the denial", () => {
+    expect(classifyExec(["uv", "--quiet", "pip", "install", "x"])).toBe("deny");
+  });
+
+  test("uv pip with no further args is still denied", () => {
+    expect(classifyExec(["uv", "pip"])).toBe("deny");
+  });
+
+  test("both-sides rule: an ordinary uv add still classifies install-shaped and hardens", () => {
+    expect(classifyExec(["uv", "add", "x"])).toBe("install");
+    expect(normalizeExec({ ...base, packageName: "mypkg", argv: ["uv", "add", "x"], target: "package" })).toEqual({
+      argv: ["uv", "add", "--package", "mypkg", "x"],
+      cwd: "/repo",
+    });
+  });
+
+  test("both-sides rule: an ordinary generic bun x call still classifies generic and is unmodified", () => {
+    expect(classifyExec(["bun", "x", "tsc", "--noEmit"])).toBe("generic");
+    expect(normalizeExec({ ...base, argv: ["bun", "x", "tsc", "--noEmit"], target: "package" })).toEqual({
+      argv: ["bun", "x", "tsc", "--noEmit"],
+      cwd: "/repo/packages/foo",
+    });
+  });
+});

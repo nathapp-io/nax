@@ -100,13 +100,19 @@
  * | manager | global (`globalDirectoryFlags`) | install-only (`installDirectoryFlags`) |
  * |---|---|---|
  * | bun | `--cwd` | — |
- * | yarn | `--cwd` | — |
+ * | yarn | `--cwd`, `-C` (fix round 3 — `-C` is added for symmetry with pnpm; not confirmed as a documented yarn alias, but an over-denial here is the safe direction) | — |
  * | pnpm | `--dir`, `-C` | — |
  * | npm | — | — (`--prefix` changes npm's effective directory; already denied by `DENIED_FLAGS` in `exec-guard.ts` regardless of manager — not duplicated here) |
  * | cargo | `--manifest-path` (accepted by nearly every cargo subcommand, `add`/`fetch` included) | — |
- * | pip | `--python` (a general pip option, valid before or after the subcommand, that redirects which interpreter/environment gets installed into) | `--target`, `--root` (install-destination overrides, meaningful only for `pip install`; `--prefix` is likewise install-scoped but already covered by the same shared `DENIED_FLAGS` entry as npm's, so also not duplicated) |
+ * | pip | `--python` (a general pip option, valid before or after the subcommand, that redirects which interpreter/environment gets installed into) | `--target`, `-t` (documented short alias, fix round 3), `--root` (install-destination overrides, meaningful only for `pip install`; `--prefix` is likewise install-scoped but already covered by the same shared `DENIED_FLAGS` entry as npm's, so also not duplicated) |
  * | uv | `--directory`, `--project` (both are documented as general uv options, accepted ahead of the subcommand, that change what "the project" means for the whole invocation) | — |
  * | go | `-C` (a general go flag: "change to dir before running the command") | — |
+ *
+ * `uv pip <anything>` (fix round 3, finding 3) is denied at classification
+ * time, not treated as a directory-redirect flag gap — see the comment on
+ * `isNestedPipInvocation` in `package-managers.ts` for why nesting one
+ * manager's semantics inside another's entry was rejected in favor of a
+ * flat denial.
  */
 
 import { normalizeFlagToken } from "./exec-guard";
@@ -256,8 +262,11 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     // is needed on top of that.
     scopingConflict: () => undefined,
     // `--cwd` is global to yarn (any subcommand) — screened regardless of
-    // classification.
-    globalDirectoryConflict: (argv) => flagConflict(argv, ["--cwd"]),
+    // classification. `-C` is added for symmetry with pnpm's entry (fix
+    // round 3, finding 2) — yarn's own docs do not document a `-C` short
+    // alias, so this is an over-denial rather than a confirmed fact; that
+    // is the safe direction here, so it stays.
+    globalDirectoryConflict: (argv) => flagConflict(argv, ["--cwd", "-C"]),
     installDirectoryConflict: () => undefined,
     // `yarn workspace <name> ...` takes the manifest NAME, not a path.
     packageForm: (argv, ctx) => {
@@ -281,8 +290,11 @@ export const MANAGER_TABLE: Readonly<Record<string, ManagerEntry>> = {
     // would be the other general redirect, but it is already covered by
     // the same shared `DENIED_FLAGS` entry as npm's, so not duplicated.
     globalDirectoryConflict: (argv) => flagConflict(argv, ["--python"]),
-    // `--target`/`--root` only mean anything for `pip install`.
-    installDirectoryConflict: (argv) => flagConflict(argv, ["--target", "--root"]),
+    // `--target`/`--root` only mean anything for `pip install`. `-t` is
+    // pip's own documented short alias for `--target` (fix round 3,
+    // finding 1) — checked pip's docs for a short alias of `--root` and
+    // `--python` too; neither documents one, so only `-t` is added here.
+    installDirectoryConflict: (argv) => flagConflict(argv, ["--target", "-t", "--root"]),
     packageForm: (argv, ctx) => ({ argv, cwd: ctx.packageWorkdir }),
     rootForm: (argv, ctx) => ({ argv, cwd: ctx.repoRoot }),
   },
