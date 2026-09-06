@@ -95,7 +95,7 @@ export interface SessionTurnDispatchEvent extends DispatchEventBase {
    */
   readonly interactions?: readonly import("../agents/types").InteractionExchange[];
   /** Diagnostic only — never branch subscriber logic on this. */
-  readonly origin: "runAsSession" | "runTrackedSession";
+  readonly origin: "runAsSession";
 }
 
 export interface CompleteDispatchEvent extends DispatchEventBase {
@@ -129,7 +129,7 @@ export interface OperationCompletedEvent {
 
 export interface DispatchErrorEvent {
   readonly kind: "error";
-  readonly origin: "runAsSession" | "runTrackedSession" | "completeAs";
+  readonly origin: "runAsSession" | "completeAs";
   readonly agentName: string;
   readonly stage: PipelineStage;
   readonly storyId?: string;

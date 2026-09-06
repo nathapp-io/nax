@@ -192,9 +192,9 @@ describe("openSession()", () => {
   });
 
   test("resets live-handle with terminal descriptor to RUNNING (keepOpen scenario)", async () => {
-    // Reproduces the bug where TDD session-runner sets keepOpen=true so
-    // session-run-hop skips closeSession (handle stays in _liveHandles) but
-    // runTrackedSession still transitions the descriptor to COMPLETED.
+    // Reproduces the bug where a caller sets keepOpen=true so session-run-hop
+    // skips closeSession (handle stays in _liveHandles) while the descriptor is
+    // still transitioned to COMPLETED.
     // A later openSession call on the same name must not return the stale handle.
     let openCallCount = 0;
     const adapter = makeAgentAdapter({
@@ -212,7 +212,7 @@ describe("openSession()", () => {
     expect(sm.descriptor(name)?.state).toBe("RUNNING");
     expect(openCallCount).toBe(1);
 
-    // Simulate runTrackedSession completing without closeSession (keepOpen path):
+    // Simulate a turn completing without closeSession (keepOpen path):
     // descriptor goes COMPLETED but handle stays in _liveHandles
     const desc = sm.descriptor(name);
     assertDefined(desc, "descriptor");

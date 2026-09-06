@@ -7,14 +7,13 @@
  *
  * Boundaries under test:
  *   - runAsSession       → one SessionTurnDispatchEvent (origin:"runAsSession")
- *   - runTrackedSession  → zero SessionTurnDispatchEvents (dispatch deferred to runAsSession)
  *   - completeAs         → one CompleteDispatchEvent
  *   - runWithFallback    → N SessionTurnDispatchEvents + one OperationCompletedEvent
  *   - runAs envelope     → zero DispatchEvents + one OperationCompletedEvent
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeContextBundle } from "@test/helpers";
+import { makeContextBundle } from "@test/helpers";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { AgentManager } from "@/agents/manager";
 import type { SessionHandle, TurnResult } from "@/agents/types";
@@ -27,9 +26,6 @@ import type {
   SessionTurnDispatchEvent,
 } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
-import type { SessionManagerState } from "@/session/manager-run";
-import { runTrackedSession } from "@/session/manager-run";
-import type { SessionDescriptor } from "@/session/types";
 import { makeClient, makeSession } from "./acp/adapter.test";
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
@@ -218,101 +214,6 @@ describe("runAsSession — dispatch emission", () => {
 
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("network failure");
-  });
-});
-
-// ─── runTrackedSession ───────────────────────────────────────────────────────
-
-describe("runTrackedSession — dispatch emission", () => {
-  function makeDescriptor(role: SessionDescriptor["role"] = "implementer"): SessionDescriptor {
-    return {
-      id: "sess-001",
-      role,
-      state: "RUNNING",
-      agent: "claude",
-      workdir: "/tmp/repo",
-      featureName: "feat",
-      storyId: "US-002",
-      protocolIds: { recordId: null, sessionId: null },
-      completedStages: [],
-      createdAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
-    };
-  }
-
-  function makeState(descriptor: SessionDescriptor, bus: DispatchEventBus): SessionManagerState {
-    const sessions = new Map<string, SessionDescriptor>([[descriptor.id, descriptor]]);
-    return {
-      sessions,
-      transition: mock((_id, to) => {
-        const d = sessions.get(_id);
-        assertDefined(d, "sessions.get(_id)");
-        const updated = { ...d, state: to } as SessionDescriptor;
-        sessions.set(_id, updated);
-        return updated;
-      }),
-      bindHandle: mock((_id, handle, pids) => {
-        const d = sessions.get(_id);
-        assertDefined(d, "sessions.get(_id)");
-        const updated = { ...d, handle, protocolIds: pids };
-        sessions.set(_id, updated);
-        return updated;
-      }),
-      handoff: mock((_id, agent) => {
-        const d = sessions.get(_id);
-        assertDefined(d, "sessions.get(_id)");
-        const updated = { ...d, agent };
-        sessions.set(_id, updated);
-        return updated;
-      }),
-      persistDescriptor: mock(() => {}),
-      dispatchEvents: bus,
-      defaultAgent: "claude",
-      nameFor: mock(() => "nax-00000000-feat-US-002-implementer"),
-    };
-  }
-
-  test("emits zero session-turn events (dispatch deferred to agentManager.runAsSession)", async () => {
-    // runTrackedSession is a lifecycle wrapper (descriptor state transitions,
-    // bindHandle, handoff reconciliation). The SessionTurnDispatchEvent is
-    // emitted by agentManager.runAsSession, which is called from within
-    // runner.run() via createSessionRunHop. Emitting here too would produce
-    // duplicate audit files — see the duplicate-audit fix in PR #1007+.
-    const bus = new DispatchEventBus();
-    const descriptor = makeDescriptor("implementer");
-    const state = makeState(descriptor, bus);
-
-    const received: SessionTurnDispatchEvent[] = [];
-    bus.onDispatch((e) => {
-      if (e.kind === "session-turn") received.push(e);
-    });
-
-    const runner = {
-      run: mock(async () => ({
-        success: true,
-        exitCode: 0,
-        output: "impl result",
-        rateLimited: false,
-        durationMs: 100,
-        estimatedCostUsd: 0.002,
-        internalRoundTrips: 1,
-      })),
-    };
-
-    await runTrackedSession(state, descriptor.id, runner, {
-      runOptions: {
-        prompt: "implement it",
-        workdir: "/tmp/repo",
-        modelTier: "fast",
-        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
-        timeoutSeconds: 30,
-        config: DEFAULT_CONFIG,
-        storyId: "US-002",
-        pipelineStage: "run",
-      },
-    });
-
-    expect(received).toHaveLength(0);
   });
 });
 

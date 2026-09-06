@@ -136,27 +136,6 @@ export interface TransitionOptions {
   completedStage?: string;
 }
 
-/** Per-session agent runner — see SessionManager.runInSession for contract. */
-export type SessionAgentRunner = (
-  options: import("../agents/types").AgentRunOptions,
-) => Promise<import("../agents/types").AgentResult>;
-
-export interface SessionManagedRunRequest {
-  runOptions: import("../agents/types").AgentRunOptions;
-  signal?: AbortSignal;
-}
-
-export interface SessionRunClient {
-  run(request: SessionManagedRunRequest): Promise<import("../agents/types").AgentResult>;
-}
-
-/**
- * Options for SessionManager.runInSession (ADR-013 Phase 1).
- * Reserved for Phase 2 retry limits and abort signal overrides. Currently unused.
- */
-// biome-ignore lint/complexity/noBannedTypes: reserved empty interface for Phase 2 extensions
-export type SessionRunOptions = {};
-
 /**
  * Input to SessionManager.openSession — the SessionManager-level API.
  * Takes pipelineStage so SessionManager can resolve permissions before
@@ -342,17 +321,6 @@ export interface ISessionManager {
    * Most ops use this via callOp.
    */
   runInSession(name: string, prompt: string, opts: RunInSessionOpts): Promise<import("../agents/types").TurnResult>;
-
-  /**
-   * Run a tracked session through a caller-provided run client.
-   * Preserves the pre-ADR-019 bookkeeping behavior without importing AgentManager.
-   */
-  runInSession(
-    id: string,
-    runner: SessionRunClient,
-    request: SessionManagedRunRequest,
-    options?: SessionRunOptions,
-  ): Promise<import("../agents/types").AgentResult>;
 
   /**
    * Transactional multi-prompt form — open, run callback against live handle, close (try/finally).

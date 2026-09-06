@@ -7,18 +7,16 @@
  * See: docs/specs/SPEC-session-manager-integration.md
  */
 
-import type { AgentAdapter, AgentResult, SessionHandle, TurnResult } from "../agents/types";
+import type { AgentAdapter, SessionHandle, TurnResult } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import { type NaxConfig, trackedSpawnDeadlines } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import type { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
-import { DispatchEventBus, type IDispatchEventBus } from "../runtime/dispatch-events";
 import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import { _sessionManagerDeps, deriveNativeTranscriptDir, resolveProjectDirFromScratchDir } from "./manager-deps";
-import { runTrackedSession } from "./manager-run";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { selectModel } from "./model-selection";
 import { formatSessionName } from "./naming";
@@ -31,9 +29,6 @@ import type {
   RunInSessionOpts,
   SendPromptOpts,
   SessionDescriptor,
-  SessionManagedRunRequest,
-  SessionRunClient,
-  SessionRunOptions,
   SessionState,
   TransitionOptions,
 } from "./types";
@@ -70,8 +65,6 @@ export class SessionManager implements ISessionManager {
   private readonly _liveHandles = new Map<string, SessionHandle>();
   private _getAdapter: (name: string) => AgentAdapter | undefined;
   private _config: NaxConfig | undefined;
-  private _dispatchEvents: IDispatchEventBus;
-  private _defaultAgent: string;
   private _pidRegistry: PidRegistry | undefined;
   private _watchdogControllerRegistry: Map<string, () => Promise<void>> | undefined;
   /** Native transcript root, injected by `configureRuntime` — never the project tree. */
@@ -87,23 +80,14 @@ export class SessionManager implements ISessionManager {
   /** Disposer for the agent.call_ended subscription; cleared in `close()` if added. */
   private _agentStreamUnsubscribe: (() => void) | undefined;
 
-  constructor(opts?: {
-    getAdapter?: (name: string) => AgentAdapter | undefined;
-    config?: NaxConfig;
-    dispatchEvents?: IDispatchEventBus;
-    defaultAgent?: string;
-  }) {
+  constructor(opts?: { getAdapter?: (name: string) => AgentAdapter | undefined; config?: NaxConfig }) {
     this._getAdapter = opts?.getAdapter ?? (() => undefined);
     this._config = opts?.config;
-    this._dispatchEvents = opts?.dispatchEvents ?? new DispatchEventBus();
-    this._defaultAgent = opts?.defaultAgent ?? "claude";
   }
 
   configureRuntime(opts: {
     getAdapter?: (name: string) => AgentAdapter | undefined;
     config?: NaxConfig;
-    dispatchEvents?: IDispatchEventBus;
-    defaultAgent?: string;
     pidRegistry?: PidRegistry;
     watchdogControllerRegistry?: Map<string, () => Promise<void>>;
     onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
@@ -118,8 +102,6 @@ export class SessionManager implements ISessionManager {
   }): void {
     if (opts.getAdapter) this._getAdapter = opts.getAdapter;
     if (opts.config) this._config = opts.config;
-    if (opts.dispatchEvents) this._dispatchEvents = opts.dispatchEvents;
-    if (opts.defaultAgent) this._defaultAgent = opts.defaultAgent;
     if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
     if (opts.watchdogControllerRegistry) this._watchdogControllerRegistry = opts.watchdogControllerRegistry;
     if (opts.onStreamActivity) this._onStreamActivity = opts.onStreamActivity;
@@ -457,7 +439,7 @@ export class SessionManager implements ISessionManager {
       if (!liveDesc || (liveDesc.state !== "COMPLETED" && liveDesc.state !== "FAILED")) {
         return liveHandle;
       }
-      // Stale handle: keepOpen left it in _liveHandles but runTrackedSession already
+      // Stale handle: keepOpen left it in _liveHandles but closeSession already
       // transitioned the descriptor to a terminal state. Remove it so the full open path runs.
       this._liveHandles.delete(name);
     }
@@ -661,78 +643,29 @@ export class SessionManager implements ISessionManager {
 
   // ─── runInSession: prompt + callback overloads ──────────────────────────────
 
-  /**
-   * Tracked-session form — preserves descriptor lifecycle bookkeeping for
-   * callers that still provide a run client rather than direct prompt/callback
-   * usage. The session layer stays peer-oriented by depending only on the
-   * structural `run(request)` surface.
-   */
-  async runInSession(
-    id: string,
-    runner: SessionRunClient,
-    request: SessionManagedRunRequest,
-    options?: SessionRunOptions,
-  ): Promise<AgentResult>;
   /** Phase B prompt form — open, sendPrompt, close (try/finally). */
   async runInSession(name: string, prompt: string, opts: RunInSessionOpts): Promise<TurnResult>;
   /** Phase B callback form — open, run callback with live handle, close (try/finally). */
   async runInSession<T>(name: string, runFn: (handle: SessionHandle) => Promise<T>, opts: RunInSessionOpts): Promise<T>;
   async runInSession(
-    idOrName: string,
-    promptOrFnOrRunner: string | ((handle: SessionHandle) => Promise<unknown>) | SessionRunClient,
-    optsOrRequest: RunInSessionOpts | SessionManagedRunRequest,
-    _legacyOptions?: SessionRunOptions,
-  ): Promise<TurnResult | AgentResult | unknown> {
-    if (
-      typeof promptOrFnOrRunner === "object" &&
-      promptOrFnOrRunner !== null &&
-      "run" in promptOrFnOrRunner &&
-      typeof promptOrFnOrRunner.run === "function"
-    ) {
-      return this._runTrackedSession(
-        idOrName,
-        promptOrFnOrRunner as SessionRunClient,
-        optsOrRequest as SessionManagedRunRequest,
-      );
-    }
-
-    const opts = optsOrRequest as RunInSessionOpts;
-    const handle = await this.openSession(idOrName, opts);
+    name: string,
+    promptOrFn: string | ((handle: SessionHandle) => Promise<unknown>),
+    opts: RunInSessionOpts,
+  ): Promise<TurnResult | unknown> {
+    const handle = await this.openSession(name, opts);
 
     try {
-      if (typeof promptOrFnOrRunner === "string") {
+      if (typeof promptOrFn === "string") {
         // Forwarded whole: every SendPromptOpts member is optional and present
         // on RunInSessionOpts, and sendPrompt re-picks fields explicitly — so
         // new SendPromptOpts fields (e.g. codingTools) cannot be silently
         // dropped here. manager.ts is past its file-size baseline; do not grow.
-        return await this.sendPrompt(handle, promptOrFnOrRunner, opts);
+        return await this.sendPrompt(handle, promptOrFn, opts);
       }
-      return await (promptOrFnOrRunner as (h: SessionHandle) => Promise<unknown>)(handle);
+      return await promptOrFn(handle);
     } finally {
       await this.closeSession(handle);
     }
-  }
-
-  private async _runTrackedSession(
-    id: string,
-    runner: SessionRunClient,
-    request: SessionManagedRunRequest,
-  ): Promise<AgentResult> {
-    return runTrackedSession(
-      {
-        sessions: this._sessions,
-        transition: (sid, to, opts) => this.transition(sid, to, opts),
-        bindHandle: (sid, handle, protocolIds) => this.bindHandle(sid, handle, protocolIds),
-        handoff: (sid, agent, reason) => this.handoff(sid, agent, reason),
-        persistDescriptor: (desc) => this._persistDescriptor(desc),
-        dispatchEvents: this._dispatchEvents,
-        defaultAgent: this._defaultAgent,
-        nameFor: (req) => this.nameFor(req),
-      },
-      id,
-      runner,
-      request,
-    );
   }
 
   sweepOrphans(ttlMs = DEFAULT_ORPHAN_TTL_MS): number {

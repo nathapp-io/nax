@@ -280,7 +280,6 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     opts?.reviewAuditor ??
     (config.review?.audit?.enabled ? new ReviewAuditor(runId, outputDir) : createNoOpReviewAuditor());
 
-  const defaultAgent = config.agent?.default ?? "claude";
   const pidRegistry = opts?.pidRegistry ?? new PidRegistry(workdir);
 
   const watchdogControllerRegistry = new Map<string, () => Promise<void>>();
@@ -292,8 +291,6 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     sessionManager.configureRuntime({
       config,
       getAdapter: (name) => agentManager?.getAgent(name),
-      dispatchEvents,
-      defaultAgent,
       pidRegistry,
       watchdogControllerRegistry,
       onStreamActivity: (event) => agentStreamEvents.emitAgentStream(event.runId ? event : { ...event, runId }),

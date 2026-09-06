@@ -3,10 +3,9 @@
  * run() path.
  *
  * This is nax#1744 repeated one layer up. `buildCodingToolSupport` is the only
- * producer of a live CodingToolRuntime, and it was called from
- * `session/manager-run.ts` (runTrackedSession) — a function reachable only from
- * `SessionManager.runInSession`, which has no production caller. `callOp`
- * dispatches through `buildHopCallback` instead, which forwarded a
+ * producer of a live CodingToolRuntime, and its sole caller used to be a
+ * tracked-session path no production code reached (deleted in nax#1903).
+ * `callOp` dispatches through `buildHopCallback` instead, which forwarded a
  * `codingTools` field nothing on that path ever set.
  *
  * Every seam passed its own unit test while the chain was dead end to end, so
