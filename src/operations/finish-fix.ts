@@ -35,7 +35,7 @@ export const finishFixOp: RunOperationWithHooks<FinishFixInput, FixOutcome, Fini
   session: { role: "finish-fix", lifetime: "fresh" },
   // No GitCommit: the prompt explicitly forbids committing — "nax-finish
   // commits and pushes your edits itself" (buildFixPrompt, finish/review/prompt.ts).
-  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand"],
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "Exec", "RequestCapability"],
   model: (input) => input.model,
   // `finish.timeouts.stepMs` when set, otherwise the run's own session timeout.
   // Not left undefined: `callOp` does fall back to `execution.sessionTimeoutSeconds`

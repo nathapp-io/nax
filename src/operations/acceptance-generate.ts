@@ -69,7 +69,7 @@ export const acceptanceGenerateOp: RunOperationWithHooks<
   session: { role: "acceptance-gen", lifetime: "fresh" },
   // buildGeneratorFromPRDPrompt's "File output (REQUIRED)" bullet instructs the
   // agent to write the test file directly, never reply with the code inline.
-  tools: ["Read", "Glob", "Grep", "Write"],
+  tools: ["Read", "Glob", "Grep", "Write", "Exec", "RequestCapability"],
   config: acceptanceGenConfigSelector,
   model: (_input, ctx) => ctx.config.acceptance.generateModel ?? ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
