@@ -13,6 +13,7 @@ import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { killProcessGroup } from "../utils/process-kill";
+import { withAgentOutputEnv } from "../verification/executor";
 
 /** Default timeout for quality commands — matches legacy REVIEW_CHECK_TIMEOUT_MS. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -133,6 +134,10 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
     for (const key of stripEnvVars ?? []) {
       delete baseEnv[key];
     }
+    // Opt the child into agent-friendly output (failures + summary, no pass
+    // roll call). Shared with verification/executor.ts so the two spawn sites
+    // cannot drift; a caller that strips AGENT keeps it stripped.
+    const agentEnv = withAgentOutputEnv(baseEnv, stripEnvVars ?? []);
 
     // Execute via shell to preserve quoting semantics of configured commands.
     // Splitting on whitespace loses quoted args and escaped spaces.
@@ -141,7 +146,7 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
-      env: { ...baseEnv, ...(env ?? {}) },
+      env: { ...agentEnv, ...(env ?? {}) },
       // Bun.spawn does not setpgid children into their own group by default, so
       // killProcessGroup(-pid) on timeout would target a group the shell isn't
       // actually the leader of (ESRCH -> falls back to killing only the /bin/sh

@@ -173,9 +173,6 @@ export const NaxConfigSchema = z
       drainTimeoutMs: 2000,
       shell: "/bin/sh",
       stripEnvVars: [
-        "CLAUDECODE",
-        "REPL_ID",
-        "AGENT",
         "GITLAB_ACCESS_TOKEN",
         "GITHUB_TOKEN",
         "GITHUB_ACCESS_TOKEN",

@@ -29,13 +29,34 @@ export function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<
 }
 
 /**
- * Normalize environment variables for verification subprocess.
+ * Env vars that tell an agent-aware test runner to emit failures-only output.
+ * `bun test` honours all three (https://bun.com/docs/test): failures keep their
+ * full code frame, diff and stack, and the summary line is preserved — only the
+ * per-test pass/skip/todo roll call is dropped.
  *
- * Force standard output mode during orchestrator-controlled test runs by
- * unsetting AI-optimized env vars (CLAUDECODE, REPL_ID, AGENT).
+ * Exported so the quality runner applies the identical rule at its own spawn
+ * site; the two env paths must not drift.
  */
-const DEFAULT_STRIP_ENV_VARS = ["CLAUDECODE", "REPL_ID", "AGENT"];
+export const AGENT_OUTPUT_MARKERS = ["CLAUDECODE", "REPL_ID", "AGENT"] as const;
 
+/**
+ * Nothing is stripped unless the caller asks. This used to default to
+ * AGENT_OUTPUT_MARKERS in order to "force standard output mode", which had it
+ * exactly backwards: the roll call it restored is the one output nax never
+ * reads, and it cost 12x on a single-file run and 241x on a directory
+ * (measured, bun 1.4.0). Secret stripping is configured, not defaulted here —
+ * see `quality.stripEnvVars`.
+ */
+const DEFAULT_STRIP_ENV_VARS: readonly string[] = [];
+
+/**
+ * Normalize environment variables for a verification subprocess.
+ *
+ * Strips what the caller asked for, then opts the child into agent-friendly
+ * output. `AGENT=1` is only added when the caller carries no marker of its own
+ * — so an inherited CLAUDECODE/REPL_ID is left to speak for itself, and an
+ * explicit strip of AGENT is not silently undone.
+ */
 export function normalizeEnvironment(
   env: Record<string, string | undefined>,
   stripVars?: string[],
@@ -47,7 +68,19 @@ export function normalizeEnvironment(
     delete normalized[varName];
   }
 
-  return normalized;
+  return withAgentOutputEnv(normalized, varsToStrip);
+}
+
+/**
+ * Add `AGENT=1` unless a marker is already present or the caller stripped it.
+ */
+export function withAgentOutputEnv(
+  env: Record<string, string | undefined>,
+  strippedVars: readonly string[] = [],
+): Record<string, string | undefined> {
+  if (strippedVars.includes("AGENT")) return env;
+  if (AGENT_OUTPUT_MARKERS.some((marker) => env[marker] !== undefined)) return env;
+  return { ...env, AGENT: "1" };
 }
 
 /**

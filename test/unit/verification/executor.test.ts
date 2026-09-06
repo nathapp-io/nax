@@ -41,10 +41,30 @@ describe("appendForceExitFlag (VER-1)", () => {
 });
 
 describe("normalizeEnvironment", () => {
-  test("strips AI-optimized env vars by default", () => {
+  // nax#agent-output: these three are how `bun test` (and other agent-aware
+  // runners) are told to emit failures-only output. Stripping them made every
+  // test command 12-240x more verbose for zero diagnostic gain — the detail
+  // nax parses (failures, summary) survives agent mode intact.
+  test("preserves agent-output markers by default", () => {
     const out = normalizeEnvironment({ CLAUDECODE: "1", REPL_ID: "x", AGENT: "1", PATH: "/usr/bin" });
-    expect(out.CLAUDECODE).toBeUndefined();
-    expect(out.REPL_ID).toBeUndefined();
+    expect(out.CLAUDECODE).toBe("1");
+    expect(out.REPL_ID).toBe("x");
+    expect(out.AGENT).toBe("1");
+    expect(out.PATH).toBe("/usr/bin");
+  });
+
+  test("sets AGENT=1 when the caller carries no agent-output marker", () => {
+    const out = normalizeEnvironment({ PATH: "/usr/bin" });
+    expect(out.AGENT).toBe("1");
+  });
+
+  test("does not add AGENT when another marker is already present", () => {
+    expect(normalizeEnvironment({ CLAUDECODE: "1" }).AGENT).toBeUndefined();
+    expect(normalizeEnvironment({ REPL_ID: "x" }).AGENT).toBeUndefined();
+  });
+
+  test("an explicit strip of AGENT is honoured and not re-added", () => {
+    const out = normalizeEnvironment({ AGENT: "1", PATH: "/usr/bin" }, ["AGENT"]);
     expect(out.AGENT).toBeUndefined();
     expect(out.PATH).toBe("/usr/bin");
   });
