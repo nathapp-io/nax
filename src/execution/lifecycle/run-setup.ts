@@ -27,7 +27,7 @@ import type { PRD } from "@/prd";
 import { countStories, loadPRD, savePRD } from "@/prd";
 import { detectProjectProfile } from "@/project";
 import { createRuntime, type NaxRuntime } from "@/runtime";
-import { SessionManager } from "@/session";
+import { SessionManager, sweepFeatureTranscripts } from "@/session";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
@@ -41,6 +41,7 @@ export const _runSetupDeps = {
   detectProjectProfile,
   createRuntime,
   installCrashHandlers,
+  sweepFeatureTranscripts,
 };
 
 /**
@@ -398,6 +399,17 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // Everything after lock acquisition is wrapped in try-catch to ensure
     // the lock is released if any setup step fails (FIX-H16)
     try {
+      // US-002 AC10/AC11: prune retained transcripts only after the run lock
+      // prevents concurrent setup from racing over the same files.
+      const sweptTranscripts = await _runSetupDeps.sweepFeatureTranscripts({
+        featureName: options.feature,
+        transcriptRoot: runtime.outputDir,
+        dryRun: options.dryRun,
+      });
+      if (sweptTranscripts > 0) {
+        logger?.info("session", "Swept retained transcripts at run setup", { sweptTranscripts });
+      }
+
       // ── Detect project profile (US-003) and log explicit vs auto-detected values ──
       const existingProjectConfig = config.project ?? {};
       const detectedProfile = await _runSetupDeps.detectProjectProfile(workdir, existingProjectConfig);

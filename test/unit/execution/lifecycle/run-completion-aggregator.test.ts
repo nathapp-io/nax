@@ -57,6 +57,7 @@ function makeEmptySnapshot(): CostSnapshot {
     totalOutputTokens: 0,
     callCount: 0,
     errorCount: 0,
+    totalErrorCostUsd: 0,
   };
 }
 

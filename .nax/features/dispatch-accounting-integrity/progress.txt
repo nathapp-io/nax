@@ -1,0 +1,4 @@
+[2026-09-06T08:39:23.963Z] US-001 — PASSED — Failed dispatches record spent usage — Cost: $7.3973
+[2026-09-06T09:50:38.266Z] US-004 — PASSED — Claim project identity before plan dispatch — Cost: $0.5059
+[2026-09-06T11:48:49.815Z] US-002 — PASSED — Sweep retained transcripts at run setup — Cost: $1.1584
+[2026-09-06T13:35:00.051Z] US-003 — PASSED — Preserve audited coding-tool runtime in tracked sessions — Cost: $0.7926

@@ -107,6 +107,15 @@ export function attachCostSubscriber(
   });
 
   const offError = bus.onDispatchError((event: DispatchErrorEvent) => {
+    // US-001: failed dispatches record spent usage. Lift tokenUsage,
+    // estimatedCostUsd, exactCostUsd and sessionRole off the dispatch event
+    // when the producer supplied them — a SessionTurnError that carries
+    // BUG-57 usage lands here as a thrown turn. `tokens` stays undefined
+    // when no usage arrived, so a zeroed `tokens` object never recreates
+    // the "failed vs cost zero" ambiguity the `kind:"error"` discriminator
+    // was added for.
+    const tu = event.tokenUsage;
+    const costUsd = event.exactCostUsd ?? event.estimatedCostUsd;
     const errorEvent: CostErrorEvent = {
       kind: "error",
       ts: event.timestamp,
@@ -120,6 +129,20 @@ export function attachCostSubscriber(
       scopeId: event.scopeId,
       errorCode: event.errorCode,
       durationMs: event.durationMs,
+      ...(event.sessionRole !== undefined ? { sessionRole: event.sessionRole } : {}),
+      ...(tu
+        ? {
+            tokens: {
+              input: tu.inputTokens ?? 0,
+              output: tu.outputTokens ?? 0,
+              cacheRead: tu.cacheReadInputTokens,
+              cacheWrite: tu.cacheCreationInputTokens,
+            },
+          }
+        : {}),
+      ...(event.estimatedCostUsd !== undefined ? { estimatedCostUsd: event.estimatedCostUsd } : {}),
+      ...(event.exactCostUsd !== undefined ? { exactCostUsd: event.exactCostUsd } : {}),
+      ...(costUsd !== undefined ? { costUsd } : {}),
     };
     aggregator.recordError(errorEvent);
   });

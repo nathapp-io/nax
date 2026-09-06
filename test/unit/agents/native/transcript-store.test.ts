@@ -112,7 +112,7 @@ describe("pruneRetainedTranscripts", () => {
   });
 
   test("does nothing when the directory does not exist", async () => {
-    await expect(pruneRetainedTranscripts(join(dir, "missing"), 5)).resolves.toBeUndefined();
+    await expect(pruneRetainedTranscripts(join(dir, "missing"), 5)).resolves.toBe(0);
   });
 
   test("does nothing when the count is at or below the cap", async () => {
@@ -160,5 +160,101 @@ describe("pruneRetainedTranscripts", () => {
 
   test("exports the documented default cap", () => {
     expect(MAX_RETAINED_TRANSCRIPTS).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-002 AC1–AC3: pruneRetainedTranscripts returns Promise<number> — the count
+// of deleted files. The existing describe block above asserted `undefined`
+// (matching the old void return); the per-AC tests below pin the new contract.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("pruneRetainedTranscripts — US-002 return value", () => {
+  beforeEach(() => {
+    _resetTranscriptTruncationWarningForTests();
+  });
+
+  test("AC1: returns 3 when 53 transcript files exceed maxRetained 50", async () => {
+    // 53 > 50 → expect 3 deletions.
+    for (let i = 0; i < 53; i++) {
+      await saveTranscript(dir, `sess-${String(i).padStart(3, "0")}`, msgs);
+    }
+
+    const deleted = await pruneRetainedTranscripts(dir, 50);
+
+    expect(deleted).toBe(3);
+  });
+
+  test("AC1: leaves exactly 50 files on disk after deleting the excess from 53", async () => {
+    for (let i = 0; i < 53; i++) {
+      await saveTranscript(dir, `sess-${String(i).padStart(3, "0")}`, msgs);
+    }
+
+    await pruneRetainedTranscripts(dir, 50);
+
+    const remaining = (await readdir(dir)).filter((n) => n.endsWith(".transcript.json"));
+    expect(remaining).toHaveLength(50);
+  });
+
+  test("AC2: returns 0 when the directory holds fewer files than maxRetained", async () => {
+    for (const name of ["sess-a", "sess-b", "sess-c"]) {
+      await saveTranscript(dir, name, msgs);
+    }
+    const before = (await readdir(dir)).filter((n) => n.endsWith(".transcript.json")).sort();
+
+    const deleted = await pruneRetainedTranscripts(dir, 50);
+
+    expect(deleted).toBe(0);
+    const after = (await readdir(dir)).filter((n) => n.endsWith(".transcript.json")).sort();
+    expect(after).toEqual(before);
+  });
+
+  test("AC3: removes oldest transcripts first by mtime, leaving exactly maxRetained most-recent", async () => {
+    // 5 transcripts spaced 1 day apart in mtime; cap=2 keeps the two newest.
+    const names = ["t-2026-01-01", "t-2026-01-02", "t-2026-01-03", "t-2026-01-04", "t-2026-01-05"] as const;
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i] as string;
+      await saveTranscript(dir, name, msgs);
+      const mtime = new Date(2026, 0, 1 + i);
+      await utimes(transcriptPath(dir, name), mtime, mtime);
+    }
+
+    const deleted = await pruneRetainedTranscripts(dir, 2);
+
+    expect(deleted).toBe(3);
+    const remaining = (await readdir(dir)).filter((n) => n.endsWith(".transcript.json")).sort();
+    expect(remaining).toEqual(["t-2026-01-04.transcript.json", "t-2026-01-05.transcript.json"]);
+  });
+
+  test("AC3 (boundary): returns 0 and keeps everything when count equals maxRetained", async () => {
+    for (let i = 0; i < 50; i++) {
+      await saveTranscript(dir, `sess-${String(i).padStart(3, "0")}`, msgs);
+    }
+
+    const deleted = await pruneRetainedTranscripts(dir, 50);
+
+    expect(deleted).toBe(0);
+    const remaining = (await readdir(dir)).filter((n) => n.endsWith(".transcript.json"));
+    expect(remaining).toHaveLength(50);
+  });
+
+  test("AC3 (boundary): deletes exactly 1 from a directory of 51 with maxRetained 50", async () => {
+    for (let i = 0; i < 51; i++) {
+      await saveTranscript(dir, `sess-${String(i).padStart(3, "0")}`, msgs);
+    }
+
+    const deleted = await pruneRetainedTranscripts(dir, 50);
+
+    expect(deleted).toBe(1);
+    const remaining = (await readdir(dir)).filter((n) => n.endsWith(".transcript.json"));
+    expect(remaining).toHaveLength(50);
+  });
+
+  test("AC9 prerequisite: returns 0 (not throws) when the directory does not exist", async () => {
+    // The derived directory in setupRun may not exist yet on a fresh run;
+    // sweepFeatureTranscripts delegates here, so this must be a safe no-op,
+    // not a thrown ENOENT.
+    const deleted = await pruneRetainedTranscripts(join(dir, "never-created"), 50);
+    expect(deleted).toBe(0);
   });
 });

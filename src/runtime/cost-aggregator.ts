@@ -105,6 +105,20 @@ export interface CostErrorEvent {
   readonly scopeId?: string;
   readonly errorCode: string;
   readonly durationMs: number;
+  // US-001 (failed-dispatch cost attribution). `tokens` stays optional and
+  // is left undefined when the dispatch error carried no usage — a zeroed
+  // `tokens` would re-create the "failed vs cost zero" ambiguity the `kind`
+  // discriminator was added for.
+  readonly sessionRole?: string;
+  readonly tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
+  readonly estimatedCostUsd?: number;
+  readonly exactCostUsd?: number;
+  /**
+   * Canonical cost for budget/totals: exact when available, else estimated.
+   * `totalCostUsd` keeps its successful-spend meaning; failed spend is
+   * summed separately into `CostSnapshot.totalErrorCostUsd`.
+   */
+  readonly costUsd?: number;
 }
 
 export interface CostSnapshot {
@@ -115,6 +129,15 @@ export interface CostSnapshot {
   readonly totalOutputTokens: number;
   readonly callCount: number;
   readonly errorCount: number;
+  /**
+   * Sum of `costUsd` from error rows — spent usage on dispatches that
+   * threw. `totalCostUsd` keeps its successful-spend meaning, so failed
+   * spend becomes visible without silently re-basing every historical
+   * comparison (US-001).
+   *
+   * Always numeric: a snapshot with no failed dispatches reports zero.
+   */
+  readonly totalErrorCostUsd: number;
 }
 
 export interface CostScopeHandle {
@@ -163,6 +186,7 @@ const EMPTY_SNAPSHOT: CostSnapshot = {
   totalOutputTokens: 0,
   callCount: 0,
   errorCount: 0,
+  totalErrorCostUsd: 0,
 };
 
 function makeCorrelationId(): string {
@@ -222,6 +246,7 @@ function emptySnap(): CostSnapshot {
     totalOutputTokens: 0,
     callCount: 0,
     errorCount: 0,
+    totalErrorCostUsd: 0,
   };
 }
 
@@ -234,13 +259,15 @@ function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
     totalOutputTokens: snap.totalOutputTokens + e.tokens.output,
     callCount: snap.callCount + 1,
     errorCount: snap.errorCount,
+    totalErrorCostUsd: snap.totalErrorCostUsd,
   };
 }
 
-function accumulateError(snap: CostSnapshot): CostSnapshot {
+function accumulateError(snap: CostSnapshot, e?: CostErrorEvent): CostSnapshot {
   return {
     ...snap,
     errorCount: snap.errorCount + 1,
+    totalErrorCostUsd: snap.totalErrorCostUsd + (e?.costUsd ?? 0),
   };
 }
 
@@ -278,15 +305,16 @@ export class CostAggregator implements ICostAggregator {
   snapshot(): CostSnapshot {
     const allEvents = [...this._events, ...this._inFlightEvents];
     const allErrors = [...this._errors, ...this._inFlightErrors];
-    return allEvents.reduce(accumulate, { ...emptySnap(), errorCount: allErrors.length });
+    const eventReduced = allEvents.reduce(accumulate, emptySnap());
+    return allErrors.reduce((snap, e) => accumulateError(snap, e), eventReduced);
   }
 
   byAgent(): Record<string, CostSnapshot> {
     const m: Record<string, CostSnapshot> = {};
     for (const e of this._events) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
     for (const e of this._inFlightEvents) m[e.agentName] = accumulate(m[e.agentName] ?? emptySnap(), e);
-    for (const e of this._errors) m[e.agentName] = accumulateError(m[e.agentName] ?? emptySnap());
-    for (const e of this._inFlightErrors) m[e.agentName] = accumulateError(m[e.agentName] ?? emptySnap());
+    for (const e of this._errors) m[e.agentName] = accumulateError(m[e.agentName] ?? emptySnap(), e);
+    for (const e of this._inFlightErrors) m[e.agentName] = accumulateError(m[e.agentName] ?? emptySnap(), e);
     return m;
   }
 
@@ -302,11 +330,11 @@ export class CostAggregator implements ICostAggregator {
     }
     for (const e of this._errors) {
       const k = e.stage ?? "unknown";
-      m[k] = accumulateError(m[k] ?? emptySnap());
+      m[k] = accumulateError(m[k] ?? emptySnap(), e);
     }
     for (const e of this._inFlightErrors) {
       const k = e.stage ?? "unknown";
-      m[k] = accumulateError(m[k] ?? emptySnap());
+      m[k] = accumulateError(m[k] ?? emptySnap(), e);
     }
     return m;
   }
@@ -323,11 +351,11 @@ export class CostAggregator implements ICostAggregator {
     }
     for (const e of this._errors) {
       const k = e.storyId ?? "unknown";
-      m[k] = accumulateError(m[k] ?? emptySnap());
+      m[k] = accumulateError(m[k] ?? emptySnap(), e);
     }
     for (const e of this._inFlightErrors) {
       const k = e.storyId ?? "unknown";
-      m[k] = accumulateError(m[k] ?? emptySnap());
+      m[k] = accumulateError(m[k] ?? emptySnap(), e);
     }
     return m;
   }
@@ -340,7 +368,7 @@ export class CostAggregator implements ICostAggregator {
     }
     for (const e of [...this._errors, ...this._inFlightErrors]) {
       if (e.callId === undefined) continue;
-      m[e.callId] = accumulateError(m[e.callId] ?? emptySnap());
+      m[e.callId] = accumulateError(m[e.callId] ?? emptySnap(), e);
     }
     return m;
   }
@@ -353,7 +381,7 @@ export class CostAggregator implements ICostAggregator {
     }
     for (const e of [...this._errors, ...this._inFlightErrors]) {
       if (e.scopeId === undefined) continue;
-      m[e.scopeId] = accumulateError(m[e.scopeId] ?? emptySnap());
+      m[e.scopeId] = accumulateError(m[e.scopeId] ?? emptySnap(), e);
     }
     return m;
   }
@@ -369,7 +397,7 @@ export class CostAggregator implements ICostAggregator {
         const matching = [...this._events, ...this._inFlightEvents].filter((e) => e.scopeId === id);
         const matchingErrors = [...this._errors, ...this._inFlightErrors].filter((e) => e.scopeId === id);
         const eventSnapshot = matching.reduce(accumulate, emptySnap());
-        return matchingErrors.reduce((snap) => accumulateError(snap), eventSnapshot);
+        return matchingErrors.reduce((snap, e) => accumulateError(snap, e), eventSnapshot);
       },
       close: (): void => {
         if (closed) return;

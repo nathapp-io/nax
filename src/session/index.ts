@@ -19,6 +19,8 @@ export type {
 export { appendScratchEntry, digestFilePath, readDigestFile, scratchFilePath, writeDigestFile } from "./scratch-writer";
 export type { SessionKeeperOptions, SessionKeeperSendOptions } from "./session-keeper";
 export { SessionKeeper } from "./session-keeper";
+export type { SweepFeatureTranscriptsOptions } from "./transcript-sweep";
+export { sweepFeatureTranscripts } from "./transcript-sweep";
 export type {
   CreateSessionOptions,
   ISessionManager,
