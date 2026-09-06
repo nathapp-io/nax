@@ -87,6 +87,16 @@ export interface PostRunStatus {
 }
 
 // ============================================================================
+// Gates Status (US-004)
+// ============================================================================
+
+/** Gate summary derived from postRun phases */
+export interface GatesStatus {
+  acceptance: PostRunPhaseStatus;
+  regression: PostRunPhaseStatus;
+}
+
+// ============================================================================
 // NaxStatusFile Interface
 // ============================================================================
 
@@ -189,6 +199,17 @@ export interface NaxStatusFile {
 
   /** Post-run phase statuses (present when post-run has been initiated) */
   postRun?: PostRunStatus;
+
+  /**
+   * Gate summary derived from postRun (US-004).
+   *
+   * Mirrors `postRun.acceptance.status` and `postRun.regression.status`,
+   * except that `acceptance` is `"failed"` whenever `postRun.acceptance.skippedPackages`
+   * is non-empty — a missing acceptance test target is a failure.
+   *
+   * Omitted when `postRun` is absent.
+   */
+  gates?: GatesStatus;
 }
 
 // ============================================================================
@@ -322,6 +343,18 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
 
   if (state.postRun) {
     snapshot.postRun = state.postRun;
+
+    // Derive gates summary from postRun (US-004)
+    // acceptance is "failed" if skippedPackages is non-empty, otherwise mirrors the status
+    const acceptanceStatus: PostRunPhaseStatus =
+      state.postRun.acceptance.skippedPackages && state.postRun.acceptance.skippedPackages.length > 0
+        ? "failed"
+        : state.postRun.acceptance.status;
+
+    snapshot.gates = {
+      acceptance: acceptanceStatus,
+      regression: state.postRun.regression.status,
+    };
   }
 
   return snapshot;
