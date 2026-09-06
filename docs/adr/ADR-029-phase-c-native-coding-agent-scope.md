@@ -320,6 +320,20 @@ model removed `types: ["bun-types"]` from `tsconfig.json` and narrowed
 file a `RequestCapability` row; it tried to author a command string through a
 field built to accept only a declared key.
 
+**The limits of this evidence, stated plainly.** This feature has unit and
+integration coverage only. It has not been exercised in a live agent run. The
+`hello-lint` ledger quoted above is evidence of the defect — that a model
+routes around an absent capability rather than requesting it — and is not
+evidence that the fix works in production; no ledger row above was produced by
+this branch. The integration test installs from a local path in a temp
+fixture, and no live model has yet chosen to call `Exec`, so nothing here
+shows a model will reach for the new branch rather than continuing to work
+around the gap the way the 2026-09-06 run did — that disposition is precisely
+what is untested. The built-in allowlist itself was assembled from each
+manager's documented install and restore verbs, not from an observed
+distribution of denials, and it is expected to be wrong somewhere; that is
+what the reopen triggers below exist to catch, not a hypothetical.
+
 **What would reopen it.** Any denial pattern in the tool-audit ledger showing
 the allowlist is systematically too narrow — install-shaped calls refused
 across multiple real stories for managers or verbs a project legitimately
