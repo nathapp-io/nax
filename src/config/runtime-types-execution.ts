@@ -34,6 +34,20 @@ export interface MutationCheckConfig {
   timeoutSeconds: number;
 }
 
+/** Lifecycle-script gate for agent-triggered installs (`install.allowScripts`). */
+export interface InstallConfig {
+  /**
+   * Lifecycle scripts are off for agent-triggered installs.
+   *
+   * A postinstall script is arbitrary code from a third party running in the
+   * user's repo with the user's environment. nax appends the manager's
+   * no-scripts flag, and the model cannot remove it because nax builds the
+   * argv. A repo that genuinely needs native builds opts out here, in config
+   * a human wrote and a reviewer can grep for. (default: false)
+   */
+  allowScripts: boolean;
+}
+
 /** Smart test runner configuration (STR-007) */
 export interface SmartTestRunnerConfig {
   /** Enable smart test runner (default: true) */

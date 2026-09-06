@@ -160,10 +160,12 @@ export async function resolveCodingToolSupport(
   const widenedConfig = options.config as
     | {
         quality?: { commands?: Partial<Record<string, string>>; stripEnvVars?: unknown };
-        // `install.allowScripts` does not exist in the schema yet (Task 8 adds
-        // it) — read defensively and default to false rather than adding an
-        // unreleased field to the config type here.
-        install?: { allowScripts?: unknown };
+        // AgentManagerConfig (agentManagerConfigSelector) only picks
+        // agent/execution/profile, so `install` is not in its type even
+        // though both hops source this from the full NaxConfig at runtime
+        // (see RULING F2 above). Widen locally rather than broaden the
+        // shared selector.
+        install?: { allowScripts?: boolean };
       }
     | undefined;
   const quality = widenedConfig?.quality;
@@ -171,7 +173,7 @@ export async function resolveCodingToolSupport(
   const stripEnvVars = Array.isArray(quality?.stripEnvVars)
     ? quality.stripEnvVars.filter((value): value is string => typeof value === "string")
     : [];
-  const allowScripts = widenedConfig?.install?.allowScripts === true;
+  const allowScripts = widenedConfig?.install?.allowScripts ?? false;
   const declaredCommands = new Map(
     Object.entries(commands).filter((e): e is [string, string] => typeof e[1] === "string"),
   );

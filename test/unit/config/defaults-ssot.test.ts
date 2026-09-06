@@ -25,6 +25,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "autoRoute",
   "routing",
   "execution",
+  "install",
   "quality",
   "tdd",
   "constitution",

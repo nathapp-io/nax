@@ -12,6 +12,7 @@ import type { AutoRouteConfig } from "./runtime-types-auto-route";
 import type { ContextConfig } from "./runtime-types-context";
 import type {
   FlakeDetectionConfig,
+  InstallConfig,
   MutationCheckConfig,
   SmartTestRunnerConfig,
   WorktreeDependenciesConfig,
@@ -167,7 +168,7 @@ export interface ExecutionConfig {
   mutationCheck: MutationCheckConfig;
 }
 
-export type { FlakeDetectionConfig, MutationCheckConfig } from "./runtime-types-execution";
+export type { FlakeDetectionConfig, InstallConfig, MutationCheckConfig } from "./runtime-types-execution";
 
 /** Quality gate config */
 export interface QualityConfig {
@@ -512,6 +513,8 @@ export interface NaxConfig {
   routing: RoutingConfig;
   /** Execution limits */
   execution: ExecutionConfig;
+  /** Lifecycle-script gate for agent-triggered installs */
+  install: InstallConfig;
   /** Quality gates */
   quality: QualityConfig;
   /** TDD settings */

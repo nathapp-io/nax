@@ -33,6 +33,7 @@ export type {
   FeatureContextEngineConfig,
   FinishTimeoutsConfig,
   IdleWatchdogConfig,
+  InstallConfig,
   InteractionConfig,
   LlmRoutingConfig,
   NaxConfig,

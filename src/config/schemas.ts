@@ -15,6 +15,7 @@ import {
   ConstitutionConfigSchema,
   DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
   ExecutionConfigSchema,
+  InstallConfigSchema,
   QualityConfigSchema,
   RectificationConfigSchema,
   RegressionGateConfigSchema,
@@ -152,6 +153,7 @@ export const NaxConfigSchema = z
         timeoutSeconds: 60,
       },
     } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
+    install: InstallConfigSchema.default({ allowScripts: false }),
     quality: QualityConfigSchema.default({
       scopeTestThreshold: 10,
       commands: {},
