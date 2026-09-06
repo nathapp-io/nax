@@ -34,6 +34,7 @@ import {
   nativeSessionCompaction,
   nativeSessionStreamHooks,
   nativeSessionTimeouts,
+  nativeSessionTransportRetry,
   openNativeSession,
 } from "./session/session";
 import { buildNativeStreamEvent } from "./session/turn-events";
@@ -275,6 +276,9 @@ export class NativeAgentAdapter implements AgentAdapter {
         contextWindow: resolveContextWindow(handle.modelDef?.contextWindow, resolved.contextWindow),
         ...(nativeSessionCompaction.get(handle.id) !== undefined
           ? { compaction: nativeSessionCompaction.get(handle.id) }
+          : {}),
+        ...(nativeSessionTransportRetry.get(handle.id) !== undefined
+          ? { transportRetry: nativeSessionTransportRetry.get(handle.id) }
           : {}),
         pricingSource,
         onActivity: (activity) => {

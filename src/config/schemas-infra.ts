@@ -268,6 +268,30 @@ const AgentAcpConfigSchema = z.object({
   trackedSpawnStartupDeadlineMs: z.number().int().positive().default(30_000),
 });
 
+/**
+ * nax#1870: bounded retry for a transport/overloaded fault from the native
+ * turn loop's `complete()` call — the native counterpart to
+ * `agent.acp.promptRetries`. Defaults (3 attempts, 2000ms base) are chosen
+ * against the issue's own evidence: the observed kills came after single
+ * silent gaps of 130s and 258s with no retry of any kind, while several
+ * shorter gaps (85-150s) self-recovered inside the SAME attempt — so even a
+ * modest bounded retry (three attempts, jittered exponential backoff from
+ * 2s: ~2s, ~4s) covers a meaningful share of transient stalls at a cost of
+ * seconds, against the alternative of discarding a multi-minute session.
+ * Unlike `promptRetries` (default 0, opt-in), this defaults ON: acpx already
+ * has its own absorption layer to opt out of, native has none at all, so an
+ * inert default here would leave the fault this issue exists to fix
+ * unhandled by default.
+ */
+const AgentNativeTransportRetryConfigSchema = z.object({
+  maxAttempts: z.number().int().min(1).default(3),
+  baseDelayMs: z.number().int().positive().default(2000),
+});
+
+const AgentNativeConfigSchema = z.object({
+  transportRetry: AgentNativeTransportRetryConfigSchema.default({ maxAttempts: 3, baseDelayMs: 2000 }),
+});
+
 // Bounded same-agent retry after a wall-clock timeout (US-002). `budgetMultiplier`
 // scales the prior hop's `timeoutSeconds` for the retry's fresh session.
 const AgentTimeoutRetryConfigSchema = z.object({
@@ -303,6 +327,7 @@ export const AgentConfigSchema = z.object({
     trackedSpawnDeadlineMs: 10_000,
     trackedSpawnStartupDeadlineMs: 30_000,
   }),
+  native: AgentNativeConfigSchema.default({ transportRetry: { maxAttempts: 3, baseDelayMs: 2000 } }),
   idleWatchdog: AgentIdleWatchdogConfigSchema.default(DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG),
   timeoutRetry: AgentTimeoutRetryConfigSchema.default(DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG),
 });

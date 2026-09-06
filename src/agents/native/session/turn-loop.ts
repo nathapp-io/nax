@@ -27,6 +27,7 @@ import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscript
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import type { NativeTurnActivity } from "./turn-events";
+import { retryTransportFault, type TurnRetryConfig } from "./turn-retry";
 
 export interface NativeTurnResponse {
   readonly text: string;
@@ -76,6 +77,18 @@ export interface TurnDeps {
    * dispatch layer can stamp the row without re-deriving from MODEL_PRICING.
    */
   pricingSource?: "catalog-rates" | "config-override";
+  /**
+   * nax#1870: bounded retry for a transport/overloaded fault thrown by
+   * deps.complete, resolved from `agent.native.transportRetry`. Absent
+   * disables retry — the pre-#1870 behaviour of rethrowing immediately.
+   */
+  transportRetry?: TurnRetryConfig;
+  /**
+   * Injectable sleep for the transport-retry backoff, so tests never
+   * actually wait (forbidden-patterns-tests.md). Absent uses a real timer —
+   * a real session always wants to actually wait.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -270,28 +283,58 @@ export async function runNativeTurn(
           deps.compaction === undefined ||
           !deps.compaction.enabled
         ) {
-          throw err;
+          // nax#1870: not an overflow this branch can handle. One more
+          // guarded branch beside the overflow backstop above, not a second
+          // loop or a second try/catch here — the retry's own looping and
+          // backoff live in retryTransportFault (./turn-retry), called once.
+          if (deps.transportRetry === undefined) throw err;
+          res = await retryTransportFault(err, {
+            attempt: () => deps.complete(messages, tools),
+            config: deps.transportRetry,
+            deadline: deps.deadline,
+            signal: opts.signal,
+            sleep: deps.sleep,
+            onRetry: (retryNumber, delayMs, fault) => {
+              getSafeLogger()?.warn("native-adapter", "retrying after a transport fault", {
+                sessionName: handle.id,
+                retryNumber,
+                delayMs,
+                kind: fault.protocolError.kind,
+              });
+              // Resets the watchdog's lastActivityAt so a call being retried
+              // is not mistaken for an idle one — same mechanism the
+              // compaction summary above uses. All-zero is honest, not
+              // fabricated: a pre-first-event transport throw bills nothing
+              // (see nax-ai's retry.ts), so this beat truly carries zero
+              // tokens, not a guessed non-zero number.
+              deps.onActivity?.({ kind: "usage", inputTokens: 0, outputTokens: 0, costUsd: 0 });
+            },
+          });
+          // Falls through to the shared round-trip bookkeeping and tool
+          // execution below, exactly like the overflow-retry branch's own
+          // `res = await deps.complete(...)` two lines down — one success
+          // path, reached from either recovery, not a second copy of it.
+        } else {
+          // Same code path, half the keep budget. Not a second algorithm.
+          const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction, true));
+          if (plan === undefined) throw err;
+          const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
+          messages = applyCompaction(messages, plan, summary.text);
+          inputTokens += summary.usage.inputTokens;
+          outputTokens += summary.usage.outputTokens;
+          costUsd += summary.costUsd;
+          deps.onActivity?.({
+            kind: "usage",
+            inputTokens: summary.usage.inputTokens,
+            outputTokens: summary.usage.outputTokens,
+            costUsd: summary.costUsd,
+          });
+          lastUsage = undefined;
+          anchorIndex = undefined;
+          // Retried once. A second overflow propagates: compacting further would be
+          // guessing, and the failure now carries a correct diagnosis.
+          res = await deps.complete(messages, tools);
         }
-
-        // Same code path, half the keep budget. Not a second algorithm.
-        const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction, true));
-        if (plan === undefined) throw err;
-        const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
-        messages = applyCompaction(messages, plan, summary.text);
-        inputTokens += summary.usage.inputTokens;
-        outputTokens += summary.usage.outputTokens;
-        costUsd += summary.costUsd;
-        deps.onActivity?.({
-          kind: "usage",
-          inputTokens: summary.usage.inputTokens,
-          outputTokens: summary.usage.outputTokens,
-          costUsd: summary.costUsd,
-        });
-        lastUsage = undefined;
-        anchorIndex = undefined;
-        // Retried once. A second overflow propagates: compacting further would be
-        // guessing, and the failure now carries a correct diagnosis.
-        res = await deps.complete(messages, tools);
       }
       roundTrips += 1;
       inputTokens += res.usage.inputTokens;

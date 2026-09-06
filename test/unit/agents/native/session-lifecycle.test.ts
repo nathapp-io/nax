@@ -9,6 +9,7 @@ import {
   nativeSessionCompaction,
   nativeSessionLastUsage,
   nativeSessionTranscriptOwners,
+  nativeSessionTransportRetry,
   openNativeSession,
 } from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
@@ -378,6 +379,82 @@ describe("SessionManager resolves execution.compaction into the adapter call", (
     expect(capturedOpts).toHaveLength(1);
     expect(capturedOpts[0].compaction).toEqual(compaction);
     expect(handle.id).toBe("nax-compaction-wiring");
+  });
+});
+
+// ─── SessionManager resolves agent.native.transportRetry into the adapter call ───
+//
+// nax#1870: same seam as execution.compaction above — SessionManager resolves
+// the config value once, in the wiring layer, and hands the adapter a resolved
+// primitive (check:adapter-no-config-import forbids the adapter reading
+// NaxConfig itself).
+describe("SessionManager resolves agent.native.transportRetry into the adapter call", () => {
+  test("adapter.openSession receives the config's transportRetry value", async () => {
+    const capturedOpts: OpenSessionOpts[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedOpts.push(opts);
+        return { id: name, agentName: "native-fake" } satisfies SessionHandle;
+      }),
+    });
+
+    const config = makeNaxConfig({ agent: { native: { transportRetry: { maxAttempts: 5, baseDelayMs: 750 } } } });
+
+    const sm = new SessionManager({ getAdapter: () => adapter, config });
+    const request: OpenSessionRequest = {
+      agentName: "native-fake",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
+      timeoutSeconds: 60,
+      transcriptDir: dir,
+    };
+
+    const handle = await sm.openSession("nax-transport-retry-wiring", request);
+
+    expect(capturedOpts).toHaveLength(1);
+    expect(capturedOpts[0].transportRetry).toEqual({ maxAttempts: 5, baseDelayMs: 750 });
+    expect(handle.id).toBe("nax-transport-retry-wiring");
+  });
+
+  test("falls back to the schema defaults when the config carries no override", async () => {
+    const capturedOpts: OpenSessionOpts[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedOpts.push(opts);
+        return { id: name, agentName: "native-fake" } satisfies SessionHandle;
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter, config: makeNaxConfig({}) });
+    const request: OpenSessionRequest = {
+      agentName: "native-fake",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash", env: {} },
+      timeoutSeconds: 60,
+      transcriptDir: dir,
+    };
+
+    await sm.openSession("nax-transport-retry-default", request);
+
+    expect(capturedOpts[0].transportRetry).toEqual({ maxAttempts: 3, baseDelayMs: 2000 });
+  });
+});
+
+describe("native session transport-retry settings", () => {
+  const settings = { maxAttempts: 4, baseDelayMs: 1500 };
+
+  test("openSession records the resolved settings for the turn to read", async () => {
+    const handle = await openNativeSession("sess-retry", opts({ transportRetry: settings }));
+    expect(nativeSessionTransportRetry.get("sess-retry")).toEqual(settings);
+    await closeNativeSession(handle, false);
+  });
+
+  test("closing clears the settings, like every other session map", async () => {
+    const handle = await openNativeSession("sess-retry2", opts({ transportRetry: settings }));
+    await closeNativeSession(handle, false);
+    expect(nativeSessionTransportRetry.has("sess-retry2")).toBe(false);
   });
 });
 
