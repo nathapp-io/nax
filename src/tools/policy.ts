@@ -11,6 +11,7 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
+import { validateArgv } from "./exec-guard";
 import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 
 /**
@@ -77,6 +78,34 @@ function matchesAny(patterns: readonly CompiledPattern[], value: string): boolea
   return patterns.some((p) => p.re.test(value));
 }
 
+/**
+ * Split a grant pattern into whitespace-separated tokens, each compiled
+ * independently. Per-token compilation (rather than joining argv with
+ * spaces and matching one regex against the joined string) is deliberate:
+ * a joined string lets a value containing spaces or glob metacharacters
+ * shift what a later token appears to match. `"bun add*"` must mean "argv[0]
+ * is exactly bun, argv[1] starts with add", never "the space-joined argv
+ * matches this glob".
+ */
+function compileArgvPattern(pattern: string): readonly CompiledPattern[] {
+  return pattern
+    .split(/\s+/)
+    .filter((token) => token.length > 0)
+    .map((token) => ({ source: token, re: globToRegExp(token) }));
+}
+
+/** A grant pattern's tokens are a PREFIX of argv — trailing argv tokens
+ * (the package name, flags, ...) are the payload a prefix grant like
+ * `bun add*` does not itself constrain. */
+function matchesArgvPattern(tokens: readonly CompiledPattern[], argv: readonly string[]): boolean {
+  if (tokens.length > argv.length) return false;
+  return tokens.every((token, i) => token.re.test(argv[i] as string));
+}
+
+function matchesArgvGrant(argvPatterns: readonly (readonly CompiledPattern[])[], argv: readonly string[]): boolean {
+  return argvPatterns.some((tokens) => matchesArgvPattern(tokens, argv));
+}
+
 /** Read a top-level or dot-addressed path-bearing input field. */
 function pathFieldValue(input: Record<string, unknown>, field: string): unknown {
   let value: unknown = input;
@@ -89,13 +118,23 @@ function pathFieldValue(input: Record<string, unknown>, field: string): unknown 
 
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
-  const compiled = new Map<string, { unconditional: boolean; matchers: CompiledPattern[]; raw: readonly string[] }>();
+  const compiled = new Map<
+    string,
+    {
+      unconditional: boolean;
+      matchers: CompiledPattern[];
+      argvPatterns: readonly (readonly CompiledPattern[])[];
+      raw: readonly string[];
+    }
+  >();
 
   for (const grant of grants) {
     const unconditional = grant.patterns.includes("*");
+    const nonWildcard = grant.patterns.filter((p) => p !== "*");
     compiled.set(grant.tool, {
       unconditional,
-      matchers: grant.patterns.filter((p) => p !== "*").map((source) => ({ source, re: globToRegExp(source) })),
+      matchers: nonWildcard.map((source) => ({ source, re: globToRegExp(source) })),
+      argvPatterns: nonWildcard.map((source) => compileArgvPattern(source)),
       raw: grant.patterns,
     });
   }
@@ -128,6 +167,25 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
     check(tool, scope, input) {
       const grant = compiled.get(tool);
       if (grant === undefined) return deny(`tool "${tool}" is not permitted for this stage`);
+
+      // An argv-bearing call (RunCommand's `Exec` branch) is checked entirely
+      // here, never falling through to the verbField/pathFields logic below:
+      // there is no "command" field on this shape for verbField to read.
+      // `validateArgv` runs FIRST — before this grant's patterns are even
+      // consulted — so a malformed token can never be admitted by a `*`
+      // grant that would otherwise wave anything through unchecked.
+      if (scope.argvField !== undefined) {
+        const rawArgv = input[scope.argvField];
+        if (rawArgv !== undefined) {
+          const invalid = validateArgv(rawArgv);
+          if (invalid !== undefined) return deny(invalid);
+          const argv = rawArgv as readonly string[];
+          if (!grant.unconditional && !matchesArgvGrant(grant.argvPatterns, argv)) {
+            return deny(`${tool} is not granted for argv "${argv.join(" ")}"`);
+          }
+          return { allowed: true, resolvedPaths: [] };
+        }
+      }
 
       // Verb gating: the tool's own allowedVerbs bound what config can grant,
       // so a "*" grant can never reach a mutating subcommand.

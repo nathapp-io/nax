@@ -75,6 +75,15 @@ export interface ToolScope {
   readonly refPathFields?: readonly string[];
   readonly verbField?: string;
   readonly allowedVerbs?: readonly string[];
+  /**
+   * The input field holding a model-authored argv (RunCommand's `Exec`
+   * branch). When a call carries this field, the policy checks it under the
+   * `Exec` identity (`EXEC_TOOL_NAME`), matching each grant pattern against
+   * the argv token-by-token, rather than under the tool's own name — an
+   * `Exec(...)` grant is otherwise never consulted and a `RunCommand(*)`
+   * wildcard would silently cover the argv branch too.
+   */
+  readonly argvField?: string;
 }
 
 /**

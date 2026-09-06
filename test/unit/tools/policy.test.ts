@@ -227,3 +227,33 @@ describe("compileToolPolicy — path globs apply to array and ref fields too", (
     expect(verdict.allowed === false && verdict.breach).toBe(true);
   });
 });
+
+describe("compileToolPolicy — Exec argv matching", () => {
+  test("Exec grant matches per argv token, not across a joined string", () => {
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["bun add*"] }], "/repo");
+    const scope: ToolScope = { pathFields: [], argvField: "argv" };
+    expect(policy.check("Exec", scope, { argv: ["bun", "add", "-d", "x"] }).allowed).toBe(true);
+    expect(policy.check("Exec", scope, { argv: ["bun", "publish"] }).allowed).toBe(false);
+    expect(policy.check("Exec", scope, { argv: ["bunx", "add"] }).allowed).toBe(false);
+  });
+
+  test("a RunCommand(*) grant does not admit an argv call checked under the Exec identity", () => {
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], "/repo");
+    const scope: ToolScope = { pathFields: [], verbField: "command", allowedVerbs: ["test"], argvField: "argv" };
+    expect(policy.check("Exec", scope, { argv: ["bun", "install"] }).allowed).toBe(false);
+  });
+
+  test("an unconditional Exec('*') grant still runs validateArgv before matching", () => {
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], "/repo");
+    const scope: ToolScope = { pathFields: [], argvField: "argv" };
+    const verdict = policy.check("Exec", scope, { argv: ["bun", "add", "x; rm -rf /"] });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("metacharacter");
+  });
+
+  test("a call with no argv field present falls through to the ordinary verbField check", () => {
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["test"] }], "/repo");
+    const scope: ToolScope = { pathFields: [], verbField: "command", allowedVerbs: ["test"], argvField: "argv" };
+    expect(policy.check("RunCommand", scope, { command: "test" }).allowed).toBe(true);
+  });
+});
