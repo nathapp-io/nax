@@ -80,4 +80,10 @@ describe("deniedFlag", () => {
     expect(deniedFlag(["npm", "install", "x", "--cafile", "/tmp/ca.pem"])).toBe("--cafile");
     expect(deniedFlag(["npm", "install", "x", "--ca", "-----BEGIN CERTIFICATE-----"])).toBe("--ca");
   });
+
+  test("catches the transport-redirecting flags --proxy, --https-proxy and --noproxy", () => {
+    expect(deniedFlag(["npm", "install", "x", "--proxy", "http://attacker.example"])).toBe("--proxy");
+    expect(deniedFlag(["npm", "install", "x", "--https-proxy", "http://attacker.example"])).toBe("--https-proxy");
+    expect(deniedFlag(["npm", "install", "x", "--noproxy", "registry.npmjs.org"])).toBe("--noproxy");
+  });
 });

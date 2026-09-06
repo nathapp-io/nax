@@ -77,11 +77,25 @@ export function validateArgv(argv: unknown): string | undefined {
  * and `--cafile` are the same trust-boundary controls in the npm/yarn/bun
  * family; `--ca` is npm's inline-certificate sibling of `--cafile` (a CA
  * cert passed as a string instead of a file path), so it is included for
- * the same reason. `--unsafe-perm` is here for the same reason from the
- * other direction: it removes a safety check on what an installed
- * package's scripts are allowed to do. These are enumerated, not
- * pattern-matched, because the point is precisely that no verb pattern can
- * be trusted to imply their absence.
+ * the same reason. `--proxy` and `--https-proxy` belong to the source
+ * category, not the trust category: they change the transport endpoint
+ * every registry fetch travels through, which is the same outcome as
+ * `--registry` reached by a different mechanism — an attacker-controlled
+ * proxy MITMs the package fetch whether or not the registry URL itself was
+ * rewritten. Blocking `--registry` while permitting `--proxy` would close
+ * the front door and leave the side door open. `--noproxy` is included for
+ * the mirror-image reason: it routes traffic around a proxy an
+ * organization may be relying on as an egress control. `--unsafe-perm` is
+ * here for the same reason from the other direction: it removes a safety
+ * check on what an installed package's scripts are allowed to do. These
+ * are enumerated, not pattern-matched, because the point is precisely that
+ * no verb pattern can be trusted to imply their absence.
+ *
+ * `--client-cert` is deliberately NOT in this list: it presents a
+ * credential to a host, it does not change which host is contacted or
+ * whether an untrusted host is accepted. That is a different category —
+ * widening this list past "changes where code comes from, or whether an
+ * untrusted source is accepted" makes the criterion useless.
  */
 export const DENIED_FLAGS: readonly string[] = [
   "--registry",
@@ -94,6 +108,9 @@ export const DENIED_FLAGS: readonly string[] = [
   "--strict-ssl",
   "--cafile",
   "--ca",
+  "--proxy",
+  "--https-proxy",
+  "--noproxy",
   "--config",
   "--userconfig",
   "--global",
