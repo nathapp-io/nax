@@ -32,6 +32,16 @@ export interface RunCommandExecOptions {
   /** Manifest name, required by yarn/cargo's package-scoping form; absent when unresolvable. */
   readonly packageName?: string;
   readonly allowScripts: boolean;
+  /**
+   * The containment carve-out's write side (Task 10). When present, a
+   * successful install-shaped Exec call appends the manifest/lockfile it
+   * wrote to this array — see `recordExecTouchedPaths` in
+   * `src/tools/exec-touched-paths.ts`. The SAME array reference must be
+   * given to `compileToolPolicy`'s `execTouchedPaths` option so a later
+   * GitCommit call in this dispatch hop can see the update; omitted
+   * entirely means no carve-out is offered for this session.
+   */
+  readonly touchedPaths?: string[];
 }
 
 export interface RunCommandToolOptions {

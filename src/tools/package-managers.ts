@@ -92,7 +92,7 @@ const DLX_VERB = "dlx";
  * Path-separator forms (`./npm`, `..\npm.exe`) are refused upstream by
  * `validateArgv` in `exec-guard.ts` and are not re-checked here.
  */
-function normalizeManagerBinary(token: string): string {
+export function normalizeManagerBinary(token: string): string {
   return token.toLowerCase().replace(/\.(cmd|exe|ps1|bat)$/, "");
 }
 

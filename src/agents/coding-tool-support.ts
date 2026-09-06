@@ -83,8 +83,17 @@ export function buildCodingToolSupport(args: {
     args.auditDir !== undefined
       ? createToolAuditSink({ dir: args.auditDir, sessionName: args.sessionName ?? "unattached" })
       : createNoOpToolAuditSink();
+  // Task 10: shared, mutable, and scoped to this one hop's dispatch -- a
+  // fresh array every call, never a module-level or story-keyed cache. Given
+  // by reference to BOTH the policy (read side, in `check()`) and the Exec
+  // branch's options (write side, in run-command-exec.ts) so a successful
+  // repoRoot install and a later GitCommit call within the SAME hop see the
+  // same set. A commit an agent defers to a later hop still has the
+  // completion-phase auto-commit sweep (`autoCommitIfDirty`, which already
+  // stages from the git root) as its backstop -- see task-10-report.md.
+  const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
-    policy: compileToolPolicy(grants, args.root),
+    policy: compileToolPolicy(grants, args.root, { execTouchedPaths }),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     sink,
     extraTools:
@@ -98,6 +107,7 @@ export function buildCodingToolSupport(args: {
                       repoRoot: args.repoRoot ?? args.root,
                       packageWorkdir: args.root,
                       allowScripts: args.allowScripts ?? false,
+                      touchedPaths: execTouchedPaths,
                       ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
                     },
                   }

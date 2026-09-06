@@ -24,7 +24,8 @@
 import { relative } from "node:path";
 import { runArgv } from "../utils/argv-exec";
 import { deniedFlag, validateArgv } from "./exec-guard";
-import { normalizeExec } from "./package-managers";
+import { recordExecTouchedPaths } from "./exec-touched-paths";
+import { classifyExec, normalizeExec, normalizeManagerBinary } from "./package-managers";
 import type { ExecTarget } from "./package-managers-types";
 import type { ToolResult, ToolRunContext } from "./registry";
 import type { RunCommandToolOptions } from "./run-command";
@@ -80,6 +81,21 @@ export async function runExecBranch(
     const body = result.timedOut
       ? `timed out after ${EXEC_TIMEOUT_MS}ms`
       : `exit ${result.exitCode}\n${result.stdout}\n${result.stderr}`;
+
+    // Task 10: the containment carve-out's write side. Recorded only for a
+    // REAL success (not timed out, exit 0) of an argv `classifyExec` already
+    // recognized as install-shaped -- never for a generic call, and never
+    // from anything the model supplied itself (the filenames come from
+    // `recordExecTouchedPaths`'s own table, keyed by the manager binary this
+    // module already validated and normalized above). `normalized.cwd` is
+    // the cwd nax itself computed, not one the model could redirect (see
+    // `package-managers.ts`'s directory-redirect screens).
+    if (opts.exec.touchedPaths !== undefined && !result.timedOut && result.exitCode === 0) {
+      if (classifyExec(argv) === "install") {
+        recordExecTouchedPaths(opts.exec.touchedPaths, normalizeManagerBinary(argv[0] as string), normalized.cwd);
+      }
+    }
+
     return {
       content: body.slice(0, ctx.maxBytes),
       isError: result.timedOut || result.exitCode !== 0,

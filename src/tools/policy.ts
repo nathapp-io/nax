@@ -5,8 +5,12 @@
  * decides no permission of its own.
  *
  * Containment runs BEFORE pattern matching and is not expressible in config:
- * the root is a hard boundary no profile can widen. `unrestricted` means "any
+ * the root is a boundary no PROFILE can widen. `unrestricted` means "any
  * tool, any path within the root", never "any path on the machine".
+ *
+ * The one exception is `execTouchedPaths` (Task 10), and it is not a profile
+ * widening: see `resolveWithin` below for what it admits and why that is not
+ * the same kind of hole.
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -20,11 +24,23 @@ import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
  * The single containment seam. Multi-root support (a future configurable
  * extension) changes this function and nothing else, which is why every tool
  * receives an already-resolved path rather than resolving one itself.
+ *
+ * The one exception to the paragraph above, and it is not a profile widening:
+ * a workspace package manager writes the root manifest and lockfile by design,
+ * so an Exec that nax itself normalized and ran records those two paths in
+ * `execTouchedPaths` (see `src/tools/run-command-exec.ts` and
+ * `src/tools/exec-touched-paths.ts`). Nothing else is admitted, matching is
+ * exact (never a prefix — a single touched path must never widen a whole
+ * directory), and the set is session-scoped: it is built fresh for one
+ * dispatch hop and shared only between that hop's Exec and GitCommit calls,
+ * never persisted across stories or sessions.
  */
-export function resolveWithin(root: string, candidate: string): string | null {
+export function resolveWithin(root: string, candidate: string, execTouchedPaths?: readonly string[]): string | null {
   const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
-  if (!isInside(root, absolute)) return null;
-  return realOrRaw(absolute);
+  if (isInside(root, absolute)) return realOrRaw(absolute);
+  const resolved = realOrRaw(absolute);
+  if (execTouchedPaths?.some((touched) => realOrRaw(touched) === resolved)) return resolved;
+  return null;
 }
 
 /**
@@ -116,8 +132,20 @@ function pathFieldValue(input: Record<string, unknown>, field: string): unknown 
   return value;
 }
 
-export function compileToolPolicy(grants: readonly ToolGrant[], root: string): ToolPolicy {
+export interface ToolPolicyOptions {
+  /**
+   * Paths a prior, successfully-run allowlisted Exec call touched — the
+   * containment carve-out documented on `resolveWithin`. Read live, not
+   * copied: callers that build this once per dispatch hop and keep pushing
+   * into the same array (`src/agents/coding-tool-support.ts`) get updates
+   * reflected on every subsequent `check()` without recompiling the policy.
+   */
+  readonly execTouchedPaths?: readonly string[];
+}
+
+export function compileToolPolicy(grants: readonly ToolGrant[], root: string, options?: ToolPolicyOptions): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
+  const execTouchedPaths = options?.execTouchedPaths;
   const compiled = new Map<
     string,
     {
@@ -213,7 +241,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
         if (value === undefined) continue;
         if (typeof value !== "string") return deny(`"${field}" must be a string path`);
 
-        const resolved = resolveWithin(resolvedRoot, value);
+        const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
         if (resolved === null) {
           return deny(`path "${value}" resolves outside the permitted root`, true);
         }
@@ -231,7 +259,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
 
         for (const value of values) {
           if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
-          const resolved = resolveWithin(resolvedRoot, value);
+          const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
           if (resolved === null) {
             return deny(`"${field}" entry "${value}" resolves outside the permitted root`, true);
           }
@@ -254,7 +282,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string): T
           const candidatePath = value.slice(colonAt + 1);
           if (candidatePath === "") continue; // e.g. "HEAD:" — no path to check
 
-          const resolved = resolveWithin(resolvedRoot, candidatePath);
+          const resolved = resolveWithin(resolvedRoot, candidatePath, execTouchedPaths);
           if (resolved === null) {
             return deny(`"${field}" entry "${value}" resolves outside the permitted root`, true);
           }
