@@ -81,11 +81,11 @@ export function buildCodingToolSupport(args: {
  * nax-permission-mode-allow: delegates the decision to resolvePermissions();
  * decides nothing itself.
  *
- * Exists because the producer above had exactly one caller, in
- * `session/manager-run.ts` — a path `callOp` never takes. Both real hops
- * (`operations/build-hop-callback.ts`, `runtime/session-run-hop.ts`) call this
- * so the two cannot drift: a tool wired into one hop and not the other is
- * invisible until an operation happens to dispatch through the other.
+ * Exists so the two real hops (`operations/build-hop-callback.ts`,
+ * `runtime/session-run-hop.ts`) resolve support identically and cannot drift:
+ * a tool wired into one hop and not the other is invisible until an operation
+ * happens to dispatch through the other. Call this, never the raw producer
+ * above — it takes no `auditDir`, so it yields a non-recording ledger sink.
  */
 /**
  * Ledger session name.

@@ -110,6 +110,18 @@ Introduce `DispatchEvent`, a discriminated union emitted by exactly **three** me
 | `SessionManager.runTrackedSession(id, manager, req)` | `src/session/manager-run.ts:36` | session **descriptor** (role + computed name) | `sessionName = nameFor(descriptor)`, `sessionRole = descriptor.role` |
 | `AgentManager.completeAs(agent, prompt, opts)` | `src/agents/manager.ts:~388` | `completeOptions` (role, name) | `sessionName = formatSessionName(opts)`, `sessionRole = opts.sessionRole` |
 
+> **Amended 2026-09-06 (nax#1903) — the third boundary no longer exists.**
+> `runTrackedSession` was reachable only from the runner-form `SessionManager.runInSession`
+> overload, whose two production callers were deleted by ADR-019 Phase C (#712,
+> `session/runners/single-session-runner.ts`) and #1069 (`tdd/session-runner.ts`) — including the
+> `runTddSession` path described below. It sat unreachable from 2026-05-21, and
+> `src/session/manager-run.ts`, the overload, and the `"runTrackedSession"` member of both
+> `origin` unions were removed. **Two dispatch boundaries remain: `runAsSession` and
+> `completeAs`.** Everything else in this ADR stands; the descriptor-owner-must-emit principle
+> is now carried by `runtime/session-run-hop.ts` and `operations/build-hop-callback.ts`, which
+> dispatch through `runAsSession`. The paragraph and table row below are kept as the historical
+> record of why the boundary was introduced.
+
 **The third boundary (`runTrackedSession`) is the one ADR-020 originally missed.** Discovered by the post-#783 audit-naming bug: TDD's `runTddSession` calls `sessionManager.runInSession(sessionId, manager, req)` (runner-form overload, `manager.ts:513`), which routes to `runTrackedSession`, which calls `runner.run(req)` blindly — bypassing `runAsSession`. The descriptor in `state.sessions.get(id)` has the correct role (`"implementer"`, etc.) and computes the correct sessionName via `nameFor()`, but none of it propagates into the middleware ctx that fires at `runAs`. Result: TDD audit files named `1777371175083-run-run-US-001.txt` instead of `*-implementer.txt`. The owner of the descriptor IS the session-aware boundary; it must emit.
 
 ```typescript

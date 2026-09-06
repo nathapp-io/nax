@@ -7,11 +7,12 @@
  *   *-implementer-run-t01.txt
  *   *-verifier-run-t01.txt
  *
- * Before ADR-020 Wave 1, runTrackedSession wrote sessionHint into runOptions and
- * the audit middleware read it back. After Wave 1, runTrackedSession emits a typed
+ * Before ADR-020 Wave 1, the dispatch path wrote sessionHint into runOptions and
+ * the audit middleware read it back. After Wave 1, the emitter produces a typed
  * SessionTurnDispatchEvent with sessionRole and sessionName populated from the
  * session descriptor. This test locks in the D1/D5 contract so regressions in the
- * emit path surface immediately.
+ * emit path surface immediately. It builds the event literal itself rather than
+ * calling an emitter, so it pins the subscriber chain, not the producer.
  *
  * The test exercises the same subscriber chain the production runtime uses:
  *   DispatchEventBus → attachAuditSubscriber → PromptAuditor → per-role .txt file
@@ -44,7 +45,7 @@ function makeTddTurnEvent(role: SessionRole, roundTrips = 1): SessionTurnDispatc
     roundTrips,
     roundTripUnit: "agent-run",
     protocolIds: { sessionId: null },
-    origin: "runTrackedSession",
+    origin: "runAsSession",
     durationMs: 200,
     timestamp: 1_700_000_000_000,
   };

@@ -3,9 +3,8 @@
  * `openSession` call.
  *
  * Its own module for the same reason as `model-selection.ts`: `manager.ts` is
- * a grandfathered oversized file that may not grow, and the alternative
- * homes are worse fits (`manager-run.ts` is the tracked-session lifecycle,
- * `manager-deps.ts` is the injectable-dependency facade).
+ * a grandfathered oversized file that may not grow, and the alternative home
+ * is a worse fit (`manager-deps.ts` is the injectable-dependency facade).
  */
 
 import type { ResolvedCompaction } from "../agents/native/session/compaction";

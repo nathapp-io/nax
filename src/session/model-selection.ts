@@ -2,9 +2,8 @@
  * Model-selection fields forwarded from an `OpenSessionRequest` to the adapter.
  *
  * Its own module because `manager.ts` is a grandfathered oversized file that may
- * not grow, and the alternative homes are worse fits: `manager-run.ts` is the
- * tracked-session lifecycle and `manager-deps.ts` is the injectable-dependency
- * facade.
+ * not grow, and the alternative home is a worse fit: `manager-deps.ts` is the
+ * injectable-dependency facade.
  */
 
 import type { ModelDef, ModelTier } from "../config/schema";

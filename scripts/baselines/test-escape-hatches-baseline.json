@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1623
+    "looseCast": 1593
   },
-  "updatedAt": "2026-08-27T11:40:37.725Z",
+  "updatedAt": "2026-09-06T14:33:06.618Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -109,7 +109,7 @@
       "looseCast": 4
     },
     "test/integration/execution/status-file.test.ts": {
-      "looseCast": 7
+      "looseCast": 8
     },
     "test/integration/execution/deferred-review-integration.test.ts": {
       "looseCast": 1
@@ -171,20 +171,14 @@
     "test/unit/session/manager.test.ts": {
       "looseCast": 1
     },
+    "test/unit/session/transcript-sweep.test.ts": {
+      "looseCast": 1
+    },
     "test/unit/session/manager-phase-b-session.test.ts": {
       "looseCast": 7
     },
-    "test/unit/session/manager-run-in-session.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/session/manager-early-protocol-ids.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/session/session-keeper.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/session/manager-session-retry.test.ts": {
-      "looseCast": 11
     },
     "test/unit/session/manager-phase-b-prompt.test.ts": {
       "looseCast": 15
@@ -224,6 +218,9 @@
     },
     "test/unit/routing/calibrate/propose.test.ts": {
       "looseCast": 3
+    },
+    "test/unit/log-format/run-summary.test.ts": {
+      "looseCast": 1
     },
     "test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts": {
       "looseCast": 2
@@ -267,29 +264,8 @@
     "test/unit/prd/out-of-scope-persistence.test.ts": {
       "looseCast": 1
     },
-    "test/unit/review/adversarial-metadata-audit.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/review/semantic-audit-shape.test.ts": {
-      "looseCast": 4
-    },
-    "test/unit/review/semantic-unverifiable.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/review/semantic-debate.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/review/adversarial-verifiedby.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/review/semantic-debate-audit-shape.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/review/review-iteration-store.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/review/semantic-signature-diff.test.ts": {
-      "looseCast": 8
     },
     "test/unit/review/ac-quote-validator.test.ts": {
       "looseCast": 2
@@ -297,17 +273,11 @@
     "test/unit/review/recurrence-demotion.test.ts": {
       "looseCast": 1
     },
+    "test/unit/review/audit-shape.test.ts": {
+      "looseCast": 3
+    },
     "test/unit/review/semantic-categories.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/review/adversarial-audit-shape.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/review/semantic-agent-session.test.ts": {
-      "looseCast": 7
-    },
-    "test/unit/review/semantic-prompt-response.test.ts": {
-      "looseCast": 2
     },
     "test/unit/finish/ops-impl.test.ts": {
       "looseCast": 1
@@ -402,6 +372,9 @@
     "test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts": {
       "looseCast": 1
     },
+    "test/unit/execution/iteration-runner.test.ts": {
+      "looseCast": 3
+    },
     "test/unit/execution/oscillation-store.test.ts": {
       "looseCast": 1
     },
@@ -489,6 +462,12 @@
     "test/unit/execution/story-orchestrator/run-phase-telemetry.test.ts": {
       "looseCast": 2
     },
+    "test/unit/execution/story-orchestrator/rectification-context-stage.test.ts": {
+      "looseCast": 3
+    },
+    "test/unit/execution/story-orchestrator/run-phase-context-bundle.test.ts": {
+      "looseCast": 1
+    },
     "test/unit/execution/story-orchestrator/flake-triage-seam.test.ts": {
       "ratchetAllow": 1
     },
@@ -512,6 +491,9 @@
     },
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": {
       "looseCast": 8
+    },
+    "test/unit/execution/lifecycle/run-setup.test.ts": {
+      "looseCast": 3
     },
     "test/unit/execution/lifecycle/run-setup-credentials.test.ts": {
       "looseCast": 1
@@ -681,9 +663,6 @@
     "test/unit/debate/selectors/judge.test.ts": {
       "looseCast": 1
     },
-    "test/unit/debate/verifiers/review-grounding-filter.test.ts": {
-      "looseCast": 4
-    },
     "test/unit/debate/verifiers/plan-checklist.test.ts": {
       "looseCast": 35
     },
@@ -712,7 +691,7 @@
       "looseCast": 1
     },
     "test/unit/cli/status-cost.test.ts": {
-      "looseCast": 1
+      "looseCast": 3
     },
     "test/unit/cli/plan-interactive.test.ts": {
       "looseCast": 3
@@ -723,8 +702,8 @@
     "test/unit/cli/rules-export-scope.test.ts": {
       "looseCast": 1
     },
-    "test/unit/cli/status-dispatch.test.ts": {
-      "looseCast": 13
+    "test/unit/cli/generate-flows.test.ts": {
+      "looseCast": 5
     },
     "test/unit/cli/plan-decompose-mapper.test.ts": {
       "looseCast": 6
@@ -753,8 +732,8 @@
     "test/unit/utils/process-kill.test.ts": {
       "looseCast": 4
     },
-    "test/unit/utils/queue-file-lock.test.ts": {
-      "looseCast": 5
+    "test/unit/utils/file-lock.test.ts": {
+      "looseCast": 1
     },
     "test/unit/utils/git.test.ts": {
       "looseCast": 1
@@ -787,10 +766,13 @@
       "looseCast": 2
     },
     "test/unit/agents/manager-dispatch-emission.test.ts": {
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/agents/manager-credentials.test.ts": {
       "looseCast": 1
+    },
+    "test/unit/agents/manager-dispatch-complete.test.ts": {
+      "looseCast": 3
     },
     "test/unit/agents/manager-swap-loop.test.ts": {
       "looseCast": 1
@@ -823,6 +805,9 @@
       "looseCast": 2
     },
     "test/unit/agents/retry/hop-retry-policy.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/agents/native/auth-store-ops.test.ts": {
       "looseCast": 1
     },
     "test/unit/runtime/session-run-hop.test.ts": {
@@ -901,7 +886,7 @@
       "looseCast": 1
     },
     "test/unit/plugins/builtin/curator-heuristics-h1.test.ts": {
-      "looseCast": 5
+      "looseCast": 4
     },
     "test/unit/config/profile.test.ts": {
       "looseCast": 5
@@ -970,8 +955,14 @@
     "test/unit/config/permissions.test.ts": {
       "looseCast": 1
     },
+    "test/unit/quality/runner-origin.test.ts": {
+      "looseCast": 1
+    },
     "test/unit/logger/redact.test.ts": {
       "looseCast": 1
+    },
+    "test/unit/logger/warn-once.test.ts": {
+      "looseCast": 2
     },
     "test/unit/context/engine/tool-runtime.test.ts": {
       "looseCast": 3
@@ -1156,6 +1147,9 @@
     "test/unit/pipeline/stages/queue-check.test.ts": {
       "looseCast": 1
     },
+    "test/unit/pipeline/stages/acceptance-setup-dispatch-failure.test.ts": {
+      "looseCast": 9
+    },
     "test/unit/metrics/tracker-context-metrics.test.ts": {
       "looseCast": 1
     },
@@ -1170,6 +1164,9 @@
     },
     "test/unit/metrics/tracker.test.ts": {
       "looseCast": 1
+    },
+    "test/ui/useAgentStreamEvents.test.tsx": {
+      "looseCast": 2
     }
   }
 }
