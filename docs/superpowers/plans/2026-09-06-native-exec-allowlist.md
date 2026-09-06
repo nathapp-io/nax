@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- No file in `src/` may exceed **600 lines**; no file in `test/` may exceed **800 lines** (`scripts/check-file-sizes.ts`). New files must come in under, not be baselined.
+- No file in `src/` may exceed **600 lines**; no file in `test/` may exceed **800 lines** (`scripts/check-file-sizes.ts`). New files must come in under, not be baselined. Note the two numbers differ on purpose: `.nax/rules/project-conventions.md` sets a **400-line convention** for new source files, and 600 is the gate's hard limit. Aim for 400; 600 fails the build.
 - Imports use the `@/` alias inside `src/` (`import { x } from "@/tools"`), matching neighbours.
 - The argv branch must never call `runQualityCommand` and must never construct a shell string. Task 6 adds a test that fails if it does.
 - Every commit runs the repo pre-commit gate (typecheck + biome + 24 check scripts). Do not bypass it with `--no-verify`.
