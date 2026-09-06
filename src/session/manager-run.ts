@@ -6,7 +6,7 @@
  * to avoid circular imports.
  */
 
-import { buildCodingToolSupport } from "../agents/coding-tool-support";
+import { resolveCodingToolSupport } from "../agents/coding-tool-support";
 import type { AgentResult } from "../agents/types";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
@@ -67,12 +67,17 @@ export async function runTrackedSession(
   // The seam that makes coding tools reachable: turn the op's declared tools
   // plus the resolved grants into a live runtime. Must run before
   // injectedRequest below, which spreads the result into runOptions.
-  const codingSupport = buildCodingToolSupport({
-    root: request.runOptions.codingToolRoot,
-    grants: resolvedPermissions.toolGrants,
-    declared: request.runOptions.declaredTools ?? [],
-    ...(request.runOptions.storyId !== undefined ? { storyId: request.runOptions.storyId } : {}),
-  });
+  // `resolveCodingToolSupport` reads the run's `outputDir` so the audit ledger
+  // lands in the run output dir (not the ephemeral `codingToolRoot`), and
+  // derives the ledger session name via `buildLedgerSessionName` so concurrent
+  // TDD roles do not collide in one directory.
+  //
+  // A caller that already built a recording runtime (e.g. a test harness
+  // accumulating its own audit ledger) supplies it on `runOptions.codingToolRuntime`.
+  // We must keep that instance — overwriting it loses the caller's records —
+  // so the spread below is gated on `request.runOptions.codingToolRuntime`
+  // being `undefined`.
+  const codingSupport = resolveCodingToolSupport(request.runOptions);
 
   const callerCallback = request.runOptions.onSessionEstablished;
   const injectedRequest: SessionManagedRunRequest = {
@@ -91,7 +96,9 @@ export async function runTrackedSession(
         }
         callerCallback?.(protocolIds, sessionName);
       },
-      ...(codingSupport ? { codingToolRuntime: codingSupport.runtime, codingTools: codingSupport.tools } : {}),
+      ...(codingSupport && request.runOptions.codingToolRuntime === undefined
+        ? { codingToolRuntime: codingSupport.runtime, codingTools: codingSupport.tools }
+        : {}),
     },
   };
 
