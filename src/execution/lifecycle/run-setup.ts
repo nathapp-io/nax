@@ -27,7 +27,7 @@ import type { PRD } from "@/prd";
 import { countStories, loadPRD, savePRD } from "@/prd";
 import { detectProjectProfile } from "@/project";
 import { createRuntime, type NaxRuntime } from "@/runtime";
-import { SessionManager } from "@/session";
+import { SessionManager, sweepFeatureTranscripts } from "@/session";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
@@ -41,6 +41,7 @@ export const _runSetupDeps = {
   detectProjectProfile,
   createRuntime,
   installCrashHandlers,
+  sweepFeatureTranscripts,
 };
 
 /**
@@ -383,6 +384,16 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     if (sweptOrphans > 0) {
       logger?.info("session", "Swept orphan sessions at run setup", { sweptOrphans });
     }
+
+    // US-002 AC10/AC11: prune this run's retained native transcripts (kept on
+    // turn failure) under the runtime output dir so the kept-on-failure set
+    // never grows past MAX_RETAINED_TRANSCRIPTS. dryRun is threaded through so
+    // a --dry-run never deletes.
+    await _runSetupDeps.sweepFeatureTranscripts({
+      featureName: options.feature,
+      transcriptRoot: runtime.outputDir,
+      dryRun: options.dryRun,
+    });
 
     // Acquire lock to prevent concurrent execution
     const lockAcquired = await acquireLock(workdir);

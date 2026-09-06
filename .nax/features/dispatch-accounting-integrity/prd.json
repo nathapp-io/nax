@@ -3,7 +3,7 @@
   "feature": "dispatch-accounting-integrity",
   "branchName": "feat/dispatch-accounting-integrity",
   "createdAt": "2026-09-16T00:00:00.000Z",
-  "updatedAt": "2026-09-06T07:30:39.270Z",
+  "updatedAt": "2026-09-06T09:01:46.228Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,8 +32,8 @@
         "cost-ledger"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -80,14 +80,17 @@
         "filesystem"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "paused",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds a filesystem sweep and wires it into lifecycle setup; it operates on session artifacts, requiring strict session-path test isolation."
+        "reasoning": "Adds a filesystem sweep and wires it into lifecycle setup; it operates on session artifacts, requiring strict session-path test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/native/session/transcript-store.ts",
@@ -99,9 +102,12 @@
       "expectedFiles": [
         "src/session/transcript-sweep.ts"
       ],
-      "priorErrors": [],
+      "priorErrors": [
+        "PAUSED: Human review needed: session-failure"
+      ],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "911d559fdc0fd3895a10ee2e504a4f9bb4f54d33"
     },
     {
       "id": "US-003",
@@ -122,14 +128,17 @@
         "audit"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "paused",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Changes session-run wiring that grants tool execution capability and audit evidence, so strict isolation is appropriate."
+        "reasoning": "Changes session-run wiring that grants tool execution capability and audit evidence, so strict isolation is appropriate.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/session/manager-run.ts",
@@ -138,9 +147,12 @@
         "src/tools/tool-audit.ts",
         "src/session/manager.ts"
       ],
-      "priorErrors": [],
+      "priorErrors": [
+        "PAUSED: Human review needed: session-failure"
+      ],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "911d559fdc0fd3895a10ee2e504a4f9bb4f54d33"
     },
     {
       "id": "US-004",
@@ -167,11 +179,23 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "toAgent": "native",
+          "reason": "agent session failed (exit 1); phases=implementer",
+          "timestamp": "2026-09-06T09:01:44.192Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A focused CLI preflight and dependency-injection change with established identity and plan-test conventions."
+        "reasoning": "A focused CLI preflight and dependency-injection change with established identity and plan-test conventions.",
+        "initialComplexity": "medium",
+        "modelTier": "powerful",
+        "initialModelTier": "balanced",
+        "agent": "native"
       },
       "contextFiles": [
         "src/cli/plan-command.ts",
@@ -179,9 +203,21 @@
         "src/execution/lifecycle/run-setup.ts",
         "src/runtime/paths.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: agent session failed (exit 1); phases=implementer"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: agent session failed (exit 1); phases=implementer",
+          "cost": 0,
+          "timestamp": "2026-09-06T09:01:44.192Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "911d559fdc0fd3895a10ee2e504a4f9bb4f54d33"
     }
   ],
   "analysis": "This is an enhancement of existing TypeScript dispatch, accounting, session, and CLI infrastructure. US-001 changes the error-event boundary in src/agents/manager-dispatch.ts:178 and its two AgentManager call sites (src/agents/manager.ts:693,745), then maps the newly carried attribution and usage through src/runtime/middleware/cost.ts:91 into CostErrorEvent and CostSnapshot in src/runtime/cost-aggregator.ts:89-110. SessionTurnError already carries the required usage/cost values at src/agents/session-types.ts:235, while DispatchErrorEvent currently lacks them at src/runtime/dispatch-events.ts:130. Error aggregates must include error cost separately in every snapshot path (overall, grouped, scoped) without changing successful totalCostUsd; drain already serializes the error union. The manager file has a size-baseline constraint, so replace individual identifiers with the existing options object as specified rather than adding lines.\n\nUS-002 changes pruneRetainedTranscripts in src/agents/native/session/transcript-store.ts:165 from a void operation to a deletion count; it currently recognizes live and failed transcript names and is only invoked from a close path. The new sweep must use deriveNativeTranscriptDir from src/session/manager-deps.ts:45 rather than reconstructing paths, export through both barrel layers (src/agents/native/index.ts and src/session/index.ts), and be invoked during startup next to sessionManager.sweepOrphans() in src/execution/lifecycle/run-setup.ts:381. src/session/scratch-purge.ts provides the injectable, feature-scoped utility shape, but has no production-call implication. Existing transcript-store tests currently assert the old undefined return for a missing directory (test/unit/agents/native/transcript-store.test.ts:115), so update those expectations as part of the widening migration.\n\nUS-003 replaces the direct buildCodingToolSupport call in src/session/manager-run.ts:70. resolveCodingToolSupport in src/agents/coding-tool-support.ts:103 resolves permissions, audit directory, ledger session name, and preserves the existing CODING_TOOL_ROOT_MISSING failure. Only apply resolved support when the caller did not supply codingToolRuntime, avoiding an overwrite; no dispatch event should be added because the runner remains the turn-event producer. The SessionManager.runInSession runner-shaped path is the production seam and existing tests include test/unit/session/manager-run-in-session.test.ts.\n\nUS-004 adds an injected identity claim to _planDeps in src/cli/plan-runtime.ts and runs it before buildPlanModeContext in src/cli/plan-command.ts:79. Mirror the identity derivation/remote lookup/collision handling at src/execution/lifecycle/run-setup.ts:339-359; claimProjectIdentity itself throws RUN_NAME_COLLISION for foreign workdirs in src/runtime/paths.ts:75. A collision must abort before strategy creation/dispatch; other claim errors warn and allow planning. Existing plan tests are concentrated under test/unit/cli/plan*.test.ts and run under isolated global config.\n\nCompatibility and migration: all public event and row additions are optional, except the intentional private builder-input reshape and prune return widening. Existing DispatchErrorEvent literals remain valid; preserve undefined tokens for usage-less failures, rather than emitting zero-token data. Ledger readers must tolerate older JSONL rows without the new fields/schema changes; no data backfill is required. The four stories are independent, and only US-002 creates src/session/transcript-sweep.ts.",

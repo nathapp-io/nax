@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import { saveTranscript } from "@/agents/native/session/transcript-store";
+import { sweepFeatureTranscripts } from "@/session";
 
 let rootDir: string;
 let transcriptRoot: string;
@@ -49,6 +50,8 @@ async function seedSessions(n: number): Promise<void> {
 describe("sweepFeatureTranscripts — AC4", () => {
   test("prunes the derived directory and returns the count", async () => {
     await seedSessions(53);
+    const deleted = await sweepFeatureTranscripts({ featureName: FEATURE, transcriptRoot, dryRun: false });
+    expect(deleted).toBe(3);
     const dir = SESSIONS_DIR();
     const files = (await readdir(dir)).filter((n) => n.endsWith(".transcript.json"));
     expect(files).toHaveLength(50);
