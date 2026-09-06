@@ -3,6 +3,8 @@ export { buildGitArgv, GIT_ESCAPE_FLAGS, GIT_READ_VERBS, gitTool } from "./git";
 export { buildCommitArgvs, gitCommitTool } from "./git-commit";
 export { globTool } from "./glob";
 export { _grepDeps, buildGrepArgv, grepTool } from "./grep";
+export type { ExecTarget, NormalizeInput, NormalizeResult } from "./package-managers";
+export { classifyExec, isKnownManager, normalizeExec } from "./package-managers";
 export { compileToolPolicy, resolveWithin } from "./policy";
 export { readTool } from "./read";
 export type { CodingTool, ToolResult, ToolRunContext } from "./registry";
