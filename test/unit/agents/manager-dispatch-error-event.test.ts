@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { SessionTurnError } from "@/agents";
 import { AgentManager } from "@/agents/manager";
 import { buildDispatchErrorEvent } from "@/agents/manager-dispatch";
-import type { SessionHandle } from "@/agents/types";
+import type { CompleteOptions, SessionHandle } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import type { ResolvedPermissions } from "@/config/permissions";
 import { resolvePermissions } from "@/config/permissions";
@@ -228,5 +228,61 @@ describe("AgentManager.runAsSession failed SessionTurnError (AC14)", () => {
     expect(event?.sessionRole).toBe("implementer");
     // The legacy field stays populated too — call sites still rely on it.
     expect(event?.storyId).toBe("US-001");
+  });
+});
+
+// AC14's runAsSession coverage stops at the session transport. The story
+// describes the same error-event reshaping for completeAsWithFallback,
+// which mirrors the runAsSession catch block. Without this test the
+// call-site reshaping has no failing test guarding it.
+describe("AgentManager.completeAsWithFallback dispatch-error path", () => {
+  // AGENT_NOT_FOUND is the only path inside completeWithFallback that throws
+  // (all adapter exceptions are caught and converted to result.adapterFailure),
+  // so the only reliable way to drive the outer catch in completeAsWithFallback
+  // is to ask for an agent name that the registry cannot resolve.
+  test("emits a DispatchErrorEvent with origin:completeAs carrying dispatchOptions.{storyId,callId,scopeId,sessionRole} and rethrows on AGENT_NOT_FOUND", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, { dispatchEvents: bus });
+    const receivedErrors: DispatchErrorEvent[] = [];
+    bus.onDispatchError((e) => receivedErrors.push(e));
+
+    const options: CompleteOptions = {
+      modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+      workdir: "/tmp",
+      storyId: "US-001",
+      callId: "call-42",
+      scopeId: "scope-eu",
+      sessionRole: "synthesis",
+      pipelineStage: "complete",
+    };
+
+    // The throw must propagate unchanged — the catch only re-emits, never
+    // swallows. AGENT_NOT_FOUND is the specific error code that
+    // completeWithFallback throws for an unresolved agent.
+    await expect(manager.completeAsWithFallback("nonexistent-agent", "do the thing", options)).rejects.toThrow(
+      'Agent "nonexistent-agent" not found in registry',
+    );
+
+    // Exactly one DispatchErrorEvent must have been emitted, carrying the
+    // dispatchOptions fields the catch block forwards onto it.
+    expect(receivedErrors).toHaveLength(1);
+    const event = receivedErrors[0];
+    // Origin discriminates the dispatch boundary that produced the event.
+    expect(event?.origin).toBe("completeAs");
+    // errorCode / errorMessage carry the NaxError that escaped completeWithFallback.
+    expect(event?.errorCode).toBe("AGENT_NOT_FOUND");
+    expect(event?.errorMessage).toContain("nonexistent-agent");
+    // stage defaults to options.pipelineStage when the caller supplies it.
+    expect(event?.stage).toBe("complete");
+    // agentName is the resolved primary (the one the dispatch tried to call).
+    expect(event?.agentName).toBe("nonexistent-agent");
+    // dispatchOptions.{storyId,callId,scopeId,sessionRole} are the only fields
+    // that survive from CompleteOptions onto the DispatchErrorEvent — the
+    // call site reshapes these so cost rows can attribute the failure to the
+    // same role that produced successful spend.
+    expect(event?.storyId).toBe("US-001");
+    expect(event?.callId).toBe("call-42");
+    expect(event?.scopeId).toBe("scope-eu");
+    expect(event?.sessionRole).toBe("synthesis");
   });
 });
