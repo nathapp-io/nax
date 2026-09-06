@@ -16,6 +16,24 @@ paths:
 
 All retry logic in nax is expressed through the `RetryStrategy` interface — no inline retry loops, no hardcoded delay constants, no `while (true)` with a counter elsewhere in the codebase.
 
+## Scope: dispatch tiers only
+
+This rule governs nax's **dispatch** tiers — the layers that decide whether to
+re-dispatch a call. It does not govern **agent-internal** retry, which re-issues
+a single call from inside the agent's own execution of it, below any dispatch
+decision, and has never been a `RetryStrategy`:
+
+- **ACP** — `agent.acp.promptRetries` is passed to acpx as `--prompt-retries`.
+  The retry runs inside the spawned claude / codex / opencode process, outside
+  nax entirely.
+- **Native** — there is no child process; nax is the agent. The same layer
+  therefore lives in nax, in `src/agents/native/session/turn-retry.ts`
+  (nax#1870), and its loop is the sanctioned execution site for that layer.
+
+So `turn-retry.ts` is ACP parity, not a third tier and not a violation of the
+line above. Anything that decides whether to re-dispatch a call still belongs
+behind `RetryStrategy`.
+
 ## Two-tier model
 
 | Tier | Site | Default | Override |
