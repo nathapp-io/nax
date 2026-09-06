@@ -173,6 +173,58 @@ describe("runSelfHealChain", () => {
     expect(result.adapterFailure).toEqual(seedFailure);
     expect(result.adapterFailure?.outcome).toBe("fail-service-down");
   });
+
+  // Multi-step chains: the carried failure is the most recently observed one, not
+  // the seed's. `planRefineOp` passes two steps whenever specGuard is true, so a
+  // chain longer than one step is reachable today.
+  test("carries a later step's own adapterFailure past a clean final step", async () => {
+    const step1Failure = makeFailure("fail-timeout", "availability");
+    const seed = makeTurn("seed-out", 1);
+    const turns = [makeTurn("step1-out", 2, step1Failure), makeTurn("step2-out", 3)];
+    let call = 0;
+    const send = mock(async (_p: string) => turns[call++]);
+    const steps = [
+      makeSelfHealStep<Input, string>({ detect: async () => ["d1"], buildRepair: () => "fix1" }),
+      makeSelfHealStep<Input, string>({ detect: async () => ["d2"], buildRepair: () => "fix2" }),
+    ];
+    const result = await runSelfHealChain(makeCtx(send), seed, steps);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(result.output).toBe("step2-out");
+    // The step-1 failure survives the clean step-2 turn rather than being dropped.
+    expect(result.adapterFailure).toEqual(step1Failure);
+  });
+
+  test("a later step's own adapterFailure wins over the seed's stale one", async () => {
+    const seedFailure = makeFailure("fail-service-down", "availability");
+    const step1Failure = makeFailure("fail-timeout", "availability");
+    const seed = makeTurn("seed-out", 1, seedFailure);
+    const turns = [makeTurn("step1-out", 2, step1Failure), makeTurn("step2-out", 3)];
+    let call = 0;
+    const send = mock(async (_p: string) => turns[call++]);
+    const steps = [
+      makeSelfHealStep<Input, string>({ detect: async () => ["d1"], buildRepair: () => "fix1" }),
+      makeSelfHealStep<Input, string>({ detect: async () => ["d2"], buildRepair: () => "fix2" }),
+    ];
+    const result = await runSelfHealChain(makeCtx(send), seed, steps);
+    expect(result.output).toBe("step2-out");
+    // The more recent step-1 failure is carried, NOT the seed's stale one.
+    expect(result.adapterFailure).toEqual(step1Failure);
+    expect(result.adapterFailure?.outcome).not.toBe("fail-service-down");
+  });
+
+  test("carries no adapterFailure when neither the seed nor any turn has one", async () => {
+    const seed = makeTurn("seed-out", 1);
+    const turns = [makeTurn("step1-out", 2), makeTurn("step2-out", 3)];
+    let call = 0;
+    const send = mock(async (_p: string) => turns[call++]);
+    const steps = [
+      makeSelfHealStep<Input, string>({ detect: async () => ["d1"], buildRepair: () => "fix1" }),
+      makeSelfHealStep<Input, string>({ detect: async () => ["d2"], buildRepair: () => "fix2" }),
+    ];
+    const result = await runSelfHealChain(makeCtx(send), seed, steps);
+    expect(result.output).toBe("step2-out");
+    expect("adapterFailure" in result).toBe(false);
+  });
 });
 
 describe("makeSelfHealStep — log branch", () => {

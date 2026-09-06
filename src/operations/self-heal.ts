@@ -53,11 +53,11 @@ export function makeSelfHealStep<I, D>(spec: SelfHealSpec<I, D>): SelfHealStep<I
  * the seed, if none fired) becomes the returned output.
  *
  * US-001: a seed carrying `adapterFailure` is the only signal a failed dispatch
- * left on the chain. The path-correction step replaces the seed wholesale when
- * it fires, which silently drops that signal — see AC1. We preserve the seed's
- * `adapterFailure` when the corrective turn does not carry its own; a
- * corrective turn that does carry one keeps its own. This is the single point of
- * loss on the path (US-001 spec).
+ * left on the chain. A corrective step replaces the seed wholesale when it fires,
+ * which silently drops that signal — see AC1. The chain therefore carries the most
+ * recently observed `adapterFailure` forward onto each replacement; a corrective
+ * turn that carries its own keeps it and becomes the new carrier. This is the
+ * single point of loss on the path (US-001 spec).
  *
  * The op's `verify` should re-check the same conditions and warn on residual
  * deviations — see `planRefineOp` for the canonical pairing.
@@ -69,17 +69,25 @@ export async function runSelfHealChain<I>(
 ): Promise<TurnResult> {
   let last = seed;
   let totalCost = seed.estimatedCostUsd ?? 0;
+  // The most recently observed adapterFailure on the chain — the seed's to begin
+  // with, then any corrective turn's own. Tracking it (rather than re-reading the
+  // seed each iteration) keeps multi-step chains consistent with single-step ones:
+  // a later clean turn carries the latest real failure forward, not a stale one.
+  let lastFailure = seed.adapterFailure;
   for (const step of steps) {
     try {
       const turn = await step.run(ctx);
       if (turn) {
         totalCost += turn.estimatedCostUsd ?? 0;
-        // Carry seed's adapterFailure onto the replacement when the corrective
-        // turn does not carry its own. A corrective turn that already carries
-        // one keeps its own (AC2). The seed's failure is the only signal a
-        // failed dispatch produced — see US-001 AC1.
-        if (!turn.adapterFailure && seed.adapterFailure) {
-          last = { ...turn, adapterFailure: seed.adapterFailure };
+        // A corrective turn that carries its own adapterFailure keeps it, and it
+        // becomes the carrier (AC2). Otherwise the carried failure is preserved
+        // onto the replacement — the only signal a failed dispatch left behind
+        // (US-001 AC1).
+        if (turn.adapterFailure) {
+          lastFailure = turn.adapterFailure;
+          last = turn;
+        } else if (lastFailure) {
+          last = { ...turn, adapterFailure: lastFailure };
         } else {
           last = turn;
         }
