@@ -157,7 +157,9 @@ describe("resolveCodingToolSupport — story correlation", () => {
 
       await support?.runtime.callTool("Read", { path: "a.ts" });
 
-      const line = logger.calls.find((c) => c.stage === "coding-tool" && c.message === "invoked");
+      // The message now names the tool and outcome ("Read ok"); the stage is the
+      // stable selector.
+      const line = logger.calls.find((c) => c.stage === "coding-tool");
       expect(line?.data?.storyId).toBe("US-002");
     } finally {
       _codingToolDeps.getLogger = orig;

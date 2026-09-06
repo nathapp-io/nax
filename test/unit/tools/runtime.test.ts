@@ -201,8 +201,11 @@ describe("createCodingToolRuntime — invocation logging", () => {
     _codingToolDeps.getLogger = orig;
   });
 
+  // The message now names the tool and outcome ("Read ok"), so the selector
+  // matches on stage; the level is asserted per-case because it is what the
+  // console formatter filters on.
   function invoked() {
-    return logger.calls.filter((c) => c.stage === "coding-tool" && c.message === "invoked");
+    return logger.calls.filter((c) => c.stage === "coding-tool");
   }
 
   test("logs a successful call with the story, tool and output size", async () => {
@@ -215,6 +218,8 @@ describe("createCodingToolRuntime — invocation logging", () => {
 
     expect(outcome.kind).toBe("ok");
     expect(invoked()).toHaveLength(1);
+    expect(invoked()[0]?.level).toBe("debug");
+    expect(invoked()[0]?.message).toBe("Read ok");
     expect(invoked()[0]?.data).toEqual({
       storyId: "US-002",
       tool: "Read",
@@ -231,7 +236,11 @@ describe("createCodingToolRuntime — invocation logging", () => {
 
     await rt.callTool("Write", { path: "src/a.ts", content: "x" });
 
+    // A denial is an operator-facing event, so it must not be demoted to the
+    // debug level the console drops.
+    expect(invoked()[0]?.level).toBe("warn");
     expect(invoked()[0]?.data).toMatchObject({ tool: "Write", outcome: "denied" });
+    expect(invoked()[0]?.data?.error).toBeTruthy();
   });
 
   test("storyId is the first key, per the structured-log convention", async () => {

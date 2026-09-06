@@ -38,6 +38,16 @@ export interface CodingTool {
   readonly description: string;
   readonly inputSchema: JSONSchema;
   readonly scope: ToolScope;
+  /**
+   * True when an `isError` result is a routine part of using this tool rather
+   * than a fault worth an operator's attention. Only `RunCommand` sets it: a
+   * non-zero exit from a project command is the agent's own red/green loop, and
+   * on the acpx transport that loop runs inside the spawned agent where nax
+   * never observes it. Such calls are recorded at debug — the JSONL and the
+   * audit sink still get them, the console does not. Everything else defaults
+   * to false, so a malformed Read or a failed GitCommit stays visible.
+   */
+  readonly routineErrors?: boolean;
   run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>;
 }
 

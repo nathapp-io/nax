@@ -112,12 +112,32 @@ export function createCodingToolRuntime(opts: {
     resultBytes: number,
     input: Record<string, unknown>,
     breach?: boolean,
+    reason?: string,
+    routineErrors?: boolean,
   ): void {
-    _codingToolDeps.getLogger()?.info("coding-tool", "invoked", {
+    // The level is the console filter: `normal` mode drops debug, and the file
+    // sink writes every level regardless, so demoting keeps the record without
+    // spending an operator's attention on it. A breach is the one outcome that
+    // can indicate prompt injection, so it alone reaches `error`.
+    const level =
+      outcome === "denied"
+        ? breach === true
+          ? "error"
+          : "warn"
+        : outcome === "error" && !routineErrors
+          ? "warn"
+          : "debug";
+
+    // `reason` rides under the `error` key because the formatter's
+    // readFailureReason() renders exactly that key on warn/error lines. The
+    // message names the tool so the line is legible without the JSONL: these
+    // used to print as a bare "coding-tool invoked" with neither.
+    _codingToolDeps.getLogger()?.[level]("coding-tool", `${tool} ${outcome}`, {
       storyId: opts.storyId,
       tool,
       outcome,
       resultBytes,
+      ...(reason !== undefined && reason.length > 0 ? { error: reason } : {}),
     });
     sink.record({
       tool,
@@ -144,8 +164,9 @@ export function createCodingToolRuntime(opts: {
     async callTool(name, input) {
       const tool = lookup(name);
       if (tool === undefined) {
-        log(name, "denied", 0, input);
-        return { kind: "denied", reason: `unknown tool "${name}"`, breach: false };
+        const reason = `unknown tool "${name}"`;
+        log(name, "denied", 0, input, false, reason);
+        return { kind: "denied", reason, breach: false };
       }
 
       const verdict = opts.policy.check(name, tool.scope, input);
@@ -159,7 +180,7 @@ export function createCodingToolRuntime(opts: {
             root: opts.policy.root,
           });
         }
-        log(name, "denied", verdict.reason.length, input, verdict.breach);
+        log(name, "denied", verdict.reason.length, input, verdict.breach, verdict.reason);
         return { kind: "denied", reason: verdict.reason, breach: verdict.breach };
       }
 
@@ -171,11 +192,19 @@ export function createCodingToolRuntime(opts: {
           maxFileBytes,
         });
         const kind = result.isError === true ? "error" : "ok";
-        log(name, kind, result.content.length, input);
+        log(
+          name,
+          kind,
+          result.content.length,
+          input,
+          false,
+          kind === "error" ? result.content : undefined,
+          tool.routineErrors,
+        );
         return { kind, content: result.content };
       } catch (err) {
         const content = err instanceof Error ? err.message : String(err);
-        log(name, "error", content.length, input);
+        log(name, "error", content.length, input, false, content, tool.routineErrors);
         return { kind: "error", content };
       }
     },

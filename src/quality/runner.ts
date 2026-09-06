@@ -36,6 +36,20 @@ export interface QualityCommandOptions {
   env?: Record<string, string | undefined>;
   /** Secret env var names to strip before spawning the shell command. */
   stripEnvVars?: string[];
+  /**
+   * Who invoked this run. Defaults to `"harness"`.
+   *
+   * `"agent-tool"` marks the agent's own iteration loop arriving through the
+   * `RunCommand` coding tool (src/tools/run-command.ts). Those records are
+   * demoted to debug: they still reach the JSONL (the file sink writes every
+   * level) but stay off the console, because a failing lint there is normal TDD
+   * red rather than a harness fault — and because on the acpx transport the
+   * identical loop runs inside the spawned agent process, where nax never sees
+   * it at all. Leaving them at info made the two transports produce wildly
+   * different logs for the same work: one observed native run emitted 289
+   * quality pairs, 283 of them (98%) from this path.
+   */
+  origin?: "harness" | "agent-tool";
 }
 
 export interface QualityCommandResult {
@@ -81,7 +95,16 @@ function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; ca
  * to avoid deadlocking on output larger than the OS pipe buffer (~64 KB).
  */
 export async function runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult> {
-  const { commandName, command, workdir, storyId, timeoutMs = DEFAULT_TIMEOUT_MS, env, stripEnvVars } = opts;
+  const {
+    commandName,
+    command,
+    workdir,
+    storyId,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    env,
+    stripEnvVars,
+    origin = "harness",
+  } = opts;
 
   if (!command || command.trim() === "") {
     return {
@@ -97,8 +120,10 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
 
   const startTime = Date.now();
   const logger = getSafeLogger();
+  // Console level follows the caller, not the outcome — see `origin` above.
+  const level = origin === "agent-tool" ? "debug" : "info";
 
-  logger?.info("quality", `Running ${commandName}`, { storyId, commandName, command, workdir });
+  logger?.[level]("quality", `Running ${commandName}`, { storyId, commandName, command, workdir });
 
   try {
     // Build the base env, stripping any configured secret vars before spawning.
@@ -203,7 +228,7 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
     const output = [stdout, stderr].filter(Boolean).join("\n");
     const success = exitCode === 0;
 
-    logger?.info("quality", `${commandName} completed`, {
+    logger?.[level]("quality", `${commandName} completed`, {
       storyId,
       commandName,
       command,

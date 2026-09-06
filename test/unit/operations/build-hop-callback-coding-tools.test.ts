@@ -134,7 +134,9 @@ describe("buildHopCallback — declared coding tools reach the agent", () => {
       const { opts } = await dispatchOnce();
       await opts.interactionHandler?.onInteraction({ kind: "coding-tool", name: "Read", input: { path: "calc.ts" } });
 
-      const line = logger.calls.find((c) => c.stage === "coding-tool" && c.message === "invoked");
+      // The message now names the tool and outcome ("Read ok"); the stage is the
+      // stable selector.
+      const line = logger.calls.find((c) => c.stage === "coding-tool");
       // Asserted on the real dispatch path: coding-tool-support.test.ts proves
       // the helper threads it, not that the hop ever populates it.
       expect(line?.data?.storyId).toBe("US-002");

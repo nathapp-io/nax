@@ -37,7 +37,7 @@ type LogSpy = Mock<Logger["warn"]>;
  * Resets the logger before and after so the spied instance is the one the code
  * under test resolves via `getSafeLogger()`.
  */
-async function withLogSpy<T>(level: "warn" | "info", fn: (spy: LogSpy) => Promise<T>): Promise<T> {
+async function withLogSpy<T>(level: "warn" | "info" | "debug", fn: (spy: LogSpy) => Promise<T>): Promise<T> {
   const { resetLogger, initLogger } = await import("@/logger");
   resetLogger();
   const spy: LogSpy = spyOn(initLogger({ level: "silent" }), level);
@@ -61,4 +61,14 @@ export async function withWarnSpy<T>(fn: (warnSpy: LogSpy) => Promise<T>): Promi
  */
 export async function withInfoSpy<T>(fn: (infoSpy: LogSpy) => Promise<T>): Promise<T> {
   return withLogSpy("info", fn);
+}
+
+/**
+ * Spy on `logger.debug` for the duration of `fn`. Same contract as
+ * `withWarnSpy`. Used where the assertion is that a record was *demoted* to
+ * debug — it stays in the JSONL (the file sink writes every level) but is
+ * filtered off the console by the formatter's normal mode.
+ */
+export async function withDebugSpy<T>(fn: (debugSpy: LogSpy) => Promise<T>): Promise<T> {
+  return withLogSpy("debug", fn);
 }

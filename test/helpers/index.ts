@@ -83,5 +83,5 @@ export { waitForCondition, withTimeout } from "./timeout";
 export type { TimerSpyResult } from "./timer-spy";
 export { withTimerSpy } from "./timer-spy";
 export { makeTurnResult } from "./turn-result";
-export { withInfoSpy, withWarnSpy } from "./warn-spy";
+export { withDebugSpy, withInfoSpy, withWarnSpy } from "./warn-spy";
 export { type MockWorktreeManager, makeWorktreeManager } from "./worktree-manager";
