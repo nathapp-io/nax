@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { recordExecTouchedPaths } from "@/tools/exec-touched-paths";
+import { isKnownManifestOrLockfileName, recordExecTouchedPaths } from "@/tools/exec-touched-paths";
 
 describe("recordExecTouchedPaths", () => {
-  test("appends the manifest and lockfile for a known manager, resolved absolutely", () => {
+  test("appends the manifest and lockfile(s) for a known manager, resolved absolutely", () => {
     const target: string[] = [];
     recordExecTouchedPaths(target, "bun", "/repo");
-    expect(target).toEqual(["/repo/package.json", "/repo/bun.lock"]);
+    expect(target).toEqual(["/repo/package.json", "/repo/bun.lock", "/repo/bun.lockb"]);
   });
 
   test("uses the cwd actually given, not the process cwd", () => {
@@ -29,6 +29,33 @@ describe("recordExecTouchedPaths", () => {
   test("does not duplicate an already-recorded path", () => {
     const target: string[] = ["/repo/package.json"];
     recordExecTouchedPaths(target, "bun", "/repo");
-    expect(target).toEqual(["/repo/package.json", "/repo/bun.lock"]);
+    expect(target).toEqual(["/repo/package.json", "/repo/bun.lock", "/repo/bun.lockb"]);
+  });
+});
+
+describe("isKnownManifestOrLockfileName", () => {
+  test.each([
+    "package.json",
+    "bun.lock",
+    "bun.lockb",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "Cargo.toml",
+    "Cargo.lock",
+    "pyproject.toml",
+    "uv.lock",
+    "go.mod",
+    "go.sum",
+  ])("recognizes %s", (name) => {
+    expect(isKnownManifestOrLockfileName(name)).toBe(true);
+  });
+
+  test("does not recognize an ordinary source file", () => {
+    expect(isKnownManifestOrLockfileName("index.ts")).toBe(false);
+  });
+
+  test("does not recognize a manifest-adjacent name it does not track", () => {
+    expect(isKnownManifestOrLockfileName("requirements.txt")).toBe(false);
   });
 });

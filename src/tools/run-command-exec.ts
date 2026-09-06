@@ -52,6 +52,12 @@ export async function runExecBranch(
   const invalid = validateArgv(input.argv);
   if (invalid !== undefined) return { content: invalid, isError: true };
   const argv = input.argv as string[];
+  // Real narrowing, not a cast: validateArgv above already rejected an
+  // empty argv, so this destructure cannot actually miss -- kept as a
+  // defensive fallback (matching package-managers.ts's own "unreachable"
+  // comments) rather than a postfix `!` or an `as string`.
+  const [binary] = argv;
+  if (binary === undefined) return { content: "argv must not be empty", isError: true };
 
   const flag = deniedFlag(argv);
   if (flag !== undefined) return { content: `flag ${flag} is not permitted`, isError: true };
@@ -92,7 +98,17 @@ export async function runExecBranch(
     // `package-managers.ts`'s directory-redirect screens).
     if (opts.exec.touchedPaths !== undefined && !result.timedOut && result.exitCode === 0) {
       if (classifyExec(argv) === "install") {
-        recordExecTouchedPaths(opts.exec.touchedPaths, normalizeManagerBinary(argv[0] as string), normalized.cwd);
+        // Deliberately `binary` (from the ORIGINAL argv), not
+        // `normalized.argv[0]`: manager identity is invariant under
+        // normalization (normalizeExec only ever appends a scoping/
+        // no-scripts flag or rewrites arguments after argv[0]; it never
+        // changes the binary itself), so the two would name the same
+        // manager here -- but every other read in this function uses
+        // `normalized` for the values normalization actually changes
+        // (cwd, env). Using the pre-normalization binary keeps that
+        // distinction visible instead of reaching into `normalized.argv`
+        // for a value it never touches.
+        recordExecTouchedPaths(opts.exec.touchedPaths, normalizeManagerBinary(binary), normalized.cwd);
       }
     }
 

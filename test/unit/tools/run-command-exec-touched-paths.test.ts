@@ -30,7 +30,7 @@ describe("RunCommand argv branch — Exec-touched paths (Task 10)", () => {
       ctx,
     );
     expect(result.isError).toBe(false);
-    expect(touchedPaths).toEqual(["/repo/package.json", "/repo/bun.lock"]);
+    expect(touchedPaths).toEqual(["/repo/package.json", "/repo/bun.lock", "/repo/bun.lockb"]);
   });
 
   test("records nothing when the Exec call fails", async () => {
@@ -63,6 +63,10 @@ describe("RunCommand argv branch — Exec-touched paths (Task 10)", () => {
       ctx,
     );
     expect(result.isError).toBe(false);
-    expect(touchedPaths).toEqual(["/repo/packages/foo/package.json", "/repo/packages/foo/bun.lock"]);
+    expect(touchedPaths).toEqual([
+      "/repo/packages/foo/package.json",
+      "/repo/packages/foo/bun.lock",
+      "/repo/packages/foo/bun.lockb",
+    ]);
   });
 });

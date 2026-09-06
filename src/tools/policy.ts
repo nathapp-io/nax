@@ -13,9 +13,10 @@
  * the same kind of hole.
  */
 
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
+import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
 import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 
 /**
@@ -185,6 +186,46 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     return { allowed: false, reason, breach };
   }
 
+  /**
+   * The reason text for a path that resolved outside the root and found no
+   * `execTouchedPaths` match (fix round 1, Task 10).
+   *
+   * A bare "resolves outside the permitted root" taught the model nothing
+   * the last time this shape of denial mattered: in the run that motivated
+   * this whole feature, that message is what led an agent to delete a
+   * tsconfig entry instead of installing the package it needed. The design's
+   * own rule is that a denial returns the reason AND what would have been
+   * allowed — so for GitCommit specifically, when the refused path LOOKS
+   * like a manifest or lockfile (`isKnownManifestOrLockfileName`, the same
+   * closed table `recordExecTouchedPaths` writes from), the message explains
+   * the actual rule: only a manifest/lockfile an Exec call touched IN THIS
+   * TURN can be staged from outside the story's own package root, and even
+   * when that is not this call, the run's completion-phase auto-commit sweep
+   * (`autoCommitIfDirty`, `src/utils/git.ts`) stages root-level changes
+   * regardless, so the work is not silently lost.
+   *
+   * Every other refused path — including a manifest-shaped path for a tool
+   * OTHER than GitCommit, and any non-manifest-shaped path at all — keeps the
+   * plain message. This must never get chattier for ordinary containment
+   * denials, and must never reveal repository structure for a path the model
+   * never touched.
+   */
+  function outOfRootReason(tool: string, root: string, candidate: string): string {
+    if (tool === "GitCommit") {
+      const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
+      if (isKnownManifestOrLockfileName(basename(absolute))) {
+        return (
+          "lies outside this story's package root; only a manifest or lockfile touched by an " +
+          'Exec install in THIS turn can be staged from here (see Exec\'s `target: "repoRoot"` ' +
+          "form), and this call's containment carve-out does not cover it -- the run's " +
+          "completion-phase auto-commit sweep stages root-level changes regardless, so the " +
+          "work is not lost even if this commit is refused"
+        );
+      }
+    }
+    return "resolves outside the permitted root";
+  }
+
   return {
     root: resolvedRoot,
 
@@ -243,7 +284,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
         const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
         if (resolved === null) {
-          return deny(`path "${value}" resolves outside the permitted root`, true);
+          return deny(`path "${value}" ${outOfRootReason(tool, resolvedRoot, value)}`, true);
         }
 
         if (!grant.unconditional && !matchesAny(globs, relativeTo(resolved))) {
@@ -261,7 +302,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
           const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
           if (resolved === null) {
-            return deny(`"${field}" entry "${value}" resolves outside the permitted root`, true);
+            return deny(`"${field}" entry "${value}" ${outOfRootReason(tool, resolvedRoot, value)}`, true);
           }
           if (restrictPaths && !matchesAny(globs, relativeTo(resolved))) {
             return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
@@ -284,7 +325,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
           const resolved = resolveWithin(resolvedRoot, candidatePath, execTouchedPaths);
           if (resolved === null) {
-            return deny(`"${field}" entry "${value}" resolves outside the permitted root`, true);
+            return deny(`"${field}" entry "${value}" ${outOfRootReason(tool, resolvedRoot, candidatePath)}`, true);
           }
           if (restrictPaths && !matchesAny(globs, relativeTo(resolved))) {
             return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
