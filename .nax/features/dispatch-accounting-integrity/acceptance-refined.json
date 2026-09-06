@@ -1,0 +1,282 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "buildDispatchErrorEvent returns a DispatchErrorEvent whose tokenUsage equals the SessionTurnError tokenUsage when given a SessionTurnError carrying tokenUsage, estimatedCostUsd, and exactCostUsd.",
+    "refined": "Given a SessionTurnError instance with tokenUsage = { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 }, estimatedCostUsd = 0.002, and exactCostUsd = 0.003, calling buildDispatchErrorEvent({ origin, agentName, stage, error, dispatchOptions, startedAt }) returns a DispatchErrorEvent where event.tokenUsage deep-equals { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 }.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "buildDispatchErrorEvent returns a DispatchErrorEvent whose estimatedCostUsd equals the SessionTurnError estimatedCostUsd when given that SessionTurnError.",
+    "refined": "Given a SessionTurnError with estimatedCostUsd = 0.002, calling buildDispatchErrorEvent returns a DispatchErrorEvent where event.estimatedCostUsd === 0.002 (strict numeric equality).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "buildDispatchErrorEvent returns a DispatchErrorEvent whose exactCostUsd equals the SessionTurnError exactCostUsd when given that SessionTurnError.",
+    "refined": "Given a SessionTurnError with exactCostUsd = 0.003, calling buildDispatchErrorEvent returns a DispatchErrorEvent where event.exactCostUsd === 0.003 (strict numeric equality).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "buildDispatchErrorEvent returns a DispatchErrorEvent whose tokenUsage, estimatedCostUsd, and exactCostUsd are undefined when given a plain Error.",
+    "refined": "Given a plain new Error('boom') (not a SessionTurnError), calling buildDispatchErrorEvent returns a DispatchErrorEvent where event.tokenUsage === undefined, event.estimatedCostUsd === undefined, and event.exactCostUsd === undefined.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "buildDispatchErrorEvent returns a DispatchErrorEvent whose tokenUsage is undefined and whose errorCode and durationMs are populated when given a SessionTurnError whose tokenUsage is undefined.",
+    "refined": "Given a SessionTurnError with tokenUsage === undefined, calling buildDispatchErrorEvent returns a DispatchErrorEvent where event.tokenUsage === undefined, typeof event.errorCode === 'string' and event.errorCode.length > 0, and typeof event.durationMs === 'number'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "buildDispatchErrorEvent returns a DispatchErrorEvent whose sessionRole, storyId, callId, and scopeId equal the corresponding dispatchOptions fields.",
+    "refined": "Given dispatchOptions = { storyId: 'S-1', callId: 'c-42', scopeId: 'scope-7', sessionRole: 'coder' }, calling buildDispatchErrorEvent returns a DispatchErrorEvent where event.storyId === 'S-1', event.callId === 'c-42', event.scopeId === 'scope-7', and event.sessionRole === 'coder'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "buildDispatchErrorEvent returns a DispatchErrorEvent whose sessionRole is undefined when dispatchOptions omits sessionRole.",
+    "refined": "Given dispatchOptions = { storyId: 'S-1' } (sessionRole key absent), calling buildDispatchErrorEvent returns a DispatchErrorEvent where event.sessionRole === undefined.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When attachCostSubscriber receives a DispatchErrorEvent carrying tokenUsage and exactCostUsd, it records a CostErrorEvent whose tokens.input, tokens.output, estimatedCostUsd, exactCostUsd, and sessionRole match the emitted event.",
+    "refined": "Given a DispatchErrorEvent with tokenUsage = { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 }, exactCostUsd = 0.003, estimatedCostUsd = 0.002, and sessionRole = 'coder', after the cost subscriber processes the event, the aggregator's recorded CostErrorEvent satisfies tokens.input === 100, tokens.output === 50, tokens.cacheRead === 10, tokens.cacheWrite === 5, estimatedCostUsd === 0.002, exactCostUsd === 0.003, and sessionRole === 'coder'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When attachCostSubscriber receives a DispatchErrorEvent with no tokenUsage, it records a CostErrorEvent whose tokens is undefined rather than an object of zeros.",
+    "refined": "Given a DispatchErrorEvent with tokenUsage === undefined, after the cost subscriber processes the event, the recorded CostErrorEvent satisfies event.tokens === undefined (strictly undefined, not an object with all-zero input/output values).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When attachCostSubscriber receives a dispatch error with exactCostUsd, the recorded CostErrorEvent.costUsd equals exactCostUsd.",
+    "refined": "Given a DispatchErrorEvent with exactCostUsd = 0.003 and estimatedCostUsd = 0.002, after the cost subscriber processes the event, the recorded CostErrorEvent satisfies event.costUsd === 0.003 (exactCostUsd takes precedence over estimatedCostUsd).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When attachCostSubscriber receives a dispatch error carrying only estimatedCostUsd, the recorded CostErrorEvent.costUsd equals estimatedCostUsd.",
+    "refined": "Given a DispatchErrorEvent with estimatedCostUsd = 0.002 and exactCostUsd === undefined, after the cost subscriber processes the event, the recorded CostErrorEvent satisfies event.costUsd === 0.002 (estimatedCostUsd is the fallback).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "CostAggregator.snapshot() returns totalErrorCostUsd equal to the summed costUsd of recorded error events, with totalCostUsd unchanged by those error events.",
+    "refined": "Given two error events recorded with costUsd = 0.002 and costUsd = 0.003 (and no other error events), CostAggregator.snapshot() returns totalErrorCostUsd === 0.005, and totalCostUsd equals the value it had before these error events were recorded (error costs contribute 0 to totalCostUsd).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "After CostAggregator.drain(), the written <runId>.jsonl contains an error row whose tokens and costUsd equal the recorded values alongside its errorCode.",
+    "refined": "Given a CostErrorEvent recorded with tokens = { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 }, costUsd = 0.003, and errorCode = 'E_TEST', after calling CostAggregator.drain(), parsing each line of the written <runId>.jsonl as JSON yields exactly one row with kind === 'error' where row.tokens deep-equals { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 }, row.costUsd === 0.003, and row.errorCode === 'E_TEST'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given sendPrompt stubbed to throw a SessionTurnError carrying tokenUsage and exactCostUsd, when AgentManager.runAsSession is called, then it emits a dispatch-error event carrying that tokenUsage and exactCostUsd and rethrows the error.",
+    "refined": "Stub sendPrompt to throw a SessionTurnError with tokenUsage = { input: 100, output: 50 } and exactCostUsd = 0.003. Calling AgentManager.runAsSession(...) rejects (rethrows the same SessionTurnError instance), and a dispatch-error listener registered via the runtime event stream receives exactly one event with kind === 'error' where event.tokenUsage deep-equals { input: 100, output: 50 } and event.exactCostUsd === 0.003.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "pruneRetainedTranscripts returns 3 when it deletes the excess from a directory holding 53 transcript files with maxRetained 50.",
+    "refined": "Given a directory containing 53 files matching the native transcript file pattern (e.g., <name>.transcript.json and failed-<stamp>.transcript.json), when await pruneRetainedTranscripts(dir, 50) resolves, it returns the number 3 and the directory contains exactly 50 transcript files afterwards.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "pruneRetainedTranscripts returns 0 and deletes nothing when the directory holds fewer transcript files than maxRetained.",
+    "refined": "Given a directory containing N transcript files where N < maxRetained (e.g., 10 files with maxRetained = 50), when await pruneRetainedTranscripts(dir, maxRetained) resolves, it returns 0 and the directory still contains exactly N files with identical names and unchanged mtimes (no file is deleted or rewritten).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "pruneRetainedTranscripts deletes oldest transcript files by mtime first, leaving exactly the maxRetained most recently modified files.",
+    "refined": "Given a directory with maxRetained + k transcript files whose mtimes are set to distinct known values via fs.utimes, when await pruneRetainedTranscripts(dir, maxRetained) resolves, it returns k and the set of remaining file names is exactly the k files with the newest mtimes that were removed and the maxRetained newest-mtime files that remain; fs.stat confirms the retained files are precisely the maxRetained files with the largest mtimes in their original order.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "sweepFeatureTranscripts prunes <transcriptRoot>/features/<featureName>/sessions to MAX_RETAINED_TRANSCRIPTS and returns the deleted count when given featureName and transcriptRoot.",
+    "refined": "Given a fixture tree <transcriptRoot>/features/<featureName>/sessions containing MAX_RETAINED_TRANSCRIPTS + 3 transcript files, when await sweepFeatureTranscripts({ featureName: 'f', transcriptRoot: root }) resolves, it returns 3, the sessions directory contains exactly MAX_RETAINED_TRANSCRIPTS files, and the derived path matches what deriveNativeTranscriptDir(transcriptRoot, featureName) returns.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "sweepFeatureTranscripts deletes a live-name <name>.transcript.json file as readily as a failed-<stamp> file when the directory is over the cap.",
+    "refined": "Given a sessions directory over MAX_RETAINED_TRANSCRIPTS where the oldest-by-mtime files include one named <name>.transcript.json and one named failed-<stamp>.transcript.json, when await sweepFeatureTranscripts({ featureName, transcriptRoot }) resolves, both the live-name file and the failed- file are absent from the directory and the returned count reflects both deletions (neither filename pattern is exempt from pruning).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "sweepFeatureTranscripts returns 0 and deletes nothing when featureName is undefined.",
+    "refined": "Given a fixture tree under transcriptRoot containing transcript files, when await sweepFeatureTranscripts({ transcriptRoot }) resolves, it returns 0, no file under transcriptRoot is deleted (directory contents byte-identical), and deriveNativeTranscriptDir is never invoked with a feature name (no disk access under the features path).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "sweepFeatureTranscripts returns 0 and deletes nothing when transcriptRoot is undefined.",
+    "refined": "Given featureName is provided but transcriptRoot is undefined, when await sweepFeatureTranscripts({ featureName }) resolves, it returns 0 and no filesystem calls occur (assert via injected/mocked fs deps or fs spy: zero read/write/unlink calls).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "sweepFeatureTranscripts returns 0 and deletes nothing when dryRun is true, even for a directory over the cap.",
+    "refined": "Given a sessions directory containing MAX_RETAINED_TRANSCRIPTS + 3 transcript files, when await sweepFeatureTranscripts({ featureName, transcriptRoot, dryRun: true }) resolves, it returns 0 and the directory still contains all MAX_RETAINED_TRANSCRIPTS + 3 files (no unlink calls made).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "sweepFeatureTranscripts returns 0 when the derived directory does not exist.",
+    "refined": "Given featureName and transcriptRoot such that deriveNativeTranscriptDir yields a path that does not exist on disk, when await sweepFeatureTranscripts({ featureName, transcriptRoot }) resolves, it returns 0 and rejects neither (handles the missing-directory stat error internally, e.g., ENOENT), and no directory is created.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given sweepFeatureTranscripts stubbed, when setupRun runs, then it invokes the sweep exactly once with the run feature as featureName and runtime outputDir as transcriptRoot.",
+    "refined": "With sweepFeatureTranscripts replaced by a test double (via module mock or injectable dep), when setupRun executes for a run with feature 'F' and runtime.outputDir = '/out', it calls the stub exactly once with a single options object satisfying { featureName: 'F', transcriptRoot: '/out' }, where '/out' is the same value threaded to SessionManager as transcriptRoot.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given sweepFeatureTranscripts stubbed, when setupRun runs under dryRun true, then it invokes the sweep with dryRun true.",
+    "refined": "With sweepFeatureTranscripts stubbed and a run whose runtime.dryRun === true, when setupRun executes, the recorded stub call includes dryRun: true in its options object (assert deep-equal on the options: { featureName: <run feature>, transcriptRoot: <outputDir>, dryRun: true }).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given SessionManager.runInSession with a SessionRunClient, declared coding tools, a codingToolRoot, an outputDir, and no caller-supplied codingToolRuntime, when the received runtime dispatches a tool call, then a ledger record is written under the audit directory derived by toolAuditDir from those options.",
+    "refined": "When runInSession is invoked with declaredTools non-empty, codingToolRoot set, outputDir set, and request.runOptions.codingToolRuntime undefined, the runtime injected into the runner resolves auditDir via toolAuditDir(root, outputDir) and dispatching a tool call through that runtime appends a JSONL ledger record whose filename is buildLedgerSessionName(storyId) under that auditDir; assert the file exists and contains one record after dispatch.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "runTrackedSession passes the runner runOptions.codingTools equal to the advertised tools for the declared set when declaredTools is non-empty and no caller-supplied codingToolRuntime exists.",
+    "refined": "Given request.runOptions.codingToolRuntime is undefined and declaredTools is a non-empty array, runTrackedSession invokes the runner with runOptions.codingTools deep-equal to the advertised tool descriptors produced for declaredTools (the codingTools field of the CodingToolSupport returned by resolveCodingToolSupport); assert via a runner stub capturing received runOptions.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "runTrackedSession passes the runner the same codingToolRuntime instance supplied by the caller when one is supplied.",
+    "refined": "Given request.runOptions.codingToolRuntime is a non-undefined runtime instance R, runTrackedSession does not call resolveCodingToolSupport to build a replacement and the runner receives runOptions.codingToolRuntime === R (identity comparison via toBe); the caller's runtime audit directory and ledger are untouched by runTrackedSession.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "runTrackedSession passes the runner runOptions.codingToolRuntime as undefined when declaredTools is empty and no caller-supplied runtime exists.",
+    "refined": "Given declaredTools is an empty array and request.runOptions.codingToolRuntime is undefined, runTrackedSession invokes the runner with runOptions.codingToolRuntime === undefined and runOptions.codingTools === undefined (no codingTool keys injected); assert via a runner stub capturing received runOptions.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "runTrackedSession rejects with a NaxError whose code is CODING_TOOL_ROOT_MISSING when declaredTools is non-empty and codingToolRoot is an empty string.",
+    "refined": "Given declaredTools.length > 0 and codingToolRoot === \"\", runTrackedSession returns a rejected promise whose error is an instance of NaxError with error.code === \"CODING_TOOL_ROOT_MISSING\"; assert with await expect(...).rejects.toMatchObject({ code: \"CODING_TOOL_ROOT_MISSING\" }).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given SessionManager.runInSession with a SessionRunClient and declared tools, when the runner receives the request, then runOptions.codingToolRuntime is defined and the session state is RUNNING.",
+    "refined": "When runInSession executes with declaredTools non-empty and request.runOptions.codingToolRuntime undefined, the runner stub receives a runOptions object where runOptions.codingToolRuntime !== undefined, and immediately after the runner receives the request, the tracked session state (as observed by the runner, e.g., via session state passed in context) equals RUNNING.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "planCommand rejects with a NaxError whose code is RUN_NAME_COLLISION when the derived projectKey identity is registered to a different workdir.",
+    "refined": "Given _planDeps.claimProjectIdentity is stubbed to reject with a NaxError whose code property is RUN_NAME_COLLISION, when planCommand(workdir, config, options) is called, the returned promise rejects with an Error instance whose code property equals RUN_NAME_COLLISION.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When planCommand encounters a RUN_NAME_COLLISION identity claim, then the plan strategy execute method is never invoked.",
+    "refined": "Given _planDeps.claimProjectIdentity rejects with a NaxError whose code is RUN_NAME_COLLISION, when planCommand is called and the rejection propagates, the plan strategy object returned by createPlanStrategy has its execute method invocation count equal to 0 (verified via a spy/mock).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When no identity exists for the derived projectKey, planCommand writes an identity whose workdir equals its workdir argument and invokes the plan strategy once.",
+    "refined": "Given _planDeps.claimProjectIdentity is a mock whose implementation records (projectKey, workdir, remoteUrl) and resolves, when planCommand('wd', config, options) is called, the recorded call has workdir === 'wd', and the plan strategy execute spy has invocation count 1.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When the derived projectKey identity is already registered to the same workdir, planCommand invokes the plan strategy once and updates the stored lastSeen.",
+    "refined": "Given _planDeps.claimProjectIdentity is stubbed to resolve (no rejection), when planCommand is called, the claimProjectIdentity spy has invocation count 1, the plan strategy execute spy has invocation count 1, and the claimProjectIdentity mock resolves without throwing (idempotent same-workdir claim update including lastSeen).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "planCommand claims under the trimmed config.name when config.name is a non-empty string.",
+    "refined": "Given config.name = '  myproj  ', when planCommand is called, _planDeps.claimProjectIdentity is invoked with its first argument (projectKey) equal to 'myproj' (config.name.trim(), not basename(workdir)).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "planCommand claims under basename(workdir) when config.name is absent or only whitespace.",
+    "refined": "Given config.name is undefined (and separately given config.name = '   '), when planCommand('/abs/path/to/wd', config, options) is called, _planDeps.claimProjectIdentity is invoked with its first argument (projectKey) equal to 'wd' (basename(workdir)) in both cases.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "planCommand passes the trimmed origin remote URL as remoteUrl when _planDeps.spawnSync reports exit code 0.",
+    "refined": "Given _planDeps.spawnSync is stubbed to return { status: 0, stdout: '  https://example.com/repo.git  \\n' } for args ['git', 'remote', 'get-url', 'origin'], when planCommand is called, _planDeps.claimProjectIdentity is invoked with its third argument (remoteUrl) equal to 'https://example.com/repo.git' (trimmed stdout).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "planCommand passes null as remoteUrl when _planDeps.spawnSync reports a non-zero exit code.",
+    "refined": "Given _planDeps.spawnSync is stubbed to return { status: 128, stdout: '', stderr: 'fatal: ...' } (and separately null status), when planCommand is called, _planDeps.claimProjectIdentity is invoked with its third argument (remoteUrl) strictly equal to null.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When _planDeps.claimProjectIdentity rejects with an error whose code is not RUN_NAME_COLLISION, then planCommand invokes the plan strategy once and resolves.",
+    "refined": "Given _planDeps.claimProjectIdentity rejects with an Error whose code is 'SOME_OTHER_CODE' (e.g. 'EPERM'), when planCommand is called, the returned promise resolves (does not reject), the rejection is swallowed (warn-and-proceed), and the plan strategy execute spy has invocation count 1.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
