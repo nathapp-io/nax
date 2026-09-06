@@ -1,0 +1,201 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "dispatch-accounting-integrity",
+  "branchName": "feat/dispatch-accounting-integrity",
+  "createdAt": "2026-09-16T00:00:00.000Z",
+  "updatedAt": "2026-09-06T06:35:55.187Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Failed dispatches record spent usage",
+      "description": "**Goal** — Carry SessionTurnError usage and role attribution through dispatch errors into durable cost-ledger rows and separate failed-spend totals.\n\n**Motivation** — A run-op whose turn throws spends real money and writes no usage to the cost ledger.\n\n**Approach** — `DispatchErrorEvent` — `src/runtime/dispatch-events.ts:130` (US-001)\n- Baseline: `{ kind: \"error\"; origin; agentName; stage; storyId?; errorCode; errorMessage; prompt?; durationMs; timestamp; resolvedPermissions; callId?; scopeId? }`\n- Target: the same, plus four optional fields — `sessionRole?: string`, `tokenUsage?: TokenUsage`, `estimatedCostUsd?: number`, `exactCostUsd?: number`. `TokenUsage` is the one already imported at `src/runtime/dispatch-events.ts:1` from `../agents/cost` (`src/agents/cost/types.ts:16`) — **not** the same-named interface at `src/metrics/types.ts:12`. All four are optional, so existing constructions stay valid.\n\n**Approach** — `buildDispatchErrorEvent` — `src/agents/manager-dispatch.ts:178` (US-001)\n- Baseline: input `{ origin; agentName; stage; storyId?; error: unknown; prompt?; resolvedPermissions; callId?; scopeId?; startedAt }`.\n- Target: the three per-call id fields `storyId` / `callId` / `scopeId` are replaced by a single `dispatchOptions: { storyId?: string; callId?: string; scopeId?: string; sessionRole?: string }`, and the function reads `tokenUsage`, `estimatedCostUsd` and `exactCostUsd` off the thrown value when it is a `SessionTurnError`, leaving them undefined otherwise.\n- Collapsing three fields into one is deliberate: both call sites live in `src/agents/manager.ts`, which is grandfathered at 786 lines in `scripts/baselines/file-sizes-baseline.json` against a 600-line limit and **may not grow**. Passing the existing `opts` / `options` object as `dispatchOptions` removes two lines at each call site.\n\n**Approach** — `CostErrorEvent` — `src/runtime/cost-aggregator.ts:89` (US-001)\n- Baseline: `{ kind: \"error\"; ts; runId; projectKey?; schemaVersion?; agentName; model?; stage?; storyId?; callId?; scopeId?; errorCode; durationMs }`\n- Target: the same, plus `sessionRole?: string`, `tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }`, `estimatedCostUsd?: number`, `exactCostUsd?: number`, `costUsd?: number`. `tokens` stays **optional and is left undefined** when the dispatch error carried no usage — a zeroed `tokens` would re-create the \"failed vs cost zero\" ambiguity the `kind` discriminator was added for (#1433).\n\n**Approach** — `CostSnapshot` — `src/runtime/cost-aggregator.ts:110` (US-001)\n- Baseline: `{ totalCostUsd; totalEstimatedCostUsd; totalExactCostUsd; totalInputTokens; …; errorCount }`\n- Target: the same, plus `totalErrorCostUsd: number` — the summed `costUsd` of error rows. `totalCostUsd` keeps its current meaning (successful spend only), so failed spend becomes visible without silently re-basing every historical comparison.\n\n**Scope** — In: error-event construction, AgentManager call-site reshaping, error cost mapping/serialization, and aggregate error-spend totals. Out: reporting failed spend in the `nax cost` CLI output; adding model attribution (`model`, `pricingSource`) to `DispatchErrorEvent`.\n\n**Interface**\n```typescript\ndispatchOptions: { storyId?: string; callId?: string; scopeId?: string; sessionRole?: string }\nsessionRole?: string\ntokenUsage?: TokenUsage\nestimatedCostUsd?: number\nexactCostUsd?: number\ntokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }\ncostUsd?: number\ntotalErrorCostUsd: number\n```",
+      "acceptanceCriteria": [
+        "buildDispatchErrorEvent returns a DispatchErrorEvent whose tokenUsage equals the SessionTurnError tokenUsage when given a SessionTurnError carrying tokenUsage, estimatedCostUsd, and exactCostUsd.",
+        "buildDispatchErrorEvent returns a DispatchErrorEvent whose estimatedCostUsd equals the SessionTurnError estimatedCostUsd when given that SessionTurnError.",
+        "buildDispatchErrorEvent returns a DispatchErrorEvent whose exactCostUsd equals the SessionTurnError exactCostUsd when given that SessionTurnError.",
+        "buildDispatchErrorEvent returns a DispatchErrorEvent whose tokenUsage, estimatedCostUsd, and exactCostUsd are undefined when given a plain Error.",
+        "buildDispatchErrorEvent returns a DispatchErrorEvent whose tokenUsage is undefined and whose errorCode and durationMs are populated when given a SessionTurnError whose tokenUsage is undefined.",
+        "buildDispatchErrorEvent returns a DispatchErrorEvent whose sessionRole, storyId, callId, and scopeId equal the corresponding dispatchOptions fields.",
+        "buildDispatchErrorEvent returns a DispatchErrorEvent whose sessionRole is undefined when dispatchOptions omits sessionRole.",
+        "When attachCostSubscriber receives a DispatchErrorEvent carrying tokenUsage and exactCostUsd, it records a CostErrorEvent whose tokens.input, tokens.output, estimatedCostUsd, exactCostUsd, and sessionRole match the emitted event.",
+        "When attachCostSubscriber receives a DispatchErrorEvent with no tokenUsage, it records a CostErrorEvent whose tokens is undefined rather than an object of zeros.",
+        "When attachCostSubscriber receives a dispatch error with exactCostUsd, the recorded CostErrorEvent.costUsd equals exactCostUsd.",
+        "When attachCostSubscriber receives a dispatch error carrying only estimatedCostUsd, the recorded CostErrorEvent.costUsd equals estimatedCostUsd.",
+        "CostAggregator.snapshot() returns totalErrorCostUsd equal to the summed costUsd of recorded error events, with totalCostUsd unchanged by those error events.",
+        "After CostAggregator.drain(), the written <runId>.jsonl contains an error row whose tokens and costUsd equal the recorded values alongside its errorCode.",
+        "Given sendPrompt stubbed to throw a SessionTurnError carrying tokenUsage and exactCostUsd, when AgentManager.runAsSession is called, then it emits a dispatch-error event carrying that tokenUsage and exactCostUsd and rethrows the error."
+      ],
+      "tags": [
+        "feature",
+        "accounting",
+        "dispatch",
+        "cost-ledger"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Crosses dispatch typing, manager call sites, middleware mapping, aggregation, and persisted JSONL while preserving historical total semantics."
+      },
+      "contextFiles": [
+        "src/agents/manager-dispatch.ts",
+        "src/runtime/dispatch-events.ts",
+        "src/runtime/middleware/cost.ts",
+        "src/runtime/cost-aggregator.ts",
+        "src/agents/session-types.ts"
+      ],
+      "outOfScope": [
+        "US-001 only: reporting failed spend in the `nax cost` CLI output.",
+        "Adding model attribution (`model`, `pricingSource`) to `DispatchErrorEvent`; only `sessionRole` and usage are added."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Sweep retained transcripts at run setup",
+      "description": "**Goal** — Make native transcript retention enforce its cap even when warm sessions never reach the close path.\n\n**Motivation** — A warm-lifetime native session is never closed, so its transcript is never deleted and the retention cap structurally cannot see it.\n\n**Approach** — `pruneRetainedTranscripts` — `src/agents/native/session/transcript-store.ts:165` (US-002)\n- Baseline: `pruneRetainedTranscripts(dir: string, maxRetained = MAX_RETAINED_TRANSCRIPTS): Promise<void>`\n- Target: same parameters, returns `Promise<number>` — the count of files deleted. Its one existing caller (`src/agents/native/session/session.ts:157`) ignores the return value.\n\n**Approach** — `sweepFeatureTranscripts` — new, `src/session/transcript-sweep.ts` (US-002)\n- Target: `sweepFeatureTranscripts(opts: { featureName?: string; transcriptRoot?: string; dryRun?: boolean }): Promise<number>`. Derives the directory through `deriveNativeTranscriptDir` (`src/session/manager-deps.ts:45`) — the documented SSOT for the transcript path (ADR-028 §3), imported relatively from `./manager-deps` — and delegates to `pruneRetainedTranscripts`, imported from the `@/agents/native` nested barrel. Returns `0` without touching disk when the directory cannot be derived or `dryRun` is true. Exported from the `@/session` barrel; the `@/agents/native` barrel gains a `pruneRetainedTranscripts` re-export.\n- It mirrors the file shape of `src/session/scratch-purge.ts` (a feature-scoped sessions-directory sweep with injectable deps). Note that `purgeStaleScratch` has no production caller today despite its docstring — it is a shape precedent only, not evidence of an existing run-end hook.\n\n**Approach** — `setupRun` — `src/execution/lifecycle/run-setup.ts:187` (US-002)\n- Baseline: at `:381` it calls `sessionManager.sweepOrphans()` and logs the count.\n- Target: the same block also calls `sweepFeatureTranscripts` with the run's `feature` and `runtime.outputDir` (`NaxRuntime.outputDir`, `src/runtime/index.ts:124`; it is the value threaded to `SessionManager` as `transcriptRoot` at `src/runtime/index.ts:304`) and `runtime.dryRun`, logging the deleted count when non-zero. Sweeping here rather than at run end is what makes the cap independent of any close.\n\n**Scope** — In: counted pruning, a feature-scoped sweep utility and barrel exports, and startup invocation. Out: closing warm-lifetime native sessions at run end; changing `MAX_RETAINED_TRANSCRIPTS` from 50, or making it configurable; wiring `purgeStaleScratch`.\n\n**Interface**\n```typescript\npruneRetainedTranscripts(dir: string, maxRetained = MAX_RETAINED_TRANSCRIPTS): Promise<number>\nsweepFeatureTranscripts(opts: { featureName?: string; transcriptRoot?: string; dryRun?: boolean }): Promise<number>\n```",
+      "acceptanceCriteria": [
+        "pruneRetainedTranscripts returns 3 when it deletes the excess from a directory holding 53 transcript files with maxRetained 50.",
+        "pruneRetainedTranscripts returns 0 and deletes nothing when the directory holds fewer transcript files than maxRetained.",
+        "pruneRetainedTranscripts deletes oldest transcript files by mtime first, leaving exactly the maxRetained most recently modified files.",
+        "sweepFeatureTranscripts prunes <transcriptRoot>/features/<featureName>/sessions to MAX_RETAINED_TRANSCRIPTS and returns the deleted count when given featureName and transcriptRoot.",
+        "sweepFeatureTranscripts deletes a live-name <name>.transcript.json file as readily as a failed-<stamp> file when the directory is over the cap.",
+        "sweepFeatureTranscripts returns 0 and deletes nothing when featureName is undefined.",
+        "sweepFeatureTranscripts returns 0 and deletes nothing when transcriptRoot is undefined.",
+        "sweepFeatureTranscripts returns 0 and deletes nothing when dryRun is true, even for a directory over the cap.",
+        "sweepFeatureTranscripts returns 0 when the derived directory does not exist.",
+        "Given sweepFeatureTranscripts stubbed, when setupRun runs, then it invokes the sweep exactly once with the run feature as featureName and runtime outputDir as transcriptRoot.",
+        "Given sweepFeatureTranscripts stubbed, when setupRun runs under dryRun true, then it invokes the sweep with dryRun true."
+      ],
+      "tags": [
+        "feature",
+        "sessions",
+        "retention",
+        "filesystem"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Adds a filesystem sweep and wires it into lifecycle setup; it operates on session artifacts, requiring strict session-path test isolation."
+      },
+      "contextFiles": [
+        "src/agents/native/session/transcript-store.ts",
+        "src/session/scratch-purge.ts",
+        "src/session/manager-deps.ts",
+        "src/execution/lifecycle/run-setup.ts",
+        "src/agents/native/index.ts"
+      ],
+      "expectedFiles": [
+        "src/session/transcript-sweep.ts"
+      ],
+      "outOfScope": [
+        "Closing warm-lifetime native sessions at run end; retention is made independent of the close path instead.",
+        "Changing `MAX_RETAINED_TRANSCRIPTS` from 50, or making it configurable.",
+        "Wiring `purgeStaleScratch`, which has no production caller today."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Preserve audited coding-tool runtime in tracked sessions",
+      "description": "**Goal** — Resolve audited coding-tool support for tracked sessions without replacing a runtime supplied by the caller.\n\n**Motivation** — `runTrackedSession` builds coding-tool support with a no-op audit sink and overwrites the caller's recording runtime.\n\n**Approach** — `runTrackedSession` — `src/session/manager-run.ts:70` (US-003)\n- Baseline: calls `buildCodingToolSupport({ root, grants, declared, storyId })` and unconditionally spreads `codingToolRuntime` / `codingTools` into the injected `runOptions`.\n- Target: calls `resolveCodingToolSupport(request.runOptions)` (`src/agents/coding-tool-support.ts:103`) — which derives `auditDir` via `toolAuditDir` and the ledger name via `buildLedgerSessionName`, and therefore records — and applies the result **only when** `request.runOptions.codingToolRuntime` is `undefined`, so a caller that already built a recording runtime keeps it.\n\n**Scope** — In: tracked-session coding-tool support resolution and caller-runtime preservation. Out: wiring a production caller for `SessionRunClient`; `runTrackedSession` stays reachable only from `SessionManager.runInSession`.\n\n**Interface**\n```typescript\nresolveCodingToolSupport(options): CodingToolSupport | undefined\n```",
+      "acceptanceCriteria": [
+        "Given SessionManager.runInSession with a SessionRunClient, declared coding tools, a codingToolRoot, an outputDir, and no caller-supplied codingToolRuntime, when the received runtime dispatches a tool call, then a ledger record is written under the audit directory derived by toolAuditDir from those options.",
+        "runTrackedSession passes the runner runOptions.codingTools equal to the advertised tools for the declared set when declaredTools is non-empty and no caller-supplied codingToolRuntime exists.",
+        "runTrackedSession passes the runner the same codingToolRuntime instance supplied by the caller when one is supplied.",
+        "runTrackedSession passes the runner runOptions.codingToolRuntime as undefined when declaredTools is empty and no caller-supplied runtime exists.",
+        "runTrackedSession rejects with a NaxError whose code is CODING_TOOL_ROOT_MISSING when declaredTools is non-empty and codingToolRoot is an empty string.",
+        "Given SessionManager.runInSession with a SessionRunClient and declared tools, when the runner receives the request, then runOptions.codingToolRuntime is defined and the session state is RUNNING."
+      ],
+      "tags": [
+        "feature",
+        "sessions",
+        "tools",
+        "audit"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Changes session-run wiring that grants tool execution capability and audit evidence, so strict isolation is appropriate."
+      },
+      "contextFiles": [
+        "src/session/manager-run.ts",
+        "src/agents/coding-tool-support.ts",
+        "src/runtime/session-run-hop.ts",
+        "src/tools/tool-audit.ts",
+        "src/session/manager.ts"
+      ],
+      "outOfScope": [
+        "Wiring a production caller for `SessionRunClient`; `runTrackedSession` stays reachable only from `SessionManager.runInSession`."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Claim project identity before plan dispatch",
+      "description": "**Goal** — Ensure every nax plan mode claims its project identity before it can dispatch paid plan work.\n\n**Motivation** — `nax plan` never claims the project identity, so two checkouts sharing a project name mix their cost records in one directory.\n\n**Approach** — `planCommand` — `src/cli/plan-command.ts:79` (US-004)\n- Baseline: `planCommand(workdir, config, options)` calls `buildPlanModeContext` immediately.\n- Target: the same signature; before `buildPlanModeContext`, it claims the project identity via a new `_planDeps.claimProjectIdentity` entry (`src/cli/plan-runtime.ts`), defaulting to `claimProjectIdentity` from `@/runtime`. `projectKey` is derived exactly as `run-setup.ts:350` derives it: `config.name?.trim() || basename(workdir)`. `remoteUrl` is resolved the same way, via `_planDeps.spawnSync([\"git\", \"remote\", \"get-url\", \"origin\"])`, and is `null` when that fails.\n- `planCommand` is the sole `nax plan` entry point — `bin/nax.ts:426` and `bin/nax.ts:1045` both route through it, and pipeline mode is reached from inside it via `createPlanStrategy`, so one claim covers every plan mode.\n\n**Scope** — In: injected plan identity claim, project-key and origin-URL derivation, collision propagation, and warn-and-proceed handling for other failures. Out: any change to `nax migrate --reclaim` / `--merge`, or to collision recovery generally; extending the collision guard to `nax resume`, `nax replay`, or any command other than `nax plan`.\n\n**Interface**\n```typescript\nclaimProjectIdentity(projectKey, workdir, remoteUrl): Promise<void>\n```",
+      "acceptanceCriteria": [
+        "planCommand rejects with a NaxError whose code is RUN_NAME_COLLISION when the derived projectKey identity is registered to a different workdir.",
+        "When planCommand encounters a RUN_NAME_COLLISION identity claim, then the plan strategy execute method is never invoked.",
+        "When no identity exists for the derived projectKey, planCommand writes an identity whose workdir equals its workdir argument and invokes the plan strategy once.",
+        "When the derived projectKey identity is already registered to the same workdir, planCommand invokes the plan strategy once and updates the stored lastSeen.",
+        "planCommand claims under the trimmed config.name when config.name is a non-empty string.",
+        "planCommand claims under basename(workdir) when config.name is absent or only whitespace.",
+        "planCommand passes the trimmed origin remote URL as remoteUrl when _planDeps.spawnSync reports exit code 0.",
+        "planCommand passes null as remoteUrl when _planDeps.spawnSync reports a non-zero exit code.",
+        "When _planDeps.claimProjectIdentity rejects with an error whose code is not RUN_NAME_COLLISION, then planCommand invokes the plan strategy once and resolves."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "identity",
+        "accounting"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A focused CLI preflight and dependency-injection change with established identity and plan-test conventions."
+      },
+      "contextFiles": [
+        "src/cli/plan-command.ts",
+        "src/cli/plan-runtime.ts",
+        "src/execution/lifecycle/run-setup.ts",
+        "src/runtime/paths.ts"
+      ],
+      "outOfScope": [
+        "Any change to `nax migrate --reclaim` / `--merge`, or to collision recovery generally.",
+        "Extending the collision guard to `nax resume`, `nax replay`, or any command other than `nax plan`."
+      ]
+    }
+  ],
+  "analysis": "This is an enhancement of existing TypeScript dispatch, accounting, session, and CLI infrastructure. US-001 changes the error-event boundary in src/agents/manager-dispatch.ts:178 and its two AgentManager call sites (src/agents/manager.ts:693,745), then maps the newly carried attribution and usage through src/runtime/middleware/cost.ts:91 into CostErrorEvent and CostSnapshot in src/runtime/cost-aggregator.ts:89-110. SessionTurnError already carries the required usage/cost values at src/agents/session-types.ts:235, while DispatchErrorEvent currently lacks them at src/runtime/dispatch-events.ts:130. Error aggregates must include error cost separately in every snapshot path (overall, grouped, scoped) without changing successful totalCostUsd; drain already serializes the error union. The manager file has a size-baseline constraint, so replace individual identifiers with the existing options object as specified rather than adding lines.\n\nUS-002 changes pruneRetainedTranscripts in src/agents/native/session/transcript-store.ts:165 from a void operation to a deletion count; it currently recognizes live and failed transcript names and is only invoked from a close path. The new sweep must use deriveNativeTranscriptDir from src/session/manager-deps.ts:45 rather than reconstructing paths, export through both barrel layers (src/agents/native/index.ts and src/session/index.ts), and be invoked during startup next to sessionManager.sweepOrphans() in src/execution/lifecycle/run-setup.ts:381. src/session/scratch-purge.ts provides the injectable, feature-scoped utility shape, but has no production-call implication. Existing transcript-store tests currently assert the old undefined return for a missing directory (test/unit/agents/native/transcript-store.test.ts:115), so update those expectations as part of the widening migration.\n\nUS-003 replaces the direct buildCodingToolSupport call in src/session/manager-run.ts:70. resolveCodingToolSupport in src/agents/coding-tool-support.ts:103 resolves permissions, audit directory, ledger session name, and preserves the existing CODING_TOOL_ROOT_MISSING failure. Only apply resolved support when the caller did not supply codingToolRuntime, avoiding an overwrite; no dispatch event should be added because the runner remains the turn-event producer. The SessionManager.runInSession runner-shaped path is the production seam and existing tests include test/unit/session/manager-run-in-session.test.ts.\n\nUS-004 adds an injected identity claim to _planDeps in src/cli/plan-runtime.ts and runs it before buildPlanModeContext in src/cli/plan-command.ts:79. Mirror the identity derivation/remote lookup/collision handling at src/execution/lifecycle/run-setup.ts:339-359; claimProjectIdentity itself throws RUN_NAME_COLLISION for foreign workdirs in src/runtime/paths.ts:75. A collision must abort before strategy creation/dispatch; other claim errors warn and allow planning. Existing plan tests are concentrated under test/unit/cli/plan*.test.ts and run under isolated global config.\n\nCompatibility and migration: all public event and row additions are optional, except the intentional private builder-input reshape and prune return widening. Existing DispatchErrorEvent literals remain valid; preserve undefined tokens for usage-less failures, rather than emitting zero-token data. Ledger readers must tolerate older JSONL rows without the new fields/schema changes; no data backfill is required. The four stories are independent, and only US-002 creates src/session/transcript-sweep.ts.",
+  "outOfScope": [
+    "Recording spend for a session killed by `SIGKILL`, which no handler can catch; addressing it would require flushing cost per round trip rather than per op.",
+    "Including failed-dispatch spend in `CostSnapshot.totalCostUsd`; failed spend is reported separately as `totalErrorCostUsd`.",
+    "Adding model attribution (`model`, `pricingSource`) to `DispatchErrorEvent`; only `sessionRole` and usage are added.",
+    "Closing warm-lifetime native sessions at run end; retention is made independent of the close path instead.",
+    "Changing `MAX_RETAINED_TRANSCRIPTS` from 50, or making it configurable.",
+    "Wiring a production caller for `SessionRunClient`; `runTrackedSession` stays reachable only from `SessionManager.runInSession`.",
+    "Wiring `purgeStaleScratch`, which has no production caller today.",
+    "Any change to `nax migrate --reclaim` / `--merge`, or to collision recovery generally.",
+    "Extending the collision guard to `nax resume`, `nax replay`, or any command other than `nax plan`.",
+    "US-001 only: reporting failed spend in the `nax cost` CLI output."
+  ],
+  "routingProfile": "native"
+}
