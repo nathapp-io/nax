@@ -250,6 +250,7 @@ describe("createRuntime", () => {
           totalOutputTokens: 0,
           callCount: 0,
           errorCount: 0,
+          totalErrorCostUsd: 0,
         };
       },
       byAgent() {
@@ -278,6 +279,7 @@ describe("createRuntime", () => {
             totalOutputTokens: 0,
             callCount: 0,
             errorCount: 0,
+            totalErrorCostUsd: 0,
           }),
           close: () => {},
         };
@@ -315,6 +317,7 @@ describe("createRuntime", () => {
           totalOutputTokens: 0,
           callCount: 0,
           errorCount: 0,
+          totalErrorCostUsd: 0,
         };
       },
       byAgent() {
@@ -343,6 +346,7 @@ describe("createRuntime", () => {
             totalOutputTokens: 0,
             callCount: 0,
             errorCount: 0,
+            totalErrorCostUsd: 0,
           }),
           close: () => {},
         };

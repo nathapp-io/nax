@@ -40,8 +40,10 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { SessionTurnError } from "@/agents/session-types";
 import type { AgentResult, AgentRunOptions, SessionHandle } from "@/agents/types";
 import { toolAuditDir } from "@/config/paths";
+import type { DispatchErrorEvent } from "@/runtime/dispatch-events";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 import { runTrackedSession, type SessionManagerState } from "@/session/manager-run";
 import type { SessionDescriptor, SessionRunClient } from "@/session/types";
@@ -262,7 +264,7 @@ describe("runTrackedSession — AC2: codingTools equals the advertised set", () 
 // ────────────────────────────────────────────────────────────────────────────
 
 describe("runTrackedSession — AC3: caller-supplied runtime is preserved", () => {
-  test("runner receives the SAME runtime instance supplied by the caller", async () => {
+  test("runner receives the SAME runtime instance without requiring codingToolRoot", async () => {
     const root = makeTempDir("nax-003-ac3-");
     try {
       // A caller-supplied runtime is identified by identity, not by anything
@@ -286,7 +288,6 @@ describe("runTrackedSession — AC3: caller-supplied runtime is preserved", () =
       await runTrackedSession(state, descriptor.id, runner, {
         runOptions: makeRunOptions({
           declaredTools: ["Read"],
-          codingToolRoot: root,
           codingToolRuntime: sentinelRuntime,
         }),
       });
@@ -368,6 +369,48 @@ describe("runTrackedSession — AC5: CODING_TOOL_ROOT_MISSING on empty root", ()
 
     // The runner must never have been invoked when the seam rejects first.
     expect(runner.run).not.toHaveBeenCalled();
+  });
+});
+
+describe("runTrackedSession — failed turn accounting", () => {
+  test("emits the SessionTurnError usage, cost, and request attribution", async () => {
+    const descriptor = makeDescriptor({ role: "verifier", storyId: "US-003" });
+    const state = makeState(descriptor);
+    const receivedErrors: DispatchErrorEvent[] = [];
+    state.dispatchEvents = {
+      ...state.dispatchEvents,
+      emitDispatchError: (event) => receivedErrors.push(event),
+    };
+    const sessionTurnError = new SessionTurnError(
+      "transport failed",
+      false,
+      true,
+      { inputTokens: 100, outputTokens: 50 },
+      0.002,
+      0.003,
+    );
+    const runner: SessionRunClient = {
+      run: mock(async () => {
+        throw sessionTurnError;
+      }),
+    };
+
+    await expect(
+      runTrackedSession(state, descriptor.id, runner, {
+        runOptions: makeRunOptions({ callId: "call-1", scopeId: "scope-1" }),
+      }),
+    ).rejects.toBe(sessionTurnError);
+
+    expect(receivedErrors).toHaveLength(1);
+    expect(receivedErrors[0]).toMatchObject({
+      storyId: "US-003",
+      sessionRole: "verifier",
+      callId: "call-1",
+      scopeId: "scope-1",
+      tokenUsage: { inputTokens: 100, outputTokens: 50 },
+      estimatedCostUsd: 0.002,
+      exactCostUsd: 0.003,
+    });
   });
 });
 

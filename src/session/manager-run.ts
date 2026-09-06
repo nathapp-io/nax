@@ -7,6 +7,7 @@
  */
 
 import { resolveCodingToolSupport } from "../agents/coding-tool-support";
+import { SessionTurnError } from "../agents/session-types";
 import type { AgentResult } from "../agents/types";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
@@ -77,7 +78,8 @@ export async function runTrackedSession(
   // We must keep that instance — overwriting it loses the caller's records —
   // so the spread below is gated on `request.runOptions.codingToolRuntime`
   // being `undefined`.
-  const codingSupport = resolveCodingToolSupport(request.runOptions);
+  const codingSupport =
+    request.runOptions.codingToolRuntime === undefined ? resolveCodingToolSupport(request.runOptions) : undefined;
 
   const callerCallback = request.runOptions.onSessionEstablished;
   const injectedRequest: SessionManagedRunRequest = {
@@ -115,18 +117,27 @@ export async function runTrackedSession(
       if (state.sessions.get(id)?.state === "RUNNING") {
         state.transition(id, "FAILED");
       }
+      const sessionTurnError = err instanceof SessionTurnError ? err : undefined;
       state.dispatchEvents.emitDispatchError({
         kind: "error",
         origin: "runTrackedSession",
         agentName: pre.agent ?? state.defaultAgent,
         stage,
         storyId: pre.storyId,
+        sessionRole: pre.role,
         errorCode: err instanceof NaxError ? err.code : "DISPATCH_ERROR",
         errorMessage: errorMessage(err),
         prompt: request.runOptions.prompt,
         durationMs: Date.now() - startedAt,
         timestamp: Date.now(),
         resolvedPermissions,
+        ...(request.runOptions.callId !== undefined ? { callId: request.runOptions.callId } : {}),
+        ...(request.runOptions.scopeId !== undefined ? { scopeId: request.runOptions.scopeId } : {}),
+        ...(sessionTurnError?.tokenUsage !== undefined ? { tokenUsage: sessionTurnError.tokenUsage } : {}),
+        ...(sessionTurnError?.estimatedCostUsd !== undefined
+          ? { estimatedCostUsd: sessionTurnError.estimatedCostUsd }
+          : {}),
+        ...(sessionTurnError?.exactCostUsd !== undefined ? { exactCostUsd: sessionTurnError.exactCostUsd } : {}),
       } satisfies DispatchErrorEvent);
       throw err;
     }

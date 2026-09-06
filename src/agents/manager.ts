@@ -690,8 +690,8 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatch(event);
       return result;
     } catch (err) {
-      // US-001: pass opts as dispatchOptions so the error event carries the
-      // spent usage / role attribution.
+      // US-001: preserve the role resolved from the handle, matching the
+      // successful dispatch event when callers omit opts.sessionRole.
       const errEvent = buildDispatchErrorEvent({
         origin: "runAsSession",
         agentName,
@@ -700,7 +700,7 @@ export class AgentManager implements IAgentManager {
         prompt,
         resolvedPermissions,
         startedAt: start,
-        dispatchOptions: opts,
+        dispatchOptions: { ...opts, sessionRole },
       });
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;

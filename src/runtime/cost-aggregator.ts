@@ -135,11 +135,9 @@ export interface CostSnapshot {
    * spend becomes visible without silently re-basing every historical
    * comparison (US-001).
    *
-   * Optional on the type so existing test fixtures that build literal
-   * `CostSnapshot` objects compile unchanged; absent means zero (no error
-   * rows have been recorded).
+   * Always numeric: a snapshot with no failed dispatches reports zero.
    */
-  readonly totalErrorCostUsd?: number;
+  readonly totalErrorCostUsd: number;
 }
 
 export interface CostScopeHandle {
@@ -261,7 +259,7 @@ function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
     totalOutputTokens: snap.totalOutputTokens + e.tokens.output,
     callCount: snap.callCount + 1,
     errorCount: snap.errorCount,
-    totalErrorCostUsd: snap.totalErrorCostUsd ?? 0,
+    totalErrorCostUsd: snap.totalErrorCostUsd,
   };
 }
 
@@ -269,7 +267,7 @@ function accumulateError(snap: CostSnapshot, e?: CostErrorEvent): CostSnapshot {
   return {
     ...snap,
     errorCount: snap.errorCount + 1,
-    totalErrorCostUsd: (snap.totalErrorCostUsd ?? 0) + (e?.costUsd ?? 0),
+    totalErrorCostUsd: snap.totalErrorCostUsd + (e?.costUsd ?? 0),
   };
 }
 

@@ -144,14 +144,7 @@
       "lint",
       "semantic",
       "adversarial"
-    ],
-    "commands": {
-      "typecheck": "bun run typecheck",
-      "lint": "bun run lint",
-      "build": "bun run build",
-      "lintFix": "bun run lint:fix",
-      "formatFix": "bun run lint:fix"
-    }
+    ]
   },
   "plan": {
     "model": "balanced",

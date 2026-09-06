@@ -385,19 +385,6 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       logger?.info("session", "Swept orphan sessions at run setup", { sweptOrphans });
     }
 
-    // US-002 AC10/AC11: prune this run's retained native transcripts (kept on
-    // turn failure) under the runtime output dir so the kept-on-failure set
-    // never grows past MAX_RETAINED_TRANSCRIPTS. dryRun is threaded through so
-    // a --dry-run never deletes.
-    const sweptTranscripts = await _runSetupDeps.sweepFeatureTranscripts({
-      featureName: options.feature,
-      transcriptRoot: runtime.outputDir,
-      dryRun: options.dryRun,
-    });
-    if (sweptTranscripts > 0) {
-      logger?.info("session", "Swept retained transcripts at run setup", { sweptTranscripts });
-    }
-
     // Acquire lock to prevent concurrent execution
     const lockAcquired = await acquireLock(workdir);
     if (!lockAcquired) {
@@ -412,6 +399,17 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // Everything after lock acquisition is wrapped in try-catch to ensure
     // the lock is released if any setup step fails (FIX-H16)
     try {
+      // US-002 AC10/AC11: prune retained transcripts only after the run lock
+      // prevents concurrent setup from racing over the same files.
+      const sweptTranscripts = await _runSetupDeps.sweepFeatureTranscripts({
+        featureName: options.feature,
+        transcriptRoot: runtime.outputDir,
+        dryRun: options.dryRun,
+      });
+      if (sweptTranscripts > 0) {
+        logger?.info("session", "Swept retained transcripts at run setup", { sweptTranscripts });
+      }
+
       // ── Detect project profile (US-003) and log explicit vs auto-detected values ──
       const existingProjectConfig = config.project ?? {};
       const detectedProfile = await _runSetupDeps.detectProjectProfile(workdir, existingProjectConfig);

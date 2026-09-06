@@ -184,6 +184,28 @@ describe("buildDispatchErrorEvent dispatchOptions plumbing (AC6-7)", () => {
 });
 
 describe("AgentManager.runAsSession failed SessionTurnError (AC14)", () => {
+  test("uses the role resolved from the handle when options omit sessionRole", async () => {
+    const bus = new DispatchEventBus();
+    const sessionTurnError = makeSessionTurnErrorWithUsage();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => {
+        throw sessionTurnError;
+      }),
+      dispatchEvents: bus,
+    });
+    const receivedErrors: DispatchErrorEvent[] = [];
+    bus.onDispatchError((event) => receivedErrors.push(event));
+
+    await expect(
+      manager.runAsSession("claude", makeHandle({ role: "verifier" }), "do the thing", {
+        pipelineStage: "run",
+      }),
+    ).rejects.toBe(sessionTurnError);
+
+    expect(receivedErrors).toHaveLength(1);
+    expect(receivedErrors[0]?.sessionRole).toBe("verifier");
+  });
+
   test("AC14: sendPrompt throwing a SessionTurnError emits a DispatchErrorEvent carrying that tokenUsage and exactCostUsd, then rethrows", async () => {
     const carriedUsage = { inputTokens: 200, outputTokens: 80 };
     const carriedExactCost = 0.0142;
