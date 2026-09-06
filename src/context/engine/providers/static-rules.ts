@@ -371,7 +371,7 @@ export class StaticRulesProvider implements IContextProvider {
 
         const budgetResult = _staticRulesDeps.applySectionBudget(allSections, effectiveBudget);
         if (budgetResult.totalTokens >= Math.floor(effectiveBudget * 0.75)) {
-          logger.warn("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
+          logger.warnOnce("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
             storyId: request.storyId,
             totalTokens: budgetResult.totalTokens,
             budgetTokens: effectiveBudget,
@@ -379,7 +379,7 @@ export class StaticRulesProvider implements IContextProvider {
           });
         }
         if (budgetResult.droppedIds.length > 0) {
-          logger.warn("static-rules", "Rule sections truncated by static rules budget", {
+          logger.warnOnce("static-rules", "Rule sections truncated by static rules budget", {
             storyId: request.storyId,
             totalTokens: budgetResult.totalTokens,
             usedTokens: budgetResult.usedTokens,
