@@ -65,6 +65,30 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     expect(result.output).toBe("done");
   });
 
+  /**
+   * The turn-loop layer is the only place a real timer can still reach a
+   * retry: TurnRetryDeps.sleep is required, but TurnDeps.sleep is optional and
+   * falls back to realSleep for production. A backoff budget far larger than
+   * the test timeout means dropping the injection stops being a slow test and
+   * starts being a failing one.
+   */
+  test("never waits on a real timer — the injected sleep is what the backoff uses", async () => {
+    const startedAt = Date.now();
+    let calls = 0;
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      transportRetry: { maxAttempts: 3, baseDelayMs: 600_000 },
+      sleep: noopSleep,
+      complete: async () => {
+        calls += 1;
+        if (calls === 1) throw new ProtocolStreamError({ kind: "overloaded", message: "503" });
+        return reply();
+      },
+    });
+    expect(calls).toBe(2);
+    expect(result.output).toBe("done");
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
   test("retries an overloaded error", async () => {
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {

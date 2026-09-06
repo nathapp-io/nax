@@ -53,12 +53,36 @@ describe("turnRetryDelayMs", () => {
     expect(turnRetryDelayMs(err, 0, config, () => 0.999)).toBe(7000);
   });
 
-  test("falls back to jittered exponential backoff when retryAfter is absent", () => {
+  test("falls back to equal-jitter exponential backoff when retryAfter is absent", () => {
     const err = new ProtocolStreamError({ kind: "transport", message: "x" });
-    // ceiling = baseDelayMs * 2^retryIndex; random is injected so the result is deterministic.
-    expect(turnRetryDelayMs(err, 0, config, () => 0.5)).toBe(500);
-    expect(turnRetryDelayMs(err, 1, config, () => 0.5)).toBe(1000);
-    expect(turnRetryDelayMs(err, 0, config, () => 0)).toBe(0);
+    // ceiling = baseDelayMs * 2^retryIndex, half of it fixed and half jittered,
+    // so the delay is never below ceiling/2. random is injected for determinism.
+    expect(turnRetryDelayMs(err, 0, config, () => 0.5)).toBe(750);
+    expect(turnRetryDelayMs(err, 1, config, () => 0.5)).toBe(1500);
+    expect(turnRetryDelayMs(err, 0, config, () => 1)).toBe(1000);
+  });
+
+  test("never returns a zero delay, so a just-stalled provider is not hit instantly", () => {
+    const err = new ProtocolStreamError({ kind: "overloaded", message: "x" });
+    expect(turnRetryDelayMs(err, 0, config, () => 0)).toBe(500);
+  });
+
+  test("clamps the backoff to the turn's remaining budget", () => {
+    const err = new ProtocolStreamError({ kind: "transport", message: "x" });
+    expect(turnRetryDelayMs(err, 1, config, () => 1, 300)).toBe(300);
+  });
+
+  test("clamps the provider's retryAfter to the turn's remaining budget", () => {
+    // A 503 may advertise a recovery window far longer than the turn has left.
+    // Sleeping it out would spend wall clock the budget already declared gone,
+    // and the attempt after it aborts at once (remainingMs clamps to 0).
+    const err = new ProtocolStreamError({ kind: "overloaded", message: "x", retryAfter: 600 });
+    expect(turnRetryDelayMs(err, 0, config, () => 0.5, 30_000)).toBe(30_000);
+  });
+
+  test("leaves the delay alone when the turn is unbounded", () => {
+    const err = new ProtocolStreamError({ kind: "overloaded", message: "x", retryAfter: 600 });
+    expect(turnRetryDelayMs(err, 0, config, () => 0.5, undefined)).toBe(600_000);
   });
 });
 
@@ -121,7 +145,8 @@ describe("retryTransportFault", () => {
 
     expect(result).toBe("ok");
     expect(attempts).toBe(1);
-    expect(delays).toEqual([0]);
+    // random() === 0 lands on the equal-jitter floor (ceiling / 2), never zero.
+    expect(delays).toEqual([500]);
   });
 
   test("retries an overloaded error", async () => {
@@ -198,7 +223,7 @@ describe("retryTransportFault", () => {
           return "never";
         },
         config,
-        deadline: { expired: () => true },
+        deadline: { expired: () => true, remainingMs: () => 0 },
         sleep: noopSleep,
       }),
     ).rejects.toBe(err);
@@ -237,6 +262,20 @@ describe("retryTransportFault", () => {
     expect(delays).toEqual([3000]);
   });
 
+  test("clamps its sleep to the deadline's remaining budget", async () => {
+    const err = new ProtocolStreamError({ kind: "overloaded", message: "x", retryAfter: 600 });
+    const delays: number[] = [];
+    await retryTransportFault(err, {
+      attempt: async () => "ok",
+      config,
+      deadline: { expired: () => false, remainingMs: () => 5_000 },
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+    });
+    expect(delays).toEqual([5_000]);
+  });
+
   test("fires onRetry once per retry with the retry number, delay and fault", async () => {
     const err = new ProtocolStreamError({ kind: "transport", message: "stall" });
     const beats: Array<{ retryNumber: number; delayMs: number }> = [];
@@ -249,6 +288,6 @@ describe("retryTransportFault", () => {
         beats.push({ retryNumber, delayMs });
       },
     });
-    expect(beats).toEqual([{ retryNumber: 1, delayMs: 0 }]);
+    expect(beats).toEqual([{ retryNumber: 1, delayMs: 500 }]);
   });
 });

@@ -67,32 +67,44 @@ export function canAttemptTurnRetry(retryIndex: number, config: TurnRetryConfig)
 }
 
 /**
- * Full jitter (AWS's "Exponential Backoff And Jitter"): a uniformly random
- * delay in [0, base * 2^retryIndex] rather than a fixed schedule, so
- * concurrent retries spread out instead of synchronising on the same step.
- * nax-ai's own retry.ts deliberately omits jitter because it hands
- * concurrency policy to its consumer — this module IS that consumer, so
+ * Equal jitter (AWS's "Exponential Backoff And Jitter"): half of
+ * `base * 2^retryIndex` fixed, half uniformly random, so concurrent retries
+ * spread out instead of synchronising on the same step while still keeping a
+ * floor. Full jitter's [0, ceiling] range was rejected: its lower bound lets
+ * a retry re-issue almost instantly against a provider that has just stalled
+ * or reported itself overloaded, which is the one thing backoff exists to
+ * avoid. nax-ai's own retry.ts omits jitter entirely because it hands
+ * concurrency policy to its consumer — this module IS that consumer, so the
  * jitter belongs here.
  */
 function backoffMs(retryIndex: number, baseDelayMs: number, random: () => number): number {
-  const ceiling = baseDelayMs * 2 ** retryIndex;
-  return Math.floor(random() * ceiling);
+  const half = (baseDelayMs * 2 ** retryIndex) / 2;
+  return Math.floor(half + random() * half);
 }
 
 /**
  * How long to wait before the next attempt. The provider's own `retryAfter`
  * wins when set — it knows its own recovery time better than a guessed
- * backoff does — otherwise jittered exponential backoff from `baseDelayMs`.
+ * backoff does — otherwise equal-jitter exponential backoff from
+ * `baseDelayMs`.
+ *
+ * `remainingMs` caps whatever that produces. A 503 can advertise a recovery
+ * window far longer than the turn has left, and sleeping it out would spend
+ * wall clock the budget has already declared gone — the attempt after it
+ * aborts immediately anyway, because TurnDeadline.remainingMs() clamps to 0
+ * and adapter.ts arms the call's AbortController with it. Absent means the
+ * turn is unbounded (TurnDeadline's UNBOUNDED), so nothing caps the wait.
  */
 export function turnRetryDelayMs(
   err: RetryableProtocolError,
   retryIndex: number,
   config: TurnRetryConfig,
   random: () => number = Math.random,
+  remainingMs?: number,
 ): number {
   const { retryAfter } = err.protocolError;
-  if (retryAfter !== undefined) return retryAfter * 1000;
-  return backoffMs(retryIndex, config.baseDelayMs, random);
+  const delayMs = retryAfter !== undefined ? retryAfter * 1000 : backoffMs(retryIndex, config.baseDelayMs, random);
+  return remainingMs === undefined ? delayMs : Math.min(delayMs, remainingMs);
 }
 
 function abortError(signal: AbortSignal): unknown {
@@ -117,15 +129,25 @@ export function abortableSleep(ms: number, sleep: (ms: number) => Promise<void>,
   });
 }
 
+/** The real timer. Named and exported so the only production wiring of it is one reference. */
+export function realSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface TurnRetryDeps<T> {
   /** Re-issues the round trip. Called once per retry, never for the triggering attempt. */
   readonly attempt: () => Promise<T>;
   readonly config: TurnRetryConfig;
   /** Whole-turn wall-clock budget. Absent means unbounded, matching TurnDeps.deadline. */
-  readonly deadline?: { expired(): boolean };
+  readonly deadline?: { expired(): boolean; remainingMs(): number | undefined };
   readonly signal?: AbortSignal;
-  /** Injectable sleep so tests never actually wait. Defaults to a real timer. */
-  readonly sleep?: (ms: number) => Promise<void>;
+  /**
+   * The sleep used for backoff. Deliberately REQUIRED and without a default:
+   * a real timer here is production wiring (turn-loop.ts passes `realSleep`),
+   * and leaving it optional let a test omit it and silently wait out a real
+   * multi-second backoff. Required makes that a compile error instead.
+   */
+  readonly sleep: (ms: number) => Promise<void>;
   /** Injectable jitter source, for deterministic tests. Defaults to Math.random. */
   readonly random?: () => number;
   /** Fired once per retry, before the backoff delay, with a 1-based retry number. */
@@ -144,7 +166,7 @@ export interface TurnRetryDeps<T> {
  * both would silently break if this function rethrew a new object.
  */
 export async function retryTransportFault<T>(firstError: unknown, deps: TurnRetryDeps<T>): Promise<T> {
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const { sleep } = deps;
   const random = deps.random ?? Math.random;
   let err = firstError;
   let retryIndex = 0;
@@ -155,7 +177,7 @@ export async function retryTransportFault<T>(firstError: unknown, deps: TurnRetr
     if (deps.deadline?.expired() === true || deps.signal?.aborted === true) throw err;
 
     const fault = err;
-    const delayMs = turnRetryDelayMs(fault, retryIndex, deps.config, random);
+    const delayMs = turnRetryDelayMs(fault, retryIndex, deps.config, random, deps.deadline?.remainingMs());
     deps.onRetry?.(retryIndex + 1, delayMs, fault);
 
     try {

@@ -27,7 +27,7 @@ import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscript
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import type { NativeTurnActivity } from "./turn-events";
-import { retryTransportFault, type TurnRetryConfig } from "./turn-retry";
+import { realSleep, retryTransportFault, type TurnRetryConfig } from "./turn-retry";
 
 export interface NativeTurnResponse {
   readonly text: string;
@@ -293,7 +293,7 @@ export async function runNativeTurn(
             config: deps.transportRetry,
             deadline: deps.deadline,
             signal: opts.signal,
-            sleep: deps.sleep,
+            sleep: deps.sleep ?? realSleep,
             onRetry: (retryNumber, delayMs, fault) => {
               getSafeLogger()?.warn("native-adapter", "retrying after a transport fault", {
                 sessionName: handle.id,
