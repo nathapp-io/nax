@@ -187,6 +187,24 @@ export function buildDispatchErrorEvent(input: {
   callId?: string;
   scopeId?: string;
   startedAt: number;
+  /**
+   * US-001: per-call id and role attribution, bundled so callers can pass
+   * the existing options object rather than spelling out each field. When
+   * absent, falls back to the legacy `storyId` / `callId` / `scopeId` fields
+   * above — both call sites will be reshaped to use dispatchOptions only, at
+   * which point the legacy fields become dead and are removed.
+   *
+   * STUB: the option fields are accepted but the function body does not yet
+   * lift SessionTurnError.tokenUsage / cost onto the event or copy
+   * dispatchOptions.sessionRole / dispatchOptions.{storyId,callId,scopeId}
+   * over the legacy fields. The implementer replaces this body.
+   */
+  dispatchOptions?: {
+    storyId?: string;
+    callId?: string;
+    scopeId?: string;
+    sessionRole?: string;
+  };
 }): DispatchErrorEvent {
   return {
     kind: "error",

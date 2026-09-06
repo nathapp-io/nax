@@ -141,6 +141,14 @@ export interface DispatchErrorEvent {
   readonly resolvedPermissions: ResolvedPermissions;
   readonly callId?: string;
   readonly scopeId?: string;
+  // US-001 (failed-dispatch cost attribution). Forwarded from a thrown
+  // SessionTurnError so a run-op whose turn throws still records its spent
+  // usage and role attribution. All four are optional; existing
+  // constructions stay valid.
+  readonly sessionRole?: string;
+  readonly tokenUsage?: TokenUsage;
+  readonly estimatedCostUsd?: number;
+  readonly exactCostUsd?: number;
 }
 
 export interface ReviewDecisionEvent {
