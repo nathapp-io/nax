@@ -36,3 +36,7 @@ export type {
 export { credentialFilePath, naxCredentialStore, type StoredEntry } from "./credentials";
 export { NativeSessionUnsupportedError } from "./errors";
 export { NATIVE_AGENT } from "./models";
+export {
+  MAX_RETAINED_TRANSCRIPTS,
+  pruneRetainedTranscripts,
+} from "./session/transcript-store";

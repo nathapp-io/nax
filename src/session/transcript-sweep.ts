@@ -14,7 +14,7 @@
  * derived directory does not exist.
  */
 
-import { pruneRetainedTranscripts } from "../agents/native/session/transcript-store";
+import { pruneRetainedTranscripts } from "@/agents/native";
 import { deriveNativeTranscriptDir } from "./manager-deps";
 
 export interface SweepFeatureTranscriptsOptions {
