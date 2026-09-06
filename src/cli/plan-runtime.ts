@@ -19,7 +19,7 @@ import { getLogger } from "../logger";
 import type { PRD } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
 import type { NaxRuntime } from "../runtime";
-import { createRuntime } from "../runtime";
+import { claimProjectIdentity, createRuntime } from "../runtime";
 import { errorMessage } from "../utils/errors";
 import { createCliInteractionBridge } from "./plan-helpers";
 
@@ -81,6 +81,8 @@ export const _planDeps = {
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
   scanSourceRoots: (workdir: string) => scanSourceRoots(workdir),
   createRuntime: (cfg: NaxConfig, wd: string, featureName: string) => createRuntime(cfg, wd, { featureName }),
+  /** Claim the project identity before a `nax plan` dispatches paid work (US-004). */
+  claimProjectIdentity,
   readPackageJson: (workdir: string): Promise<Record<string, unknown> | null> =>
     Bun.file(join(workdir, "package.json"))
       .json()

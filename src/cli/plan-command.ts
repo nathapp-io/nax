@@ -8,7 +8,7 @@
  * Interactive mode: uses ACP session + stdin bridge for Q&A.
  */
 
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
 import { renderManifestSection } from "../debate";
 import { NaxError } from "../errors";
@@ -16,6 +16,7 @@ import type { PlanDraftInput } from "../operations";
 import { callOp, groundOp, planDraftOp } from "../operations";
 import type { PlanResult } from "../plan/strategies";
 import { buildPlanModeContext, createPlanStrategy, finalizeAndWritePrd } from "../plan/strategies";
+import { errorMessage } from "../utils/errors";
 
 export { assertIsValidPrd, buildPlanComposition } from "../plan/strategies";
 
@@ -64,6 +65,43 @@ export interface PlanCommandOptions {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Project identity claim (US-004)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Claim the project identity before any plan work is dispatched (US-004).
+ *
+ * projectKey derivation mirrors run-setup: `config.name?.trim() || basename(workdir)`.
+ * The origin URL is read the same way — via `_planDeps.spawnSync(["git", "remote",
+ * "get-url", "origin"])` — and is null when the lookup fails. A RUN_NAME_COLLISION
+ * collision is propagated (plan must not dispatch paid work into another project's
+ * cost records); any other claim failure is bookkeeping and warns without blocking.
+ */
+async function claimPlanIdentity(workdir: string, config: NaxConfig): Promise<void> {
+  let remoteUrl: string | null = null;
+  try {
+    const gitResult = _planDeps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+    if (gitResult.exitCode === 0) {
+      remoteUrl = gitResult.stdout.toString().trim() || null;
+    }
+  } catch {
+    // non-git project — remoteUrl stays null
+  }
+  const projectKey = config.name?.trim() || basename(workdir);
+  try {
+    await _planDeps.claimProjectIdentity(projectKey, workdir, remoteUrl);
+  } catch (err) {
+    if (err instanceof NaxError && err.code === "RUN_NAME_COLLISION") {
+      throw err;
+    }
+    _planDeps.getLogger()?.warn("plan", "Failed to claim project identity", {
+      projectKey,
+      error: errorMessage(err),
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -81,6 +119,7 @@ export async function planCommand(
   config: NaxConfig,
   options: PlanCommandOptions,
 ): Promise<PlanResult> {
+  await claimPlanIdentity(workdir, config);
   const ctx = await buildPlanModeContext(workdir, config, options, _planDeps);
   try {
     const mode = resolvePlanMode(config);

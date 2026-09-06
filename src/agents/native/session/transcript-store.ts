@@ -161,16 +161,19 @@ export function _resetTranscriptTruncationWarningForTests(): void {
  * accumulate, since a clean close always deletes its own transcript.
  *
  * A missing directory is not an error (nothing to prune yet).
+ *
+ * Returns the number of transcript files deleted (0 when there is nothing to
+ * delete) so callers can report the sweep's work without re-reading the dir.
  */
 export async function pruneRetainedTranscripts(
   dir: string,
   maxRetained: number = MAX_RETAINED_TRANSCRIPTS,
-): Promise<void> {
+): Promise<number> {
   let entries: string[];
   try {
     entries = await readdir(dir);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
     throw err;
   }
 
@@ -178,7 +181,7 @@ export async function pruneRetainedTranscripts(
   // produces — the retained set is the one that accumulates, so a filter that
   // missed it would leave the cap enforcing nothing.
   const transcriptFiles = entries.filter((name) => name.includes(".transcript.") && name.endsWith(".json"));
-  if (transcriptFiles.length <= maxRetained) return;
+  if (transcriptFiles.length <= maxRetained) return 0;
 
   const withMtimes = await Promise.all(
     transcriptFiles.map(async (name) => {
@@ -200,4 +203,5 @@ export async function pruneRetainedTranscripts(
       dir,
     });
   }
+  return toDelete.length;
 }
