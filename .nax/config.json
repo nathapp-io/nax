@@ -124,9 +124,11 @@
     "commands": {
       "test": "bun run test",
       "typecheck": "bun run typecheck",
-      "lint": "bun run lint:json",
+      "lint": "bun run lint",
       "build": "bun run build",
-      "testScoped": "CI=1 bun test --timeout=60000 {{files}}"
+      "testScoped": "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
+      "lintFix": "bun run lint:fix",
+      "formatFix": "bun run lint:fix"
     },
     "forceExit": false,
     "detectOpenHandles": true,
@@ -145,7 +147,7 @@
     ],
     "commands": {
       "typecheck": "bun run typecheck",
-      "lint": "bun run lint:json",
+      "lint": "bun run lint",
       "build": "bun run build",
       "lintFix": "bun run lint:fix",
       "formatFix": "bun run lint:fix"
