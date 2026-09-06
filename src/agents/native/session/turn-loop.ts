@@ -23,7 +23,7 @@ import {
   type ResolvedCompaction,
   shouldCompact,
 } from "./compaction";
-import { nativeSessionLastUsage, nativeTranscriptDirs } from "./session";
+import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import type { NativeTurnActivity } from "./turn-events";
@@ -124,7 +124,10 @@ export async function runNativeTurn(
     });
   }
 
-  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id))];
+  // nax#1877: an owner mismatch reads as a new conversation, so an abandoned
+  // invocation's history cannot ride along on the first request of this one.
+  const transcriptOwner = nativeSessionTranscriptOwners.get(handle.id);
+  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptOwner))];
   messages.push({ role: "user", content: prompt });
 
   const codingTools = opts.codingTools ?? [];
@@ -411,7 +414,7 @@ export async function runNativeTurn(
     // failure fails the turn, because continuing on unstored history is silent
     // degradation. Here a failure is already in flight, and masking it with a
     // write error would lose the cause.
-    await saveTranscript(dir, handle.id, messages).catch((saveErr: unknown) => {
+    await saveTranscript(dir, handle.id, messages, transcriptOwner).catch((saveErr: unknown) => {
       getSafeLogger()?.warn("native-adapter", "could not persist the transcript of a failed turn", {
         sessionName: handle.id,
         error: saveErr instanceof Error ? saveErr.message : String(saveErr),
@@ -447,7 +450,7 @@ export async function runNativeTurn(
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
-  await saveTranscript(dir, handle.id, messages);
+  await saveTranscript(dir, handle.id, messages, transcriptOwner);
 
   return {
     output,

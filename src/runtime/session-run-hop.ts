@@ -32,6 +32,7 @@ export function createSessionRunHop(
         pipelineStage: options.pipelineStage,
       });
 
+    const transcriptOwner = options.scopeId ?? options.callId;
     const handle = await sessionManager.openSession(sessionName, {
       agentName,
       role: options.sessionRole,
@@ -43,6 +44,8 @@ export function createSessionRunHop(
       timeoutSeconds: options.timeoutSeconds,
       featureName: options.featureName,
       storyId: options.storyId,
+      // nax#1877 — mirrors build-hop-callback.ts; the two must not drift.
+      ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
       signal: options.abortSignal,
       onSessionEstablished: options.onSessionEstablished,
     });

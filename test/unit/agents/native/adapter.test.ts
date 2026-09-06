@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
@@ -251,7 +251,12 @@ describe("NativeAgentAdapter.closeSession after a failed turn", () => {
       .catch(() => {});
     await adapter.closeSession(handle);
 
-    expect(await loadTranscript(transcriptDir, "sess-keep")).toHaveLength(1);
+    // nax#1877: kept for a human to read, under a name the next session of
+    // this name cannot load — the post-mortem artifact and the resumption
+    // source used to be the same file.
+    const kept = (await readdir(transcriptDir)).filter((n) => n.startsWith("sess-keep.transcript.failed-"));
+    expect(kept).toHaveLength(1);
+    expect(await loadTranscript(transcriptDir, "sess-keep")).toEqual([]);
   });
 
   test("still deletes it when every turn succeeded", async () => {

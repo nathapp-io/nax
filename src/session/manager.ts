@@ -489,12 +489,12 @@ export class SessionManager implements ISessionManager {
       resume,
       onActiveCall: this._buildOnActiveCall(name),
       onStreamActivity: this._onStreamActivity,
-      // Finding 1 (whole-branch review): callers never supplied transcriptDir,
-      // so derive it here — the one place documented by ADR-028 §3 — from the
-      // runtime-injected transcript root. An explicit caller value still wins.
+      // Finding 1: callers never supplied transcriptDir, so derive it here — the one place ADR-028 §3
+      // documents. An explicit caller value wins. transcriptOwner is nax#1877's ownership key.
       transcriptDir:
         opts.transcriptDir ??
         deriveNativeTranscriptDir({ featureName: opts.featureName, transcriptRoot: this._transcriptRoot }),
+      ...(opts.transcriptOwner !== undefined ? { transcriptOwner: opts.transcriptOwner } : {}),
       ...trackedSpawnDeadlines(this._config), // #1583
     });
     this._liveHandles.set(name, handle);

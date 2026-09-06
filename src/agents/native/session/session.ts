@@ -12,7 +12,7 @@ import { NaxError } from "@/errors";
 import { NATIVE_AGENT } from "../models";
 import { nativeSessionId } from "../session-affinity";
 import type { ResolvedCompaction } from "./compaction";
-import { deleteTranscript, pruneRetainedTranscripts } from "./transcript-store";
+import { deleteTranscript, pruneRetainedTranscripts, retainTranscript } from "./transcript-store";
 
 /**
  * Session name -> transcript directory, so sendTurn and close can find it.
@@ -63,6 +63,16 @@ export const nativeSessionStreamHooks = new Map<
  */
 export const nativeSessionFailed = new Set<string>();
 
+/**
+ * Session name -> the identity that owns this session's transcript (nax#1877).
+ *
+ * Read by `runNativeTurn` on both the load and the save, so a transcript left
+ * behind by an abandoned invocation of the same deterministic session name is
+ * recognised as foreign rather than silently resumed. Same lifecycle as the
+ * maps above: set on open, cleared on close.
+ */
+export const nativeSessionTranscriptOwners = new Map<string, string>();
+
 /** Session name -> resolved compaction settings. Same lifecycle as the maps above. */
 export const nativeSessionCompaction = new Map<string, ResolvedCompaction>();
 
@@ -93,6 +103,15 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
   }
   nativeTranscriptDirs.set(name, opts.transcriptDir);
   nativeSessionTimeouts.set(name, opts.timeoutSeconds);
+  if (opts.transcriptOwner !== undefined) nativeSessionTranscriptOwners.set(name, opts.transcriptOwner);
+  else nativeSessionTranscriptOwners.delete(name);
+  // `resume` is SessionManager's "this name already has a descriptor in this
+  // process" signal, and it had no consumer on this transport (nax#1877) — a
+  // native session resumed whatever transcript happened to be on disk. Honouring
+  // it here is the flag's documented contract; the owner check in loadTranscript
+  // is what covers the cases `resume` cannot see (a same-process re-entry into a
+  // stage, and a process that died without closing anything).
+  if (opts.resume !== true) await deleteTranscript(opts.transcriptDir, name);
   if (opts.compaction !== undefined) nativeSessionCompaction.set(name, opts.compaction);
   nativeSessionStreamHooks.set(name, {
     ...(opts.onStreamActivity !== undefined ? { onStreamActivity: opts.onStreamActivity } : {}),
@@ -125,6 +144,8 @@ export async function closeNativeSession(handle: SessionHandle, failed?: boolean
   const treatAsFailed = failed ?? nativeSessionFailed.has(handle.id);
   if (dir !== undefined) {
     if (treatAsFailed) {
+      // Retain for a human, out of reach of the next session of this name.
+      await retainTranscript(dir, handle.id);
       await pruneRetainedTranscripts(dir);
     } else {
       await deleteTranscript(dir, handle.id);
@@ -132,6 +153,7 @@ export async function closeNativeSession(handle: SessionHandle, failed?: boolean
   }
   nativeTranscriptDirs.delete(handle.id);
   nativeSessionTimeouts.delete(handle.id);
+  nativeSessionTranscriptOwners.delete(handle.id);
   nativeSessionStreamHooks.delete(handle.id);
   nativeSessionFailed.delete(handle.id);
   nativeSessionCompaction.delete(handle.id);
