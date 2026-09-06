@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { compileToolPolicy } from "@/tools/policy";
 import type { ToolRunContext } from "@/tools/registry";
-import { createRunCommandTool, EXEC_TIMEOUT_MS, type RunCommandExecOptions } from "@/tools/run-command";
+import { createRunCommandTool, type RunCommandExecOptions } from "@/tools/run-command";
+import { EXEC_TIMEOUT_MS } from "@/tools/run-command-exec";
 import { createCodingToolRuntime } from "@/tools/runtime";
 
 const ctx: ToolRunContext = { root: "/repo", resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 };
@@ -66,13 +67,16 @@ describe("RunCommand argv branch", () => {
     expect(result.content).toContain("disguised");
   });
 
-  test("the argv branch never reaches the shell executor", async () => {
-    const source = await Bun.file(new URL("../../../src/tools/run-command.ts", import.meta.url)).text();
-    const start = source.indexOf("async function runExecBranch");
-    expect(start).toBeGreaterThan(-1);
-    const execFn = source.slice(start);
-    expect(execFn).not.toContain("runQualityCommand");
-    expect(execFn).not.toContain("shellQuoteArg");
+  test("the argv branch's whole file never reaches the shell executor", async () => {
+    // Whole-file, not a slice from a known function name: the argv branch
+    // now lives in its own module (src/tools/run-command-exec.ts), so this
+    // guard cannot be defeated by adding a function after runExecBranch or
+    // by reordering the file — the failure mode the prior slice-based guard
+    // had when everything lived in run-command.ts together.
+    const source = await Bun.file(new URL("../../../src/tools/run-command-exec.ts", import.meta.url)).text();
+    expect(source).not.toContain("runQualityCommand");
+    expect(source).not.toContain("shellQuoteArg");
+    expect(source).not.toContain("quality/runner");
   });
 
   test("EXEC_TIMEOUT_MS is a longer deadline than the declared branch's default", () => {
