@@ -275,11 +275,18 @@ nax has three independent retry layers, each targeting a different failure class
 
 | Layer | Config | Triggers on | Behaviour |
 |:------|:-------|:------------|:----------|
-| `agent.acp.promptRetries` (acpx) | `agent.acp.promptRetries` (default `0`) | Transient ACP-layer errors before side effects | acpx retries the same prompt with exponential backoff; JSON output stays stable; skipped if side effects already occurred |
+| Agent-internal retry | `agent.acp.promptRetries` (acpx, default `0`) / `agent.native.transportRetry` (native, default 3 attempts × 2000ms) | A transient provider fault inside one call — a stalled stream, a 502/503 | Re-issues that call, with backoff, before the dispatch layers ever see a failure |
 | Op / manager retry (nax) | `op.retry` per `Operation` + `defaultRetryStrategy` (`src/agents/retry/`) | Parse failures, rate limits, transient adapter errors | `RetryStrategy.shouldRetry()` decides; bounded by `MAX_COMPLETE_RETRY_ATTEMPTS` |
 | Tier escalation (nax) | `autoMode.escalation.*` (`tierOrder`, `escalateEntireBatch`) | Repeated rectification failures | Bumps model tier (fast → balanced → powerful) |
 
-**Key rule:** `promptRetries` is the cheapest layer — it fires inside acpx before nax even sees the result. Set it to `2` for transient-rate-limit tolerance without overlapping the escalation logic. The failure classes are disjoint: prompt-level transients vs. quality failures vs. repeated quality failures.
+**The first layer has one meaning and two implementations**, because the two transports put the agent in different places:
+
+- **ACP** — nax passes `--prompt-retries` to acpx, which spawns claude / codex / opencode. The retry happens inside that child process, on its own timeout, outside nax entirely. JSON output stays stable, and it is skipped once side effects have occurred.
+- **Native** — there is no child process; nax *is* the agent. The equivalent retry therefore lives in nax, in the native turn loop (`src/agents/native/session/turn-retry.ts`, nax#1870). It re-issues a single round trip on a `transport` or `overloaded` fault, with equal-jitter backoff capped by the turn's remaining budget.
+
+This is why neither one is a `RetryStrategy`: the two-tier model below governs nax's **dispatch** tiers — whether to re-dispatch a call — while this layer sits underneath both, inside the execution of a single call.
+
+**Key rule:** agent-internal retry is the cheapest layer — on ACP it fires inside acpx before nax sees a result, and on native it fires inside the turn loop before a round trip is abandoned. Tune it for transient-provider tolerance without overlapping the escalation logic. The failure classes are disjoint: in-call transients vs. quality failures vs. repeated quality failures.
 
 ### Async Decompose Prompts
 

@@ -61,13 +61,22 @@ nax run -f my-feature --agent opencode
 
 ### How fallback works
 
-nax has three independent retry layers. Only one of them swaps the agent; the other two stay on the same agent. Conflating them causes silent regressions (the T16.3 bug), so it's worth understanding the split.
+nax has four independent retry layers. Only one of them swaps the agent; the rest stay on the same agent. Conflating them causes silent regressions (the T16.3 bug), so it's worth understanding the split.
 
 | Layer | Trigger | Owner | Swaps agent? |
 |:------|:--------|:------|:-------------|
 | **Availability** | Auth (401), rate-limit (429), service down | `AgentManager` | Yes — walks `agent.fallback.map` |
 | **Transport** | Broken socket, `QUEUE_DISCONNECTED`, stale session | `AcpAgentAdapter` | No — same agent, new protocol session |
+| **Agent-internal** | A transient provider fault inside one call — stalled stream, 502/503 | acpx child process (ACP) / native turn loop (native) | No — same agent, same call re-issued |
 | **Payload** | JSON parse / schema mismatch on LLM reply | Caller (e.g. semantic / adversarial review) | No — same agent, re-ask |
+
+The agent-internal layer is one idea with two implementations, because the two
+transports put the agent in different places. On ACP, `agent.acp.promptRetries`
+becomes acpx's `--prompt-retries` and the retry happens inside the spawned
+claude / codex / opencode process, outside nax. On native there is no child
+process — nax *is* the agent — so `agent.native.transportRetry` does the same
+job inside the native turn loop (nax#1870). Neither is a `RetryStrategy`: this
+layer sits below the dispatch tiers, inside the execution of a single call.
 
 When the availability layer fires, `AgentManager.runWithFallback` iterates the
 fallback chain and invokes the per-hop callback (`buildHopCallback`, ADR-019

@@ -67,7 +67,7 @@ The `agent` block is the canonical source of truth for agent selection and avail
 
 | Key | Default | Description |
 |:----|:--------|:------------|
-| `agent.protocol` | `"acp"` | Transport protocol. Only `"acp"` is supported. |
+| `agent.protocol` | `"acp"` | Transport protocol — `"acp"` (spawns an agent CLI via acpx), `"native"` (nax drives the model directly), or `"hybrid"`. A capability gate, not a router. |
 | `agent.default` | `"claude"` | Primary agent. Read via `resolveDefaultAgent(config)` / `ctx.agentManager.getDefault()`. |
 | `agent.maxInteractionTurns` | `20` | Max turns per agent session. |
 | `agent.fallback.enabled` | `false` | Master switch for availability fallback (auth / rate-limit / service-down). |
@@ -75,8 +75,11 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.fallback.maxHopsPerStory` | `2` | Swap ceiling per story. Prevents runaway swap loops. |
 | `agent.fallback.rebuildContext` | `true` | Call `ContextOrchestrator.rebuildForAgent()` on swap so the new agent sees a re-rendered bundle. |
 | `agent.fallback.onQualityFailure` | `false` | Also swap on review / verify reject, not just availability. Use with care — often masks real regressions. |
+| `agent.acp.promptRetries` | `0` | ACP only. Becomes acpx's `--prompt-retries`; the retry runs inside the spawned agent process. |
+| `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
+| `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
 
-**Scope — what this controls.** Only the *availability* retry layer (auth / 429 / service down). Transport retries (broken socket, stale session) stay on the same agent inside the adapter. Payload-shape retries (JSON parse fail) stay on the same agent inside the caller. See [Agents — How fallback works](agents.md#how-fallback-works) for the full three-layer split.
+**Scope — what this controls.** Only the *availability* retry layer (auth / 429 / service down). Transport retries (broken socket, stale session) stay on the same agent inside the adapter. Agent-internal retries (a stalled stream or a 502/503 inside one call) stay on the same agent too, in the spawned agent process on ACP and in the native turn loop on native — see `agent.acp.promptRetries` and `agent.native.transportRetry` above. Payload-shape retries (JSON parse fail) stay on the same agent inside the caller. See [Agents — How fallback works](agents.md#how-fallback-works) for the full split.
 
 **Legacy keys are rejected, not stripped.** `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` were removed in ADR-012 Phase 6. Loading a config with them throws `NaxError code: CONFIG_LEGACY_AGENT_KEYS` with a migration hint. This is intentional — silently stripping would mask the migration.
 
