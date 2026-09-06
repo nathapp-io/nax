@@ -1,4 +1,4 @@
-# SPEC: An allowlisted argv branch for RunCommand (EXEC-001)
+# An allowlisted argv branch for RunCommand — design
 
 **Status:** Design approved, not implemented
 **Date:** 2026-09-06
