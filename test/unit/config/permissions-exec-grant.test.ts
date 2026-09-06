@@ -33,17 +33,16 @@ describe("Exec grant", () => {
   });
 
   test("an explicit Exec expression parses into patterns", () => {
-    // `execution.permissions` (the #374 per-stage block that carries these
-    // expressions) is not yet part of `NaxConfig["execution"]` — it is
-    // rejected at config load until GitHub #374 lands. `resolveScopedPermissions`
-    // itself reads it via an internal cast for the same reason, so the test
-    // config extends a real NaxConfig with that field via Object.assign
-    // (returns the intersection type) rather than lying about the whole shape.
-    const scoped = makeNaxConfig({ execution: { permissionProfile: "scoped" } });
-    const config = Object.assign(scoped, {
+    // `permissions` (the #374 per-stage block that carries these expressions)
+    // is typed on `ExecutionConfig` (src/config/runtime-types.ts), so a plain
+    // `makeNaxConfig` override is enough — no cast needed. Mirrors the
+    // `configWith` idiom in test/unit/config/scoped-permissions.test.ts.
+    const config = makeNaxConfig({
       execution: {
-        ...scoped.execution,
-        permissions: { default: { allowedTools: ["Exec(bun add*, bun install)", "Read"] } },
+        permissionProfile: "scoped",
+        permissions: {
+          default: { allowedTools: ["Exec(bun add*, bun install)", "Read"] },
+        },
       },
     });
     const resolved = resolvePermissions(config, "run");
