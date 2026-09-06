@@ -297,7 +297,19 @@ upward, `cargo add` edits the member manifest while the root `Cargo.lock`
 moves with it. For this tool the permitted root is a cwd choice the model
 names (`target: "package"` or `target: "repoRoot"`), not a sandbox nax
 enforces. The gate carrying the safety property is the allowlist plus the
-no-scripts default nax appends and the model cannot remove, not containment.
+no-scripts default nax appends and the model cannot remove, not containment —
+**except for pip and uv.** For those two, no no-scripts mechanism exists: pip
+has no `--ignore-scripts` equivalent at all, and uv's fallback source build has
+no documented flag that suppresses it either (`package-managers-table.ts`'s
+file header records the verification attempt). Both nonetheless ship in the
+default, nax-controlled install list (`BUILT_IN_EXEC_PATTERNS`,
+`src/config/permissions.ts`), so for pip and uv specifically the allowlist
+alone carries the property — plus, as of the fix-round-4 hardening below, the
+containment check on positional path arguments (`findPositionalPathConflict`,
+`package-managers.ts`), which denies a call like `pip install /etc/passwd` or
+an install from a path outside the permitted root regardless of the missing
+no-scripts mechanism.
+
 A second, narrower carve-out follows from the first: `GitCommit` may stage a
 manifest or lockfile that an install in the same hop actually touched. That
 allowance is exact-match, hop-scoped, and populated only from installs nax
