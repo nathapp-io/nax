@@ -3,7 +3,7 @@
   "feature": "dispatch-accounting-integrity",
   "branchName": "feat/dispatch-accounting-integrity",
   "createdAt": "2026-09-16T00:00:00.000Z",
-  "updatedAt": "2026-09-06T09:50:38.267Z",
+  "updatedAt": "2026-09-06T11:18:49.448Z",
   "userStories": [
     {
       "id": "US-001",
@@ -80,7 +80,7 @@
         "filesystem"
       ],
       "dependencies": [],
-      "status": "paused",
+      "status": "pending",
       "passes": false,
       "attempts": 1,
       "escalations": [],
@@ -128,7 +128,7 @@
         "audit"
       ],
       "dependencies": [],
-      "status": "paused",
+      "status": "pending",
       "passes": false,
       "attempts": 1,
       "escalations": [],
