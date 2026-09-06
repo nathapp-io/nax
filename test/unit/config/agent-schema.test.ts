@@ -271,4 +271,29 @@ describe("AgentConfigSchema", () => {
       expect(result.agent?.idleWatchdog?.activityKinds).toEqual(kinds);
     }
   });
+
+  // nax#1870: the native counterpart to acp.promptRetries — acpx's spawned
+  // process absorbs a transient provider stall internally before nax ever
+  // sees it; native has no such process, so the turn loop needs its own knob.
+  test("agent.native.transportRetry defaults to 3 attempts and a 2000ms base delay", () => {
+    const result = NaxConfigSchema.parse({});
+    expect(result.agent?.native?.transportRetry?.maxAttempts).toBe(3);
+    expect(result.agent?.native?.transportRetry?.baseDelayMs).toBe(2000);
+  });
+
+  test("agent.native.transportRetry accepts a fully populated override", () => {
+    const result = NaxConfigSchema.parse({
+      agent: { native: { transportRetry: { maxAttempts: 5, baseDelayMs: 500 } } },
+    });
+    expect(result.agent?.native?.transportRetry?.maxAttempts).toBe(5);
+    expect(result.agent?.native?.transportRetry?.baseDelayMs).toBe(500);
+  });
+
+  test("agent.native.transportRetry rejects maxAttempts below 1", () => {
+    expect(() => NaxConfigSchema.parse({ agent: { native: { transportRetry: { maxAttempts: 0 } } } })).toThrow();
+  });
+
+  test("agent.native.transportRetry rejects a non-positive baseDelayMs", () => {
+    expect(() => NaxConfigSchema.parse({ agent: { native: { transportRetry: { baseDelayMs: 0 } } } })).toThrow();
+  });
 });

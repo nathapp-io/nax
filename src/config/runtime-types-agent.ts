@@ -77,6 +77,26 @@ export interface AgentAcpConfig {
   trackedSpawnStartupDeadlineMs?: number;
 }
 
+/**
+ * Bounded retry for a transport/overloaded fault from the native turn loop
+ * (nax#1870). The native counterpart to `agent.acp.promptRetries`: acpx's
+ * spawned CLI process absorbs a transient provider stall internally before
+ * nax ever observes it, but native has no such process — nax is the harness
+ * for it, and `src/agents/native/session/turn-retry.ts` is where it lives.
+ */
+export interface AgentNativeTransportRetryConfig {
+  /** Total call attempts including the first (default: 3 — two retries beyond the original call). */
+  maxAttempts?: number;
+  /** Base delay for exponential backoff with jitter, in ms, when the provider gives no retryAfter (default: 2000). */
+  baseDelayMs?: number;
+}
+
+/** Native-agent-specific configuration, the counterpart to AgentAcpConfig. */
+export interface AgentNativeConfig {
+  /** Bounded retry for a transport/overloaded fault thrown by the turn loop's complete() call. */
+  transportRetry?: AgentNativeTransportRetryConfig;
+}
+
 /** Bounded same-agent retry after a wall-clock timeout (US-002) */
 export interface AgentTimeoutRetryConfig {
   /** Maximum timeout-retry attempts (default: 1) */
@@ -99,6 +119,8 @@ export interface AgentConfig {
   fallback?: AgentFallbackConfig;
   /** ACP-specific settings */
   acp?: AgentAcpConfig;
+  /** Native-specific settings (nax#1870) */
+  native?: AgentNativeConfig;
   /** Idle watchdog configuration */
   idleWatchdog?: IdleWatchdogConfig;
   /** Bounded same-agent retry after a wall-clock timeout */

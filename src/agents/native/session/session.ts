@@ -13,6 +13,7 @@ import { NATIVE_AGENT } from "../models";
 import { nativeSessionId } from "../session-affinity";
 import type { ResolvedCompaction } from "./compaction";
 import { deleteTranscript, pruneRetainedTranscripts, retainTranscript } from "./transcript-store";
+import type { TurnRetryConfig } from "./turn-retry";
 
 /**
  * Session name -> transcript directory, so sendTurn and close can find it.
@@ -77,6 +78,12 @@ export const nativeSessionTranscriptOwners = new Map<string, string>();
 export const nativeSessionCompaction = new Map<string, ResolvedCompaction>();
 
 /**
+ * Session name -> resolved transport-fault retry settings (nax#1870). Same
+ * lifecycle as the maps above: set on open, cleared on close.
+ */
+export const nativeSessionTransportRetry = new Map<string, TurnRetryConfig>();
+
+/**
  * Session name -> the last round trip's reported input tokens and the index it
  * covers, so the next estimate can anchor on a real number.
  *
@@ -113,6 +120,7 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
   // stage, and a process that died without closing anything).
   if (opts.resume !== true) await deleteTranscript(opts.transcriptDir, name);
   if (opts.compaction !== undefined) nativeSessionCompaction.set(name, opts.compaction);
+  if (opts.transportRetry !== undefined) nativeSessionTransportRetry.set(name, opts.transportRetry);
   nativeSessionStreamHooks.set(name, {
     ...(opts.onStreamActivity !== undefined ? { onStreamActivity: opts.onStreamActivity } : {}),
     ...(opts.onActiveCall !== undefined ? { onActiveCall: opts.onActiveCall } : {}),
@@ -157,5 +165,6 @@ export async function closeNativeSession(handle: SessionHandle, failed?: boolean
   nativeSessionStreamHooks.delete(handle.id);
   nativeSessionFailed.delete(handle.id);
   nativeSessionCompaction.delete(handle.id);
+  nativeSessionTransportRetry.delete(handle.id);
   nativeSessionLastUsage.delete(handle.id);
 }

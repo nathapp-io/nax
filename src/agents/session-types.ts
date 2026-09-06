@@ -110,6 +110,12 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * src/agents/native/ must not read config (check:adapter-no-config-import).
    */
   compaction?: import("./native/session/compaction").ResolvedCompaction;
+  /**
+   * Native: resolved transport-fault retry settings (nax#1870), threaded the
+   * same way as `compaction` — a resolved primitive, never NaxConfig. ACP
+   * ignores it; acpx has its own knob (`promptRetries`).
+   */
+  transportRetry?: import("./native/session/turn-retry").TurnRetryConfig;
 }
 
 /** Options for sendTurn(). */

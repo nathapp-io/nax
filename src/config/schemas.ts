@@ -322,6 +322,7 @@ export const NaxConfigSchema = z
       promptAudit: { enabled: false },
       fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
       acp: { promptRetries: 0, trackedSpawnDeadlineMs: 10_000, trackedSpawnStartupDeadlineMs: 30_000 },
+      native: { transportRetry: { maxAttempts: 3, baseDelayMs: 2000 } },
       idleWatchdog: DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
       timeoutRetry: DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
     }),

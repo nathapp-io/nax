@@ -22,6 +22,7 @@ import { runTrackedSession } from "./manager-run";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { selectModel } from "./model-selection";
 import { formatSessionName } from "./naming";
+import { selectNativeTurnConfig } from "./turn-config-selection";
 import type {
   CreateSessionOptions,
   ISessionManager,
@@ -471,7 +472,6 @@ export class SessionManager implements ISessionManager {
     }
 
     const resolvedPermissions = resolvePermissions(opts.config ?? this._config, opts.pipelineStage);
-    const compaction = (opts.config ?? this._config)?.execution?.compaction;
     const existingDescriptor = this._findByName(name);
     const resume = existingDescriptor !== undefined;
 
@@ -479,7 +479,7 @@ export class SessionManager implements ISessionManager {
       agentName: opts.agentName,
       workdir: opts.workdir,
       resolvedPermissions,
-      compaction,
+      ...selectNativeTurnConfig(opts.config ?? this._config),
       ...selectModel(opts),
       timeoutSeconds: opts.timeoutSeconds,
       onPidSpawned: this._pidRegistry ? (pid) => this._pidRegistry?.register(pid) : undefined,
