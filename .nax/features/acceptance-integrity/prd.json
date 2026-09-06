@@ -3,7 +3,7 @@
   "feature": "acceptance-integrity",
   "branchName": "feat/acceptance-integrity",
   "createdAt": "2026-03-10T00:00:00.000Z",
-  "updatedAt": "2026-09-06T04:12:19.842Z",
+  "updatedAt": "2026-09-06T04:31:06.766Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,7 +32,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three existing modules need small, conventional metadata-preservation changes; existing operation and self-heal seams support focused unit tests."
+        "reasoning": "Three existing modules need small, conventional metadata-preservation changes; existing operation and self-heal seams support focused unit tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/self-heal.ts",
@@ -41,10 +44,10 @@
         "src/context/engine/types.ts",
         "test/unit/operations/self-heal.test.ts"
       ],
-      "outOfScope": [
-        "US-001 only: attaching the run outcome's `adapterFailure` to the outputs of operations other than `acceptance-generate` is a consequence of `callOp` being shared, but no other operation's behaviour is changed to read it here.",
-        "US-001 only: carrying an `adapterFailure` through the `complete`-kind branch of `callOp` is out of scope; the acceptance generator is a `run`-kind operation."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "32b031155e7d94b43d0f35991dff0dc75e61d780"
     },
     {
       "id": "US-002",
@@ -81,11 +84,9 @@
         "src/pipeline/stages/acceptance.ts",
         "test/unit/pipeline/stages/acceptance-setup-agent-file.test.ts"
       ],
-      "outOfScope": [
-        "US-002 only: deleting or rolling back an acceptance test file that already exists at the target path when a regeneration dispatch fails is out of scope. The branch writes nothing; it does not remove prior content.",
-        "US-002 only: propagating the dispatch failure as a thrown error that aborts the run is out of scope. The stage records the failure and lets the existing missing-target path fail the acceptance gate.",
-        "Changing the auto-commit that the acceptance-setup stage performs is out of scope; with US-002 landed there is simply no stub file for it to commit on the dispatch-failure path."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -118,10 +119,9 @@
         "src/execution/lifecycle/acceptance-loop.ts",
         "test/unit/execution/lifecycle/acceptance-loop.test.ts"
       ],
-      "outOfScope": [
-        "US-003 only: changing `MAX_STUB_REGENS`, the acceptance loop's retry budget, or when the loop decides to regenerate is out of scope. This story changes what a regeneration reports, not how many are attempted.",
-        "US-003 only: changing the stub-detection predicate itself is out of scope; the existing classifier is used as it stands."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -156,12 +156,9 @@
         "src/execution/status-writer.ts",
         "test/integration/execution/status-file.test.ts"
       ],
-      "outOfScope": [
-        "US-004 only: changing the meaning of `run.status`, adding a new value such as `completed-with-failures`, or changing the values of `PostRunPhaseStatus` is out of scope. This story adds an additive summary field and leaves every existing value alone.",
-        "US-004 only: surfacing `gates` in the TUI, the headless run footer, or the `nax status` command is out of scope; this story writes the field into the status file.",
-        "US-004 only: including the `finish` phase in `gates` is out of scope — `postRun.finish` is optional and describes what happened after the gates, not a gate.",
-        "Backfilling `gates` onto status files already written to disk is out of scope."
-      ]
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is an existing TypeScript feature change. US-001 spans src/operations/self-heal.ts:58, src/operations/call.ts, and src/operations/acceptance-generate.ts. runSelfHealChain currently returns `{ ...last, estimatedCostUsd: totalCost }`, so a corrective TurnResult replaces seed metadata. acceptanceGenerateOp always executes its path-correction self-heal. callOp normalizes the run outcome, records fallbacks, parses output, and returns runPostParse’s result without attaching `outcome.adapterFailure`; the attachment must preserve a parsed object’s own failure and leave non-object parsed values unchanged. call.ts is already 563 lines, so use a small module-private helper at the run tail or move it to existing src/operations/post-parse.ts if needed. AdapterFailure is defined in src/context/engine/types.ts and has four required fields. Existing self-heal coverage is test/unit/operations/self-heal.test.ts; callOp has extensive existing unit fixtures under test/unit/operations/call*.test.ts and run-operation-retry.test.ts.\n\nUS-002 changes the generation loop in src/pipeline/stages/acceptance-setup.ts. Its `_acceptanceSetupDeps.callOp` and `writeFile` are established test seams, exercised by test/unit/pipeline/stages/acceptance-setup-agent-file.test.ts. The current result is locally cast as `{ testCode: string | null }` and all falsy results generate a skeleton. The new branch must not write or delete `testPath` on an adapter failure, but must retain the truthy-code path and current no-failure skeleton warning. src/pipeline/stages/acceptance.ts already detects absent required package test paths, adds packageDir to `missingTargets`, stores `ctx.acceptanceFailures`, and returns fail; protect this seam rather than duplicating it.\n\nUS-003 is localized to src/execution/lifecycle/acceptance-helpers.ts. regenerateAcceptanceTest already backs up pre-existing content to `.bak`, deletes the original, invokes setup through `_regenerateDeps`, and returns false for a missing target. `isStubTestFile` already exists in this file and must be applied to regenerated existing content. Tests in test/unit/execution/lifecycle/acceptance-loop.test.ts use the injectable regeneration dependencies. Do not alter acceptance-loop retry scheduling or MAX_STUB_REGENS.\n\nUS-004 is an additive status schema change in src/execution/status-file.ts. NaxStatusFile already makes postRun optional, and buildStatusSnapshot is the centralized producer for status snapshots. Add optional gates only when `state.postRun` exists; derive acceptance from postRun except that non-empty skippedPackages forces `failed`; preserve `run.status`. Existing serialization and snapshot tests are in test/integration/execution/status-file.test.ts, and status-writer call sites need no migration because derivation is centralized. Old on-disk status files remain readable because gates is optional and is not backfilled.",
