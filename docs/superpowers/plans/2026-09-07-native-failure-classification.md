@@ -831,7 +831,7 @@ git commit -m "fix(retry): honour the provider's retryAfterSeconds in the manage
 
 **Interfaces:**
 - Consumes: `AgentRunOutcome.result.adapterFailure` at the callOp seam; `CallContext.runtime` and `CallContext.storyId`.
-- Produces: `runtime.lastAdapterFailure: Map<string, AdapterFailure>` and `recordAdapterFailure(ctx: CallContext, failure: AdapterFailure | undefined): void`.
+- Produces: `runtime.lastAdapterFailure: Map<string, AdapterFailure>` and `recordAdapterFailure(ctx: CallContext, failure: AdapterFailure | undefined): void`. Both reference `AdapterFailure` via the inline `import("../context/engine")` form — see the note in step 3.
 
 **Context you need:** `applyPostRunInspection` rebuilds `ctx.agentResult` from the implementer's phase output with `rateLimited: false` hardcoded, so every story that died to a 429 logs `"rateLimited": false`. The comment at `call.ts:456-462` already names this defect.
 
@@ -848,7 +848,17 @@ runs the rebuild this task changes.
 `@test/helpers` and `makeInspectionOpts` / `makePlanResult` from
 `./_post-run-fixtures`. Read all three before writing, and reuse them:
 
+**`makePlanResult()` defaults the implementer phase to `success: true`**
+(`_post-run-fixtures.ts:21`), which is the SUCCEEDING story. The spec's anchor 9
+is about a story that *died* to a 429, so every case below must override that
+phase output — otherwise the test passes while exercising the wrong path:
+
 ```ts
+const failedImplementer = () =>
+  makePlanResult({
+    phaseOutputs: { [implementerOp.name]: { success: false, estimatedCostUsd: 0, durationMs: 50 } },
+  });
+
 test("a story whose op failed with fail-rate-limit reports rateLimited on the rebuilt result", async () => {
   const ctx = makeTestContext();
   ctx.runtime.lastAdapterFailure.set(ctx.story.id, {
@@ -858,14 +868,14 @@ test("a story whose op failed with fail-rate-limit reports rateLimited on the re
     message: "429",
   });
 
-  await applyPostRunInspection(ctx, makePlanResult(), makeInspectionOpts());
+  await applyPostRunInspection(ctx, failedImplementer(), makeInspectionOpts());
 
   expect(ctx.agentResult?.rateLimited).toBe(true);
 });
 
 test("a story with no recorded failure still reports rateLimited false", async () => {
   const ctx = makeTestContext();
-  await applyPostRunInspection(ctx, makePlanResult(), makeInspectionOpts());
+  await applyPostRunInspection(ctx, failedImplementer(), makeInspectionOpts());
   expect(ctx.agentResult?.rateLimited).toBe(false);
 });
 
@@ -878,15 +888,20 @@ test("a non-rate-limit failure does not set rateLimited", async () => {
     message: "503",
   });
 
-  await applyPostRunInspection(ctx, makePlanResult(), makeInspectionOpts());
+  await applyPostRunInspection(ctx, failedImplementer(), makeInspectionOpts());
 
   expect(ctx.agentResult?.rateLimited).toBe(false);
 });
 ```
 
-If `makePlanResult()` needs an argument to produce a failed implementer phase,
-read `_post-run-fixtures.ts` and pass what it actually takes. The second and
-third cases are the regression guards.
+`implementerOp` is already imported by `_post-run-fixtures.ts` from `@/operations`;
+import it the same way in the test. The second and third cases are the regression
+guards.
+
+**No test-helper change is needed.** `makeTestContext` composes
+`makeDispatchContext()`, whose `makeMockRuntime` calls the real `createRuntime`,
+so the field added in step 3 reaches every test context automatically. Do not
+hand-add it to a stub.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -896,6 +911,23 @@ bun test test/unit/execution/post-run-inspection.test.ts
 Expected: FAIL — `lastAdapterFailure` does not exist on the runtime, and `rateLimited` is hardcoded `false`.
 
 - [ ] **Step 3: Add the sink**
+
+**Use an inline type import for `AdapterFailure`, not a top-level one.** Neither
+`src/runtime/index.ts` nor `src/operations/call-resolvers.ts` imports from
+`context/engine` today. `src/runtime/index.ts` is a barrel already implicated in
+a known cycle (`runtime/index.ts` -> `internal/agent-manager-factory` ->
+`agents/factory` -> `agents/manager` -> `runtime/index.ts`), and
+`bun run check:import-cycles` FAILS when the count grows above its baseline of
+132. The codebase's own pattern for exactly this is the inline form used at
+`src/operations/types.ts:31,66,74`:
+
+```ts
+import("../context/engine").AdapterFailure
+```
+
+Write both new type references that way. If you prefer a top-level import,
+you must run `bun run check:import-cycles` and prove the count did not rise
+before committing.
 
 In `src/runtime/index.ts`, beside `readonly agentFallbacks: Map<string, AgentFallbackRecord[]>;`:
 
@@ -911,7 +943,7 @@ In `src/runtime/index.ts`, beside `readonly agentFallbacks: Map<string, AgentFal
    * agent-swap hops do (nax#1707). Last write wins: post-run runs immediately
    * after its story's plan, so the last recorded failure is the failing op's.
    */
-  readonly lastAdapterFailure: Map<string, AdapterFailure>;
+  readonly lastAdapterFailure: Map<string, import("../context/engine").AdapterFailure>;
 ```
 
 Declare `const lastAdapterFailure = new Map<string, AdapterFailure>();` beside `const agentFallbacks = ...` (near line 335) and add `lastAdapterFailure,` to the returned object (near line 368).
@@ -925,7 +957,10 @@ In `src/operations/call-resolvers.ts`, beside `recordAgentFallbacks`:
  * No-ops for a success and for ad-hoc calls with no storyId, matching
  * recordAgentFallbacks: an unattributable failure has nowhere to go.
  */
-export function recordAdapterFailure(ctx: CallContext, failure: AdapterFailure | undefined): void {
+export function recordAdapterFailure(
+  ctx: CallContext,
+  failure: import("../context/engine").AdapterFailure | undefined,
+): void {
   if (!failure || !ctx.storyId) return;
   ctx.runtime.lastAdapterFailure.set(ctx.storyId, failure);
 }
