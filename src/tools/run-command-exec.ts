@@ -24,7 +24,7 @@
 import { relative } from "node:path";
 import { runArgv } from "../utils/argv-exec";
 import { deniedFlag, validateArgv } from "./exec-guard";
-import { recordExecTouchedPaths } from "./exec-touched-paths";
+import { recordExecTouchedPaths, snapshotExecTouchedPaths } from "./exec-touched-paths";
 import { classifyExec, normalizeExec, normalizeManagerBinary } from "./package-managers";
 import type { ExecTarget } from "./package-managers-types";
 import type { ToolResult, ToolRunContext } from "./registry";
@@ -74,6 +74,11 @@ export async function runExecBranch(
     ...(opts.exec.packageName !== undefined ? { packageName: opts.exec.packageName } : {}),
   });
   if ("error" in normalized) return { content: normalized.error, isError: true };
+  const classification = classifyExec(argv);
+  const touchedBefore =
+    opts.exec.touchedPaths !== undefined && classification === "install"
+      ? await snapshotExecTouchedPaths(normalizeManagerBinary(binary), normalized.cwd)
+      : undefined;
 
   try {
     const result = await runArgv({
@@ -97,7 +102,7 @@ export async function runExecBranch(
     // the cwd nax itself computed, not one the model could redirect (see
     // `package-managers.ts`'s directory-redirect screens).
     if (opts.exec.touchedPaths !== undefined && !result.timedOut && result.exitCode === 0) {
-      if (classifyExec(argv) === "install") {
+      if (classification === "install" && touchedBefore !== undefined) {
         // Deliberately `binary` (from the ORIGINAL argv), not
         // `normalized.argv[0]`: manager identity is invariant under
         // normalization (normalizeExec only ever appends a scoping/
@@ -108,7 +113,7 @@ export async function runExecBranch(
         // (cwd, env). Using the pre-normalization binary keeps that
         // distinction visible instead of reaching into `normalized.argv`
         // for a value it never touches.
-        recordExecTouchedPaths(opts.exec.touchedPaths, normalizeManagerBinary(binary), normalized.cwd);
+        await recordExecTouchedPaths(opts.exec.touchedPaths, touchedBefore);
       }
     }
 

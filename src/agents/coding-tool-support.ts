@@ -75,7 +75,7 @@ export function buildCodingToolSupport(args: {
   // must never reach runtime.advertised() itself, or the lookup for a tool
   // named "Exec" would simply fail and the marker would vanish from the
   // advertised set without a trace of why.
-  const allowExec = args.declared.includes(EXEC_TOOL_NAME);
+  const allowExec = args.declared.includes(EXEC_TOOL_NAME) && grants.some((grant) => grant.tool === EXEC_TOOL_NAME);
   const advertised = args.declared.filter((name) => name !== EXEC_TOOL_NAME);
 
   const declaredCommands = args.declaredCommands ?? new Map<string, string>();

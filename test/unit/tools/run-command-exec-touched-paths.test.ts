@@ -22,7 +22,7 @@ function toolWithTouchedPaths(touchedPaths: string[]) {
 }
 
 describe("RunCommand argv branch — Exec-touched paths (Task 10)", () => {
-  test("records the root manifest and lockfile after a successful repoRoot install", async () => {
+  test("does not grant expected paths when a successful install changed no files", async () => {
     _argvExecDeps.spawn = makeSpawn(() => ({ exitCode: 0, stdout: "added 1 package" })).spawn;
     const touchedPaths: string[] = [];
     const result = await toolWithTouchedPaths(touchedPaths).run(
@@ -30,7 +30,7 @@ describe("RunCommand argv branch — Exec-touched paths (Task 10)", () => {
       ctx,
     );
     expect(result.isError).toBe(false);
-    expect(touchedPaths).toEqual(["/repo/package.json", "/repo/bun.lock", "/repo/bun.lockb"]);
+    expect(touchedPaths).toEqual([]);
   });
 
   test("records nothing when the Exec call fails", async () => {
@@ -55,7 +55,7 @@ describe("RunCommand argv branch — Exec-touched paths (Task 10)", () => {
     expect(touchedPaths).toEqual([]);
   });
 
-  test("records the package cwd's own manifest/lockfile for a package-target install, not the repo root's", async () => {
+  test("does not grant package paths when a successful package install changed no files", async () => {
     _argvExecDeps.spawn = makeSpawn(() => ({ exitCode: 0, stdout: "added 1 package" })).spawn;
     const touchedPaths: string[] = [];
     const result = await toolWithTouchedPaths(touchedPaths).run(
@@ -63,10 +63,6 @@ describe("RunCommand argv branch — Exec-touched paths (Task 10)", () => {
       ctx,
     );
     expect(result.isError).toBe(false);
-    expect(touchedPaths).toEqual([
-      "/repo/packages/foo/package.json",
-      "/repo/packages/foo/bun.lock",
-      "/repo/packages/foo/bun.lockb",
-    ]);
+    expect(touchedPaths).toEqual([]);
   });
 });

@@ -31,6 +31,18 @@ describe("buildCodingToolSupport with Exec", () => {
     });
     expect(support).toBeUndefined();
   });
+
+  test("does not expose argv when the op declares Exec but policy does not grant it", () => {
+    const support = buildCodingToolSupport({
+      root: "/repo",
+      grants: [{ tool: "RunCommand", patterns: ["*"] }],
+      declared: ["RunCommand", "Exec"],
+      declaredCommands: new Map([["test", "bun test"]]),
+    });
+    const runCommand = support?.tools.find((tool) => tool.name === "RunCommand");
+    expect(runCommand?.inputSchema.properties).not.toHaveProperty("argv");
+    expect(runCommand?.inputSchema.required).toEqual(["command"]);
+  });
 });
 
 describe("resolvePackageName", () => {

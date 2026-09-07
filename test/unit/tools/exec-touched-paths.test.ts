@@ -1,35 +1,56 @@
 import { describe, expect, test } from "bun:test";
-import { isKnownManifestOrLockfileName, recordExecTouchedPaths } from "@/tools/exec-touched-paths";
+import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
+import {
+  isKnownManifestOrLockfileName,
+  recordExecTouchedPaths,
+  snapshotExecTouchedPaths,
+} from "@/tools/exec-touched-paths";
 
 describe("recordExecTouchedPaths", () => {
-  test("appends the manifest and lockfile(s) for a known manager, resolved absolutely", () => {
-    const target: string[] = [];
-    recordExecTouchedPaths(target, "bun", "/repo");
-    expect(target).toEqual(["/repo/package.json", "/repo/bun.lock", "/repo/bun.lockb"]);
+  test("records only files whose contents changed", async () => {
+    await withTempDir(async (root) => {
+      await Bun.write(join(root, "package.json"), "before");
+      await Bun.write(join(root, "bun.lock"), "unchanged");
+      const before = await snapshotExecTouchedPaths("bun", root);
+      await Bun.write(join(root, "package.json"), "after");
+
+      const target: string[] = [];
+      await recordExecTouchedPaths(target, before);
+      expect(target).toEqual([join(root, "package.json")]);
+    });
   });
 
-  test("uses the cwd actually given, not the process cwd", () => {
-    const target: string[] = [];
-    recordExecTouchedPaths(target, "npm", "/repo/packages/foo");
-    expect(target).toEqual(["/repo/packages/foo/package.json", "/repo/packages/foo/package-lock.json"]);
+  test("records a newly created lockfile", async () => {
+    await withTempDir(async (root) => {
+      const before = await snapshotExecTouchedPaths("npm", root);
+      await Bun.write(join(root, "package-lock.json"), "created");
+      const target: string[] = [];
+      await recordExecTouchedPaths(target, before);
+      expect(target).toEqual([join(root, "package-lock.json")]);
+    });
   });
 
-  test("is a no-op for a manager with no known lockfile shape", () => {
+  test("is a no-op for a manager with no known lockfile shape", async () => {
     const target: string[] = [];
-    recordExecTouchedPaths(target, "pip", "/repo");
+    await recordExecTouchedPaths(target, await snapshotExecTouchedPaths("pip", "/repo"));
     expect(target).toEqual([]);
   });
 
-  test("is a no-op for an unrecognized manager string", () => {
+  test("is a no-op for an unrecognized manager string", async () => {
     const target: string[] = [];
-    recordExecTouchedPaths(target, "curl", "/repo");
+    await recordExecTouchedPaths(target, await snapshotExecTouchedPaths("curl", "/repo"));
     expect(target).toEqual([]);
   });
 
-  test("does not duplicate an already-recorded path", () => {
-    const target: string[] = ["/repo/package.json"];
-    recordExecTouchedPaths(target, "bun", "/repo");
-    expect(target).toEqual(["/repo/package.json", "/repo/bun.lock", "/repo/bun.lockb"]);
+  test("does not grant unchanged or merely expected paths", async () => {
+    await withTempDir(async (root) => {
+      await Bun.write(join(root, "package.json"), "unchanged");
+      const before = await snapshotExecTouchedPaths("bun", root);
+      const target: string[] = [];
+      await recordExecTouchedPaths(target, before);
+      expect(target).toEqual([]);
+    });
   });
 });
 

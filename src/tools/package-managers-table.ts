@@ -171,7 +171,11 @@ function flagConflict(argv: readonly string[], flags: readonly string[]): string
   const lowered = new Set(flags.map((flag) => normalizeFlagToken(flag)));
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i] as string;
-    if (lowered.has(normalizeFlagToken(token))) return token;
+    const normalized = normalizeFlagToken(token);
+    if (lowered.has(normalized)) return token;
+    for (const flag of lowered) {
+      if (flag.length === 2 && normalized.startsWith(flag) && normalized.length > flag.length) return token;
+    }
   }
   return undefined;
 }

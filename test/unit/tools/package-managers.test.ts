@@ -464,6 +464,12 @@ describe("normalizeExec — pip -t short alias is denied", () => {
       normalizeExec({ ...base, argv: ["pip", "install", "-t", "/elsewhere", "x"], target: "package" }),
     ).toHaveProperty("error");
   });
+
+  test("pip install denies an attached -t value", () => {
+    expect(normalizeExec({ ...base, argv: ["pip", "install", "-t/tmp/out", "x"], target: "package" })).toHaveProperty(
+      "error",
+    );
+  });
 });
 
 // Fix round 3, finding 2: yarn's global screen missed -C (added for

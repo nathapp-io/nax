@@ -136,7 +136,13 @@ export function normalizeFlagToken(element: string): string {
 export function deniedFlag(argv: readonly string[]): string | undefined {
   for (const element of argv) {
     const name = normalizeFlagToken(element);
-    if (DENIED_FLAGS.includes(name)) return name;
+    for (const denied of DENIED_FLAGS) {
+      if (name === denied) return denied;
+      // Short options conventionally accept their value in the same token
+      // (`pip -t/tmp/out`, `pip -ihttps://index`). Exact matching alone lets
+      // those forms bypass destination/source controls.
+      if (denied.length === 2 && name.startsWith(denied) && name.length > denied.length) return denied;
+    }
   }
   return undefined;
 }

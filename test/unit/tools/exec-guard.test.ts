@@ -51,6 +51,10 @@ describe("deniedFlag", () => {
     expect(deniedFlag(["npm", "install", "--prefix", "/tmp"])).toBe("--prefix");
   });
 
+  test("catches a value attached to a denied short option", () => {
+    expect(deniedFlag(["pip", "install", "-ihttps://attacker.example/simple", "x"])).toBe("-i");
+  });
+
   test("catches --flag=value form", () => {
     expect(deniedFlag(["bun", "add", "x", "--registry=https://attacker.example"])).toBe("--registry");
   });

@@ -1,5 +1,9 @@
 export { editTool } from "./edit";
-export { isKnownManifestOrLockfileName, recordExecTouchedPaths } from "./exec-touched-paths";
+export {
+  isKnownManifestOrLockfileName,
+  recordExecTouchedPaths,
+  snapshotExecTouchedPaths,
+} from "./exec-touched-paths";
 export { buildGitArgv, GIT_ESCAPE_FLAGS, GIT_READ_VERBS, gitTool } from "./git";
 export { buildCommitArgvs, gitCommitTool } from "./git-commit";
 export { globTool } from "./glob";
