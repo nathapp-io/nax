@@ -3,6 +3,13 @@ import type { CallContext } from "@/operations";
 import type { AdvisoryFinding } from "@/review/review-audit";
 import type { DroppedFindingSummary, ReviewDecisionPayload } from "./types";
 
+/** Narrows to the union rather than casting — an unrecognised value becomes
+ * `undefined` so it can never be written into the audit as if it were a real,
+ * governing threshold. */
+function toBlockingThreshold(value: unknown): "error" | "warning" | "info" | undefined {
+  return value === "error" || value === "warning" || value === "info" ? value : undefined;
+}
+
 export function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
   if (output === null || output === undefined || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
@@ -11,11 +18,24 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
   if (!reviewer) return null;
 
   const unparsedPreview = typeof record.unparsedPreview === "string" ? record.unparsedPreview : undefined;
+  // Read regardless of parse outcome — both ops now stamp blockingThreshold on
+  // their failOpen/looksLikeFail branches too (mirrors AdversarialReviewOutput
+  // AC8 and semantic's equivalent), so a fail-open give-up under a mis-set
+  // threshold is diagnosable (#1889).
+  const blockingThreshold = toBlockingThreshold(record.blockingThreshold);
   if (record.failOpen === true) {
-    return { reviewer, parsed: false, passed: true, failOpen: true, result: null, unparsedPreview };
+    return { reviewer, parsed: false, passed: true, failOpen: true, result: null, unparsedPreview, blockingThreshold };
   }
   if (record.looksLikeFail === true) {
-    return { reviewer, parsed: false, passed: false, looksLikeFail: true, result: null, unparsedPreview };
+    return {
+      reviewer,
+      parsed: false,
+      passed: false,
+      looksLikeFail: true,
+      result: null,
+      unparsedPreview,
+      blockingThreshold,
+    };
   }
 
   if (typeof record.passed !== "boolean" || !Array.isArray(record.findings)) {
@@ -37,12 +57,20 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
       })
     : undefined;
 
+  // #1423 acknowledgements. Both ops return `ReviewAck[]` at the top level of
+  // their output; kept as `unknown[]` here (like advisoryFindings/acDropped
+  // above) since this seam only guards shape, not the element type — the
+  // review-audit middleware is the typed boundary (ReviewAck cast).
+  const acks = Array.isArray(record.acks) ? (record.acks as unknown[]) : undefined;
+
   return {
     reviewer,
     parsed: true,
     passed: record.passed,
     result: { passed: record.passed, findings: record.findings },
     acDropped,
+    acks,
+    blockingThreshold,
     // Op output crosses this seam untyped (`output: unknown`), so the shape is asserted
     // rather than checked. Upstream both ops return `Finding[]`
     // (operations/{adversarial,semantic}-review.ts) and every consumer downstream is now
@@ -71,12 +99,23 @@ export function emitReviewDecision(ctx: CallContext, opName: string, output: unk
     looksLikeFail: payload.parsed ? undefined : payload.looksLikeFail,
     failOpen: payload.parsed ? false : payload.failOpen,
     passed: payload.passed,
+    // advisoryFindings and acDropped were computed by both review ops and then
+    // dropped here, so every review-audit record wrote them as null. See F3 of
+    // docs/findings/2026-08-01-review-pipeline-gap-analysis.md. `acks` was the
+    // same bug, never added to that rescued list (third pass over this seam) —
+    // it joins them here, gated behind `parsed` like the other two: an unparsed
+    // turn has no acks to report.
     result: payload.result,
-    // These three were computed by both review ops and then dropped here, so
-    // every review-audit record wrote them as null. See F3 of
-    // docs/findings/2026-08-01-review-pipeline-gap-analysis.md.
     advisoryFindings: payload.parsed ? payload.advisoryFindings : undefined,
     acDropped: payload.parsed ? payload.acDropped : undefined,
+    acks: payload.parsed ? payload.acks : undefined,
+    // Unlike acks, blockingThreshold is NOT gated behind `parsed` — it is read
+    // from both branches of ReviewDecisionPayload (see toReviewDecisionPayload,
+    // which threads it through the failOpen/looksLikeFail early returns too). A
+    // fail-open review under a mis-set threshold is exactly the case #1889 needs
+    // this data for; gating it here would silently re-introduce the same bug for
+    // every give-up.
+    blockingThreshold: payload.blockingThreshold,
     unparsedPreview: payload.parsed ? undefined : payload.unparsedPreview,
   });
 }

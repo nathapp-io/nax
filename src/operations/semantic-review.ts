@@ -131,6 +131,13 @@ export interface SemanticReviewOutput {
     outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
     costUsd: number;
   };
+  /**
+   * The resolved blockingThreshold used during verify(), mirroring
+   * `AdversarialReviewOutput.blockingThreshold` (US-003 AC8). Persisted here so
+   * the audit record carries the threshold that actually governed this verdict
+   * rather than always assuming the "error" default.
+   */
+  blockingThreshold?: "error" | "warning" | "info";
 }
 
 const FAIL_OPEN: SemanticReviewOutput = {
@@ -387,10 +394,14 @@ export const semanticReviewOp: RunOperationWithHooks<
     return { ...FAIL_OPEN, unparsedPreview };
   },
   async verify(parsed, input, _verifyCtx) {
-    if (parsed.failOpen || parsed.looksLikeFail) return parsed;
-    if (parsed.findings.length === 0) return parsed;
-
+    // Hoisted above the short-circuits (was previously computed only for the main
+    // return path) so all three branches can stamp blockingThreshold — see
+    // AdversarialReviewOutput's equivalent field for precedent. The empty-findings
+    // branch matters most in practice: 47.2% of August semantic reviews hit it.
     const threshold = input.blockingThreshold ?? "error";
+    if (parsed.failOpen || parsed.looksLikeFail) return { ...parsed, blockingThreshold: threshold };
+    if (parsed.findings.length === 0) return { ...parsed, blockingThreshold: threshold };
+
     const findings = parsed.findings as LLMFinding[];
 
     const sanitized = sanitizeRefModeFindings(findings, input.mode, threshold);
@@ -444,6 +455,7 @@ export const semanticReviewOp: RunOperationWithHooks<
     return {
       ...parsed,
       passed,
+      blockingThreshold: threshold,
       findings: accepted,
       normalizedFindings: toReviewFindings(blocking, { isTestFile }),
       advisoryFindings,
