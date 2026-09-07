@@ -1,9 +1,4 @@
-/**
- * AgentManager — owns agent lifecycle and fallback policy (ADR-012).
- *
- * Phase 4: implements real shouldSwap, nextCandidate, runWithFallback, and
- * completeWithFallback. Adapter-owned fallback state removed.
- */
+/** AgentManager owns agent lifecycle and fallback policy (ADR-012). */
 
 import { EventEmitter } from "node:events";
 import type { AgentManagerConfig } from "@/config/selectors";
@@ -23,7 +18,7 @@ import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
-import { resolveStartAgent, StoryHopBudget } from "./hop-budget";
+import { StoryHopBudget } from "./hop-budget";
 import {
   buildCompleteCallPreamble,
   buildCompleteEvent,
@@ -34,6 +29,7 @@ import {
   resolveHopCompleteOptions,
 } from "./manager-dispatch";
 import { type ManagerExhaustionOptions, resolveManagerExhaustion } from "./manager-exhaustion";
+import { runWithFallback } from "./manager-run-fallback";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -49,7 +45,6 @@ import type {
 import type { AgentRegistry } from "./registry";
 import { createAgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
-import { describeRetryLogEvent, type SameAgentRetryState, trySameAgentRetry } from "./retry/hop-retry-policy";
 import type { RetryStrategy } from "./retry/types";
 import {
   availableCandidates,
@@ -58,20 +53,14 @@ import {
   type FallbackTarget,
   logSwapDecline,
 } from "./swap-decision";
-import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
+import type { AgentResult, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 type LoggerLike = {
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
   info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
 };
 
-/**
- * Upper bound on dispatch-event listeners before EventEmitter warns of a leak.
- * A single run legitimately attaches several listeners per concurrent story
- * (parallel mode), so the Node default of 10 is too low. We raise the ceiling
- * but deliberately keep it finite — `setMaxListeners(0)` (unlimited) would
- * disable the very warning that surfaces a genuine listener leak.
- */
+/** Finite listener ceiling: concurrent stories exceed Node's default of 10. */
 const MAX_EMITTER_LISTENERS = 100;
 
 /** Injectable deps for testability. */
@@ -211,241 +200,21 @@ export class AgentManager implements IAgentManager {
   }
 
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
-    const logger = this._loggerOverride ?? getSafeLogger();
-    const fallbacks: AgentFallbackRecord[] = [];
-    const primaryAgent = primaryAgentOverride ?? this.getDefault();
-    const storyId = request.runOptions.storyId;
-    const start = resolveStartAgent(this, primaryAgent, this._config.agent?.fallback?.enabled, storyId, logger);
-    let currentAgent = start.agent;
-    let currentHopKind: import("./manager-types").HopKind =
-      "tier" in start ? { kind: "primary", tier: start.tier } : { kind: "primary" };
-    let hopsSoFar = this._budget.spent(storyId);
-    let rateLimitRetry = 0;
-    let staleRetryAttempts = 0;
-    let timeoutRetryAttempts = 0;
-    let adapterErrorRetries = 0;
-    let currentBundle = request.bundle;
-    let currentRunOptions: AgentRunOptions = request.runOptions;
-    let finalPrompt: string | undefined;
-
-    const _opStartMs = Date.now();
-    const _agentChain: string[] = [primaryAgent];
-    let _finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
-    let _totalCostUsd = 0;
-
-    try {
-      while (true) {
-        let result: AgentResult;
-        let updatedBundle = currentBundle;
-
-        if (request.executeHop) {
-          const hopOut = await request.executeHop(currentAgent, currentBundle, currentHopKind, currentRunOptions);
-          result = hopOut.result;
-          updatedBundle = hopOut.bundle ?? currentBundle;
-          finalPrompt = hopOut.prompt ?? finalPrompt;
-        } else {
-          if (!this._runHop) {
-            const unboundResult: AgentResult = {
-              success: false,
-              exitCode: 1,
-              output: `AgentManager run hop is not wired for agent "${currentAgent}"`,
-              rateLimited: false,
-              durationMs: 0,
-              estimatedCostUsd: 0,
-            };
-            _finalStatus = "error";
-            return { result: unboundResult, fallbacks, finalBundle: currentBundle, finalPrompt };
-          }
-          const rawHopOut = await this._runHop(currentAgent, currentRunOptions);
-          // Normalize: support both wrapped SessionRunHopResult and flat AgentResult (test injection)
-          const hopOut =
-            "result" in rawHopOut && rawHopOut.result != null
-              ? (rawHopOut as { result: AgentResult; prompt?: string })
-              : { result: rawHopOut as unknown as AgentResult, prompt: undefined };
-          result = hopOut.result;
-          finalPrompt = hopOut.prompt ?? finalPrompt;
-        }
-
-        _totalCostUsd += result.estimatedCostUsd ?? 0;
-
-        if (result.success) {
-          _finalStatus = "ok";
-          return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-        }
-
-        const isFailStale = result.adapterFailure?.outcome === "fail-stale";
-        const retryState: SameAgentRetryState = {
-          staleRetryAttempts,
-          timeoutRetryAttempts,
-          adapterErrorRetries,
-          currentRunOptions,
-          tier: "tier" in currentHopKind ? currentHopKind.tier : undefined,
-        };
-        const retryDecision = trySameAgentRetry(result, retryState, {
-          config: this._config,
-          requestRunOptions: request.runOptions,
-          signal: request.signal,
-        });
-
-        if (retryDecision) {
-          staleRetryAttempts =
-            retryDecision.outcome === "stale-retry" ? retryDecision.staleRetryAttempts : staleRetryAttempts;
-          timeoutRetryAttempts =
-            retryDecision.outcome === "timeout-retry" ? retryDecision.timeoutRetryAttempts : timeoutRetryAttempts;
-          adapterErrorRetries =
-            retryDecision.outcome === "adapter-error" ? retryDecision.adapterErrorRetries : adapterErrorRetries;
-          currentRunOptions =
-            retryDecision.outcome === "timeout-retry" ? retryDecision.currentRunOptions : currentRunOptions;
-
-          const retryHop = buildFallbackRecord({
-            storyId: request.runOptions.storyId,
-            priorAgent: currentAgent,
-            newAgent: currentAgent,
-            hop: retryDecision.kind.attempt,
-            failure: retryDecision.fallbackRecord,
-            costUsd: retryDecision.fallbackRecord.costUsd,
-          });
-          const logEvent = describeRetryLogEvent(retryDecision, request.runOptions.storyId, currentAgent);
-          if (logEvent.recordFallback) {
-            fallbacks.push(retryHop);
-            this._emitter.emit("onSwapAttempt", retryHop);
-          }
-          if (logEvent.level === "warn") {
-            logger?.warn("agent-manager", logEvent.message, logEvent.fields);
-          } else {
-            logger?.info("agent-manager", logEvent.message, logEvent.fields);
-          }
-          currentHopKind = retryDecision.kind;
-          continue;
-        }
-
-        // Op-level opt-out (TDD ops per ADR-018 §5.2). Returns the primary-agent
-        // result without entering the swap branch. Same-agent retries (fail-stale,
-        // fail-timeout, fail-adapter-error) fire before this gate so single-agent
-        // ops still benefit from bounded retry; only the swap path is suppressed.
-        if (request.noFallback) {
-          _finalStatus = "error";
-          return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-        }
-
-        const fb = this._config.agent?.fallback;
-        const swapDecision = decideSwap(result.adapterFailure, hopsSoFar, fb);
-        if (!swapDecision.swap) {
-          // #1713: the neighbouring terminal exits below emit; this one was silent.
-          logSwapDecline(logger, swapDecision.reason, {
-            storyId: request.runOptions.storyId,
-            agent: currentAgent,
-            hopsSoFar,
-            failure: result.adapterFailure,
-          });
-          if (isFailStale) {
-            logger?.warn("agent-manager", "fail-stale: no swap candidate, returning terminal failure", {
-              storyId: request.runOptions.storyId,
-            });
-            _finalStatus = "error";
-            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-          }
-          const outcome = await this._resolveExhaustion({
-            failure: result.adapterFailure,
-            hopsSoFar,
-            attempt: rateLimitRetry,
-            swapWasPossible: swapDecision.reason === "hop-cap-reached",
-            agent: currentAgent,
-            site: "run",
-            storyId: request.runOptions.storyId,
-            stage: request.runOptions.pipelineStage ?? "run",
-            signal: request.signal,
-          });
-          if (outcome === "cancelled") {
-            _finalStatus = "cancelled";
-            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-          }
-          if (outcome === "retry") {
-            rateLimitRetry += 1;
-            continue;
-          }
-          _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
-          return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-        }
-
-        const adapterFailure = result.adapterFailure ?? {
-          category: "quality" as const,
-          outcome: "fail-unknown" as const,
-          retriable: false,
-          message: "",
-        };
-        // Hop-local exclusion prevents re-selecting the failed agent.
-        this.markUnavailable(currentAgent, adapterFailure);
-
-        // Resolve from the primary so flat fallback maps work across hops.
-        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
-        if (!next) {
-          const outcome = await this._resolveExhaustion({
-            failure: adapterFailure,
-            hopsSoFar,
-            attempt: rateLimitRetry,
-            swapWasPossible: true,
-            agent: currentAgent,
-            site: "run",
-            storyId: request.runOptions.storyId,
-            stage: request.runOptions.pipelineStage ?? "run",
-            signal: request.signal,
-          });
-          if (outcome === "cancelled") {
-            _finalStatus = "cancelled";
-            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-          }
-          if (outcome === "retry") {
-            rateLimitRetry += 1;
-            continue;
-          }
-          _finalStatus = "exhausted";
-          return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-        }
-        hopsSoFar = this._budget.spend(storyId, hopsSoFar);
-        rateLimitRetry = 0;
-        currentBundle = updatedBundle;
-        // The tier rides on the hop kind, the per-hop channel the caller already reads, not a parallel variable.
-        currentHopKind = { kind: "swap", failure: adapterFailure, ...("tier" in next ? { tier: next.tier } : {}) };
-
-        const hop = buildFallbackRecord({
-          storyId: request.runOptions.storyId,
-          priorAgent: currentAgent,
-          newAgent: next.agent,
-          hop: hopsSoFar,
-          failure: adapterFailure,
-          costUsd: result.estimatedCostUsd ?? 0,
-        });
-        fallbacks.push(hop);
-        this._emitter.emit("onSwapAttempt", hop);
-
-        logger?.info("agent-manager", "Agent swap triggered", {
-          storyId: request.runOptions.storyId,
-          fromAgent: currentAgent,
-          toAgent: next.agent,
-          hop: hopsSoFar,
-        });
-
-        _agentChain.push(next.agent);
-        currentAgent = next.agent;
-      }
-    } finally {
-      this._dispatchEvents.emitOperationCompleted({
-        kind: "operation-completed",
-        operation: "run-with-fallback",
-        agentChain: _agentChain,
-        hopCount: hopsSoFar,
-        fallbackTriggered: fallbacks.length > 0,
-        totalElapsedMs: Date.now() - _opStartMs,
-        totalCostUsd: _totalCostUsd,
-        finalStatus: _finalStatus,
-        storyId: request.runOptions.storyId,
-        stage: request.runOptions.pipelineStage ?? "run",
-        timestamp: Date.now(),
-        ...(request.runOptions.callId !== undefined ? { callId: request.runOptions.callId } : {}),
-        ...(request.runOptions.scopeId !== undefined ? { scopeId: request.runOptions.scopeId } : {}),
-      });
-    }
+    return runWithFallback({
+      request,
+      primaryAgentOverride,
+      config: this._config,
+      budget: this._budget,
+      runHop: this._runHop,
+      dispatchEvents: this._dispatchEvents,
+      logger: this._loggerOverride ?? getSafeLogger(),
+      getDefault: () => this.getDefault(),
+      isUnavailable: (agent) => this.isUnavailable(agent),
+      markUnavailable: (agent, failure) => this.markUnavailable(agent, failure),
+      nextCandidate: (current, hops, exclude) => this.nextCandidate(current, hops, exclude),
+      resolveExhaustion: (options) => this._resolveExhaustion(options),
+      emitSwapAttempt: (fallback) => this._emitter.emit("onSwapAttempt", fallback),
+    });
   }
 
   async completeWithFallback(
