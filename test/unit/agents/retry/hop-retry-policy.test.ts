@@ -160,3 +160,44 @@ describe("trySameAgentRetry — fail-stale cap comes from the shared SSOT defaul
     expect(decision).toBeNull();
   });
 });
+
+describe("trySameAgentRetry admits fail-service-down (nax#1884)", () => {
+  const serviceDown = {
+    success: false,
+    exitCode: 1,
+    output: "",
+    rateLimited: false,
+    durationMs: 0,
+    tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    estimatedCostUsd: 0,
+    adapterFailure: {
+      category: "availability" as const,
+      outcome: "fail-service-down" as const,
+      retriable: true,
+      message: "provider stalled",
+    },
+  };
+
+  const deps = () => ({
+    config: makeNaxConfig({ execution: { sessionErrorRetryableMaxRetries: 3 } }),
+    requestRunOptions: makeRunOptions(),
+  });
+
+  test("retries on the same agent while under the cap", () => {
+    const result = trySameAgentRetry(serviceDown, makeState({ adapterErrorRetries: 0 }), deps());
+    expect(result).not.toBeNull();
+    expect(result?.outcome).toBe("adapter-error");
+  });
+
+  test("returns null once the cap is reached, so the swap path is reached", () => {
+    expect(trySameAgentRetry(serviceDown, makeState({ adapterErrorRetries: 3 }), deps())).toBeNull();
+  });
+
+  test("a fail-stale still takes the stale lane, unchanged", () => {
+    const stale = {
+      ...serviceDown,
+      adapterFailure: { ...serviceDown.adapterFailure, outcome: "fail-stale" as const },
+    };
+    expect(trySameAgentRetry(stale, makeState({ adapterErrorRetries: 0 }), deps())?.outcome).toBe("stale-retry");
+  });
+});
