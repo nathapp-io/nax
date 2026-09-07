@@ -42,7 +42,11 @@ export function attachReviewAuditSubscriber(
       recordId: event.recordId,
       workdir: event.workdir,
       projectDir: event.projectDir,
-      outputDir: event.outputDir,
+      // Note: `outputDir` is deliberately NOT forwarded from the event — the
+      // audit writer's own `_outputDir` (set in the constructor) is the
+      // authoritative location. Forwarding the event's `outputDir` would
+      // override the auditor's location and write the file somewhere the
+      // caller (e.g. a test, or a swapped auditor) does not expect.
       agentName: event.agentName,
       storyId: event.storyId,
       featureName: event.featureName,

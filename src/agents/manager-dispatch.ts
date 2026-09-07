@@ -195,6 +195,18 @@ export function buildDispatchErrorEvent(input: {
   scopeId?: string;
   startedAt: number;
   /**
+   * US-001: model attribution for the failed dispatch. Top-level
+   * `modelDef` / `modelTier` take precedence over the same keys on
+   * `dispatchOptions` so callers that hold the dispatch's `ModelDef`
+   * directly (e.g. session turns holding `handle.modelDef`) can pass
+   * it without rebundling into `dispatchOptions`. Without this seam,
+   * a failed dispatch and a successful one pinned to the same
+   * `modelDef` would record different rows — the cost ledger silently
+   * disagreeing across the success/fail boundary.
+   */
+  modelDef?: ModelDef;
+  modelTier?: ModelTier;
+  /**
    * US-001: per-call id, role, and model attribution, bundled so callers
    * can pass the existing options object rather than spelling out each
    * field. When supplied, its `storyId` / `callId` / `scopeId` / `sessionRole`
@@ -202,12 +214,12 @@ export function buildDispatchErrorEvent(input: {
    * reshaped to pass dispatchOptions, leaving the legacy fields as fallbacks
    * for any caller that has not migrated yet.
    *
-   * `modelDef` / `modelTier` are also routed through `dispatchOptions` rather
-   * than added as separate parameters: the call sites already have the
-   * dispatch's `modelDef` on the matching options object (handle for
-   * `runAsSession`, options for `completeAsWithFallback`), and reusing the
-   * `modelAttribution()` resolver keeps a failed dispatch and a successful
-   * one pinned to the same `modelDef` on the same row.
+   * `modelDef` / `modelTier` on `dispatchOptions` remain as a fallback for
+   * callers that already have them on the matching options object
+   * (`completeAsWithFallback`'s `options` is the canonical example).
+   * Top-level `modelDef` / `modelTier`, when supplied, win — the call
+   * site can pass the resolved dispatch's model without spelling out
+   * the dispatchOptions bag just for these two keys.
    */
   dispatchOptions?: {
     storyId?: string;
@@ -223,6 +235,13 @@ export function buildDispatchErrorEvent(input: {
   const callId = dispatchOpts?.callId ?? input.callId;
   const scopeId = dispatchOpts?.scopeId ?? input.scopeId;
   const sessionRole = dispatchOpts?.sessionRole;
+  // US-001: top-level modelDef / modelTier win over dispatchOptions so a caller
+  // holding the dispatch's resolved ModelDef (e.g. handle.modelDef on a
+  // runAsSession failure) can pass it directly. dispatchOptions remains the
+  // fallback for callers that already bundle them with the options object
+  // (completeAsWithFallback's options is the canonical case).
+  const modelDef = input.modelDef ?? dispatchOpts?.modelDef;
+  const modelTier = input.modelTier ?? dispatchOpts?.modelTier;
 
   // US-001: a SessionTurnError carries the BUG-57 usage / cost slots — lift
   // them onto the event so a run-op whose turn throws still records its
@@ -239,8 +258,8 @@ export function buildDispatchErrorEvent(input: {
   // which lets a consumer tell "no model was attributed" apart from
   // "model was attributed as haiku".
   const attribution = modelAttribution({
-    ...(dispatchOpts?.modelDef !== undefined ? { modelDef: dispatchOpts.modelDef } : {}),
-    ...(dispatchOpts?.modelTier !== undefined ? { modelTier: dispatchOpts.modelTier } : {}),
+    ...(modelDef !== undefined ? { modelDef } : {}),
+    ...(modelTier !== undefined ? { modelTier } : {}),
   });
 
   return {
