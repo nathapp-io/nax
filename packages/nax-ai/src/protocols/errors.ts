@@ -138,19 +138,53 @@ export function parseRetryAfter(headers: Readonly<Record<string, string>> | unde
 }
 
 /**
- * Normalises an arbitrary thrown value (connection reset, DNS failure, an
- * immediate socket error) into a `ProtocolError`.
+ * A status carried by a thrown value, when it has one.
  *
- * Always classified as "transport": `classifyHttpError(undefined)` would
- * return "unknown", but a throw with no HTTP response is exactly the class
- * of fault §10.1 assigns to nax-ai's own bounded retry, not the consumer's
- * rate-limit/overload policy. `cause` is preserved so the original value is
- * never lost.
+ * Provider SDKs are inconsistent about where they put it: some set `status`,
+ * some `statusCode`, some hang a whole `response` off the error. Anything
+ * else -- a bare Error, a string, undefined -- has no status, which is the
+ * case classifyThrown was originally written for.
+ */
+function thrownStatus(cause: unknown): number | undefined {
+  if (typeof cause !== "object" || cause === null) return undefined;
+  const it = cause as { status?: unknown; statusCode?: unknown; response?: { status?: unknown } };
+  const raw = it.status ?? it.statusCode ?? it.response?.status;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+}
+
+/** Headers carried by a thrown value, in the same two shapes as the status. */
+function thrownHeaders(cause: unknown): Readonly<Record<string, string>> | undefined {
+  if (typeof cause !== "object" || cause === null) return undefined;
+  const it = cause as { headers?: unknown; response?: { headers?: unknown } };
+  const raw = it.headers ?? it.response?.headers;
+  return typeof raw === "object" && raw !== null ? (raw as Record<string, string>) : undefined;
+}
+
+/**
+ * Normalises an arbitrary thrown value into a `ProtocolError`.
+ *
+ * A throw carrying an HTTP status is classified from it, exactly as an error
+ * event would be, and keeps its `retry-after`. Section 10.1 assigns rate
+ * limits and overload capacity to the consumer, and filing a thrown 429 as
+ * `transport` handed it to this module's own retry instead -- against that
+ * policy, and discarding the provider's recovery time on the way.
+ *
+ * A throw with NO status stays `transport`: that is the connection reset, DNS
+ * failure and immediate socket error this function was written for, where
+ * classifyHttpError(undefined) would return "unknown" and the fault genuinely
+ * is ours to retry. `cause` is preserved either way.
  */
 export function classifyThrown(cause: unknown): ProtocolError {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const status = thrownStatus(cause);
+  if (status === undefined) return { kind: "transport", message, cause };
+
+  const retryAfter = parseRetryAfter(thrownHeaders(cause));
   return {
-    kind: "transport",
-    message: cause instanceof Error ? cause.message : String(cause),
+    kind: classifyProviderError(status, message),
+    message,
+    status,
+    ...(retryAfter !== undefined ? { retryAfter } : {}),
     cause,
   };
 }

@@ -194,3 +194,65 @@ describe("retryTransportFaults", () => {
     expect(calls).toBe(1);
   });
 });
+
+describe("a thrown value carrying an HTTP status", () => {
+  it("does not retry a thrown 429 -- rate limits are consumer policy", async () => {
+    const thrown = Object.assign(new Error("Too Many Requests"), { status: 429 });
+    let attempts = 0;
+    const sleep = () => Promise.resolve();
+
+    await expect(
+      collect(
+        retryTransportFaults(
+          () => {
+            attempts += 1;
+            return throwingStream(thrown);
+          },
+          { retries: 2, sleep },
+        ),
+      ),
+    ).rejects.toBe(thrown);
+
+    expect(attempts).toBe(1);
+  });
+
+  it("does not retry a thrown 401 -- auth is terminal", async () => {
+    const thrown = Object.assign(new Error("Unauthorized"), { status: 401 });
+    let attempts = 0;
+    const sleep = () => Promise.resolve();
+
+    await expect(
+      collect(
+        retryTransportFaults(
+          () => {
+            attempts += 1;
+            return throwingStream(thrown);
+          },
+          { retries: 2, sleep },
+        ),
+      ),
+    ).rejects.toBe(thrown);
+
+    expect(attempts).toBe(1);
+  });
+
+  it("still retries a thrown value with no status", async () => {
+    const thrown = new Error("ECONNRESET");
+    let attempts = 0;
+    const sleep = () => Promise.resolve();
+
+    await expect(
+      collect(
+        retryTransportFaults(
+          () => {
+            attempts += 1;
+            return throwingStream(thrown);
+          },
+          { retries: 2, sleep },
+        ),
+      ),
+    ).rejects.toBe(thrown);
+
+    expect(attempts).toBe(3);
+  });
+});

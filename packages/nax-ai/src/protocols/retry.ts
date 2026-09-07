@@ -13,6 +13,7 @@
  * 4xx and auth failures are terminal — retrying cannot help either.
  */
 
+import { classifyThrown } from "./errors.ts";
 import type { ProtocolEvent } from "./types.ts";
 
 export interface RetryOptions {
@@ -97,10 +98,12 @@ export async function* retryTransportFaults(
         yield event;
       }
     } catch (cause) {
-      // A throw is retryable whenever it precedes any emitted event and
-      // attempts remain — unlike an error event, a throw carries no `kind`
-      // to gate on, so any pre-first-event throw is presumed transport-shaped.
+      // A throw carries no `kind` of its own, so classify it the same way an
+      // error event is classified. Section 10.1 reserves rate-limit, overload,
+      // auth and bad-request for the consumer; only a genuine transport fault
+      // -- typically a throw with no HTTP status at all -- is ours to retry.
       if (emitted || retryIndex >= retries) throw cause;
+      if (classifyThrown(cause).kind !== "transport") throw cause;
       await abortableSleep(backoffMs(retryIndex), sleep, signal);
       retryIndex += 1;
       continue;

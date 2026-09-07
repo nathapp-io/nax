@@ -167,3 +167,49 @@ describe("classifyThrown", () => {
     expect(error.cause).toBe("connection reset");
   });
 });
+
+describe("classifyThrown", () => {
+  it("classifies a throw carrying a 429 status as rate-limit, with its retryAfter", () => {
+    const thrown = Object.assign(new Error("Too Many Requests"), {
+      status: 429,
+      headers: { "retry-after": "30" },
+    });
+    const error = classifyThrown(thrown);
+    expect(error.kind).toBe("rate-limit");
+    expect(error.status).toBe(429);
+    expect(error.retryAfter).toBe(30);
+  });
+
+  it("classifies a throw carrying a 401 status as auth", () => {
+    const thrown = Object.assign(new Error("Unauthorized"), { status: 401 });
+    expect(classifyThrown(thrown).kind).toBe("auth");
+  });
+
+  it("reads a status from statusCode and from response.status", () => {
+    expect(classifyThrown(Object.assign(new Error("x"), { statusCode: 429 })).kind).toBe("rate-limit");
+    expect(classifyThrown(Object.assign(new Error("x"), { response: { status: 429 } })).kind).toBe("rate-limit");
+  });
+
+  it("reads retryAfter from response.headers", () => {
+    const thrown = Object.assign(new Error("x"), {
+      response: { status: 429, headers: { "Retry-After": "12" } },
+    });
+    expect(classifyThrown(thrown).retryAfter).toBe(12);
+  });
+
+  it("still classifies a throw with no status as transport", () => {
+    expect(classifyThrown(new Error("ECONNRESET")).kind).toBe("transport");
+    expect(classifyThrown("boom").kind).toBe("transport");
+    expect(classifyThrown(undefined).kind).toBe("transport");
+  });
+
+  it("classifies a non-numeric or out-of-range status as transport", () => {
+    expect(classifyThrown(Object.assign(new Error("x"), { status: "429" })).kind).toBe("transport");
+    expect(classifyThrown(Object.assign(new Error("x"), { status: Number.NaN })).kind).toBe("transport");
+  });
+
+  it("preserves the original thrown value as cause", () => {
+    const thrown = Object.assign(new Error("Too Many Requests"), { status: 429 });
+    expect(classifyThrown(thrown).cause).toBe(thrown);
+  });
+});
