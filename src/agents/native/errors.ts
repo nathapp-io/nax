@@ -6,10 +6,6 @@
  *
  * The category split is load-bearing: shouldSwap's fallback branch only accepts
  * "availability", so a kind filed under "quality" is terminal for the op.
- *
- * Reached from `complete()` only. `sendTurn` rethrows nax-ai's error, and the
- * run path reclassifies it generically in build-hop-callback -- so this table
- * does not govern a session turn. See nax#1832.
  */
 
 import type { AdapterFailure } from "@/context/engine";
@@ -72,12 +68,24 @@ const FAILURES: Readonly<Record<string, AdapterFailure>> = Object.freeze({
 
 const UNKNOWN: AdapterFailure = FAILURES.unknown as AdapterFailure;
 
+/** The shape this module reads off a nax-ai protocol fault. Structural, never the class. */
+export interface NativeProtocolError {
+  readonly kind: string;
+  /** Seconds, when the provider signalled one. */
+  readonly retryAfter?: number;
+}
+
 /**
  * An unrecognised kind degrades to unknown rather than throwing: a new nax-ai
  * kind should downgrade one call, not crash the run.
+ *
+ * Takes the whole protocol error, not the bare kind: `retryAfter` is the
+ * provider's own recovery time and the retry layers need it. FAILURES is a
+ * frozen shared table, so the entry is copied rather than assigned onto.
  */
-export function toAdapterFailure(kind: string): AdapterFailure {
-  return FAILURES[kind] ?? UNKNOWN;
+export function toAdapterFailure(protocolError: NativeProtocolError): AdapterFailure {
+  const base = FAILURES[protocolError.kind] ?? UNKNOWN;
+  return protocolError.retryAfter === undefined ? base : { ...base, retryAfterSeconds: protocolError.retryAfter };
 }
 
 export class NativeSessionUnsupportedError extends NaxError {
