@@ -274,5 +274,6 @@ Deletion and documentation only. Verified by the build/static gate — `bun run 
 
 - `.nax/rules/retry-strategy.md` is the canonical store and is updated to state the manager tier's real accepted outcomes (`fail-rate-limit`, `fail-stale` and `fail-service-down`), so its "op-tier strategies MUST NOT handle these" prohibition covers the outcome US-003 promoted. It currently documents `defaultRetryStrategy` as firing only on `fail-rate-limit`, which was already stale before this spec.
 - The Claude-side mirror under `.claude/rules/` is regenerated from the canonical store rather than hand-edited.
-- The header comment at `src/agents/native/errors.ts:10`, which claims the failure table "does not govern a session turn", is corrected — it has been stale since #1840 and misdirected a live diagnosis (#1900).
+- **#1900 is already fixed in code.** Spec 1 (#1913) rewrote that header and the "does not govern a session turn" sentence no longer exists; the issue is merely un-closed. Close it with a comment citing `c9d360ca7` rather than editing anything.
+- What *is* now stale in `src/agents/native/errors.ts` is its remaining header claim that "the category split is load-bearing: shouldSwap's fallback branch only accepts \"availability\"" — US-003 makes that false, because `decideSwap` reads the policy table and never reads `category`. Correct that sentence.
 - Any commentary in `src/agents/retry/default-strategy.ts` naming the accepted outcomes is brought in line with the table.
