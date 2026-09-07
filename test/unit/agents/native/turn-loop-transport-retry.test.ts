@@ -104,8 +104,8 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     expect(result.output).toBe("done");
   });
 
-  test("never retries auth, bad-request or rate-limit faults", async () => {
-    for (const kind of ["auth", "bad-request", "rate-limit"]) {
+  test("never retries auth or bad-request faults", async () => {
+    for (const kind of ["auth", "bad-request"]) {
       let calls = 0;
       await expect(
         runNativeTurn(handle, "hi", opts(), {
@@ -119,6 +119,25 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
       ).rejects.toThrow("terminal");
       expect(calls).toBe(1);
     }
+  });
+
+  test("waits out a rate-limit fault and re-issues the round trip", async () => {
+    let calls = 0;
+    const delays: number[] = [];
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      transportRetry: retryConfig,
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+      complete: async () => {
+        calls += 1;
+        if (calls === 1) throw new ProtocolStreamError({ kind: "rate-limit", message: "429-ish", retryAfter: 4 });
+        return reply();
+      },
+    });
+    expect(calls).toBe(2);
+    expect(delays).toEqual([4000]);
+    expect(result.output).toBe("done");
   });
 
   test("leaves context-overflow on its own existing path, unaffected by transportRetry being set", async () => {
