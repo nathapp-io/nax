@@ -1,0 +1,117 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "ledger-and-audit-field-truth",
+  "branchName": "feat/ledger-and-audit-field-truth",
+  "createdAt": "2026-08-01T00:00:00.000Z",
+  "updatedAt": "2026-09-07T16:49:14.542Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Cost ledger records what it already knows",
+      "description": "**Goal** — Add round-trip attribution, model attribution on error rows, and a persisted row for successful dispatches whose usage is missing. **Motivation** — Without `roundTrips` on a cost row, `cacheRead` is the only proxy for loop length, and it cannot separate a long transcript from many turns. **Approach** — Both stories follow the precedent `blockingThreshold` set in #1907: the value is read off the record the op returned, forwarded by the emitter, and persisted by the existing writer. No new computation is introduced anywhere — every value this feature persists is already computed correctly upstream. `roundTripUnit` travels with `roundTrips` because the two units are not comparable quantities: native counts model completions, ACP counts delegated agent runs. A consumer that averages them without the discriminator produces a meaningless number, so the count is never persisted alone. **Scope** — In: CostEvent and DispatchErrorEvent shape extensions; session-turn round-trip forwarding; error-model forwarding from existing model attribution; usage-missing row recording; schema v4; relevant builder, bus, and middleware tests. Out: Review audit verdict provenance (US-002). Backfilling, rewriting or migrating cost rows already written at `schemaVersion` 3 is out of scope. The schema version is how a consumer distinguishes them. Making the native path report a wire-exact cost is out of scope. nax-ai supplies rates and computes no cost, so no wire cost exists to report. The atomicity of `CostAggregator.drain()` under concurrent record-and-drain is out of scope and unchanged by this feature. Persisting a per-call tool-call count is out of scope. `codingToolUse` exists on the native turn result but not on the ACP path, so it has no cross-transport meaning. **Interface** — `CostEvent` — `src/runtime/cost-aggregator.ts:3` (US-001): Target: the same, plus optional `roundTrips` (number), `roundTripUnit` (`\"model-call\" | \"agent-run\"`), and `usageMissing` (boolean). `DispatchErrorEvent` — `src/runtime/dispatch-events.ts:130` (US-001): Target: the same, plus an optional `model` string. `COST_ROW_SCHEMA_VERSION` — `src/runtime/middleware/cost.ts:38` (US-001): Target: `4`, with the doc comment above it extended to state what a v4 row guarantees, following the convention already used for the v2/v3 boundary. Symbols this feature reads but does not change: `attachCostSubscriber(bus, aggregator, runId, projectKey?)` — `src/runtime/middleware/cost.ts:40`. The only subscriber that builds cost rows. `buildDispatchErrorEvent` — `src/agents/manager-dispatch.ts:179`. The only producer of a `DispatchErrorEvent`. `modelAttribution()` — `src/agents/manager-dispatch.ts:45`. Already resolves the model for the success path; the error path reuses it. `buildSessionTurnEvent` — `src/agents/manager-dispatch.ts:59`. Already stamps `roundTrips` and `roundTripUnit` onto the dispatch event at `:104-105`.",
+      "acceptanceCriteria": [
+        "When a session-turn dispatch event with roundTrips=7 and roundTripUnit=\"model-call\" is emitted on the dispatch bus, then its recorded cost row has roundTrips=7.",
+        "When that session-turn dispatch event is emitted, then its recorded cost row has roundTripUnit=\"model-call\".",
+        "When a session-turn dispatch event with roundTrips=3 and roundTripUnit=\"agent-run\" is emitted, then its recorded cost row has roundTripUnit=\"agent-run\".",
+        "When a complete-kind dispatch event is emitted, then its recorded cost row omits both roundTrips and roundTripUnit rather than defaulting them to 1.",
+        "When buildDispatchErrorEvent is called for a dispatch whose modelAttribution() resolves a model, then the returned DispatchErrorEvent has model equal to that resolved model.",
+        "When a dispatch error event with model=\"anthropic/claude-sonnet-5\" is emitted, then its recorded error row has model=\"anthropic/claude-sonnet-5\".",
+        "When a dispatch error event with no model is emitted, then its recorded error row omits model rather than writing the string \"unknown\".",
+        "When a successful session-turn dispatch event has undefined tokenUsage and exactCostUsd=0, then exactly one cost row is recorded.",
+        "When that successful usage-less session-turn event is recorded, then its cost row has usageMissing=true.",
+        "When that successful usage-less session-turn event is recorded, then its cost row has no tokens field rather than a tokens object with input and output both 0.",
+        "When a successful session-turn dispatch event carries token usage, then its recorded cost row omits usageMissing.",
+        "When a session-turn dispatch event is recorded, then its cost row has schemaVersion=4.",
+        "When a dispatch error event is recorded, then its error row has schemaVersion=4."
+      ],
+      "tags": [
+        "feature",
+        "cost-ledger",
+        "telemetry"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This touches existing cost shapes, dispatch/error construction, schema-versioned middleware output, and established unit fixtures, but requires no new abstraction or dependency."
+      },
+      "contextFiles": [
+        "src/runtime/middleware/cost.ts",
+        "src/runtime/cost-aggregator.ts",
+        "src/runtime/dispatch-events.ts",
+        "src/agents/manager-dispatch.ts",
+        "test/unit/runtime/middleware/cost.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a recorded dispatch has a wire-exact cost and a producer-supplied pricingSource, then the cost row retains pricingSource=\"wire\"."
+      ],
+      "outOfScope": [
+        "Review audit verdict provenance (US-002).",
+        "Backfilling, rewriting or migrating cost rows already written at `schemaVersion` 3 is out of scope. The schema version is how a consumer distinguishes them.",
+        "Making the native path report a wire-exact cost is out of scope. nax-ai supplies rates and computes no cost, so no wire cost exists to report.",
+        "The atomicity of `CostAggregator.drain()` under concurrent record-and-drain is out of scope and unchanged by this feature.",
+        "Persisting a per-call tool-call count is out of scope. `codingToolUse` exists on the native turn result but not on the ACP path, so it has no cross-transport meaning."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/runtime/middleware/cost.test.ts",
+          "reason": "two assertions break against a correct implementation. The test named `\"#1464: rows carry schemaVersion 3\"` (`:528-536`) asserts `schemaVersion` is exactly `3`; under AC-12 it becomes `4`. The test named `\"skips emit when no tokenUsage and no exactCostUsd\"` (`:105`) asserts that this dispatch records nothing; under AC-8 it records exactly one row carrying `usageMissing: true`. US-001 owns updating both to the new invariants."
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Review audit records verdict provenance",
+      "description": "**Goal** — Forward the adversarial model's own pass claim through the review decision event and persisted audit record. **Motivation** — Without `modelPassed`, a `passed:true` verdict carrying an `error`-severity finding cannot be attributed to the model's own claim or to a miscomputed verdict. **Approach** — Both stories follow the precedent `blockingThreshold` set in #1907: the value is read off the record the op returned, forwarded by the emitter, and persisted by the existing writer. No new computation is introduced anywhere — every value this feature persists is already computed correctly upstream. The `modelPassed` forwarding is guarded by extending the existing field-forwarding canary at `test/unit/execution/story-orchestrator/review-decision-field-forwarding.test.ts`, which drives the real `verify()` rather than a hand-authored fixture. **Scope** — In: boolean narrowing in ReviewDecisionPayload, ReviewDecisionEvent and audit-record persistence forwarding, and canary/integration coverage for true, false, absent, malformed, and unparsed output. Out: Cost ledger attribution and schema v4 (US-001). Repairing the adversarial verdict path that allowed ten historical records to carry `passed:true` beside an `error`-severity finding is out of scope for this feature. It requires the `modelPassed` data this feature makes observable, and is deferred to a follow-up. **Interface** — `ReviewDecisionPayload` — `src/execution/story-orchestrator/review-decision.ts:13` (US-002): Target: the same, plus an optional `modelPassed` boolean. `ReviewDecisionEvent` — `src/runtime/dispatch-events.ts` (US-002): Target: the same, plus an optional `modelPassed` boolean. Only the adversarial op populates `modelPassed` — `SEMANTIC_OUTPUT_KEYS` in the canary does not list it, and `semanticReviewOp.verify()` does not set it. This feature does not add it to the semantic path; a semantic output simply has no `modelPassed`, which is the absent input class AC-3 pins. Symbols this feature reads but does not change: `emitReviewDecision` — `src/execution/story-orchestrator/review-decision.ts:84`. The only live emitter of `review-decision`. `AdversarialReviewOutput.modelPassed` — `src/operations/adversarial-review.ts:81`, populated by `verify()` at `:567`.",
+      "acceptanceCriteria": [
+        "When toReviewDecisionPayload receives adversarial op output with modelPassed=true, then it returns a payload with modelPassed=true.",
+        "When toReviewDecisionPayload receives adversarial op output with modelPassed=false, then it returns a payload with modelPassed=false rather than dropping the field as falsy.",
+        "When toReviewDecisionPayload receives op output with no modelPassed, then it returns a payload that omits modelPassed.",
+        "When toReviewDecisionPayload receives op output with modelPassed=\"yes\", then it returns a payload that omits modelPassed.",
+        "Given real adversarialReviewOp.verify() output for a model that claimed a pass, when emitReviewDecision is called, then the emitted ReviewDecisionEvent carries modelPassed.",
+        "When emitReviewDecision processes adversarial op output with modelPassed=false, then the persisted review audit record has modelPassed=false.",
+        "When emitReviewDecision processes unparseable op output that carries modelPassed, then the persisted audit record preserves modelPassed, matching how blockingThreshold is read outside the parsed branch."
+      ],
+      "tags": [
+        "feature",
+        "review-audit",
+        "telemetry"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is coordinated optional-field forwarding through existing payload, event, subscriber, and audit-writing paths plus a real-verify canary, without new infrastructure."
+      },
+      "contextFiles": [
+        "src/execution/story-orchestrator/review-decision.ts",
+        "src/runtime/dispatch-events.ts",
+        "src/runtime/middleware/review-audit.ts",
+        "src/operations/adversarial-review.ts",
+        "test/unit/execution/story-orchestrator/review-decision-field-forwarding.test.ts"
+      ],
+      "outOfScope": [
+        "Cost ledger attribution and schema v4 (US-001).",
+        "Repairing the adversarial verdict path that allowed ten historical records to carry `passed:true` beside an `error`-severity finding is out of scope for this feature. It requires the `modelPassed` data this feature makes observable, and is deferred to a follow-up."
+      ]
+    }
+  ],
+  "analysis": "This enhancement has two independent seams. Cost rows are built only by attachCostSubscriber in src/runtime/middleware/cost.ts:42. It currently drops session-turn roundTrips/roundTripUnit, returns without recording when usage is absent and normalized cost is zero (:62), and emits zero tokens for absent usage (:88-94). CostEvent requires tokens at src/runtime/cost-aggregator.ts:48, while CostErrorEvent already has optional model at :110-112. The v3 schema history and constant are in cost.ts:4-40. SessionTurnDispatchEvent already exposes roundTrips and roundTripUnit in src/runtime/dispatch-events.ts:77-85, and buildSessionTurnEvent already stamps them in src/agents/manager-dispatch.ts:104-105. DispatchErrorEvent has no model (dispatch-events.ts:130-158); buildDispatchErrorEvent should reuse modelAttribution (manager-dispatch.ts:45-56) and its AgentManager callers are at src/agents/manager.ts:500,552. Existing cost middleware tests are test/unit/runtime/middleware/cost.test.ts, including now-obsolete no-row and schema-v3 assertions at :105 and :528-536; builder error-path tests are test/unit/agents/manager-dispatch-error-event.test.ts. For review provenance, toReviewDecisionPayload and emitReviewDecision form the untyped-output forwarding seam in src/execution/story-orchestrator/review-decision.ts:12-127. ReviewDecisionPayload has parsed and unparsed variants in types.ts:112-157; modelPassed must be boolean-narrowed and survive either variant. ReviewDecisionEvent (src/runtime/dispatch-events.ts:160-199), the audit subscriber (src/runtime/middleware/review-audit.ts:33-68), and ReviewAuditEntry serialization (src/review/review-audit.ts:45-136,187-222) all need forwarding. adversarialReviewOp already declares modelPassed and sets it in verify (src/operations/adversarial-review.ts:75-81,567); semantic deliberately does not. The real-verify canary already lists modelPassed only for adversarial outputs in test/unit/execution/story-orchestrator/review-decision-field-forwarding.test.ts:111-127. All additions are optional and must preserve omission semantics: no unknown error model, default round trips, or zero-token object. Schema v4 distinguishes new rows from unmodified v3 data; no backfill occurs. Preserve current wire-exact pricingSource precedence. With optional tokens, aggregation must safely count missing usage as zero. Audit serialization conventionally represents absent optional persisted fields as null. The stories share no symbols and have no dependency.",
+  "outOfScope": [
+    "Repairing the adversarial verdict path that allowed ten historical records to carry `passed:true` beside an `error`-severity finding is out of scope for this feature. It requires the `modelPassed` data this feature makes observable, and is deferred to a follow-up.",
+    "Changes to the telemetry analyzer script `analyze.py` are out of scope. It lives outside this repository and no change here can reach it.",
+    "Backfilling, rewriting or migrating cost rows already written at `schemaVersion` 3 is out of scope. The schema version is how a consumer distinguishes them.",
+    "Making the native path report a wire-exact cost is out of scope. nax-ai supplies rates and computes no cost, so no wire cost exists to report.",
+    "The atomicity of `CostAggregator.drain()` under concurrent record-and-drain is out of scope and unchanged by this feature.",
+    "Persisting a per-call tool-call count is out of scope. `codingToolUse` exists on the native turn result but not on the ACP path, so it has no cross-transport meaning."
+  ],
+  "routingProfile": "native"
+}
