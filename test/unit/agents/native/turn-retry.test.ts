@@ -23,10 +23,14 @@ describe("isRetryableTransportFault", () => {
     expect(isRetryableTransportFault(new ProtocolStreamError({ kind: "overloaded", message: "x" }))).toBe(true);
   });
 
-  test("rejects auth, bad-request, rate-limit and context-overflow", () => {
-    for (const kind of ["auth", "bad-request", "rate-limit", "context-overflow"]) {
+  test("rejects auth, bad-request and context-overflow", () => {
+    for (const kind of ["auth", "bad-request", "context-overflow"]) {
       expect(isRetryableTransportFault(new ProtocolStreamError({ kind, message: "x" }))).toBe(false);
     }
+  });
+
+  test("accepts rate-limit -- the provider's own delay is honoured here", () => {
+    expect(isRetryableTransportFault(new ProtocolStreamError({ kind: "rate-limit", message: "x" }))).toBe(true);
   });
 
   test("rejects a plain error with no protocolError", () => {
@@ -160,8 +164,8 @@ describe("retryTransportFault", () => {
     expect(result).toBe("recovered");
   });
 
-  test("does not retry auth, bad-request or rate-limit", async () => {
-    for (const kind of ["auth", "bad-request", "rate-limit"]) {
+  test("does not retry auth or bad-request", async () => {
+    for (const kind of ["auth", "bad-request"]) {
       const err = new ProtocolStreamError({ kind, message: "no" });
       let attempted = false;
       await expect(
@@ -262,18 +266,25 @@ describe("retryTransportFault", () => {
     expect(delays).toEqual([3000]);
   });
 
-  test("clamps its sleep to the deadline's remaining budget", async () => {
+  test("refuses to retry when the provider's retryAfter exceeds the remaining budget", async () => {
     const err = new ProtocolStreamError({ kind: "overloaded", message: "x", retryAfter: 600 });
-    const delays: number[] = [];
-    await retryTransportFault(err, {
-      attempt: async () => "ok",
-      config,
-      deadline: { expired: () => false, remainingMs: () => 5_000 },
-      sleep: async (ms) => {
-        delays.push(ms);
-      },
-    });
-    expect(delays).toEqual([5_000]);
+    let attempted = false;
+    const slept: number[] = [];
+    await expect(
+      retryTransportFault(err, {
+        attempt: async () => {
+          attempted = true;
+          return "ok";
+        },
+        config,
+        deadline: { expired: () => false, remainingMs: () => 5_000 },
+        sleep: async (ms) => {
+          slept.push(ms);
+        },
+      }),
+    ).rejects.toBe(err);
+    expect(attempted).toBe(false);
+    expect(slept).toEqual([]);
   });
 
   test("fires onRetry once per retry with the retry number, delay and fault", async () => {
@@ -289,5 +300,83 @@ describe("retryTransportFault", () => {
       },
     });
     expect(beats).toEqual([{ retryNumber: 1, delayMs: 500 }]);
+  });
+});
+
+describe("retryTransportFault budget refusal", () => {
+  const rateLimit = (retryAfter: number) => new ProtocolStreamError({ kind: "rate-limit", message: "429", retryAfter });
+
+  test("waits the provider's retryAfter and re-issues when budget allows", async () => {
+    const slept: number[] = [];
+    let attempts = 0;
+    const result = await retryTransportFault(rateLimit(30), {
+      attempt: () => {
+        attempts += 1;
+        return Promise.resolve("ok");
+      },
+      config: { maxAttempts: 3, baseDelayMs: 1000 },
+      deadline: { expired: () => false, remainingMs: () => 300_000 },
+      sleep: (ms) => {
+        slept.push(ms);
+        return Promise.resolve();
+      },
+    });
+
+    expect(result).toBe("ok");
+    expect(attempts).toBe(1);
+    expect(slept).toEqual([30_000]);
+  });
+
+  test("refuses to retry when the provider's delay exceeds the remaining budget", async () => {
+    const err = rateLimit(30);
+    let attempts = 0;
+    const slept: number[] = [];
+
+    await expect(
+      retryTransportFault(err, {
+        attempt: () => {
+          attempts += 1;
+          return Promise.resolve("ok");
+        },
+        config: { maxAttempts: 3, baseDelayMs: 1000 },
+        deadline: { expired: () => false, remainingMs: () => 10_000 },
+        sleep: (ms) => {
+          slept.push(ms);
+          return Promise.resolve();
+        },
+      }),
+    ).rejects.toBe(err);
+
+    expect(attempts).toBe(0);
+    expect(slept).toEqual([]);
+  });
+
+  test("an unbounded turn waits the full retryAfter", async () => {
+    const slept: number[] = [];
+    await retryTransportFault(rateLimit(45), {
+      attempt: () => Promise.resolve("ok"),
+      config: { maxAttempts: 3, baseDelayMs: 1000 },
+      deadline: { expired: () => false, remainingMs: () => undefined },
+      sleep: (ms) => {
+        slept.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(slept).toEqual([45_000]);
+  });
+
+  test("an overloaded fault with no retryAfter still uses jittered backoff", async () => {
+    const slept: number[] = [];
+    await retryTransportFault(new ProtocolStreamError({ kind: "overloaded", message: "503" }), {
+      attempt: () => Promise.resolve("ok"),
+      config: { maxAttempts: 3, baseDelayMs: 1000 },
+      deadline: { expired: () => false, remainingMs: () => 300_000 },
+      random: () => 0,
+      sleep: (ms) => {
+        slept.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(slept).toEqual([500]);
   });
 });
