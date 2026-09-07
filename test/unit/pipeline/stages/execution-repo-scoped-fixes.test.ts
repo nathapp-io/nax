@@ -101,6 +101,7 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
         },
         selfVerificationFailed: false,
         needsHumanReview: false,
+        providerUnavailable: false,
         combinedOutput: "",
       };
     };
@@ -132,6 +133,7 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
       },
       selfVerificationFailed: false,
       needsHumanReview: false,
+      providerUnavailable: false,
       combinedOutput: "",
     });
     return withExecutionDeps({

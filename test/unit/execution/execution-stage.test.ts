@@ -17,11 +17,14 @@ import {
 } from "@test/helpers";
 import type { ConfigSelector } from "@/config";
 import { NaxError } from "@/errors";
+import type { PostRunInspectionResult } from "@/execution/post-run";
+import { decideStageAction } from "@/execution/post-run";
 import { ExecutionPlan } from "@/execution/story-orchestrator";
 import type { CallContext } from "@/operations";
 import { executionStage, routeTddFailure } from "@/pipeline/stages/execution";
 import type { PipelineContext } from "@/pipeline/types";
 import type { FailureCategory } from "@/tdd";
+import { makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -29,6 +32,17 @@ import type { FailureCategory } from "@/tdd";
 
 interface MockContext {
   retryAsLite?: boolean;
+}
+
+function makeInspection(overrides: Partial<PostRunInspectionResult> = {}): PostRunInspectionResult {
+  return {
+    agentResult: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 },
+    selfVerificationFailed: false,
+    needsHumanReview: true,
+    providerUnavailable: false,
+    combinedOutput: "",
+    ...overrides,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,9 +68,14 @@ describe("routeTddFailure", () => {
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
-  it("escalates on session-failure with category in reason", () => {
-    const ctx: MockContext = {};
-    const result = routeTddFailure("session-failure", false, ctx);
+  it("escalates on a provider-caused session-failure with category in reason", async () => {
+    const ctx = makeTestContext();
+    const result = await decideStageAction(
+      ctx,
+      makePlanResult({ success: false }),
+      makeInspection({ failureCategory: "session-failure", providerUnavailable: true }),
+      makeInspectionOpts({ tddMode: { isLite: false, rollbackEnabled: false } }),
+    );
 
     expect(result.action).toBe("escalate");
     if (result.action === "escalate") expect(result.reason).toBe("TDD session-failure");
