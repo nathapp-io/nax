@@ -4,7 +4,9 @@
  * When a complete-kind op returns empty agent output, completeWithFallback synthesises
  * a retriable fail-stale AdapterFailure (spec §B2). AgentManager.completeWithFallback
  * recognises this and retries the same agent up to idleWatchdog.maxRetryAttempts times
- * before exhaustion (or fallback agent swap).
+ * before exhaustion (or fallback agent swap). Once the stale lane is spent and a swap
+ * is declined, the run backs off via the policy table (terminalBackoff: 2s/4s/8s)
+ * before exhausting.
  *
  * These tests exercise the full dispatch path through the real AgentManager:
  *   callOp → completeAs → completeWithFallback → synthesis → same-agent retry → success
@@ -16,6 +18,7 @@
  */
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { agentManagerInternals, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { _agentManagerDeps } from "@/agents/manager";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { CompleteOperation } from "@/operations";
 import { callOp } from "@/operations";
@@ -42,10 +45,21 @@ function makeCompleteOp(name: string): CompleteOperation<string, string, Pick<ty
 // ---------------------------------------------------------------------------
 
 const createdRuntimes: NaxRuntime[] = [];
+const originalSleep = _agentManagerDeps.sleep;
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
+  _agentManagerDeps.sleep = originalSleep;
 });
+
+/** Captures the delays handed to the injected sleep; nothing waits in real time. */
+function captureSleeps(): number[] {
+  const slept: number[] = [];
+  _agentManagerDeps.sleep = async (ms: number) => {
+    slept.push(ms);
+  };
+  return slept;
+}
 
 // ---------------------------------------------------------------------------
 // AC5 + AC6: happy path — empty on first attempt, success on retry
@@ -127,7 +141,8 @@ describe("AC5+AC6: complete-kind empty-output → completeWithFallback retry (sa
 // ---------------------------------------------------------------------------
 
 describe("AC5: complete-kind empty-output — retries exhausted", () => {
-  test("maxRetryAttempts=1: 2 total calls (initial + 1 retry), parse receives empty string", async () => {
+  test("maxRetryAttempts=1: 5 total calls (initial + 1 stale retry + 3 backoff), parse receives empty string", async () => {
+    const slept = captureSleeps();
     let callCount = 0;
     const config = makeNaxConfig({
       agent: {
@@ -157,13 +172,16 @@ describe("AC5: complete-kind empty-output — retries exhausted", () => {
       "hello",
     );
 
-    // 1 initial + 1 retry = 2 total calls (maxRetryAttempts=1)
-    expect(callCount).toBe(2);
+    // 1 initial + 1 stale-lane retry + 3 backoff retries (2s/4s/8s) = 5 total calls (maxRetryAttempts=1)
+    expect(callCount).toBe(5);
+    // fail-stale terminalBackoff backs off 2s/4s/8s before exhaustion
+    expect(slept).toEqual([2000, 4000, 8000]);
     // parse("") = "" — callOp returns empty string on complete-kind exhaustion
     expect(result).toBe("");
   });
 
-  test("maxRetryAttempts=3: 4 total calls (initial + 3 retries) on all-empty output", async () => {
+  test("maxRetryAttempts=3: 7 total calls (initial + 3 stale retries + 3 backoff) on all-empty output", async () => {
+    const slept = captureSleeps();
     let callCount = 0;
     const config = makeNaxConfig({
       agent: {
@@ -192,8 +210,10 @@ describe("AC5: complete-kind empty-output — retries exhausted", () => {
       "hello",
     );
 
-    // 1 initial + 3 retries = 4 total
-    expect(callCount).toBe(4);
+    // 1 initial + 3 stale-lane retries + 3 backoff retries (2s/4s/8s) = 7 total
+    expect(callCount).toBe(7);
+    // fail-stale terminalBackoff backs off 2s/4s/8s before exhaustion
+    expect(slept).toEqual([2000, 4000, 8000]);
   });
 });
 
