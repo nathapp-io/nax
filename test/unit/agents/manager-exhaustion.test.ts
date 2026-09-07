@@ -30,13 +30,13 @@ function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptio
 }
 
 /** `map: {}` is the cliff: decideSwap accepts, nextCandidate finds nobody. */
-function makeFallbackConfig(opts: { enabled: boolean; map?: Record<string, string[]> }) {
+function makeFallbackConfig(opts: { enabled: boolean; map?: Record<string, string[]>; maxHopsPerStory?: number }) {
   return makeNaxConfig({
     agent: {
       fallback: {
         enabled: opts.enabled,
         map: opts.map ?? {},
-        maxHopsPerStory: 2,
+        maxHopsPerStory: opts.maxHopsPerStory ?? 2,
         onQualityFailure: false,
         rebuildContext: false,
       },
@@ -100,6 +100,23 @@ describe("exhaustion on the run path", () => {
 
     expect(slept).toContain(45_000);
     expect(exhausted).toEqual([]);
+  });
+
+  test("a hop-cap-reached decline is exhaustion: backs off and emits at hops 0", async () => {
+    const slept = captureSleeps();
+    // maxHopsPerStory 0: the FIRST failure is already at the cap, so decideSwap
+    // declines with hop-cap-reached rather than the map cliff.
+    const manager = new AgentManager(makeFallbackConfig({ enabled: true, maxHopsPerStory: 0 }), undefined, {
+      runHop: alwaysRateLimited,
+    });
+    const exhausted: Array<{ hops: number }> = [];
+    manager.events.on("onSwapExhausted", (e) => exhausted.push(e));
+
+    await manager.runWithFallback({ runOptions: makeRunOptions(), bundle: mockBundle });
+
+    expect(slept).toContain(45_000);
+    expect(exhausted).toHaveLength(1);
+    expect(exhausted[0]?.hops).toBe(0);
   });
 });
 
