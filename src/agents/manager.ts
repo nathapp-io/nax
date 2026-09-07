@@ -6,7 +6,6 @@
  */
 
 import { EventEmitter } from "node:events";
-import type { PipelineStage } from "@/config/permissions";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
@@ -34,6 +33,7 @@ import {
   resolveFinalDispatch,
   resolveHopCompleteOptions,
 } from "./manager-dispatch";
+import { type ManagerExhaustionOptions, resolveManagerExhaustion } from "./manager-exhaustion";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -50,9 +50,14 @@ import type { AgentRegistry } from "./registry";
 import { createAgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
 import { describeRetryLogEvent, type SameAgentRetryState, trySameAgentRetry } from "./retry/hop-retry-policy";
-import { type ExhaustionOutcome, resolveExhaustion } from "./retry/resolve-exhaustion";
 import type { RetryStrategy } from "./retry/types";
-import { availableCandidates, credentialCandidates, decideSwap, logSwapDecline } from "./swap-decision";
+import {
+  availableCandidates,
+  credentialCandidates,
+  decideSwap,
+  type FallbackTarget,
+  logSwapDecline,
+} from "./swap-decision";
 import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 type LoggerLike = {
@@ -71,16 +76,9 @@ const MAX_EMITTER_LISTENERS = 100;
 
 /** Injectable deps for testability. */
 export const _agentManagerDeps = {
-  /**
-   * Cancellable backoff delay. Delegates to the canonical helper in
-   * `src/utils/bun-deps.ts` — see there for the rationale and the
-   * coding-standards §6 reference. Exposed on `_deps` so tests can mock it.
-   */
+  /** Cancellable backoff delay, injectable for tests. */
   sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
-  /**
-   * Clock for cooldown expiry. Exposed so tests can advance time by hand
-   * instead of waiting — a cooldown test that slept would take a minute.
-   */
+  /** Injectable clock for cooldown expiry tests. */
   now: () => Date.now(),
 };
 
@@ -207,19 +205,11 @@ export class AgentManager implements IAgentManager {
     return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
-  nextCandidate(
-    current: string,
-    _hopsSoFar: number,
-    exclude?: string,
-  ): import("./swap-decision").FallbackTarget | null {
+  nextCandidate(current: string, _hopsSoFar: number, exclude?: string): FallbackTarget | null {
     const excluded = (candidate: string): boolean => candidate === exclude || this._isExcluded(candidate);
     return availableCandidates(this._config.agent?.fallback?.map, current, excluded)[0] ?? null;
   }
 
-  // Swap hops produced here reach StoryMetrics.fallback via the run-scoped
-  // ctx.runtime.agentFallbacks sink, written by recordAgentFallbacks at the
-  // callOp seam (#1707) — result-side data never back-flows through
-  // CallContext, per .claude/rules/adapter-wiring.md Rule 6.
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
@@ -348,8 +338,6 @@ export class AgentManager implements IAgentManager {
             hopsSoFar,
             failure: result.adapterFailure,
           });
-          // For fail-stale with no swap available: exit immediately without backoff.
-          // The session was stale — retrying with backoff won't help if no fallback exists.
           if (isFailStale) {
             logger?.warn("agent-manager", "fail-stale: no swap candidate, returning terminal failure", {
               storyId: request.runOptions.storyId,
@@ -386,13 +374,10 @@ export class AgentManager implements IAgentManager {
           retriable: false,
           message: "",
         };
-        // Cooldown is a policy decision (may be "none"); hop-local exclusion is not.
-        // Passing `currentAgent` to nextCandidate is what guarantees we do not
-        // re-select the agent that just failed, regardless of its cooldown.
+        // Hop-local exclusion prevents re-selecting the failed agent.
         this.markUnavailable(currentAgent, adapterFailure);
 
-        // Look up the fallback chain by the primary agent so flat maps like
-        // { claude: ["codex", "gemini"] } work correctly across multiple hops.
+        // Resolve from the primary so flat fallback maps work across hops.
         const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
         if (!next) {
           const outcome = await this._resolveExhaustion({
@@ -590,9 +575,7 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
-        // Cooldown is a policy decision (may be "none"); hop-local exclusion is not.
-        // Passing `currentAgent` to nextCandidate is what guarantees we do not
-        // re-select the agent that just failed, regardless of its cooldown.
+        // Hop-local exclusion prevents re-selecting the failed agent.
         this.markUnavailable(currentAgent, result.adapterFailure);
         const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
         if (!next) {
@@ -816,46 +799,16 @@ export class AgentManager implements IAgentManager {
     return (await this.completeAsWithFallback(agentName, prompt, options)).result;
   }
 
+  private _resolveExhaustion(options: Omit<ManagerExhaustionOptions, "retryStrategy" | "sleep" | "onExhausted">) {
+    return resolveManagerExhaustion({
+      ...options,
+      retryStrategy: this._retryStrategy,
+      sleep: _agentManagerDeps.sleep,
+      onExhausted: (hops) => this._emitter.emit("onSwapExhausted", { storyId: options.storyId, hops }),
+    });
+  }
   close(): void {
     this._emitter.removeAllListeners();
-  }
-
-  /**
-   * Adapts the manager's state to `resolveExhaustion`'s pure input.
-   *
-   * Takes plain fields rather than the run path's `request`, because the
-   * complete path has no `runOptions` — it carries `ResolvedCompleteOptions`
-   * directly. Both call sites therefore pass the same five things.
-   */
-  private _resolveExhaustion(opts: {
-    failure: AdapterFailure | undefined;
-    hopsSoFar: number;
-    attempt: number;
-    swapWasPossible: boolean;
-    agent: string;
-    site: "run" | "complete";
-    storyId: string | undefined;
-    stage: PipelineStage;
-    signal: AbortSignal | undefined;
-  }): Promise<ExhaustionOutcome> {
-    return resolveExhaustion({
-      failure: opts.failure,
-      attempt: opts.attempt,
-      hopsSoFar: opts.hopsSoFar,
-      swapWasPossible: opts.swapWasPossible,
-      retryStrategy: this._retryStrategy,
-      retryCtx: {
-        site: opts.site,
-        agentName: opts.agent,
-        stage: opts.stage,
-        storyId: opts.storyId,
-      },
-      signal: opts.signal,
-      sleep: (ms, signal) => _agentManagerDeps.sleep(ms, signal),
-      onExhausted: (hops) => {
-        this._emitter.emit("onSwapExhausted", { storyId: opts.storyId, hops });
-      },
-    });
   }
 
   private _resolveRegistry(): AgentRegistry {

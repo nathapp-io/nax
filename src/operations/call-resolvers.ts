@@ -151,13 +151,17 @@ export function recordAgentFallbacks(ctx: CallContext, fallbacks: readonly Agent
 /**
  * Record the failure a dispatch reported, for the run-scoped per-story store.
  *
- * No-ops for a success and for ad-hoc calls with no storyId, matching
- * recordAgentFallbacks: an unattributable failure has nowhere to go.
+ * A successful dispatch clears an earlier failure so post-run inspects only
+ * the terminal operation. Ad-hoc calls have no attributable story state.
  */
 export function recordAdapterFailure(
   ctx: CallContext,
   failure: import("../context/engine").AdapterFailure | undefined,
 ): void {
-  if (!failure || !ctx.storyId) return;
-  ctx.runtime.lastAdapterFailure.set(ctx.storyId, failure);
+  if (!ctx.storyId) return;
+  if (failure) {
+    ctx.runtime.lastAdapterFailure.set(ctx.storyId, failure);
+    return;
+  }
+  ctx.runtime.lastAdapterFailure.delete(ctx.storyId);
 }

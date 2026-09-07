@@ -179,4 +179,47 @@ describe("callOp — kind:run — attach adapterFailure from dispatch outcome (U
 
     expect(result).toBe("hello-string-output");
   });
+
+  test("clears an earlier provider failure after a later successful operation", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-rate-limit",
+      category: "availability",
+      retriable: true,
+      message: "429",
+    };
+    let calls = 0;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req: AgentRunRequest) => {
+        calls += 1;
+        return {
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            agentFallbacks: [],
+            ...(calls === 1 ? { adapterFailure: failure } : {}),
+          },
+          fallbacks: [],
+        };
+      },
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+    const ctx = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-001",
+    };
+
+    await callOp(ctx, runEchoOp, { text: "first" });
+    expect(runtime.lastAdapterFailure.get("US-001")).toEqual(failure);
+
+    await callOp(ctx, runEchoOp, { text: "second" });
+    expect(runtime.lastAdapterFailure.has("US-001")).toBe(false);
+  });
 });
