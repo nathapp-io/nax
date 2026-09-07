@@ -156,7 +156,7 @@ describe("completeWithFallback empty-output synthesis (AC4)", () => {
 });
 
 describe("completeWithFallback staleRetryAttempts counter (AC5)", () => {
-  test("AC5a: retries same agent up to maxRetryAttempts=3 before exhausting (adapter called 4 times total)", async () => {
+  test("AC5a: retries same agent up to maxRetryAttempts=3 before exhausting (adapter called 7 times total)", async () => {
     // 4 calls all return empty: initial + 3 stale retries = 4, then the spent
     // lane backs off 3 times via the terminal exhaustion routine (2s/4s/8s)
     const { registry, getCallCount } = makeStaticRegistry("claude", ["", "", "", "", "", "", ""]);
@@ -176,7 +176,7 @@ describe("completeWithFallback staleRetryAttempts counter (AC5)", () => {
     }
   });
 
-  test("AC5b: maxRetryAttempts=1 results in 2 calls total (1 initial + 1 retry)", async () => {
+  test("AC5b: maxRetryAttempts=1 results in 5 calls total", async () => {
     const { registry, getCallCount } = makeStaticRegistry("claude", ["", "", "", "", ""]);
     const originalSleep = _agentManagerDeps.sleep;
     _agentManagerDeps.sleep = async () => {};

@@ -86,7 +86,7 @@ describe("resolveExhaustion", () => {
     expect(exhausted).toEqual([0]);
   });
 
-  test("a policy decline backs off but does not emit — it is not exhaustion", async () => {
+  test("a policy decline does not back off and does not emit — it is not exhaustion", async () => {
     const { input, slept, exhausted } = harness({ retryStrategy: neverRetry, swapWasPossible: false });
     expect(await resolveExhaustion(input)).toBe("exhausted");
     expect(exhausted).toEqual([]);
