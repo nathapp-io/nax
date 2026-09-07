@@ -336,3 +336,113 @@ describe("emitReviewDecision — forwards blockingThreshold (both reviewers, all
     expect(event.blockingThreshold).toBeUndefined();
   });
 });
+
+describe("emitReviewDecision — forwards modelPassed (adversarial-review)", () => {
+  // US-002 — AC5: when the real `adversarialReviewOp.verify()` is driven on a
+  // verdict whose model claimed a pass, the dispatched ReviewDecisionEvent
+  // carries modelPassed=true. Drives verify() rather than a hand-authored
+  // fixture so a future op-output rename fails here immediately.
+  test("AC5: real adversarial verify() output with model-claimed pass reaches the event as modelPassed:true", async () => {
+    return withTempDir(async (workdir) => {
+      const { ctx, getEvent } = captureEmittedEvent();
+      const verifyCtx = makeVerifyCtx(adversarialReviewOp, ctx);
+      const input: AdversarialReviewInput = { ...ADVERSARIAL_BASE_INPUT, workdir, blockingThreshold: "error" };
+      const parsed = makeAdversarialOutput({ passed: true, findings: [] });
+
+      const { verify } = adversarialReviewOp;
+      assertDefined(verify, "adversarialReviewOp.verify");
+      const output = await verify(parsed, input, verifyCtx);
+      assertDefined(output, "verify() result");
+
+      emitReviewDecision(ctx, "adversarial-review", output);
+      const event = getEvent();
+      assertDefined(event, "emitted ReviewDecisionEvent");
+      expect(event.modelPassed).toBe(true);
+    });
+  });
+
+  // US-002 — AC6: modelPassed:false must round-trip onto the event. This is the
+  // exact attribution claim the feature exists to surface — without it, the
+  // ten historical "passed:true beside an error-severity finding" records
+  // remain undiagnosable.
+  test("AC6: an adversarial op output with modelPassed:false reaches the event as modelPassed:false", async () => {
+    return withTempDir(async (workdir) => {
+      const { ctx, getEvent } = captureEmittedEvent();
+      const verifyCtx = makeVerifyCtx(adversarialReviewOp, ctx);
+      const input: AdversarialReviewInput = { ...ADVERSARIAL_BASE_INPUT, workdir, blockingThreshold: "error" };
+      // Model claims failure, threshold catches nothing — verify() therefore
+      // stamps `modelPassed: false` on its output alongside a `passed: true`
+      // verdict, which is the historic bug class the feature exposes.
+      const parsed = makeAdversarialOutput({ passed: false, findings: [] });
+
+      const { verify } = adversarialReviewOp;
+      assertDefined(verify, "adversarialReviewOp.verify");
+      const output = await verify(parsed, input, verifyCtx);
+      assertDefined(output, "verify() result");
+
+      emitReviewDecision(ctx, "adversarial-review", output);
+      const event = getEvent();
+      assertDefined(event, "emitted ReviewDecisionEvent");
+      expect(event.modelPassed).toBe(false);
+    });
+  });
+
+  // US-002 — AC7: an unparsed-but-model-attributed adversarial output must
+  // preserve modelPassed on the event. The precedent is `blockingThreshold`,
+  // which is read off both branches of the unified payload (toReviewDecisionPayload
+  // threads it through the failOpen/looksLikeFail early returns too).
+  test("AC7: a fail-open adversarial output carrying modelPassed reaches the event", () => {
+    const { ctx, getEvent } = captureEmittedEvent();
+    // Bare record, not the op's output type: simulates the `output: unknown`
+    // seam carrying a give-up with model attribution still resolvable.
+    const output: Record<string, unknown> = {
+      passed: true,
+      findings: [],
+      normalizedFindings: [],
+      acDropped: [],
+      failOpen: true,
+      modelPassed: false,
+    };
+
+    emitReviewDecision(ctx, "adversarial-review", output);
+    const event = getEvent();
+    assertDefined(event, "emitted ReviewDecisionEvent");
+    expect(event.parsed).toBe(false);
+    expect(event.failOpen).toBe(true);
+    expect(event.modelPassed).toBe(false);
+  });
+
+  test("AC7: a looksLikeFail adversarial output carrying modelPassed reaches the event", () => {
+    const { ctx, getEvent } = captureEmittedEvent();
+    const output: Record<string, unknown> = {
+      passed: false,
+      findings: [],
+      normalizedFindings: [],
+      acDropped: [],
+      looksLikeFail: true,
+      modelPassed: true,
+    };
+
+    emitReviewDecision(ctx, "adversarial-review", output);
+    const event = getEvent();
+    assertDefined(event, "emitted ReviewDecisionEvent");
+    expect(event.parsed).toBe(false);
+    expect(event.looksLikeFail).toBe(true);
+    expect(event.modelPassed).toBe(true);
+  });
+
+  test("empty: a semantic output reaches the event with no modelPassed (adversarial-only field)", () => {
+    const { ctx, getEvent } = captureEmittedEvent();
+    const output: SemanticReviewOutput & Record<string, unknown> = {
+      passed: true,
+      findings: [],
+      normalizedFindings: [],
+      acDropped: [],
+    };
+
+    emitReviewDecision(ctx, "semantic-review", output);
+    const event = getEvent();
+    assertDefined(event, "emitted ReviewDecisionEvent");
+    expect(event.modelPassed).toBeUndefined();
+  });
+});

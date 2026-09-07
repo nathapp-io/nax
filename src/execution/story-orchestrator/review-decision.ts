@@ -10,6 +10,13 @@ function toBlockingThreshold(value: unknown): "error" | "warning" | "info" | und
   return value === "error" || value === "warning" || value === "info" ? value : undefined;
 }
 
+/** US-002 — narrows the model's raw `passed` flag from the op output. Returns
+ * `undefined` for any non-boolean value (including strings like `"yes"`) so
+ * the audit never records a wrong-typed provenance. */
+function toModelPassed(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
 export function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
   if (output === null || output === undefined || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
@@ -23,8 +30,22 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
   // AC8 and semantic's equivalent), so a fail-open give-up under a mis-set
   // threshold is diagnosable (#1889).
   const blockingThreshold = toBlockingThreshold(record.blockingThreshold);
+  // US-002 — modelPassed mirrors blockingThreshold: read on both branches. A
+  // fail-open / looksLikeFail give-up that still has a model-claim resolvable
+  // from the raw record must surface it, just like #1889's threshold carries
+  // through the give-up branch.
+  const modelPassed = toModelPassed(record.modelPassed);
   if (record.failOpen === true) {
-    return { reviewer, parsed: false, passed: true, failOpen: true, result: null, unparsedPreview, blockingThreshold };
+    return {
+      reviewer,
+      parsed: false,
+      passed: true,
+      failOpen: true,
+      result: null,
+      unparsedPreview,
+      blockingThreshold,
+      ...(modelPassed !== undefined ? { modelPassed } : {}),
+    };
   }
   if (record.looksLikeFail === true) {
     return {
@@ -35,6 +56,7 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
       result: null,
       unparsedPreview,
       blockingThreshold,
+      ...(modelPassed !== undefined ? { modelPassed } : {}),
     };
   }
 
@@ -71,6 +93,11 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
     acDropped,
     acks,
     blockingThreshold,
+    // US-002 — modelPassed forwarded as-is when present (including explicit
+    // `false`), omitted when absent. The conditional spread is the AC3 / AC4
+    // gate; an unconditional assignment would write `modelPassed: undefined`
+    // and the audit JSON would carry a sentinel rather than a missing field.
+    ...(modelPassed !== undefined ? { modelPassed } : {}),
     // Op output crosses this seam untyped (`output: unknown`), so the shape is asserted
     // rather than checked. Upstream both ops return `Finding[]`
     // (operations/{adversarial,semantic}-review.ts) and every consumer downstream is now
@@ -116,6 +143,12 @@ export function emitReviewDecision(ctx: CallContext, opName: string, output: unk
     // this data for; gating it here would silently re-introduce the same bug for
     // every give-up.
     blockingThreshold: payload.blockingThreshold,
+    // US-002 — modelPassed follows blockingThreshold's precedent: read on both
+    // branches, forwarded onto the event without gating. A fail-open or
+    // looksLikeFail give-up that still carries an attributable model-claim
+    // must surface it on the dispatched event and (via the audit subscriber)
+    // into the persisted record.
+    modelPassed: payload.modelPassed,
     unparsedPreview: payload.parsed ? undefined : payload.unparsedPreview,
   });
 }

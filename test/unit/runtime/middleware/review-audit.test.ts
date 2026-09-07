@@ -120,6 +120,38 @@ describe("attachReviewAuditSubscriber", () => {
     expect(decisions[0].passed).toBe(false);
   });
 
+  // US-002 — AC7: the audit subscriber forwards modelPassed from the dispatched
+  // event onto the decision the writer consumes, matching how blockingThreshold
+  // is forwarded. Without this, the persisted audit JSON never sees the field.
+  test("forwards modelPassed from the dispatched event to the decision", () => {
+    const decisions: ReviewAuditDecision[] = [];
+    const bus = new DispatchEventBus();
+    attachReviewAuditSubscriber(
+      bus,
+      {
+        recordDispatch() {},
+        recordDecision: (e) => decisions.push(e),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
+      "run-1",
+    );
+
+    const event: ReviewDecisionEvent = {
+      kind: "review-decision",
+      reviewer: "adversarial",
+      timestamp: 9000,
+      parsed: true,
+      passed: true,
+      modelPassed: false,
+      result: { passed: true, findings: [] },
+    };
+    bus.emitReviewDecision(event);
+
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].modelPassed).toBe(false);
+  });
+
   test("unsubscribing stops review-decision forwarding", () => {
     const decisions: ReviewAuditDecision[] = [];
     const bus = new DispatchEventBus();

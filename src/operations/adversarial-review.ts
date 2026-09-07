@@ -474,8 +474,12 @@ export const adversarialReviewOp: RunOperationWithHooks<
   },
   async verify(parsed, input, _verifyCtx) {
     const threshold = input.blockingThreshold ?? "error";
-    if (parsed.failOpen || parsed.looksLikeFail) return { ...parsed, blockingThreshold: threshold };
-    if (parsed.findings.length === 0) return { ...parsed, blockingThreshold: threshold };
+    if (parsed.failOpen || parsed.looksLikeFail) {
+      return { ...parsed, blockingThreshold: threshold, modelPassed: parsed.passed };
+    }
+    if (parsed.findings.length === 0) {
+      return { ...parsed, blockingThreshold: threshold, modelPassed: parsed.passed };
+    }
     const findings = parsed.findings as AdversarialLLMFinding[];
 
     const substantiated = await substantiateAdversarialFindings({

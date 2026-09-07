@@ -204,6 +204,15 @@ export interface ReviewDecisionEvent {
   readonly adversarialAcceptAnalysis?: readonly unknown[];
   /** Set when the adversarial check passed due to all drops being ac_quote_not_substring. */
   readonly passReason?: string;
+  /**
+   * US-002 — the model's raw `passed` flag, before `verify()` applied
+   * blockingThreshold. Carried on the dispatched event so the audit subscriber
+   * can persist it onto the review-audit record. Adversarial-only: the
+   * semantic op does not populate it. Omitted when the producer did not
+   * populate it (semantic, or an adversarial give-up with no resolvable
+   * model-claim) — never coerced.
+   */
+  readonly modelPassed?: boolean;
 }
 
 export interface ReviewRepromptEvent {

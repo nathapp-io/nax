@@ -596,4 +596,25 @@ describe("toPersistedEntry", () => {
     const json = JSON.parse(toPersistedEntry({ ...base, blockingThreshold: "warning" }, 1_700_000_000_000));
     expect(json.blockingThreshold).toBe("warning");
   });
+
+  // US-002 — AC7: the audit writer persists modelPassed when it is set on the
+  // entry. Without it, the feature's headline claim ("verdict provenance is
+  // observable in the audit trail") does not survive the disk-write seam.
+  test("persists modelPassed:true when the entry declares it", () => {
+    const json = JSON.parse(toPersistedEntry({ ...base, modelPassed: true }, 1_700_000_000_000));
+    expect(json.modelPassed).toBe(true);
+  });
+
+  // US-002 — AC6: modelPassed:false must round-trip into the audit JSON as
+  // boolean false, not be coerced to null or undefined — the false attribution
+  // is exactly the signal the feature exists to surface.
+  test("persists modelPassed:false when the entry declares it (not coerced to null)", () => {
+    const json = JSON.parse(toPersistedEntry({ ...base, modelPassed: false }, 1_700_000_000_000));
+    expect(json.modelPassed).toBe(false);
+  });
+
+  test("writes modelPassed:null when the entry does not declare it (matches adversarial-only optional-field convention)", () => {
+    const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
+    expect(json.modelPassed).toBeNull();
+  });
 });
