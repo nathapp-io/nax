@@ -617,4 +617,15 @@ describe("toPersistedEntry", () => {
     const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
     expect(json.modelPassed).toBeNull();
   });
+
+  // US-002 — adversarial-review finding: end-to-end persistence of the
+  // headline scenario. modelPassed:false must survive alongside a passed:true
+  // verdict (the framework's flipped verdict after nax#1378 sub-threshold
+  // demotion) so a future reader can tell the framework flipped it from a
+  // model-claimed pass.
+  test("AC6 (end-to-end): entry with passed:true + modelPassed:false persists both, distinct values", () => {
+    const json = JSON.parse(toPersistedEntry({ ...base, passed: true, modelPassed: false }, 1_700_000_000_000));
+    expect(json.passed).toBe(true);
+    expect(json.modelPassed).toBe(false);
+  });
 });

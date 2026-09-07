@@ -387,6 +387,40 @@ describe("emitReviewDecision — forwards modelPassed (adversarial-review)", () 
     });
   });
 
+  // US-002 — adversarial-review finding: the headline scenario is model
+  // claimed failure with a sub-threshold warning finding that survives the
+  // filter pipeline. verify() flips the verdict to passed:true (nax#1378
+  // sub-threshold branch) but the modelPassed field must remain false so the
+  // audit attributes the verdict to the framework, not to the model. This test
+  // drives that path through emitReviewDecision end-to-end; the previous AC6
+  // test covered only the empty-findings short-circuit, which is the same
+  // outcome via a different branch.
+  test("AC6 (main path): model claimed failure with a sub-threshold finding flips to passed:true but preserves modelPassed:false", async () => {
+    return withTempDir(async (workdir) => {
+      const { ctx, getEvent } = captureEmittedEvent();
+      const verifyCtx = makeVerifyCtx(adversarialReviewOp, ctx);
+      const input: AdversarialReviewInput = { ...ADVERSARIAL_BASE_INPUT, workdir, blockingThreshold: "error" };
+      // Model claims failure; a warning-severity finding survives because it is
+      // sub-threshold at "error". verify()'s nax#1378 branch flips passed:true
+      // while modelPassed stays at the model's raw claim.
+      const parsed = makeAdversarialOutput({ passed: false, findings: [SUB_THRESHOLD_FINDING] });
+
+      const { verify } = adversarialReviewOp;
+      assertDefined(verify, "adversarialReviewOp.verify");
+      const output = await verify(parsed, input, verifyCtx);
+      assertDefined(output, "verify() result");
+      // Sanity: the framework did flip the verdict, and the field survived.
+      expect(output.passed).toBe(true);
+      expect(output.modelPassed).toBe(false);
+
+      emitReviewDecision(ctx, "adversarial-review", output);
+      const event = getEvent();
+      assertDefined(event, "emitted ReviewDecisionEvent");
+      expect(event.passed).toBe(true); // framework's flipped verdict
+      expect(event.modelPassed).toBe(false); // model-claimed failure — preserved
+    });
+  });
+
   // US-002 — AC7: an unparsed-but-model-attributed adversarial output must
   // preserve modelPassed on the event. The precedent is `blockingThreshold`,
   // which is read off both branches of the unified payload (toReviewDecisionPayload
