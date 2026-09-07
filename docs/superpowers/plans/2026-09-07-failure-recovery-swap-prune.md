@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun 1.4, TypeScript strict, `bun:test`, Biome.
 
-**Spec:** `.nax/specs/failure-recovery-swap-prune.md` (design rationale and rejected alternatives: `docs/superpowers/specs/2026-09-07-failure-recovery-swap-prune-design.md`)
+**Spec:** `docs/superpowers/specs/2026-09-07-failure-recovery-swap-prune-design.md` — read it before Task 1. Sections that matter most to an implementer: §3.1 (the policy table and its four readers), §3.2 (the three mechanisms replacing `markUnavailable`), §6a (which existing tests break and, just as important, which look like they should but do not), and §6 (the fifteen verification anchors).
 
 ## Global Constraints
 
@@ -877,7 +877,9 @@ Closes #1883."
 
 - [ ] **Step 1: Write the failing test**
 
-Append to the hop-retry-policy test file (create it at `test/unit/agents/retry/hop-retry-policy.test.ts` if it does not exist, importing `trySameAgentRetry` from `@/agents/retry/hop-retry-policy`):
+`test/unit/agents/retry/hop-retry-policy.test.ts` already exists and already imports
+`trySameAgentRetry` plus the factories `makeRunOptions` (line 37) and
+`makeState` (line 131). Reuse them — do not redefine them. Append:
 
 ```typescript
 describe("trySameAgentRetry admits fail-service-down (nax#1884)", () => {
@@ -893,27 +895,19 @@ describe("trySameAgentRetry admits fail-service-down (nax#1884)", () => {
     },
   };
 
-  const state = (adapterErrorRetries: number) => ({
-    staleRetryAttempts: 0,
-    timeoutRetryAttempts: 0,
-    adapterErrorRetries,
-    currentRunOptions: makeRunOptions(),
-    tier: undefined,
-  });
-
   const deps = () => ({
     config: makeNaxConfig({ execution: { sessionErrorRetryableMaxRetries: 3 } }),
     requestRunOptions: makeRunOptions(),
   });
 
   test("retries on the same agent while under the cap", () => {
-    const result = trySameAgentRetry(serviceDown, state(0), deps());
+    const result = trySameAgentRetry(serviceDown, makeState({ adapterErrorRetries: 0 }), deps());
     expect(result).not.toBeNull();
     expect(result?.outcome).toBe("adapter-error");
   });
 
   test("returns null once the cap is reached, so the swap path is reached", () => {
-    expect(trySameAgentRetry(serviceDown, state(3), deps())).toBeNull();
+    expect(trySameAgentRetry(serviceDown, makeState({ adapterErrorRetries: 3 }), deps())).toBeNull();
   });
 
   test("a fail-stale still takes the stale lane, unchanged", () => {
@@ -921,12 +915,10 @@ describe("trySameAgentRetry admits fail-service-down (nax#1884)", () => {
       ...serviceDown,
       adapterFailure: { ...serviceDown.adapterFailure, outcome: "fail-stale" as const },
     };
-    expect(trySameAgentRetry(stale, state(0), deps())?.outcome).toBe("stale-retry");
+    expect(trySameAgentRetry(stale, makeState({ adapterErrorRetries: 0 }), deps())?.outcome).toBe("stale-retry");
   });
 });
 ```
-
-Import the helpers this file needs from `@test/helpers` (`makeNaxConfig`, and a `makeRunOptions` local factory matching the one in `test/unit/agents/manager-swap-loop.test.ts` if the shared helper does not export one).
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1372,21 +1364,30 @@ Mirror `test/unit/agents/manager-complete.test.ts` for the registry helper and a
 describe("exhaustion on the complete path", () => {
   test("a rate limit with no candidate now backs off and emits, where it previously did neither", async () => {
     const slept = captureSleeps();
+    // makeAgentRegistry takes a Partial<AgentRegistry>, not a name->adapter map.
     const registry = makeAgentRegistry({
-      claude: makeAgentAdapter({
-        complete: async () => ({
-          output: "",
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-          adapterFailure: rateLimit,
+      getAgent: () =>
+        makeAgentAdapter({
+          complete: async () => ({
+            output: "",
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+            adapterFailure: rateLimit,
+          }),
         }),
-      }),
     });
     const manager = new AgentManager(makeConfig({ enabled: true }), registry);
     const exhausted: unknown[] = [];
     manager.events.on("onSwapExhausted", (e) => exhausted.push(e));
 
-    await manager.completeWithFallback("prompt", { storyId: "s1" });
+    // ResolvedCompleteOptions = CompleteOptions & { resolvedPermissions }.
+    // Shape copied from test/unit/agents/manager-complete.test.ts:73-77.
+    await manager.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+      storyId: "s1",
+    });
 
     expect(slept).toContain(45_000);
     expect(exhausted).toHaveLength(1);
@@ -1394,10 +1395,7 @@ describe("exhaustion on the complete path", () => {
 });
 ```
 
-Import `makeAgentAdapter` and `makeAgentRegistry` from `@test/helpers` — the same
-two helpers `test/unit/agents/swap-decline-log.test.ts` imports. Match
-`completeWithFallback`'s real argument shape from `manager-complete.test.ts`
-rather than guessing it.
+Import `makeAgentAdapter` and `makeAgentRegistry` from `@test/helpers`.
 
 - [ ] **Step 5: Run it to verify it fails**
 
@@ -1426,12 +1424,16 @@ In `src/agents/manager.ts`, the declined-swap branch currently inlines the whole
             _finalStatus = "error";
             return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
           }
-          const outcome = await this._resolveExhaustion(request, result.adapterFailure, {
+          const outcome = await this._resolveExhaustion({
+            failure: result.adapterFailure,
             hopsSoFar,
             attempt: rateLimitRetry,
             swapWasPossible: false,
             agent: currentAgent,
             site: "run",
+            storyId: request.runOptions.storyId,
+            stage: request.runOptions.pipelineStage ?? "run",
+            signal: request.signal,
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
@@ -1451,12 +1453,16 @@ and the no-candidate exit becomes:
 ```typescript
         const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
         if (!next) {
-          const outcome = await this._resolveExhaustion(request, adapterFailure, {
+          const outcome = await this._resolveExhaustion({
+            failure: adapterFailure,
             hopsSoFar,
             attempt: rateLimitRetry,
             swapWasPossible: true,
             agent: currentAgent,
             site: "run",
+            storyId: request.runOptions.storyId,
+            stage: request.runOptions.pipelineStage ?? "run",
+            signal: request.signal,
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
@@ -1471,17 +1477,37 @@ and the no-candidate exit becomes:
         }
 ```
 
-Add one private helper so both paths and the complete path share the wiring, and so `manager.ts` shrinks rather than grows:
+Add one private helper so both paths share the wiring, and so `manager.ts` shrinks
+rather than grows. It needs two imports `manager.ts` does not have yet — add them
+beside the existing ones:
 
 ```typescript
-  /** Adapts the manager's state to `resolveExhaustion`'s pure input. */
-  private _resolveExhaustion(
-    request: { runOptions: { storyId?: string; pipelineStage?: PipelineStage }; signal?: AbortSignal },
-    failure: AdapterFailure | undefined,
-    opts: { hopsSoFar: number; attempt: number; swapWasPossible: boolean; agent: string; site: "run" | "complete" },
-  ): Promise<ExhaustionOutcome> {
+import type { PipelineStage } from "@/config/permissions";
+import { resolveExhaustion, type ExhaustionOutcome } from "./retry/resolve-exhaustion";
+```
+
+
+```typescript
+  /**
+   * Adapts the manager's state to `resolveExhaustion`'s pure input.
+   *
+   * Takes plain fields rather than the run path's `request`, because the
+   * complete path has no `runOptions` — it carries `ResolvedCompleteOptions`
+   * directly. Both call sites therefore pass the same five things.
+   */
+  private _resolveExhaustion(opts: {
+    failure: AdapterFailure | undefined;
+    hopsSoFar: number;
+    attempt: number;
+    swapWasPossible: boolean;
+    agent: string;
+    site: "run" | "complete";
+    storyId: string | undefined;
+    stage: PipelineStage;
+    signal: AbortSignal | undefined;
+  }): Promise<ExhaustionOutcome> {
     return resolveExhaustion({
-      failure,
+      failure: opts.failure,
       attempt: opts.attempt,
       hopsSoFar: opts.hopsSoFar,
       swapWasPossible: opts.swapWasPossible,
@@ -1489,13 +1515,13 @@ Add one private helper so both paths and the complete path share the wiring, and
       retryCtx: {
         site: opts.site,
         agentName: opts.agent,
-        stage: request.runOptions.pipelineStage ?? "run",
-        storyId: request.runOptions.storyId,
+        stage: opts.stage,
+        storyId: opts.storyId,
       },
-      signal: request.signal,
+      signal: opts.signal,
       sleep: (ms, signal) => _agentManagerDeps.sleep(ms, signal),
       onExhausted: (hops) => {
-        this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops });
+        this._emitter.emit("onSwapExhausted", { storyId: opts.storyId, hops });
       },
     });
   }
@@ -1505,7 +1531,9 @@ Delete the now-dead `hopsSoFar > 0 ? emit : silent` block that previously sat be
 
 - [ ] **Step 7: Wire the complete path**
 
-In `completeWithFallback`, replace both terminal exits (the declined-swap return and the null-candidate return) with the same helper, passing `site: "complete"` and `swapWasPossible: false` / `true` respectively. The complete path has no `rateLimitRetry` counter today; add one initialised to `0` beside `staleRetryAttempts` and increment it on a `"retry"` outcome, mirroring the run path.
+In `completeWithFallback`, replace both terminal exits (the declined-swap return and the null-candidate return) with the same helper, passing `site: "complete"`, `storyId: options.storyId`,
+`stage: options.pipelineStage ?? "run"`, the complete path's own signal, and
+`swapWasPossible: false` / `true` respectively. The complete path has no `rateLimitRetry` counter today; add one initialised to `0` beside `staleRetryAttempts` and increment it on a `"retry"` outcome, mirroring the run path.
 
 - [ ] **Step 8: Run the tests**
 
@@ -1540,7 +1568,11 @@ git commit -m "fix(agents): give both dispatch paths one exhaustion routine with
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `test/unit/execution/post-run-decide-action.test.ts`, mirroring the fixture style of the existing `session-failure` tests at lines 108-132:
+`test/unit/execution/post-run-decide-action.test.ts` builds `ctx` and `planResult`
+inline per test and supplies the rest through `makeInspection(overrides:
+Partial<PostRunInspectionResult>)` (line 34) and `makeInspectionOpts()`. Mirror the
+existing `session-failure` tests at lines 108-132 for the `ctx`/`planResult` setup,
+and append:
 
 ```typescript
 describe("session-failure caused by the provider escalates (nax#1892)", () => {
@@ -1548,10 +1580,10 @@ describe("session-failure caused by the provider escalates (nax#1892)", () => {
     "%s escalates rather than pausing",
     async (outcome) => {
       const result = await decideStageAction(
-        makeCtx(),
-        makePlanResult(),
-        makeInspection({ failureCategory: "session-failure", providerUnavailable: true, outcome }),
-        makeOpts(),
+        ctx,
+        planResult,
+        makeInspection({ failureCategory: "session-failure", providerUnavailable: true }),
+        makeInspectionOpts(),
       );
       expect(result.action).toBe("escalate");
     },
@@ -1559,17 +1591,22 @@ describe("session-failure caused by the provider escalates (nax#1892)", () => {
 
   test("a genuine session failure still pauses with the unchanged reason", async () => {
     const result = await decideStageAction(
-      makeCtx(),
-      makePlanResult(),
+      ctx,
+      planResult,
       makeInspection({ failureCategory: "session-failure", providerUnavailable: false }),
-      makeOpts(),
+      makeInspectionOpts(),
     );
     expect(result).toEqual({ action: "pause", reason: "Human review needed: session-failure" });
   });
 });
 ```
 
-Extend the file's existing inspection factory to accept `providerUnavailable`, defaulting it to `false` so every existing test keeps its current meaning.
+`makeInspection` already takes a `Partial<PostRunInspectionResult>`, so it accepts
+the new field as soon as Step 3 adds it to the interface — but its defaults object
+must gain `providerUnavailable: false`, or the returned object no longer satisfies
+the type. Defaulting to `false` also keeps every existing test's meaning intact.
+The `test.each` above drops `outcome` from the overrides: the flag is what
+`decideStageAction` reads, and the outcome that produced it is Step 3's concern.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -1702,11 +1739,25 @@ bun run typecheck && bun run lint && bun run check:rules-drift
 
 Expected: all green, including `check:file-sizes` with `manager.ts` ≤ 830 and `post-run.ts` ≤ 640. `check:rules-drift` is in `check:all`, not `lint`, which is why it is named separately here.
 
-- [ ] **Step 3: Confirm every spec verification anchor has a home**
+- [ ] **Step 3: Run the per-file coverage gate**
 
-Walk the six AC blocks in `.nax/specs/failure-recovery-swap-prune.md` and confirm each numbered criterion is covered by a test written in Tasks 1-8. Report any criterion with no covering test rather than quietly skipping it. US-006 has no ACs by design — its verification is the gate run in Step 2.
+```bash
+bun run test:coverage
+```
 
-- [ ] **Step 4: Open the PR**
+This is **not** part of `bun run test` — it is a separate CI step with an 80%
+aggregate floor and an 80% per-file floor ratcheted against
+`scripts/baselines/coverage-per-file-baseline.json`. This plan adds four new
+source files, and the per-file ratchet fails a *new* file that lands under the
+floor, so a passing suite can still fail this gate. Expected: green. If a new
+module is under 80%, add the missing case to its own test file rather than
+lowering the floor.
+
+- [ ] **Step 4: Confirm every spec verification anchor has a home**
+
+Walk the fifteen verification anchors in §6 of `docs/superpowers/specs/2026-09-07-failure-recovery-swap-prune-design.md` and confirm each is covered by a test written in Tasks 1-8. Report any anchor with no covering test rather than quietly skipping it. Anchors 1/2, 4/5, 12/13 and 9/10 are matched pairs — both halves must be non-empty, since each pair's second half is the guard proving the first did not overreach. Task 9's work has no anchor by design; its verification is the gate run in Step 2.
+
+- [ ] **Step 5: Open the PR**
 
 ```bash
 git push -u origin feat/native-failure-recovery-spec-2
@@ -1715,7 +1766,7 @@ gh pr create --fill
 
 State in the body that this is spec 2 of the failure-recovery arc, that it closes #1883, #1884 and #1892, that #1900 was closed as already-fixed by #1913, and that #1914 tracks removing the temporary file-size headroom this PR relies on.
 
-- [ ] **Step 5: Report what spec 3 now needs**
+- [ ] **Step 6: Report what spec 3 now needs**
 
 Spec 3 (the binding lattice and peer map) was deliberately deferred so it could be designed on measurements. Two of the three now become collectable from ordinary runs, because this spec makes them observable:
 

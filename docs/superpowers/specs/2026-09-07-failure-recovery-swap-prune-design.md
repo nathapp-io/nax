@@ -4,7 +4,7 @@ Date: 2026-09-07
 Status: design, awaiting review
 Repo: `nax` only — no nax-ai change, so no cross-repo landing gate
 Related: #1883, #1884, #1892; follows #1913 (spec 1); baseline headroom #1914;
-incidentally closes #1900. The binding lattice and peer map are **spec 3**.
+and closes #1900 as already-fixed. The binding lattice and peer map are **spec 3**.
 
 ## 1. Why
 
@@ -164,11 +164,19 @@ which is the whole of Gap 1: `fail-timeout` can now swap with `cooldown: "none"`
 and leave the agent selectable for the next story.
 
 **One terminal routine.** New module `src/agents/retry/resolve-exhaustion.ts`.
-All exits — swap declined, no candidate, hop cap reached — funnel through it. It
-consults the retry strategy once when `terminalBackoff` is set, backs off on the
-provider's own delay, then emits `onSwapExhausted`. Both `runWithFallback` and
-`completeWithFallback` use it, which is what gives the complete path a backoff
-and an exhaustion signal it has never had.
+All exits — swap declined, no candidate, hop cap reached — funnel through it.
+Both `runWithFallback` and `completeWithFallback` use it, which is what gives the
+complete path a backoff and an exhaustion signal it has never had.
+
+**Backoff and the exhaustion event are separate concerns, and do not fire
+together.** The backoff runs whenever the failure's policy sets
+`terminalBackoff`, on every terminal exit, using the provider's own delay.
+`onSwapExhausted` fires only when a swap was genuinely possible and had nowhere
+to go — the swap was accepted and `nextCandidate` returned `null`, or the hop cap
+was reached. A policy decline (`fallback-disabled`, `quality-failure-declined`,
+`outcome-refused`, `no-failure`) is **not** exhaustion and must not emit: the
+header of `swap-decline-log.test.ts` pins the decline log and `onSwapExhausted`
+as distinct neighbouring signals, and collapsing them would displace one.
 
 `onSwapExhausted` now also fires at `hops: 0`. That is deliberate: the event
 comes to mean "nowhere left to go" rather than "nowhere left to go, having gone
@@ -183,8 +191,13 @@ working untouched. With no behaviour resting on it, both lies lose their motive:
 `fail-timeout` may describe itself honestly, because pruning is now a table
 value of `none` rather than a consequence of the word `availability`.
 
-The stale header at `native/errors.ts:10` — which misdirected a live diagnosis —
-is corrected in the same pass (#1900).
+**#1900 is already fixed in code.** Spec 1 (#1913) rewrote that header, and the
+"does not govern a session turn" sentence no longer exists — the issue is merely
+un-closed. Close it citing `c9d360ca7`; do not go hunting for the sentence. What
+*is* still stale in that header is its claim that "the category split is
+load-bearing: shouldSwap's fallback branch only accepts `availability`" — this
+spec falsifies it, because `decideSwap` reads the policy table and never reads
+`category`. Correct that sentence instead.
 
 ### 3.4 `session-failure` splits (#1892)
 
@@ -247,10 +260,42 @@ Behavioural runtime cases, not grep or file-content assertions.
 | 12 | `session-failure` caused by a provider rate limit, through `decideStageAction` | escalates |
 | 13 | a genuinely broken session, through `decideStageAction` | still pauses |
 | 14 | any swap | `category` still present on the fallback record and `StoryMetrics` |
+| 15 | a rate limit with `fallback.enabled` false | backs off, and emits **no** `onSwapExhausted` — a policy decline is not exhaustion |
 
 Pairs that must both be non-empty: 1/2 (the swap and the guard that it did not
 become a prune), 4/5, 12/13 (the split, and the ruling it preserves), 9/10
 (expiry, and the exemption from it).
+
+## 6a. Which existing tests this breaks
+
+Checked against the tree at `c9d360ca7`. Only one file necessarily breaks:
+
+- **`test/unit/agents/fail-timeout-should-swap.test.ts`** — all three tests assert
+  `shouldSwap` returns `false` for `fail-timeout`, the third explicitly as an
+  invariant overriding `onQualityFailure` because "the swap branch would call
+  `markUnavailable` and prune the timed-out agent". It must be rewritten, not
+  deleted: #1371's invariant (don't poison the pool) still holds and should be
+  asserted **directly** — mark a timed-out agent and confirm it is not
+  unavailable — rather than by the proxy of refusing the swap.
+
+Three files that look like they should break, and do not — verified, so nobody
+re-litigates them mid-implementation:
+
+- `test/unit/agents/agent-manager-reset.test.ts` — asserts unavailability
+  *immediately* after marking (no clock advance) and after
+  `resetTransientUnavailable`. A cooldown preserves both.
+- `test/unit/agents/manager.test.ts` — same immediacy, and its shared
+  `availFailure` is `fail-auth`, whose cooldown is `"run"`, so its
+  `nextCandidate` expectations are unaffected.
+- `test/unit/agents/manager-swap-loop.test.ts` — asserts exactly one
+  `onSwapExhausted` when both agents fail; still exactly one.
+
+The two `#1892` tests that assert `escalate` by calling `routeTddFailure`
+directly (`test/unit/execution/execution-stage.test.ts`,
+`test/integration/pipeline/pipeline.test.ts`) keep passing either way — they
+bypass `decideStageAction` and so pin a path that never runs. Rewire them
+through `decideStageAction`; a green test on an unreachable path enforces
+nothing.
 
 ## 7. Landing order
 
@@ -261,7 +306,8 @@ become a prune), 4/5, 12/13 (the split, and the ruling it preserves), 9/10
 4. `resolve-exhaustion.ts`, wired into both `runWithFallback` and
    `completeWithFallback`.
 5. The `#1892` split, and the rewiring of its two bypassing tests.
-6. `category` demotion and the `native/errors.ts` header (#1900).
+6. `category` demotion, the `native/errors.ts` category sentence, and the
+   `.nax/rules/retry-strategy.md` manager-tier claims (#1900 closed, not edited).
 7. Full verification: `bun run test --force` (a cached green is not evidence),
    `typecheck`, `lint`.
 
