@@ -208,7 +208,17 @@ export function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): stri
       passed: entry.passed ?? entry.result?.passed ?? null,
       naxVersion: entry.naxVersion ?? NAX_VERSION,
       naxCommit: entry.naxCommit ?? NAX_COMMIT,
-      blockingThreshold: entry.blockingThreshold ?? "error",
+      // `?? null`, never `?? "error"`. The old default fabricated a threshold the
+      // run may never have used: before nax#1907 the only live emitter never
+      // forwarded this field, so every populated record read "error" regardless of
+      // configuration. Across a 5,367-record local corpus, all 2,938 non-null values
+      // were "error" and not one was "warning" or "info" — the field recorded the
+      // fallback, not a measurement, and analyses keyed on it (nax#1889) were reading
+      // a constant. A missing threshold must stay visibly missing: this mirrors the
+      // narrowing in toReviewDecisionPayload, which deliberately yields `undefined`
+      // rather than guessing, and that guarantee is worthless if the writer guesses
+      // one layer down.
+      blockingThreshold: entry.blockingThreshold ?? null,
       result: entry.result,
       advisoryFindings: entry.advisoryFindings ?? null,
       acks: entry.acks ?? null,

@@ -587,9 +587,23 @@ describe("toPersistedEntry", () => {
     expect(JSON.parse(toPersistedEntry(base, 1_700_000_000_000)).acks).toBeNull();
   });
 
-  test("resolves blockingThreshold to 'error' when unset (never null)", () => {
+  // Was "resolves blockingThreshold to 'error' when unset (never null)" — a
+  // deliberate choice (ac856989c, "resolve blockingThreshold in review audit") to
+  // make each record self-describing by applying the config default here.
+  //
+  // Its premise was that an entry lacking the field was a genuine default-config
+  // review. That was false: the only live emitter never forwarded the field at all
+  // (nax#1907), so the fallback fired on every record and "resolved" silently meant
+  // "always error". Measured over a 5,367-record corpus: 2,938 non-null values, all
+  // of them "error", not one "warning" or "info". Analyses keyed on the field were
+  // reading a constant (nax#1889).
+  //
+  // Resolution now happens in the op's verify(), which knows the threshold it
+  // actually applied, and the emitter forwards it. A second guess here can only be
+  // less informed than the first — so an absent threshold stays visibly absent.
+  test("writes blockingThreshold: null when unset — never fabricates the default", () => {
     const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
-    expect(json.blockingThreshold).toBe("error");
+    expect(json.blockingThreshold).toBeNull();
   });
 
   test("preserves an explicit blockingThreshold", () => {
