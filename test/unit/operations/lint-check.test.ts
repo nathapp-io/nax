@@ -5,6 +5,7 @@ import type { ConfigSelector, QualityConfig } from "@/config";
 import type { Finding } from "@/findings";
 import type { CallContext, LintCheckDeps } from "@/operations";
 import { lintCheckOp } from "@/operations";
+import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 
 function ctxWithQuality(
   quality?: DeepPartial<QualityConfig>,
@@ -191,5 +192,37 @@ describe("lintCheckOp — workdir routing: repoRoot vs packageDir", () => {
       deps,
     );
     expect(seenWorkdir).toBe("/repo/packages/lib");
+  });
+});
+
+describe("lintCheckOp — sentinel affordances", () => {
+  test("a DECLARED command offers the RunCommand key and the shell string", async () => {
+    const result = await lintCheckOp.execute(
+      { storyId: "US-003", workdir: "/repo" },
+      ctxWithQuality({ commands: { lint: "bun run lint" } }),
+      makeDeps({ runQualityCommand: async () => failedResult, parseLintOutput: () => null }),
+    );
+    const message = result.findings[0]?.message ?? "";
+    expect(message).toContain('RunCommand {"command": "lint"}');
+    expect(message).toContain("bun run lint");
+  });
+
+  test("an AUTO-DETECTED command never names a RunCommand key", async () => {
+    const origDetect = _commandDefaultsDeps.detectLanguage;
+    _commandDefaultsDeps.detectLanguage = async () => "go";
+    clearCommandDefaultsCache();
+    try {
+      const result = await lintCheckOp.execute(
+        { storyId: "US-003", workdir: "/repo" },
+        ctxWithQuality({ commands: {} }),
+        makeDeps({ runQualityCommand: async () => failedResult, parseLintOutput: () => null }),
+      );
+      const message = result.findings[0]?.message ?? "";
+      expect(message).toContain("go vet ./...");
+      expect(message).not.toContain("RunCommand");
+    } finally {
+      _commandDefaultsDeps.detectLanguage = origDetect;
+      clearCommandDefaultsCache();
+    }
   });
 });

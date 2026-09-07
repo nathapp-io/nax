@@ -5,6 +5,7 @@ import type { ConfigSelector, QualityConfig } from "@/config";
 import type { Finding } from "@/findings";
 import type { CallContext, TypecheckCheckDeps } from "@/operations";
 import { typecheckCheckOp } from "@/operations";
+import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 
 function ctxWithQuality(
   quality?: DeepPartial<QualityConfig>,
@@ -179,5 +180,43 @@ describe("typecheckCheckOp — AC6: no-command early return", () => {
     expect(out.findings).toEqual([]);
     expect(out.durationMs).toBe(0);
     expect(runQualityCalled).toBe(false);
+  });
+});
+
+describe("typecheckCheckOp — sentinel affordances", () => {
+  test("a DECLARED command offers the RunCommand key and the shell string", async () => {
+    // Key first for native (which has RunCommand and no shell); shell string
+    // retained for ACP (which is never given codingTools at all).
+    const result = await typecheckCheckOp.execute(
+      { storyId: "US-003", workdir: "/repo" },
+      ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
+      makeDeps({ runQualityCommand: async () => failedResult, parseTypecheckOutput: () => null }),
+    );
+    const message = result.findings[0]?.message ?? "";
+    expect(message).toContain('RunCommand {"command": "typecheck"}');
+    expect(message).toContain("bun run typecheck");
+  });
+
+  test("an AUTO-DETECTED command never names a RunCommand key", async () => {
+    // declaredCommands is built from quality.commands verbatim, so a detected
+    // command has no key -- naming one would dead-end on `unknown command`.
+    // Go is used because its defaults are toolchain built-ins, returned with no
+    // filesystem probing, which keeps the detected branch deterministic here.
+    const origDetect = _commandDefaultsDeps.detectLanguage;
+    _commandDefaultsDeps.detectLanguage = async () => "go";
+    clearCommandDefaultsCache();
+    try {
+      const result = await typecheckCheckOp.execute(
+        { storyId: "US-003", workdir: "/repo" },
+        ctxWithQuality({ commands: {} }),
+        makeDeps({ runQualityCommand: async () => failedResult, parseTypecheckOutput: () => null }),
+      );
+      const message = result.findings[0]?.message ?? "";
+      expect(message).toContain("go build ./...");
+      expect(message).not.toContain("RunCommand");
+    } finally {
+      _commandDefaultsDeps.detectLanguage = origDetect;
+      clearCommandDefaultsCache();
+    }
   });
 });
