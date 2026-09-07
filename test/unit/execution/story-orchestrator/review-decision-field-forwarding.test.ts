@@ -319,9 +319,9 @@ describe("emitReviewDecision — forwards blockingThreshold (both reviewers, all
 
   test("empty: an unrecognised blockingThreshold value narrows to undefined, never a wrong-but-valid value", () => {
     const { ctx, getEvent } = captureEmittedEvent();
-    // Deliberately untyped as SemanticReviewOutput: this simulates a malformed
-    // value crossing the `output: unknown` seam, which toReviewDecisionPayload
-    // must narrow defensively rather than trust.
+    // Deliberately a bare record, not the op's output type: this simulates a
+    // malformed value crossing the `output: unknown` seam, which
+    // toReviewDecisionPayload must narrow defensively rather than trust.
     const output: Record<string, unknown> = {
       passed: true,
       findings: [],

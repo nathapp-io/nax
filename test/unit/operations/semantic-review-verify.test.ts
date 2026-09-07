@@ -131,7 +131,8 @@ describe("semanticReviewOp.verify() — short-circuits (AC13)", () => {
     const input: SemanticReviewInput = { ...BASE_INPUT, blockingThreshold: "warning" };
     const parsed = makeOutput({ failOpen: true, passed: true, findings: [], normalizedFindings: [] });
     const result = await runVerify(parsed, input, ctx);
-    expect((result as SemanticReviewOutput & Record<string, unknown>).blockingThreshold).toBe("warning");
+    assertDefined(result, "verify() result");
+    expect(result.blockingThreshold).toBe("warning");
   });
 
   test("verify() persists blockingThreshold from input onto output on the looksLikeFail path", async () => {
@@ -139,7 +140,8 @@ describe("semanticReviewOp.verify() — short-circuits (AC13)", () => {
     const input: SemanticReviewInput = { ...BASE_INPUT, blockingThreshold: "info" };
     const parsed = makeOutput({ looksLikeFail: true, passed: false, findings: [], normalizedFindings: [] });
     const result = await runVerify(parsed, input, ctx);
-    expect((result as SemanticReviewOutput & Record<string, unknown>).blockingThreshold).toBe("info");
+    assertDefined(result, "verify() result");
+    expect(result.blockingThreshold).toBe("info");
   });
 
   // Critical branch — 47.2% of August semantic reviews hit the empty-findings
@@ -150,7 +152,8 @@ describe("semanticReviewOp.verify() — short-circuits (AC13)", () => {
     const input: SemanticReviewInput = { ...BASE_INPUT, blockingThreshold: "warning" };
     const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
     const result = await runVerify(parsed, input, ctx);
-    expect((result as SemanticReviewOutput & Record<string, unknown>).blockingThreshold).toBe("warning");
+    assertDefined(result, "verify() result");
+    expect(result.blockingThreshold).toBe("warning");
   });
 
   test("verify() defaults blockingThreshold to error when input omits it", async () => {
@@ -158,7 +161,8 @@ describe("semanticReviewOp.verify() — short-circuits (AC13)", () => {
     const { blockingThreshold: _omit, ...inputWithoutThreshold } = BASE_INPUT;
     const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
     const result = await runVerify(parsed, inputWithoutThreshold, ctx);
-    expect((result as SemanticReviewOutput & Record<string, unknown>).blockingThreshold).toBe("error");
+    assertDefined(result, "verify() result");
+    expect(result.blockingThreshold).toBe("error");
   });
 });
 
