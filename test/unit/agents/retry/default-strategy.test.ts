@@ -41,6 +41,10 @@ describe("defaultRetryStrategy", () => {
     expect(defaultRetryStrategy.shouldRetry(rateLimit(), 1, nativeCtx)).toEqual({ retry: true, delayMs: 4_000 });
   });
 
+  test("falls back to exponential backoff when a provider reports an invalid negative delay", () => {
+    expect(defaultRetryStrategy.shouldRetry(rateLimit(-1), 0, nativeCtx)).toEqual({ retry: true, delayMs: 2_000 });
+  });
+
   test("the provider's delay does not extend the attempt budget", () => {
     expect(defaultRetryStrategy.shouldRetry(rateLimit(45), 3, nativeCtx)).toEqual({ retry: false });
   });

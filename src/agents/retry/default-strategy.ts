@@ -27,7 +27,11 @@ export const defaultRetryStrategy: RetryStrategy = {
     // (parse-agent-error) and, since the native errors table takes the whole
     // protocol error, by native too. The attempt cap is unchanged -- a long
     // retryAfter buys a longer wait, never an extra attempt.
-    const delayMs = af.retryAfterSeconds !== undefined ? af.retryAfterSeconds * 1000 : 2 ** (attempt + 1) * 1000;
+    const retryAfterSeconds = af.retryAfterSeconds;
+    const delayMs =
+      retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0
+        ? retryAfterSeconds * 1000
+        : 2 ** (attempt + 1) * 1000;
     return { retry: true, delayMs };
   },
 };
