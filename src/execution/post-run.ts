@@ -138,10 +138,12 @@ export async function applyPostRunInspection(
     | { success: boolean; filesChanged?: string[]; estimatedCostUsd?: number; durationMs?: number }
     | undefined;
 
+  const lastFailure = ctx.runtime.lastAdapterFailure.get(ctx.story.id);
+
   const agentResult: AgentResult = {
     success: implementerOutput?.success ?? false,
     estimatedCostUsd: capturedCostUsd || planResult.phaseCosts[implementerOp.name] || 0,
-    rateLimited: false,
+    rateLimited: lastFailure?.outcome === "fail-rate-limit",
     output: capturedResponse,
     exitCode: implementerOutput?.success ? 0 : 1,
     durationMs: implementerOutput?.durationMs ?? planResult.durationMs,
@@ -571,9 +573,6 @@ export async function decideStageAction(
       stderrTail: stderrTail || undefined,
       outputTail: outputTail || undefined,
     });
-    if (agentResult.rateLimited) {
-      logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });
-    }
     await cleanupSessionOnFailure(ctx);
     const failedPhaseNames = Object.keys(failedPhases);
     const reasonParts: string[] = [];

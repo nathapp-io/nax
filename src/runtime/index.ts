@@ -170,6 +170,18 @@ export interface NaxRuntime {
    */
   readonly agentFallbacks: Map<string, AgentFallbackRecord[]>;
   /**
+   * The most recent adapter failure per story, written by callOp.
+   *
+   * post-run.ts rebuilds ctx.agentResult from the implementer's phase output,
+   * which drops everything the AgentResult carried -- including whether the
+   * failure was a rate limit, which the run log then reported as false on every
+   * rate-limited story (nax#1897). Result-side data may not travel back through
+   * CallContext (adapter-wiring.md Rule 6), so it travels here, exactly as
+   * agent-swap hops do (nax#1707). Last write wins: post-run runs immediately
+   * after its story's plan, so the last recorded failure is the failing op's.
+   */
+  readonly lastAdapterFailure: Map<string, import("../context/engine").AdapterFailure>;
+  /**
    * Run-scoped cumulative count of runtime-crash retries per story (BUG-070, nax#1707
    * follow-up).
    *
@@ -333,6 +345,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const rectificationOscillations = new Map<string, number>();
   const reviewFindingRecurrences: ReviewRecurrenceStore = new Map();
   const agentFallbacks = new Map<string, AgentFallbackRecord[]>();
+  const lastAdapterFailure = new Map<string, import("../context/engine").AdapterFailure>();
   const runtimeCrashRetries = new Map<string, number>();
   const storyFixHistory = createStoryFixHistory();
   const mutationSummaries = new Map<string, MutationStorySummary>();
@@ -366,6 +379,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     rectificationOscillations,
     reviewFindingRecurrences,
     agentFallbacks,
+    lastAdapterFailure,
     runtimeCrashRetries,
     storyFixHistory,
     mutationSummaries,

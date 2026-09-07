@@ -372,6 +372,54 @@ describe("AC9: applyPostRunInspection ctx field derivations", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// nax#1897: the real rate-limit outcome reaches the rebuilt agentResult
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rateLimited derivation from the run-scoped adapter-failure sink", () => {
+  // makePlanResult() defaults the implementer phase to success:true (the
+  // SUCCEEDING story); every case here must override it with a failing
+  // implementer — the rebuild under test is the story that DIED.
+  const failedImplementer = () =>
+    makePlanResult({
+      phaseOutputs: { [implementerOp.name]: { success: false, estimatedCostUsd: 0, durationMs: 50 } },
+    });
+
+  test("a story whose op failed with fail-rate-limit reports rateLimited on the rebuilt result", async () => {
+    const ctx = makeTestContext();
+    ctx.runtime.lastAdapterFailure.set(ctx.story.id, {
+      category: "availability",
+      outcome: "fail-rate-limit",
+      retriable: true,
+      message: "429",
+    });
+
+    await applyPostRunInspection(ctx, failedImplementer(), makeInspectionOpts());
+
+    expect(ctx.agentResult?.rateLimited).toBe(true);
+  });
+
+  test("a story with no recorded failure still reports rateLimited false", async () => {
+    const ctx = makeTestContext();
+    await applyPostRunInspection(ctx, failedImplementer(), makeInspectionOpts());
+    expect(ctx.agentResult?.rateLimited).toBe(false);
+  });
+
+  test("a non-rate-limit failure does not set rateLimited", async () => {
+    const ctx = makeTestContext();
+    ctx.runtime.lastAdapterFailure.set(ctx.story.id, {
+      category: "availability",
+      outcome: "fail-service-down",
+      retriable: true,
+      message: "503",
+    });
+
+    await applyPostRunInspection(ctx, failedImplementer(), makeInspectionOpts());
+
+    expect(ctx.agentResult?.rateLimited).toBe(false);
+  });
+});
+
 describe("TDD rollback gating", () => {
   let origRollback: typeof _postRunDeps.rollbackToRef;
   let origAutoCommit: typeof _postRunDeps.autoCommitIfDirty;
