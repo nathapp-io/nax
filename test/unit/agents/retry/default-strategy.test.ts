@@ -83,3 +83,30 @@ describe("defaultRetryStrategy", () => {
     expect(delays).toEqual([2000, 4000, 8000]);
   });
 });
+
+describe("defaultRetryStrategy follows the policy table", () => {
+  const ctx = { site: "run", agentName: "claude", stage: "run", storyId: "us-001" } as const;
+
+  const failure = (outcome: AdapterFailure["outcome"]): AdapterFailure => ({
+    category: "availability",
+    outcome,
+    retriable: true,
+    message: "",
+  });
+
+  test("retries fail-service-down, which it used to decline", () => {
+    expect(defaultRetryStrategy.shouldRetry(failure("fail-service-down"), 0, ctx)).toEqual({
+      retry: true,
+      delayMs: 2_000,
+    });
+  });
+
+  test("still declines a quality failure", () => {
+    expect(defaultRetryStrategy.shouldRetry(failure("fail-quality"), 0, ctx)).toEqual({ retry: false });
+  });
+
+  test("still honours the provider's retryAfterSeconds over the computed backoff", () => {
+    const withRetryAfter = { ...failure("fail-rate-limit"), retryAfterSeconds: 45 };
+    expect(defaultRetryStrategy.shouldRetry(withRetryAfter, 0, ctx)).toEqual({ retry: true, delayMs: 45_000 });
+  });
+});
