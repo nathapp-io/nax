@@ -3,7 +3,7 @@
   "feature": "ledger-and-audit-field-truth",
   "branchName": "feat/ledger-and-audit-field-truth",
   "createdAt": "2026-08-01T00:00:00.000Z",
-  "updatedAt": "2026-09-07T17:03:35.592Z",
+  "updatedAt": "2026-09-07T17:27:24.528Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,8 +31,8 @@
         "event-bus"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -88,7 +88,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The feature extends an existing unknown-output forwarding seam and audit persistence path, with real-verify canary coverage and no new abstraction."
+        "reasoning": "The feature extends an existing unknown-output forwarding seam and audit persistence path, with real-verify canary coverage and no new abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/review-decision.ts",
@@ -99,7 +102,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7cafd199b4525c6b00a716edfcbd679b550f842b"
     }
   ],
   "analysis": "Enhancement of existing event-bus seams. attachCostSubscriber is the sole cost-row builder; it returns early for no usage/zero cost and synthesizes zero tokens (src/runtime/middleware/cost.ts:55-91), while its error path omits model (src/runtime/middleware/cost.ts:119-153). COST_ROW_SCHEMA_VERSION is 3 with a schema-history contract (src/runtime/middleware/cost.ts:5-38). CostEvent requires tokens but CostErrorEvent makes them optional (src/runtime/cost-aggregator.ts:3-113); successful-event aggregation dereferences tokens, so optional successful tokens require zero-safe aggregation (src/runtime/cost-aggregator.ts:224-235). SessionTurnDispatchEvent already declares roundTrips/unit while CompleteDispatchEvent does not (src/runtime/dispatch-events.ts:76-113), and buildSessionTurnEvent already supplies them (src/agents/manager-dispatch.ts:59-117). DispatchErrorEvent and buildDispatchErrorEvent lack model attribution (src/runtime/dispatch-events.ts:130-154; src/agents/manager-dispatch.ts:179-251). Existing cost tests directly exercise the dispatch bus and pin both the obsolete early return and v3 (test/unit/runtime/middleware/cost.test.ts:105-115,528-541); builder/error-path tests are in test/unit/agents/manager-dispatch-error-event.test.ts:1-238.\n\nReviewDecisionPayload has parsed and unparsed branches in src/execution/story-orchestrator/types.ts:114-159; toReviewDecisionPayload and emitReviewDecision omit modelPassed today (src/execution/story-orchestrator/review-decision.ts:13-132), as does ReviewDecisionEvent (src/runtime/dispatch-events.ts:156-195). The audit subscriber must copy it (src/runtime/middleware/review-audit.ts:31-69), and ReviewAuditEntry/toPersistedEntry must serialize it (src/review/review-audit.ts:45-122,194-226). Adversarial output already declares/populates the field (src/operations/adversarial-review.ts:81,567); semantic does not. The existing canary drives real verify() and already intentionally names modelPassed only in adversarial output keys (test/unit/execution/story-orchestrator/review-decision-field-forwarding.test.ts:1-142).\n\nCompatibility: schema v4 distinguishes new rows; do not backfill v3. Optional successful tokens must remain absent in rows, not zero-filled. Error models remain absent if unresolved, and complete events must omit round-trip values. modelPassed crosses an unknown boundary only after boolean narrowing, preserving false, and must remain absent for semantic output. US-001 and US-002 share no modified symbol and have no dependency.",
