@@ -48,7 +48,11 @@ locate the code; they are never the interface to implement.
   `tokens`, `estimatedCostUsd`, `exactCostUsd`, `costUsd`, `confidence`,
   `pricingSource`, `durationMs` and related optional attribution fields.
 - Target: the same, plus optional `roundTrips` (number), `roundTripUnit`
-  (`"model-call" | "agent-run"`), and `usageMissing` (boolean).
+  (`"model-call" | "agent-run"`), and `usageMissing` (boolean) — **and `tokens`
+  becomes optional.** It is required today (`cost-aggregator.ts:50`) while
+  `CostErrorEvent.tokens` is already optional (`:113`) for exactly the reason
+  AC-10 restates: a zeroed `tokens` re-creates the "failed versus cost-zero"
+  ambiguity. AC-10 cannot be satisfied without this change.
 
 **`DispatchErrorEvent`** — `src/runtime/dispatch-events.ts:130` (US-001)
 - Baseline: carries `agentName`, `stage`, `errorCode`, `durationMs`,
