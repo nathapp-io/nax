@@ -175,10 +175,11 @@ export interface IAgentManager {
 
   /**
    * Returns the next fallback target (agent, and its optional tier) for a given
-   * current agent and hop count, excluding pruned (no credentials) and
-   * already-unavailable agents. Returns null when no candidate is available.
+   * current agent and hop count, excluding pruned (no credentials),
+   * already-unavailable agents, and — when passed — the agent named by
+   * `exclude`. Returns null when no candidate is available.
    */
-  nextCandidate(current: string, hopsSoFar: number): FallbackTarget | null;
+  nextCandidate(current: string, hopsSoFar: number, exclude?: string): FallbackTarget | null;
 
   /**
    * Run the prompt with automatic agent-swap fallback on availability failures.

@@ -22,6 +22,7 @@ import { DispatchEventBus } from "../runtime/dispatch-events";
 import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
+import { CooldownStore } from "./cooldown-store";
 import { resolveStartAgent, StoryHopBudget } from "./hop-budget";
 import {
   buildCompleteCallPreamble,
@@ -74,12 +75,17 @@ export const _agentManagerDeps = {
    * coding-standards §6 reference. Exposed on `_deps` so tests can mock it.
    */
   sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
+  /**
+   * Clock for cooldown expiry. Exposed so tests can advance time by hand
+   * instead of waiting — a cooldown test that slept would take a minute.
+   */
+  now: () => Date.now(),
 };
 
 export class AgentManager implements IAgentManager {
   private readonly _config: AgentManagerConfig;
   private _registry: AgentRegistry | undefined;
-  private readonly _unavailable = new Map<string, AdapterFailure>();
+  private readonly _cooldowns = new CooldownStore(() => _agentManagerDeps.now());
   private readonly _prunedFallback = new Set<string>();
   private readonly _budget = new StoryHopBudget();
   private readonly _emitter = (() => {
@@ -151,23 +157,22 @@ export class AgentManager implements IAgentManager {
   }
 
   isUnavailable(agent: string): boolean {
-    return this._unavailable.has(agent);
+    return this._cooldowns.isCooling(agent);
   }
 
   markUnavailable(agent: string, reason: AdapterFailure): void {
-    this._unavailable.set(agent, reason);
+    this._cooldowns.mark(agent, reason);
     this._emitter.emit("onAgentUnavailable", { agent, failure: reason });
   }
 
   reset(): void {
-    this._unavailable.clear();
+    this._cooldowns.clear();
     this._prunedFallback.clear();
     this._budget.clear();
   }
+
   resetTransientUnavailable(): void {
-    for (const [agent, failure] of this._unavailable) {
-      if (failure.outcome !== "fail-auth" && failure.outcome !== "fail-quota") this._unavailable.delete(agent);
-    }
+    this._cooldowns.sweepTransient();
   }
   async validateCredentials(): Promise<void> {
     const primary = this.getDefault();
@@ -200,8 +205,13 @@ export class AgentManager implements IAgentManager {
     return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
-  nextCandidate(current: string, _hopsSoFar: number): import("./swap-decision").FallbackTarget | null {
-    return availableCandidates(this._config.agent?.fallback?.map, current, this._isExcluded)[0] ?? null;
+  nextCandidate(
+    current: string,
+    _hopsSoFar: number,
+    exclude?: string,
+  ): import("./swap-decision").FallbackTarget | null {
+    const excluded = (candidate: string): boolean => candidate === exclude || this._isExcluded(candidate);
+    return availableCandidates(this._config.agent?.fallback?.map, current, excluded)[0] ?? null;
   }
 
   // Swap hops produced here reach StoryMetrics.fallback via the run-scoped
@@ -393,13 +403,14 @@ export class AgentManager implements IAgentManager {
           retriable: false,
           message: "",
         };
-        // Mark the current agent unavailable BEFORE calling nextCandidate so the filter
-        // in nextCandidate excludes the just-failed agent and selects the true next one.
+        // Cooldown is a policy decision (may be "none"); hop-local exclusion is not.
+        // Passing `currentAgent` to nextCandidate is what guarantees we do not
+        // re-select the agent that just failed, regardless of its cooldown.
         this.markUnavailable(currentAgent, adapterFailure);
 
         // Look up the fallback chain by the primary agent so flat maps like
         // { claude: ["codex", "gemini"] } work correctly across multiple hops.
-        const next = this.nextCandidate(primaryAgent, hopsSoFar);
+        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
         if (!next) {
           this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
           _finalStatus = "exhausted";
@@ -558,9 +569,11 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
-        // Mark unavailable before nextCandidate so the filter excludes the just-failed agent.
+        // Cooldown is a policy decision (may be "none"); hop-local exclusion is not.
+        // Passing `currentAgent` to nextCandidate is what guarantees we do not
+        // re-select the agent that just failed, regardless of its cooldown.
         this.markUnavailable(currentAgent, result.adapterFailure);
-        const next = this.nextCandidate(primaryAgent, hopsSoFar);
+        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
         if (!next) {
           _finalStatus = "exhausted";
           return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
