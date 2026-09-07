@@ -104,7 +104,7 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
     success: !r.adapterFailure,
     exitCode: r.adapterFailure ? 1 : 0,
     output: r.output,
-    rateLimited: false,
+    rateLimited: r.adapterFailure?.outcome === "fail-rate-limit",
     durationMs: 0,
     estimatedCostUsd: r.estimatedCostUsd ?? 0,
     exactCostUsd: r.exactCostUsd,

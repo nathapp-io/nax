@@ -72,7 +72,7 @@ function fakeClient(over: Record<string, unknown> = {}): Client {
  */
 describe("NativeAgentAdapter.sendTurn failure classification", () => {
   class ProtocolStreamError extends Error {
-    constructor(readonly protocolError: { kind: string; message: string }) {
+    constructor(readonly protocolError: { kind: string; message: string; retryAfter?: number }) {
       super(protocolError.message);
       this.name = "ProtocolStreamError";
     }
@@ -115,7 +115,7 @@ describe("NativeAgentAdapter.sendTurn failure classification", () => {
     _clientDeps.build = async () =>
       fakeClient({
         complete: async () => {
-          throw new ProtocolStreamError({ kind: "rate-limit", message: "429 slow down" });
+          throw new ProtocolStreamError({ kind: "rate-limit", message: "429 slow down", retryAfter: 30 });
         },
       });
     const { adapter, handle } = await openTurnSession("sess-ratelimit");
@@ -124,6 +124,7 @@ describe("NativeAgentAdapter.sendTurn failure classification", () => {
 
     expect(err.adapterFailure.outcome).toBe("fail-rate-limit");
     expect(err.adapterFailure.category).toBe("availability");
+    expect(err.adapterFailure.retryAfterSeconds).toBe(30);
   });
 
   test("keeps the upstream message, which is the only description of what happened", async () => {

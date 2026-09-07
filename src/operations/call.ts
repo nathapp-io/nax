@@ -16,6 +16,7 @@ import {
   newCorrelationId,
   normalizeRunOutcome,
   normalizeSelector,
+  recordAdapterFailure,
   recordAgentFallbacks,
   resolveOpModel,
   resolveOpRetry,
@@ -460,6 +461,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // sequential success path. Parallel and failed stories build metrics elsewhere and do
   // not read this yet — see #1709.
   recordAgentFallbacks(ctx, outcome.fallbacks);
+  recordAdapterFailure(ctx, outcome.result.adapterFailure);
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),
   // buildHopCallback's catch swallowed it. Surface it here before parse runs.

@@ -46,14 +46,19 @@ interface RetryableProtocolError {
 }
 
 /**
- * Kinds this module retries. "auth" and "bad-request" are terminal —
- * retrying cannot help. "rate-limit" is consumer policy handled elsewhere
- * (the manager-tier `defaultRetryStrategy`, and nax-ai's own doc comment
- * makes the same call) — retrying it here would double-retry against that.
- * "context-overflow" keeps its existing, dedicated compaction-retry path in
- * turn-loop.ts and must never be handled here.
+ * Kinds this module retries. "auth" and "bad-request" are terminal --
+ * retrying cannot help. "context-overflow" keeps its existing, dedicated
+ * compaction-retry path in turn-loop.ts and must never be handled here.
+ *
+ * "rate-limit" belongs here, not at the manager. It was previously excluded
+ * and deferred to the manager-tier defaultRetryStrategy, but that handler sits
+ * inside runWithFallback's "swap declined" branch, and on the native transport
+ * the swap gate accepts rather than declines -- so control left the branch
+ * before reaching it. The wait is also cheapest here: on a throw from
+ * deps.complete the messages array is unchanged and no tool has executed, so a
+ * re-issue costs one round trip rather than a whole hop and a fresh session.
  */
-const RETRYABLE_KINDS = new Set(["transport", "overloaded"]);
+const RETRYABLE_KINDS = new Set(["transport", "overloaded", "rate-limit"]);
 
 export function isRetryableTransportFault(err: unknown): err is RetryableProtocolError {
   if (typeof err !== "object" || err === null || !("protocolError" in err)) return false;
@@ -105,6 +110,22 @@ export function turnRetryDelayMs(
   const { retryAfter } = err.protocolError;
   const delayMs = retryAfter !== undefined ? retryAfter * 1000 : backoffMs(retryIndex, config.baseDelayMs, random);
   return remainingMs === undefined ? delayMs : Math.min(delayMs, remainingMs);
+}
+
+/**
+ * Whether the wait is worth taking at all.
+ *
+ * turnRetryDelayMs clamps to `remainingMs`, which alone produces the worst
+ * outcome available: a provider advertising 300s against 30s of budget sleeps
+ * the 30s, re-issues, and aborts immediately, having spent the remaining
+ * wall clock to learn nothing. Refusing outright surfaces the failure while
+ * budget remains for the layer above to act on it.
+ *
+ * An absent `remainingMs` means the turn is unbounded (TurnDeadline's
+ * UNBOUNDED), so there is no budget to exceed and the wait is always allowed.
+ */
+export function turnRetryFitsBudget(delayMs: number, remainingMs: number | undefined): boolean {
+  return remainingMs === undefined || delayMs <= remainingMs;
 }
 
 function abortError(signal: AbortSignal): unknown {
@@ -177,7 +198,13 @@ export async function retryTransportFault<T>(firstError: unknown, deps: TurnRetr
     if (deps.deadline?.expired() === true || deps.signal?.aborted === true) throw err;
 
     const fault = err;
-    const delayMs = turnRetryDelayMs(fault, retryIndex, deps.config, random, deps.deadline?.remainingMs());
+    // Computed WITHOUT the remainingMs clamp: the value that decides whether the
+    // wait is affordable must be the provider's own, not one already reduced to
+    // fit. Clamping alone spends the whole remaining budget on a wait that cannot
+    // succeed, and the attempt after it aborts immediately.
+    const remainingMs = deps.deadline?.remainingMs();
+    const delayMs = turnRetryDelayMs(fault, retryIndex, deps.config, random);
+    if (!turnRetryFitsBudget(delayMs, remainingMs)) throw fault;
     deps.onRetry?.(retryIndex + 1, delayMs, fault);
 
     try {

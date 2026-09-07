@@ -13,6 +13,8 @@ const MAX_RETRIES = 3;
  *
  * Backoff: 2^(attempt+1) * 1000ms → 2s, 4s, 8s across 3 retries.
  * This matches the original MAX_RATE_LIMIT_RETRIES = 3 behavior exactly.
+ * When the provider reports its own recovery time (`retryAfterSeconds`), that
+ * delay replaces the computed backoff (see `shouldRetry`).
  */
 export const defaultRetryStrategy: RetryStrategy = {
   shouldRetry(failure: AdapterFailure | Error, attempt: number, _ctx: RetryContext): RetryDecision {
@@ -21,7 +23,15 @@ export const defaultRetryStrategy: RetryStrategy = {
     const af = failure as AdapterFailure;
     if (af.retriable === false) return { retry: false };
     if (af.outcome !== "fail-rate-limit" && af.outcome !== "fail-stale") return { retry: false };
-    const delayMs = 2 ** (attempt + 1) * 1000;
+    // The provider's own recovery time beats a guess. Populated by acpx
+    // (parse-agent-error) and, since the native errors table takes the whole
+    // protocol error, by native too. The attempt cap is unchanged -- a long
+    // retryAfter buys a longer wait, never an extra attempt.
+    const retryAfterSeconds = af.retryAfterSeconds;
+    const delayMs =
+      retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0
+        ? retryAfterSeconds * 1000
+        : 2 ** (attempt + 1) * 1000;
     return { retry: true, delayMs };
   },
 };

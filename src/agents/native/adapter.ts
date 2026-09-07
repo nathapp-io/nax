@@ -213,7 +213,7 @@ export class NativeAgentAdapter implements AgentAdapter {
           output: "",
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
           estimatedCostUsd: 0,
-          adapterFailure: toAdapterFailure(err.protocolError.kind),
+          adapterFailure: toAdapterFailure(err.protocolError),
         };
       }
       throw err;
@@ -378,7 +378,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       // Only a protocol fault is wrapped. A TypeError from our own code is not a
       // vendor failure, and dressing it as one would hide the bug.
       if (isProtocolStreamError(err)) {
-        const adapterFailure = toAdapterFailure(err.protocolError.kind);
+        const adapterFailure = toAdapterFailure(err.protocolError);
         const usage = readNativeTurnFailureUsage(err);
         throw new SessionTurnError(
           err.protocolError.message,

@@ -24,29 +24,54 @@ const CASES: Array<[kind: string, category: "availability" | "quality", outcome:
 
 describe("toAdapterFailure", () => {
   test.each(CASES)("maps %s to %s/%s", (kind, category, outcome) => {
-    const failure = toAdapterFailure(kind);
+    const failure = toAdapterFailure({ kind });
     expect(failure.category).toBe(category);
     expect(failure.outcome).toBe(outcome);
   });
 
   test("keeps five of seven kinds swappable", () => {
     const kinds = ["rate-limit", "auth", "overloaded", "transport", "bad-request", "context-overflow", "unknown"];
-    const availability = kinds.filter((k) => toAdapterFailure(k).category === "availability");
+    const availability = kinds.filter((k) => toAdapterFailure({ kind: k }).category === "availability");
     expect(availability).toHaveLength(5);
   });
 
   test("does not mark an overflow retriable: the same agent would rebuild the same oversized request", () => {
-    expect(toAdapterFailure("context-overflow").retriable).toBe(false);
+    expect(toAdapterFailure({ kind: "context-overflow" }).retriable).toBe(false);
   });
 
   test("says the prompt outgrew the window, not that the request was malformed", () => {
-    const message = toAdapterFailure("context-overflow").message;
+    const message = toAdapterFailure({ kind: "context-overflow" }).message;
     expect(message).toContain("context window");
     expect(message).not.toContain("malformed");
   });
 
   test("treats an unrecognised kind as unknown rather than throwing", () => {
-    expect(toAdapterFailure("something-new").outcome).toBe("fail-unknown");
+    expect(toAdapterFailure({ kind: "something-new" }).outcome).toBe("fail-unknown");
+  });
+});
+
+describe("retryAfterSeconds", () => {
+  test("carries the provider's retryAfter onto the failure", () => {
+    expect(toAdapterFailure({ kind: "rate-limit", retryAfter: 30 }).retryAfterSeconds).toBe(30);
+  });
+
+  test("omits the field when the provider supplied none", () => {
+    expect(toAdapterFailure({ kind: "rate-limit" }).retryAfterSeconds).toBeUndefined();
+  });
+
+  test("carries it for any kind, not just rate-limit", () => {
+    expect(toAdapterFailure({ kind: "overloaded", retryAfter: 5 }).retryAfterSeconds).toBe(5);
+  });
+
+  test("an unrecognised kind still degrades to unknown, and still carries retryAfter", () => {
+    const failure = toAdapterFailure({ kind: "brand-new-kind", retryAfter: 9 });
+    expect(failure.outcome).toBe("fail-unknown");
+    expect(failure.retryAfterSeconds).toBe(9);
+  });
+
+  test("the shared table entries are not mutated across calls", () => {
+    expect(toAdapterFailure({ kind: "rate-limit", retryAfter: 30 }).retryAfterSeconds).toBe(30);
+    expect(toAdapterFailure({ kind: "rate-limit" }).retryAfterSeconds).toBeUndefined();
   });
 });
 
@@ -59,11 +84,11 @@ describe("swap eligibility, through the real gate", () => {
   const fallback = { enabled: true, maxHopsPerStory: 2 };
 
   test("an overflow is swap-eligible, so another agent's window gets a chance", () => {
-    expect(decideSwap(toAdapterFailure("context-overflow"), 0, fallback)).toEqual({ swap: true });
+    expect(decideSwap(toAdapterFailure({ kind: "context-overflow" }), 0, fallback)).toEqual({ swap: true });
   });
 
   test("a genuinely malformed request stays declined", () => {
-    expect(decideSwap(toAdapterFailure("bad-request"), 0, fallback)).toEqual({
+    expect(decideSwap(toAdapterFailure({ kind: "bad-request" }), 0, fallback)).toEqual({
       swap: false,
       reason: "quality-failure-declined",
     });
