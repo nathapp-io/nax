@@ -4,6 +4,7 @@
  * Extracted from generator.ts to keep each file within the 600-line project limit.
  */
 
+import { SKELETON_WATERMARK } from "./heuristics";
 import type { AcceptanceCriterion } from "./types";
 
 function skeletonImportLine(testFramework?: string): string {
@@ -33,7 +34,8 @@ function generateGoSkeletonTests(_featureName: string, criteria: AcceptanceCrite
     })
     .join("\n\n");
 
-  return `package acceptance_test
+  return `// ${SKELETON_WATERMARK}
+package acceptance_test
 
 import "testing"
 
@@ -56,7 +58,8 @@ function generatePythonSkeletonTests(_featureName: string, criteria: AcceptanceC
     })
     .join("\n\n");
 
-  return `import pytest
+  return `# ${SKELETON_WATERMARK}
+import pytest
 
 ${tests || "# No acceptance criteria found"}
 `;
@@ -77,7 +80,8 @@ function generateRustSkeletonTests(_featureName: string, criteria: AcceptanceCri
     })
     .join("\n\n");
 
-  return `#[cfg(test)]
+  return `// ${SKELETON_WATERMARK}
+#[cfg(test)]
 mod tests {
 ${tests || "    // No acceptance criteria found"}
 }
@@ -163,7 +167,8 @@ export function generateSkeletonTests(
     })
     .join("\n\n");
 
-  return `${skeletonImportLine(testFramework)}
+  return `// ${SKELETON_WATERMARK}
+${skeletonImportLine(testFramework)}
 
 describe("${featureName} - Acceptance Tests", () => {
 ${tests || "  // No acceptance criteria found"}
