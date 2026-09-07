@@ -38,8 +38,21 @@ behind `RetryStrategy`.
 
 | Tier | Site | Default | Override |
 |:---|:---|:---|:---|
-| **Manager** | `AgentManager.runWithFallback` (site #1) | `defaultRetryStrategy` — rate-limit only, 3 retries, 2s/4s/8s exponential | Pass `retryStrategy` to `AgentManager` constructor via `_agentManagerDeps` injection |
+| **Manager** | `AgentManager.runWithFallback` (site #1) | `defaultRetryStrategy` — fires on every outcome `failurePolicyFor(outcome).terminalBackoff` marks (currently `fail-rate-limit`, `fail-stale`, `fail-service-down`), 3 retries, 2s/4s/8s exponential | Pass `retryStrategy` to `AgentManager` constructor via `_agentManagerDeps` injection |
 | **Op** | `callOp` run-kind and complete-kind (site #2) | none — throws on first parse failure; complete-kind throws on first call failure | Declare `retry` on `RunOperation` or `CompleteOperation` |
+
+### Cooldown durations are availability expiries, not retry delays
+
+The failure policy table (`src/agents/retry/failure-policy.ts`) carries cooldown
+durations such as `TRANSIENT_COOLDOWN_MS` (60s for `fail-rate-limit`,
+`fail-stale`, and `fail-service-down`). These are **availability expiries** — how
+long an agent stays excluded from fallback candidacy after a failure — not retry
+delays. Nothing sleeps on them: `resolveCooldownExpiry` turns one into an absolute
+expiry recorded in `CooldownStore`, evaluated lazily on read, and a cooldown must
+never be passed to `_agentManagerDeps.sleep` or `_callOpDeps.sleep`. They are
+therefore not a `RetryStrategy` concern, and their presence in the policy table is
+not a violation of the no-hardcoded-delays rule — the actual sleep path stays
+behind `RetryStrategy`, and the retry backoff lives in `defaultRetryStrategy`.
 
 ## Declaring retry on a `CompleteOperation`
 
@@ -86,7 +99,7 @@ retry: {
 
 ## `defaultRetryStrategy` (manager tier)
 
-Lives in `src/agents/retry/default-strategy.ts`. Fires **only** on `fail-rate-limit` outcome; all other failures pass through immediately. Backoff: `2^(attempt+1) * 1000` ms — 2s, 4s, 8s across 3 retries. Injected into `AgentManager` via the constructor; tests override via `_agentManagerDeps.sleep` + a custom strategy.
+Lives in `src/agents/retry/default-strategy.ts`. Fires on every outcome `failurePolicyFor(outcome).terminalBackoff` marks — currently `fail-rate-limit`, `fail-stale`, and `fail-service-down` (see the policy table in `src/agents/retry/failure-policy.ts`); all other failures pass through immediately. Backoff: `2^(attempt+1) * 1000` ms — 2s, 4s, 8s across 3 retries. Injected into `AgentManager` via the constructor; tests override via `_agentManagerDeps.sleep` + a custom strategy.
 
 ## `composeRetry` vs. single-strategy escalation
 
@@ -116,7 +129,7 @@ retry: {
 }
 ```
 
-**Manager-tier concerns:** `fail-rate-limit` and `fail-stale` are universal infrastructure concerns handled by `defaultRetryStrategy` at the manager tier. Op-tier strategies MUST NOT handle these — doing so causes double-retry (op retries, then manager retries again) and confuses failure attribution. If an op-tier strategy needs to handle rate-limits, it is a sign that the concern should move to `defaultRetryStrategy` or be routed through it.
+**Manager-tier concerns:** `fail-rate-limit`, `fail-stale`, and `fail-service-down` are universal infrastructure concerns handled by `defaultRetryStrategy` at the manager tier. Op-tier strategies MUST NOT handle these — doing so causes double-retry (op retries, then manager retries again) and confuses failure attribution. If an op-tier strategy needs to handle rate-limits, it is a sign that the concern should move to `defaultRetryStrategy` or be routed through it.
 
 ## `HopBody` and `op.retry` — composition semantics
 
