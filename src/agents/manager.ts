@@ -22,6 +22,7 @@ import { DispatchEventBus } from "../runtime/dispatch-events";
 import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
+import { CooldownStore } from "./cooldown-store";
 import { resolveStartAgent, StoryHopBudget } from "./hop-budget";
 import {
   buildCompleteCallPreamble,
@@ -32,6 +33,7 @@ import {
   resolveFinalDispatch,
   resolveHopCompleteOptions,
 } from "./manager-dispatch";
+import { type ManagerExhaustionOptions, resolveManagerExhaustion } from "./manager-exhaustion";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -48,8 +50,14 @@ import type { AgentRegistry } from "./registry";
 import { createAgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
 import { describeRetryLogEvent, type SameAgentRetryState, trySameAgentRetry } from "./retry/hop-retry-policy";
-import type { RetryContext, RetryStrategy } from "./retry/types";
-import { availableCandidates, credentialCandidates, decideSwap, logSwapDecline } from "./swap-decision";
+import type { RetryStrategy } from "./retry/types";
+import {
+  availableCandidates,
+  credentialCandidates,
+  decideSwap,
+  type FallbackTarget,
+  logSwapDecline,
+} from "./swap-decision";
 import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 type LoggerLike = {
@@ -68,18 +76,16 @@ const MAX_EMITTER_LISTENERS = 100;
 
 /** Injectable deps for testability. */
 export const _agentManagerDeps = {
-  /**
-   * Cancellable backoff delay. Delegates to the canonical helper in
-   * `src/utils/bun-deps.ts` — see there for the rationale and the
-   * coding-standards §6 reference. Exposed on `_deps` so tests can mock it.
-   */
+  /** Cancellable backoff delay, injectable for tests. */
   sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
+  /** Injectable clock for cooldown expiry tests. */
+  now: () => Date.now(),
 };
 
 export class AgentManager implements IAgentManager {
   private readonly _config: AgentManagerConfig;
   private _registry: AgentRegistry | undefined;
-  private readonly _unavailable = new Map<string, AdapterFailure>();
+  private readonly _cooldowns = new CooldownStore(() => _agentManagerDeps.now());
   private readonly _prunedFallback = new Set<string>();
   private readonly _budget = new StoryHopBudget();
   private readonly _emitter = (() => {
@@ -151,23 +157,22 @@ export class AgentManager implements IAgentManager {
   }
 
   isUnavailable(agent: string): boolean {
-    return this._unavailable.has(agent);
+    return this._cooldowns.isCooling(agent);
   }
 
   markUnavailable(agent: string, reason: AdapterFailure): void {
-    this._unavailable.set(agent, reason);
+    this._cooldowns.mark(agent, reason);
     this._emitter.emit("onAgentUnavailable", { agent, failure: reason });
   }
 
   reset(): void {
-    this._unavailable.clear();
+    this._cooldowns.clear();
     this._prunedFallback.clear();
     this._budget.clear();
   }
+
   resetTransientUnavailable(): void {
-    for (const [agent, failure] of this._unavailable) {
-      if (failure.outcome !== "fail-auth" && failure.outcome !== "fail-quota") this._unavailable.delete(agent);
-    }
+    this._cooldowns.sweepTransient();
   }
   async validateCredentials(): Promise<void> {
     const primary = this.getDefault();
@@ -200,14 +205,11 @@ export class AgentManager implements IAgentManager {
     return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
-  nextCandidate(current: string, _hopsSoFar: number): import("./swap-decision").FallbackTarget | null {
-    return availableCandidates(this._config.agent?.fallback?.map, current, this._isExcluded)[0] ?? null;
+  nextCandidate(current: string, _hopsSoFar: number, exclude?: string): FallbackTarget | null {
+    const excluded = (candidate: string): boolean => candidate === exclude || this._isExcluded(candidate);
+    return availableCandidates(this._config.agent?.fallback?.map, current, excluded)[0] ?? null;
   }
 
-  // Swap hops produced here reach StoryMetrics.fallback via the run-scoped
-  // ctx.runtime.agentFallbacks sink, written by recordAgentFallbacks at the
-  // callOp seam (#1707) — result-side data never back-flows through
-  // CallContext, per .claude/rules/adapter-wiring.md Rule 6.
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
@@ -336,8 +338,6 @@ export class AgentManager implements IAgentManager {
             hopsSoFar,
             failure: result.adapterFailure,
           });
-          // For fail-stale with no swap available: exit immediately without backoff.
-          // The session was stale — retrying with backoff won't help if no fallback exists.
           if (isFailStale) {
             logger?.warn("agent-manager", "fail-stale: no swap candidate, returning terminal failure", {
               storyId: request.runOptions.storyId,
@@ -345,45 +345,26 @@ export class AgentManager implements IAgentManager {
             _finalStatus = "error";
             return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
           }
-          // Preserve legacy rate-limit backoff when no swap candidates are available.
-          // #585 Path B: race the sleep against the shutdown signal — an abort during
-          // backoff settles within milliseconds instead of the full exponential wait.
-          if (result.adapterFailure) {
-            const retryCtx: RetryContext = {
-              site: "run",
-              agentName: currentAgent,
-              stage: request.runOptions.pipelineStage ?? "run",
-              storyId: request.runOptions.storyId,
-            };
-            const decision = this._retryStrategy.shouldRetry(result.adapterFailure, rateLimitRetry, retryCtx);
-            if (decision.retry) {
-              if (request.signal?.aborted) {
-                logger?.info("agent-manager", "Rate-limited backoff aborted — shutdown in progress", {
-                  storyId: request.runOptions.storyId,
-                });
-                _finalStatus = "cancelled";
-                return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-              }
-              rateLimitRetry += 1;
-              logger?.info("agent-manager", "Rate-limited with no swap candidate — backing off", {
-                storyId: request.runOptions.storyId,
-                attempt: rateLimitRetry,
-                backoffMs: decision.delayMs,
-              });
-              await _agentManagerDeps.sleep(decision.delayMs, request.signal);
-              if (request.signal?.aborted) {
-                _finalStatus = "cancelled";
-                return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
-              }
-              continue;
-            }
+          const outcome = await this._resolveExhaustion({
+            failure: result.adapterFailure,
+            hopsSoFar,
+            attempt: rateLimitRetry,
+            swapWasPossible: swapDecision.reason === "hop-cap-reached",
+            agent: currentAgent,
+            site: "run",
+            storyId: request.runOptions.storyId,
+            stage: request.runOptions.pipelineStage ?? "run",
+            signal: request.signal,
+          });
+          if (outcome === "cancelled") {
+            _finalStatus = "cancelled";
+            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
           }
-          if (hopsSoFar > 0) {
-            this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
-            _finalStatus = "exhausted";
-          } else {
-            _finalStatus = "error";
+          if (outcome === "retry") {
+            rateLimitRetry += 1;
+            continue;
           }
+          _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
 
@@ -393,15 +374,31 @@ export class AgentManager implements IAgentManager {
           retriable: false,
           message: "",
         };
-        // Mark the current agent unavailable BEFORE calling nextCandidate so the filter
-        // in nextCandidate excludes the just-failed agent and selects the true next one.
+        // Hop-local exclusion prevents re-selecting the failed agent.
         this.markUnavailable(currentAgent, adapterFailure);
 
-        // Look up the fallback chain by the primary agent so flat maps like
-        // { claude: ["codex", "gemini"] } work correctly across multiple hops.
-        const next = this.nextCandidate(primaryAgent, hopsSoFar);
+        // Resolve from the primary so flat fallback maps work across hops.
+        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
         if (!next) {
-          this._emitter.emit("onSwapExhausted", { storyId: request.runOptions.storyId, hops: hopsSoFar });
+          const outcome = await this._resolveExhaustion({
+            failure: adapterFailure,
+            hopsSoFar,
+            attempt: rateLimitRetry,
+            swapWasPossible: true,
+            agent: currentAgent,
+            site: "run",
+            storyId: request.runOptions.storyId,
+            stage: request.runOptions.pipelineStage ?? "run",
+            signal: request.signal,
+          });
+          if (outcome === "cancelled") {
+            _finalStatus = "cancelled";
+            return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+          }
+          if (outcome === "retry") {
+            rateLimitRetry += 1;
+            continue;
+          }
           _finalStatus = "exhausted";
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
@@ -464,6 +461,7 @@ export class AgentManager implements IAgentManager {
     let currentTier: string | undefined;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
+    let rateLimitRetry = 0;
     const maxStaleRetries = resolveIdleWatchdogSettings(this._config.agent?.idleWatchdog).maxRetryAttempts;
 
     const _opStartMs = Date.now();
@@ -554,14 +552,52 @@ export class AgentManager implements IAgentManager {
             hopsSoFar,
             failure: result.adapterFailure,
           });
+          const outcome = await this._resolveExhaustion({
+            failure: result.adapterFailure,
+            hopsSoFar,
+            attempt: rateLimitRetry,
+            swapWasPossible: dec.reason === "hop-cap-reached",
+            agent: currentAgent,
+            site: "complete",
+            storyId: options.storyId,
+            stage: options.pipelineStage ?? "run",
+            signal: options.signal,
+          });
+          if (outcome === "cancelled") {
+            _finalStatus = "cancelled";
+            return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+          }
+          if (outcome === "retry") {
+            rateLimitRetry += 1;
+            continue;
+          }
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
           return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
-        // Mark unavailable before nextCandidate so the filter excludes the just-failed agent.
+        // Hop-local exclusion prevents re-selecting the failed agent.
         this.markUnavailable(currentAgent, result.adapterFailure);
-        const next = this.nextCandidate(primaryAgent, hopsSoFar);
+        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
         if (!next) {
+          const outcome = await this._resolveExhaustion({
+            failure: result.adapterFailure,
+            hopsSoFar,
+            attempt: rateLimitRetry,
+            swapWasPossible: true,
+            agent: currentAgent,
+            site: "complete",
+            storyId: options.storyId,
+            stage: options.pipelineStage ?? "run",
+            signal: options.signal,
+          });
+          if (outcome === "cancelled") {
+            _finalStatus = "cancelled";
+            return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+          }
+          if (outcome === "retry") {
+            rateLimitRetry += 1;
+            continue;
+          }
           _finalStatus = "exhausted";
           return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
@@ -763,6 +799,14 @@ export class AgentManager implements IAgentManager {
     return (await this.completeAsWithFallback(agentName, prompt, options)).result;
   }
 
+  private _resolveExhaustion(options: Omit<ManagerExhaustionOptions, "retryStrategy" | "sleep" | "onExhausted">) {
+    return resolveManagerExhaustion({
+      ...options,
+      retryStrategy: this._retryStrategy,
+      sleep: _agentManagerDeps.sleep,
+      onExhausted: (hops) => this._emitter.emit("onSwapExhausted", { storyId: options.storyId, hops }),
+    });
+  }
   close(): void {
     this._emitter.removeAllListeners();
   }

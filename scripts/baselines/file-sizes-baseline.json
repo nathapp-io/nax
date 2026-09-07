@@ -1,7 +1,8 @@
 {
   "updatedAt": "2026-09-06T14:33:18.896Z",
   "byFile": {
-    "src/agents/manager.ts": 786,
+    "src/agents/manager.ts": 830,
+    "src/execution/post-run.ts": 640,
     "src/execution/unified-executor.ts": 766,
     "src/interaction/plugins/telegram.ts": 613,
     "src/prd/schema.ts": 629,

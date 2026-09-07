@@ -36,6 +36,7 @@ function makeInspection(overrides: Partial<PostRunInspectionResult> = {}): PostR
     agentResult: makeAgentResult(),
     selfVerificationFailed: false,
     needsHumanReview: false,
+    providerUnavailable: false,
     combinedOutput: "",
     ...overrides,
   };
@@ -133,6 +134,35 @@ describe("decideStageAction — TDD human-review pause", () => {
     expect(send).toHaveBeenCalledTimes(1);
     const sentRequest = send.mock.calls[0]?.[0];
     expect(sentRequest?.summary).toContain("Human review needed");
+  });
+});
+
+describe("session-failure caused by the provider escalates (nax#1892)", () => {
+  const ctx = makeTestContext({ interaction: undefined });
+  const planResult = makePlanResult({ success: false });
+  const opts = makeInspectionOpts({ tddMode: { isLite: false, rollbackEnabled: false } });
+
+  test.each(["fail-rate-limit", "fail-quota", "fail-service-down"] as const)(
+    "%s escalates rather than pausing",
+    async () => {
+      const result = await decideStageAction(
+        ctx,
+        planResult,
+        makeInspection({ failureCategory: "session-failure", needsHumanReview: true, providerUnavailable: true }),
+        opts,
+      );
+      expect(result.action).toBe("escalate");
+    },
+  );
+
+  test("a genuine session failure still pauses with the unchanged reason", async () => {
+    const result = await decideStageAction(
+      ctx,
+      planResult,
+      makeInspection({ failureCategory: "session-failure", needsHumanReview: true, providerUnavailable: false }),
+      opts,
+    );
+    expect(result).toEqual({ action: "pause", reason: "Human review needed: session-failure" });
   });
 });
 

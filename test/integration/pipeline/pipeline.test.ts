@@ -447,6 +447,8 @@ describe("Pipeline Runner", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { makeDispatchContext } from "@test/helpers";
+import type { InspectionOptions, PostRunInspectionResult, StoryOrchestratorResult } from "@/execution";
+import { decideStageAction } from "@/execution/post-run";
 import { routeTddFailure } from "@/pipeline/stages/execution";
 import type { FailureCategory } from "@/tdd/types";
 
@@ -469,11 +471,43 @@ describe("routeTddFailure", () => {
   });
 
   describe("session-failure", () => {
-    test("escalates in strict and lite mode; does not set retryAsLite", () => {
-      const ctx1 = makeCtx();
-      expect(routeTddFailure("session-failure", false, ctx1, "session crashed").action).toBe("escalate");
-      expect(ctx1.retryAsLite).toBeUndefined();
-      expect(routeTddFailure("session-failure", true, makeCtx()).action).toBe("escalate");
+    test("escalates in strict and lite mode via decideStageAction; does not set retryAsLite", async () => {
+      for (const isLite of [false, true]) {
+        const ctx = createTestContext();
+        const planResult: StoryOrchestratorResult = {
+          success: false,
+          phaseCosts: {},
+          totalCostUsd: 0,
+          durationMs: 1,
+          phaseOutputs: {},
+        };
+        const inspection: PostRunInspectionResult = {
+          agentResult: {
+            success: false,
+            exitCode: 1,
+            output: "",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+          },
+          selfVerificationFailed: false,
+          needsHumanReview: true,
+          providerUnavailable: true,
+          failureCategory: "session-failure",
+          combinedOutput: "",
+        };
+        const opts: InspectionOptions = {
+          capturedResponse: "",
+          capturedCostUsd: 0,
+          tddMode: { isLite, rollbackEnabled: false },
+          initialRef: null,
+          untrackedBefore: null,
+        };
+        const result = await decideStageAction(ctx, planResult, inspection, opts);
+        expect(result.action).toBe("escalate");
+        if (result.action === "escalate") expect(result.reason).toBe("TDD session-failure");
+        expect(ctx.retryAsLite).toBeUndefined();
+      }
     });
   });
 

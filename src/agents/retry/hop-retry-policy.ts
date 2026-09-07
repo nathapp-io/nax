@@ -19,6 +19,7 @@ import type { AdapterFailure } from "@/context";
 // runtime import cycle (see src/agents/manager.ts for the full chain).
 import { resolveIdleWatchdogSettings } from "@/runtime/middleware/idle-watchdog";
 import type { AgentResult, AgentRunOptions } from "../types";
+import { failurePolicyFor } from "./failure-policy";
 
 export interface TimeoutRetryConfig {
   maxAttempts: number;
@@ -85,8 +86,11 @@ export function trySameAgentRetry(
   const { staleRetryAttempts, timeoutRetryAttempts, adapterErrorRetries, currentRunOptions, tier } = state;
   const { config, requestRunOptions, signal } = deps;
 
+  const outcome = result.adapterFailure?.outcome;
+  const lane = outcome ? failurePolicyFor(outcome).sameAgentRetry : "none";
+
   // fail-stale: same-agent retries up to maxRetryAttempts before swap or terminal failure.
-  const isFailStale = result.adapterFailure?.outcome === "fail-stale";
+  const isFailStale = lane === "stale";
   const maxStaleRetries = resolveIdleWatchdogSettings(config.agent?.idleWatchdog).maxRetryAttempts;
   if (isFailStale && result.adapterFailure?.retriable && staleRetryAttempts < maxStaleRetries) {
     const newAttempts = staleRetryAttempts + 1;
@@ -104,7 +108,7 @@ export function trySameAgentRetry(
   }
 
   // fail-timeout: same-agent retry with reduced budget and fresh session.
-  const isFailTimeout = result.adapterFailure?.outcome === "fail-timeout";
+  const isFailTimeout = lane === "timeout";
   if (isFailTimeout && result.adapterFailure?.retriable) {
     const timeoutConfig = extractTimeoutRetryConfig(config);
     if (timeoutRetryShouldRetry(timeoutRetryAttempts, timeoutConfig)) {
@@ -129,8 +133,11 @@ export function trySameAgentRetry(
     }
   }
 
-  // fail-adapter-error: same-agent retry when acpx signals retryable.
-  const isFailAdapterError = result.adapterFailure?.outcome === "fail-adapter-error";
+  // adapter-error lane: acpx session errors, and (nax#1884) a stalled provider
+  // stream, which classifies fail-service-down since nax#1869. Before that fix
+  // the same fault synthesised fail-adapter-error and got these retries; the
+  // classification got more accurate and the retry was lost.
+  const isFailAdapterError = lane === "adapter-error";
   if (isFailAdapterError && !signal?.aborted) {
     const runConfig = requestRunOptions.config ?? config;
     const maxAdapterRetries = result.adapterFailure?.retriable

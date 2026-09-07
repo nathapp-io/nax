@@ -74,3 +74,40 @@ describe("decideSwap names the gate that declined (#1713)", () => {
     expect(decideSwap(QUALITY, 0, { ...ON, onQualityFailure: true })).toEqual({ swap: true });
   });
 });
+
+describe("decideSwap reads the policy table, not the category", () => {
+  const ON = { enabled: true, maxHopsPerStory: 2, onQualityFailure: false };
+
+  const failure = (outcome: AdapterFailure["outcome"], category: "availability" | "quality"): AdapterFailure => ({
+    category,
+    outcome,
+    retriable: true,
+    message: "",
+  });
+
+  test("a spent-lane fail-timeout now swaps", () => {
+    expect(decideSwap(failure("fail-timeout", "quality"), 0, ON)).toEqual({ swap: true });
+  });
+
+  test("fail-aborted still refuses at the outcome gate", () => {
+    expect(decideSwap(failure("fail-aborted", "availability"), 0, ON)).toEqual({
+      swap: false,
+      reason: "outcome-refused",
+    });
+  });
+
+  test("a rate limit mislabelled as quality still swaps", () => {
+    // The proof that `category` is no longer a decision input.
+    expect(decideSwap(failure("fail-rate-limit", "quality"), 0, ON)).toEqual({ swap: true });
+  });
+
+  test("quality outcomes still honour onQualityFailure in both directions", () => {
+    expect(decideSwap(failure("fail-quality", "quality"), 0, ON)).toEqual({
+      swap: false,
+      reason: "quality-failure-declined",
+    });
+    expect(decideSwap(failure("fail-quality", "quality"), 0, { ...ON, onQualityFailure: true })).toEqual({
+      swap: true,
+    });
+  });
+});

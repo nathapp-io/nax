@@ -4,8 +4,10 @@
  * nax-ai returns a discriminated kind, so nothing here parses a message. The
  * acpx path has to (parseAgentError); this one must not start.
  *
- * The category split is load-bearing: shouldSwap's fallback branch only accepts
- * "availability", so a kind filed under "quality" is terminal for the op.
+ * `category` is an observability tag only: swap behaviour comes from
+ * `failurePolicyFor(outcome)` in `src/agents/retry/failure-policy.ts`, which
+ * keys on `outcome` and never reads `category`. A kind filed under "quality" is
+ * not automatically terminal for the op — `decideSwap` consults the policy table.
  */
 
 import type { AdapterFailure } from "@/context/engine";

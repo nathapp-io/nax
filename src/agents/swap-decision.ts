@@ -12,12 +12,13 @@
  */
 
 import type { AdapterFailure } from "../context/engine";
+import { failurePolicyFor } from "./retry/failure-policy";
 
 /** Which gate refused the swap. One member per decline path in `decideSwap`. */
 export type SwapDeclineReason =
   /** No adapter failure to react to. */
   | "no-failure"
-  /** `fail-aborted` (teardown) and `fail-timeout` (pool poison) never swap. */
+  /** `fail-aborted` is teardown and never swaps; a spent-lane `fail-timeout` does (nax#1883). */
   | "outcome-refused"
   /** `agent.fallback.enabled` is off. */
   | "fallback-disabled"
@@ -60,15 +61,19 @@ export function decideSwap(
   fallback: SwapFallbackConfig | undefined,
 ): SwapDecision {
   if (!failure) return { swap: false, reason: "no-failure" };
-  if (failure.outcome === "fail-aborted" || failure.outcome === "fail-timeout") {
-    return { swap: false, reason: "outcome-refused" };
-  }
+  const policy = failurePolicyFor(failure.outcome);
+  // `fail-aborted` is teardown and must never swap. `fail-timeout` used to share
+  // this gate because swapping implied pruning (nax#1371); it no longer does —
+  // its policy cooldown is "none", so the agent survives the swap.
+  if (policy.swap === "never") return { swap: false, reason: "outcome-refused" };
   if (!fallback?.enabled) return { swap: false, reason: "fallback-disabled" };
   if (hopsSoFar >= (fallback.maxHopsPerStory ?? DEFAULT_MAX_HOPS)) {
     return { swap: false, reason: "hop-cap-reached" };
   }
-  if (failure.category === "availability") return { swap: true };
-  return fallback.onQualityFailure ? { swap: true } : { swap: false, reason: "quality-failure-declined" };
+  if (policy.swap === "quality-gated") {
+    return fallback.onQualityFailure ? { swap: true } : { swap: false, reason: "quality-failure-declined" };
+  }
+  return { swap: true };
 }
 
 /** A fallback target, after both config spellings are reduced to one shape. */

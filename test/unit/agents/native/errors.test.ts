@@ -1,10 +1,10 @@
 /**
  * nax-ai error kinds to nax's failure taxonomy.
  *
- * Five of seven kinds must be "availability", because that is the only category
- * shouldSwap's fallback branch accepts. A blanket quality/fail-unknown once
+ * Five of seven kinds file "availability". A blanket quality/fail-unknown once
  * made every transient failure terminal for exactly these complete-kind ops;
- * this table is what stops that returning.
+ * this table is what stops that returning. The category tag is observability
+ * only — swap behaviour comes from the policy table by outcome (nax#1883).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -83,8 +83,19 @@ describe("retryAfterSeconds", () => {
 describe("swap eligibility, through the real gate", () => {
   const fallback = { enabled: true, maxHopsPerStory: 2 };
 
-  test("an overflow is swap-eligible, so another agent's window gets a chance", () => {
-    expect(decideSwap(toAdapterFailure({ kind: "context-overflow" }), 0, fallback)).toEqual({ swap: true });
+  test("an overflow is swap-eligible once quality swaps are opted in", () => {
+    expect(
+      decideSwap(toAdapterFailure({ kind: "context-overflow" }), 0, { ...fallback, onQualityFailure: true }),
+    ).toEqual({
+      swap: true,
+    });
+  });
+
+  test("an overflow is declined by default, like any fail-adapter-error", () => {
+    expect(decideSwap(toAdapterFailure({ kind: "context-overflow" }), 0, fallback)).toEqual({
+      swap: false,
+      reason: "quality-failure-declined",
+    });
   });
 
   test("a genuinely malformed request stays declined", () => {

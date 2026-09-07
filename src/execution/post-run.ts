@@ -59,6 +59,7 @@ export interface PostRunInspectionResult {
   readonly pauseReason?: string;
   readonly failureCategory?: FailureCategory;
   readonly needsHumanReview: boolean;
+  readonly providerUnavailable: boolean;
   readonly combinedOutput: string;
 }
 
@@ -139,6 +140,16 @@ export async function applyPostRunInspection(
     | undefined;
 
   const lastFailure = ctx.runtime.lastAdapterFailure.get(ctx.story.id);
+  /**
+   * A session failure the provider caused, not one a human must look at.
+   * nax#1892: `needsHumanReview` fired on the category alone, so a rate limit
+   * parked the story at attempt 1 while an identically-caused story on a
+   * different test strategy escalated and passed.
+   */
+  const providerUnavailable =
+    lastFailure?.outcome === "fail-rate-limit" ||
+    lastFailure?.outcome === "fail-quota" ||
+    lastFailure?.outcome === "fail-service-down";
 
   const agentResult: AgentResult = {
     success: implementerOutput?.success ?? false,
@@ -297,7 +308,7 @@ export async function applyPostRunInspection(
     (ctx as { tddIsolations?: typeof tddIsolations }).tddIsolations = tddIsolations;
   }
 
-  const needsHumanReview = failureCategory === "session-failure";
+  const needsHumanReview = failureCategory === "session-failure" && !providerUnavailable;
   const combinedOutput = (agentResult.output ?? "") + ((agentResult as { stderr?: string }).stderr ?? "");
 
   // Primary success-path cleanup: verifierOp.parse (strict) + verifierOp.verify handle
@@ -322,7 +333,15 @@ export async function applyPostRunInspection(
   const rectOut = planResult.phaseOutputs.rectification as { iterationCount?: number } | undefined;
   ctx.rectifyAttempt = rectOut?.iterationCount ?? 0;
 
-  return { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput };
+  return {
+    agentResult,
+    selfVerificationFailed,
+    pauseReason,
+    failureCategory,
+    needsHumanReview,
+    providerUnavailable,
+    combinedOutput,
+  };
 }
 
 /**
@@ -339,8 +358,15 @@ export async function decideStageAction(
   const isTdd = opts.tddMode !== null;
   const isLiteMode = opts.tddMode?.isLite ?? false;
   const shouldRollback = shouldRollbackTddFailure(opts.tddMode, inspection.failureCategory);
-  const { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput } =
-    inspection;
+  const {
+    agentResult,
+    selfVerificationFailed,
+    pauseReason,
+    failureCategory,
+    needsHumanReview,
+    providerUnavailable,
+    combinedOutput,
+  } = inspection;
 
   if (isTdd && !planResult.success) {
     ctx.tddFailureCategory = failureCategory;
@@ -504,7 +530,7 @@ export async function decideStageAction(
       }
     }
 
-    if (needsHumanReview) {
+    if (needsHumanReview && !providerUnavailable) {
       logger.warn("execution", "Human review needed", { storyId: ctx.story.id, failureCategory });
       if (ctx.interaction) {
         try {

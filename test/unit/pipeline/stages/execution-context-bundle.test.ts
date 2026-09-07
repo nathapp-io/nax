@@ -79,6 +79,7 @@ beforeEach(() => {
     },
     selfVerificationFailed: false,
     needsHumanReview: false,
+    providerUnavailable: false,
     combinedOutput: "",
   });
   _executionDeps.decideStageAction = async () => ({ action: "continue" });

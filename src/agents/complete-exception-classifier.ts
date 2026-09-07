@@ -13,17 +13,17 @@ import { isTransportFailureMessage } from "./transport-failure-message";
  * discarding the classification `parseAgentError` already provides for
  * structured errors (auth, rate-limit, model-not-available) and treating a
  * wall-clock `AGENT_TIMEOUT` the same as a genuinely unknown failure. That
- * blanket classification always failed `shouldSwap`'s availability branch
- * (`category: "quality"` never qualifies unless `fallback.onQualityFailure`
- * is enabled), making one transient failure terminal for complete-kind ops
- * (routing, decompose, debate, acceptance-refine) even when a fallback agent
- * was configured and available.
+ * blanket classification always declined the swap: `decideSwap` reads the
+ * policy table by outcome (nax#1883), and `fail-unknown` is quality-gated, so
+ * it never swapped unless `fallback.onQualityFailure` is enabled — making one
+ * transient failure terminal for complete-kind ops (routing, decompose,
+ * debate, acceptance-refine) even when a fallback agent was configured and
+ * available.
  *
- * Note: `completeWithFallback` has no rate-limit backoff path — `_retryStrategy`
- * is only consulted from `runWithFallback`. A `fail-rate-limit` classification
- * here still helps (it unlocks agent swap via `shouldSwap`'s availability
- * branch) but does not itself trigger a same-agent backoff-and-retry; without
- * a swap candidate, a rate-limited complete-kind op is still terminal.
+ * `completeWithFallback` and `runWithFallback` share one exhaustion routine
+ * (`resolveExhaustion`): a terminal exit backs off per the failure's policy,
+ * so a `fail-rate-limit` classification on the complete path sleeps on the
+ * provider's delay exactly as it does on the run path.
  */
 /** Mirrors the truncation length used by the ACP adapter's own classification (adapter.ts, parse-agent-error.ts). */
 const MAX_FAILURE_MESSAGE_CHARS = 500;
@@ -65,9 +65,12 @@ export function classifyCompleteException(err: unknown): AdapterFailure {
       // is availability, which swaps to a healthy agent. Asked last, so a
       // structured signal always wins over a phrase.
       //
-      // fail-service-down, not fail-timeout: decideSwap refuses fail-timeout at
-      // its first gate, so that outcome would leave the swap exactly as
-      // declined as the bug it is meant to fix.
+      // fail-service-down, not fail-timeout: a spent-lane fail-timeout does swap
+      // (its cooldown is "none", so the agent survives), and a terminal exit
+      // backs off per the failure's policy (terminalBackoff) via
+      // resolveExhaustion — neither is the "refused at its first gate" bug this
+      // branch originally dodged, but fail-service-down still reads truer for a
+      // transport fault and its policy treats it as immediately swappable.
       //
       // Read on the full message for the same reason parseAgentError is — a
       // marker can sit past the truncation point.
