@@ -6,6 +6,15 @@
  * (check:nax-ai-imports confines that package to src/agents/native/).
  */
 
+/**
+ * Policy identity for RunCommand's allowlisted, model-authored argv branch,
+ * and the marker an operation's `tools` declaration uses to request it.
+ * `Exec` is not a registered tool — nothing in `registerBuiltinCodingTools`
+ * carries this name, and it is reserved (`RESERVED_TOOL_NAMES`) precisely so
+ * no third party can register a tool that shadows the identity.
+ */
+export const EXEC_TOOL_NAME = "Exec";
+
 /** The tools nax ships. Third parties register additional names at runtime. */
 export type CodingToolName =
   | "Read"
@@ -16,7 +25,8 @@ export type CodingToolName =
   | "Git"
   | "GitCommit"
   | "RunCommand"
-  | "RequestCapability";
+  | "RequestCapability"
+  | "Exec";
 
 /**
  * One declarative permission grant, as produced by resolvePermissions.
@@ -65,6 +75,15 @@ export interface ToolScope {
   readonly refPathFields?: readonly string[];
   readonly verbField?: string;
   readonly allowedVerbs?: readonly string[];
+  /**
+   * The input field holding a model-authored argv (RunCommand's `Exec`
+   * branch). When a call carries this field, the policy checks it under the
+   * `Exec` identity (`EXEC_TOOL_NAME`), matching each grant pattern against
+   * the argv token-by-token, rather than under the tool's own name — an
+   * `Exec(...)` grant is otherwise never consulted and a `RunCommand(*)`
+   * wildcard would silently cover the argv branch too.
+   */
+  readonly argvField?: string;
 }
 
 /**

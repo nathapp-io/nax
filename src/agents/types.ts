@@ -177,6 +177,14 @@ export interface AgentRunOptions {
    */
   codingToolRoot?: string;
   /**
+   * Repo root for the same dispatch, when the story runs in a package.
+   *
+   * `codingToolRoot` is the package workdir and is the containment root for
+   * every path-bearing tool. Exec's `target: "repoRoot"` needs the workspace
+   * root as well, and it is not derivable from the package dir alone.
+   */
+  codingToolRepoRoot?: string;
+  /**
    * The run's output directory (`~/.nax/<project>` by default), where durable
    * run artifacts live. Carried here so the tool-audit ledger lands beside
    * prompt-audit and review-audit rather than inside `codingToolRoot`.

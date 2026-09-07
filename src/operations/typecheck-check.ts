@@ -158,7 +158,17 @@ export const typecheckCheckOp: DeterministicOperation<
       severity: "error",
       category: "typecheck-failure",
       fixTarget: "source",
-      message: `typecheck failed (no structured findings parsed), please run the typecheck command: ${command}`,
+      // Offer the RunCommand key only when the command is genuinely DECLARED:
+      // `declaredCommands` is built from `quality.commands` verbatim, so a
+      // command that was auto-detected above has no key and naming one would
+      // send the model into `unknown command "typecheck"`. The shell string
+      // stays for the ACP transport, which has no RunCommand at all. See the
+      // note in prompts/sections/self-verification.ts.
+      message: `typecheck failed (no structured findings parsed), please re-run the typecheck: ${
+        detectedFromPackage
+          ? `\`${command}\``
+          : `RunCommand {"command": "typecheck"} if that tool is available to you, otherwise \`${command}\``
+      }`,
     };
     const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
     return { success: false, findings, durationMs: Date.now() - start };

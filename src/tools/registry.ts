@@ -17,6 +17,19 @@ import type { CodingToolName, ToolScope } from "./types";
 export interface ToolResult {
   readonly content: string;
   readonly isError?: boolean;
+  /**
+   * Set only by RunCommand's argv branch (`Exec`), which is the one call
+   * shape whose executed argv can differ from what the model requested
+   * (normalization scopes it to a workspace member and may append a
+   * no-scripts mechanism). Returned here rather than re-derived by the
+   * runtime so the ledger records the argv that actually ran. Task 7 reads
+   * this to write `executed`/`target` onto the ledger row; this task only
+   * defines and returns it.
+   */
+  readonly audit?: {
+    readonly executed: readonly string[];
+    readonly target: "repoRoot" | "package";
+  };
 }
 
 export interface ToolRunContext {
@@ -62,6 +75,7 @@ export const RESERVED_TOOL_NAMES: readonly CodingToolName[] = [
   "GitCommit",
   "RunCommand",
   "RequestCapability",
+  "Exec",
 ];
 
 const registry = new Map<string, CodingTool>();

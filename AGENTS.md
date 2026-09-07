@@ -17,7 +17,7 @@ These instructions apply to all AI coding agents in this project.
 
 **Key dependencies:** @types/react, react, zod, @types/bun, react-devtools-core, typescript
 
-**Commands:** test: `bun run test` | lint: `bun run lint:json` | typecheck: `bun run typecheck`
+**Commands:** test: `bun run test` | lint: `bun run lint` | typecheck: `bun run typecheck`
 
 ---
 # nax — AI Coding Agent Orchestrator
@@ -193,9 +193,12 @@ args.push("--dangerously-skip-permissions");
 `skipPermissions` field belonged to the CLI adapter, which no longer exists, and were
 removed — do not reintroduce either.
 
-**Profiles:** `unrestricted` (approve-all), `safe` (approve-reads), `scoped` (Phase 2).
-`scoped` and the per-stage `execution.permissions` block are both rejected at
-config load until GitHub #374 lands — neither is wired to anything.
+**Profiles:** `unrestricted` (approve-all), `safe` (approve-reads), `scoped` (approve-reads,
+per-stage allowlist). `scoped` resolves through `resolveScopedPermissions`
+(`src/config/permissions.ts`) and the `execution.permissions` block is enforced at config
+load by `validatePermissionsBlock` (`src/config/config-guards.ts`); `scoped` is in the
+schema enum in `src/config/schemas-execution.ts`. GitHub #374 tracked the original design;
+the block is wired and enforced, not rejected.
 **Full spec:** `docs/architecture/agent-adapters.md` §14.
 
 ## Workflow Protocol

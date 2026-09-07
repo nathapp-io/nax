@@ -90,7 +90,7 @@ describe("resolveCodingToolSupport — ledger location", () => {
     const outputDir = makeTempDir("nax-audit-out-");
     try {
       await Bun.write(`${root}/a.ts`, "const a = 1;\n");
-      const support = resolveCodingToolSupport({
+      const support = await resolveCodingToolSupport({
         declaredTools: ["Read"],
         codingToolRoot: root,
         outputDir,
@@ -119,7 +119,7 @@ describe("resolveCodingToolSupport — ledger location", () => {
     const root = makeTempDir("nax-audit-fallback-");
     try {
       await Bun.write(`${root}/a.ts`, "const a = 1;\n");
-      const support = resolveCodingToolSupport({
+      const support = await resolveCodingToolSupport({
         declaredTools: ["Read"],
         codingToolRoot: root,
         pipelineStage: "review",
@@ -147,7 +147,7 @@ describe("resolveCodingToolSupport — story correlation", () => {
     const root = makeTempDir("nax-tool-story-");
     try {
       await Bun.write(`${root}/a.ts`, "const a = 1;\n");
-      const support = resolveCodingToolSupport({
+      const support = await resolveCodingToolSupport({
         declaredTools: ["Read"],
         codingToolRoot: root,
         pipelineStage: "review",
@@ -205,7 +205,7 @@ describe("buildCodingToolSupport — declared-command seam and audit sink", () =
     const previous = process.env[secretName];
     process.env[secretName] = "must-not-reach-the-model";
     try {
-      const support = resolveCodingToolSupport({
+      const support = await resolveCodingToolSupport({
         declaredTools: ["RunCommand"],
         codingToolRoot: process.cwd(),
         pipelineStage: "run",

@@ -66,7 +66,7 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   // session CAN commit its own RED state, but no test-writer prompt step
   // currently directs it to do so -- the committed-boundary benefit for the
   // implementer's `beforeRef` is not realised until the prompt gains that step.
-  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit"],
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit", "Exec", "RequestCapability"],
   // Test-writing is a cheap scoped task — follows the configured per-role tier.
   // Defaults to "fast" via the schema; undefined only for partial test configs.
   model: (_input, ctx) => ctx.config.tdd?.sessionTiers?.testWriter,

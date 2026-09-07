@@ -24,6 +24,24 @@ export interface ToolCallRecord {
   readonly resultBytes: number;
   readonly storyId?: string;
   readonly at: string;
+  /**
+   * Why a "denied" outcome was refused. runtime.ts's log() computes this for
+   * the console logger (under the `error` key) but used to drop it before it
+   * reached this sink, so a denied row's `error` field read null and the
+   * refusal reason was unrecoverable -- the exact gap this field closes.
+   */
+  readonly reason?: string;
+  /**
+   * The argv that actually ran, after normalization (workspace scoping, an
+   * appended no-scripts flag). Set only for the argv branch (`Exec`).
+   * Deliberately alongside `input.argv` (the model's requested argv) rather
+   * than instead of it: either half alone is uninformative -- `input` cannot
+   * show what actually ran, and `executed` alone cannot show whether the
+   * normalization was faithful to what was requested.
+   */
+  readonly executed?: readonly string[];
+  /** Which workspace root the argv branch executed against. */
+  readonly target?: "package" | "repoRoot";
 }
 
 export interface ToolAuditSink {

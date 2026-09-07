@@ -28,7 +28,11 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
   // The prompt (PlanPromptBuilder.build / jsonRepair / schemaRepair / citationRepair)
   // always instructs the agent to write the PRD JSON directly to `outputFilePath`
   // rather than reply with it — see `fileOutput` below, which reads that file back.
-  tools: ["Read", "Glob", "Grep", "Write"],
+  // No Exec: this writes ONE fresh PRD JSON file (fileOutput contract below),
+  // never edits existing source, so it never needs a package manager.
+  // RequestCapability stays: it only records a want, granting nothing, so
+  // there is no reason to withhold it from an op that will never need Exec.
+  tools: ["Read", "Glob", "Grep", "Write", "RequestCapability"],
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,

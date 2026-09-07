@@ -298,7 +298,7 @@ export function buildHopCallback(
     // Coding tools are resolved per hop rather than per run: a swap changes the
     // agent, and the grants are stage-scoped, so a runtime captured once above
     // would outlive the dispatch it was resolved for.
-    const codingSupport = resolveCodingToolSupport(resolvedRunOptions);
+    const codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
 
     // A bridge is no longer required: without a handler, sendPrompt falls back
     // to NO_OP_INTERACTION_HANDLER and a well-formed tool call goes unanswered.

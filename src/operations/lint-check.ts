@@ -149,7 +149,12 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       source: "lint",
       severity: "error",
       category: "lint-failure",
-      message: `lint failed (no structured findings parsed), please run the lint check command: ${command}`,
+      // Key only when DECLARED, shell string always -- see typecheck-check.ts.
+      message: `lint failed (no structured findings parsed), please re-run the lint check: ${
+        detectedFromPackage
+          ? `\`${command}\``
+          : `RunCommand {"command": "lint"} if that tool is available to you, otherwise \`${command}\``
+      }`,
     };
     const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
     return { success: false, findings, durationMs: Date.now() - start };

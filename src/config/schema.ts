@@ -47,6 +47,7 @@ export type {
   ContextV2Config,
   EscalationEntry,
   ExecutionConfig,
+  InstallConfig,
   InteractionConfig,
   LlmRoutingConfig,
   LlmRoutingMode,

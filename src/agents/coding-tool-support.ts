@@ -19,11 +19,13 @@ import {
   createNoOpToolAuditSink,
   createRunCommandTool,
   createToolAuditSink,
+  EXEC_TOOL_NAME,
   type ToolAuditSink,
   type ToolGrant,
 } from "@/tools";
 import { toolAuditDir } from "../config/paths";
 import { resolvePermissions } from "../config/permissions";
+import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 
 export interface CodingToolSupport {
@@ -34,6 +36,11 @@ export interface CodingToolSupport {
 
 export function buildCodingToolSupport(args: {
   root?: string;
+  /**
+   * Repo root for Exec's `target: "repoRoot"` form. Falls back to `root`
+   * when absent (single-package repos, where the two coincide).
+   */
+  repoRoot?: string;
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
   storyId?: string;
@@ -41,6 +48,10 @@ export function buildCodingToolSupport(args: {
   stripEnvVars?: readonly string[];
   auditDir?: string;
   sessionName?: string;
+  /** Manifest name of the member at `root`; see `resolvePackageName`. */
+  packageName?: string;
+  /** `config.install.allowScripts` (Task 8 adds the field); defaults to false. */
+  allowScripts?: boolean;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -58,19 +69,54 @@ export function buildCodingToolSupport(args: {
     );
   }
 
+  // `Exec` is a capability marker in an operation's `tools` declaration, not
+  // a registered tool — nothing in registerBuiltinCodingTools carries this
+  // name. It decides whether RunCommand gets its argv branch (Task 6); it
+  // must never reach runtime.advertised() itself, or the lookup for a tool
+  // named "Exec" would simply fail and the marker would vanish from the
+  // advertised set without a trace of why.
+  const allowExec = args.declared.includes(EXEC_TOOL_NAME) && grants.some((grant) => grant.tool === EXEC_TOOL_NAME);
+  const advertised = args.declared.filter((name) => name !== EXEC_TOOL_NAME);
+
   const declaredCommands = args.declaredCommands ?? new Map<string, string>();
   const sink =
     args.auditDir !== undefined
       ? createToolAuditSink({ dir: args.auditDir, sessionName: args.sessionName ?? "unattached" })
       : createNoOpToolAuditSink();
+  // Task 10: shared, mutable, and scoped to this one hop's dispatch -- a
+  // fresh array every call, never a module-level or story-keyed cache. Given
+  // by reference to BOTH the policy (read side, in `check()`) and the Exec
+  // branch's options (write side, in run-command-exec.ts) so a successful
+  // repoRoot install and a later GitCommit call within the SAME hop see the
+  // same set. A commit an agent defers to a later hop still has the
+  // completion-phase auto-commit sweep (`autoCommitIfDirty`, which already
+  // stages from the git root) as its backstop -- see task-10-report.md.
+  const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
-    policy: compileToolPolicy(grants, args.root),
+    policy: compileToolPolicy(grants, args.root, { execTouchedPaths }),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     sink,
     extraTools:
-      declaredCommands.size > 0 ? [createRunCommandTool(declaredCommands, { stripEnvVars: args.stripEnvVars })] : [],
+      declaredCommands.size > 0 || allowExec
+        ? [
+            createRunCommandTool(declaredCommands, {
+              stripEnvVars: args.stripEnvVars,
+              ...(allowExec
+                ? {
+                    exec: {
+                      repoRoot: args.repoRoot ?? args.root,
+                      packageWorkdir: args.root,
+                      allowScripts: args.allowScripts ?? false,
+                      touchedPaths: execTouchedPaths,
+                      ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
+                    },
+                  }
+                : {}),
+            }),
+          ]
+        : [],
   });
-  const tools = runtime.advertised(args.declared);
+  const tools = runtime.advertised(advertised);
   if (tools.length === 0) return undefined;
   return { runtime, tools, auditSink: sink };
 }
@@ -100,11 +146,12 @@ export function buildLedgerSessionName(opts: { storyId?: string; sessionRole?: s
   return opts.sessionRole === undefined ? base : `${base}-${opts.sessionRole}`;
 }
 
-export function resolveCodingToolSupport(
+export async function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
     | "declaredTools"
     | "codingToolRoot"
+    | "codingToolRepoRoot"
     | "outputDir"
     | "pipelineStage"
     | "storyId"
@@ -112,7 +159,7 @@ export function resolveCodingToolSupport(
     | "featureName"
     | "config"
   >,
-): CodingToolSupport | undefined {
+): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
   if (declared.length === 0) return undefined;
   const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
@@ -120,17 +167,23 @@ export function resolveCodingToolSupport(
   // (agent/execution/profile), yet both hops source it from configLoader.current(),
   // so it carries the full NaxConfig at runtime — only the type lies. The read is
   // widened locally here; the shared agentManagerConfigSelector stays untouched.
-  const quality = (
-    options.config as
-      | {
-          quality?: { commands?: Partial<Record<string, string>>; stripEnvVars?: unknown };
-        }
-      | undefined
-  )?.quality;
+  const widenedConfig = options.config as
+    | {
+        quality?: { commands?: Partial<Record<string, string>>; stripEnvVars?: unknown };
+        // AgentManagerConfig (agentManagerConfigSelector) only picks
+        // agent/execution/profile, so `install` is not in its type even
+        // though both hops source this from the full NaxConfig at runtime
+        // (see RULING F2 above). Widen locally rather than broaden the
+        // shared selector.
+        install?: { allowScripts?: boolean };
+      }
+    | undefined;
+  const quality = widenedConfig?.quality;
   const commands = quality?.commands ?? {};
   const stripEnvVars = Array.isArray(quality?.stripEnvVars)
     ? quality.stripEnvVars.filter((value): value is string => typeof value === "string")
     : [];
+  const allowScripts = widenedConfig?.install?.allowScripts ?? false;
   const declaredCommands = new Map(
     Object.entries(commands).filter((e): e is [string, string] => typeof e[1] === "string"),
   );
@@ -147,8 +200,18 @@ export function resolveCodingToolSupport(
     ...(options.sessionRole !== undefined ? { sessionRole: options.sessionRole } : {}),
     ...(options.featureName !== undefined ? { featureName: options.featureName } : {}),
   });
+  // Resolved here, ahead of the sync tool seam (buildCodingToolSupport):
+  // both dispatch hops call that seam on a hot path, so it stays synchronous
+  // and never touches the filesystem itself. Skipped unless the op declared
+  // Exec — no reason to read a manifest off disk on every dispatch when
+  // nothing downstream will use the result.
+  const packageName =
+    root !== undefined && root.trim() !== "" && declared.includes(EXEC_TOOL_NAME)
+      ? await resolvePackageName(root)
+      : undefined;
   return buildCodingToolSupport({
     root: options.codingToolRoot,
+    ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
     grants: resolved.toolGrants,
     declared,
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
@@ -156,5 +219,7 @@ export function resolveCodingToolSupport(
     stripEnvVars,
     ...(auditDir !== undefined ? { auditDir } : {}),
     sessionName,
+    ...(packageName !== undefined ? { packageName } : {}),
+    allowScripts,
   });
 }

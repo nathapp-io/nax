@@ -19,7 +19,7 @@ import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
-import type { ToolPolicy } from "./types";
+import { EXEC_TOOL_NAME, type ToolPolicy } from "./types";
 import { writeTool } from "./write";
 
 /** Per-call output ceiling, mirroring ToolDescriptor.maxTokensPerCall in spirit. */
@@ -114,6 +114,7 @@ export function createCodingToolRuntime(opts: {
     breach?: boolean,
     reason?: string,
     routineErrors?: boolean,
+    audit?: { executed?: readonly string[]; target?: "package" | "repoRoot" },
   ): void {
     // The level is the console filter: `normal` mode drops debug, and the file
     // sink writes every level regardless, so demoting keeps the record without
@@ -147,6 +148,9 @@ export function createCodingToolRuntime(opts: {
       resultBytes,
       storyId: opts.storyId,
       at: new Date().toISOString(),
+      ...(reason !== undefined && reason.length > 0 ? { reason } : {}),
+      ...(audit?.executed !== undefined ? { executed: audit.executed } : {}),
+      ...(audit?.target !== undefined ? { target: audit.target } : {}),
     });
   }
 
@@ -169,18 +173,29 @@ export function createCodingToolRuntime(opts: {
         return { kind: "denied", reason, breach: false };
       }
 
-      const verdict = opts.policy.check(name, tool.scope, input);
+      // A call carrying the tool's declared argv field (RunCommand's `Exec`
+      // branch) is checked, and ledgered, under the `Exec` identity rather
+      // than the tool's own name. Left as `name`, an `Exec(...)` grant would
+      // never be consulted — the call would run under RunCommand's own grant
+      // (often a wildcard for its declared commands), making the allowlist
+      // decorative. The tool's registered name is unaffected; this changes
+      // only which identity the policy and ledger see for THIS call.
+      const argvField = tool.scope.argvField;
+      const hasArgv = argvField !== undefined && input[argvField] !== undefined;
+      const policyIdentity = hasArgv ? EXEC_TOOL_NAME : name;
+
+      const verdict = opts.policy.check(policyIdentity, tool.scope, input);
       if (!verdict.allowed) {
         if (verdict.breach) {
           // In band so an unattended run survives one bad path guess, but loud:
           // a path escaping the root can indicate prompt injection.
           getSafeLogger()?.warn("tools", "[policy] path resolved outside the permitted root", {
-            tool: name,
+            tool: policyIdentity,
             reason: verdict.reason,
             root: opts.policy.root,
           });
         }
-        log(name, "denied", verdict.reason.length, input, verdict.breach, verdict.reason);
+        log(policyIdentity, "denied", verdict.reason.length, input, verdict.breach, verdict.reason);
         return { kind: "denied", reason: verdict.reason, breach: verdict.breach };
       }
 
@@ -193,18 +208,19 @@ export function createCodingToolRuntime(opts: {
         });
         const kind = result.isError === true ? "error" : "ok";
         log(
-          name,
+          policyIdentity,
           kind,
           result.content.length,
           input,
           false,
           kind === "error" ? result.content : undefined,
           tool.routineErrors,
+          result.audit,
         );
         return { kind, content: result.content };
       } catch (err) {
         const content = err instanceof Error ? err.message : String(err);
-        log(name, "error", content.length, input, false, content, tool.routineErrors);
+        log(policyIdentity, "error", content.length, input, false, content, tool.routineErrors);
         return { kind: "error", content };
       }
     },

@@ -16,12 +16,39 @@
 import { runQualityCommand } from "../quality/runner";
 import { shellQuoteArg } from "../verification/shell-quote";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { runExecBranch } from "./run-command-exec";
 
 const PLACEHOLDER = /\{\{([a-zA-Z]+)\}\}/g;
+
+/**
+ * Context for RunCommand's allowlisted, model-authored argv branch (`Exec`).
+ *
+ * Populated only when the operation declared the `Exec` marker
+ * (`buildCodingToolSupport` in `src/agents/coding-tool-support.ts`).
+ */
+export interface RunCommandExecOptions {
+  readonly repoRoot: string;
+  readonly packageWorkdir: string;
+  /** Manifest name, required by yarn/cargo's package-scoping form; absent when unresolvable. */
+  readonly packageName?: string;
+  readonly allowScripts: boolean;
+  /**
+   * The containment carve-out's write side (Task 10). When present, a
+   * successful install-shaped Exec call appends the manifest/lockfile it
+   * wrote to this array — see `recordExecTouchedPaths` in
+   * `src/tools/exec-touched-paths.ts`. The SAME array reference must be
+   * given to `compileToolPolicy`'s `execTouchedPaths` option so a later
+   * GitCommit call in this dispatch hop can see the update; omitted
+   * entirely means no carve-out is offered for this session.
+   */
+  readonly touchedPaths?: string[];
+}
 
 export interface RunCommandToolOptions {
   /** Secret environment variables excluded from agent-triggered commands. */
   readonly stripEnvVars?: readonly string[];
+  /** See `RunCommandExecOptions`. */
+  readonly exec?: RunCommandExecOptions;
 }
 
 function quoteAt(template: string, end: number): "single" | "double" | undefined {
@@ -79,25 +106,62 @@ export function createRunCommandTool(
   opts: RunCommandToolOptions = {},
 ): CodingTool {
   const keys = [...declared.keys()];
+  const hasExec = opts.exec !== undefined;
   return {
     name: "RunCommand",
     // A non-zero exit here is the agent's red/green loop, not a fault.
     routineErrors: true,
-    description: `Run one of this project's declared commands: ${keys.join(", ")}. Supply values for its placeholders; you cannot write a command of your own.`,
+    description: hasExec
+      ? `Two ways to run something. (1) Run one of this project's declared commands: ${keys.join(", ")} — supply "command" and, optionally, "values" for its placeholders. (2) Run an allowlisted external command via "argv" (an array, e.g. ["bun","add","left-pad"]) — no shell, so no quoting and no shell metacharacters; only some commands and forms are permitted. Supply exactly one of "command" or "argv".`
+      : `Run one of this project's declared commands: ${keys.join(", ")}. Supply values for its placeholders; you cannot write a command of your own.`,
     inputSchema: {
       type: "object",
       properties: {
         command: { type: "string", enum: keys, description: "Which declared command to run" },
         values: { type: "object", description: 'Values for the command\'s placeholders, e.g. { files: "a.test.ts" }' },
+        ...(hasExec
+          ? {
+              argv: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  'Argv for an allowlisted external command, e.g. ["bun","add","left-pad"]. No shell: each element is one literal argument. Supply exactly one of "command" or "argv".',
+              },
+              target: {
+                type: "string",
+                enum: ["repoRoot", "package"],
+                description: 'Working directory for "argv": this package (default) or the repo root.',
+              },
+            }
+          : {}),
       },
-      required: ["command"],
+      // With exec available, neither field is unconditionally required —
+      // run() enforces "exactly one of command or argv" at call time, which
+      // a static JSON Schema `required` list cannot express as an either/or.
+      ...(hasExec ? {} : { required: ["command"] }),
     },
     // `{{files}}` is the declared scoped-test path parameter. Keeping it in
     // the policy's containment seam prevents a quoted-but-otherwise harmless
     // absolute filename from making the configured command act outside root.
-    scope: { pathFields: ["values.files"], verbField: "command", allowedVerbs: keys },
+    // `argvField` is set only when exec is available: it is what lets the
+    // policy recognize an argv call and check it under the `Exec` identity
+    // (see src/tools/runtime.ts and src/tools/policy.ts) rather than under
+    // RunCommand's own grant.
+    scope: {
+      pathFields: ["values.files"],
+      verbField: "command",
+      allowedVerbs: keys,
+      ...(hasExec ? { argvField: "argv" } : {}),
+    },
 
     async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
+      const hasCommand = typeof input.command === "string" && input.command.length > 0;
+      const hasArgv = input.argv !== undefined;
+      if (hasCommand && hasArgv) {
+        return { content: "supply exactly one of command or argv, not both", isError: true };
+      }
+      if (hasArgv) return runExecBranch(input, ctx, opts);
+
       const key = typeof input.command === "string" ? input.command : "";
       const template = declared.get(key);
       if (template === undefined) return { content: `unknown command "${key}"`, isError: true };
