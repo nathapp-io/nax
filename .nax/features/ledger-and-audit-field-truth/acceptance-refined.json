@@ -1,0 +1,142 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When a session-turn dispatch event carrying `roundTrips: 7` and `roundTripUnit: \"model-call\"` is emitted on the dispatch bus, then its recorded cost row has `roundTrips` equal to `7`.",
+    "refined": "Emit a CostEvent on the dispatch bus with roundTrips=7 and roundTripUnit=\"model-call\"; after attachCostSubscriber processes it and CostAggregator.drain() returns, the persisted schema-v4 cost row for that (runId, agentName, stage) has a defined roundTrips property with numeric value 7.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When that dispatch event is emitted, then its recorded cost row has `roundTripUnit` equal to `\"model-call\"`.",
+    "refined": "Emit the same session-turn CostEvent with roundTrips=7 and roundTripUnit=\"model-call\"; the persisted cost row has roundTripUnit strictly equal to the string \"model-call\" (not \"agent-run\" and not undefined).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When a session-turn dispatch event carrying `roundTrips: 3` and `roundTripUnit: \"agent-run\"` is emitted, then its recorded cost row has `roundTripUnit` equal to `\"agent-run\"`.",
+    "refined": "Emit a session-turn CostEvent with roundTrips=3 and roundTripUnit=\"agent-run\"; the persisted cost row has roundTrips === 3 and roundTripUnit === \"agent-run\", preserving the ACP delegated-agent-run unit unchanged.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When a `complete`-kind dispatch event is emitted, then its recorded cost row omits both `roundTrips` and `roundTripUnit` rather than defaulting them to `1`.",
+    "refined": "Emit a successful session-turn CostEvent whose source dispatch event carries no roundTrips/roundTripUnit values; the persisted cost row satisfies !('roundTrips' in row) and !('roundTripUnit' in row) — neither key is present, and neither is defaulted to 1.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `buildDispatchErrorEvent` builds an error event for a dispatch with resolved model attribution, then the returned `DispatchErrorEvent.model` equals the model resolved by `modelAttribution()` for that dispatch.",
+    "refined": "Call buildDispatchErrorEvent for a dispatch whose modelAttribution() returns a non-undefined model string M; assert that the returned DispatchErrorEvent.model === M (deep-equal to the modelAttribution() output for the same dispatch inputs).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When a dispatch error event carrying `model: \"anthropic/claude-sonnet-5\"` is emitted, then its recorded error row has `model` equal to `\"anthropic/claude-sonnet-5\"`.",
+    "refined": "Emit a DispatchErrorEvent with model=\"anthropic/claude-sonnet-5\" through the error path; after draining the aggregator, the persisted schema-v4 error cost row has model === \"anthropic/claude-sonnet-5\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When a dispatch error event carrying no model is emitted, then its recorded error row omits `model` rather than the string `\"unknown\"`.",
+    "refined": "Emit a DispatchErrorEvent where model is undefined (modelAttribution() resolved nothing); the persisted error cost row satisfies !('model' in row) — the key is absent, and its value is never the string \"unknown\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When a successful session-turn dispatch event has undefined `tokenUsage` and `exactCostUsd: 0`, then emitting it records exactly one cost row.",
+    "refined": "Emit a successful session-turn CostEvent with tokenUsage === undefined and exactCostUsd === 0 (and estimatedCostUsd === 0); after CostAggregator.drain(), the drain result contains exactly 1 cost row for that runId — the usage-less success is not dropped and not duplicated.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When that usage-less successful session-turn dispatch is recorded, then its cost row has `usageMissing` equal to `true`.",
+    "refined": "Emit the usage-less successful session-turn CostEvent (tokenUsage undefined, exactCostUsd 0); the persisted cost row has usageMissing === true (boolean true, not undefined/null).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When that usage-less successful session-turn dispatch is recorded, then its cost row has no `tokens` field rather than a tokens object with `input` and `output` both `0`.",
+    "refined": "Emit the usage-less successful session-turn CostEvent (tokenUsage undefined); the persisted cost row satisfies !('tokens' in row) — the tokens key is absent entirely, and the row does not contain a zeroed tokens object {input: 0, output: 0}.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When a successful session-turn dispatch event carries token usage, then its recorded cost row omits `usageMissing`.",
+    "refined": "Emit a successful session-turn CostEvent with a defined tokenUsage object (e.g. {input: 100, output: 50}); the persisted cost row satisfies !('usageMissing' in row) — the usageMissing key is absent, not set to false.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When a session-turn dispatch event is recorded, then its cost row has `schemaVersion` equal to `4`.",
+    "refined": "Emit any successful session-turn CostEvent; after it is persisted, the cost row has schemaVersion === 4 (matching COST_ROW_SCHEMA_VERSION exported from src/runtime/middleware/cost.ts), and the doc comment above that constant documents the v4 guarantees (roundTrips/roundTripUnit/usageMissing, optional tokens).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When a dispatch error event is recorded, then its error row has `schemaVersion` equal to `4`.",
+    "refined": "Emit a DispatchErrorEvent through the error path; after it is persisted, the error cost row has schemaVersion === 4, identical to the schemaVersion stamped on success-path cost rows.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `toReviewDecisionPayload` receives an adversarial op output whose `modelPassed` is `true`, then it returns a payload whose `modelPassed` is `true`.",
+    "refined": "Calling toReviewDecisionPayload with an AdversarialReviewOutput object where modelPassed === true returns a ReviewDecisionPayload with a `modelPassed` property strictly equal to boolean true (Object.is(result.modelPassed, true)).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `toReviewDecisionPayload` receives an adversarial op output whose `modelPassed` is `false`, then it returns a payload whose `modelPassed` is `false`, rather than dropping the field as falsy.",
+    "refined": "Calling toReviewDecisionPayload with an AdversarialReviewOutput object where modelPassed === false returns a ReviewDecisionPayload where the `modelPassed` key is present (Object.prototype.hasOwnProperty.call(result, 'modelPassed') === true) and its value is strictly boolean false (Object.is(result.modelPassed, false)); the field must not be omitted or coerced.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `toReviewDecisionPayload` receives an op output carrying no `modelPassed`, then it returns a payload that omits `modelPassed`.",
+    "refined": "Calling toReviewDecisionPayload with an op output object lacking a `modelPassed` property (e.g., a semantic review output) returns a payload where the `modelPassed` key is absent: Object.prototype.hasOwnProperty.call(result, 'modelPassed') === false and result.modelPassed === undefined.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `toReviewDecisionPayload` receives an op output whose `modelPassed` is the string `\"yes\"`, then it returns a payload that omits `modelPassed`.",
+    "refined": "Calling toReviewDecisionPayload with an op output whose `modelPassed` is the string \"yes\" (non-boolean value) returns a payload where the `modelPassed` key is absent: Object.prototype.hasOwnProperty.call(result, 'modelPassed') === false. The string value must not be truthiness-coerced into a boolean.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When the real `adversarialReviewOp.verify()` is driven on output whose model claimed a pass and `emitReviewDecision` is called, then the emitted `ReviewDecisionEvent` carries `modelPassed`.",
+    "refined": "Integration/canary test (extending test/unit/execution/story-orchestrator/review-decision-field-forwarding.test.ts): invoking the real adversarialReviewOp.verify() on model output that claims a pass, passing its returned output through emitReviewDecision, and capturing the emitted 'review-decision' event yields a ReviewDecisionEvent with `modelPassed` present (hasOwnProperty true) and strictly equal to the boolean true returned by verify().",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `emitReviewDecision` handles an adversarial op output whose `modelPassed` is `false`, then the persisted review audit record has `modelPassed` equal to `false`.",
+    "refined": "End-to-end test: calling emitReviewDecision with an adversarial op output where modelPassed === false results in the persisted review audit record (written by the audit subscriber/writer) having a `modelPassed` property present (hasOwnProperty true) whose value is strictly boolean false; the false value must be persisted, not dropped.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `emitReviewDecision` handles an op output that failed to parse but carries `modelPassed`, then the persisted audit record preserves `modelPassed`, matching how `blockingThreshold` is read outside the parsed branch.",
+    "refined": "End-to-end test: calling emitReviewDecision with an op output where parsed === false, passed is fail-open-derived, and modelPassed === true results in the persisted review audit record containing modelPassed strictly equal to true; the read must occur outside the parsed branch, mirroring the existing blockingThreshold forwarding code path (persisted even when parsing failed).",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]
