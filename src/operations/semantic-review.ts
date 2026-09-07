@@ -423,11 +423,7 @@ export const semanticReviewOp: RunOperationWithHooks<
     // blocking and is surfaced as a coverageGap-tagged advisory, so one
     // disputed finding cannot deadlock the story indefinitely.
     const recurrenceCfg = input.semanticConfig.recurrenceDemotion ?? { enabled: false, maxBlockingRounds: 2 };
-    const {
-      blocking,
-      advisory: subThreshold,
-      demoted,
-    } = classifyRecurrence(
+    const { blocking, advisory, demoted } = classifyRecurrence(
       accepted,
       input.priorSemanticIterations ?? [],
       recurrenceCfg,
@@ -437,11 +433,18 @@ export const semanticReviewOp: RunOperationWithHooks<
     );
     // Tag AFTER conversion: llmFindingToFinding rebuilds `meta` from scratch, so
     // a coverageGap tag applied to the LLMFinding would be silently dropped.
+    //
+    // `advisory` is already the sub-threshold bucket: under semantic's default config
+    // (recurrenceDemotion.enabled: false), classifyRecurrence takes its `!cfg.enabled`
+    // early return and partitions purely by severity, so every member of `advisory` is
+    // BY DEFINITION not blocking-severity. A `.filter((f) => isBlockingSeverity(...))`
+    // used to sit here, which intersected that bucket with its own complement and
+    // produced `[]` on every default-config run — nax#1865. Per the convention in
+    // non-blocking-fix.ts ("Applied at the SEEDING site only, never in the reviewer's
+    // own output"), filtering does not belong here at all: adversarialReviewOp.verify()
+    // forwards its identical `advisory` bucket unfiltered, and semantic now matches it.
     const advisoryFindings = [
-      ...toReviewFindings(
-        subThreshold.filter((f) => isBlockingSeverity(f.severity, threshold)),
-        { isTestFile },
-      ),
+      ...toReviewFindings(advisory, { isTestFile }),
       ...tagCoverageGap(toReviewFindings(demoted, { isTestFile })),
     ];
     // Honour blockingThreshold: the verdict fails only when a blocking finding

@@ -211,16 +211,20 @@ describe("semanticReviewOp — persisted audit shape (#1861)", () => {
     });
   });
 
-  // A plain sub-threshold-severity finding does NOT reach semanticReviewOp's
-  // advisoryFindings: verify() intersects the recurrence-demotion "advisory"
-  // bucket with `isBlockingSeverity` before converting
-  // (src/operations/semantic-review.ts, the `subThreshold.filter(...)` line),
-  // so a bare "warning" never survives that filter. That is unrelated to the
-  // Finding/ReviewFinding shape question #1861 rules on — recorded here as a
-  // discovered behavior, not asserted as a defect this issue fixes — so the
-  // only populated path for semantic advisoryFindings today is recurrence
-  // demotion (a formerly-blocking finding demoted after recurring past
-  // maxBlockingRounds), which is what this test drives.
+  // Previously, a plain sub-threshold-severity finding did NOT reach
+  // semanticReviewOp's advisoryFindings: verify() intersected the
+  // recurrence-demotion "advisory" bucket with `isBlockingSeverity` before
+  // converting (src/operations/semantic-review.ts, the removed
+  // `subThreshold.filter(...)` line) — an inverted condition, since `advisory`
+  // is already the sub-threshold bucket and intersecting it with
+  // "is blocking-severity" produced the empty set on every default-config run.
+  // That was ruled a defect and fixed in nax#1865: semantic now forwards its
+  // `advisory` bucket unfiltered, matching adversarialReviewOp.verify(). This
+  // test still drives the recurrence-demoted path specifically (a
+  // formerly-blocking finding demoted after recurring past maxBlockingRounds),
+  // because that path is what exercises the Finding/ReviewFinding shape
+  // question #1861 rules on (`message`/no `issue`) — not because it is the
+  // only path into advisoryFindings any more.
   test("advisoryFindings (recurrence-demoted path) carries message, not issue", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx(semanticReviewOp);

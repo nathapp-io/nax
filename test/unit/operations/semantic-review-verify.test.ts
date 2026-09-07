@@ -335,6 +335,56 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
     });
   });
 
+  test("warning finding at threshold error reaches advisoryFindings; error finding does not (#1865)", async () => {
+    return withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), "function login() { return true; }\n");
+
+      const ctx = makeVerifyCtx();
+      const input: SemanticReviewInput = {
+        ...BASE_INPUT,
+        workdir,
+        mode: "embedded", // embedded mode skips substantiation
+      };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Missing input validation",
+            suggestion: "Validate input",
+            acIndex: 1,
+          },
+          {
+            severity: "warning",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Consider logging",
+            suggestion: "Add a log",
+            acIndex: 1,
+          },
+        ],
+        normalizedFindings: [],
+      });
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      assertDefined(result.advisoryFindings, "advisoryFindings");
+      // The fix under #1865: the sub-threshold warning must now surface in
+      // advisoryFindings instead of being silently dropped by the old
+      // `subThreshold.filter((f) => isBlockingSeverity(...))` intersection-with-its-
+      // own-complement bug.
+      expect(result.advisoryFindings.some((f) => f.message?.includes("Consider logging"))).toBe(true);
+      // The blocking error finding must NOT appear in advisoryFindings — this is the
+      // other side of the regression test: it proves the fix forwards only the
+      // sub-threshold bucket, not everything indiscriminately.
+      expect(result.advisoryFindings.some((f) => f.message?.includes("Missing input validation"))).toBe(false);
+      // ...and it must still reach normalizedFindings, unaffected by this change.
+      expect(result.normalizedFindings.some((f) => f.message?.includes("Missing input validation"))).toBe(true);
+    });
+  });
+
   test("finding without valid acIndex is dropped from accepted (AC-grounding filter)", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx();
