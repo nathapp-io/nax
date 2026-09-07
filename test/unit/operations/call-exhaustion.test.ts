@@ -28,6 +28,7 @@ import {
   makeSessionManager,
   makeTestRuntime,
 } from "@test/helpers";
+import { _agentManagerDeps } from "@/agents/manager";
 import type { TurnResult } from "@/agents/types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { NaxError } from "@/errors";
@@ -71,10 +72,21 @@ function makeCompleteOp(name: string): CompleteOperation<string, string, Pick<ty
 // ---------------------------------------------------------------------------
 
 const createdRuntimes: NaxRuntime[] = [];
+const originalSleep = _agentManagerDeps.sleep;
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
+  _agentManagerDeps.sleep = originalSleep;
 });
+
+/** Captures the delays handed to the injected sleep; nothing waits in real time. */
+function captureSleeps(): number[] {
+  const slept: number[] = [];
+  _agentManagerDeps.sleep = async (ms: number) => {
+    slept.push(ms);
+  };
+  return slept;
+}
 
 // ---------------------------------------------------------------------------
 // AC7: run-kind exhaustion → CALL_OP_NO_OUTPUT
@@ -168,6 +180,7 @@ describe("AC7: run-kind — all retries exhaust → CALL_OP_NO_OUTPUT", () => {
 
 describe("AC7: complete-kind — all retries exhaust → parse receives empty string", () => {
   test("maxRetryAttempts=0, no fallback, empty output → callOp returns empty string (parse succeeds)", async () => {
+    const slept = captureSleeps();
     const config = makeNaxConfig({
       agent: {
         idleWatchdog: { maxRetryAttempts: 0, enabled: true, idleTimeoutSeconds: 900 },
@@ -200,8 +213,10 @@ describe("AC7: complete-kind — all retries exhaust → parse receives empty st
 
     // No exception thrown — op.parse("") returns "" which callOp returns as-is.
     expect(result).toBe("");
-    // maxRetryAttempts=0 → only 1 call (no same-agent retries)
-    expect(callCount).toBe(1);
+    // maxRetryAttempts=0 → no same-agent stale retries, but the terminal
+    // exhaustion routine backs off fail-stale 3 times (2s/4s/8s): 4 calls total.
+    expect(callCount).toBe(4);
+    expect(slept).toEqual([2000, 4000, 8000]);
   });
 
   test("complete-kind exhaustion error code is NOT CALL_OP_PARSE_FAILED when parse rejects empty", async () => {
@@ -209,6 +224,7 @@ describe("AC7: complete-kind — all retries exhaust → parse receives empty st
     // callOp re-throws the parse error directly (not wrapped as CALL_OP_PARSE_FAILED).
     // This verifies the error code boundary — parse errors are not confused with
     // agent-level no-output errors.
+    captureSleeps();
     const config = makeNaxConfig({
       agent: {
         idleWatchdog: { maxRetryAttempts: 0, enabled: true, idleTimeoutSeconds: 900 },
