@@ -120,6 +120,10 @@ export type ReviewDecisionPayload =
       acDropped?: DroppedFindingSummary[];
       /** Sub-threshold findings retained as advisory — carries `meta.coverageGap`. */
       advisoryFindings?: readonly AdvisoryFinding[];
+      /** Prior findings the reviewer resolved or withdrew this round — see `review/acks.ts` (#1423). */
+      acks?: readonly unknown[];
+      /** The blockingThreshold the op resolved and used to compute `passed` (US-003 AC8 precedent). */
+      blockingThreshold?: "error" | "warning" | "info";
     }
   | {
       reviewer: "semantic" | "adversarial";
@@ -134,6 +138,12 @@ export type ReviewDecisionPayload =
        * fact — the raw response is not retained anywhere else.
        */
       unparsedPreview?: string;
+      /**
+       * Present here too (not just the parsed:true branch): a fail-open /
+       * looksLikeFail give-up under a mis-configured threshold is exactly the
+       * case issue #1889 needs this data for.
+       */
+      blockingThreshold?: "error" | "warning" | "info";
     };
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally

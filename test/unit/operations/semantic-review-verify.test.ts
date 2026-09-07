@@ -77,26 +77,88 @@ async function runVerify(
   return verify(parsed, input, ctx);
 }
 
+/**
+ * The short-circuit branches previously asserted `toBe(parsed)` — reference
+ * identity, which encoded a no-mutation guarantee. verify() now stamps
+ * blockingThreshold onto every branch, so it necessarily returns a NEW object
+ * and identity no longer holds. The guarantee itself still does, so it is
+ * asserted directly here rather than dropped: the input is deep-compared
+ * against a snapshot taken before the call.
+ */
+async function runVerifyExpectingNoInputMutation(
+  parsed: SemanticReviewOutput,
+  input: SemanticReviewInput,
+  ctx: ReturnType<typeof makeVerifyCtx>,
+) {
+  const before = structuredClone(parsed);
+  const result = await runVerify(parsed, input, ctx);
+  expect(parsed).toEqual(before);
+  return result;
+}
+
 describe("semanticReviewOp.verify() — short-circuits (AC13)", () => {
-  test("FAIL_OPEN short-circuits verify — returns parsed unchanged", async () => {
+  // verify() now stamps blockingThreshold onto all three short-circuit
+  // branches (mirroring adversarialReviewOp — see US-003 AC8), so it returns
+  // a new object rather than the same `parsed` reference. Assertions are
+  // content supersets (toMatchObject) plus an explicit no-mutation check,
+  // together covering what the old `toBe(parsed)` identity assertion did.
+  test("FAIL_OPEN short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ failOpen: true, passed: true, findings: [], normalizedFindings: [] });
-    const result = await runVerify(parsed, BASE_INPUT, ctx);
-    expect(result).toBe(parsed); // exact reference equality — no mutation
+    const result = await runVerifyExpectingNoInputMutation(parsed, BASE_INPUT, ctx);
+    expect(result).toMatchObject(parsed);
   });
 
-  test("looksLikeFail short-circuits verify — returns parsed unchanged", async () => {
+  test("looksLikeFail short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ looksLikeFail: true, passed: false, findings: [], normalizedFindings: [] });
-    const result = await runVerify(parsed, BASE_INPUT, ctx);
-    expect(result).toBe(parsed);
+    const result = await runVerifyExpectingNoInputMutation(parsed, BASE_INPUT, ctx);
+    expect(result).toMatchObject(parsed);
   });
 
-  test("empty findings short-circuits verify — returns parsed unchanged", async () => {
+  test("empty findings short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
-    const result = await runVerify(parsed, BASE_INPUT, ctx);
-    expect(result).toBe(parsed);
+    const result = await runVerifyExpectingNoInputMutation(parsed, BASE_INPUT, ctx);
+    expect(result).toMatchObject(parsed);
+  });
+
+  // blockingThreshold was previously only stamped on the main return path — the
+  // empty-findings branch (47.2% of August semantic reviews) and the
+  // failOpen/looksLikeFail give-ups silently dropped it. All three now persist it.
+  test("verify() persists blockingThreshold from input onto output on the FAIL_OPEN path", async () => {
+    const ctx = makeVerifyCtx();
+    const input: SemanticReviewInput = { ...BASE_INPUT, blockingThreshold: "warning" };
+    const parsed = makeOutput({ failOpen: true, passed: true, findings: [], normalizedFindings: [] });
+    const result = await runVerify(parsed, input, ctx);
+    expect((result as SemanticReviewOutput & Record<string, unknown>).blockingThreshold).toBe("warning");
+  });
+
+  test("verify() persists blockingThreshold from input onto output on the looksLikeFail path", async () => {
+    const ctx = makeVerifyCtx();
+    const input: SemanticReviewInput = { ...BASE_INPUT, blockingThreshold: "info" };
+    const parsed = makeOutput({ looksLikeFail: true, passed: false, findings: [], normalizedFindings: [] });
+    const result = await runVerify(parsed, input, ctx);
+    expect((result as SemanticReviewOutput & Record<string, unknown>).blockingThreshold).toBe("info");
+  });
+
+  // Critical branch — 47.2% of August semantic reviews hit the empty-findings
+  // short-circuit. Missing blockingThreshold here alone would make the fix look
+  // like it worked while the majority of real records stayed null.
+  test("verify() persists blockingThreshold from input onto output on the empty-findings path", async () => {
+    const ctx = makeVerifyCtx();
+    const input: SemanticReviewInput = { ...BASE_INPUT, blockingThreshold: "warning" };
+    const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
+    const result = await runVerify(parsed, input, ctx);
+    expect((result as SemanticReviewOutput & Record<string, unknown>).blockingThreshold).toBe("warning");
+  });
+
+  test("verify() defaults blockingThreshold to error when input omits it", async () => {
+    const ctx = makeVerifyCtx();
+    const { blockingThreshold: _omit, ...inputWithoutThreshold } = BASE_INPUT;
+    const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
+    const result = await runVerify(parsed, inputWithoutThreshold, ctx);
+    expect((result as SemanticReviewOutput & Record<string, unknown>).blockingThreshold).toBe("error");
   });
 });
 
