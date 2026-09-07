@@ -26,6 +26,7 @@ import { rollbackToRef } from "../tdd/rollback";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
 import { inspectOscillationBreaker } from "./oscillation-breaker";
+import { sendPostRunNotification } from "./post-run-notifications";
 import { applyReviewsFailedOpen } from "./post-run-review-summary";
 import { maybeHandleRecurrenceBreaker } from "./recurrence-pause";
 import { failAndClose } from "./session-manager-runtime";
@@ -490,26 +491,12 @@ export async function decideStageAction(
   // pauseReason → pause (with optional notify)
   if (pauseReason) {
     logger.warn("execution", "Plan run produced pauseReason", { storyId: ctx.story.id, pauseReason });
-    if (ctx.interaction) {
-      try {
-        await ctx.interaction.send({
-          id: `pause-${ctx.story.id}-${Date.now()}`,
-          type: "notify",
-          featureName: ctx.featureDir ? (ctx.featureDir.split("/").pop() ?? "unknown") : "unknown",
-          storyId: ctx.story.id,
-          stage: "execution",
-          summary: `Execution paused: ${ctx.story.id}`,
-          detail: `Story: ${ctx.story.title}\nReason: ${pauseReason}`,
-          fallback: "continue",
-          createdAt: Date.now(),
-        });
-      } catch (notifyErr) {
-        logger.warn("execution", "Failed to send pause notification", {
-          storyId: ctx.story.id,
-          error: String(notifyErr),
-        });
-      }
-    }
+    await sendPostRunNotification(ctx, {
+      idPrefix: "pause",
+      summary: `Execution paused: ${ctx.story.id}`,
+      detail: `Story: ${ctx.story.title}\nReason: ${pauseReason}`,
+      failureMessage: "Failed to send pause notification",
+    });
     return { action: "pause", reason: pauseReason };
   }
 
@@ -532,26 +519,12 @@ export async function decideStageAction(
 
     if (needsHumanReview && !providerUnavailable) {
       logger.warn("execution", "Human review needed", { storyId: ctx.story.id, failureCategory });
-      if (ctx.interaction) {
-        try {
-          await ctx.interaction.send({
-            id: `human-review-${ctx.story.id}-${Date.now()}`,
-            type: "notify",
-            featureName: ctx.featureDir ? (ctx.featureDir.split("/").pop() ?? "unknown") : "unknown",
-            storyId: ctx.story.id,
-            stage: "execution",
-            summary: `Human review needed: ${ctx.story.id}`,
-            detail: `Story: ${ctx.story.title}\nReason: Human review needed\nCategory: ${failureCategory ?? "unknown"}`,
-            fallback: "continue",
-            createdAt: Date.now(),
-          });
-        } catch (notifyErr) {
-          logger.warn("execution", "Failed to send human review notification", {
-            storyId: ctx.story.id,
-            error: String(notifyErr),
-          });
-        }
-      }
+      await sendPostRunNotification(ctx, {
+        idPrefix: "human-review",
+        summary: `Human review needed: ${ctx.story.id}`,
+        detail: `Story: ${ctx.story.title}\nReason: Human review needed\nCategory: ${failureCategory ?? "unknown"}`,
+        failureMessage: "Failed to send human review notification",
+      });
       return { action: "pause", reason: `Human review needed: ${failureCategory ?? "unknown"}` };
     }
 
