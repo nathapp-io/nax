@@ -169,12 +169,31 @@ already populated correctly and thrown away today.
 
 ### 3.3 Reporting (#1897)
 
-Carry the hop's `AdapterFailure.outcome` through the plan result onto the
-rebuilt `agentResult` in `applyPostRunInspection`, and derive `rateLimited`
-from it (`outcome === "fail-rate-limit"`) rather than threading the boolean.
-The outcome is strictly more informative and keeps one source of truth; the
-boolean stays for the existing consumers. The `Agent session failed` log line
-and the escalation reason then tell the truth.
+Carry the hop's `AdapterFailure.outcome` to `applyPostRunInspection` and derive
+`rateLimited` from it (`outcome === "fail-rate-limit"`) rather than threading
+the boolean. The outcome is strictly more informative and keeps one source of
+truth; the boolean stays for the existing consumers. The `Agent session failed`
+log line and the escalation reason then tell the truth.
+
+**Not through the plan result.** `.claude/rules/adapter-wiring.md` Rule 6
+forbids routing result-side data back through `CallContext`, and nax#1707
+already settled the shape for exactly this problem: a **run-scoped sink on
+`ctx.runtime`, written at the `callOp` seam**. `recordAgentFallbacks`
+(`call-resolvers.ts:140`, called from `call.ts:462`) is the precedent, and the
+comment above that call already names this defect — *"post-run.ts rebuilds
+ctx.agentResult from the implementer's phase output, so anything left on the
+AgentResult here is dropped before metrics run."*
+
+So: add `runtime.lastAdapterFailure: Map<string, AdapterFailure>` alongside
+`runtime.agentFallbacks`, write it with a `recordAdapterFailure` helper beside
+`recordAgentFallbacks`, and read it in `applyPostRunInspection`. Last-write-wins
+per story is sufficient — post-run runs immediately after that story's plan, so
+the last recorded failure is the failing op's. Ad-hoc calls with no `storyId`
+are not recorded, matching `recordAgentFallbacks`.
+
+**File-size constraint:** `post-run.ts` is at 598 of the 600-line limit and the
+gate forbids any growth. The change there is net-negative (removing the
+`"will retry"` block frees three lines), but it must stay so.
 
 `turnResultToAgentResult` (`build-hop-callback.ts:107`) also hardcodes
 `rateLimited: false` on the non-throwing path, so the field is inconsistently
