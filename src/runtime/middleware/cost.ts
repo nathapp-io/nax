@@ -41,8 +41,14 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
  *     the `tokens` field omitted entirely; the loop-length signal is preserved
  *     even when token accounting is absent. `complete` events carry neither
  *     `roundTrips` nor `roundTripUnit` and the row omits both rather than
- *     defaulting them to `1`. Error rows additionally carry `model` (omitted
- *     when no `modelDef` was attributed, never defaulted to "unknown").
+ *     defaulting them to `1`. Any row whose dispatch event carried no
+ *     `tokenUsage` (session-turn or complete, when one was recorded) omits
+ *     `tokens` rather than carrying a zeroed `tokens: {input:0, output:0}`
+ *     object — the same "failed vs cost zero" ambiguity the `kind:"error"`
+ *     discriminator was added for means a zeroed `tokens` field is not
+ *     distinguishable from "we don't know the tokens". Error rows additionally
+ *     carry `model` (omitted when no `modelDef` was attributed, never
+ *     defaulted to "unknown").
  *
  * Bump this when adding or changing a field consumers key on, and extend the
  * list above — the constant is how a reader learns what a row guarantees.

@@ -546,8 +546,10 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatch(event);
       return outcome;
     } catch (err) {
-      // US-001: pass options as dispatchOptions so the error event carries
-      // the spent usage / role attribution.
+      // US-001: pass options as dispatchOptions so the error event carries the spent usage / role attribution.
+      // Limitation: this forwards `options.modelDef` (the primary's model) rather than the final-hop's model the
+      // success path resolves via `resolveFinalDispatch`. Currently unreachable — `completeWithFallback` only ever
+      // `throw`s at the first-hop `AGENT_NOT_FOUND` check; revisit if a future change adds a mid-chain throw.
       const errEvent = buildDispatchErrorEvent({
         origin: "completeAs",
         agentName,

@@ -251,6 +251,43 @@ describe("AgentManager.runAsSession failed SessionTurnError (AC14)", () => {
     // The legacy field stays populated too — call sites still rely on it.
     expect(event?.storyId).toBe("US-001");
   });
+
+  // Adversarial review (manager.ts:507): the wiring that forwards
+  // handle.modelDef to the error event was unverified. AC5/AC6 only cover
+  // buildDispatchErrorEvent directly, and the AC14 tests above pass a handle
+  // without modelDef, so a regression that removed `modelDef: handle.modelDef`
+  // from the runAsSession catch would leave every AC test green while
+  // production error rows silently lost model attribution. This test pins
+  // the wiring end-to-end through the manager.
+  test("AC6 (wiring): runAsSession forwards handle.modelDef onto the emitted DispatchErrorEvent.model", async () => {
+    const bus = new DispatchEventBus();
+    const sessionTurnError = makeSessionTurnErrorWithUsage();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => {
+        throw sessionTurnError;
+      }),
+      dispatchEvents: bus,
+    });
+    const receivedErrors: DispatchErrorEvent[] = [];
+    bus.onDispatchError((e) => receivedErrors.push(e));
+
+    // Pin a modelDef on the handle — runAsSession must read it off the
+    // handle (not the opts) and forward it to buildDispatchErrorEvent via
+    // dispatchOptions. parseModelSpec then decomposes the bare id (no
+    // [effort] suffix in this fixture) so the recorded model is exactly the
+    // modelDef.model string.
+    await expect(
+      manager.runAsSession(
+        "claude",
+        makeHandle({ modelDef: { provider: "anthropic", model: "anthropic/claude-sonnet-5" } }),
+        "do the thing",
+        { pipelineStage: "run", storyId: "US-001" },
+      ),
+    ).rejects.toBe(sessionTurnError);
+
+    expect(receivedErrors).toHaveLength(1);
+    expect(receivedErrors[0]?.model).toBe("anthropic/claude-sonnet-5");
+  });
 });
 
 // AC14's runAsSession coverage stops at the session transport. The story
