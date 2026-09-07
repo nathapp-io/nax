@@ -268,3 +268,112 @@ describe("US-002: truthy testCode with adapterFailure — write the testCode", (
     expect(targetWrites[0]?.[1]).toBe(realTestCode);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #1896: a dispatch failure must not stamp acceptance-meta.json
+//
+// writeMeta sits outside the per-group loop and ran unconditionally, so the
+// AC fingerprint was recorded for a suite that was never written. On the next
+// run the gate matches and takes the reuse branch, which explicitly blesses a
+// missing file — and the stub guard cannot recover it, because that guard
+// keys on file CONTENT and findExistingAcceptanceTestPath returns undefined
+// when nothing is on disk. The empty suite then survives every later run.
+// ---------------------------------------------------------------------------
+
+describe("#1896: acceptance-meta is not stamped for a suite that was never written", () => {
+  function wireDeps(generateResult: () => { testCode: string | null; adapterFailure?: AdapterFailure }) {
+    // The mock is held locally and returned rather than read back off
+    // _acceptanceSetupDeps, so the assertion needs no cast to see mock.calls.
+    const writeMetaMock = mock(async () => {});
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        return generateResult();
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = writeMetaMock;
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    return writeMetaMock;
+  }
+
+  test("makes no writeMeta call when the generation dispatch failed", async () => {
+    const writeMetaMock = wireDeps(() => ({ testCode: null, adapterFailure: FAILED_DISPATCH }));
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(writeMetaMock.mock.calls.length).toBe(0);
+  });
+
+  test("still stamps meta when generation succeeded", async () => {
+    const writeMetaMock = wireDeps(() => ({
+      testCode: "test('AC-1', () => { expect(sweep()).toBe(2) })",
+    }));
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(writeMetaMock.mock.calls.length).toBe(1);
+  });
+
+  test("still stamps meta when generation fell back to a skeleton", async () => {
+    const writeMetaMock = wireDeps(() => ({ testCode: null }));
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(writeMetaMock.mock.calls.length).toBe(1);
+  });
+
+  test("warns on the acceptance-setup channel, naming the story, when the stamp is skipped", async () => {
+    wireDeps(() => ({ testCode: null, adapterFailure: FAILED_DISPATCH }));
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    const metaWarns = logWarnCalls.filter(
+      ([stage, message]) => stage === "acceptance-setup" && message.includes("not recording acceptance meta"),
+    );
+    expect(metaWarns.length).toBe(1);
+    expect(metaWarns[0]?.[2]).toMatchObject({ storyId: "US-001" });
+  });
+
+  test("skips the stamp when only one of two package groups failed to generate", async () => {
+    // The single-group default would pass even if the flag were scoped to the
+    // last group, so the cross-group semantic needs two real groups. Group A
+    // succeeds and group B's dispatch fails: meta must still not be stamped,
+    // or B's missing suite becomes permanent via the reuse branch.
+    const stories = [
+      makeStory({ id: "US-001", workdir: "packages/a", acceptanceCriteria: ["AC-1: first criterion"] }),
+      makeStory({ id: "US-002", workdir: "packages/b", acceptanceCriteria: ["AC-2: second criterion"] }),
+    ];
+    let generateCalls = 0;
+    const writeMetaMock = mock(async () => {});
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+        return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+      }
+      if (op.name === "acceptance-generate") {
+        generateCalls++;
+        return generateCalls === 1
+          ? { testCode: "test('AC-1', () => { expect(sweep()).toBe(2) })" }
+          : { testCode: null, adapterFailure: FAILED_DISPATCH };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = writeMetaMock;
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(makeCtx({ prd: makePrd(stories), story: stories[0], stories }));
+
+    expect(generateCalls).toBe(2);
+    expect(writeMetaMock.mock.calls.length).toBe(0);
+  });
+});

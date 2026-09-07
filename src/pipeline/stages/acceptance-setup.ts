@@ -234,6 +234,9 @@ async function runAcceptanceSetup(
 
   let totalCriteria = 0;
   let testableCount = 0;
+  // #1896: set when any group's generation dispatch failed, so the fingerprint
+  // below is not stamped for a suite that was never written to disk.
+  let sawDispatchFailure = false;
 
   // P2-A: Staleness detection — regenerate if fingerprint changed or meta missing.
   // Fingerprint is the source of truth for AC stability; file existence is secondary.
@@ -384,6 +387,7 @@ async function runAcceptanceSetup(
       // unwritten so the acceptance stage routes this package into its
       // existing missing-target path (US-003).
       const dispatchFailure: AdapterFailure | undefined = genResult.adapterFailure;
+      if (dispatchFailure) sawDispatchFailure = true;
       if (testCode) {
         await _acceptanceSetupDeps.writeFile(testPath, testCode);
       } else if (dispatchFailure) {
@@ -438,14 +442,28 @@ async function runAcceptanceSetup(
     }
 
     // P2-B: Store acceptance metadata (centralized in featureDir)
-    const fingerprint = computeACFingerprint(allCriteria);
-    await _acceptanceSetupDeps.writeMeta(metaPath, {
-      generatedAt: new Date().toISOString(),
-      acFingerprint: fingerprint,
-      storyCount: ctx.prd.userStories.length,
-      acCount: totalCriteria,
-      generator: "nax",
-    });
+    //
+    // #1896: only when every group actually produced a file. A dispatch failure
+    // writes no test, and the reuse branch at the gate above explicitly blesses
+    // a missing file — so stamping a matching fingerprint here would make the
+    // empty suite permanent. The stub guard cannot rescue it either: it keys on
+    // file content, and findExistingAcceptanceTestPath returns undefined when
+    // nothing is on disk. Leaving meta unwritten makes the next run regenerate.
+    if (sawDispatchFailure) {
+      getSafeLogger()?.warn(
+        "acceptance-setup",
+        "generation dispatch failed; not recording acceptance meta so the next run regenerates",
+        { storyId: ctx.story?.id, metaPath },
+      );
+    } else {
+      await _acceptanceSetupDeps.writeMeta(metaPath, {
+        generatedAt: new Date().toISOString(),
+        acFingerprint: fingerprint,
+        storyCount: ctx.prd.userStories.length,
+        acCount: totalCriteria,
+        generator: "nax",
+      });
+    }
 
     // Commit the generated acceptance test file(s) and meta before any story's
     // storyGitRef is captured. Without this commit, the acceptance test file lands
