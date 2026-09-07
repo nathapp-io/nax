@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { defaultRetryStrategy } from "@/agents/retry/index";
+import { defaultRetryStrategy } from "@/agents/retry/default-strategy";
+import type { RetryContext } from "@/agents/retry/types";
 import type { AdapterFailure } from "@/context/engine";
 
 const rateLimitFailure: AdapterFailure = {
@@ -18,7 +19,43 @@ const quotaFailure: AdapterFailure = {
 
 const ctx = { site: "run" as const, agentName: "claude", stage: "run" as const, storyId: "US-001" };
 
+const nativeCtx: RetryContext = { site: "run", agentName: "native", stage: "run", storyId: "US-001" };
+
+function rateLimit(retryAfterSeconds?: number): AdapterFailure {
+  return {
+    category: "availability",
+    outcome: "fail-rate-limit",
+    retriable: true,
+    message: "429",
+    ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+  };
+}
+
 describe("defaultRetryStrategy", () => {
+  test("prefers the provider's retryAfterSeconds over computed backoff", () => {
+    expect(defaultRetryStrategy.shouldRetry(rateLimit(45), 0, nativeCtx)).toEqual({ retry: true, delayMs: 45_000 });
+  });
+
+  test("falls back to exponential backoff when the provider gave none", () => {
+    expect(defaultRetryStrategy.shouldRetry(rateLimit(), 0, nativeCtx)).toEqual({ retry: true, delayMs: 2_000 });
+    expect(defaultRetryStrategy.shouldRetry(rateLimit(), 1, nativeCtx)).toEqual({ retry: true, delayMs: 4_000 });
+  });
+
+  test("the provider's delay does not extend the attempt budget", () => {
+    expect(defaultRetryStrategy.shouldRetry(rateLimit(45), 3, nativeCtx)).toEqual({ retry: false });
+  });
+
+  test("still declines outcomes it never accepted", () => {
+    const quality: AdapterFailure = {
+      category: "quality",
+      outcome: "fail-quality",
+      retriable: true,
+      message: "x",
+      retryAfterSeconds: 45,
+    };
+    expect(defaultRetryStrategy.shouldRetry(quality, 0, nativeCtx)).toEqual({ retry: false });
+  });
+
   test("retries rate-limit failure up to 3 times with exponential backoff", () => {
     expect(defaultRetryStrategy.shouldRetry(rateLimitFailure, 0, ctx)).toEqual({ retry: true, delayMs: 2000 });
     expect(defaultRetryStrategy.shouldRetry(rateLimitFailure, 1, ctx)).toEqual({ retry: true, delayMs: 4000 });
