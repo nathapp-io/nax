@@ -251,6 +251,26 @@ describe("compileToolPolicy — Exec argv matching", () => {
     expect(verdict.allowed === false && verdict.reason).toContain("metacharacter");
   });
 
+  test("an argv denial names the forms that would have been allowed", () => {
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["bun add*", "npm install*"] }], "/repo");
+    const scope: ToolScope = { pathFields: [], argvField: "argv" };
+    const verdict = policy.check("Exec", scope, { argv: ["bun", "x", "tsc", "--noEmit"] });
+    expect(verdict.allowed).toBe(false);
+    // A bare denial is what produced the defect this branch exists to fix: the
+    // model read "no" as "route around it" rather than "use a different form".
+    expect(verdict.allowed === false && verdict.reason).toContain("bun x tsc --noEmit");
+    expect(verdict.allowed === false && verdict.reason).toContain("bun add*");
+    expect(verdict.allowed === false && verdict.reason).toContain("npm install*");
+  });
+
+  test("an argv denial under a grant with no matchable form says so rather than naming an empty list", () => {
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: [] }], "/repo");
+    const scope: ToolScope = { pathFields: [], argvField: "argv" };
+    const verdict = policy.check("Exec", scope, { argv: ["bun", "install"] });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("no argv forms are granted");
+  });
+
   test("a call with no argv field present falls through to the ordinary verbField check", () => {
     const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["test"] }], "/repo");
     const scope: ToolScope = { pathFields: [], verbField: "command", allowedVerbs: ["test"], argvField: "argv" };

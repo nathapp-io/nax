@@ -250,7 +250,17 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           if (invalid !== undefined) return deny(invalid);
           const argv = rawArgv as readonly string[];
           if (!grant.unconditional && !matchesArgvGrant(grant.argvPatterns, argv)) {
-            return deny(`${tool} is not granted for argv "${argv.join(" ")}"`);
+            // Name the granted forms, not just the refusal. A bare "no" is what
+            // produced the defect this branch exists to fix: denied with no
+            // legal alternative named, the model deleted the requirement
+            // instead of installing it. An unconditional grant never enters
+            // this branch (see the guard above), so `raw` cannot contain the
+            // bare "*" element -- entries *containing* "*" (`bun add*`) are
+            // exactly what we want to name.
+            const granted = grant.raw.join(", ");
+            const alternatives =
+              granted === "" ? "no argv forms are granted for this stage" : `granted forms: ${granted}`;
+            return deny(`${tool} is not granted for argv "${argv.join(" ")}" -- ${alternatives}`);
           }
           return { allowed: true, resolvedPaths: [] };
         }
