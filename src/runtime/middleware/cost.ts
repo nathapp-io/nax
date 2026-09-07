@@ -21,21 +21,33 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
  *     `{ agent, model }` pin reports none rather than a fabricated tier.
  *     Error rows additionally carry `kind: "error"`.
  *
- * 3 — current (#1464). `model` is now the bare id with any `[effort]` suffix
- *     stripped, so rate cards keyed on the bare id (e.g. `gpt-5.6-luna`) apply
- *     to `MODEL_PRICING` lookups that previously could never match the
- *     composite string. `effort` is present when the resolved model spec named
- *     a reasoning effort, omitted otherwise.
+ * 3 — (#1464). `model` is now the bare id with any `[effort]` suffix stripped,
+ *     so rate cards keyed on the bare id (e.g. `gpt-5.6-luna`) apply to
+ *     `MODEL_PRICING` lookups that previously could never match the composite
+ *     string. `effort` is present when the resolved model spec named a
+ *     reasoning effort, omitted otherwise.
  *
  *     IMPORTANT: v2 rows carry COMPOSITE models (`gpt-5.6-luna[high]`). A
  *     consumer aggregating across the v2/v3 boundary will see
  *     `gpt-5.6-luna[high]` and `gpt-5.6-luna` as distinct keys unless it
  *     normalizes v2 rows itself.
  *
+ * 4 — current (US-001). Session-turn rows additionally carry `roundTrips` and
+ *     `roundTripUnit` (the unit discriminates ACP's delegated-agent-run count
+ *     from native's model-call count — averaging the two without the
+ *     discriminator produces a meaningless number, so the count is never
+ *     persisted alone). A session-turn whose dispatch carried no `tokenUsage`
+ *     and no `exactCostUsd` still records a row, with `usageMissing: true` and
+ *     the `tokens` field omitted entirely; the loop-length signal is preserved
+ *     even when token accounting is absent. `complete` events carry neither
+ *     `roundTrips` nor `roundTripUnit` and the row omits both rather than
+ *     defaulting them to `1`. Error rows additionally carry `model` (omitted
+ *     when no `modelDef` was attributed, never defaulted to "unknown").
+ *
  * Bump this when adding or changing a field consumers key on, and extend the
  * list above — the constant is how a reader learns what a row guarantees.
  */
-export const COST_ROW_SCHEMA_VERSION = 3;
+export const COST_ROW_SCHEMA_VERSION = 4;
 
 export function attachCostSubscriber(
   bus: IDispatchEventBus,
@@ -57,7 +69,26 @@ export function attachCostSubscriber(
     const exactCostUsd = hasWireExactCost ? wireExactCostUsd : estimatedCostUsd;
     const confidence: "exact" | "estimated" = hasWireExactCost ? "exact" : "estimated";
 
-    if (!tu && exactCostUsd === 0) return;
+    // US-001: session-turn dispatches are recorded even when token usage and
+    // exact cost are both absent. The cost row still carries roundTrips /
+    // roundTripUnit / round-trip-cost / role attribution, plus `usageMissing:
+    // true` to flag the absent token accounting — preserving the loop-length
+    // signal (the AC's stated motivation) without a zeroed `tokens` object
+    // (which would re-create the "failed vs cost zero" ambiguity the
+    // `kind: "error"` discriminator was added for).
+    //
+    // `complete` dispatches still skip when no token usage AND no exact cost
+    // — the AC is explicit that this asymmetry is intentional, and the
+    // pre-existing "skips emit when no tokenUsage and no exactCostUsd" test
+    // is the load-bearing assertion for that path.
+    const isSessionTurn = event.kind === "session-turn";
+    if (!isSessionTurn && !tu && exactCostUsd === 0) return;
+
+    // `usageMissing` is set only for session-turn rows that have no token
+    // accounting. complete rows are not flagged — they have their own skip
+    // path, and a complete-with-zero-usage row is structurally different from
+    // a session-turn-with-zero-usage row.
+    const usageMissing = isSessionTurn && !tu ? true : undefined;
 
     const costEvent: CostEvent = {
       ts: event.timestamp,
@@ -80,14 +111,28 @@ export function attachCostSubscriber(
       storyId: event.storyId,
       callId: event.callId,
       scopeId: event.scopeId,
-      tokens: tu
+      // US-001: omit `tokens` on a `usageMissing` row. Carrying a zeroed
+      // `tokens: { input: 0, output: 0 }` object would re-create the
+      // "failed vs cost zero" ambiguity the `kind: "error"` discriminator
+      // was added for (#1433) — a reader could not tell "we don't know
+      // the tokens" apart from "the call cost zero tokens".
+      ...(tu
         ? {
-            input: tu.inputTokens ?? 0,
-            output: tu.outputTokens ?? 0,
-            cacheRead: tu.cacheReadInputTokens,
-            cacheWrite: tu.cacheCreationInputTokens,
+            tokens: {
+              input: tu.inputTokens ?? 0,
+              output: tu.outputTokens ?? 0,
+              cacheRead: tu.cacheReadInputTokens,
+              cacheWrite: tu.cacheCreationInputTokens,
+            },
           }
-        : { input: 0, output: 0 },
+        : {}),
+      // US-001: roundTrips / roundTripUnit live only on session-turn events.
+      // complete events have neither, and the cost row omits both rather than
+      // defaulting them to `1` so a reader can tell "unknown loop length"
+      // apart from "one round-trip".
+      ...(event.kind === "session-turn" ? { roundTrips: event.roundTrips } : {}),
+      ...(event.kind === "session-turn" ? { roundTripUnit: event.roundTripUnit } : {}),
+      ...(usageMissing !== undefined ? { usageMissing } : {}),
       estimatedCostUsd,
       exactCostUsd,
       costUsd: exactCostUsd,
@@ -123,6 +168,13 @@ export function attachCostSubscriber(
       ...(projectKey !== undefined ? { projectKey } : {}),
       schemaVersion: COST_ROW_SCHEMA_VERSION,
       agentName: event.agentName,
+      // US-001: error rows now carry the model the dispatch was pinned to,
+      // when `buildDispatchErrorEvent` resolved one. Omitted (not "unknown")
+      // when no `modelDef` was attributed — a failed dispatch with no model
+      // is not the same as one that ran on a known model.
+      ...(event.model !== undefined ? { model: event.model } : {}),
+      ...(event.modelTier !== undefined ? { modelTier: event.modelTier } : {}),
+      ...(event.effort !== undefined ? { effort: event.effort } : {}),
       stage: event.stage,
       storyId: event.storyId,
       callId: event.callId,

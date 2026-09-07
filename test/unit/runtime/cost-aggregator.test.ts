@@ -482,6 +482,30 @@ describe("CostAggregator", () => {
   // consumers read. Serialisation is a whole-object JSON.stringify, so a
   // whitelist regression here would silently un-attribute every row again.
 
+  // US-001: a `usageMissing` row omits `tokens` rather than carrying a
+  // zeroed object. `accumulate` must handle the absent field without
+  // crashing and without treating it as zero-token spend (which would skew
+  // totalInputTokens / totalOutputTokens across a run).
+  test("US-001: snapshot() leaves token totals unchanged by a usageMissing event (no tokens field)", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    agg.record(makeEvent({ ts: 1000, costUsd: 0.01, tokens: { input: 100, output: 50 } }));
+    agg.record(
+      makeEvent({
+        ts: 2000,
+        costUsd: 0,
+        // No tokens — US-001 usageMissing path. The cost row still records
+        // (callCount increments) but token counters stay where the prior
+        // recorded event left them.
+        tokens: undefined,
+      }),
+    );
+    const snap = agg.snapshot();
+    expect(snap.callCount).toBe(2);
+    expect(snap.totalCostUsd).toBeCloseTo(0.01);
+    expect(snap.totalInputTokens).toBe(100);
+    expect(snap.totalOutputTokens).toBe(50);
+  });
+
   test("#1433: drain writes model, tier, role and schemaVersion into the JSONL", async () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");

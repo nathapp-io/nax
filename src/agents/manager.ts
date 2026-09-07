@@ -495,8 +495,7 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatch(event);
       return result;
     } catch (err) {
-      // US-001: preserve the role resolved from the handle, matching the
-      // successful dispatch event when callers omit opts.sessionRole.
+      // US-001: forward handle.modelDef/modelTier so the error event records the same model attribution the success path would have.
       const errEvent = buildDispatchErrorEvent({
         origin: "runAsSession",
         agentName,
@@ -505,7 +504,7 @@ export class AgentManager implements IAgentManager {
         prompt,
         resolvedPermissions,
         startedAt: start,
-        dispatchOptions: { ...opts, sessionRole },
+        dispatchOptions: { ...opts, sessionRole, modelDef: handle.modelDef, modelTier: handle.modelTier },
       });
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;

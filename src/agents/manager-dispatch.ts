@@ -26,7 +26,7 @@ import { SessionTurnError } from "./session-types";
 import type { CompleteOptions, ResolvedCompleteOptions, SessionHandle, TurnResult } from "./types";
 
 /**
- * Model attribution fields for a dispatch event (#1433, #1464).
+ * Model attribution fields for a dispatch event (#1433, #1464, US-001).
  *
  * All keys are omitted rather than set to `undefined` when unknown: a cost row
  * that says `model: "unknown"` because nothing resolved a model must stay
@@ -41,8 +41,14 @@ import type { CompleteOptions, ResolvedCompleteOptions, SessionHandle, TurnResul
  * composite nax profiles use to name codex reasoning effort. `effort` carries
  * the suffix when the spec had one, and is omitted (not `undefined`) when it
  * did not, for the same reason `modelTier` is omitted rather than nulled.
+ *
+ * Exported so `buildDispatchErrorEvent` (US-001) can reuse the same resolver
+ * the success path uses — a failed dispatch and a successful one carrying
+ * the same `modelDef` / `modelTier` must produce the same `model` on the
+ * row, or the cost ledger would silently disagree across the success/fail
+ * boundary.
  */
-function modelAttribution(src: { modelDef?: ModelDef; modelTier?: ModelTier }): {
+export function modelAttribution(src: { modelDef?: ModelDef; modelTier?: ModelTier }): {
   model?: string;
   effort?: string;
   modelTier?: string;
@@ -189,18 +195,27 @@ export function buildDispatchErrorEvent(input: {
   scopeId?: string;
   startedAt: number;
   /**
-   * US-001: per-call id and role attribution, bundled so callers can pass
-   * the existing options object rather than spelling out each field. When
-   * supplied, its `storyId` / `callId` / `scopeId` / `sessionRole` replace
-   * the legacy positional fields above — both call sites have been reshaped
-   * to pass dispatchOptions, leaving the legacy fields as fallbacks for any
-   * caller that has not migrated yet.
+   * US-001: per-call id, role, and model attribution, bundled so callers
+   * can pass the existing options object rather than spelling out each
+   * field. When supplied, its `storyId` / `callId` / `scopeId` / `sessionRole`
+   * replace the legacy positional fields above — both call sites have been
+   * reshaped to pass dispatchOptions, leaving the legacy fields as fallbacks
+   * for any caller that has not migrated yet.
+   *
+   * `modelDef` / `modelTier` are also routed through `dispatchOptions` rather
+   * than added as separate parameters: the call sites already have the
+   * dispatch's `modelDef` on the matching options object (handle for
+   * `runAsSession`, options for `completeAsWithFallback`), and reusing the
+   * `modelAttribution()` resolver keeps a failed dispatch and a successful
+   * one pinned to the same `modelDef` on the same row.
    */
   dispatchOptions?: {
     storyId?: string;
     callId?: string;
     scopeId?: string;
     sessionRole?: string;
+    modelDef?: ModelDef;
+    modelTier?: ModelTier;
   };
 }): DispatchErrorEvent {
   const dispatchOpts = input.dispatchOptions;
@@ -216,6 +231,17 @@ export function buildDispatchErrorEvent(input: {
   const tokenUsage = input.error instanceof SessionTurnError ? input.error.tokenUsage : undefined;
   const estimatedCostUsd = input.error instanceof SessionTurnError ? input.error.estimatedCostUsd : undefined;
   const exactCostUsd = input.error instanceof SessionTurnError ? input.error.exactCostUsd : undefined;
+
+  // US-001: model attribution. The error path reuses the same resolver as
+  // the success path, so a run-op that resolves modelDef="haiku" and then
+  // throws records a `model: "haiku"` error row — not a row whose model
+  // was either guessed or omitted. No `modelDef` → no model on the event,
+  // which lets a consumer tell "no model was attributed" apart from
+  // "model was attributed as haiku".
+  const attribution = modelAttribution({
+    ...(dispatchOpts?.modelDef !== undefined ? { modelDef: dispatchOpts.modelDef } : {}),
+    ...(dispatchOpts?.modelTier !== undefined ? { modelTier: dispatchOpts.modelTier } : {}),
+  });
 
   return {
     kind: "error",
@@ -235,6 +261,7 @@ export function buildDispatchErrorEvent(input: {
     ...(tokenUsage !== undefined ? { tokenUsage } : {}),
     ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
     ...(exactCostUsd !== undefined ? { exactCostUsd } : {}),
+    ...attribution,
   };
 }
 

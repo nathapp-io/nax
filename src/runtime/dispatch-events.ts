@@ -149,6 +149,22 @@ export interface DispatchErrorEvent {
   readonly tokenUsage?: TokenUsage;
   readonly estimatedCostUsd?: number;
   readonly exactCostUsd?: number;
+  /**
+   * Model the dispatch was pinned to, resolved by `modelAttribution()` from
+   * the dispatch's `modelDef` / `modelTier` before the throw. Absent when no
+   * model was attributed — a failed dispatch with no model is not the same
+   * as one that ran on a known model, so the field is omitted rather than
+   * defaulted to `"unknown"`.
+   */
+  readonly model?: string;
+  /** Tier `model` resolved from, when one selected it. Attribution only. */
+  readonly modelTier?: string;
+  /**
+   * Reasoning effort from a `model[effort]` profile suffix, when the resolved
+   * model spec carried one. Attribution only; consumers record it, never
+   * branch on it.
+   */
+  readonly effort?: string;
 }
 
 export interface ReviewDecisionEvent {
