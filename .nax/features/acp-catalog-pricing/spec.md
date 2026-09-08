@@ -197,27 +197,27 @@ the tier-aware cost function so both paths share one implementation.
 
 Depends on: nothing.
 
-**Creates**
+#### Creates
 - `src/agents/catalog/index.ts`, `src/agents/catalog/pricing-lookup.ts`
 - `src/agents/cost/rate-card.ts`, `src/agents/cost/model-aliases.json`
 - `test/unit/agents/catalog/pricing-lookup.test.ts`, `test/unit/agents/cost/rate-card.test.ts`
 
-**Context Files**
+#### Context Files
 - `src/agents/native/models.ts` — `buildRateCard` is the resolve-once pattern to mirror
 - `src/agents/cost/pricing.ts` — the rates being replaced
 - `src/agents/cost/calculate.ts` — current estimator semantics
 - `src/config/schema-types.ts` — `TokenPricing`, `TokenPricingTier`
 
-**Modifies**
-- **US-001** `src/agents/native/models.ts` — `estimateCostUsd` and its private `selectRates`
+#### Modifies
+- `src/agents/native/models.ts` — `estimateCostUsd` and its private `selectRates`
   helper move to `src/agents/cost/`; this file imports `estimateCostUsd` from `@/agents/cost`
   instead of defining it. Its existing callers keep the same signature.
-- **US-001** `scripts/check-nax-ai-imports.ts` — `ALLOWED_PREFIX` is a single hard-coded
+- `scripts/check-nax-ai-imports.ts` — `ALLOWED_PREFIX` is a single hard-coded
   `src/agents/native/`; it becomes a list also admitting `src/agents/catalog/`, and its
   error message names both.
-- **US-001** `test/unit/agents/native/models.test.ts` — imports `estimateCostUsd` from
+- `test/unit/agents/native/models.test.ts` — imports `estimateCostUsd` from
   `@/agents/native/models`, pinning its old location; it imports from `@/agents/cost` instead.
-- **US-001** `test/unit/agents/native/adapter-cost-rates.test.ts` — imports `estimateCostUsd`
+- `test/unit/agents/native/adapter-cost-rates.test.ts` — imports `estimateCostUsd`
   from `@/agents/native/models`, pinning its old location; it imports from `@/agents/cost`
   instead.
 
@@ -228,19 +228,19 @@ from it, reporting which source it used.
 
 Depends on: US-001.
 
-**Context Files**
+#### Context Files
 - `src/agents/cost/rate-card.ts` — created by US-001, consumed here
 - `src/agents/native/adapter.ts` — how the native adapter stamps `pricingSource`
 - `src/agents/session-types.ts` — `TurnResult.pricingSource`
 - `src/agents/types.ts` — `CompleteResult.pricingSource`
 
-**Modifies**
-- **US-002** `src/agents/acp/adapter.ts` — `deriveTokenUsage` takes a rate card rather than a
+#### Modifies
+- `src/agents/acp/adapter.ts` — `deriveTokenUsage` takes a rate card rather than a
   model string; `complete()` and `createSession()` resolve the card once; the session handle
   carries it beside `_modelDef`.
-- **US-002** `src/agents/acp/adapter-output.ts` — `BuildTurnResultInput.modelDef` becomes
+- `src/agents/acp/adapter-output.ts` — `BuildTurnResultInput.modelDef` becomes
   `rateCard`, and `buildTurnResult` prices from it.
-- **US-002** `test/unit/agents/acp/adapter-output-timedout.test.ts` — builds
+- `test/unit/agents/acp/adapter-output-timedout.test.ts` — builds
   `BuildTurnResultInput` with `modelDef` at seven call sites, a field this story replaces;
   each site constructs the input with `rateCard` instead.
 
@@ -250,29 +250,29 @@ Deletion-only terminal cleanup. No new code.
 
 Depends on: US-002.
 
-**Context Files**
+#### Context Files
 - `src/agents/index.ts` — the barrel exporting the retired symbols
 - `src/agents/cost/index.ts` — the cost barrel
 
-**Modifies**
-- **US-003** `src/agents/cost/pricing.ts` — deleted in full: `MODEL_PRICING`, `COST_RATES`,
+#### Modifies
+- `src/agents/cost/pricing.ts` — deleted in full: `MODEL_PRICING`, `COST_RATES`,
   `RATE_CARD_REVIEWED`.
-- **US-003** `src/agents/cost/calculate.ts` — `estimateCost`, `estimateCostByDuration` and
+- `src/agents/cost/calculate.ts` — `estimateCost`, `estimateCostByDuration` and
   `estimateCostFromTokenUsage` are removed; `resolvePricingSource` loses its `MODEL_PRICING`
   branch and keeps its signature and return union.
-- **US-003** `src/agents/index.ts` — re-exports `COST_RATES`, `MODEL_PRICING`,
+- `src/agents/index.ts` — re-exports `COST_RATES`, `MODEL_PRICING`,
   `estimateCostFromTokenUsage`; these entries are removed.
-- **US-003** `test/unit/metrics/cost.test.ts` — its whole surface is `estimateCost`,
+- `test/unit/metrics/cost.test.ts` — its whole surface is `estimateCost`,
   `estimateCostByDuration` and `COST_RATES`, all removed by this story; the file is deleted,
   except any `formatCostWithConfidence` coverage, which moves to the calculate suite below.
-- **US-003** `test/unit/agents/acp/cost.test.ts` — its entire surface is
+- `test/unit/agents/acp/cost.test.ts` — its entire surface is
   `estimateCostFromTokenUsage` (four describe blocks, all of it); the function is removed by
   this story, so the file is deleted. Its per-model rate cases are superseded by the
   rate-card suite US-001 creates.
-- **US-003** `test/unit/runtime/middleware/cost.test.ts` — imports `estimateCostFromTokenUsage`
+- `test/unit/runtime/middleware/cost.test.ts` — imports `estimateCostFromTokenUsage`
   and `MODEL_PRICING`, both removed by this story; those imports and the assertions resting on
   them are removed, and its `pricingSource` coverage is re-pinned to producer-supplied values.
-- **US-003** `test/unit/agents/cost/calculate.test.ts` — asserts against `MODEL_PRICING`
+- `test/unit/agents/cost/calculate.test.ts` — asserts against `MODEL_PRICING`
   lookups and `estimateCostFromTokenUsage`; those assertions are removed and the surviving
   `resolvePricingSource` behaviour is re-pinned to its `unknown-model` / `fallback-rates`
   contract.
