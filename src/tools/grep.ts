@@ -32,14 +32,32 @@ function containsRegexMetacharacter(pattern: string): boolean {
 /** @internal Injectable for tests — exercises the fallback without uninstalling ripgrep. */
 export const _grepDeps = { which, spawn };
 
-export function buildGrepArgv(binary: "rg" | "grep", pattern: string, path: string | undefined): string[] {
+export type GrepPatternType = "literal" | "regex";
+
+export function buildGrepArgv(
+  binary: "rg" | "grep",
+  pattern: string,
+  path: string | undefined,
+  patternType: GrepPatternType = "literal",
+): string[] {
   const target = path ?? ".";
-  // `--` terminates flag parsing: a pattern beginning with "-" is then data,
-  // not an option. Neither binary is ever handed a shell string.
+  // `--` terminates flag parsing on both branches, in both modes: a pattern
+  // beginning with "-" is then data, not an option. Neither binary is ever
+  // handed a shell string.
   if (binary === "rg") {
-    return ["rg", "--fixed-strings", "--line-number", "--no-heading", "--color", "never", "--", pattern, target];
+    // rg's own default IS regex (its "fixed-strings" flag is what disables
+    // it), so the regex branch simply omits the flag rather than adding one.
+    const flags =
+      patternType === "literal"
+        ? ["--fixed-strings", "--line-number", "--no-heading", "--color", "never"]
+        : ["--line-number", "--no-heading", "--color", "never"];
+    return ["rg", ...flags, "--", pattern, target];
   }
-  return ["grep", "-r", "-n", "-F", "--", pattern, target];
+  // grep has no "regex" default to fall back to: -F is fixed-strings, and the
+  // nearest equivalent to rg's regex syntax is -E (POSIX ERE, e.g. `a+`, `a|b`
+  // with no backslash), not grep's default BRE.
+  const modeFlag = patternType === "literal" ? "-F" : "-E";
+  return ["grep", "-r", "-n", modeFlag, "--", pattern, target];
 }
 
 function truncate(body: string, maxBytes: number): string {
@@ -50,12 +68,22 @@ function truncate(body: string, maxBytes: number): string {
 export const grepTool: CodingTool = {
   name: "Grep",
   description:
-    "Search repository file contents for a literal string. Returns 'path:line:text' rows relative to the repository root when no subdirectory target is supplied, absolute when one is (rg prints the target as given).",
+    "Search repository file contents for a literal string or a regular expression. Returns 'path:line:text' rows relative to the repository root when no subdirectory target is supplied, absolute when one is (rg prints the target as given). Defaults to a literal (fixed-string) search; set pattern_type to \"regex\" to interpret the pattern as a regular expression (ripgrep syntax, e.g. `foo|bar`, `\\d+`; on a machine without ripgrep the pattern falls back to POSIX ERE, which the result discloses).",
   inputSchema: {
     type: "object",
     properties: {
-      pattern: { type: "string", description: "Literal string to search for" },
+      pattern: {
+        type: "string",
+        description:
+          'String to search for. Interpreted literally unless pattern_type is "regex", in which case it is a regular expression.',
+      },
       path: { type: "string", description: "Optional subdirectory, relative to the repository root" },
+      pattern_type: {
+        type: "string",
+        enum: ["literal", "regex"],
+        default: "literal",
+        description: '"literal" (default) matches pattern as a fixed string; "regex" interprets it as a regex.',
+      },
     },
     required: ["pattern"],
   },
@@ -68,13 +96,19 @@ export const grepTool: CodingTool = {
     const pattern = input.pattern;
     if (typeof pattern !== "string") return { content: "pattern must be a string", isError: true };
 
+    const patternType = input.pattern_type;
+    if (patternType !== undefined && patternType !== "literal" && patternType !== "regex") {
+      return { content: 'pattern_type must be "literal" or "regex"', isError: true };
+    }
+    const mode: GrepPatternType = patternType === "regex" ? "regex" : "literal";
+
     const binary: "rg" | "grep" | null = _grepDeps.which("rg") ? "rg" : _grepDeps.which("grep") ? "grep" : null;
     if (binary === null) {
       return { content: "neither ripgrep nor grep is available on this machine", isError: true };
     }
 
     const [target] = ctx.resolvedPaths;
-    const proc = _grepDeps.spawn(buildGrepArgv(binary, pattern, target), {
+    const proc = _grepDeps.spawn(buildGrepArgv(binary, pattern, target, mode), {
       cwd: ctx.root,
       stdout: "pipe",
       stderr: "pipe",
@@ -98,21 +132,48 @@ export const grepTool: CodingTool = {
     clearTimeout(timer);
 
     const stdout = await stdoutText;
+    // Two independent caveats, either of which means the search the caller
+    // asked for is not quite the search that ran.
+    //
+    // 1. The literal disclosure fires whenever the search was literal AND the
+    //    pattern contained a metacharacter a regex would have treated
+    //    specially -- regardless of whether it matched. #1876 only covered the
+    //    zero-match case; a literal match on a pattern like "foo.bar" is the
+    //    WORSE case (#1922): the caller has positive evidence and no cue that
+    //    "." was never a wildcard, so a real regex match was never attempted.
+    //
+    // 2. The dialect note fires when regex mode ran through the grep fallback.
+    //    ripgrep's Rust regex and POSIX ERE are NOT the same language: `\d`,
+    //    `\w` and `\b` are unsupported in ERE, and whether they degrade to a
+    //    literal or to something else differs BY PLATFORM (GNU grep treats
+    //    `\d` as `d`; the BSD grep on macOS matches a digit). Silently
+    //    returning a different answer depending on which binary the machine
+    //    happens to have is exactly the failure this file's header forbids of
+    //    the fallback, so the divergence is disclosed rather than hidden.
+    const notes: string[] = [];
+    if (mode === "literal" && containsRegexMetacharacter(pattern)) {
+      notes.push("The search was performed literally and regex metacharacters were not interpreted.");
+    }
+    if (mode === "regex" && binary === "grep") {
+      notes.push(
+        "ripgrep is not installed here, so the pattern was matched with POSIX ERE via grep: escapes such as \\d, \\w and \\b are NOT supported — use [0-9], [A-Za-z0-9_] and similar instead.",
+      );
+    }
+    const caveat = notes.join(" ");
+
     // Both binaries exit 1 for "no matches" — a normal outcome, not a failure.
     if (exitCode === 1 && stdout.trim() === "") {
       const base = `no matches for "${pattern}"`;
-      // Disclose that the search was literal when the pattern contained regex metacharacters,
-      // so callers know their pattern was not interpreted as a regex.
-      if (containsRegexMetacharacter(pattern)) {
-        return {
-          content: `${base}. The search was performed literally and regex metacharacters were not interpreted.`,
-        };
-      }
-      return { content: base };
+      return { content: caveat === "" ? base : `${base}. ${caveat}` };
     }
     if (exitCode !== 0 && stdout.trim() === "") {
       return { content: (await stderrText).trim() || `${binary} exited ${exitCode}`, isError: true };
     }
-    return { content: truncate(stdout.trimEnd(), ctx.maxBytes) };
+    // The caveat leads rather than trails, and truncation is applied to the
+    // whole body: appended after truncate() it both overran ctx.maxBytes and was
+    // the first thing lost on a result large enough to need the cue most.
+    const matches = stdout.trimEnd();
+    const body = caveat === "" ? matches : `${caveat}\n\n${matches}`;
+    return { content: truncate(body, ctx.maxBytes) };
   },
 };
