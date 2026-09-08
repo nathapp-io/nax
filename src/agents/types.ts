@@ -407,9 +407,11 @@ export interface CompleteResult {
   /**
    * Which rate card priced this call (US-003, first half of #1817).
    * `"catalog-rates"` means nax-ai's catalog; `"config-override"` means an
-   * explicit `modelDef.pricing` won wholesale. Absent on adapters that do
-   * not split the decision this way (e.g. ACP, which prices through
-   * `MODEL_PRICING[bareModel]` and so leaves nothing for the result to say).
+   * explicit `modelDef.pricing` won wholesale; `"fallback-rates"` means the
+   * generic $3/$15-per-1M card applied because nothing more specific
+   * resolved. Absent on adapters that do not split the decision this way
+   * (e.g. ACP, which prices through the rate-card resolver at dispatch time
+   * and lets `resolvePricingSource` classify it downstream).
    */
   pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
   /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */

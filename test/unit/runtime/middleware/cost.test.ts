@@ -443,10 +443,11 @@ describe("attachCostSubscriber", () => {
   // ── #1433 item 6: pricingSource ──────────────────────────────────────────
   //
   // `confidence` says whether a wire cost existed. It does NOT say what an
-  // estimate was built from. estimateCostFromTokenUsage silently applies a
-  // generic $3/$15-per-1M card to any model absent from MODEL_PRICING, so a
-  // minimax/* or gpt-5.6-* row was priced with Sonnet-shaped rates and looked
-  // identical to a correctly-priced one.
+  // estimate was built from. estimateCostUsd (the catalog-backed successor
+  // to estimateCostFromTokenUsage) silently applies a generic $3/$15-per-1M
+  // card to any model absent from the catalog, so a minimax/* or gpt-5.6-*
+  // row was priced with Sonnet-shaped rates and looked identical to a
+  // correctly-priced one.
 
   test("#1433: wire-exact rows record pricingSource=wire", () => {
     const recorded: CostEvent[] = [];
@@ -460,27 +461,38 @@ describe("attachCostSubscriber", () => {
     expect(recorded[0].pricingSource).toBe("wire");
   });
 
-  test("#1433: estimated rows for a known model record model-rates", () => {
+  test("#1433: estimated rows with a producer-supplied catalog-rates stamp surface that stamp", () => {
+    // US-003 retired the table-backed MODEL_PRICING lookup; the only path
+    // that can still produce a `model-rates` classification is the producer
+    // (native adapter) stamping it. The cost subscriber prefers the
+    // producer's report over resolvePricingSource(model).
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");
 
-    bus.emitDispatch(makeSessionTurnEvent({ model: "haiku", exactCostUsd: undefined, estimatedCostUsd: 0.01 }));
+    bus.emitDispatch(
+      makeSessionTurnEvent({
+        model: "haiku",
+        exactCostUsd: undefined,
+        estimatedCostUsd: 0.01,
+        pricingSource: "catalog-rates",
+      }),
+    );
 
     expect(recorded[0].confidence).toBe("estimated");
-    expect(recorded[0].pricingSource).toBe("model-rates");
+    expect(recorded[0].pricingSource).toBe("catalog-rates");
   });
 
-  test("#1433: estimated rows for a model absent from the table record fallback-rates", () => {
+  test("#1433: estimated rows without a producer stamp fall back to resolvePricingSource (fallback-rates)", () => {
+    // US-003: with MODEL_PRICING gone, resolvePricingSource returns
+    // "fallback-rates" for any non-empty model name. ACP never stamps a
+    // pricingSource, so ACP rows land here.
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");
 
-    // A real model with no MODEL_PRICING entry — this class was the 60% of
-    // review spend and 63% of plan spend priced on guessed rates. `MiniMax-M2.7`
-    // stood here until it was given a card (it is priced identically to M3).
     bus.emitDispatch(
       makeSessionTurnEvent({ model: "opencode-go/hy3", exactCostUsd: undefined, estimatedCostUsd: 0.01 }),
     );
@@ -620,8 +632,10 @@ describe("attachCostSubscriber", () => {
 
   test("US-004 AC3: event without pricingSource falls back to resolvePricingSource(model)", () => {
     // ACP path: the adapter never stamps a pricingSource, so the cost
-    // subscriber must fall back to deriving it from the model — preserving
-    // pre-US-004 behaviour exactly.
+    // subscriber must fall back to deriving it from the model. US-003
+    // retired MODEL_PRICING — any non-empty resolved model name now resolves
+    // to "fallback-rates" through this path, so the fall-back value is
+    // "fallback-rates" rather than the historical "model-rates".
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -636,7 +650,7 @@ describe("attachCostSubscriber", () => {
     );
 
     expect(recorded).toHaveLength(1);
-    expect(recorded[0].pricingSource).toBe("model-rates");
+    expect(recorded[0].pricingSource).toBe("fallback-rates");
   });
 
   test("US-004 AC4: wire-exact cost still wins over producer-supplied pricingSource", () => {

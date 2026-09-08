@@ -201,7 +201,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         // US-003: stamp the branch buildRateCard took so cost rows can tell a
         // catalog-priced call from a config-overridden one. Single source of
         // truth — the same override !== undefined predicate the rate card was
-        // chosen on, reported rather than re-derived from MODEL_PRICING.
+        // chosen on, reported rather than re-derived by the cost subscriber.
         pricingSource,
       };
     } catch (err) {

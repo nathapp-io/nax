@@ -1,69 +1,15 @@
 /**
- * Cost calculation functions for all agent adapters.
+ * Cost calculation helpers for all agent adapters.
+ *
+ * US-003 removed the table-backed `MODEL_PRICING` lookup. Every price
+ * estimate now flows through `estimateCostUsd` (./estimate) with a
+ * rate card resolved by `./rate-card.ts`. The helpers that remain here
+ * are pure, allocator-free utilities shared across the cost subsystem:
+ * `addTokenUsage`, `formatCostWithConfidence`, `inputClassTokens` and
+ * `resolvePricingSource`.
  */
 
-import type { ModelTier } from "@/config/schema";
-import { parseModelSpec } from "../model-spec";
-import { COST_RATES, MODEL_PRICING } from "./pricing";
-import type { CostEstimate, ModelCostRates, TokenUsage } from "./types";
-
-/**
- * Estimate cost in USD based on token usage and model tier.
- *
- * @param modelTier - Model tier (fast/balanced/powerful)
- * @param inputTokens - Number of input tokens consumed
- * @param outputTokens - Number of output tokens generated
- * @param customRates - Optional custom rates (overrides tier defaults)
- * @returns Total cost in USD
- *
- * @example
- * ```ts
- * const cost = estimateCost("balanced", 10000, 5000);
- * // Sonnet 4.5: (10000/1M * $3.00) + (5000/1M * $15.00) = $0.105
- * ```
- */
-export function estimateCost(
-  modelTier: ModelTier,
-  inputTokens: number,
-  outputTokens: number,
-  customRates?: ModelCostRates,
-): number {
-  const rates = customRates ?? COST_RATES[modelTier];
-  const inputCost = (inputTokens / 1_000_000) * rates.inputPer1M;
-  const outputCost = (outputTokens / 1_000_000) * rates.outputPer1M;
-  return inputCost + outputCost;
-}
-
-/**
- * Fallback cost estimation based on runtime duration.
- *
- * Used when token usage cannot be parsed from agent output.
- * Provides conservative estimates using per-minute rates.
- *
- * @param modelTier - Model tier for cost calculation
- * @param durationMs - Agent runtime in milliseconds
- * @returns Cost estimate with 'fallback' confidence
- *
- * @example
- * ```ts
- * const estimate = estimateCostByDuration("balanced", 120000); // 2 minutes
- * // { cost: 0.10, confidence: 'fallback' }
- * // Sonnet: 2 min * $0.05/min = $0.10
- * ```
- */
-export function estimateCostByDuration(modelTier: ModelTier, durationMs: number): CostEstimate {
-  const costPerMinute: Record<ModelTier, number> = {
-    fast: 0.01,
-    balanced: 0.05,
-    powerful: 0.15,
-  };
-  const minutes = durationMs / 60000;
-  const cost = minutes * costPerMinute[modelTier];
-  return {
-    cost,
-    confidence: "fallback",
-  };
-}
+import type { CostEstimate, TokenUsage } from "./types";
 
 /**
  * Format cost estimate with confidence indicator for display.
@@ -133,76 +79,30 @@ export function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
 }
 
 /**
- * Calculate USD cost from internal TokenUsage using per-model pricing.
+ * Which rate card the caller would use for `model`.
  *
- * @param usage - Internal token usage (camelCase)
- * @param model - Model identifier (e.g., 'claude-sonnet-4', 'claude-haiku-4-5')
- * @returns Estimated cost in USD
- */
-export function estimateCostFromTokenUsage(usage: TokenUsage, model: string): number {
-  // #1464: nax profiles name codex models with a reasoning-effort suffix
-  // ("gpt-5.6-luna[high]"); MODEL_PRICING is keyed on the bare id, so a rate
-  // card can never be hit unless the suffix is stripped first. Parsing a bare
-  // id is a no-op, so this is safe to apply unconditionally.
-  const { model: bareModel } = parseModelSpec(model);
-  const pricing = MODEL_PRICING[bareModel];
-
-  if (!pricing) {
-    // Fallback: use average rate for unknown models
-    const fallbackInputRate = 3 / 1_000_000;
-    const fallbackOutputRate = 15 / 1_000_000;
-    const inputCost = (usage.inputTokens ?? 0) * fallbackInputRate;
-    const outputCost = (usage.outputTokens ?? 0) * fallbackOutputRate;
-    const cacheReadCost = (usage.cacheReadInputTokens ?? 0) * (0.5 / 1_000_000);
-    const cacheCreationCost = (usage.cacheCreationInputTokens ?? 0) * (2 / 1_000_000);
-    return inputCost + outputCost + cacheReadCost + cacheCreationCost;
-  }
-
-  // Convert $/1M rates to $/token
-  const inputRate = pricing.input / 1_000_000;
-  const outputRate = pricing.output / 1_000_000;
-  const cacheReadRate = (pricing.cacheRead ?? pricing.input * 0.1) / 1_000_000;
-  const cacheCreationRate = (pricing.cacheCreation ?? pricing.input * 0.33) / 1_000_000;
-
-  const inputCost = (usage.inputTokens ?? 0) * inputRate;
-  const outputCost = (usage.outputTokens ?? 0) * outputRate;
-  const cacheReadCost = (usage.cacheReadInputTokens ?? 0) * cacheReadRate;
-  const cacheCreationCost = (usage.cacheCreationInputTokens ?? 0) * cacheCreationRate;
-
-  return inputCost + outputCost + cacheReadCost + cacheCreationCost;
-}
-
-/**
- * Which rate card `estimateCostFromTokenUsage` would use for `model`.
+ * US-003 deleted the table-backed `MODEL_PRICING[model]` lookup; every
+ * non-empty, non-undefined, non-`"unknown"` model name therefore returns
+ * `"fallback-rates"`. The producer (native / catalog) carries its own
+ * `pricingSource` value on `CompleteResult` / `TurnResult`, which the cost
+ * subscriber in `@/runtime/middleware/cost` prefers when supplied. This
+ * function exists to serve the path that has no producer-supplied source
+ * (currently the ACP adapter, which never stamps one).
  *
- * Deliberately adjacent to that function: it re-states the same
- * `MODEL_PRICING[model]` predicate, so the two must be changed together. When
- * the table has no entry the estimator silently applies a generic
- * $3/$15-per-1M card, which is Sonnet-shaped and wrong for most third-party
- * models — July 2026 priced every `minimax/*` and `gpt-5.6-*` row that way,
- * giving per-row errors up to 21x. Recording the source makes an estimate built
- * on guessed rates distinguishable from one built on the model's real rates
- * (#1433).
- *
- * The US-004 widening adds `"catalog-rates"` and `"config-override"` so
- * producer-supplied values from `CompleteResult.pricingSource` /
- * `TurnResult.pricingSource` type-check through the cost subscriber. The
- * function itself never returns those values — it only consults
- * `MODEL_PRICING` — but the union must admit them so the cost row's
- * `pricingSource` field can carry the producer's report unchanged.
+ * The return union still admits `"catalog-rates"` and `"config-override"`
+ * so producer-supplied values type-check through the cost subscriber
+ * unchanged. This function itself never returns those values; it only
+ * classifies between the three options it actually knows about.
  *
  * @param model - Resolved model name, or undefined when nothing resolved one
- * @returns `"model-rates"` when priced from the table, `"fallback-rates"` when
- *          priced from the generic card, `"unknown-model"` when no model is known
+ * @returns `"unknown-model"` when nothing resolved a model, `"fallback-rates"`
+ *          for any non-empty model name now that the table is gone.
  */
 export function resolvePricingSource(
   model: string | undefined,
 ): "model-rates" | "fallback-rates" | "unknown-model" | "catalog-rates" | "config-override" {
   if (model === undefined || model === "" || model === "unknown") return "unknown-model";
-  // #1464: same normalization as estimateCostFromTokenUsage, so the two stay
-  // in agreement about which rate card produced the number.
-  const { model: bareModel } = parseModelSpec(model);
-  return MODEL_PRICING[bareModel] ? "model-rates" : "fallback-rates";
+  return "fallback-rates";
 }
 
 /**

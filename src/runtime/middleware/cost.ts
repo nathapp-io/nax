@@ -23,7 +23,7 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
  *
  * 3 — (#1464). `model` is now the bare id with any `[effort]` suffix stripped,
  *     so rate cards keyed on the bare id (e.g. `gpt-5.6-luna`) apply to
- *     `MODEL_PRICING` lookups that previously could never match the composite
+ *     catalog lookups that previously could never match the composite
  *     string. `effort` is present when the resolved model spec named a
  *     reasoning effort, omitted otherwise.
  *

@@ -145,10 +145,10 @@ export function toNaxTokenUsage(usage: NativeUsage): TokenUsage {
  * rewrite rates the user configured on purpose.
  *
  * US-003 (#1817): reports which branch it took alongside the card, so the
- * adapter can stamp `pricingSource` on the result without re-deriving it
- * from `MODEL_PRICING[bareModel]` (which the catalog was chosen to avoid
- * maintaining). The card is the rate object; the source is the answer to
- * "which one did we use".
+ * adapter can stamp `pricingSource` on the result without re-deriving the
+ * rate-card branch (US-003 retired the table-backed `MODEL_PRICING` lookup
+ * this resolver was the successor to). The card is the rate object; the
+ * source is the answer to "which one did we use".
  */
 export function buildRateCard(
   catalog: Pricing,
