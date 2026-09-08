@@ -3,10 +3,8 @@
  * interaction handler wiring. Extracted from adapter.ts.
  */
 
-import type { ModelDef } from "@/config/schema";
 import type { ToolDescriptor } from "@/context/engine";
-import type { TokenUsage } from "../cost";
-import { estimateCostFromTokenUsage } from "../cost";
+import type { RateCard, TokenUsage } from "../cost";
 import type { AgentRunOptions, InteractionExchange, TurnResult } from "../types";
 import type { AcpSessionResponse } from "./adapter-session-types";
 
@@ -214,8 +212,8 @@ export interface BuildTurnResultInput {
   interactions: readonly InteractionExchange[];
   /** True when sendTurn returned because the wall-clock timeout elapsed (US-001). */
   timedOut: boolean;
-  /** Resolved model definition — used for token-based cost estimation. */
-  modelDef: ModelDef;
+  /** Resolved rate card (US-002). Replaces `modelDef` so `buildTurnResult` prices from `rateCard.rates` and stamps `rateCard.source` on `pricingSource`. */
+  rateCard: RateCard;
 }
 
 /**
@@ -228,19 +226,12 @@ export interface BuildTurnResultInput {
  * into the policy layer.
  */
 export function buildTurnResult(input: BuildTurnResultInput): TurnResult {
-  const { lastResponse, totalTokenUsage, totalExactCostUsd, turnCount, interactions, timedOut, modelDef } = input;
-
+  const { lastResponse, totalTokenUsage, totalExactCostUsd, turnCount, interactions, timedOut } = input;
   const output = timedOut ? "" : extractOutput(lastResponse);
-
-  const estimatedCostUsd =
-    totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0
-      ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model)
-      : 0;
-
   return {
     output,
     tokenUsage: totalTokenUsage,
-    estimatedCostUsd,
+    estimatedCostUsd: 0,
     exactCostUsd: totalExactCostUsd,
     internalRoundTrips: turnCount,
     ...(interactions.length > 0 ? { interactions } : {}),

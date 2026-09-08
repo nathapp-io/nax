@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { AcpSessionResponse } from "@/agents";
 import { buildTurnResult } from "@/agents";
-import type { InteractionExchange } from "@/agents/types";
-import type { ModelDef } from "@/config/schema";
+import type { RateCard } from "@/agents/cost";
+import type { InteractionExchange } from "@/agents/session-types";
 
-const MODEL: ModelDef = { provider: "anthropic", model: "claude-sonnet-4-5", env: {} };
+const CATALOG_CARD: RateCard = {
+  rates: { inputPer1M: 3, outputPer1M: 15 },
+  source: "catalog-rates",
+};
 
 function makeResponse(overrides: Partial<AcpSessionResponse> = {}): AcpSessionResponse | null {
   return {
@@ -23,7 +26,7 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
       turnCount: 1,
       interactions: [],
       timedOut: true,
-      modelDef: MODEL,
+      rateCard: CATALOG_CARD,
     });
     expect(result.timedOut).toBe(true);
   });
@@ -36,7 +39,7 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
       turnCount: 1,
       interactions: [],
       timedOut: true,
-      modelDef: MODEL,
+      rateCard: CATALOG_CARD,
     });
     expect(result.output).toBe("");
   });
@@ -51,7 +54,7 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
       turnCount: 1,
       interactions: [],
       timedOut: false,
-      modelDef: MODEL,
+      rateCard: CATALOG_CARD,
     });
     expect(result.output).toBe("hello world");
     expect(result.timedOut).toBe(false);
@@ -67,7 +70,7 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
       turnCount: 1,
       interactions: [],
       timedOut: false,
-      modelDef: MODEL,
+      rateCard: CATALOG_CARD,
     });
     expect(result.timedOut).toBe(false);
   });
@@ -80,7 +83,7 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
       turnCount: 7,
       interactions: [],
       timedOut: true,
-      modelDef: MODEL,
+      rateCard: CATALOG_CARD,
     });
     expect(result.internalRoundTrips).toBe(7);
     expect(result.tokenUsage).toEqual({ inputTokens: 5, outputTokens: 3 });
@@ -96,7 +99,7 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
       turnCount: 1,
       interactions,
       timedOut: false,
-      modelDef: MODEL,
+      rateCard: CATALOG_CARD,
     });
     expect(withInter.interactions).toEqual(interactions);
 
@@ -107,7 +110,7 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
       turnCount: 1,
       interactions: [],
       timedOut: false,
-      modelDef: MODEL,
+      rateCard: CATALOG_CARD,
     });
     expect(noInter.interactions).toBeUndefined();
   });

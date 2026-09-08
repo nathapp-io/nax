@@ -585,7 +585,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       turnCount,
       interactions,
       timedOut,
-      modelDef,
+      rateCard: { rates: { inputPer1M: 0, outputPer1M: 0 }, source: "fallback-rates" },
     });
   }
 

@@ -9,6 +9,8 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { ProtocolIds } from "@/runtime/protocol-types";
 import { sleep, which } from "@/utils/bun-deps";
+import type { RateCard } from "../cost";
+import { resolveRateCard as defaultResolveRateCard } from "../cost";
 import type { SessionHandle } from "../types";
 import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 import { parseAgentError } from "./parse-agent-error";
@@ -52,6 +54,19 @@ export const _acpAdapterDeps = {
     opts?: AcpClientOptions,
   ): AcpClient {
     return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries, onPidExited, opts);
+  },
+
+  /**
+   * Resolve a model id to a rate card (US-002). The adapter consults this
+   * seam from both `complete()` and `openSession()`, and the card it
+   * returns is what stamps `pricingSource` on `CompleteResult` /
+   * `TurnResult` (the implementer wires the call sites; the seam is here
+   * so tests can stub it without touching the catalog or alias file).
+   *
+   * Default delegates to `@/agents/cost:resolveRateCard`.
+   */
+  resolveRateCard(modelId: string): Promise<RateCard> {
+    return defaultResolveRateCard(modelId);
   },
 };
 

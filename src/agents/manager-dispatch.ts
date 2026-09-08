@@ -152,7 +152,7 @@ export function buildCompleteEvent(input: {
    * — same omission-not-undefined discipline as the other optional fields
    * on this event.
    */
-  pricingSource?: "catalog-rates" | "config-override";
+  pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
 }): CompleteDispatchEvent {
   const { options } = input;
   return {

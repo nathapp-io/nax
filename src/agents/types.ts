@@ -411,7 +411,7 @@ export interface CompleteResult {
    * not split the decision this way (e.g. ACP, which prices through
    * `MODEL_PRICING[bareModel]` and so leaves nothing for the result to say).
    */
-  pricingSource?: "catalog-rates" | "config-override";
+  pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
   /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */
   adapterFailure?: AdapterFailure;
   /**

@@ -177,7 +177,7 @@ export interface TurnResult {
    * explicit `modelDef.pricing` won wholesale. Set by adapters that split
    * the decision this way (today: native). Absent otherwise.
    */
-  pricingSource?: "catalog-rates" | "config-override";
+  pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
   /**
    * Mid-turn human-in-the-loop Q&A exchanges captured during the session turn
    * (issue #1226). Each entry pairs the agent's question with the operator's
