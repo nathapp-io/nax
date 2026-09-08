@@ -68,8 +68,10 @@ Read-only symbols, verified present at their stated shapes:
 - `parseModelSpec(raw): { model: string; effort?: string }` — `src/agents/model-spec.ts`.
 - `TokenPricing` / `TokenPricingTier` — `src/config/schema-types.ts`; the tier field is
   `inputTokensAbove`.
-- `buildRateCard(catalog: Pricing, override: TokenPricing | undefined): { rates: TokenPricing; source: "config-override" | "catalog-rates" }`
-  — `src/agents/native/models.ts:218`. The pattern US-002 mirrors: resolve once, reuse per turn.
+- `buildRateCard` — `src/agents/native/models.ts:218`. Takes a nax-ai `Pricing` and an
+  optional `TokenPricing` override; returns an object carrying `rates` (a `TokenPricing`) and
+  `source`, whose value is the config-override tag when an override won and the catalog-rates
+  tag otherwise. The pattern US-002 mirrors: resolve once, reuse per turn.
 
 Mutated symbols:
 
@@ -85,14 +87,18 @@ Mutated symbols:
   - Target: carries `rateCard: RateCard` in place of `modelDef`; `buildTurnResult` prices
     from `rateCard.rates` and sets `pricingSource` from `rateCard.source`.
 
-- `resolvePricingSource(model: string | undefined)` — `src/agents/cost/calculate.ts:200`.
-  - Baseline: returns `"model-rates"` when `MODEL_PRICING` has the model.
-  - Target: the `MODEL_PRICING` branch is gone; the function returns `"unknown-model"` for
-    an absent/empty/`"unknown"` model and `"fallback-rates"` otherwise, for callers with no
-    producer-supplied source. The return union is unchanged.
+- `resolvePricingSource` — `src/agents/cost/calculate.ts:200`. Takes the resolved model name
+  or undefined and returns a source tag.
+  - Baseline: returns the model-rates tag when `MODEL_PRICING` carries the model. Baseline
+    stated only to locate the code.
+  - Target: the `MODEL_PRICING` branch is gone. It returns the unknown-model tag when the
+    model is undefined, empty, or the literal unknown, and the fallback-rates tag in every
+    other case, serving callers with no producer-supplied source. Its five permitted return
+    values are unchanged: model-rates, fallback-rates, unknown-model, catalog-rates and
+    config-override.
 
 Existing consumers that must keep working unchanged: `middleware/cost.ts:154` still prefers
-`exactCostUsd` and stamps `"wire"`; `CompleteResult.pricingSource` (`agents/types.ts:414`)
+`exactCostUsd` and stamps the wire tag; `CompleteResult.pricingSource` (`agents/types.ts:414`)
 and `TurnResult.pricingSource` (`agents/session-types.ts:180`) already exist and are already
 accepted by `CostAggregator` — US-003/US-004 widened the union for native but never wired
 the ACP producers to emit it.
