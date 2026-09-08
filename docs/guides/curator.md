@@ -156,9 +156,9 @@ Observations: 47
 
 ## Add to .nax/features/auth/context.md
 - [ ] [HIGH] (H3) Postgres connection pool sizing — story story-001 ran 3 rectify cycles
-- [ ] [MED] (H2) "review batch" pull-tool returned empty 2× across stories story-002, story-003
 
-## Add to .nax/rules/api-data.md
+## Add to .nax/rules/curator-suggestions.md
+- [ ] [MED] (H2) "review batch" pull-tool returned empty 2× across stories story-002, story-003
 - [ ] [HIGH] (H1) "never N+1 on /v2/reviews" — review finding fired in 4 stories
 
 ## Drop from .nax/rules/web.md
@@ -180,8 +180,8 @@ Observations: 47
 
 | Category | Meaning | Action |
 |:---|:---|:---|
-| **Add to .nax/features/<id>/context.md** | Missing context that cost rectification cycles or empty tool results | Append to the feature's context file |
-| **Add to .nax/rules/<file>.md** | Repeated review findings — likely anti-patterns | Create a new rule or append to an existing rules file |
+| **Add to .nax/features/<id>/context.md** | A single story needed repeated rectification — context likely incomplete for that story's own feature | Append to that feature's context file |
+| **Add to .nax/rules/<file>.md** | Repeated review findings, or a pattern (empty pull-tool keyword, escalation chain) that recurred across multiple features — project-level, not one feature's | Create a new rule or append to an existing rules file |
 | **Drop from .nax/rules/<file>.md** | Stale rules that haven't matched recent runs | Remove specified lines |
 | **Advisory** | Interesting signals but no canonical-source target (e.g., prompt diagnosis) | Read but usually don't act on |
 
@@ -192,9 +192,9 @@ The curator uses six deterministic heuristics. Each has a traceability ID (H1–
 | ID | Heuristic | Threshold | Meaning | Action |
 |:---|:---|:---|:---|:---|
 | **H1** | Repeated review finding | `≥ N occurrences across stories` | Same lint/test finding fired repeatedly — anti-pattern | Add to rules |
-| **H2** | Pull-tool empty result | `≥ N empty results for same keyword` | Context query returned nothing multiple times — missing docs | Add to context |
-| **H3** | Repeated rectification cycle | `≥ N cycles for same story` | Story needed multiple fix attempts — context likely incomplete | Add to context |
-| **H4** | Escalation chain | `≥ N escalations for same story type` | Repeated model-tier escalation — context may be insufficient | Add to context |
+| **H2** | Pull-tool empty result | `≥ N empty results for same keyword` | Context query returned nothing multiple times — missing docs. Sites deliberately span features, so the target is project-level, not one feature's context.md | Add to rules |
+| **H3** | Repeated rectification cycle | `≥ N cycles for same story` | Story needed multiple fix attempts — context likely incomplete for that story's own feature | Add to context |
+| **H4** | Escalation chain | `≥ N escalations for same story type` | Repeated model-tier escalation — context may be insufficient. Sites deliberately span features, so the target is project-level, not one feature's context.md | Add to rules |
 | **H5** | Stale chunk | `chunk excluded as stale, but story still passed` | Old context no longer needed — can be dropped | Drop from rules |
 | **H6** | Fix-cycle unchanged | `≥ N consecutive "unchanged" outcomes` | Diagnosis didn't resolve the issue — prompt may need review | Advisory |
 

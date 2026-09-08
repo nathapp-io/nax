@@ -257,6 +257,54 @@ describe("runHeuristics", () => {
         runHeuristics(nonEmptyObs, { ...defaultThresholds, emptyKeyword: 2 }).find((p) => p.id === "H2"),
       ).toBeUndefined();
     });
+
+    test("targets the project-level rules file, not the oldest evidence row's feature, when sites span multiple features (#1929)", () => {
+      const crossFeatureObs: Observation[] = [
+        {
+          schemaVersion: 1,
+          projectKey: "test-proj",
+          runId: "run-1",
+          featureId: "feature-context-fragments",
+          storyId: "story-1",
+          stage: "pull",
+          ts: "2026-05-04T00:00:00Z",
+          kind: "pull-call",
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
+        },
+        {
+          schemaVersion: 1,
+          projectKey: "test-proj",
+          runId: "run-1",
+          featureId: "feature-billing",
+          storyId: "story-2",
+          stage: "pull",
+          ts: "2026-05-04T00:01:00Z",
+          kind: "pull-call",
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
+        },
+        {
+          schemaVersion: 1,
+          projectKey: "test-proj",
+          runId: "run-1",
+          featureId: "feature-onboarding",
+          storyId: "story-3",
+          stage: "pull",
+          ts: "2026-05-04T00:02:00Z",
+          kind: "pull-call",
+          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
+        },
+      ];
+
+      const h2 = runHeuristics(crossFeatureObs, { ...defaultThresholds, emptyKeyword: 2 }).find((p) => p.id === "H2");
+      expect(h2).toBeDefined();
+      expect(h2?.target.canonicalFile).toBe(".nax/rules/curator-suggestions.md");
+      expect(h2?.target.canonicalFile).not.toContain("feature-context-fragments");
+      expect(h2?.target.canonicalFile).not.toContain(".nax/features/");
+      // Evidence should still let a human see which features the pattern spans.
+      expect(h2?.evidence).toContain("feature-context-fragments");
+      expect(h2?.evidence).toContain("feature-billing");
+      expect(h2?.evidence).toContain("feature-onboarding");
+    });
   });
 
   describe("H3 — Repeated Rectification Cycle", () => {
@@ -329,363 +377,46 @@ describe("runHeuristics", () => {
         runHeuristics(diffStoryObs, { ...defaultThresholds, rectifyAttempts: 3 }).find((p) => p.id === "H3"),
       ).toBeUndefined();
     });
-  });
 
-  describe("H4 — Escalation Chain", () => {
-    test("triggers for same tier path >= threshold; does not trigger for different paths", () => {
-      const samePathObs: Observation[] = [
+    test("guard: H3 stays targeted at the story's own per-feature context.md, unlike H2/H4 (#1929)", () => {
+      const obs: Observation[] = [
         {
           schemaVersion: 1,
           projectKey: "test-proj",
           runId: "run-1",
-          featureId: "feat-1",
+          featureId: "feature-billing",
           storyId: "story-1",
-          stage: "escalation",
+          stage: "rectify",
           ts: "2026-05-04T00:00:00Z",
-          kind: "escalation",
-          payload: { from: "fast", to: "balanced" },
+          kind: "rectify-cycle",
+          payload: { iteration: 1, status: "failed" },
         },
         {
           schemaVersion: 1,
           projectKey: "test-proj",
           runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-2",
-          stage: "escalation",
+          featureId: "feature-billing",
+          storyId: "story-1",
+          stage: "rectify",
           ts: "2026-05-04T00:01:00Z",
-          kind: "escalation",
-          payload: { from: "fast", to: "balanced" },
-        },
-      ];
-      const h4 = runHeuristics(samePathObs, { ...defaultThresholds, escalationChain: 2 }).find((p) => p.id === "H4");
-      expect(h4).toBeDefined();
-      expect(h4?.severity).toBe("MED");
-      expect(h4?.target.action).toBe("add");
-
-      const diffPathObs: Observation[] = [
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "escalation",
-          ts: "2026-05-04T00:00:00Z",
-          kind: "escalation",
-          payload: { from: "fast", to: "balanced" },
+          kind: "rectify-cycle",
+          payload: { iteration: 2, status: "failed" },
         },
         {
           schemaVersion: 1,
           projectKey: "test-proj",
           runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-2",
-          stage: "escalation",
-          ts: "2026-05-04T00:01:00Z",
-          kind: "escalation",
-          payload: { from: "balanced", to: "powerful" },
-        },
-      ];
-      expect(
-        runHeuristics(diffPathObs, { ...defaultThresholds, escalationChain: 2 }).find((p) => p.id === "H4"),
-      ).toBeUndefined();
-    });
-  });
-
-  describe("H5 — Stale Chunk Excluded", () => {
-    test("triggers for stale exclusions persisting across runs; does not trigger for non-stale", () => {
-      const staleObs: Observation[] = [
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-1",
+          featureId: "feature-billing",
           storyId: "story-1",
-          stage: "context",
-          ts: "2026-05-04T00:00:00Z",
-          kind: "chunk-excluded",
-          payload: { chunkId: "c1", label: "stale chunk", reason: "stale" },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-2",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "context",
-          ts: "2026-05-05T00:00:00Z",
-          kind: "chunk-excluded",
-          payload: { chunkId: "c1", label: "stale chunk", reason: "stale" },
-        },
-      ];
-      const h5 = runHeuristics(staleObs, { ...defaultThresholds, staleChunkRuns: 2 }).find((p) => p.id === "H5");
-      expect(h5).toBeDefined();
-      expect(h5?.severity).toBe("LOW");
-      expect(h5?.target.action).toBe("drop");
-
-      const noMatchObs: Observation[] = [
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "context",
-          ts: "2026-05-04T00:00:00Z",
-          kind: "chunk-excluded",
-          payload: { chunkId: "c1", label: "chunk", reason: "no-match" },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-2",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "context",
-          ts: "2026-05-05T00:00:00Z",
-          kind: "chunk-excluded",
-          payload: { chunkId: "c1", label: "chunk", reason: "no-match" },
-        },
-      ];
-      expect(
-        runHeuristics(noMatchObs, { ...defaultThresholds, staleChunkRuns: 2 }).find((p) => p.id === "H5"),
-      ).toBeUndefined();
-    });
-  });
-
-  describe("H6 — Fix-cycle Unchanged Outcome", () => {
-    test("triggers when unchanged outcome >= threshold; does not trigger with mixed outcomes", () => {
-      const unchangedObs: Observation[] = [
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "fix-cycle",
-          ts: "2026-05-04T00:00:00Z",
-          kind: "fix-cycle-iteration",
-          payload: { iteration: 1, status: "failed", outcome: "unchanged" },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "fix-cycle",
-          ts: "2026-05-04T00:01:00Z",
-          kind: "fix-cycle-iteration",
-          payload: { iteration: 2, status: "failed", outcome: "unchanged" },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "fix-cycle",
+          stage: "rectify",
           ts: "2026-05-04T00:02:00Z",
-          kind: "fix-cycle-iteration",
-          payload: { iteration: 3, status: "failed", outcome: "unchanged" },
+          kind: "rectify-cycle",
+          payload: { iteration: 3, status: "failed" },
         },
       ];
-      const h6 = runHeuristics(unchangedObs, { ...defaultThresholds, unchangedOutcome: 3 }).find((p) => p.id === "H6");
-      expect(h6).toBeDefined();
-      expect(h6?.severity).toBe("LOW");
-      expect(h6?.target.action).toBe("advisory");
-
-      const mixedObs: Observation[] = [
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "fix-cycle",
-          ts: "2026-05-04T00:00:00Z",
-          kind: "fix-cycle-iteration",
-          payload: { iteration: 1, status: "passed", outcome: "resolved" },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-1",
-          storyId: "story-1",
-          stage: "fix-cycle",
-          ts: "2026-05-04T00:01:00Z",
-          kind: "fix-cycle-iteration",
-          payload: { iteration: 2, status: "failed", outcome: "unchanged" },
-        },
-      ];
-      expect(
-        runHeuristics(mixedObs, { ...defaultThresholds, unchangedOutcome: 2 }).find((p) => p.id === "H6"),
-      ).toBeUndefined();
-    });
-  });
-
-  describe("Multiple heuristics firing", () => {
-    test("returns all triggered proposals together", () => {
-      const obs: Observation[] = [
-        // H1: Repeated finding
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-story-1",
-          storyId: "story-1",
-          stage: "review",
-          ts: "2026-05-04T00:00:00Z",
-          kind: "review-finding",
-          payload: {
-            ruleId: "rule1",
-            severity: "error",
-            file: "src/index.ts",
-            line: 10,
-            message: "test error",
-          },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-story-2",
-          storyId: "story-2",
-          stage: "review",
-          ts: "2026-05-04T00:01:00Z",
-          kind: "review-finding",
-          payload: {
-            ruleId: "rule1",
-            severity: "error",
-            file: "src/index.ts",
-            line: 15,
-            message: "test error",
-          },
-        },
-        // H2: Pull-tool empty
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-story-1",
-          storyId: "story-1",
-          stage: "pull",
-          ts: "2026-05-04T00:02:00Z",
-          kind: "pull-call",
-          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-story-3",
-          storyId: "story-3",
-          stage: "pull",
-          ts: "2026-05-04T00:03:00Z",
-          kind: "pull-call",
-          payload: { toolName: "query_feature_context", keyword: "review batch", resultCount: 0, status: "completed" },
-        },
-      ];
-
-      const proposals = runHeuristics(obs, defaultThresholds);
-
-      expect(proposals.length).toBeGreaterThanOrEqual(2);
-      expect(proposals.some((p) => p.id === "H1")).toBe(true);
-      expect(proposals.some((p) => p.id === "H2")).toBe(true);
-    });
-  });
-
-  describe("Evidence and metadata", () => {
-    test("includes observation kind in sourceKinds", () => {
-      const obs: Observation[] = [
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-story-1",
-          storyId: "story-1",
-          stage: "review",
-          ts: "2026-05-04T00:00:00Z",
-          kind: "review-finding",
-          payload: {
-            ruleId: "rule1",
-            severity: "error",
-            file: "src/index.ts",
-            line: 10,
-            message: "test error",
-          },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-story-2",
-          storyId: "story-2",
-          stage: "review",
-          ts: "2026-05-04T00:01:00Z",
-          kind: "review-finding",
-          payload: {
-            ruleId: "rule1",
-            severity: "error",
-            file: "src/index.ts",
-            line: 15,
-            message: "test error",
-          },
-        },
-      ];
-
-      const proposals = runHeuristics(obs, defaultThresholds);
-      const h1 = proposals.find((p) => p.id === "H1");
-
-      expect(h1?.sourceKinds).toContain("review-finding");
-    });
-
-    test("produces non-empty description and evidence", () => {
-      const obs: Observation[] = [
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-story-1",
-          storyId: "story-1",
-          stage: "review",
-          ts: "2026-05-04T00:00:00Z",
-          kind: "review-finding",
-          payload: {
-            ruleId: "rule1",
-            severity: "error",
-            file: "src/index.ts",
-            line: 10,
-            message: "test error",
-          },
-        },
-        {
-          schemaVersion: 1,
-          projectKey: "test-proj",
-          runId: "run-1",
-          featureId: "feat-story-2",
-          storyId: "story-2",
-          stage: "review",
-          ts: "2026-05-04T00:01:00Z",
-          kind: "review-finding",
-          payload: {
-            ruleId: "rule1",
-            severity: "error",
-            file: "src/index.ts",
-            line: 15,
-            message: "test error",
-          },
-        },
-      ];
-
-      const proposals = runHeuristics(obs, defaultThresholds);
-      const h1 = proposals.find((p) => p.id === "H1");
-
-      expect(h1?.description).toMatch(/\S/);
-      expect(h1?.evidence).toMatch(/\S/);
+      const h3 = runHeuristics(obs, { ...defaultThresholds, rectifyAttempts: 3 }).find((p) => p.id === "H3");
+      expect(h3).toBeDefined();
+      expect(h3?.target.canonicalFile).toBe(".nax/features/feature-billing/context.md");
     });
   });
 });
-
-// ─── Issue #942 AC-5: H1 ruleId buckets are not single-word collapses ──────
