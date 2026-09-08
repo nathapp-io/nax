@@ -32,6 +32,13 @@ describe("redirectForArgv", () => {
     expect(redirectForArgv(["rm", "a.ts"], ALL, CMDS)).toContain("Delete");
   });
 
+  test.each([{ argv: ["rm", "-r", "directory"] }, { argv: ["git", "rm", "--cached", "a.ts"] }])(
+    "does not redirect an unsupported delete form: $argv",
+    ({ argv }) => {
+      expect(redirectForArgv(argv, ALL, CMDS)).toBeUndefined();
+    },
+  );
+
   test("points a scoped test run at testScoped only when the project declares it", () => {
     expect(redirectForArgv(["bun", "test", "a.test.ts"], ALL, CMDS)).toContain("testScoped");
     expect(redirectForArgv(["bun", "test", "a.test.ts"], ALL, new Set(["test"]))).toBeUndefined();

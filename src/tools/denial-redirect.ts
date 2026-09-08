@@ -14,6 +14,11 @@
 
 const GIT_READ_VERBS = new Set(["diff", "log", "show", "status", "blame"]);
 
+function isSingleFileDelete(argv: readonly string[]): boolean {
+  if (argv[0] === "rm") return argv.length === 2 && !argv[1]?.startsWith("-");
+  return argv[0] === "git" && argv[1] === "rm" && argv.length === 3 && !argv[2]?.startsWith("-");
+}
+
 /** Argv shapes that are really a request for a first-class tool. */
 function intendedTool(argv: readonly string[]): { tool: string; how: string } | undefined {
   // A `timeout N ...` prefix wraps the real command; look past it.
@@ -24,10 +29,10 @@ function intendedTool(argv: readonly string[]): { tool: string; how: string } | 
   if (head === "ls" || head === "find") {
     return { tool: "Glob", how: "Glob lists repository paths by pattern" };
   }
-  if (head === "rm") {
+  if (isSingleFileDelete(av) && head === "rm") {
     return { tool: "Delete", how: "Delete removes one tracked file at a time" };
   }
-  if (head === "git" && second === "rm") {
+  if (isSingleFileDelete(av) && head === "git" && second === "rm") {
     return { tool: "Delete", how: "Delete removes one tracked file at a time" };
   }
   if (head === "git" && second !== undefined && GIT_READ_VERBS.has(second)) {

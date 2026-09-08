@@ -15,7 +15,8 @@
  * needed.
  */
 
-import { stat, unlink } from "node:fs/promises";
+import { lstat, unlink } from "node:fs/promises";
+import { resolve } from "node:path";
 import { gitWithTimeout } from "@/utils/git";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
@@ -35,16 +36,20 @@ export const deleteTool: CodingTool = {
   scope: { pathFields: ["path"] },
 
   async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
-    const [target] = ctx.resolvedPaths;
-    if (target === undefined) return { content: "no path supplied", isError: true };
+    if (ctx.resolvedPaths[0] === undefined) return { content: "no path supplied", isError: true };
     const shown = String(input.path);
+    // The policy uses a realpath to prove containment, which dereferences a
+    // symlink. Deletion must instead act on the requested directory entry: a
+    // tracked symlink is itself recoverable, while its target may be a
+    // different tracked file. The policy has already validated `shown`.
+    const target = resolve(ctx.root, shown);
 
     // Existence and directory come first so each refusal says the true thing.
     // Tracked-first would report a mistyped path as "not tracked", which is
     // technically true and diagnostically useless.
     let isDirectory: boolean;
     try {
-      isDirectory = (await stat(target)).isDirectory();
+      isDirectory = (await lstat(target)).isDirectory();
     } catch {
       return { content: `"${shown}" does not exist`, isError: true };
     }

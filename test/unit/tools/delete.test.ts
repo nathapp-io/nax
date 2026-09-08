@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_TOOL_MAX_FILE_BYTES, deleteTool } from "@/tools";
@@ -12,6 +12,8 @@ beforeEach(async () => {
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "tracked.ts"), "export const a = 1;\n");
   writeFileSync(join(root, "src", "also-tracked.ts"), "export const b = 2;\n");
+  symlinkSync("src/tracked.ts", join(root, "tracked-link.ts"));
+  symlinkSync("src", join(root, "src-link"));
   await gitWithTimeout(["init", "-q", "."], root, 30_000);
   await gitWithTimeout(["config", "user.email", "t@example.com"], root, 30_000);
   await gitWithTimeout(["config", "user.name", "t"], root, 30_000);
@@ -30,6 +32,27 @@ describe("deleteTool", () => {
     expect(res.isError).toBeFalsy();
     expect(existsSync(target)).toBe(false);
     expect(res.content).toContain("GitCommit");
+  });
+
+  test("deletes a tracked symlink without deleting its target", async () => {
+    const target = join(root, "src", "tracked.ts");
+    const link = join(root, "tracked-link.ts");
+
+    const res = await deleteTool.run({ path: "tracked-link.ts" }, ctx([target]));
+
+    expect(res.isError).toBeFalsy();
+    expect(existsSync(link)).toBe(false);
+    expect(existsSync(target)).toBe(true);
+  });
+
+  test("deletes a tracked symlink to a directory", async () => {
+    const link = join(root, "src-link");
+
+    const res = await deleteTool.run({ path: "src-link" }, ctx([join(root, "src")]));
+
+    expect(res.isError).toBeFalsy();
+    expect(existsSync(link)).toBe(false);
+    expect(existsSync(join(root, "src"))).toBe(true);
   });
 
   test("refuses an untracked file and names the tracked-only rule", async () => {
