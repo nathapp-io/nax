@@ -150,7 +150,10 @@ export async function preIterationTierCheck(
   // tierOrder rungs carry attempts >= 1 (TierConfigSchema), so `0 < tierCfg.attempts`
   // always holds here — the check can never skip, escalate, or dirty the PRD at
   // attempts === 0. Any future tightening of the !tierCfg branch must keep this guard.
-  if ((story.attempts ?? 0) === 0) {
+  // nax#1809: the same "never write" contract applies to a dry run — runIteration
+  // short-circuits below this check, so escalating here is both pointless and
+  // harmful: the escalate/fail writes (savePRD, progress.txt) would mutate the tree.
+  if (runtime?.dryRun || (story.attempts ?? 0) === 0) {
     return { shouldSkipIteration: false, prdDirty: false, prd };
   }
 

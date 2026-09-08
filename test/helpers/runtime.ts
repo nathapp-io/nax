@@ -97,6 +97,8 @@ export interface MockRuntimeOptions {
   costAggregator?: ICostAggregator;
   config?: NaxConfig;
   workdir?: string;
+  /** Marks the run as a dry run on the constructed runtime (nax#1809). */
+  dryRun?: boolean;
 }
 
 /**
@@ -137,6 +139,7 @@ export function makeMockRuntime(opts: MockRuntimeOptions = {}): NaxRuntime {
       reviewAuditor: opts.reviewAuditor,
       costAggregator: opts.costAggregator,
       featureName: "_test",
+      dryRun: opts.dryRun,
     }),
   );
   if (opts.agentManagerFactory) {

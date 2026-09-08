@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { makeTestRuntime, withInfoSpy } from "@test/helpers";
 import type { FinishContext, FinishPhaseContext } from "@/finish";
 import { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "@/finish";
@@ -51,6 +51,52 @@ describe("finishSkipReason", () => {
   test("main/master report 'branch'", () => {
     expect(finishSkipReason({ ...base, branch: "main" })).toBe("branch");
     expect(finishSkipReason({ ...base, branch: "master" })).toBe("branch");
+  });
+});
+
+describe("finishSkipReason — dry run (nax#1809)", () => {
+  const base = { enabled: true, branch: "feat/x", storySummary: { completed: 2, failed: 0, paused: 0 } };
+
+  test("a dry run skips even when every other gate clause passes", () => {
+    expect(finishSkipReason({ ...base, dryRun: true })).toBe("dry-run");
+  });
+
+  test("shouldRunFinish mirrors the skip", () => {
+    expect(shouldRunFinish({ ...base, dryRun: true })).toBe(false);
+  });
+});
+
+describe("runFinishPhase — dry run (nax#1809)", () => {
+  test("returns null without entering the machine and without recording a finish status", async () => {
+    const machineSpy = spyOn(_finishPhaseDeps, "runFinishMachine").mockImplementation(async () => {
+      throw new Error("finish machine ran under a dry run");
+    });
+    let recorded = false;
+    const ctx: FinishPhaseContext = {
+      runtime: makeTestRuntime({ dryRun: true }),
+      config: { finish: { enabled: true, notify: { mode: "escalation" } } },
+      feature: "f",
+      workdir: "/tmp/finish-phase-test",
+      branch: "feat/x",
+      runId: "run-1",
+      agentName: "claude",
+      abortSignal: new AbortController().signal,
+      storySummary: { completed: 1, failed: 0, paused: 0 },
+      statusWriter: {
+        setPostRunPhase: (_phase, _update) => {
+          recorded = true;
+        },
+      },
+    };
+    try {
+      const result = await runFinishPhase(ctx);
+
+      expect(result).toBeNull();
+      expect(machineSpy).not.toHaveBeenCalled();
+      expect(recorded).toBe(false);
+    } finally {
+      machineSpy.mockRestore();
+    }
   });
 });
 

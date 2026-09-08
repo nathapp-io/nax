@@ -149,7 +149,14 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   } else {
     if (acceptanceAlreadyPassed) {
       logger?.info("execution", "Acceptance already passed — skipping acceptance phase");
-    } else if (options.config.acceptance.enabled && isComplete(options.prd)) {
+    } else if (
+      // nax#1809: under a dry run the acceptance loop would spawn the real test
+      // suite and dispatch acceptance-source-fix / acceptance-test-fix agents
+      // that edit source files. "Show plan without executing" means no tests.
+      !options.runtime?.dryRun &&
+      options.config.acceptance.enabled &&
+      isComplete(options.prd)
+    ) {
       options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
       const acceptanceStartTime = Date.now();
       pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance" });
