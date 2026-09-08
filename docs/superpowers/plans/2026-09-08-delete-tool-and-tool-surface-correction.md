@@ -10,6 +10,42 @@
 
 **Spec:** `docs/specs/2026-09-08-delete-tool-and-tool-surface-correction.md`
 
+## Before You Start
+
+You are picking this up cold. Everything you need is in the repo; nothing depends on the session that wrote this plan.
+
+**Repo:** `~/workspace/subrina-coder/projects/nax/repos/nax` (GitHub `nathapp-io/nax`).
+
+**Branch:** `feat/1925-1937-delete-tool-and-tool-surface`, already created off `main`. It currently contains **three docs-only commits** (this plan and the spec) and no implementation code. Check out that branch and work on it; do not branch again.
+
+```bash
+git checkout feat/1925-1937-delete-tool-and-tool-surface
+git log --oneline -3   # expect: plan, spec review, spec
+git status --short     # expect: clean
+```
+
+**Read first, in this order:**
+1. `docs/specs/2026-09-08-delete-tool-and-tool-surface-correction.md` — the spec this plan implements. It carries the measurement and the reasoning; this plan carries only the steps.
+2. `CLAUDE.md` at the repo root, and `.nax/rules/` — the repo's own conventions. `.claude/rules/` is generated from `.nax/rules/`; never edit the generated copies.
+
+**Two prior commits on `main` are worth reading before Task 4**, because they establish the pattern every refusal message here follows — naming the legal alternative rather than bare-refusing:
+- `1665ab2a4` (#1924/#1937 first half) — `RunCommand` naming its placeholders and argv allowlist.
+- `src/tools/policy.ts:253` and `src/tools/git.ts:94` — the two in-tree precedents, both with comments explaining the defect they fixed.
+
+**Expected baseline before you change anything** (run these; if any differs, investigate before proceeding rather than assuming the plan is stale):
+
+```bash
+bun run lint          # ends: OK: all 24 check scripts are reachable from CI
+bun run typecheck     # no output
+bun test test/unit/tools/ --timeout=30000   # all pass
+```
+
+**Commit discipline:** one commit per task, as each task's final step specifies. The pre-commit hook runs typecheck plus 24 check scripts and takes roughly a minute; it will reject the commit rather than let a gate slip. Do not use `--no-verify`.
+
+**Do not push and do not open a PR.** Stop after Task 5 and report. Pushing is the human's call.
+
+**If a step's expected output does not match:** stop and say so rather than adapting around it. Every code block here was written against the tree at `main` as of 2026-09-08, and a mismatch more likely means the tree moved than that the step is wrong. In particular the line numbers cited (for example `permissions.ts:167-176`) are hints, not addresses — locate the code by its content.
+
 ## Global Constraints
 
 - Bun-native APIs only; no Node.js equivalents where Bun has one. `node:fs/promises` is used by the existing `writeTool`, so it is the established idiom for file work.
@@ -30,7 +66,7 @@
 | `src/tools/types.ts` (modify) | Add `"Delete"` to `CodingToolName` | 2 |
 | `src/tools/registry.ts` (modify) | Add `"Delete"` to `RESERVED_TOOL_NAMES` | 2 |
 | `src/tools/runtime.ts` (modify) | Register `deleteTool` as a builtin | 2 |
-| `src/tools/index.ts` (modify) | Export `deleteTool` from the barrel | 2 |
+| `src/tools/index.ts` (modify) | Export `deleteTool` from the barrel | 1 |
 | `src/config/permissions.ts` (modify) | Grant `Delete` in the `unrestricted` profile | 2 |
 | `test/unit/tools/delete-wiring.test.ts` (create) | Delete is registered, granted, and reaches `run` through the runtime | 2 |
 | `src/operations/*.ts` (modify, 8 files) | Declare `Git` and `Delete` on the nine op objects | 3 |
@@ -141,6 +177,11 @@ describe("deleteTool", () => {
 Run: `bun test test/unit/tools/delete.test.ts --timeout=30000`
 
 Expected: FAIL. The import of `deleteTool` from `@/tools` does not resolve, so every test in the file errors.
+
+> This task's test and implementation were smoke-tested verbatim against the tree
+> at `0ade624ca` before handover: 7 pass, 0 fail, and both `bun run typecheck` and
+> `biome check` clean. The files were then reverted, so you are writing them fresh.
+> If they do not pass for you, the tree has moved — stop and say so.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -273,6 +314,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeNaxConfig } from "@test/helpers";
 import { resolvePermissions } from "@/config/permissions";
 import { compileToolPolicy } from "@/tools/policy";
 import { createCodingToolRuntime } from "@/tools/runtime";
@@ -293,12 +335,15 @@ beforeEach(async () => {
 
 describe("Delete wiring", () => {
   test("the unrestricted profile grants Delete", () => {
-    const { toolGrants } = resolvePermissions(undefined, "run");
+    // makeNaxConfig, not a raw literal: `.nax/rules/test-helpers.md` forbids
+    // re-implementing shared fixtures inline, and a bare object literal does
+    // not narrow permissionProfile to its union type.
+    const { toolGrants } = resolvePermissions(makeNaxConfig({ execution: { permissionProfile: "unrestricted" } }), "run");
     expect((toolGrants ?? []).map((g) => g.tool)).toContain("Delete");
   });
 
   test("the safe profile does NOT grant Delete", () => {
-    const { toolGrants } = resolvePermissions({ execution: { permissionProfile: "safe" } }, "run");
+    const { toolGrants } = resolvePermissions(makeNaxConfig({ execution: { permissionProfile: "safe" } }), "run");
     expect((toolGrants ?? []).map((g) => g.tool)).not.toContain("Delete");
   });
 
@@ -558,7 +603,8 @@ git commit -m "feat(operations): declare Delete and Git on file-mutating ops (#1
 
 **Files:**
 - Create: `src/tools/denial-redirect.ts`
-- Modify: `src/tools/runtime.ts` (the `advertised` method and the denial branch at ~line 187)
+- Modify: `src/tools/runtime.ts` (the opts type, the `advertised` method, and the denial branch at ~line 187)
+- Modify: `src/agents/coding-tool-support.ts` (~line 95, pass `declaredCommands` to the runtime)
 - Test: `test/unit/tools/denial-redirect.test.ts`
 
 **Interfaces:**
@@ -776,22 +822,43 @@ In the `advertised(declared)` method, record the result before returning it (it 
       return out;
 ```
 
+Add a typed option for the project's declared command names, alongside the existing `extraTools`:
+
+```typescript
+export function createCodingToolRuntime(opts: {
+  policy: ToolPolicy;
+  maxBytes?: number;
+  maxFileBytes?: number;
+  storyId?: string;
+  sink?: ToolAuditSink;
+  extraTools?: readonly CodingTool[];
+  /** Declared command names, so a denial can name `testScoped` only when the project has one. */
+  declaredCommands?: ReadonlySet<string>;
+}): CodingToolRuntime {
+```
+
+Do **not** try to read the command names back out of `RunCommand`'s `inputSchema`. `JSONSchema` is `Record<string, unknown>` (`src/context/engine/types.ts:72`), so `inputSchema.properties?.command` does not typecheck and would need a chain of casts to compile — passing the set in is both typed and honest about where the data comes from.
+
 In the denial branch, build the reason with the redirect appended. Replace the two lines that log and return the verdict's reason with:
 
 ```typescript
         const rawArgv = argvField === undefined ? undefined : input[argvField];
-        const declaredCommands = new Set<string>(
-          ((tool.inputSchema.properties?.command as { enum?: string[] } | undefined)?.enum ?? []) as string[],
-        );
         const extra = Array.isArray(rawArgv)
-          ? redirectForArgv(rawArgv as readonly string[], advertisedNames, declaredCommands)
+          ? redirectForArgv(rawArgv as readonly string[], advertisedNames, opts.declaredCommands ?? new Set())
           : undefined;
         const reason = extra === undefined ? verdict.reason : `${verdict.reason} -- ${extra}`;
         log(policyIdentity, "denied", reason.length, input, verdict.breach, reason);
         return { kind: "denied", reason, breach: verdict.breach };
 ```
 
-The declared command names are read from `RunCommand`'s own input schema (`command.enum`), which `createRunCommandTool` builds from the project's declared command map — so no new plumbing is needed to answer "does this project declare `testScoped`".
+Then pass it at the one production construction site, `src/agents/coding-tool-support.ts` (which already holds `declaredCommands` as a `ReadonlyMap<string, string>` at line 81):
+
+```typescript
+  const runtime = createCodingToolRuntime({
+    policy: compileToolPolicy(grants, args.root, { execTouchedPaths }),
+    declaredCommands: new Set(declaredCommands.keys()),
+    ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
+```
 
 - [ ] **Step 8: Run the tests to verify they pass**
 
@@ -815,7 +882,7 @@ Expected: all pass. `runtime.test.ts` and `runtime-log-levels.test.ts` assert on
 
 ```bash
 bun run lint && bun run typecheck
-git add src/tools/denial-redirect.ts src/tools/runtime.ts test/unit/tools/denial-redirect.test.ts
+git add src/tools/denial-redirect.ts src/tools/runtime.ts src/agents/coding-tool-support.ts test/unit/tools/denial-redirect.test.ts
 git commit -m "feat(tools): denied argv calls name a tool the session already has (#1937)"
 ```
 
