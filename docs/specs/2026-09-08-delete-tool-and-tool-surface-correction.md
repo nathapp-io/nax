@@ -1,5 +1,7 @@
 # Delete tool, Git for implementers, and denials that name a real alternative
 
+Status: implemented 2026-09-08 — see #1925, #1937.
+
 Date: 2026-09-08
 Issues: #1925 (no delete capability), #1937 (second half — denial names the wrong alternative)
 
