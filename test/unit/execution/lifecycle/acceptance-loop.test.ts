@@ -306,7 +306,7 @@ describe("resolveAcceptanceFixTarget", () => {
       config,
     );
     expect(result.acceptanceTestPath).toBe("/repo/apps/api/.nax-acceptance.test.ts");
-    expect(result.testCommand).toBe("pnpm vitest run {{FILE}}");
+    expect(result.testCommand).toBe("pnpm vitest run /repo/apps/api/.nax-acceptance.test.ts");
   });
 
   test("resolves the given package, not just the first acceptanceTestPaths entry", () => {
@@ -335,7 +335,7 @@ describe("resolveAcceptanceFixTarget", () => {
       config,
     );
     expect(result.acceptanceTestPath).toBe("/repo/apps/web/.nax-acceptance.test.ts");
-    expect(result.testCommand).toBe("pnpm vitest run {{FILE}}");
+    expect(result.testCommand).toBe("pnpm vitest run /repo/apps/web/.nax-acceptance.test.ts");
   });
 
   test("falls back to configured acceptance command when no failed package metadata", () => {
@@ -354,7 +354,7 @@ describe("resolveAcceptanceFixTarget", () => {
       config,
     );
     expect(result.acceptanceTestPath).toBe("/repo/apps/api/.nax-acceptance.test.ts");
-    expect(result.testCommand).toBe("npx jest --config jest.nax.config.js {{FILE}}");
+    expect(result.testCommand).toBe("npx jest --config jest.nax.config.js /repo/apps/api/.nax-acceptance.test.ts");
   });
 
   test("uses failed package path and config command when failed package is not in acceptanceTestPaths", () => {
@@ -378,7 +378,173 @@ describe("resolveAcceptanceFixTarget", () => {
     );
 
     expect(result.acceptanceTestPath).toBe("/repo/apps/other/.nax-acceptance.test.ts");
-    expect(result.testCommand).toBe("npx jest --config jest.nax.config.js {{FILE}}");
+    expect(result.testCommand).toBe("npx jest --config jest.nax.config.js /repo/apps/other/.nax-acceptance.test.ts");
+  });
+
+  // #1939: config.quality.commands.test is the FULL suite — handing a fix role
+  // the whole suite instead of the one failing acceptance test burns the session
+  // timeout. testScoped is the scoped fallback tried before the full suite.
+  test("falls back to quality.commands.testScoped when acceptance.command is absent", () => {
+    const config = makeNaxConfig({
+      quality: { commands: { testScoped: "bun test {{files}} --timeout=60000", test: "bun run test" } },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/repo/apps/api/.nax-acceptance.test.ts", packageDir: "/repo/apps/api" }],
+      undefined,
+      config,
+    );
+    expect(result.acceptanceTestPath).toBe("/repo/apps/api/.nax-acceptance.test.ts");
+    expect(result.testCommand).toBe("bun test /repo/apps/api/.nax-acceptance.test.ts --timeout=60000");
+  });
+
+  test("acceptance.command still wins over quality.commands.testScoped", () => {
+    const config = makeNaxConfig({
+      acceptance: { command: "npx jest {{FILE}}" },
+      quality: { commands: { testScoped: "bun test {{files}}", test: "bun run test" } },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/repo/apps/api/.nax-acceptance.test.ts", packageDir: "/repo/apps/api" }],
+      undefined,
+      config,
+    );
+    expect(result.testCommand).toBe("npx jest /repo/apps/api/.nax-acceptance.test.ts");
+  });
+
+  test("a failed-package commandOverride still wins over quality.commands.testScoped", () => {
+    const config = makeNaxConfig({
+      quality: { commands: { testScoped: "bun test {{files}}", test: "bun run test" } },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/repo/apps/api/.nax-acceptance.test.ts", packageDir: "/repo/apps/api" }],
+      {
+        testPath: "/repo/apps/api/.nax-acceptance.test.ts",
+        packageDir: "/repo/apps/api",
+        commandOverride: "pnpm vitest run {{FILE}}",
+      },
+      config,
+    );
+    expect(result.testCommand).toBe("pnpm vitest run /repo/apps/api/.nax-acceptance.test.ts");
+  });
+
+  test("falls back to the full suite only when neither an override nor testScoped is configured", () => {
+    const config = makeNaxConfig({
+      quality: { commands: { test: "bun run test" } },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/repo/apps/api/.nax-acceptance.test.ts", packageDir: "/repo/apps/api" }],
+      undefined,
+      config,
+    );
+    // The full-suite fallback carries no {{files}} placeholder — substitution is a no-op.
+    expect(result.testCommand).toBe("bun run test");
+  });
+
+  test.each([
+    ["acceptance.command branch", "npx jest {{FILE}}"],
+    ["quality.commands.testScoped branch (no acceptance.command)", undefined],
+  ])("no unsubstituted placeholder survives — %s", (_label, acceptanceCommand) => {
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/repo/apps/api/.nax-acceptance.test.ts", packageDir: "/repo/apps/api" }],
+      undefined,
+      makeNaxConfig({
+        acceptance: { command: acceptanceCommand },
+        quality: { commands: { testScoped: "bun test {{files}}", test: "bun run test {{FILE}}" } },
+        execution: { regressionGate: { mode: "disabled" } },
+      }),
+    );
+    expect(result.testCommand).not.toContain("{{");
+  });
+
+  test("drops a scoped template that still carries {{package}} rather than rendering it", () => {
+    // {{package}} is filled asynchronously by resolveQualityTestCommands from
+    // package.json; this resolver is synchronous and cannot. A prompt must never
+    // show a template, so the suite command is the right fall-through.
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/abs/.nax/features/f/.nax-acceptance.test.ts", packageDir: "/abs" }],
+      undefined,
+      makeNaxConfig({
+        quality: {
+          commands: { test: "bun run test", testScoped: "bunx turbo test --filter={{package}} -- {{files}}" },
+        },
+      }),
+    );
+    expect(result.testCommand).toBe("bun run test");
+    expect(result.testCommand).not.toContain("{{");
+  });
+
+  test("no resolved command ever contains an unsubstituted placeholder", () => {
+    for (const scoped of ["bun test {{files}}", "pytest {{file}}", "runner {{FILE}} --x"]) {
+      const result = resolveAcceptanceFixTarget(
+        [{ testPath: "/abs/t.test.ts", packageDir: "/abs" }],
+        undefined,
+        makeNaxConfig({ quality: { commands: { test: "bun run test", testScoped: scoped } } }),
+      );
+      expect(result.testCommand).not.toContain("{{");
+      expect(result.testCommand).toContain("/abs/t.test.ts");
+    }
+  });
+
+  // #1939 review: the prompt may only name RunCommand's declared key when the
+  // scoped template is the candidate that actually won AND {{files}} is its sole
+  // placeholder — otherwise the tool call can only answer with an error.
+  test.each([
+    [
+      "scoped template with {{files}} wins",
+      { test: "bun run test", testScoped: "bun test {{files}}" },
+      {},
+      "testScoped",
+    ],
+    [
+      "{{package}} template is dropped",
+      { test: "bun run test", testScoped: "turbo test --filter={{package}} -- {{files}}" },
+      {},
+      undefined,
+    ],
+    [
+      "orchestrator template without {{files}}",
+      { test: "bun run test", testScoped: "turbo run test --filter=web" },
+      {},
+      undefined,
+    ],
+    ["singular {{file}} dialect", { test: "bun run test", testScoped: "pytest {{file}}" }, {}, undefined],
+    [
+      "acceptance.command outranks scoped",
+      { test: "bun run test", testScoped: "bun test {{files}}" },
+      { command: "bun test {{FILE}}" },
+      undefined,
+    ],
+  ])("scopedCommandName: %s", (_label, commands, acceptance, expected) => {
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/abs/t.test.ts", packageDir: "/abs" }],
+      undefined,
+      makeNaxConfig({ quality: { commands }, acceptance }),
+    );
+    expect(result.scopedCommandName).toBe(expected);
+    expect(result.testCommand).not.toContain("{{");
+  });
+
+  test("the last-resort suite command is substituted too, never left as a template", () => {
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/abs/t.test.ts", packageDir: "/abs" }],
+      undefined,
+      makeNaxConfig({ quality: { commands: { test: "bun test {{files}}" } } }),
+    );
+    expect(result.testCommand).toBe("bun test /abs/t.test.ts");
+    expect(result.scopedCommandName).toBeUndefined();
+  });
+
+  test("a synthetic empty testPath falls through to the entry list rather than blanking the path", () => {
+    const result = resolveAcceptanceFixTarget(
+      [{ testPath: "/abs/t.test.ts", packageDir: "/abs" }],
+      { testPath: "", packageDir: "/other" },
+      makeNaxConfig({ quality: { commands: { test: "bun run test", testScoped: "bun test {{files}}" } } }),
+    );
+    expect(result.acceptanceTestPath).toBe("/abs/t.test.ts");
+    expect(result.testCommand).toBe("bun test /abs/t.test.ts");
   });
 });
 

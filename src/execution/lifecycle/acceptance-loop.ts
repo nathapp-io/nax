@@ -38,6 +38,7 @@ import {
   buildResult,
   isStubTestFile,
   regenerateAcceptanceTest as regenerateAcceptanceTestFn,
+  resolveAcceptanceFixTarget,
 } from "./acceptance-helpers";
 
 export {
@@ -48,6 +49,9 @@ export {
   loadAcceptanceTestContent,
   loadSpecContent,
   regenerateAcceptanceTest,
+  // resolveAcceptanceFixTarget lives in acceptance-helpers.ts (file-size compliance,
+  // #1939) — re-exported here so its import path stays "./acceptance-loop".
+  resolveAcceptanceFixTarget,
 } from "./acceptance-helpers";
 
 export interface AcceptanceLoopContext extends DispatchContext {
@@ -133,35 +137,15 @@ interface AcceptanceTestRunResult {
   missingTargets?: string[];
 }
 
-type AcceptanceTestPathEntry = NonNullable<PipelineContext["acceptanceTestPaths"]>[number];
+/** Exported for acceptance-helpers.ts's `resolveAcceptanceFixTarget` (file-size compliance). */
+export type AcceptanceTestPathEntry = NonNullable<PipelineContext["acceptanceTestPaths"]>[number];
 
 type AcceptanceFailedPackage = NonNullable<
   NonNullable<PipelineContext["acceptanceFailures"]>["failedPackages"]
 >[number];
 
-export function resolveAcceptanceFixTarget(
-  acceptanceTestPaths: AcceptanceTestPathEntry[] | undefined,
-  failedPackage: { testPath: string; packageDir: string; commandOverride?: string } | undefined,
-  config: NaxConfig,
-): {
-  acceptanceTestPath: string;
-  testCommand: string | undefined;
-} {
-  const matchedEntry = failedPackage
-    ? acceptanceTestPaths?.find(
-        (entry) => entry.testPath === failedPackage.testPath || entry.packageDir === failedPackage.packageDir,
-      )
-    : undefined;
-  const selectedPathEntry = matchedEntry ?? acceptanceTestPaths?.[0];
-  return {
-    acceptanceTestPath: failedPackage?.testPath ?? selectedPathEntry?.testPath ?? "",
-    testCommand:
-      failedPackage?.commandOverride ??
-      matchedEntry?.commandOverride ??
-      config.acceptance.command ??
-      config.quality?.commands?.test,
-  };
-}
+// resolveAcceptanceFixTarget — moved to acceptance-helpers.ts (file-size compliance,
+// #1939) and re-exported above so its import path is unchanged.
 
 function convertFailuresToFindings(failedACs: string[], testOutput: string): Finding[] {
   return failedACs.map((ac) => {
@@ -291,6 +275,8 @@ export async function runAcceptanceFixCycle(
   acceptanceTestPath: string,
   testCommand?: string,
   fixTarget?: { packageDir: string; testPath: string },
+  /** Declared `quality.commands.testScoped` key, set only when the fix prompt can safely name it (#1939). */
+  scopedCommandName?: string,
 ): Promise<FixCycleResult<Finding>> {
   const runtime = ctx.runtime;
   if (!runtime) {
@@ -318,6 +304,7 @@ export async function runAcceptanceFixCycle(
           diagnosisReasoning: diagnosis.reasoning,
           priorIterationsBlock: buildPriorIterationsBlock(priorIterations),
           acceptanceTestPath,
+          scopedCommandName,
         }),
         maxAttempts: 3,
         coRun: "co-run-sequential",
@@ -334,6 +321,7 @@ export async function runAcceptanceFixCycle(
           priorIterationsBlock: buildPriorIterationsBlock(priorIterations),
           failedACs: currentFailedACs,
           acceptanceTestPath,
+          scopedCommandName,
         }),
         maxAttempts: 3,
         coRun: "co-run-sequential",
@@ -529,7 +517,11 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     const remainingFindings: Finding[] = [];
     let totalInternalIterations = 0;
     for (const pkg of failedPkgs) {
-      const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(ctx.acceptanceTestPaths, pkg, ctx.config);
+      const { acceptanceTestPath, testCommand, scopedCommandName } = resolveAcceptanceFixTarget(
+        ctx.acceptanceTestPaths,
+        pkg,
+        ctx.config,
+      );
       const effectivePath = acceptanceTestPath || pkg.testPath || testEntries[0]?.testPath || "";
       const testFileContent = testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? "";
 
@@ -565,6 +557,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         effectivePath,
         testCommand,
         { packageDir: pkg.packageDir, testPath: effectivePath },
+        scopedCommandName,
       );
       totalCost += cycleResult.costUsd ?? 0;
       totalInternalIterations += cycleResult.iterations.length;

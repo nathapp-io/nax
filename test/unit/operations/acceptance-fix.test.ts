@@ -77,6 +77,29 @@ describe("acceptanceFixSourceOp.build()", () => {
     expect(result.task.content).toContain("fn returns wrong value");
     expect(result.task.content).toContain("FAIL: expected true but got false");
   });
+
+  // #1939: the op does NOT re-derive this from config — resolveAcceptanceFixTarget
+  // alone knows whether the scoped template actually won and whether {{files}} is
+  // its sole placeholder, so the decision arrives on the input.
+  test("names RunCommand's testScoped key when the resolver supplied the scoped key", () => {
+    const ctx = makeSourceCtx();
+    const result = acceptanceFixSourceOp.build(
+      { ...SOURCE_INPUT, testCommand: "bun test /tmp/acceptance.test.ts", scopedCommandName: "testScoped" },
+      ctx,
+    );
+    expect(result.task.content).toContain('RunCommand {"command": "testScoped"');
+    expect(result.task.content).toContain('"files": "/tmp/acceptance.test.ts"');
+  });
+
+  test("omits the RunCommand form when the resolver supplied no scoped key", () => {
+    const ctx = makeSourceCtx();
+    const result = acceptanceFixSourceOp.build(
+      { ...SOURCE_INPUT, testCommand: "bun test /tmp/acceptance.test.ts" },
+      ctx,
+    );
+    expect(result.task.content).not.toContain("RunCommand");
+    expect(result.task.content).toContain("Re-run the failing acceptance test");
+  });
 });
 
 describe("acceptanceFixSourceOp.parse()", () => {

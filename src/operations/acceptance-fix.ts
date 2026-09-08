@@ -9,6 +9,7 @@ export interface AcceptanceFixSourceInput {
   diagnosisReasoning?: string;
   priorIterationsBlock?: string;
   acceptanceTestPath: string;
+  scopedCommandName?: string;
 }
 
 export interface AcceptanceFixTestInput {
@@ -18,6 +19,7 @@ export interface AcceptanceFixTestInput {
   priorIterationsBlock?: string;
   failedACs: string[];
   acceptanceTestPath: string;
+  scopedCommandName?: string;
 }
 
 export interface AcceptanceFixOutput {
@@ -40,6 +42,11 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
       diagnosisReasoning: input.diagnosisReasoning,
       priorIterationsBlock: input.priorIterationsBlock,
       acceptanceTestPath: input.acceptanceTestPath,
+      // #1939: resolveAcceptanceFixTarget decides this — it alone knows whether
+      // the scoped template actually won and whether `{{files}}` is its sole
+      // placeholder. Re-deriving it from config here would name `testScoped`
+      // for a `{{package}}` template the resolver had already dropped.
+      scopedCommandName: input.scopedCommandName,
     });
     return {
       role: { id: "role", content: "", overridable: false },
@@ -68,6 +75,8 @@ export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, Acceptanc
       priorIterationsBlock: input.priorIterationsBlock,
       failedACs: input.failedACs,
       acceptanceTestPath: input.acceptanceTestPath,
+      // #1939: see acceptanceFixSourceOp.build above.
+      scopedCommandName: input.scopedCommandName,
     });
     return {
       role: { id: "role", content: "", overridable: false },
