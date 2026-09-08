@@ -111,8 +111,8 @@ second allowed prefix in the gate. It imports nax-ai, maps `Pricing` onto nax's 
 `TokenPricing`, and exports no nax-ai type. It depends on neither `cost/` nor `native/`, so
 no cycle is created. The gate's stated rationale — "swappable only while its surface has one
 consumer" — is what changes here, and the change is recorded in the gate rather than routed
-around. The prose rule in `.nax/rules/adapter-wiring.md` states the same boundary and is
-amended by the maintainer out-of-band; see Out of Scope.
+around. The prose rule in `.nax/rules/adapter-wiring.md` states the same boundary and has
+already been amended to match; see Out of Scope.
 
 ### File Format
 
@@ -174,14 +174,17 @@ fallback card and through an explicit `modelDef.pricing` override.
 - Fetching models.dev at runtime or generating a rate table from it at build time.
 - Migrating `native/` to consume `src/agents/catalog/`. Native keeps its own nax-ai import.
 - Wire-exact cost reporting. `exactCostUsd` handling and the `"wire"` stamp are unchanged.
-- Updating `.nax/rules/adapter-wiring.md`, whose "Native path" section still names
-  `src/agents/native/` as the only directory permitted to import `@nathapp/nax-ai`. No story
-  edits it; the maintainer amends it manually to add `src/agents/catalog/`. Until then the
-  canonical rule under-describes the executable gate in `scripts/check-nax-ai-imports.ts`, which
-  US-001 does change — a reviewer quoting the stale rule may flag the new `catalog/` module, and
-  that is the accepted cost of keeping generated files out of the run.
-- Regenerating the per-agent rule shims (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `codex.md`) from
-  `.nax/rules/`. `nax rules export` is run manually by the maintainer; no story runs it.
+- Updating `.nax/rules/adapter-wiring.md`. Its "Native path" section **already names**
+  `src/agents/catalog/` as a permitted `@nathapp/nax-ai` importer — amended manually on this
+  branch as a precondition, before any story runs. No story edits it. This ordering is
+  deliberate: the rule is path-scoped to `src/agents/**/*.ts` and loaded at the `execution` and
+  `review-adversarial` stages, so it reaches the implementer and reviewer prompts for the very
+  files US-001 creates. Had it still read "native is the only directory", the story and the
+  rule would contradict, and rectification could not resolve it.
+- Regenerating `.claude/rules/` from `.nax/rules/`. Already done on this branch via
+  `nax rules export --agent=claude`, so `bun run check:rules-drift` is green before the run
+  starts. No story runs the export. `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` and `codex.md` are
+  `nax generate` context files, not rule shims, and are not touched at all.
 - Retiring `resolvePricingSource` itself. It keeps its signature and return union for callers
   with no producer-supplied source.
 
