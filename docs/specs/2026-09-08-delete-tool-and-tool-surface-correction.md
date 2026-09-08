@@ -74,10 +74,14 @@ deletion gets its own audit row.
 `run` sequence:
 
 1. Take `ctx.resolvedPaths[0]` (the policy has already resolved and confined it).
-2. Refuse if git does not track the path.
-3. Refuse if the path is a directory.
+2. `stat` it: refuse if missing, refuse if it is a directory.
+3. Refuse if git does not track the path.
 4. `unlink`.
 5. Return a result naming the next step: the deletion still has to be staged.
+
+Existence and directory are checked **before** the tracked check so each refusal
+says the true thing. Tracked-first would report a mistyped path as "not tracked",
+which is technically true and diagnostically useless.
 
 ### Tracked check
 
@@ -89,11 +93,11 @@ is recoverable".
 
 One subprocess per call. `Delete` is a rare operation, so this is not on a hot path.
 
-The directory check has to come **after** the tracked check, and it is load-bearing
-rather than defensive: `git ls-files --error-unmatch -- src/tools` exits 0 for a
-directory that contains tracked files, so a directory passes the tracked check and
-would otherwise reach `unlink` (which fails with `EISDIR`, an error the model cannot
-act on). Verified both branches:
+The directory branch is load-bearing rather than defensive, whichever order it sits
+in: `git ls-files --error-unmatch -- src/tools` exits 0 for a directory that contains
+tracked files, so "tracked" does not imply "file", and without an explicit check a
+directory would reach `unlink` and fail with `EISDIR` — an error the model cannot act
+on. Verified:
 
 ```
 src/tools (directory)    -> exit 0   passes tracked, must be caught by the dir check
