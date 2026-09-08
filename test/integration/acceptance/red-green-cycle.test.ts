@@ -16,7 +16,12 @@ import { makeDispatchContext, makeNaxConfig, makePRD, makeTempDir } from "@test/
 import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
-import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
+import {
+  _acceptanceSetupDeps,
+  acceptanceSetupStage,
+  computeACFingerprint,
+  computeAcceptanceLayoutFingerprint,
+} from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 
@@ -255,6 +260,9 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
       "AC-2: second feature works",
       "AC-1: third feature works",
     ]);
+    const matchingLayoutFingerprint = computeAcceptanceLayoutFingerprint(tmpDir, [
+      { testPath, stories: [{ id: "US-001" }, { id: "US-002" }] },
+    ]);
 
     _acceptanceSetupDeps.fileExists = async (p) => {
       const f = Bun.file(p);
@@ -263,6 +271,7 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
     _acceptanceSetupDeps.readMeta = async () => ({
       generatedAt: "2026-01-01T00:00:00Z",
       acFingerprint: matchingFingerprint,
+      layoutFingerprint: matchingLayoutFingerprint,
       storyCount: 2,
       acCount: 3,
       generator: "nax",
@@ -296,6 +305,9 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
       "AC-2: second feature works",
       "AC-1: third feature works",
     ]);
+    const matchingLayoutFingerprint = computeAcceptanceLayoutFingerprint(tmpDir, [
+      { testPath, stories: [{ id: "US-001" }, { id: "US-002" }] },
+    ]);
 
     let writeFileCalled = false;
     _acceptanceSetupDeps.fileExists = async (p) => {
@@ -305,6 +317,7 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
     _acceptanceSetupDeps.readMeta = async () => ({
       generatedAt: "2026-01-01T00:00:00Z",
       acFingerprint: matchingFingerprint,
+      layoutFingerprint: matchingLayoutFingerprint,
       storyCount: 2,
       acCount: 3,
       generator: "nax",
