@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import { AgentManager } from "@/agents/manager";
 import { buildDispatchErrorEvent } from "@/agents/manager-dispatch";
@@ -343,5 +344,53 @@ describe("AgentManager.completeAsWithFallback dispatch-error path", () => {
     expect(event?.callId).toBe("call-42");
     expect(event?.scopeId).toBe("scope-eu");
     expect(event?.sessionRole).toBe("synthesis");
+  });
+
+  test("attributes a missing fallback dispatch error to the fallback agent and its resolved model", async () => {
+    const bus = new DispatchEventBus();
+    const receivedErrors: DispatchErrorEvent[] = [];
+    bus.onDispatchError((event) => receivedErrors.push(event));
+    const primary = makeAgentAdapter({
+      complete: mock(async () => ({
+        output: "",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+        adapterFailure: {
+          outcome: "fail-quota" as const,
+          category: "availability" as const,
+          retriable: false,
+          message: "primary quota exhausted",
+        },
+      })),
+    });
+    const manager = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
+      }),
+      makeAgentRegistry({ getAgent: (name) => (name === "claude" ? primary : undefined) }),
+      { dispatchEvents: bus },
+    );
+
+    await expect(
+      manager.completeAsWithFallback("claude", "do the thing", {
+        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+        modelDefFor: (name) => (name === "codex" ? { provider: "openai", model: "gpt-5.6-luna" } : undefined),
+        workdir: "/tmp",
+        pipelineStage: "complete",
+      }),
+    ).rejects.toThrow('Agent "codex" not found in registry');
+
+    expect(receivedErrors).toHaveLength(1);
+    expect(receivedErrors[0]?.agentName).toBe("codex");
+    expect(receivedErrors[0]?.model).toBe("gpt-5.6-luna");
   });
 });
