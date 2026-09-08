@@ -127,10 +127,9 @@ export function toNaxTokenUsage(usage: NativeUsage): TokenUsage {
 }
 
 /**
- * `estimateCostUsd` and the tier-selection helper `selectRates` it relies on
- * were relocated to `src/agents/cost/` (US-001) so the ACP and native paths
- * share one implementation. Re-imported above; the function still has the same
- * signature for native callers.
+ * `estimateCostUsd` (and the tier-selection helper it relies on) was
+ * relocated to `src/agents/cost/` (US-001) so the ACP and native paths share
+ * one implementation. Native callers now import it from `@/agents/cost`.
  */
 /**
  * Turn nax-ai's catalog `Pricing` into nax's own `TokenPricing` shape,
