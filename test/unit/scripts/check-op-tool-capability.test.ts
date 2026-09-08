@@ -41,6 +41,14 @@ describe("REQUIRED_TOOLS_BY_ROLE", () => {
       expect(REQUIRED_TOOLS_BY_ROLE[role]).not.toContain("Edit");
     }
   });
+
+  // #1936: a fix role that cannot re-run what it is fixing is the same defect
+  // this gate already blocks for verifier (which requires RunCommand above).
+  test("the fix roles must be able to run commands, same as the verifier", () => {
+    for (const role of ["source-fix", "test-fix"]) {
+      expect(REQUIRED_TOOLS_BY_ROLE[role]).toContain("RunCommand");
+    }
+  });
 });
 
 describe("collectOps", () => {
@@ -103,5 +111,17 @@ describe("findViolations", () => {
     const rows = [{ name: "semantic-review", role: "reviewer-semantic", tools: ["Read"] }];
 
     expect(findViolations(rows, [])).toEqual([]);
+  });
+
+  // #1936: source-fix / test-fix now require RunCommand alongside Write/Edit —
+  // an op that can edit a file but never re-run it is flagged, same as a
+  // verifier that could write but never run would be.
+  test("a fix-role op missing RunCommand is a violation", () => {
+    const rows = [{ name: "acceptance-fix-source", role: "source-fix", tools: ["Read", "Write", "Edit"] }];
+
+    const violations = findViolations(rows, []);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.missing).toEqual(["RunCommand"]);
   });
 });

@@ -47,8 +47,10 @@ const BASELINE_FILE = join(import.meta.dir, "baselines", "op-tool-capability-bas
 export const REQUIRED_TOOLS_BY_ROLE: Record<string, readonly string[]> = {
   implementer: ["Write", "Edit"],
   "test-writer": ["Write", "Edit"],
-  "source-fix": ["Write", "Edit"],
-  "test-fix": ["Write", "Edit"],
+  // #1936: a fix role edits the code it broke and must be able to re-run it —
+  // the same requirement this table already puts on the verifier below.
+  "source-fix": ["Write", "Edit", "RunCommand"],
+  "test-fix": ["Write", "Edit", "RunCommand"],
   "repo-scoped-test-fix": ["Write", "Edit"],
   "fix-gen": ["Write", "Edit"],
   "finish-fix": ["Write", "Edit"],
