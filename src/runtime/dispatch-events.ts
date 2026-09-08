@@ -150,6 +150,13 @@ export interface DispatchErrorEvent {
   readonly estimatedCostUsd?: number;
   readonly exactCostUsd?: number;
   /**
+   * US-002: the rate card that priced the failed dispatch's spent usage,
+   * forwarded from the thrown `SessionTurnError.pricingSource`. Absent when
+   * the error carried none — a plain Error, or a protocol fault with no card
+   * (native's sendTurn). Optional because existing constructions stay valid.
+   */
+  readonly pricingSource?: "catalog-rates" | "fallback-rates";
+  /**
    * Model the dispatch was pinned to, resolved by `modelAttribution()` from
    * the dispatch's `modelDef` / `modelTier` before the throw. Absent when no
    * model was attributed — a failed dispatch with no model is not the same

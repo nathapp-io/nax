@@ -486,8 +486,8 @@ describe("attachCostSubscriber", () => {
 
   test("#1433: estimated rows without a producer stamp fall back to resolvePricingSource (fallback-rates)", () => {
     // US-003: with MODEL_PRICING gone, resolvePricingSource returns
-    // "fallback-rates" for any non-empty model name. ACP never stamps a
-    // pricingSource, so ACP rows land here.
+    // "fallback-rates" for any non-empty model name. An event without a
+    // producer stamp lands here.
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -588,8 +588,9 @@ describe("attachCostSubscriber", () => {
   // CompleteResult / TurnResult, and the manager propagates that onto the
   // dispatch event. The cost subscriber must prefer the producer's report
   // over `resolvePricingSource(model)` — exactly as it already prefers a
-  // wire-exact cost over an estimate on the same row. The ACP path supplies
-  // no value and stays unchanged.
+  // wire-exact cost over an estimate on the same row. The ACP adapter
+  // (US-002) stamps its card's branch the same way; an event without a
+  // producer stamp falls back to the model-derived label.
 
   test("US-004 AC1: producer-supplied catalog-rates survives to the recorded row", () => {
     const recorded: CostEvent[] = [];
@@ -631,11 +632,12 @@ describe("attachCostSubscriber", () => {
   });
 
   test("US-004 AC3: event without pricingSource falls back to resolvePricingSource(model)", () => {
-    // ACP path: the adapter never stamps a pricingSource, so the cost
-    // subscriber must fall back to deriving it from the model. US-003
-    // retired MODEL_PRICING — any non-empty resolved model name now resolves
-    // to "fallback-rates" through this path, so the fall-back value is
-    // "fallback-rates" rather than the historical "model-rates".
+    // An event whose producer supplied no stamp (a plain Error-derived row,
+    // or an adapter that resolved no card) must fall back to deriving the
+    // source from the model. US-003 retired MODEL_PRICING — any non-empty
+    // resolved model name now resolves to "fallback-rates" through this
+    // path, so the fall-back value is "fallback-rates" rather than the
+    // historical "model-rates".
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();

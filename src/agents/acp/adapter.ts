@@ -569,6 +569,9 @@ export class AcpAgentAdapter implements AgentAdapter {
         totalTokenUsage,
         hasUsage ? estimateCostUsd(totalTokenUsage, rateCard.rates) : 0,
         totalExactCostUsd,
+        // US-002: name the card that priced the burned tokens so the error
+        // row's estimate is attributable, like every other ACP result.
+        rateCard.source,
       );
     }
 

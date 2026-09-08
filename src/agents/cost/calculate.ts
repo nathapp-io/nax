@@ -86,8 +86,7 @@ export function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
  * `"fallback-rates"`. The producer (native / catalog) carries its own
  * `pricingSource` value on `CompleteResult` / `TurnResult`, which the cost
  * subscriber in `@/runtime/middleware/cost` prefers when supplied. This
- * function exists to serve the path that has no producer-supplied source
- * (currently the ACP adapter, which never stamps one).
+ * function exists to serve the path that has no producer-supplied source.
  *
  * The return union still admits `"catalog-rates"` and `"config-override"`
  * so producer-supplied values type-check through the cost subscriber

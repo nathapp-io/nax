@@ -241,4 +241,49 @@ describe("resolveRateCard", () => {
       expect(warnCalls).toHaveLength(1);
     });
   });
+
+  // AC12 extension: [effort] variants of one unresolved model are one distinct
+  // id — the warning set keys on the effort-stripped id, so [high] and [low]
+  // do not each produce their own "No rate card found" warning.
+  test("AC12 (effort): [effort] variants of one unresolved model warn exactly once", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const lookup = makeLookup(new Map());
+      await resolveRateCard("gpt-5.6-luna[high]", lookup);
+      await resolveRateCard("gpt-5.6-luna[low]", lookup);
+      const warnCalls = warnSpy.mock.calls.filter((c) => c[0] === "rate-card");
+      expect(warnCalls).toHaveLength(1);
+      expect(JSON.stringify(warnCalls)).toContain("gpt-5.6-luna");
+    });
+  });
+
+  // AC21 extension (US-002 quality finding): a forwarding double of the default
+  // lookup — any wrapper that delegates to the real lookupPricing and returns
+  // its undefined miss — must still land on the single load-failure warning
+  // when the shared catalog is in a failed-load state, not one per id. This is
+  // the case the old `lookupPricing === defaultLookupPricing` identity check
+  // silently mislabeled.
+  test("AC21 (wrapped lookup): a forwarding double under a failed catalog warns once, not per id", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const originalLoadProviders = _catalogDeps.loadProviders;
+      // Drive the shared catalog into a failed-load state for a fresh loader
+      // reference: a rejecting loader, hit once via the real lookup.
+      _catalogDeps.loadProviders = mock(async () => {
+        throw new Error("catalog load failed");
+      });
+      await lookupPricing("anthropic", "claude-sonnet-5");
+
+      // A faithful forwarding double of the default lookup.
+      const wrapper: LookupPricing = async (provider, model) => lookupPricing(provider, model);
+      const card1 = await resolveRateCard("sonnet", wrapper);
+      const card2 = await resolveRateCard("opus", wrapper);
+      expect(card1.source).toBe("fallback-rates");
+      expect(card2.source).toBe("fallback-rates");
+      const warnCalls = warnSpy.mock.calls.filter((c) => c[0] === "rate-card");
+      // One load failure -> one warning even though the two ids miss.
+      expect(warnCalls).toHaveLength(1);
+      expect(JSON.stringify(warnCalls)).toContain("Catalog lookup failed");
+
+      _catalogDeps.loadProviders = originalLoadProviders;
+    });
+  });
 });

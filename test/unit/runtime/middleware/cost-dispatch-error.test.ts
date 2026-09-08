@@ -85,6 +85,43 @@ describe("attachCostSubscriber — DispatchErrorEvent → CostErrorEvent (AC8)",
   });
 });
 
+// ─── US-002: error rows name the card that priced the failed estimate ───────
+
+describe("attachCostSubscriber — CostErrorEvent.pricingSource (US-002)", () => {
+  test("a DispatchErrorEvent carrying pricingSource records it on the CostErrorEvent", () => {
+    const agg = makeRecordingAggregator();
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatchError(
+      makeDispatchErrorEvent({
+        tokenUsage: { inputTokens: 100, outputTokens: 50 },
+        estimatedCostUsd: 0.0084,
+        pricingSource: "catalog-rates",
+      }),
+    );
+
+    expect(agg.recordedErrors).toHaveLength(1);
+    expect(agg.recordedErrors[0].pricingSource).toBe("catalog-rates");
+  });
+
+  test("a DispatchErrorEvent without pricingSource records an error row that omits it", () => {
+    const agg = makeRecordingAggregator();
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatchError(
+      makeDispatchErrorEvent({
+        tokenUsage: { inputTokens: 100, outputTokens: 50 },
+        estimatedCostUsd: 0.0084,
+      }),
+    );
+
+    expect(agg.recordedErrors).toHaveLength(1);
+    expect("pricingSource" in agg.recordedErrors[0]).toBe(false);
+  });
+});
+
 // ─── AC9: tokens stays undefined when the dispatch error carried no usage ───
 
 describe("attachCostSubscriber — boundary: tokens undefined, not zeros (AC9)", () => {

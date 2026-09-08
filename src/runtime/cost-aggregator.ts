@@ -146,6 +146,12 @@ export interface CostErrorEvent {
   readonly estimatedCostUsd?: number;
   readonly exactCostUsd?: number;
   /**
+   * US-002: the rate card that priced the failed dispatch's estimated cost,
+   * forwarded from the thrown `SessionTurnError` when it carried one. Error
+   * rows omit it when no card was resolved or no estimate was produced.
+   */
+  readonly pricingSource?: "catalog-rates" | "fallback-rates";
+  /**
    * Canonical cost for budget/totals: exact when available, else estimated.
    * `totalCostUsd` keeps its successful-spend meaning; failed spend is
    * summed separately into `CostSnapshot.totalErrorCostUsd`.

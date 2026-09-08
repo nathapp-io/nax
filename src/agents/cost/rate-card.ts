@@ -60,10 +60,12 @@ export type LookupPricing = (provider: string, model: string) => Promise<TokenPr
 export const MODEL_ALIASES: Readonly<Record<string, AliasEntry>> = modelAliases;
 
 /**
- * Set of ids whose catalog lookup has already been logged as missing this
- * run. Bounded by the number of distinct model ids the run touches; never
- * reset between calls so AC12 (one warning per distinct id) holds across
- * repeat lookups. Exposed via `_resetRateCardWarnings` so tests can clear it.
+ * Set of catalog lookups already logged as missing this run, keyed on the
+ * effort-stripped model id so `gpt-5.6-luna[high]` and `gpt-5.6-luna[low]`
+ * share one warning for one underlying model. Bounded by the number of
+ * distinct bare model ids the run touches; never reset between calls so
+ * AC12 (one warning per distinct id) holds across repeat lookups. Exposed
+ * via `_resetRateCardWarnings` so tests can clear it.
  */
 const unresolvedIds = new Set<string>();
 
@@ -109,13 +111,13 @@ function inferProvider(modelId: string): string {
  *   infers the provider from the model id prefix and queries the catalog
  *   with that — `gpt-5.6-luna` becomes `(openai, gpt-5.6-luna)`.
  * - On miss (catalog miss, alias miss) returns the generic fallback card
- *   with `source: "fallback-rates"` and warns ONCE per distinct unresolved
- *   id.
+ *   with `source: "fallback-rates"` and warns ONCE per distinct bare
+ *   (effort-stripped) id.
  * - On catalog-load failure returns the fallback card with a single
- *   load-failure warning per process. A throwing lookup AND a default
- *   `lookupPricing` whose underlying catalog load failed both route here,
- *   so distinct ids share the same one-shot warning rather than each
- *   generating their own.
+ *   load-failure warning per process. A throwing lookup and a lookup that
+ *   returns `undefined` while the shared catalog sits in a failed-load state
+ *   both route here, so distinct ids share the same one-shot warning rather
+ *   than each generating their own.
  */
 export async function resolveRateCard(
   modelId: string,
@@ -126,7 +128,7 @@ export async function resolveRateCard(
   const coords = splitCoords ?? MODEL_ALIASES[bare] ?? { provider: inferProvider(bare), model: bare };
 
   if (coords.provider === "unknown") {
-    warnUnresolved(modelId);
+    warnUnresolved(bare);
     return { rates: FALLBACK_RATES, source: "fallback-rates" };
   }
 
@@ -134,17 +136,20 @@ export async function resolveRateCard(
   try {
     rates = await lookupPricing(coords.provider, coords.model);
   } catch (err) {
-    warnLoadFailure(modelId, err);
+    warnLoadFailure(bare, err);
     return { rates: FALLBACK_RATES, source: "fallback-rates" };
   }
 
   if (rates === undefined) {
     // Distinguish a real catalog miss from a catalog that failed to load at
-    // all. AC21: distinct ids under a failing load share one warning.
-    if (lookupPricing === defaultLookupPricing && catalogLoadFailed()) {
-      warnLoadFailure(modelId, undefined);
+    // all. AC21: distinct ids under a failing load share one warning. The
+    // probe is the shared catalog's loader state rather than the lookup's
+    // identity — a wrapped or forwarded default lookup must still land on
+    // the one-shot load-failure warning instead of one per id.
+    if (catalogLoadFailed()) {
+      warnLoadFailure(bare, undefined);
     } else {
-      warnUnresolved(modelId);
+      warnUnresolved(bare);
     }
     return { rates: FALLBACK_RATES, source: "fallback-rates" };
   }

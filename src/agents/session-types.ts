@@ -174,8 +174,11 @@ export interface TurnResult {
   /**
    * Which rate card priced this turn (US-003, first half of #1817).
    * `"catalog-rates"` means nax-ai's catalog; `"config-override"` means an
-   * explicit `modelDef.pricing` won wholesale. Set by adapters that split
-   * the decision this way (today: native). Absent otherwise.
+   * explicit `modelDef.pricing` won wholesale; `"fallback-rates"` means the
+   * generic $3/$15-per-1M card applied because nothing more specific
+   * resolved. Set by adapters that resolve a rate card — native (US-003)
+   * and ACP, which stamps its card's branch on every result (US-002).
+   * Absent only when the adapter resolved no card.
    */
   pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
   /**
@@ -248,6 +251,13 @@ export class SessionTurnError extends Error {
     public readonly tokenUsage?: TokenUsage,
     public readonly estimatedCostUsd?: number,
     public readonly exactCostUsd?: number,
+    /**
+     * US-002: which rate card priced the failed turn's accumulated spend.
+     * Set by the ACP adapter (`rateCard.source` — `"catalog-rates"` |
+     * `"fallback-rates"`); the native adapter's protocol-fault path does not
+     * set it, so the field is optional and absent there.
+     */
+    public readonly pricingSource?: "catalog-rates" | "fallback-rates",
     /**
      * nax#1840: the native path throws exactly one class per turn failure, so
      * classification (normally read off SessionFailureError.adapterFailure)

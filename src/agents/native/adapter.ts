@@ -387,6 +387,9 @@ export class NativeAgentAdapter implements AgentAdapter {
           usage?.tokenUsage,
           usage?.costUsd,
           undefined,
+          // pricingSource — the native protocol-fault path has no rate card
+          // to name here; left undefined (SessionTurnError.pricingSource).
+          undefined,
           adapterFailure,
         );
       }

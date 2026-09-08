@@ -143,6 +143,12 @@ lists `MiniMax-M2.7`).
 Only bare ids need entries. A config value already containing `/`
 (`minimax/MiniMax-M2.7`, `opencode-go/deepseek-v4-pro`) is split rather than looked up.
 
+A bare id with no alias entry is resolved by inferring a provider from the model
+prefix — `claude*` → `anthropic`, `gpt*`/`o1*`/`o3*` → `openai`, `gemini*` → `google` —
+and querying the catalog with it (so e.g. `claude-opus-4-6` gets a `catalog-rates` card).
+A bare id matching none of those prefixes falls through to the generic fallback card.
+This inference step is implemented in `resolveRateCard`; it is not covered by any AC.
+
 The file is a shipped default with no user-override path. It exists to cover the three
 Anthropic shorthands `.nax/config.json` uses; any other model can be written as its real
 provider-qualified id and bypass aliasing entirely.
@@ -151,7 +157,8 @@ provider-qualified id and bypass aliasing entirely.
 
 | Condition | Behaviour |
 |---|---|
-| Model id has no alias entry and no `/` | Generic fallback card, `source: "fallback-rates"`, warn once for that id |
+| Bare id with no alias entry and no `/`, known provider prefix (`claude*`, `gpt*`/`o1*`/`o3*`, `gemini*`) | Provider inferred from prefix, catalog queried with it; on hit `catalog-rates`, on miss the fallback row below |
+| Model id has no alias entry and no `/` (unknown prefix) | Generic fallback card, `source: "fallback-rates"`, warn once for that id |
 | Alias resolves but the catalog has no such provider/model | Generic fallback card, `source: "fallback-rates"`, warn once for that id |
 | Catalog load rejects (dynamic import or `defaultProviders` throws) | Every lookup returns no pricing; callers fall back as above; warn once for the load failure |
 | Repeated lookups of the same unresolved id | Exactly one warning per distinct id, not one per turn |
@@ -207,6 +214,11 @@ Depends on: nothing.
 - `src/agents/catalog/index.ts`, `src/agents/catalog/pricing-lookup.ts`
 - `src/agents/cost/rate-card.ts`, `src/agents/cost/model-aliases.json`
 - `test/unit/agents/catalog/pricing-lookup.test.ts`, `test/unit/agents/cost/rate-card.test.ts`
+
+> **File-layout note.** The implementation consolidated `lookupPricing` into
+> `src/agents/catalog/index.ts` (no separate `pricing-lookup.ts`), and named the suite
+> `test/unit/agents/catalog/lookup-pricing.test.ts`. The seam invariant — `lookupPricing`
+> exported from `@/agents/catalog` — is unchanged.
 
 #### Context Files
 - `src/agents/native/models.ts` — `buildRateCard` is the resolve-once pattern to mirror

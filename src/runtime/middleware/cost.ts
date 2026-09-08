@@ -149,8 +149,8 @@ export function attachCostSubscriber(
       // producer-supplied-wins precedent the "wire" branch on this line
       // already sets — the native adapter (US-003) reports its rate card via
       // CompleteResult.pricingSource / TurnResult.pricingSource, and the
-      // dispatch event forwards it here. The ACP path supplies no value, so
-      // the ACP behaviour is unchanged.
+      // dispatch event forwards it here. The ACP adapter (US-002) stamps its
+      // rate card's branch the same way.
       pricingSource: hasWireExactCost ? "wire" : (event.pricingSource ?? resolvePricingSource(event.model)),
       durationMs: event.durationMs,
     };
@@ -201,6 +201,9 @@ export function attachCostSubscriber(
       ...(event.estimatedCostUsd !== undefined ? { estimatedCostUsd: event.estimatedCostUsd } : {}),
       ...(event.exactCostUsd !== undefined ? { exactCostUsd: event.exactCostUsd } : {}),
       ...(costUsd !== undefined ? { costUsd } : {}),
+      // US-002: name the card that priced the failed dispatch's estimate,
+      // forwarded off the thrown SessionTurnError when it carried one.
+      ...(event.pricingSource !== undefined ? { pricingSource: event.pricingSource } : {}),
     };
     aggregator.recordError(errorEvent);
   });
