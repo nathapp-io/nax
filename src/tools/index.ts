@@ -1,3 +1,4 @@
+export { deleteTool } from "./delete";
 export { editTool } from "./edit";
 export {
   isKnownManifestOrLockfileName,
