@@ -206,15 +206,16 @@ function h2PullToolEmptyResult(observations: Observation[], threshold: number): 
   // feature-scoped, so two features' unrelated "US-001" would otherwise dedupe
   // into one displayed site and understate how widely this empty-keyword pattern
   // actually recurs (BUG-48; same fix as H1/H4's `sites`).
-  const byKeyword = new Map<string, { sites: string[]; featureId: string }>();
+  const byKeyword = new Map<string, { sites: string[]; featureIds: Set<string> }>();
   for (const obs of pulls) {
     const keyword = obs.payload.keyword as string;
     const site = `${obs.featureId}/${obs.storyId}`;
     const existing = byKeyword.get(keyword);
     if (existing) {
       existing.sites.push(site);
+      existing.featureIds.add(obs.featureId);
     } else {
-      byKeyword.set(keyword, { sites: [site], featureId: obs.featureId });
+      byKeyword.set(keyword, { sites: [site], featureIds: new Set([obs.featureId]) });
     }
   }
 
@@ -223,12 +224,15 @@ function h2PullToolEmptyResult(observations: Observation[], threshold: number): 
     if (data.sites.length < threshold) continue;
     const count = data.sites.length;
     const unique = uniqueStoryIds(data.sites);
+    const features = [...data.featureIds];
     proposals.push({
       id: "H2",
       severity: "MED",
-      target: { canonicalFile: `${PROJECT_FEATURES_DIR}/${data.featureId}/context.md`, action: "add" },
+      // Sites deliberately span features (#1929) — the target is project-level,
+      // not the feature of whichever observation happened to create the group.
+      target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "add" },
       description: `Pull-tool keyword returned empty: "${keyword}" returned zero results ${count}x`,
-      evidence: `Keyword "${keyword}" returned zero results ${count}× in stories: ${unique.join(", ")}`,
+      evidence: `Keyword "${keyword}" returned zero results ${count}× across ${features.length} features: ${features.join(", ")} (sites: ${unique.join(", ")})`,
       sourceKinds: ["pull-call"],
       storyIds: unique,
     });
@@ -279,15 +283,16 @@ function h4EscalationChain(observations: Observation[], threshold: number): Prop
   // feature-scoped, so two features' unrelated "US-001" would otherwise dedupe
   // into one displayed site and understate how widely this escalation path
   // actually recurs (BUG-48; same fix as H1's `sites`).
-  const byPath = new Map<string, { sites: string[]; featureId: string }>();
+  const byPath = new Map<string, { sites: string[]; featureIds: Set<string> }>();
   for (const obs of escalations) {
     const key = `${obs.payload.from}->${obs.payload.to}`;
     const site = `${obs.featureId}/${obs.storyId}`;
     const existing = byPath.get(key);
     if (existing) {
       existing.sites.push(site);
+      existing.featureIds.add(obs.featureId);
     } else {
-      byPath.set(key, { sites: [site], featureId: obs.featureId });
+      byPath.set(key, { sites: [site], featureIds: new Set([obs.featureId]) });
     }
   }
 
@@ -296,12 +301,15 @@ function h4EscalationChain(observations: Observation[], threshold: number): Prop
     if (data.sites.length < threshold) continue;
     const count = data.sites.length;
     const unique = uniqueStoryIds(data.sites);
+    const features = [...data.featureIds];
     proposals.push({
       id: "H4",
       severity: "MED",
-      target: { canonicalFile: `${PROJECT_FEATURES_DIR}/${data.featureId}/context.md`, action: "add" },
+      // Sites deliberately span features (#1929) — the target is project-level,
+      // not the feature of whichever observation happened to create the group.
+      target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "add" },
       description: `Escalation chain: ${escalationPath} occurred ${count}x`,
-      evidence: `Escalation ${escalationPath} triggered ${count}× in stories: ${unique.join(", ")}`,
+      evidence: `Escalation ${escalationPath} triggered ${count}× across ${features.length} features: ${features.join(", ")} (sites: ${unique.join(", ")})`,
       sourceKinds: ["escalation"],
       storyIds: unique,
     });
