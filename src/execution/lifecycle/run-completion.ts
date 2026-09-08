@@ -134,6 +134,10 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   if (options.skipRegression) {
     // Regression phase already passed on a prior run — skip
   } else if (
+    // nax#1809: under a dry run the regression gate would spawn the real
+    // project suite (runDeferredRegression → fullSuite) — "Show plan without
+    // executing" means no test run of any kind.
+    !options.runtime?.dryRun &&
     // 'per-story' is a superset of 'deferred': the per-story full-suite gate runs
     // during the main loop AND the deferred regression runs once at end-of-run.
     (regressionMode === "deferred" || regressionMode === "per-story") &&

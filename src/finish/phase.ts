@@ -73,10 +73,11 @@ export type FinishSkipReason = "enabled" | "dry-run" | "completed" | "failed" | 
  * *which* clause blocked the phase (#1671) rather than only that one did.
  *
  * Order matters and is preserved from the original single boolean check:
- * `enabled` is checked first (the phase is off, full stop), then the story
- * summary's three fields in the order they were originally `||`'d together,
- * then the branch. A run that fails more than one clause reports only the
- * first — good enough for a log line; nothing downstream needs the full set.
+ * `enabled` is checked first (the phase is off, full stop), then `dry-run`
+ * (nax#1809: a simulated run must never push), then the story summary's
+ * three fields in the order they were originally `||`'d together, then the
+ * branch. A run that fails more than one clause reports only the first —
+ * good enough for a log line; nothing downstream needs the full set.
  */
 export function finishSkipReason(args: {
   enabled: boolean;
