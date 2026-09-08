@@ -9,7 +9,9 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import type { Catalog, Pricing, RawModel, RawProvider, ResolvedModel } from "@nathapp/nax-ai";
 import { withWarnSpy } from "@test/helpers";
+import { _catalogDeps, lookupPricing } from "@/agents/catalog";
 import { _resetRateCardWarnings, type LookupPricing, resolveRateCard } from "@/agents/cost";
 import modelAliases from "@/agents/cost/model-aliases.json";
 
@@ -126,22 +128,83 @@ describe("resolveRateCard", () => {
     expect(lookup.calls).toEqual([{ provider: "anthropic", model: "claude-sonnet-5" }]);
   });
 
-  // AC15: regression — every alias in model-aliases.json, when its
-  // (provider, model) is passed to lookupPricing, returns a defined result.
-  // This is the test that keeps the alias file from rotting.
+  // AC15: regression — every alias in model-aliases.json must resolve through
+  // the REAL `lookupPricing` against a catalog that contains those coordinates.
+  // The catalog entries here are hardcoded independently of the alias file —
+  // derived from the same source of truth the implementer uses when wiring the
+  // catalog — so a stale alias (coordinates that no longer exist) or a stale
+  // catalog (entry the alias still references that was retired) fails this
+  // test loudly.
   test("AC15: every alias in model-aliases.json returns a defined lookupPricing result", async () => {
-    // The alias file is the source of truth for THIS test's expectations —
-    // mirror it into a synthetic lookup table so every entry resolves.
-    const table = new Map<string, Awaited<ReturnType<LookupPricing>>>();
-    for (const [, coords] of Object.entries(modelAliases)) {
-      table.set(`${coords.provider}/${coords.model}`, { inputPer1M: 1, outputPer1M: 2 });
-    }
-    const lookup = makeLookup(table);
-    for (const [id, coords] of Object.entries(modelAliases)) {
-      const card = await resolveRateCard(id, lookup);
-      expect(card.source).toBe("catalog-rates");
-      // Also assert the alias coordinates really do resolve under lookup.
-      expect(lookup.calls).toContainEqual({ provider: coords.provider, model: coords.model });
+    const originalLoadProviders = _catalogDeps.loadProviders;
+    const originalNormalise = _catalogDeps.normalise;
+    try {
+      // Coordinates are independent of modelAliases — duplicating the alias
+      // file would let stale alias entries pass by tautology. Each entry
+      // here must match what the catalog actually ships.
+      const CATALOG_ENTRIES: ReadonlyArray<readonly [string, string]> = [
+        ["anthropic", "claude-sonnet-5"],
+        ["anthropic", "claude-opus-5"],
+        ["anthropic", "claude-haiku-4-5"],
+      ];
+      const samplePricing: Pricing = { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.0 };
+      _catalogDeps.loadProviders = mock(async () =>
+        CATALOG_ENTRIES.map(([provider, modelId]) => {
+          const rawModel: RawModel = {
+            id: modelId,
+            pricing: samplePricing,
+            protocol: "test",
+            contextWindow: 128_000,
+            supportsTools: true,
+            thinkingLevels: [],
+          };
+          return {
+            id: provider,
+            baseUrl: "https://test.invalid",
+            auth: { kind: "api-key" },
+            defaultProtocol: "test",
+            models: [rawModel],
+          } satisfies RawProvider;
+        }),
+      );
+      _catalogDeps.normalise = mock((raw: readonly RawProvider[]) => {
+        const entries = new Map<string, { pricing: Pricing; model: RawModel }>();
+        for (const p of raw) {
+          for (const m of p.models) entries.set(`${p.id}/${m.id}`, { pricing: m.pricing, model: m });
+        }
+        const catalog: Catalog = {
+          provider: () => undefined,
+          model: (provider: string, model: string) => {
+            const e = entries.get(`${provider}/${model}`);
+            if (!e) return undefined;
+            const { pricing, model: rawModel } = e;
+            const resolved = {
+              id: rawModel.id,
+              provider,
+              protocol: rawModel.protocol ?? "test",
+              pricing,
+              contextWindow: rawModel.contextWindow,
+              supportsTools: rawModel.supportsTools,
+              thinkingLevels: rawModel.thinkingLevels,
+            } satisfies ResolvedModel;
+            return resolved;
+          },
+          listModels: () => [],
+        };
+        return catalog;
+      });
+
+      for (const [id, coords] of Object.entries(modelAliases)) {
+        const rates = await lookupPricing(coords.provider, coords.model);
+        expect(rates).toBeDefined();
+        if (rates === undefined) throw new Error(`lookupPricing returned undefined for alias "${id}"`);
+        expect(Number.isFinite(rates.inputPer1M)).toBe(true);
+        expect(Number.isFinite(rates.outputPer1M)).toBe(true);
+      }
+    } finally {
+      _catalogDeps.loadProviders = originalLoadProviders;
+      _catalogDeps.normalise = originalNormalise;
+      mock.restore();
     }
   });
 
@@ -159,7 +222,7 @@ describe("resolveRateCard", () => {
       // which alias maps to nothing.
       const data = warnCalls[0]?.[2];
       if (typeof data !== "object" || data === null) throw new Error("expected warn data");
-      expect(data["modelId"]).toBe("sonnet");
+      expect(data.modelId).toBe("sonnet");
     });
   });
 
