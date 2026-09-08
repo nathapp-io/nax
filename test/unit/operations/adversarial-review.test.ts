@@ -228,6 +228,55 @@ describe("adversarialReviewOp.parse()", () => {
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBeUndefined();
   });
+
+  // US-002 — adversarial-review finding: hopBody's requote drop-recovery rewrites
+  // turn.output with a framework-computed `passed` after downgrading unsubstantiated
+  // blockers. parse() must surface the model's original claim via a marker so
+  // verify() can stamp it as `modelPassed` — otherwise the audit attributes a
+  // model-claimed pass to a model that claimed failure.
+  test("US-002: surfaces the original model claim when hopBody rewrote `passed` (requote path)", () => {
+    const ctx = makeBuildCtx();
+    // First turn: model claimed failure with one blocking finding.
+    // hopBody requote could not recover it, so the rewrite flipped `passed:true`.
+    // The marker preserves the model's raw claim.
+    const json = JSON.stringify({
+      passed: true, // framework-computed after requote downgrade
+      findings: [], // blocking finding downgraded to advisory (no longer in `findings`)
+      _originalModelPassed: false, // marker set by hopBody rewrite
+    });
+    const result = adversarialReviewOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.passed).toBe(true); // framework's verdict — what parse() reports
+    expect(result.modelPassed).toBe(false); // original claim — what US-002 persists
+  });
+
+  test("US-002: surfaces modelPassed:true when hopBody rewrote with a framework pass that matches the model", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({
+      passed: true,
+      findings: [],
+      _originalModelPassed: true,
+    });
+    const result = adversarialReviewOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.modelPassed).toBe(true);
+  });
+
+  test("US-002: leaves modelPassed undefined when no marker is present (no rewrite happened)", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({ passed: true, findings: [] });
+    const result = adversarialReviewOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.modelPassed).toBeUndefined();
+  });
+
+  test("US-002: ignores a wrong-typed _originalModelPassed marker (only boolean counts)", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({
+      passed: true,
+      findings: [],
+      _originalModelPassed: "yes", // wrong type — must not coerce
+    });
+    const result = adversarialReviewOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.modelPassed).toBeUndefined();
+  });
 });
 
 describe("adversarialReviewOp.retry", () => {

@@ -67,4 +67,52 @@ describe("toReviewDecisionPayload", () => {
     expect(payload?.parsed === false && payload.looksLikeFail).toBe(true);
     expect(payload?.parsed === false && payload.unparsedPreview).toBe('{"passed": false, "findings": [ …');
   });
+
+  // US-002 — AC1: modelPassed:true must round-trip onto the payload rather than
+  // being silently dropped at the emit seam.
+  test("forwards modelPassed:true from an adversarial op output", () => {
+    const payload = toReviewDecisionPayload("adversarial-review", {
+      ...base,
+      passed: true,
+      modelPassed: true,
+    });
+    expect(payload?.parsed).toBe(true);
+    expect(payload?.parsed === true && payload.modelPassed).toBe(true);
+  });
+
+  // US-002 — AC2: the truthy-narrowing pitfall: `modelPassed:false` MUST be
+  // preserved as false on the payload, not collapsed to undefined by a falsy
+  // check. Without explicit boolean narrowing, a `?` optional + spread pattern
+  // would silently drop it.
+  test("forwards modelPassed:false from an adversarial op output rather than dropping it as falsy", () => {
+    const payload = toReviewDecisionPayload("adversarial-review", {
+      ...base,
+      passed: true,
+      modelPassed: false,
+    });
+    expect(payload?.parsed).toBe(true);
+    // Distinct from `toBeUndefined()` — the missing-modelPassed case is AC3.
+    expect(payload?.parsed === true && payload.modelPassed).toBe(false);
+  });
+
+  // US-002 — AC3: a semantic output has no modelPassed (the adversarial op is
+  // the only producer). The absent case must NOT introduce an explicit
+  // `modelPassed: undefined` field — semantic outputs flow through the same
+  // emit seam and must remain indistinguishable from pre-US-002 records.
+  test("omits modelPassed when the op output carries none", () => {
+    const payload = toReviewDecisionPayload("adversarial-review", base);
+    expect(payload?.parsed === true && "modelPassed" in payload).toBe(false);
+  });
+
+  // US-002 — AC4: a wrong-typed modelPassed (string "yes", for example from a
+  // misconfigured op or a hand-authored fixture) must NOT be coerced. The seam
+  // narrows to boolean only; any other value is omitted.
+  test("omits modelPassed when the op output carries the string 'yes' (not a boolean)", () => {
+    const payload = toReviewDecisionPayload("adversarial-review", {
+      ...base,
+      passed: true,
+      modelPassed: "yes",
+    });
+    expect(payload?.parsed === true && "modelPassed" in payload).toBe(false);
+  });
 });

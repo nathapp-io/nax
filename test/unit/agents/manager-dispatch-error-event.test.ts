@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import { AgentManager } from "@/agents/manager";
 import { buildDispatchErrorEvent } from "@/agents/manager-dispatch";
@@ -251,6 +252,43 @@ describe("AgentManager.runAsSession failed SessionTurnError (AC14)", () => {
     // The legacy field stays populated too — call sites still rely on it.
     expect(event?.storyId).toBe("US-001");
   });
+
+  // Adversarial review (manager.ts:507): the wiring that forwards
+  // handle.modelDef to the error event was unverified. AC5/AC6 only cover
+  // buildDispatchErrorEvent directly, and the AC14 tests above pass a handle
+  // without modelDef, so a regression that removed `modelDef: handle.modelDef`
+  // from the runAsSession catch would leave every AC test green while
+  // production error rows silently lost model attribution. This test pins
+  // the wiring end-to-end through the manager.
+  test("AC6 (wiring): runAsSession forwards handle.modelDef onto the emitted DispatchErrorEvent.model", async () => {
+    const bus = new DispatchEventBus();
+    const sessionTurnError = makeSessionTurnErrorWithUsage();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => {
+        throw sessionTurnError;
+      }),
+      dispatchEvents: bus,
+    });
+    const receivedErrors: DispatchErrorEvent[] = [];
+    bus.onDispatchError((e) => receivedErrors.push(e));
+
+    // Pin a modelDef on the handle — runAsSession must read it off the
+    // handle (not the opts) and forward it to buildDispatchErrorEvent via
+    // dispatchOptions. parseModelSpec then decomposes the bare id (no
+    // [effort] suffix in this fixture) so the recorded model is exactly the
+    // modelDef.model string.
+    await expect(
+      manager.runAsSession(
+        "claude",
+        makeHandle({ modelDef: { provider: "anthropic", model: "anthropic/claude-sonnet-5" } }),
+        "do the thing",
+        { pipelineStage: "run", storyId: "US-001" },
+      ),
+    ).rejects.toBe(sessionTurnError);
+
+    expect(receivedErrors).toHaveLength(1);
+    expect(receivedErrors[0]?.model).toBe("anthropic/claude-sonnet-5");
+  });
 });
 
 // AC14's runAsSession coverage stops at the session transport. The story
@@ -306,5 +344,53 @@ describe("AgentManager.completeAsWithFallback dispatch-error path", () => {
     expect(event?.callId).toBe("call-42");
     expect(event?.scopeId).toBe("scope-eu");
     expect(event?.sessionRole).toBe("synthesis");
+  });
+
+  test("attributes a missing fallback dispatch error to the fallback agent and its resolved model", async () => {
+    const bus = new DispatchEventBus();
+    const receivedErrors: DispatchErrorEvent[] = [];
+    bus.onDispatchError((event) => receivedErrors.push(event));
+    const primary = makeAgentAdapter({
+      complete: mock(async () => ({
+        output: "",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+        adapterFailure: {
+          outcome: "fail-quota" as const,
+          category: "availability" as const,
+          retriable: false,
+          message: "primary quota exhausted",
+        },
+      })),
+    });
+    const manager = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
+      }),
+      makeAgentRegistry({ getAgent: (name) => (name === "claude" ? primary : undefined) }),
+      { dispatchEvents: bus },
+    );
+
+    await expect(
+      manager.completeAsWithFallback("claude", "do the thing", {
+        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+        modelDefFor: (name) => (name === "codex" ? { provider: "openai", model: "gpt-5.6-luna" } : undefined),
+        workdir: "/tmp",
+        pipelineStage: "complete",
+      }),
+    ).rejects.toThrow('Agent "codex" not found in registry');
+
+    expect(receivedErrors).toHaveLength(1);
+    expect(receivedErrors[0]?.agentName).toBe("codex");
+    expect(receivedErrors[0]?.model).toBe("gpt-5.6-luna");
   });
 });

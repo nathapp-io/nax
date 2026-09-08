@@ -124,6 +124,16 @@ export type ReviewDecisionPayload =
       acks?: readonly unknown[];
       /** The blockingThreshold the op resolved and used to compute `passed` (US-003 AC8 precedent). */
       blockingThreshold?: "error" | "warning" | "info";
+      /**
+       * The model's raw `passed` flag, before `verify()` applied
+       * blockingThreshold. US-002 — adversarial-only, persists verdict
+       * provenance so a `passed:true` verdict beside an error-severity finding
+       * is attributable to the model's own claim rather than a miscomputed
+       * verdict. NOT gated behind `parsed`: a fail-open / looksLikeFail give-up
+       * that still has a model-claim resolvable from the raw record must
+       * surface it, mirroring how `blockingThreshold` is read outside the parsed branch.
+       */
+      modelPassed?: boolean;
     }
   | {
       reviewer: "semantic" | "adversarial";
@@ -144,6 +154,8 @@ export type ReviewDecisionPayload =
        * case issue #1889 needs this data for.
        */
       blockingThreshold?: "error" | "warning" | "info";
+      /** US-002 — see parsed:true branch. Carried outside the parsed branch too. */
+      modelPassed?: boolean;
     };
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally

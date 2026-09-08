@@ -120,6 +120,73 @@ describe("attachReviewAuditSubscriber", () => {
     expect(decisions[0].passed).toBe(false);
   });
 
+  // US-002 — AC7: the audit subscriber forwards modelPassed from the dispatched
+  // event onto the decision the writer consumes, matching how blockingThreshold
+  // is forwarded. Without this, the persisted audit JSON never sees the field.
+  test("forwards modelPassed from the dispatched event to the decision", () => {
+    const decisions: ReviewAuditDecision[] = [];
+    const bus = new DispatchEventBus();
+    attachReviewAuditSubscriber(
+      bus,
+      {
+        recordDispatch() {},
+        recordDecision: (e) => decisions.push(e),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
+      "run-1",
+    );
+
+    const event: ReviewDecisionEvent = {
+      kind: "review-decision",
+      reviewer: "adversarial",
+      timestamp: 9000,
+      parsed: true,
+      passed: true,
+      modelPassed: false,
+      result: { passed: true, findings: [] },
+    };
+    bus.emitReviewDecision(event);
+
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].modelPassed).toBe(false);
+  });
+
+  // US-002 — adversarial-review finding: the headline scenario drives the full
+  // event→decision→audit pipeline. Verdict flips to passed:true at the emit seam
+  // (nax#1378 sub-threshold), modelPassed stays false. The audit record must
+  // carry the modelPassed value, not the framework's flipped verdict.
+  test("AC6 (end-to-end): an event with passed:true + modelPassed:false reaches the decision with modelPassed:false", () => {
+    const decisions: ReviewAuditDecision[] = [];
+    const bus = new DispatchEventBus();
+    attachReviewAuditSubscriber(
+      bus,
+      {
+        recordDispatch() {},
+        recordDecision: (e) => decisions.push(e),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
+      "run-1",
+    );
+
+    const event: ReviewDecisionEvent = {
+      kind: "review-decision",
+      reviewer: "adversarial",
+      timestamp: 9000,
+      parsed: true,
+      passed: true,
+      modelPassed: false,
+      result: { passed: true, findings: [] },
+    };
+    bus.emitReviewDecision(event);
+
+    expect(decisions).toHaveLength(1);
+    const decision = decisions[0];
+    expect(decision.passed).toBe(true); // framework's flipped verdict
+    expect(decision.modelPassed).toBe(false); // model-claimed failure — preserved
+  });
+
   test("unsubscribing stops review-decision forwarding", () => {
     const decisions: ReviewAuditDecision[] = [];
     const bus = new DispatchEventBus();

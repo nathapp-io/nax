@@ -107,6 +107,13 @@ export interface ReviewAuditEntry {
   adversarialDropAnalysis?: AdversarialDropAnalysis[];
   /** Issue #986 — per-accept counterfactual analysis (blocking findings only). Adversarial only. */
   adversarialAcceptAnalysis?: AdversarialAcceptAnalysis[];
+  /**
+   * US-002 — the model's raw `passed` flag, before `verify()` applied
+   * blockingThreshold. Carried on the audit record so a `passed:true` verdict
+   * beside an error-severity finding is attributable to the model's own
+   * claim or to a miscomputed verdict. Adversarial-only; absent otherwise.
+   */
+  modelPassed?: boolean;
   /** nax version + short commit that produced this record (audit provenance). */
   naxVersion?: string;
   naxCommit?: string;
@@ -218,6 +225,14 @@ export function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): stri
       diffAvailable: entry.diffAvailable ?? null,
       adversarialDropAnalysis: entry.adversarialDropAnalysis ?? null,
       adversarialAcceptAnalysis: entry.adversarialAcceptAnalysis ?? null,
+      // US-002 — verdict provenance. Written as the boolean itself (including
+      // explicit `false`) when the entry carries it; written as `null` when the
+      // producer (semantic, or an adversarial output that did not stamp the
+      // field) had nothing to declare. Distinct from "field absent" — JSON
+      // consumers reading this shape need to tell the two apart from the
+      // schema, which is why the audit reader sees `null` rather than the key
+      // being omitted.
+      modelPassed: entry.modelPassed ?? null,
     },
     null,
     2,

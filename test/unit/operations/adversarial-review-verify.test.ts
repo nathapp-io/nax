@@ -665,4 +665,31 @@ describe("adversarialReviewOp.verify() — sub-threshold verdict (#1378)", () =>
       expect(result.modelPassed).toBe(false); // raw model claim preserved
     });
   });
+
+  // US-002 — adversarial-review finding: hopBody's requote drop-recovery rewrites
+  // `passed` to a framework-computed value after downgrading unsubstantiated blockers.
+  // parse() surfaces the model's original claim via the `modelPassed` field on the
+  // parsed object (set by the hopBody rewrite marker), and verify() must prefer that
+  // surfaced value over the framework-computed `parsed.passed`. Otherwise the audit
+  // attributes a "model-claimed pass" to a model that claimed failure.
+  test("US-002: modelPassed on parsed wins over parsed.passed when hopBody rewrote (requote path)", async () => {
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      // Model claimed failure, framework flipped to pass after requote downgrade.
+      // parse() surfaces the original claim on `modelPassed`; verify() must use it.
+      const parsed = makeOutput({
+        passed: true, // framework-computed after requote downgrade
+        modelPassed: false, // original model claim surfaced by parse() via the rewrite marker
+        findings: [],
+        normalizedFindings: [],
+      });
+
+      const result = await runVerify(parsed, input, ctx);
+
+      assertDefined(result, "verify() result");
+      expect(result.passed).toBe(true); // framework's verdict — what verify() persists
+      expect(result.modelPassed).toBe(false); // original claim — what US-002 persists
+    });
+  });
 });

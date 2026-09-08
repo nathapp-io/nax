@@ -225,7 +225,6 @@ export class AgentManager implements IAgentManager {
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
-    // No dead-primary skip (nax#1722); swapped hops re-resolve the model (nax#1739). Hop budget shared with run().
     let currentAgent = primaryAgent;
     let currentTier: string | undefined;
     let hopsSoFar = this._budget.spent(options.storyId);
@@ -240,16 +239,18 @@ export class AgentManager implements IAgentManager {
 
     try {
       while (true) {
+        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent, currentTier);
         const adapter = this._resolveRegistry().getAgent(currentAgent);
         if (!adapter) {
           _finalStatus = "error";
           throw new NaxError(`Agent "${currentAgent}" not found in registry`, "AGENT_NOT_FOUND", {
             stage: "complete",
             agentName: currentAgent,
+            modelDef: hopOptions.modelDef,
+            modelTier: currentTier,
           });
         }
 
-        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent, currentTier);
         let result: CompleteResult;
         try {
           const optionsWithLifecycle: ResolvedCompleteOptions = this._pidRegistry
@@ -271,7 +272,6 @@ export class AgentManager implements IAgentManager {
 
         _totalCostUsd += result.estimatedCostUsd;
 
-        // Empty output with no failure synthesizes fail-stale; mirrors call.ts sendWithFileOutput (spec §B2).
         if (!result.adapterFailure && !result.output?.trim()) {
           result = {
             ...result,
@@ -290,7 +290,6 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
-        // fail-stale same-agent retry (mirrors runWithFallback pattern at manager.ts:275-298).
         const isFailStale = result.adapterFailure.outcome === "fail-stale";
         if (isFailStale && result.adapterFailure.retriable && staleRetryAttempts < maxStaleRetries) {
           staleRetryAttempts++;
@@ -344,7 +343,6 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
-        // Hop-local exclusion prevents re-selecting the failed agent.
         this.markUnavailable(currentAgent, result.adapterFailure);
         const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
         if (!next) {
@@ -495,8 +493,7 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatch(event);
       return result;
     } catch (err) {
-      // US-001: preserve the role resolved from the handle, matching the
-      // successful dispatch event when callers omit opts.sessionRole.
+      // US-001: forward handle.modelDef/modelTier so the error event records the same model attribution the success path would have.
       const errEvent = buildDispatchErrorEvent({
         origin: "runAsSession",
         agentName,
@@ -505,7 +502,7 @@ export class AgentManager implements IAgentManager {
         prompt,
         resolvedPermissions,
         startedAt: start,
-        dispatchOptions: { ...opts, sessionRole },
+        dispatchOptions: { ...opts, sessionRole, modelDef: handle.modelDef, modelTier: handle.modelTier },
       });
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
@@ -540,24 +537,28 @@ export class AgentManager implements IAgentManager {
         profile: this._config.profile,
         startedAt: start,
         sessionId: outcome.result.sessionId,
-        // US-004: forward the producer's rate-card report (US-003) so the cost
-        // subscriber can prefer it over the model-derived default.
         ...(outcome.result.pricingSource !== undefined ? { pricingSource: outcome.result.pricingSource } : {}),
       });
       this._dispatchEvents.emitDispatch(event);
       return outcome;
     } catch (err) {
-      // US-001: pass options as dispatchOptions so the error event carries
-      // the spent usage / role attribution.
+      const errorContext = err instanceof NaxError ? err.context : undefined;
+      const dispatch = errorContext as
+        | { agentName?: string; modelDef?: ResolvedCompleteOptions["modelDef"]; modelTier?: string }
+        | undefined;
       const errEvent = buildDispatchErrorEvent({
         origin: "completeAs",
-        agentName,
+        agentName: dispatch?.agentName ?? agentName,
         stage,
         error: err,
         prompt,
         resolvedPermissions,
         startedAt: start,
-        dispatchOptions: options,
+        dispatchOptions: {
+          ...options,
+          ...(dispatch?.modelDef !== undefined ? { modelDef: dispatch.modelDef } : {}),
+          ...(dispatch?.modelTier !== undefined ? { modelTier: dispatch.modelTier } : {}),
+        },
       });
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;

@@ -14,20 +14,18 @@ import {
 } from "../review/adversarial-helpers";
 import type { AcDroppedEntry, AcQuoteRejectionCode } from "../review/finding-filters";
 import {
-  checkFindingEvidence,
-  downgradeUnsubstantiatedFinding,
   filterByAcQuote,
   filterByScopeQuote,
   hasCorroboratedInspectionTrail,
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
 import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
-import { parseRequoteResponse } from "../review/requote-response";
 import type { AdversarialReviewConfig, ReviewAck, SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { reviewExhaustedFallback } from "./_review-fallback";
 import { extractRepromptInfo, withRepromptMarker } from "./adversarial-reprompt-marker";
+import { DEFAULT_MAX_REQUOTES, requoteBlockingAdversarialFindings } from "./adversarial-requote";
 import type { HopBodyContext, RunOperationWithHooks } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
@@ -129,92 +127,6 @@ const FAIL_OPEN: AdversarialReviewOutput = {
   acDropped: [],
   failOpen: true,
 };
-
-const ADVERSARIAL_REQUOTE_RECOVERED_EVENT = "review.adversarial.finding.requote_recovered";
-const ADVERSARIAL_REQUOTE_FAILED_EVENT = "review.adversarial.finding.requote_failed";
-const DEFAULT_MAX_REQUOTES = 5;
-
-/**
- * Same-session requote recovery for adversarial findings with unmatched evidence.
- * Mirrors requoteBlockingFindings in semantic-review.ts for the adversarial shape.
- * Only active in ref mode when substantiation.requote is true.
- */
-async function requoteBlockingAdversarialFindings(
-  findings: AdversarialLLMFinding[],
-  ctx: HopBodyContext<AdversarialReviewInput>,
-): Promise<{ findings: AdversarialLLMFinding[]; changed: boolean; extraCostUsd: number }> {
-  const threshold = ctx.input.blockingThreshold ?? "error";
-  const maxRequotes = ctx.input.adversarialConfig.substantiation?.maxRequotes ?? DEFAULT_MAX_REQUOTES;
-  const requoteEnabled = ctx.input.adversarialConfig.substantiation?.requote ?? true;
-  if (ctx.input.mode !== "ref" || !requoteEnabled || maxRequotes <= 0) {
-    return { findings, changed: false, extraCostUsd: 0 };
-  }
-  const next = [...findings];
-  let changed = false;
-  let extraCostUsd = 0;
-  let used = 0;
-  for (const [index, finding] of next.entries()) {
-    if (!isBlockingSeverity(finding.severity, threshold)) continue;
-    const initialEvidence = await checkFindingEvidence({
-      finding,
-      workdir: ctx.input.workdir,
-      repoRoot: ctx.input.repoRoot,
-    });
-    if (initialEvidence.status !== "unmatched") continue;
-    if (used >= maxRequotes) break;
-    used += 1;
-
-    const retry = await ctx.send(AdversarialReviewPromptBuilder.requoteVerbatim({ finding }));
-    extraCostUsd += retry.estimatedCostUsd ?? 0;
-    const requote = parseRequoteResponse(retry.output);
-    if (!requote) {
-      next[index] = downgradeUnsubstantiatedFinding({
-        finding,
-        storyId: ctx.input.story.id,
-        event: ADVERSARIAL_REQUOTE_FAILED_EVENT,
-        ...initialEvidence,
-      });
-      changed = true;
-      continue;
-    }
-
-    const updatedFinding: AdversarialLLMFinding = {
-      ...finding,
-      verifiedBy: {
-        file: requote.file,
-        line: requote.line,
-        observed: requote.observed,
-      },
-    };
-    const requotedEvidence = await checkFindingEvidence({
-      finding: updatedFinding,
-      workdir: ctx.input.workdir,
-      repoRoot: ctx.input.repoRoot,
-    });
-    if (requotedEvidence.status === "matched") {
-      getSafeLogger()?.info("review", "Recovered adversarial finding via same-session requote", {
-        storyId: ctx.input.story.id,
-        event: ADVERSARIAL_REQUOTE_RECOVERED_EVENT,
-        file: requotedEvidence.file,
-        line: requotedEvidence.line,
-      });
-      next[index] = updatedFinding;
-      changed = true;
-      continue;
-    }
-
-    next[index] = downgradeUnsubstantiatedFinding({
-      finding: updatedFinding,
-      storyId: ctx.input.story.id,
-      event: ADVERSARIAL_REQUOTE_FAILED_EVENT,
-      file: requotedEvidence.file,
-      line: requotedEvidence.line,
-      observed: requotedEvidence.observed,
-    });
-    changed = true;
-  }
-  return { findings: next, changed, extraCostUsd };
-}
 
 const adversarialParseRetry = (input: AdversarialReviewInput, maxAttempts: number) =>
   makeParseRetryStrategy({
@@ -414,9 +326,19 @@ export const adversarialReviewOp: RunOperationWithHooks<
       const passed = !requoted.findings.some((finding) =>
         isBlockingSeverity(finding.severity, ctx.input.blockingThreshold ?? "error"),
       );
+      // US-002 — `passed` is framework-computed after the requote downgrade, so
+      // it is NOT the model's raw claim. Embed the model's original `passed`
+      // under `_originalModelPassed` so parse() can surface it on the parsed
+      // result and verify() can stamp it as `modelPassed`. Without this the
+      // audit would attribute the framework's flipped verdict to the model.
       return {
         ...turn,
-        output: JSON.stringify({ passed, findings: requoted.findings, ...(parsed.acks && { acks: parsed.acks }) }),
+        output: JSON.stringify({
+          passed,
+          findings: requoted.findings,
+          ...(parsed.acks && { acks: parsed.acks }),
+          _originalModelPassed: parsed.passed,
+        }),
         estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
       };
     }
@@ -450,6 +372,21 @@ export const adversarialReviewOp: RunOperationWithHooks<
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateAdversarialShape(raw);
     const repromptEvent = extractRepromptInfo(raw);
+    // US-002 — hopBody's requote drop-recovery rewrites `passed` to a
+    // framework-computed value after downgrading unsubstantiated blockers. The
+    // rewrite embeds the model's original claim under `_originalModelPassed`,
+    // matching the `_repromptInfo` marker pattern above. verify() prefers this
+    // surfaced value over the framework-computed `parsed.passed` so the audit
+    // attributes a `passed:true` verdict to a model that claimed pass, not to
+    // one that claimed failure. Without this, the field would silently round-trip
+    // the framework's verdict and the ten historical `passed:true beside
+    // error-severity finding` records would carry `modelPassed:true` while the
+    // model had said `passed:false` — exactly the miscomputation US-002 exists
+    // to make observable.
+    const originalModelPassed =
+      raw && typeof raw === "object" && typeof raw._originalModelPassed === "boolean"
+        ? raw._originalModelPassed
+        : undefined;
     if (parsed) {
       return {
         passed: parsed.passed,
@@ -458,6 +395,7 @@ export const adversarialReviewOp: RunOperationWithHooks<
         acDropped: [],
         repromptEvent,
         ...(parsed.acks && { acks: parsed.acks }),
+        ...(originalModelPassed !== undefined && { modelPassed: originalModelPassed }),
       };
     }
     if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {
@@ -474,8 +412,20 @@ export const adversarialReviewOp: RunOperationWithHooks<
   },
   async verify(parsed, input, _verifyCtx) {
     const threshold = input.blockingThreshold ?? "error";
-    if (parsed.failOpen || parsed.looksLikeFail) return { ...parsed, blockingThreshold: threshold };
-    if (parsed.findings.length === 0) return { ...parsed, blockingThreshold: threshold };
+    // US-002 — `parsed.modelPassed` is the model's raw claim, surfaced by parse()
+    // when hopBody rewrote `passed` (requote drop-recovery). On a no-rewrite path
+    // the field is undefined, so we fall back to `parsed.passed` (which IS the
+    // model's claim there). On the short-circuits below the rewrite cannot have
+    // happened, so `parsed.passed` alone is authoritative — but we still prefer
+    // `parsed.modelPassed` defensively in case a future rewrite path also targets
+    // failOpen / looksLikeFail / empty-findings.
+    const modelPassed = parsed.modelPassed ?? parsed.passed;
+    if (parsed.failOpen || parsed.looksLikeFail) {
+      return { ...parsed, blockingThreshold: threshold, modelPassed };
+    }
+    if (parsed.findings.length === 0) {
+      return { ...parsed, blockingThreshold: threshold, modelPassed };
+    }
     const findings = parsed.findings as AdversarialLLMFinding[];
 
     const substantiated = await substantiateAdversarialFindings({
@@ -564,7 +514,7 @@ export const adversarialReviewOp: RunOperationWithHooks<
       ...parsed,
       passed,
       blockingThreshold: threshold,
-      modelPassed: parsed.passed,
+      modelPassed,
       findings: accepted,
       // #1368 — `testFileMatch` also decides the fix lane: a finding located in a
       // test file goes to the test-writer whatever its category says, because the

@@ -1,0 +1,2 @@
+[2026-09-07T17:27:21.321Z] US-001 — PASSED — Cost ledger records existing dispatch attribution — Cost: $2.5350
+[2026-09-07T17:45:44.793Z] US-002 — PASSED — Review audit records model verdict provenance — Cost: $1.3743

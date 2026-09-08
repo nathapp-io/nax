@@ -72,10 +72,15 @@ describe("attachCostSubscriber", () => {
     bus.emitDispatch(makeSessionTurnEvent());
 
     expect(recorded).toHaveLength(1);
-    expect(recorded[0].tokens.input).toBe(100);
-    expect(recorded[0].tokens.output).toBe(50);
-    expect(recorded[0].tokens.cacheRead).toBe(10);
-    expect(recorded[0].tokens.cacheWrite).toBe(5);
+    // The default fixture carries `tokenUsage`, so the recorded row has a
+    // `tokens` field. Pin it before reading its sub-fields — `tokens` is
+    // optional on `CostEvent` since US-001 (the usageMissing path omits it).
+    const tokens = recorded[0].tokens;
+    if (!tokens) throw new Error("expected tokens on session-turn row with tokenUsage");
+    expect(tokens.input).toBe(100);
+    expect(tokens.output).toBe(50);
+    expect(tokens.cacheRead).toBe(10);
+    expect(tokens.cacheWrite).toBe(5);
     expect(recorded[0].exactCostUsd).toBe(0.006);
     expect(recorded[0].costUsd).toBe(0.006);
     expect(recorded[0].confidence).toBe("exact");
@@ -102,7 +107,31 @@ describe("attachCostSubscriber", () => {
     expect(recorded[0].estimatedCostUsd).toBe(0);
   });
 
-  test("skips emit when no tokenUsage and no exactCostUsd", () => {
+  test("US-001: session-turn with no tokenUsage and exactCostUsd: 0 records a row carrying usageMissing: true", () => {
+    // Pre-US-001: this dispatch (a complete event with neither tokenUsage
+    // nor exactCostUsd) recorded nothing — the skip path silently dropped
+    // every zero-token / zero-cost row, which left the cost ledger unable
+    // to answer "how many dispatches happened" independently of "how much
+    // was spent". The session-turn side now records the row with
+    // usageMissing: true so the loop-length signal survives; a complete
+    // event in the same shape is still skipped (different code path — see
+    // the complete-event skip test below).
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ tokenUsage: undefined, exactCostUsd: 0, estimatedCostUsd: undefined }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].usageMissing).toBe(true);
+  });
+
+  test("complete event with no tokenUsage and no exactCostUsd is still skipped", () => {
+    // Pre-US-001 invariant preserved for the complete-kind path: a one-shot
+    // call with neither token usage nor wire cost never made it to the
+    // ledger. US-001 only changes the session-turn side (the load-bearing
+    // behaviour change the AC names); a complete event stays skipped.
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -119,13 +148,17 @@ describe("attachCostSubscriber", () => {
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");
 
+    // US-001: when a complete event has exactCostUsd but no tokenUsage, the
+    // row is still recorded (the cost > 0 case has its own skip-exempt
+    // path) but `tokens` is omitted rather than zeroed — a zeroed `tokens`
+    // object would re-create the "failed vs cost zero" ambiguity, the same
+    // reason a `usageMissing` session-turn row omits it.
     bus.emitDispatch(makeCompleteEvent({ exactCostUsd: 0.003 }));
 
     expect(recorded).toHaveLength(1);
     expect(recorded[0].exactCostUsd).toBe(0.003);
     expect(recorded[0].confidence).toBe("exact");
-    expect(recorded[0].tokens.input).toBe(0);
-    expect(recorded[0].tokens.output).toBe(0);
+    expect("tokens" in recorded[0]).toBe(false);
   });
 
   test("records CostErrorEvent on dispatch error", () => {
@@ -525,7 +558,7 @@ describe("attachCostSubscriber", () => {
     expect("effort" in recorded[0]).toBe(false);
   });
 
-  test("#1464: rows carry schemaVersion 3", () => {
+  test("#1464 → US-001: rows carry schemaVersion 4 (bumped for roundTrips/roundTripUnit/usageMissing on session-turn, model on error rows)", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -533,8 +566,8 @@ describe("attachCostSubscriber", () => {
 
     bus.emitDispatch(makeSessionTurnEvent());
 
-    expect(recorded[0].schemaVersion).toBe(3);
-    expect(COST_ROW_SCHEMA_VERSION).toBe(3);
+    expect(recorded[0].schemaVersion).toBe(4);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(4);
   });
 
   // ── US-004: producer-supplied pricingSource wins over the model-derived one ─

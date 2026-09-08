@@ -42,7 +42,11 @@ export function attachReviewAuditSubscriber(
       recordId: event.recordId,
       workdir: event.workdir,
       projectDir: event.projectDir,
-      outputDir: event.outputDir,
+      // Note: `outputDir` is deliberately NOT forwarded from the event — the
+      // audit writer's own `_outputDir` (set in the constructor) is the
+      // authoritative location. Forwarding the event's `outputDir` would
+      // override the auditor's location and write the file somewhere the
+      // caller (e.g. a test, or a swapped auditor) does not expect.
       agentName: event.agentName,
       storyId: event.storyId,
       featureName: event.featureName,
@@ -57,6 +61,10 @@ export function attachReviewAuditSubscriber(
       acDropped: event.acDropped ? [...event.acDropped] : undefined,
       unparsedPreview: event.unparsedPreview,
       diffAvailable: event.diffAvailable,
+      // US-002 — forward modelPassed onto the decision the writer consumes.
+      // Mirrors how blockingThreshold is forwarded: preserved as-is (including
+      // explicit `false`), omitted when the producer did not declare it.
+      modelPassed: event.modelPassed,
       // Cast unknown[] from the event boundary to the typed audit shapes.
       adversarialDropAnalysis: event.adversarialDropAnalysis as AdversarialDropAnalysis[] | undefined,
       adversarialAcceptAnalysis: event.adversarialAcceptAnalysis as AdversarialAcceptAnalysis[] | undefined,

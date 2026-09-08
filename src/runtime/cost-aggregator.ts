@@ -47,7 +47,36 @@ export interface CostEvent {
   readonly packageDir?: string;
   readonly callId?: string;
   readonly scopeId?: string;
-  readonly tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
+  /**
+   * Token usage for this dispatch. Omitted on a `usageMissing` row (AC8-10) —
+   * a zeroed `tokens` object would re-create the "failed vs cost zero"
+   * ambiguity the `kind: "error"` discriminator was added for, so a row with
+   * genuinely absent token accounting carries no `tokens` field at all rather
+   * than one with `input: 0, output: 0`.
+   */
+  readonly tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
+  /**
+   * Round-trips inside this turn, copied from the dispatch event. The UNIT
+   * travels with the number (`roundTripUnit`) because on ACP each round-trip
+   * is a complete delegated agent run while on native each is a single model
+   * call — averaging them without the discriminator produces a meaningless
+   * number, so the count is never persisted alone.
+   *
+   * `complete` events carry neither; the cost row omits both fields rather
+   * than defaulting them to `1`, so a reader can tell "unknown loop length"
+   * apart from "one round-trip" (AC4).
+   */
+  readonly roundTrips?: number;
+  readonly roundTripUnit?: "model-call" | "agent-run";
+  /**
+   * Set on a successful session-turn row whose dispatch event carried no
+   * `tokenUsage` (AC9-11). The cost row still records the dispatch — the
+   * loop-length signal is preserved — but token totals are left absent
+   * rather than reported as zero, so a reader can distinguish
+   * "the call succeeded and burned zero tokens" from
+   * "we don't know what it burned".
+   */
+  readonly usageMissing?: boolean;
   /** Estimated cost from token usage × pricing rates (always present). */
   readonly estimatedCostUsd: number;
   /** Normalized exact cost: from wire protocol when available, else falls back to estimatedCostUsd. */
@@ -251,12 +280,17 @@ function emptySnap(): CostSnapshot {
 }
 
 function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
+  // `tokens` is optional since AC8-10 — a `usageMissing` row omits it rather
+  // than carrying a zeroed object. When absent, token counters stay at their
+  // current value (zero from a fresh emptySnap()), so totals reflect only
+  // dispatches with real token accounting.
+  const tokens = e.tokens;
   return {
     totalCostUsd: snap.totalCostUsd + e.costUsd,
     totalEstimatedCostUsd: snap.totalEstimatedCostUsd + e.estimatedCostUsd,
     totalExactCostUsd: snap.totalExactCostUsd + e.exactCostUsd,
-    totalInputTokens: snap.totalInputTokens + e.tokens.input,
-    totalOutputTokens: snap.totalOutputTokens + e.tokens.output,
+    totalInputTokens: snap.totalInputTokens + (tokens?.input ?? 0),
+    totalOutputTokens: snap.totalOutputTokens + (tokens?.output ?? 0),
     callCount: snap.callCount + 1,
     errorCount: snap.errorCount,
     totalErrorCostUsd: snap.totalErrorCostUsd,

@@ -149,6 +149,22 @@ export interface DispatchErrorEvent {
   readonly tokenUsage?: TokenUsage;
   readonly estimatedCostUsd?: number;
   readonly exactCostUsd?: number;
+  /**
+   * Model the dispatch was pinned to, resolved by `modelAttribution()` from
+   * the dispatch's `modelDef` / `modelTier` before the throw. Absent when no
+   * model was attributed — a failed dispatch with no model is not the same
+   * as one that ran on a known model, so the field is omitted rather than
+   * defaulted to `"unknown"`.
+   */
+  readonly model?: string;
+  /** Tier `model` resolved from, when one selected it. Attribution only. */
+  readonly modelTier?: string;
+  /**
+   * Reasoning effort from a `model[effort]` profile suffix, when the resolved
+   * model spec carried one. Attribution only; consumers record it, never
+   * branch on it.
+   */
+  readonly effort?: string;
 }
 
 export interface ReviewDecisionEvent {
@@ -188,6 +204,15 @@ export interface ReviewDecisionEvent {
   readonly adversarialAcceptAnalysis?: readonly unknown[];
   /** Set when the adversarial check passed due to all drops being ac_quote_not_substring. */
   readonly passReason?: string;
+  /**
+   * US-002 — the model's raw `passed` flag, before `verify()` applied
+   * blockingThreshold. Carried on the dispatched event so the audit subscriber
+   * can persist it onto the review-audit record. Adversarial-only: the
+   * semantic op does not populate it. Omitted when the producer did not
+   * populate it (semantic, or an adversarial give-up with no resolvable
+   * model-claim) — never coerced.
+   */
+  readonly modelPassed?: boolean;
 }
 
 export interface ReviewRepromptEvent {
