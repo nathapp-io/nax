@@ -320,6 +320,13 @@ export class AcpSessionHandleImpl implements SessionHandle {
   readonly _resumed: boolean;
   readonly _timeoutSeconds: number;
   readonly _modelDef: ModelDef;
+  /**
+   * Rate card resolved once at `openSession` (US-002) and reused by every
+   * `sendTurn` on this handle — the "resolve once, reuse per turn" pattern the
+   * native path already follows. Held beside `_modelDef` so a turn never
+   * re-resolves and every turn of one session bills on the same rates.
+   */
+  readonly _rateCard: RateCard;
   readonly _permissionMode: string;
 
   constructor(opts: {
@@ -333,6 +340,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     timeoutSeconds: number;
     modelDef: ModelDef;
     modelTier?: ModelTier;
+    rateCard: RateCard;
     permissionMode: string;
   }) {
     this.id = opts.id;
@@ -346,6 +354,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     this._modelDef = opts.modelDef;
     this.modelDef = opts.modelDef;
     this.modelTier = opts.modelTier;
+    this._rateCard = opts.rateCard;
     this._permissionMode = opts.permissionMode;
   }
 }

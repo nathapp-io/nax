@@ -14,8 +14,8 @@
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { ProtocolIds } from "@/runtime/protocol-types";
-import type { ITokenUsageMapper, TokenUsage } from "../cost";
-import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
+import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
+import { addTokenUsage, estimateCostUsd } from "../cost";
 import { createTurnDeadline } from "../turn-deadline";
 import type {
   AgentAdapter,
@@ -44,7 +44,7 @@ import {
 } from "./adapter-lifecycle";
 import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
 import { resolveRegistryEntry } from "./agent-entries";
-import { classifyCompleteError } from "./parse-agent-error";
+import { classifyCompleteError, classifyParsedAgentError } from "./parse-agent-error";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";
 import type { SessionTokenUsage } from "./wire-types";
 
@@ -113,14 +113,18 @@ export class AcpAgentAdapter implements AgentAdapter {
     return {};
   }
 
-  /** Token/cost math shared by complete()'s success and cancelled-but-billable paths. */
+  /**
+   * Token/cost math shared by complete()'s success and cancelled-but-billable
+   * paths. US-002: prices from the resolved rate card rather than the model
+   * string, so both paths bill on the card `complete()` resolved once.
+   */
   private deriveTokenUsage(
     wire: SessionTokenUsage | undefined,
-    model: string,
+    rateCard: RateCard,
   ): { tokenUsage: TokenUsage; estimatedCostUsd: number } {
     const tokenUsage = wire ? this._mapper.toInternal(wire) : { inputTokens: 0, outputTokens: 0 };
     const estimatedCostUsd =
-      tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 ? estimateCostFromTokenUsage(tokenUsage, model) : 0;
+      tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 ? estimateCostUsd(tokenUsage, rateCard.rates) : 0;
     return { tokenUsage, estimatedCostUsd };
   }
 
@@ -128,6 +132,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     const timeoutMs = _options.timeoutMs ?? 120_000;
     const permissionMode = _options.resolvedPermissions.mode;
     const workdir = _options.workdir;
+    // US-002: resolve the rate card ONCE per complete() call. Both the success
+    // and the cancelled-but-billable path price from it, and its `source`
+    // becomes CompleteResult.pricingSource.
+    const rateCard = await _acpAdapterDeps.resolveRateCard(_options.modelDef.model);
 
     // Attempt one call with the given agent; throws on any error
     const tryOneAgent = async (agentName: string): Promise<CompleteResult> => {
@@ -178,8 +186,14 @@ export class AcpAgentAdapter implements AgentAdapter {
         if (response.stopReason === "error") {
           if (response.cancelled) {
             // BUG-57: still count tokens burned before the cancel, not zero.
-            const usage = this.deriveTokenUsage(response.cumulative_token_usage, _options.modelDef.model);
-            return { output: "", ...usage, exactCostUsd: response.exactCostUsd, cancelled: true };
+            const usage = this.deriveTokenUsage(response.cumulative_token_usage, rateCard);
+            return {
+              output: "",
+              ...usage,
+              exactCostUsd: response.exactCostUsd,
+              cancelled: true,
+              pricingSource: rateCard.source,
+            };
           }
           // BUG-1: surface parsed error text (retryable preserved as-is). LOW: truncate to 500 chars.
           const errSuffix = response.error ? `: ${response.error.slice(0, 500)}` : "";
@@ -206,10 +220,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           throw new CompleteError("complete() returned empty output");
         }
 
-        const { tokenUsage, estimatedCostUsd } = this.deriveTokenUsage(
-          response.cumulative_token_usage,
-          _options.modelDef.model,
-        );
+        const { tokenUsage, estimatedCostUsd } = this.deriveTokenUsage(response.cumulative_token_usage, rateCard);
         const exactCostUsd = response.exactCostUsd;
 
         if (exactCostUsd !== undefined) {
@@ -224,6 +235,11 @@ export class AcpAgentAdapter implements AgentAdapter {
           tokenUsage,
           estimatedCostUsd,
           exactCostUsd,
+          // US-002: the card's branch, reported rather than re-derived from the
+          // model string. A wire-exact cost still outranks it at the cost-row
+          // level (the middleware's "wire" branch); the producer does not strip
+          // the field.
+          pricingSource: rateCard.source,
         };
       } finally {
         if (session) {
@@ -245,47 +261,8 @@ export class AcpAgentAdapter implements AgentAdapter {
         const classified = classifyCompleteError(error);
         if (classified) return classified;
       }
-      const parsed = _fallbackDeps.parseAgentError(error.message);
-      if (parsed.type === "auth") {
-        return {
-          output: error.message,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-          adapterFailure: {
-            category: "availability",
-            outcome: "fail-auth",
-            retriable: false,
-            message: error.message.slice(0, 500),
-          },
-        };
-      }
-      if (parsed.type === "rate-limit") {
-        return {
-          output: error.message,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-          adapterFailure: {
-            category: "availability",
-            outcome: "fail-rate-limit",
-            retriable: true,
-            message: error.message.slice(0, 500),
-            ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
-          },
-        };
-      }
-      if (parsed.type === "model-not-available") {
-        return {
-          output: error.message,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-          adapterFailure: {
-            category: "quality",
-            outcome: "fail-adapter-error",
-            retriable: false,
-            message: error.message.slice(0, 500),
-          },
-        };
-      }
+      const degraded = classifyParsedAgentError(_fallbackDeps.parseAgentError(error.message), error.message);
+      if (degraded) return degraded;
       throw err;
     }
   }
@@ -315,6 +292,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     const { signal } = opts;
 
     throwIfAborted(signal, "Run aborted — shutdown in progress");
+
+    // US-002: resolve the rate card ONCE here. The handle carries it, so every
+    // sendTurn on this session reuses it rather than re-resolving per turn.
+    const rateCard = await _acpAdapterDeps.resolveRateCard(modelDef.model);
 
     const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
     const client = _acpAdapterDeps.createClient(
@@ -379,6 +360,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         timeoutSeconds,
         modelDef,
         modelTier: opts.modelTier,
+        rateCard,
         permissionMode: resolvedPermissions.mode,
       });
     } catch (error) {
@@ -392,7 +374,9 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const impl = handle as AcpSessionHandleImpl;
-    const { _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _modelDef: modelDef } = impl;
+    // US-002: the card was resolved once at openSession — a turn reads it off
+    // the handle and never re-resolves.
+    const { _sessionName: sessionName, _timeoutSeconds: timeoutSeconds, _rateCard: rateCard } = impl;
     let sessionRecreated = false;
     const { interactionHandler, signal } = opts;
     // ACP spends the budget as this loop's bound, which is its intended use:
@@ -573,7 +557,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         lastResponse.cancelled === true,
         lastResponse.retryable === true,
         totalTokenUsage,
-        hasUsage ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model) : 0,
+        hasUsage ? estimateCostUsd(totalTokenUsage, rateCard.rates) : 0,
         totalExactCostUsd,
       );
     }
@@ -585,7 +569,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       turnCount,
       interactions,
       timedOut,
-      rateCard: { rates: { inputPer1M: 0, outputPer1M: 0 }, source: "fallback-rates" },
+      rateCard,
     });
   }
 

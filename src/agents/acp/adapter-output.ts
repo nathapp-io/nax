@@ -5,6 +5,7 @@
 
 import type { ToolDescriptor } from "@/context/engine";
 import type { RateCard, TokenUsage } from "../cost";
+import { estimateCostUsd } from "../cost";
 import type { AgentRunOptions, InteractionExchange, TurnResult } from "../types";
 import type { AcpSessionResponse } from "./adapter-session-types";
 
@@ -224,17 +225,24 @@ export interface BuildTurnResultInput {
  * When `timedOut` is true, output is forced to "" regardless of any leftover
  * lastResponse — the wall-clock timeout must not leak partial agent output
  * into the policy layer.
+ *
+ * US-002: `estimatedCostUsd` is priced from `rateCard.rates` and
+ * `pricingSource` reports `rateCard.source`. `exactCostUsd` is untouched by
+ * the card — a wire-reported cost passes through unchanged, and the cost
+ * middleware is what decides "wire" wins over the card's source.
  */
 export function buildTurnResult(input: BuildTurnResultInput): TurnResult {
-  const { lastResponse, totalTokenUsage, totalExactCostUsd, turnCount, interactions, timedOut } = input;
+  const { lastResponse, totalTokenUsage, totalExactCostUsd, turnCount, interactions, timedOut, rateCard } = input;
   const output = timedOut ? "" : extractOutput(lastResponse);
+  const hasUsage = totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0;
   return {
     output,
     tokenUsage: totalTokenUsage,
-    estimatedCostUsd: 0,
+    estimatedCostUsd: hasUsage ? estimateCostUsd(totalTokenUsage, rateCard.rates) : 0,
     exactCostUsd: totalExactCostUsd,
     internalRoundTrips: turnCount,
     ...(interactions.length > 0 ? { interactions } : {}),
     timedOut,
+    pricingSource: rateCard.source,
   };
 }

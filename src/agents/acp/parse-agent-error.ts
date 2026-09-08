@@ -26,6 +26,56 @@ export function classifyCompleteError(error: CompleteError): CompleteResult | nu
 }
 
 /**
+ * Map a `parseAgentError` verdict onto the degraded `CompleteResult` that
+ * `complete()` returns instead of throwing.
+ *
+ * Extracted from `AcpAgentAdapter.complete()`'s catch tail, which built three
+ * near-identical results inline. Lives beside `classifyCompleteError` because
+ * the two are the same decision from different inputs — a transport-supplied
+ * retryable verdict versus a stderr-pattern classification — and both produce
+ * the same `adapterFailure` envelope. Pure: no adapter state is involved.
+ *
+ * Returns `null` for `parseAgentError`'s unclassifiable verdicts (`unknown`,
+ * `timeout`, `crash`), which the caller must rethrow rather than degrade —
+ * swallowing an unrecognised fault into a fail-adapter-error would hide a bug
+ * in nax's own code behind a vendor-failure label.
+ */
+export function classifyParsedAgentError(parsed: AgentError, message: string): CompleteResult | null {
+  const base = {
+    output: message,
+    tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    estimatedCostUsd: 0,
+  } as const;
+  const truncated = message.slice(0, 500);
+
+  switch (parsed.type) {
+    case "auth":
+      return {
+        ...base,
+        adapterFailure: { category: "availability", outcome: "fail-auth", retriable: false, message: truncated },
+      };
+    case "rate-limit":
+      return {
+        ...base,
+        adapterFailure: {
+          category: "availability",
+          outcome: "fail-rate-limit",
+          retriable: true,
+          message: truncated,
+          ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
+        },
+      };
+    case "model-not-available":
+      return {
+        ...base,
+        adapterFailure: { category: "quality", outcome: "fail-adapter-error", retriable: false, message: truncated },
+      };
+    default:
+      return null;
+  }
+}
+
+/**
  * Parse structured adapter error output to identify agent error type.
  *
  * Classification intentionally uses machine-readable signals only:

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseAgentError } from "@/agents/acp/parse-agent-error";
+import { classifyParsedAgentError, parseAgentError } from "@/agents/acp/parse-agent-error";
 
 describe("parseAgentError", () => {
   test("detects rate-limit from direct JSON type", () => {
@@ -188,4 +188,68 @@ describe("parseAgentError", () => {
       expect(parseAgentError(stderr).type).toBe("unknown");
     });
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// classifyParsedAgentError — the degraded CompleteResult complete() returns
+// instead of throwing. Extracted from AcpAgentAdapter.complete()'s catch tail
+// (US-002 kept adapter.ts under the 600-line limit); these pin the mapping
+// that used to live inline there.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("classifyParsedAgentError", () => {
+  test("maps auth to a non-retriable availability/fail-auth failure", () => {
+    const result = classifyParsedAgentError({ type: "auth" }, "login fail: bad key");
+    expect(result?.output).toBe("login fail: bad key");
+    expect(result?.adapterFailure).toEqual({
+      category: "availability",
+      outcome: "fail-auth",
+      retriable: false,
+      message: "login fail: bad key",
+    });
+    expect(result?.tokenUsage).toEqual({ inputTokens: 0, outputTokens: 0 });
+    expect(result?.estimatedCostUsd).toBe(0);
+  });
+
+  test("maps rate-limit to a retriable availability/fail-rate-limit failure", () => {
+    const result = classifyParsedAgentError({ type: "rate-limit" }, "429 too many requests");
+    expect(result?.adapterFailure?.outcome).toBe("fail-rate-limit");
+    expect(result?.adapterFailure?.retriable).toBe(true);
+    expect(result?.adapterFailure?.category).toBe("availability");
+  });
+
+  test("carries retryAfterSeconds onto the failure when the parse supplied one", () => {
+    const result = classifyParsedAgentError({ type: "rate-limit", retryAfterSeconds: 42 }, "throttled");
+    expect(result?.adapterFailure?.retryAfterSeconds).toBe(42);
+  });
+
+  test("omits retryAfterSeconds when the parse supplied none", () => {
+    const result = classifyParsedAgentError({ type: "rate-limit" }, "throttled");
+    expect(result?.adapterFailure && "retryAfterSeconds" in result.adapterFailure).toBe(false);
+  });
+
+  test("maps model-not-available to a non-retriable quality/fail-adapter-error failure", () => {
+    const result = classifyParsedAgentError({ type: "model-not-available" }, 'Cannot apply --model "bad"');
+    expect(result?.adapterFailure).toEqual({
+      category: "quality",
+      outcome: "fail-adapter-error",
+      retriable: false,
+      message: 'Cannot apply --model "bad"',
+    });
+  });
+
+  test("truncates an oversized message to 500 chars on the failure", () => {
+    const huge = "x".repeat(2000);
+    const result = classifyParsedAgentError({ type: "auth" }, huge);
+    expect(result?.adapterFailure?.message.length).toBe(500);
+    // `output` is deliberately untruncated — the caller surfaces the full text.
+    expect(result?.output.length).toBe(2000);
+  });
+
+  test.each(["unknown", "timeout", "crash"] as const)(
+    "returns null for %s so the caller rethrows rather than degrading",
+    (type) => {
+      expect(classifyParsedAgentError({ type }, "boom")).toBeNull();
+    },
+  );
 });
