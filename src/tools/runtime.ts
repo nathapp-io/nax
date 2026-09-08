@@ -10,6 +10,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
+import { deleteTool } from "./delete";
 import { editTool } from "./edit";
 import { gitTool } from "./git";
 import { gitCommitTool } from "./git-commit";
@@ -64,6 +65,7 @@ export function registerBuiltinCodingTools(): void {
     grepTool,
     writeTool,
     editTool,
+    deleteTool,
     gitTool,
     gitCommitTool,
     requestCapabilityTool,

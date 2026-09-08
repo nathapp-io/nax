@@ -71,6 +71,7 @@ export const RESERVED_TOOL_NAMES: readonly CodingToolName[] = [
   "Grep",
   "Write",
   "Edit",
+  "Delete",
   "Git",
   "GitCommit",
   "RunCommand",
