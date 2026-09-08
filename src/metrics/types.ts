@@ -179,6 +179,8 @@ export interface StoryMetrics {
   rectificationCost?: number;
   /** Token usage for this story */
   tokens?: TokenUsage;
+  /** Whether token usage was measured directly or allocated from a shared batch. */
+  tokenAttribution?: "direct" | "even-split";
   /** When verifyScopedOp falls back to full suite due to threshold (issue #1116) */
   scopeTestFallback?: boolean;
   /**

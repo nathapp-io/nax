@@ -156,6 +156,8 @@ export interface VerdictObservation extends BaseObservation {
     attempts?: number;
     cost: number;
     tokens: number;
+    source?: "execution" | "parallel" | "sequential" | "rectification" | "completion-phase" | "execution-failed";
+    tokenAttribution?: "direct" | "even-split";
   };
 }
 

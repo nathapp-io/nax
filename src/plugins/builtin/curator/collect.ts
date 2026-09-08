@@ -45,6 +45,24 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function verdictSource(
+  value: unknown,
+): "execution" | "parallel" | "sequential" | "rectification" | "completion-phase" | "execution-failed" {
+  const source = optionalString(value);
+  return source === "parallel" ||
+    source === "sequential" ||
+    source === "rectification" ||
+    source === "completion-phase" ||
+    source === "execution-failed"
+    ? source
+    : "execution";
+}
+
+function tokenAttribution(value: unknown): "direct" | "even-split" | undefined {
+  const attribution = optionalString(value);
+  return attribution === "direct" || attribution === "even-split" ? attribution : undefined;
+}
+
 function numberValue(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -78,7 +96,12 @@ async function readJsonLines(filePath: string): Promise<unknown[]> {
 function tokenCount(story: JsonRecord): number {
   const tokens = asRecord(story.tokens);
   if (!tokens) return 0;
-  return numberValue(tokens.inputTokens) + numberValue(tokens.outputTokens);
+  return (
+    numberValue(tokens.inputTokens) +
+    numberValue(tokens.outputTokens) +
+    numberValue(tokens.cacheReadInputTokens) +
+    numberValue(tokens.cacheCreationInputTokens)
+  );
 }
 
 async function collectFromMetrics(context: CuratorPostRunContext): Promise<Observation[]> {
@@ -110,6 +133,10 @@ async function collectFromMetrics(context: CuratorPostRunContext): Promise<Obser
           attempts: numberValue(story.attempts, 0),
           cost: numberValue(story.cost, 0),
           tokens: tokenCount(story),
+          source: verdictSource(story.source),
+          ...(tokenAttribution(story.tokenAttribution) !== undefined
+            ? { tokenAttribution: tokenAttribution(story.tokenAttribution) }
+            : {}),
         },
       };
       observations.push(obs);

@@ -14,11 +14,22 @@ import { loadContextManifests } from "../context/engine/manifest-store";
 import { computePollutionMetrics } from "../context/engine/pollution";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
+import type { CostSnapshot } from "../runtime/cost-aggregator";
 import { errorMessage } from "../utils/errors";
 import { loadJsonFile, loadJsonFileStrict, saveJsonFile } from "../utils/json-file";
 import { withPathFileLock } from "../utils/path-file-lock";
 import type { AgentFallbackHop, ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
 import { TokenUsage } from "./types";
+
+function tokensFromSnapshot(snapshot: CostSnapshot | undefined, divisor = 1): TokenUsage | undefined {
+  if (!snapshot || snapshot.tokenUsageCount !== snapshot.callCount) return undefined;
+  return new TokenUsage({
+    inputTokens: snapshot.totalInputTokens / divisor,
+    outputTokens: snapshot.totalOutputTokens / divisor,
+    cacheReadInputTokens: (snapshot.totalCacheReadTokens ?? 0) / divisor,
+    cacheCreationInputTokens: (snapshot.totalCacheWriteTokens ?? 0) / divisor,
+  });
+}
 
 /**
  * Maximum number of runs retained in metrics.json (GROWTH-1).
@@ -300,6 +311,8 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     ctx.projectDir && featureId
       ? await deriveContextMetrics(ctx.projectDir, story.id, featureId, ctx.contextToolRunCounter?.calls)
       : undefined;
+  const costSnapshot = ctx.runtime.costAggregator.byStory()[story.id];
+  const tokens = tokensFromSnapshot(costSnapshot);
 
   return {
     storyId: story.id,
@@ -311,7 +324,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     attempts,
     finalTier,
     success: agentResult?.success || false,
-    cost: ctx.runtime.costAggregator.byStory()[story.id]?.totalCostUsd ?? 0,
+    cost: costSnapshot?.totalCostUsd ?? 0,
     durationMs: agentResult?.durationMs || 0,
     firstPassSuccess,
     startedAt: storyStartTime,
@@ -322,14 +335,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
       : {}),
     runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(story.id) ?? 0,
     reviewsFailedOpen: ctx.reviewsFailedOpen ?? 0,
-    tokens: agentResult?.tokenUsage
-      ? new TokenUsage({
-          inputTokens: agentResult.tokenUsage.inputTokens,
-          outputTokens: agentResult.tokenUsage.outputTokens,
-          cacheReadInputTokens: agentResult.tokenUsage.cacheReadInputTokens,
-          cacheCreationInputTokens: agentResult.tokenUsage.cacheCreationInputTokens,
-        })
-      : undefined,
+    ...(tokens !== undefined ? { tokens, tokenAttribution: "direct" as const } : {}),
     ...(contextMetrics !== undefined && { context: contextMetrics }),
     ...(fallbackHops.length > 0 && { fallback: { hops: fallbackHops } }),
   };
@@ -364,10 +370,12 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
   const routing = ctx.routing;
   const agentResult = ctx.agentResult;
 
-  const batchTotal = ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? 0;
+  const batchSnapshot = ctx.runtime.costAggregator.byStory()[ctx.story.id];
+  const batchTotal = batchSnapshot?.totalCostUsd ?? 0;
   const totalDuration = agentResult?.durationMs || 0;
   const costPerStory = batchTotal / stories.length;
   const durationPerStory = totalDuration / stories.length;
+  const tokensPerStory = tokensFromSnapshot(batchSnapshot, stories.length);
 
   const batchAgentUsed = routing.agent ?? ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
   let modelUsed: string = routing.modelTier;
@@ -412,6 +420,7 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
       completedAt: new Date().toISOString(),
       fullSuiteGatePassed: false, // batches are not TDD-gated
       runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(story.id) ?? 0,
+      ...(tokensPerStory !== undefined ? { tokens: tokensPerStory, tokenAttribution: "even-split" as const } : {}),
       ...(fallbackHops.length > 0 ? { fallback: { hops: fallbackHops } } : {}),
     };
   });

@@ -10,10 +10,11 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
-import { collectStoryMetrics } from "@/metrics/tracker";
+import { collectBatchMetrics, collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
+import { CostAggregator } from "@/runtime/cost-aggregator";
 
 // VerifyResult inlined after orchestrator-types.ts deletion (issue #1116).
 interface VerifyResult {
@@ -245,54 +246,93 @@ describe("collectStoryMetrics - agentUsed field", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - tokenUsage field", () => {
-  test("sets storyMetrics.tokens when ctx.agentResult.tokenUsage is defined", async () => {
+  test("uses all attributed ledger dispatches, including cache tokens", async () => {
     const story = makeStory();
-    const ctx = makeCtx(story, { modelTier: "balanced" });
+    const ctx = makeCtx(story);
+    const costAggregator = new CostAggregator("run", "/tmp/drain");
+    costAggregator.record({
+      ts: Date.now(),
+      runId: "run",
+      agentName: "claude",
+      model: "model",
+      storyId: story.id,
+      tokens: { input: 10, output: 5, cacheRead: 100, cacheWrite: 20 },
+      estimatedCostUsd: 0.01,
+      exactCostUsd: 0.01,
+      costUsd: 0.01,
+      confidence: "exact",
+      durationMs: 1,
+    });
+    costAggregator.record({
+      ts: Date.now(),
+      runId: "run",
+      agentName: "claude",
+      model: "model",
+      storyId: story.id,
+      tokens: { input: 20, output: 7, cacheRead: 200, cacheWrite: 30 },
+      estimatedCostUsd: 0.02,
+      exactCostUsd: 0.02,
+      costUsd: 0.02,
+      confidence: "exact",
+      durationMs: 1,
+    });
+    Object.assign(ctx.runtime, { costAggregator });
     ctx.agentResult = {
       success: true,
       output: "",
       exitCode: 0,
       rateLimited: false,
       estimatedCostUsd: 0.01,
-      durationMs: 5000,
-      tokenUsage: {
-        inputTokens: 1000,
-        outputTokens: 500,
-      },
+      durationMs: 1,
+      tokenUsage: { inputTokens: 1, outputTokens: 1 },
     };
 
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
-    expect(metrics.tokens).toBeDefined();
-    expect(metrics.tokens?.inputTokens).toBe(1000);
-    expect(metrics.tokens?.outputTokens).toBe(500);
+    expect(metrics.cost).toBeCloseTo(0.03);
+    expect(metrics.tokens).toMatchObject({
+      inputTokens: 30,
+      outputTokens: 12,
+      cacheReadInputTokens: 300,
+      cacheCreationInputTokens: 50,
+    });
   });
 
-  test("sets storyMetrics.tokens with cache fields when present in tokenUsage", async () => {
+  test("omits tokens when an attributed dispatch has no usage", async () => {
     const story = makeStory();
-    const ctx = makeCtx(story, { modelTier: "balanced" });
-    ctx.agentResult = {
-      success: true,
-      output: "",
-      exitCode: 0,
-      rateLimited: false,
+    const ctx = makeCtx(story);
+    const costAggregator = new CostAggregator("run", "/tmp/drain");
+    costAggregator.record({
+      ts: Date.now(),
+      runId: "run",
+      agentName: "claude",
+      model: "model",
+      storyId: story.id,
+      tokens: { input: 10, output: 5 },
       estimatedCostUsd: 0.01,
-      durationMs: 5000,
-      tokenUsage: {
-        inputTokens: 1000,
-        outputTokens: 500,
-        cacheReadInputTokens: 100,
-        cacheCreationInputTokens: 50,
-      },
-    };
+      exactCostUsd: 0.01,
+      costUsd: 0.01,
+      confidence: "exact",
+      durationMs: 1,
+    });
+    costAggregator.record({
+      ts: Date.now(),
+      runId: "run",
+      agentName: "claude",
+      model: "model",
+      storyId: story.id,
+      estimatedCostUsd: 0.01,
+      exactCostUsd: 0.01,
+      costUsd: 0.01,
+      confidence: "exact",
+      durationMs: 1,
+    });
+    Object.assign(ctx.runtime, { costAggregator });
 
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
-    expect(metrics.tokens).toBeDefined();
-    expect(metrics.tokens?.inputTokens).toBe(1000);
-    expect(metrics.tokens?.outputTokens).toBe(500);
-    expect(metrics.tokens?.cacheReadInputTokens).toBe(100);
-    expect(metrics.tokens?.cacheCreationInputTokens).toBe(50);
+    expect(metrics.cost).toBeCloseTo(0.02);
+    expect(metrics.tokens).toBeUndefined();
   });
 
   test("storyMetrics.tokens is undefined when ctx.agentResult.tokenUsage is undefined", async () => {
@@ -310,6 +350,43 @@ describe("collectStoryMetrics - tokenUsage field", () => {
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
     expect(metrics.tokens).toBeUndefined();
+  });
+});
+
+describe("collectBatchMetrics - token attribution", () => {
+  test("evenly allocates the same ledger token population as batch cost", () => {
+    const lead = makeStory();
+    const sibling = makeStory({ id: "US-002" });
+    const ctx = makeCtx(lead);
+    ctx.stories = [lead, sibling];
+    const costAggregator = new CostAggregator("run", "/tmp/drain");
+    costAggregator.record({
+      ts: Date.now(),
+      runId: "run",
+      agentName: "claude",
+      model: "model",
+      storyId: lead.id,
+      tokens: { input: 20, output: 10, cacheRead: 200, cacheWrite: 40 },
+      estimatedCostUsd: 0.02,
+      exactCostUsd: 0.02,
+      costUsd: 0.02,
+      confidence: "exact",
+      durationMs: 1,
+    });
+    Object.assign(ctx.runtime, { costAggregator });
+
+    const metrics = collectBatchMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.map((metric) => metric.cost)).toEqual([0.01, 0.01]);
+    for (const metric of metrics) {
+      expect(metric.tokens).toMatchObject({
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadInputTokens: 100,
+        cacheCreationInputTokens: 20,
+      });
+    }
+    expect(metrics.map((metric) => metric.tokenAttribution)).toEqual(["even-split", "even-split"]);
   });
 });
 

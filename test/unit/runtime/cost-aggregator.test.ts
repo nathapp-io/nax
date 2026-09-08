@@ -27,13 +27,16 @@ describe("CostAggregator", () => {
     expect(empty.totalCostUsd).toBe(0);
     expect(empty.errorCount).toBe(0);
 
-    agg.record(makeEvent({ costUsd: 0.001, tokens: { input: 100, output: 50 } }));
-    agg.record(makeEvent({ costUsd: 0.002, tokens: { input: 200, output: 80 } }));
+    agg.record(makeEvent({ costUsd: 0.001, tokens: { input: 100, output: 50, cacheRead: 400, cacheWrite: 25 } }));
+    agg.record(makeEvent({ costUsd: 0.002, tokens: { input: 200, output: 80, cacheRead: 600, cacheWrite: 75 } }));
     const accumulated = agg.snapshot();
     expect(accumulated.callCount).toBe(2);
     expect(accumulated.totalCostUsd).toBeCloseTo(0.003);
     expect(accumulated.totalInputTokens).toBe(300);
     expect(accumulated.totalOutputTokens).toBe(130);
+    expect(accumulated.totalCacheReadTokens).toBe(1000);
+    expect(accumulated.totalCacheWriteTokens).toBe(100);
+    expect(accumulated.tokenUsageCount).toBe(2);
 
     agg.recordError({
       kind: "error",
