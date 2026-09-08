@@ -3,7 +3,7 @@
   "feature": "acp-catalog-pricing",
   "branchName": "feat/acp-catalog-pricing",
   "createdAt": "2026-09-08T00:00:00.000Z",
-  "updatedAt": "2026-09-08T04:17:51.553Z",
+  "updatedAt": "2026-09-08T06:14:22.405Z",
   "userStories": [
     {
       "id": "US-001",
@@ -115,8 +115,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -180,7 +180,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The work is a bounded multi-file API and test deletion with a small, directly testable fallback-source regression change."
+        "reasoning": "The work is a bounded multi-file API and test deletion with a small, directly testable fallback-source regression change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/index.ts",
@@ -221,7 +224,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0f059995f5825edf6971c47bc44943e6fadb8b79"
     }
   ],
   "analysis": "Existing ACP pricing is table-backed in three producer paths: complete and billable SessionTurnError in src/agents/acp/adapter.ts:116-125,576, and normal turns in src/agents/acp/adapter-output.ts:205-253. Both import estimateCostFromTokenUsage from cost, and BuildTurnResultInput currently carries ModelDef rather than a card. ACP must resolve a card at complete/open-session time, retain it on AcpSessionHandleImpl (src/agents/acp/adapter-lifecycle.ts:280), reuse it on every sendTurn, and emit pricingSource. Middleware already implements the required wire precedence at src/runtime/middleware/cost.ts:146-154, so it is not modified. The stale source is src/agents/cost/pricing.ts:8-100; calculate.ts imports it and defines both old estimators and resolvePricingSource (src/agents/cost/calculate.ts:7,142-204). Native already supplies the exact shared-estimator behavior and resolve-once buildRateCard reference in src/agents/native/models.ts:151-235. TokenPricing's optional cache fields and tiers use inputTokensAbove (src/config/schema-types.ts:16-58), and parseModelSpec strips [effort] (src/agents/model-spec.ts:31-35). The architectural constraint is real: scripts/check-nax-ai-imports.ts:16 only permits nax-ai imports from native, while native imports cost; catalog lookup in cost or importing native from cost would violate the gate or create a cycle. New catalog code must own nax-ai imports, map to nax TokenPricing, and be added to the gate. Risks are a zero-cost failure path, per-turn catalog loads, lost exact-cost precedence, malformed provider/model splitting (only first slash), cache fallback regression, and lingering stale public exports. Implement in dependency order: catalog/rate-card and estimator, ACP propagation, then deletion after all consumers are rewired.",
