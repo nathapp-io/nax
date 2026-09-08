@@ -13,6 +13,7 @@
  * injection surface. They are quoted with shellQuoteArg -- the same helper
  * command-resolver.ts already applies to {{package}}.
  */
+import { statSync } from "node:fs";
 import { runQualityCommand } from "../quality/runner";
 import { shellQuoteArg } from "../verification/shell-quote";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
@@ -169,6 +170,36 @@ export function createRunCommandTool(
       const raw = (input.values ?? {}) as Record<string, unknown>;
       const values: Record<string, string> = {};
       for (const [k, v] of Object.entries(raw)) values[k] = String(v);
+
+      // `scope.pathFields: ["values.files"]` means the policy resolved this
+      // value into ctx.resolvedPaths -- absolute, and approved against the
+      // grant. Substituting that instead of the raw string is what read.ts,
+      // write.ts, edit.ts and grep.ts already do, and it fixes a real defect:
+      // `bun test .nax/features/x/foo.test.ts` treats a bare dot-prefixed
+      // relative path as a test FILTER, not a path, and reports a confident
+      // false "no tests matched" (#1936). The absolute form runs.
+      //
+      // But `pathFields` is a POLICY declaration, not a claim about what the
+      // agent actually passed. `{{files}}` is equally a test-NAME filter
+      // (`bun test run-command`), and is plural by construction elsewhere --
+      // scoped-selection.ts builds it as several paths joined by a space.
+      // resolveWithin accepts every one of those: "" resolves to the repo
+      // ROOT, and a name filter or a space-joined list each resolve to a
+      // single nonexistent path. So `resolvedPaths.length` cannot tell them
+      // apart; only an existing FILE is unambiguously the case this fix is
+      // for.
+      //
+      // Everything else keeps the raw value it had before #1936: a name
+      // filter still filters, a multi-file value stays as broken as it
+      // already was rather than becoming a confusing absolute one, and ""
+      // does not absolutise to the root and run the entire suite. One stat
+      // against a process spawn is free.
+      if (values.files !== undefined && ctx.resolvedPaths.length === 1) {
+        const [resolvedFiles] = ctx.resolvedPaths;
+        if (resolvedFiles !== undefined && statSync(resolvedFiles, { throwIfNoEntry: false })?.isFile() === true) {
+          values.files = resolvedFiles;
+        }
+      }
 
       const command = substituteCommand(template, values);
       if (typeof command !== "string") return { content: command.error, isError: true };
