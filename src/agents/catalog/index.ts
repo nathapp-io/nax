@@ -103,8 +103,9 @@ function toTokenPricing(pricing: import("@nathapp/nax-ai").Pricing): TokenPricin
 /**
  * Look up a model's rate card by `(provider, model)`.
  *
- * - Returns `undefined` on catalog miss, load failure or rejected loader
- *   (US-001 AC2, AC6).
+ * - Returns `undefined` on catalog miss, load failure, or any thrown error
+ *   from `catalog.model()` / the pricing-to-`TokenPricing` mapping (the
+ *   "no path throws" fail-open policy from US-001 AC2/AC6).
  * - Cache reads and writes that the catalog did not publish fall back to
  *   `inputPer1M` (the conservative rate-card default).
  * - The catalog is loaded exactly once per `_catalogDeps.loadProviders`
@@ -114,10 +115,29 @@ function toTokenPricing(pricing: import("@nathapp/nax-ai").Pricing): TokenPricin
 export async function lookupPricing(provider: string, model: string): Promise<TokenPricing | undefined> {
   const catalog = await loadCatalog(_catalogDeps.loadProviders);
   if (catalog === null) return undefined;
-  const resolved = catalog.model(provider, model);
-  if (resolved === undefined) return undefined;
-  const pricing = toTokenPricing(resolved.pricing);
-  if (pricing.cacheReadPer1M === undefined) pricing.cacheReadPer1M = pricing.inputPer1M;
-  if (pricing.cacheCreationPer1M === undefined) pricing.cacheCreationPer1M = pricing.inputPer1M;
-  return pricing;
+  try {
+    const resolved = catalog.model(provider, model);
+    if (resolved === undefined) return undefined;
+    const pricing = toTokenPricing(resolved.pricing);
+    if (pricing.cacheReadPer1M === undefined) pricing.cacheReadPer1M = pricing.inputPer1M;
+    if (pricing.cacheCreationPer1M === undefined) pricing.cacheCreationPer1M = pricing.inputPer1M;
+    return pricing;
+  } catch {
+    // Fail-open per AC6: a misbehaving `catalog.model()` or an unexpected
+    // Pricing shape should not propagate. Callers (resolveRateCard) treat
+    // `undefined` the same as a normal catalog miss.
+    return undefined;
+  }
+}
+
+/**
+ * Whether the catalog's most recent load attempt for the current
+ * `_catalogDeps.loadProviders` reference failed (returned `null` from
+ * `loadCatalog`). Lets callers distinguish a load failure from a normal
+ * catalog miss when `lookupPricing` returns `undefined`, so they can
+ * emit a load-failure warning once instead of one warning per distinct
+ * id (US-001 AC21).
+ */
+export function catalogLoadFailed(): boolean {
+  return catalogCache.get(_catalogDeps.loadProviders) === null;
 }

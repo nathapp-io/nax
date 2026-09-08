@@ -43,6 +43,11 @@ interface EffectiveRates {
  * semantics ("Applies when total input usage EXCEEDS this token count"):
  * a request landing exactly on the threshold does not cross it, so the base
  * rates win.
+ *
+ * Selecting the *highest* matching threshold — not overwriting on every
+ * match — keeps the contract order-independent. The catalog passes tiers
+ * through verbatim, so an upstream that emits them out of declaration
+ * order still applies the largest one that fires.
  */
 function selectRates(rates: TokenPricing, totalInputClassTokens: number): EffectiveRates {
   let winner: EffectiveRates = {
@@ -52,9 +57,11 @@ function selectRates(rates: TokenPricing, totalInputClassTokens: number): Effect
     cacheCreationPer1M: rates.cacheCreationPer1M,
   };
   if (rates.tiers !== undefined) {
+    let bestThreshold = Number.NEGATIVE_INFINITY;
     for (const tier of rates.tiers) {
-      if (totalInputClassTokens > tier.inputTokensAbove) {
+      if (totalInputClassTokens > tier.inputTokensAbove && tier.inputTokensAbove > bestThreshold) {
         winner = tier;
+        bestThreshold = tier.inputTokensAbove;
       }
     }
   }

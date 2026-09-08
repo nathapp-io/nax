@@ -21,7 +21,7 @@
  * `bun build`; `resolveJsonModule` is enabled.
  */
 
-import { lookupPricing as defaultLookupPricing } from "@/agents/catalog";
+import { catalogLoadFailed, lookupPricing as defaultLookupPricing } from "@/agents/catalog";
 import type { TokenPricing } from "@/config/schema-types";
 import { getSafeLogger } from "@/logger";
 import { parseModelSpec } from "../model-spec";
@@ -112,7 +112,10 @@ function inferProvider(modelId: string): string {
  *   with `source: "fallback-rates"` and warns ONCE per distinct unresolved
  *   id.
  * - On catalog-load failure returns the fallback card with a single
- *   load-failure warning per process.
+ *   load-failure warning per process. A throwing lookup AND a default
+ *   `lookupPricing` whose underlying catalog load failed both route here,
+ *   so distinct ids share the same one-shot warning rather than each
+ *   generating their own.
  */
 export async function resolveRateCard(
   modelId: string,
@@ -131,18 +134,18 @@ export async function resolveRateCard(
   try {
     rates = await lookupPricing(coords.provider, coords.model);
   } catch (err) {
-    if (!warnedLoadFailure) {
-      getSafeLogger()?.warn("rate-card", `Catalog lookup failed; falling back to generic rate card`, {
-        modelId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      warnedLoadFailure = true;
-    }
+    warnLoadFailure(modelId, err);
     return { rates: FALLBACK_RATES, source: "fallback-rates" };
   }
 
   if (rates === undefined) {
-    warnUnresolved(modelId);
+    // Distinguish a real catalog miss from a catalog that failed to load at
+    // all. AC21: distinct ids under a failing load share one warning.
+    if (lookupPricing === defaultLookupPricing && catalogLoadFailed()) {
+      warnLoadFailure(modelId, undefined);
+    } else {
+      warnUnresolved(modelId);
+    }
     return { rates: FALLBACK_RATES, source: "fallback-rates" };
   }
   return { rates, source: "catalog-rates" };
@@ -153,6 +156,15 @@ function warnUnresolved(modelId: string): void {
   unresolvedIds.add(modelId);
   getSafeLogger()?.warn("rate-card", `No rate card found for model id; using generic fallback`, {
     modelId,
+  });
+}
+
+function warnLoadFailure(modelId: string, err: unknown): void {
+  if (warnedLoadFailure) return;
+  warnedLoadFailure = true;
+  getSafeLogger()?.warn("rate-card", `Catalog lookup failed; falling back to generic rate card`, {
+    modelId,
+    ...(err instanceof Error ? { error: err.message } : {}),
   });
 }
 
