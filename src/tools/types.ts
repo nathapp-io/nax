@@ -22,6 +22,7 @@ export type CodingToolName =
   | "Grep"
   | "Write"
   | "Edit"
+  | "Delete"
   | "Git"
   | "GitCommit"
   | "RunCommand"

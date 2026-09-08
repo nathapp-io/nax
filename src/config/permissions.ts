@@ -168,6 +168,7 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
           ...DEFAULT_CODING_TOOLS,
           "Write",
           "Edit",
+          "Delete",
           "Git",
           "GitCommit",
           "RunCommand",
