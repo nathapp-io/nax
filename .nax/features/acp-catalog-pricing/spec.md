@@ -342,6 +342,12 @@ criteria: `bun run typecheck` and `bun run lint` (which chains `check:file-sizes
     applies the tier's `inputPer1M` when input-class usage totals 250,000 tokens.
 19. `[unit]` `estimateCostUsd` given rates carrying a tier with `inputTokensAbove` 200000
     applies the base `inputPer1M` when input-class usage totals 100,000 tokens.
+20. `[unit]` When an alias resolves but the catalog has no such provider/model,
+    `resolveRateCard` returns a card whose `source` is `"fallback-rates"` and the logger
+    receives exactly one warning for that id.
+21. `[unit]` When catalog loading rejects and `resolveRateCard` is called repeatedly, each
+    call returns a card whose `source` is `"fallback-rates"` and the logger receives exactly
+    one warning for the load failure.
 
 ### US-002
 

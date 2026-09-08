@@ -1,0 +1,225 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "acp-catalog-pricing",
+  "branchName": "feat/acp-catalog-pricing",
+  "createdAt": "2026-09-08T00:00:00.000Z",
+  "updatedAt": "2026-09-08T03:12:53.659Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Catalog-backed rate resolution",
+      "description": "**Goal** — Introduce catalog-backed TokenPricing lookup, the bundled alias default, fail-open rate cards, and the shared tier-aware estimator.\n\n**Motivation** — `MODEL_PRICING` is stale, and stale in the direction that matters: `resolvePricingSource` detects only an *absent* entry, so a wrong rate is stamped `\"model-rates\"` and reads as authoritative in the cost ledger with no downstream signal.\n\n**Approach** — Swap the rate *source*, not the estimator.\n\n**Module boundary** — `scripts/check-nax-ai-imports.ts` restricts `@nathapp/nax-ai` imports to `src/agents/native/` and runs inside `bun run lint`. Placing the catalog lookup in `src/agents/cost/` would fail that gate; importing it from `src/agents/native/` instead would close a `cost <-> native` runtime cycle. Resolution: a new `src/agents/catalog/` module owns the nax-ai boundary and is added as a second allowed prefix in the gate. It imports nax-ai, maps `Pricing` onto nax's own `TokenPricing`, and exports no nax-ai type. It depends on neither `cost/` nor `native/`, so no cycle is created.\n\n**Scope** — In: cached catalog loading, Pricing mapping, aliases, fallback cards and deduplicated warnings, estimator relocation, barrels, and the import-gate update. Out: ACP adapter consumption, user-editable aliases, per-model alias overrides, runtime models.dev fetching/build-time table generation, and migrating native to catalog.\n\n**Interface** — `estimateCostUsd(usage: TokenUsage, rates: TokenPricing): number`\n\n`defaultProviders(ids?: readonly string[]): Promise<RawProvider[]>` — `@nathapp/nax-ai`.\n`normaliseCatalog(raw, overrides?): Catalog` — `@nathapp/nax-ai`.\n`Catalog.model(provider: string, model: string): ResolvedModel | undefined`.\n`parseModelSpec(raw): { model: string; effort?: string }` — `src/agents/model-spec.ts`.\n`TokenPricing` / `TokenPricingTier` — `src/config/schema-types.ts`; the tier field is `inputTokensAbove`.\n\n**Failure handling** — Every lookup failure is fail-open: no path throws; unresolved IDs and catalog misses use a positive generic fallback card and warn once per distinct ID, while catalog-load failure returns no pricing and warns once for the load failure. Cache classes without explicit rates fall back to inputPer1M.",
+      "acceptanceCriteria": [
+        "[unit] lookupPricing(\"anthropic\", \"claude-sonnet-5\") returns a defined value whose inputPer1M and outputPer1M are positive finite numbers.",
+        "[unit] lookupPricing(\"no-such-provider\", \"no-such-model\") returns undefined.",
+        "[unit] Given a catalog whose model() returns pricing with input 3, output 15, cacheRead 0.3 and cacheWrite 3.75, lookupPricing returns inputPer1M 3, outputPer1M 15, cacheReadPer1M 0.3 and cacheCreationPer1M 3.75.",
+        "[unit] Given a catalog whose model() returns pricing carrying one tier with inputTokensAbove 200000, lookupPricing returns a value whose tiers has one entry with inputTokensAbove 200000.",
+        "[unit] When lookupPricing is called twice successively, then the underlying provider loader is invoked exactly once.",
+        "[unit] When the provider loader rejects, then lookupPricing returns undefined and does not reject.",
+        "[unit] resolveRateCard(\"sonnet\") returns a card whose source is \"catalog-rates\".",
+        "[unit] resolveRateCard(\"minimax/MiniMax-M2.7\") returns a card whose source is \"catalog-rates\", without consulting the alias file.",
+        "[unit] resolveRateCard(\"huggingface/MiniMaxAI/MiniMax-M2.7\") queries the catalog with provider \"huggingface\" and model \"MiniMaxAI/MiniMax-M2.7\".",
+        "[unit] resolveRateCard(\"gpt-5.6-luna[high]\") queries the catalog with model \"gpt-5.6-luna\".",
+        "[unit] resolveRateCard(\"no-such-model-anywhere\") returns source \"fallback-rates\" and rates.inputPer1M and rates.outputPer1M that are positive finite numbers.",
+        "[unit] When resolveRateCard(\"no-such-model-anywhere\") is called twice, then the logger receives exactly one warning.",
+        "[unit] When resolveRateCard is called once for each of two distinct unresolved ids, then the logger receives exactly two warnings.",
+        "[unit] Given lookupPricing is stubbed, resolveRateCard(\"sonnet\") invokes it once with provider \"anthropic\" and model \"claude-sonnet-5\".",
+        "[unit] Every alias entry in model-aliases.json returns a defined lookupPricing result when its provider and model are passed to lookupPricing.",
+        "[unit] estimateCostUsd imported from @/agents/cost returns 12 for usage of 1,000,000 input and 1,000,000 output tokens against rates of inputPer1M 2 and outputPer1M 10.",
+        "[unit] estimateCostUsd prices 1,000,000 cache-read tokens at inputPer1M when cacheReadPer1M is unset.",
+        "[unit] estimateCostUsd applies a tier inputPer1M when input-class usage is 250,000 and a tier has inputTokensAbove 200000.",
+        "[unit] estimateCostUsd applies the base inputPer1M when input-class usage is 100,000 and a tier has inputTokensAbove 200000.",
+        "[unit] When an alias resolves but the catalog has no such provider/model, then resolveRateCard returns a fallback-rates card and the logger receives exactly one warning for that id.",
+        "[unit] When catalog loading rejects and resolveRateCard is called repeatedly, then each call returns a fallback-rates card and the logger receives exactly one warning for the load failure."
+      ],
+      "tags": [
+        "feature",
+        "pricing",
+        "catalog",
+        "cost"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This adds a new external-package boundary, asynchronous cached loading, fail-open behavior, and shared pricing logic across several modules."
+      },
+      "contextFiles": [
+        "src/agents/native/models.ts",
+        "src/agents/cost/pricing.ts",
+        "src/agents/cost/calculate.ts",
+        "src/config/schema-types.ts",
+        "scripts/check-nax-ai-imports.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/catalog/index.ts",
+        "src/agents/catalog/pricing-lookup.ts",
+        "src/agents/cost/rate-card.ts",
+        "src/agents/cost/model-aliases.json",
+        "test/unit/agents/catalog/pricing-lookup.test.ts",
+        "test/unit/agents/cost/rate-card.test.ts"
+      ],
+      "suggestedCriteria": [
+        "estimateCostUsd continues to select the highest strictly exceeded inputTokensAbove tier using all input-class tokens."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/agents/native/models.ts",
+          "reason": "`estimateCostUsd` and its private `selectRates` helper move to `src/agents/cost/`; this file imports `estimateCostUsd` from `@/agents/cost` instead of defining it. Its existing callers keep the same signature."
+        },
+        {
+          "path": "scripts/check-nax-ai-imports.ts",
+          "reason": "`ALLOWED_PREFIX` is a single hard-coded `src/agents/native/`; it becomes a list also admitting `src/agents/catalog/`, and its error message names both."
+        },
+        {
+          "path": "test/unit/agents/native/models.test.ts",
+          "reason": "imports `estimateCostUsd` from `@/agents/native/models`, pinning its old location; it imports from `@/agents/cost` instead."
+        },
+        {
+          "path": "test/unit/agents/native/adapter-cost-rates.test.ts",
+          "reason": "imports `estimateCostUsd` from `@/agents/native/models`, pinning its old location; it imports from `@/agents/cost` instead."
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "ACP adapter prices from the rate card",
+      "description": "**Goal** — Resolve a rate card once per ACP completion or session, use its rates for all estimates, and report its source.\n\n**Motivation** — The estimator covers exactly the rows the wire does not price.\n\n**Approach** — The pattern US-002 mirrors: resolve once, reuse per turn.\n\n**Scope** — In: complete() and openSession() card resolution, session-handle card retention, card-based normal/error turn estimates, BuildTurnResultInput migration, and producer pricingSource propagation. Out: catalog lookup implementation, legacy table deletion, changing ACP wire dispatch, and wire-exact reporting; `exactCostUsd` handling and the \"wire\" stamp are unchanged.\n\n**Interface** — `BuildTurnResultInput` — `src/agents/acp/adapter-output.ts:205`.\nBaseline: carries `modelDef: ModelDef`.\nTarget: carries `rateCard: RateCard` in place of `modelDef`; `buildTurnResult` prices from `rateCard.rates` and sets `pricingSource` from `rateCard.source`.\n\n`resolveRateCard` is exported from `@/agents/cost` by US-001 and consumed by the ACP adapter in US-002. US-002 AC1 and AC2 are its seam invariants, entered at `complete()` and `sendTurn()` respectively.",
+      "acceptanceCriteria": [
+        "[integration] Invoking complete() with a stubbed resolveRateCard and a model whose card reports \"catalog-rates\" yields a CompleteResult whose pricingSource is \"catalog-rates\".",
+        "[integration] Invoking sendTurn() on a session opened by createSession() with a stubbed resolveRateCard reporting \"catalog-rates\" yields a TurnResult whose pricingSource is \"catalog-rates\".",
+        "[integration] Invoking complete() for a model whose card reports \"fallback-rates\" yields a CompleteResult whose pricingSource is \"fallback-rates\".",
+        "[integration] When sendTurn() is invoked twice on one session, then resolveRateCard is invoked exactly once.",
+        "[unit] buildTurnResult given a rateCard with inputPer1M 2 and outputPer1M 10 and accumulated usage of 1,000,000 input and 1,000,000 output tokens returns a TurnResult whose estimatedCostUsd is 12.",
+        "[unit] buildTurnResult given totalExactCostUsd of 0.42 returns a TurnResult whose exactCostUsd is 0.42, unchanged by the rate card.",
+        "[integration] When a dispatch carries wire-reported exactCostUsd, then it records a cost row whose pricingSource is \"wire\", taking precedence over the card's source.",
+        "[unit] buildTurnResult with timedOut true returns a TurnResult whose output is the empty string, unchanged by this story."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "pricing",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This changes both stateless completion and retained ACP session data flow, including result source propagation and existing exact-cost precedence."
+      },
+      "contextFiles": [
+        "src/agents/cost/rate-card.ts",
+        "src/agents/acp/adapter.ts",
+        "src/agents/acp/adapter-output.ts",
+        "src/agents/native/adapter.ts",
+        "src/agents/session-types.ts",
+        "src/agents/types.ts"
+      ],
+      "suggestedCriteria": [
+        "When sendTurn produces a billable SessionTurnError, its estimated cost is calculated from the session rate card."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/agents/acp/adapter.ts",
+          "reason": "`deriveTokenUsage` takes a rate card rather than a model string; `complete()` and `createSession()` resolve the card once; the session handle carries it beside `_modelDef`."
+        },
+        {
+          "path": "src/agents/acp/adapter-output.ts",
+          "reason": "`BuildTurnResultInput.modelDef` becomes `rateCard`, and `buildTurnResult` prices from it."
+        },
+        {
+          "path": "test/unit/agents/acp/adapter-output-timedout.test.ts",
+          "reason": "builds `BuildTurnResultInput` with `modelDef` at seven call sites, a field this story replaces; each site constructs the input with `rateCard` instead."
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Retire the hardcoded rate table",
+      "description": "**Goal** — Delete obsolete table-backed cost APIs after ACP is fully card-backed.\n\n**Motivation** — The file's own comment says \"a wrong row is worse than a missing one\".\n\n**Approach** — Deletion-only terminal cleanup. No new code.\n\n**Scope** — In: delete `MODEL_PRICING`, `COST_RATES`, `RATE_CARD_REVIEWED`, estimateCost, estimateCostByDuration, estimateCostFromTokenUsage, their public exports, and obsolete tests; retain formatCostWithConfidence and resolvePricingSource. Out: catalog/rate-card implementation, ACP adapter wiring, native pricing behavior, and retiring `resolvePricingSource` itself.\n\n**Interface** — `resolvePricingSource` — `src/agents/cost/calculate.ts:200`. Takes the resolved model name or undefined and returns a source tag. Target: the `MODEL_PRICING` branch is gone. It returns the unknown-model tag when the model is undefined, empty, or the literal unknown, and the fallback-rates tag in every other case, serving callers with no producer-supplied source. Its five permitted return values are unchanged: model-rates, fallback-rates, unknown-model, catalog-rates and config-override.\n\n**Verification** — Removals are verified by the build/static gate, not by acceptance criteria: `bun run typecheck` and `bun run lint` (which chains `check:file-sizes`, `check:alias-internals`, `check:import-cycles`, `check:nax-ai-imports` and `check:bundle-externals`). Before deleting, confirm the no-production-caller claim for `estimateCost` and `estimateCostByDuration` rather than trusting a single search.",
+      "acceptanceCriteria": [
+        "[unit] resolvePricingSource returns \"unknown-model\" when model is undefined, empty, or the literal \"unknown\".",
+        "[unit] resolvePricingSource returns \"fallback-rates\" when model is a non-empty resolved model name after the MODEL_PRICING branch is removed."
+      ],
+      "tags": [
+        "feature",
+        "cost",
+        "cleanup"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The work is a bounded multi-file API and test deletion with a small, directly testable fallback-source regression change."
+      },
+      "contextFiles": [
+        "src/agents/index.ts",
+        "src/agents/cost/index.ts",
+        "src/agents/cost/calculate.ts",
+        "src/agents/cost/pricing.ts",
+        "test/unit/agents/cost/calculate.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/agents/cost/pricing.ts",
+          "reason": "deleted in full: `MODEL_PRICING`, `COST_RATES`, `RATE_CARD_REVIEWED`."
+        },
+        {
+          "path": "src/agents/cost/calculate.ts",
+          "reason": "`estimateCost`, `estimateCostByDuration` and `estimateCostFromTokenUsage` are removed; `resolvePricingSource` loses its `MODEL_PRICING` branch and keeps its signature and return union."
+        },
+        {
+          "path": "src/agents/index.ts",
+          "reason": "re-exports `COST_RATES`, `MODEL_PRICING`, `estimateCostFromTokenUsage`; these entries are removed."
+        },
+        {
+          "path": "test/unit/metrics/cost.test.ts",
+          "reason": "its whole surface is `estimateCost`, `estimateCostByDuration` and `COST_RATES`, all removed by this story; the file is deleted, except any `formatCostWithConfidence` coverage, which moves to the calculate suite below."
+        },
+        {
+          "path": "test/unit/agents/acp/cost.test.ts",
+          "reason": "its entire surface is `estimateCostFromTokenUsage` (four describe blocks, all of it); the function is removed by this story, so the file is deleted. Its per-model rate cases are superseded by the rate-card suite US-001 creates."
+        },
+        {
+          "path": "test/unit/runtime/middleware/cost.test.ts",
+          "reason": "imports `estimateCostFromTokenUsage` and `MODEL_PRICING`, both removed by this story; those imports and the assertions resting on them are removed, and its `pricingSource` coverage is re-pinned to producer-supplied values."
+        },
+        {
+          "path": "test/unit/agents/cost/calculate.test.ts",
+          "reason": "asserts against `MODEL_PRICING` lookups and `estimateCostFromTokenUsage`; those assertions are removed and the surviving `resolvePricingSource` behaviour is re-pinned to its `unknown-model` / `fallback-rates` contract."
+        }
+      ]
+    }
+  ],
+  "analysis": "Existing ACP pricing is table-backed in three producer paths: complete and billable SessionTurnError in src/agents/acp/adapter.ts:116-125,576, and normal turns in src/agents/acp/adapter-output.ts:205-253. Both import estimateCostFromTokenUsage from cost, and BuildTurnResultInput currently carries ModelDef rather than a card. ACP must resolve a card at complete/open-session time, retain it on AcpSessionHandleImpl (src/agents/acp/adapter-lifecycle.ts:280), reuse it on every sendTurn, and emit pricingSource. Middleware already implements the required wire precedence at src/runtime/middleware/cost.ts:146-154, so it is not modified. The stale source is src/agents/cost/pricing.ts:8-100; calculate.ts imports it and defines both old estimators and resolvePricingSource (src/agents/cost/calculate.ts:7,142-204). Native already supplies the exact shared-estimator behavior and resolve-once buildRateCard reference in src/agents/native/models.ts:151-235. TokenPricing's optional cache fields and tiers use inputTokensAbove (src/config/schema-types.ts:16-58), and parseModelSpec strips [effort] (src/agents/model-spec.ts:31-35). The architectural constraint is real: scripts/check-nax-ai-imports.ts:16 only permits nax-ai imports from native, while native imports cost; catalog lookup in cost or importing native from cost would violate the gate or create a cycle. New catalog code must own nax-ai imports, map to nax TokenPricing, and be added to the gate. Risks are a zero-cost failure path, per-turn catalog loads, lost exact-cost precedence, malformed provider/model splitting (only first slash), cache fallback regression, and lingering stale public exports. Implement in dependency order: catalog/rate-card and estimator, ACP propagation, then deletion after all consumers are rewired.",
+  "outOfScope": [
+    "A user-editable or per-project override layer for `model-aliases.json`. The shipped file is the only source of aliases; a merge path is deferred until a user needs one.",
+    "Per-model rate overrides inside the alias file. Aliases map ids to catalog coordinates and nothing else.",
+    "Changing what nax dispatches on the wire. A configured \"sonnet\" continues to reach acpx as \"sonnet\"; aliases are consulted only to decide what to bill.",
+    "Changes to `src/config/` — `resolveModel`, `isUnrecognizedLiteralModel`, `MODEL_SHORTHAND_TIERS` and the protocol gate are untouched, and `ModelDef.provider` keeps its current inferred value.",
+    "Native-path pricing behaviour, which already resolves from the catalog via `buildRateCard`.",
+    "Fetching models.dev at runtime or generating a rate table from it at build time.",
+    "Migrating `native/` to consume `src/agents/catalog/`. Native keeps its own nax-ai import.",
+    "Wire-exact cost reporting. `exactCostUsd` handling and the \"wire\" stamp are unchanged.",
+    "Updating `.nax/rules/adapter-wiring.md`. Its \"Native path\" section **already names** `src/agents/catalog/` as a permitted `@nathapp/nax-ai` importer — amended manually on this branch as a precondition, before any story runs. No story edits it. This ordering is deliberate: the rule is path-scoped to `src/agents/**/*.ts` and loaded at the `execution` and `review-adversarial` stages, so it reaches the implementer and reviewer prompts for the very files US-001 creates. Had it still read \"native is the only directory\", the story and the rule would contradict, and rectification could not resolve it.",
+    "Regenerating `.claude/rules/` from `.nax/rules/`. Already done on this branch via `nax rules export --agent=claude`, so `bun run check:rules-drift` is green before the run starts. No story runs the export. `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` and `codex.md` are `nax generate` context files, not rule shims, and are not touched at all.",
+    "Retiring `resolvePricingSource` itself. It keeps its signature and return union for callers with no producer-supplied source."
+  ],
+  "routingProfile": "native"
+}
