@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeDispatchContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
-import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
+import {
+  _acceptanceSetupDeps,
+  acceptanceSetupStage,
+  computeACFingerprint,
+  computeAcceptanceLayoutFingerprint,
+} from "@/pipeline/stages/acceptance-setup";
 import { preRunPipeline } from "@/pipeline/stages/index";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
@@ -252,6 +257,15 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
     return computeACFingerprint(criteria);
   }
 
+  function matchingLayoutFingerprint() {
+    return computeAcceptanceLayoutFingerprint("/tmp/test-workdir", [
+      {
+        testPath: "/tmp/test-workdir/.nax/features/test-feature/.nax-acceptance.test.ts",
+        stories: [{ id: "US-001" }, { id: "US-002" }],
+      },
+    ]);
+  }
+
   test("does not call callOp when acceptance.test.ts already exists and fingerprint matches", async () => {
     let callOpCalled = false;
 
@@ -259,6 +273,7 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
     _acceptanceSetupDeps.readMeta = async () => ({
       generatedAt: "2026-01-01T00:00:00Z",
       acFingerprint: matchingFingerprint(),
+      layoutFingerprint: matchingLayoutFingerprint(),
       storyCount: 2,
       acCount: 3,
       generator: "nax",
@@ -283,6 +298,7 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
     _acceptanceSetupDeps.readMeta = async () => ({
       generatedAt: "2026-01-01T00:00:00Z",
       acFingerprint: matchingFingerprint(),
+      layoutFingerprint: matchingLayoutFingerprint(),
       storyCount: 2,
       acCount: 3,
       generator: "nax",
@@ -311,6 +327,7 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
     _acceptanceSetupDeps.readMeta = async () => ({
       generatedAt: "2026-01-01T00:00:00Z",
       acFingerprint: matchingFingerprint(),
+      layoutFingerprint: matchingLayoutFingerprint(),
       storyCount: 2,
       acCount: 3,
       generator: "nax",

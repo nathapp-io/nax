@@ -13,6 +13,7 @@ import {
   type AcceptanceMeta,
   acceptanceSetupStage,
   computeACFingerprint,
+  computeAcceptanceLayoutFingerprint,
 } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 
@@ -78,6 +79,15 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 
 // Criteria in default makeCtx
 const DEFAULT_CRITERIA = ["AC-1: first criterion", "AC-2: second criterion", "AC-3: third criterion"];
+
+function rootLayoutFingerprint(ctx: PipelineContext, stories = ctx.prd.userStories): string {
+  return computeAcceptanceLayoutFingerprint(ctx.workdir, [
+    {
+      testPath: `${ctx.workdir}/.nax/features/${ctx.prd.feature}/.nax-acceptance.test.ts`,
+      stories,
+    },
+  ]);
+}
 
 // ---------------------------------------------------------------------------
 // Save/restore deps
@@ -329,12 +339,15 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
 describe("acceptance-setup: US-FIX-* stories excluded from fingerprint", () => {
   test("adding fix stories does NOT trigger regeneration", async () => {
     const storedFingerprint = computeACFingerprint(DEFAULT_CRITERIA);
+    const ctx = makeCtx();
+    const storedLayoutFingerprint = rootLayoutFingerprint(ctx);
     let generateCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => true;
     _acceptanceSetupDeps.readMeta = async () => ({
       generatedAt: "2026-01-01T00:00:00Z",
       acFingerprint: storedFingerprint,
+      layoutFingerprint: storedLayoutFingerprint,
       storyCount: 2,
       acCount: 3,
       generator: "nax",
@@ -355,7 +368,8 @@ describe("acceptance-setup: US-FIX-* stories excluded from fingerprint", () => {
       makeStory("US-002", ["AC-3: third criterion"]),
       makeStory("US-FIX-001", ["Fix the broken validation logic"]),
     ];
-    const ctx = makeCtx({ prd: makePrd(stories) });
+    ctx.prd = makePrd(stories);
+    expect(rootLayoutFingerprint(ctx, stories.slice(0, 2))).toBe(storedLayoutFingerprint);
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -370,12 +384,14 @@ describe("acceptance-setup: US-FIX-* stories excluded from fingerprint", () => {
 describe("acceptance-setup: no regeneration when fingerprint unchanged (AC-16)", () => {
   test("does NOT regenerate when ACs are unchanged", async () => {
     const storedFingerprint = computeACFingerprint(DEFAULT_CRITERIA);
+    const ctx = makeCtx();
     let generateCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => true;
     _acceptanceSetupDeps.readMeta = async () => ({
       generatedAt: "2026-01-01T00:00:00Z",
       acFingerprint: storedFingerprint,
+      layoutFingerprint: rootLayoutFingerprint(ctx),
       storyCount: 2,
       acCount: 3,
       generator: "nax",
@@ -390,9 +406,88 @@ describe("acceptance-setup: no regeneration when fingerprint unchanged (AC-16)",
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
-    await acceptanceSetupStage.execute(makeCtx());
+    await acceptanceSetupStage.execute(ctx);
 
     expect(generateCalled).toBe(false);
+  });
+});
+
+describe("acceptance-setup: package layout staleness", () => {
+  test("regenerates when a story moves between existing package targets without changing ACs", async () => {
+    const previousStories = [
+      { ...makeStory("US-001", ["AC-1: first criterion"]), workdir: "apps/a" },
+      { ...makeStory("US-002", ["AC-2: second criterion"]), workdir: "apps/a" },
+      { ...makeStory("US-003", ["AC-3: third criterion"]), workdir: "apps/b" },
+    ];
+    const currentStories = [{ ...previousStories[0], workdir: "apps/b" }, previousStories[1], previousStories[2]];
+    const ctx = makeCtx({ prd: makePrd(currentStories), story: currentStories[0], stories: currentStories });
+    const previousLayout = computeAcceptanceLayoutFingerprint(ctx.workdir, [
+      {
+        testPath: `${ctx.workdir}/apps/a/.nax/features/test-feature/.nax-acceptance.test.ts`,
+        stories: previousStories.slice(0, 2),
+      },
+      {
+        testPath: `${ctx.workdir}/apps/b/.nax/features/test-feature/.nax-acceptance.test.ts`,
+        stories: previousStories.slice(2),
+      },
+    ]);
+    let generated = 0;
+
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: computeACFingerprint(DEFAULT_CRITERIA),
+      layoutFingerprint: previousLayout,
+      storyCount: 3,
+      acCount: 3,
+      generator: "nax",
+    });
+    _acceptanceSetupDeps.copyFile = async () => {};
+    _acceptanceSetupDeps.deleteFile = async () => {};
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op) => {
+      if (op.name === "acceptance-generate") {
+        generated++;
+        return { testCode: 'test("AC", () => {})' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(generated).toBe(2);
+  });
+
+  test("regenerates once when legacy metadata lacks the layout fingerprint", async () => {
+    const ctx = makeCtx();
+    let generated = false;
+
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: computeACFingerprint(DEFAULT_CRITERIA),
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
+    _acceptanceSetupDeps.copyFile = async () => {};
+    _acceptanceSetupDeps.deleteFile = async () => {};
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op) => {
+      if (op.name === "acceptance-generate") {
+        generated = true;
+        return { testCode: 'test("AC", () => {})' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(generated).toBe(true);
   });
 });
 
@@ -451,6 +546,7 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
     expect(writtenMeta).not.toBeNull();
     assertDefined(writtenMeta, "writtenMeta");
     expect(writtenMeta.acFingerprint).toBe(computeACFingerprint(DEFAULT_CRITERIA));
+    expect(writtenMeta.layoutFingerprint).toBe(rootLayoutFingerprint(ctx));
     expect(writtenMeta.acCount).toBe(3);
     expect(writtenMeta.storyCount).toBe(2);
     expect(writtenMeta.generatedAt).toBeString();

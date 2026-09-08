@@ -88,11 +88,13 @@ function setupGenerationDeps(commitCalls: Array<{ workdir: string; stage: string
 function setupFingerprintMatchDeps(
   commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }>,
   fingerprint: string,
+  layoutFingerprint: string,
 ) {
   _acceptanceSetupDeps.fileExists = async () => true;
   _acceptanceSetupDeps.readMeta = async () => ({
     generatedAt: new Date().toISOString(),
     acFingerprint: fingerprint,
+    layoutFingerprint,
     storyCount: 1,
     acCount: 2,
     generator: "nax",
@@ -205,11 +207,19 @@ describe("acceptance-setup: autoCommitIfDirty skipped on fingerprint match", () 
     const ctx = makeCtx();
 
     // Compute the real fingerprint so the stored meta matches
-    const { computeACFingerprint } = await import("@/pipeline/stages/acceptance-setup");
+    const { computeACFingerprint, computeAcceptanceLayoutFingerprint } = await import(
+      "@/pipeline/stages/acceptance-setup"
+    );
     const acs = ctx.prd.userStories.flatMap((s) => s.acceptanceCriteria);
     const fingerprint = computeACFingerprint(acs);
+    const layoutFingerprint = computeAcceptanceLayoutFingerprint(ctx.workdir, [
+      {
+        testPath: `${ctx.workdir}/.nax/features/my-feature/.nax-acceptance.test.ts`,
+        stories: [{ id: "US-001" }],
+      },
+    ]);
 
-    setupFingerprintMatchDeps(commitCalls, fingerprint);
+    setupFingerprintMatchDeps(commitCalls, fingerprint, layoutFingerprint);
 
     await acceptanceSetupStage.execute(ctx);
 

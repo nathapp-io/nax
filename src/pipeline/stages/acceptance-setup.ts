@@ -11,8 +11,9 @@
  * Stores results in ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount }.
  *
  * P2-A/P2-B: When a test file already exists, checks a SHA-256 fingerprint of the
- * sorted AC strings against acceptance-meta.json. Regenerates (with .bak backup)
- * when the fingerprint has changed or meta is missing.
+ * sorted AC strings and the resolved per-package story layout against
+ * acceptance-meta.json. Regenerates (with .bak backup) when either fingerprint
+ * has changed or meta is missing.
  *
  * US-001 (ACC-002): Groups stories by story.workdir and generates one acceptance
  * test file per package at <package-root>/.nax-acceptance.test.ts. Stories with no
@@ -47,6 +48,8 @@ export interface AcceptanceMeta {
   generatedAt: string;
   /** SHA-256 fingerprint of sorted, joined AC strings */
   acFingerprint: string;
+  /** SHA-256 fingerprint of resolved test paths and their assigned story IDs */
+  layoutFingerprint?: string;
   /** Number of stories at generation time */
   storyCount: number;
   /** Total AC count at generation time */
@@ -67,6 +70,26 @@ export function computeACFingerprint(criteria: string[]): string {
   const sorted = [...criteria].sort().join("\n");
   const hasher = new Bun.CryptoHasher("sha256");
   hasher.update(sorted);
+  return `sha256:${hasher.digest("hex")}`;
+}
+
+/**
+ * Compute a stable fingerprint for the package layout of generated acceptance
+ * tests. The global AC fingerprint cannot distinguish a story moving between
+ * packages when both package test paths already exist.
+ */
+export function computeAcceptanceLayoutFingerprint(
+  workdir: string,
+  groups: ReadonlyArray<{ testPath: string; stories: ReadonlyArray<{ id: string }> }>,
+): string {
+  const layout = groups
+    .map(({ testPath, stories }) => ({
+      testPath: path.relative(workdir, testPath).replaceAll(path.sep, "/"),
+      storyIds: stories.map((story) => story.id).sort(),
+    }))
+    .sort((a, b) => a.testPath.localeCompare(b.testPath));
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(JSON.stringify(layout));
   return `sha256:${hasher.digest("hex")}`;
 }
 
@@ -238,28 +261,33 @@ async function runAcceptanceSetup(
   // below is not stamped for a suite that was never written to disk.
   let sawDispatchFailure = false;
 
-  // P2-A: Staleness detection — regenerate if fingerprint changed or meta missing.
-  // Fingerprint is the source of truth for AC stability; file existence is secondary.
+  // P2-A: Staleness detection — regenerate if ACs or the output layout changed.
+  // Fingerprints are the source of truth; file existence is secondary.
   // If fingerprint matches the stored meta, reuse existing tests even if the file
   // was lost (e.g., after a crash). If fingerprint mismatches, regenerate with .bak backup.
   const fingerprint = computeACFingerprint(allCriteria);
+  const layoutFingerprint = computeAcceptanceLayoutFingerprint(ctx.workdir, groups);
   const meta = await _acceptanceSetupDeps.readMeta(metaPath);
   getSafeLogger()?.debug("acceptance-setup", "Fingerprint check", {
     currentFingerprint: fingerprint,
     storedFingerprint: meta?.acFingerprint ?? "none",
-    match: meta?.acFingerprint === fingerprint,
+    currentLayoutFingerprint: layoutFingerprint,
+    storedLayoutFingerprint: meta?.layoutFingerprint ?? "none",
+    match: meta?.acFingerprint === fingerprint && meta?.layoutFingerprint === layoutFingerprint,
   });
 
   let shouldGenerate = false;
   let regenerated = false;
-  if (!meta || meta.acFingerprint !== fingerprint) {
+  if (!meta || meta.acFingerprint !== fingerprint || meta.layoutFingerprint !== layoutFingerprint) {
     if (!meta) {
       getSafeLogger()?.info("acceptance-setup", "No acceptance meta — generating acceptance tests");
     } else {
-      getSafeLogger()?.info("acceptance-setup", "ACs changed — regenerating acceptance tests", {
-        reason: "fingerprint mismatch",
+      getSafeLogger()?.info("acceptance-setup", "Acceptance inputs changed — regenerating acceptance tests", {
+        reason: meta.acFingerprint !== fingerprint ? "AC fingerprint mismatch" : "layout fingerprint mismatch",
         currentFingerprint: fingerprint,
         storedFingerprint: meta.acFingerprint,
+        currentLayoutFingerprint: layoutFingerprint,
+        storedLayoutFingerprint: meta.layoutFingerprint ?? "none",
       });
     }
     // Back up and delete all existing per-package test files
@@ -459,6 +487,7 @@ async function runAcceptanceSetup(
       await _acceptanceSetupDeps.writeMeta(metaPath, {
         generatedAt: new Date().toISOString(),
         acFingerprint: fingerprint,
+        layoutFingerprint,
         storyCount: ctx.prd.userStories.length,
         acCount: totalCriteria,
         generator: "nax",
