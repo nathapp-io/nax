@@ -152,6 +152,7 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     });
     expect(m.source).toBe("completion-phase");
     expect(m.attempts).toBe(0);
+    expect(m.success).toBe(false);
   });
 });
 

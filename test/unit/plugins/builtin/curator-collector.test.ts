@@ -301,7 +301,8 @@ describe("collectObservations", () => {
               success: true,
               attempts: 2,
               cost: 1.25,
-              tokens: { inputTokens: 10, outputTokens: 5 },
+              source: "completion-phase",
+              tokens: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
             },
           ],
         },
@@ -400,6 +401,9 @@ describe("collectObservations", () => {
     };
 
     const observations = await collectObservations(context);
+    const verdict = observations.find((o) => o.kind === "verdict");
+    expect(verdict?.payload.tokens).toBe(135);
+    expect(verdict?.payload.source).toBe("completion-phase");
     expect(observations.some((o) => o.kind === "verdict")).toBe(true);
     expect(observations.some((o) => o.kind === "review-finding" && o.payload.ruleId === "no-n-plus-one")).toBe(true);
     expect(observations.some((o) => o.kind === "chunk-included")).toBe(true);

@@ -165,6 +165,12 @@ export interface CostSnapshot {
   readonly totalExactCostUsd: number;
   readonly totalInputTokens: number;
   readonly totalOutputTokens: number;
+  /** Cache-read tokens across successful dispatches with reported usage. */
+  readonly totalCacheReadTokens?: number;
+  /** Cache-creation tokens across successful dispatches with reported usage. */
+  readonly totalCacheWriteTokens?: number;
+  /** Successful dispatches that supplied token usage; distinguishes absent usage from zero usage. */
+  readonly tokenUsageCount?: number;
   readonly callCount: number;
   readonly errorCount: number;
   /**
@@ -222,6 +228,9 @@ const EMPTY_SNAPSHOT: CostSnapshot = {
   totalExactCostUsd: 0,
   totalInputTokens: 0,
   totalOutputTokens: 0,
+  totalCacheReadTokens: 0,
+  totalCacheWriteTokens: 0,
+  tokenUsageCount: 0,
   callCount: 0,
   errorCount: 0,
   totalErrorCostUsd: 0,
@@ -282,6 +291,9 @@ function emptySnap(): CostSnapshot {
     totalExactCostUsd: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
+    totalCacheReadTokens: 0,
+    totalCacheWriteTokens: 0,
+    tokenUsageCount: 0,
     callCount: 0,
     errorCount: 0,
     totalErrorCostUsd: 0,
@@ -300,6 +312,9 @@ function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
     totalExactCostUsd: snap.totalExactCostUsd + e.exactCostUsd,
     totalInputTokens: snap.totalInputTokens + (tokens?.input ?? 0),
     totalOutputTokens: snap.totalOutputTokens + (tokens?.output ?? 0),
+    totalCacheReadTokens: (snap.totalCacheReadTokens ?? 0) + (tokens?.cacheRead ?? 0),
+    totalCacheWriteTokens: (snap.totalCacheWriteTokens ?? 0) + (tokens?.cacheWrite ?? 0),
+    tokenUsageCount: (snap.tokenUsageCount ?? 0) + (tokens ? 1 : 0),
     callCount: snap.callCount + 1,
     errorCount: snap.errorCount,
     totalErrorCostUsd: snap.totalErrorCostUsd,
