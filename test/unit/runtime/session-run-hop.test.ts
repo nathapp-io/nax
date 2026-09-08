@@ -137,6 +137,8 @@ describe("createSessionRunHop", () => {
       { inputTokens: 1_000_000, outputTokens: 400_000 },
       9,
       undefined,
+      // pricingSource — intentionally absent (native protocol-fault path).
+      undefined,
       failure,
     );
     const sessionManager = makeSessionManager({

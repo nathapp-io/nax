@@ -4,6 +4,8 @@
  */
 
 import { createHash } from "node:crypto";
+import type { RateCard } from "@/agents/cost";
+import { resolveRateCard as defaultResolveRateCard } from "@/agents/cost";
 import type { ModelDef, ModelTier } from "@/config/schema";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
@@ -52,6 +54,19 @@ export const _acpAdapterDeps = {
     opts?: AcpClientOptions,
   ): AcpClient {
     return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, onPidSpawned, promptRetries, onPidExited, opts);
+  },
+
+  /**
+   * Resolve a model id to a rate card (US-002). The adapter consults this
+   * seam from both `complete()` and `openSession()`, and the card it
+   * returns is what stamps `pricingSource` on `CompleteResult` /
+   * `TurnResult` (the implementer wires the call sites; the seam is here
+   * so tests can stub it without touching the catalog or alias file).
+   *
+   * Default delegates to `@/agents/cost:resolveRateCard`.
+   */
+  resolveRateCard(modelId: string): Promise<RateCard> {
+    return defaultResolveRateCard(modelId);
   },
 };
 
@@ -305,6 +320,13 @@ export class AcpSessionHandleImpl implements SessionHandle {
   readonly _resumed: boolean;
   readonly _timeoutSeconds: number;
   readonly _modelDef: ModelDef;
+  /**
+   * Rate card resolved once at `openSession` (US-002) and reused by every
+   * `sendTurn` on this handle — the "resolve once, reuse per turn" pattern the
+   * native path already follows. Held beside `_modelDef` so a turn never
+   * re-resolves and every turn of one session bills on the same rates.
+   */
+  readonly _rateCard: RateCard;
   readonly _permissionMode: string;
 
   constructor(opts: {
@@ -318,6 +340,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     timeoutSeconds: number;
     modelDef: ModelDef;
     modelTier?: ModelTier;
+    rateCard: RateCard;
     permissionMode: string;
   }) {
     this.id = opts.id;
@@ -331,6 +354,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
     this._modelDef = opts.modelDef;
     this.modelDef = opts.modelDef;
     this.modelTier = opts.modelTier;
+    this._rateCard = opts.rateCard;
     this._permissionMode = opts.permissionMode;
   }
 }

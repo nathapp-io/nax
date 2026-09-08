@@ -89,11 +89,14 @@ export interface CostEvent {
    * Where `costUsd` came from.
    *
    * - `wire` — the agent reported an exact cost; `confidence` is `"exact"`.
-   * - `model-rates` — estimated from this model's entry in `MODEL_PRICING`.
-   * - `fallback-rates` — estimated from the generic $3/$15-per-1M card because
-   *   the pricing table has no entry for the model. Treat these as indicative
-   *   only: measured against rows that also had a wire cost, the estimator ran
-   *   0.4x in aggregate and up to 21x off per row (#1433).
+   * - `model-rates` — estimated from this model's entry in the now-retired
+   *   table-backed rate card (US-003 deleted the table; this value is
+   *   retained for backward compatibility with pre-US-003 ledger rows).
+   * - `fallback-rates` — estimated from the generic $3/$15-per-1M card
+   *   because neither the catalog nor an explicit override resolved a rate.
+   *   Treat these as indicative only: measured against rows that also had a
+   *   wire cost, the estimator ran 0.4x in aggregate and up to 21x off per
+   *   row (#1433).
    * - `unknown-model` — no model was resolved, so the rate card cannot be named.
    * - `catalog-rates` — priced from nax-ai's catalog (native adapter, US-003).
    * - `config-override` — an explicit `modelDef.pricing` won wholesale (native
@@ -142,6 +145,12 @@ export interface CostErrorEvent {
   readonly tokens?: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
   readonly estimatedCostUsd?: number;
   readonly exactCostUsd?: number;
+  /**
+   * US-002: the rate card that priced the failed dispatch's estimated cost,
+   * forwarded from the thrown `SessionTurnError` when it carried one. Error
+   * rows omit it when no card was resolved or no estimate was produced.
+   */
+  readonly pricingSource?: "catalog-rates" | "fallback-rates";
   /**
    * Canonical cost for budget/totals: exact when available, else estimated.
    * `totalCostUsd` keeps its successful-spend meaning; failed spend is

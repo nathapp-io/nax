@@ -28,15 +28,7 @@ export {
 } from "./acp";
 export { classifyCompleteException } from "./complete-exception-classifier";
 export type { CostEstimate, ModelCostRates, TokenUsage, TokenUsageWithConfidence } from "./cost";
-export {
-  COST_RATES,
-  estimateCost,
-  estimateCostByDuration,
-  estimateCostFromTokenUsage,
-  formatCostWithConfidence,
-  MODEL_PRICING,
-  resolvePricingSource,
-} from "./cost";
+export { formatCostWithConfidence, resolvePricingSource } from "./cost";
 export type { AdapterInteractionResponse, InteractionHandler } from "./interaction-handler";
 export { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 export { _agentManagerDeps, AgentManager } from "./manager";

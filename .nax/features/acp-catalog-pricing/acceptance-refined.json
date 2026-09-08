@@ -1,0 +1,219 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "[unit] lookupPricing(\"anthropic\", \"claude-sonnet-5\") returns a defined value whose inputPer1M and outputPer1M are positive finite numbers.",
+    "refined": "Given the default catalog is loaded, lookupPricing('anthropic', 'claude-sonnet-5') returns a defined TokenPricing object where Number.isFinite(rates.inputPer1M) === true, rates.inputPer1M > 0, Number.isFinite(rates.outputPer1M) === true and rates.outputPer1M > 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "[unit] lookupPricing(\"no-such-provider\", \"no-such-model\") returns undefined.",
+    "refined": "Given the default catalog is loaded, the expression lookupPricing('no-such-provider', 'no-such-model') === undefined evaluates to true, and the call does not throw.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "[unit] Given a catalog whose model() returns pricing with input 3, output 15, cacheRead 0.3 and cacheWrite 3.75, lookupPricing returns inputPer1M 3, outputPer1M 15, cacheReadPer1M 0.3 and cacheCreationPer1M 3.75.",
+    "refined": "With a stubbed catalog whose model() returns { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, the result r of lookupPricing for that provider/model satisfies r.inputPer1M === 3, r.outputPer1M === 15, r.cacheReadPer1M === 0.3 and r.cacheCreationPer1M === 3.75 (exact equality, no float drift).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "[unit] Given a catalog whose model() returns pricing carrying one tier with inputTokensAbove 200000, lookupPricing returns a value whose tiers has one entry with inputTokensAbove 200000.",
+    "refined": "With a stubbed catalog whose model() returns pricing carrying one tier { inputTokensAbove: 200000, ... }, the result of lookupPricing for that provider/model has r.tiers defined, r.tiers.length === 1, and r.tiers[0].inputTokensAbove === 200000.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "[unit] When lookupPricing is called twice successively, then the underlying provider loader is invoked exactly once.",
+    "refined": "With defaultProviders replaced by a spy (e.g. a counting stub via module mocking), calling lookupPricing('anthropic', 'claude-sonnet-5') twice successively results in the loader spy having a call count of exactly 1 after the second call.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "[unit] When the provider loader rejects, then lookupPricing returns undefined and does not reject.",
+    "refined": "With defaultProviders stubbed to return Promise.reject(new Error('load failed')), the call lookupPricing('anthropic', 'claude-sonnet-5') resolves (does not reject) and its resolved value is strictly undefined; the test asserts no unhandled rejection is thrown.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "[unit] resolveRateCard(\"sonnet\") returns a card whose source is \"catalog-rates\".",
+    "refined": "With the default alias file and catalog in place, the call resolveRateCard('sonnet') returns synchronously (or resolves to) a rate card object with card.source === 'catalog-rates'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "[unit] resolveRateCard(\"minimax/MiniMax-M2.7\") returns a card whose source is \"catalog-rates\", without consulting the alias file.",
+    "refined": "With the alias-file loader replaced by a spy that would throw (or record calls) if invoked, resolveRateCard('minimax/MiniMax-M2.7') returns a card with card.source === 'catalog-rates' and the alias-loader spy has a call count of exactly 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "[unit] resolveRateCard(\"huggingface/MiniMaxAI/MiniMax-M2.7\") queries the catalog with provider \"huggingface\" and model \"MiniMaxAI/MiniMax-M2.7\".",
+    "refined": "With lookupPricing stubbed as a spy, resolveRateCard('huggingface/MiniMaxAI/MiniMax-M2.7') results in the lookupPricing spy being called with ('huggingface', 'MiniMaxAI/MiniMax-M2.7') — i.e. only the first '/' segment is treated as provider and the remainder, including further '/' characters, is treated as the model id.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "[unit] resolveRateCard(\"gpt-5.6-luna[high]\") queries the catalog with model \"gpt-5.6-luna\".",
+    "refined": "With lookupPricing stubbed as a spy, resolveRateCard('gpt-5.6-luna[high]') results in the lookupPricing spy receiving a model argument of exactly 'gpt-5.6-luna' (effort suffix '[high]' stripped via parseModelSpec, no '[' in the queried model string).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "[unit] resolveRateCard(\"no-such-model-anywhere\") returns source \"fallback-rates\" and rates.inputPer1M and rates.outputPer1M that are positive finite numbers.",
+    "refined": "For id 'no-such-model-anywhere' (unresolved by aliases and catalog), the returned card satisfies card.source === 'fallback-rates', Number.isFinite(card.rates.inputPer1M) && card.rates.inputPer1M > 0, and Number.isFinite(card.rates.outputPer1M) && card.rates.outputPer1M > 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "[unit] When resolveRateCard(\"no-such-model-anywhere\") is called twice, then the logger receives exactly one warning.",
+    "refined": "With the logger replaced by a recording stub, calling resolveRateCard('no-such-model-anywhere') twice results in the warning-call count being exactly 1 after both calls (warning message contains the id 'no-such-model-anywhere').",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "[unit] When resolveRateCard is called once for each of two distinct unresolved ids, then the logger receives exactly two warnings.",
+    "refined": "With the logger replaced by a recording stub, calling resolveRateCard('no-such-model-anywhere') and resolveRateCard('also-not-a-model') once each results in the warning-call count being exactly 2 after both calls, with one warning per distinct id.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "[unit] Given lookupPricing is stubbed, resolveRateCard(\"sonnet\") invokes it once with provider \"anthropic\" and model \"claude-sonnet-5\".",
+    "refined": "With lookupPricing replaced by a spy, resolveRateCard('sonnet') results in the spy having a call count of exactly 1 and its call arguments satisfying provider === 'anthropic' && model === 'claude-sonnet-5' (the bundled alias 'sonnet' resolves to anthropic/claude-sonnet-5 before the catalog lookup).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "[unit] Every alias entry in model-aliases.json returns a defined lookupPricing result when its provider and model are passed to lookupPricing.",
+    "refined": "Iterating over every entry of model-aliases.json, for each { provider, model } pair the assertion lookupPricing(provider, model) !== undefined holds for all entries; the test fails listing any alias id whose pair returns undefined.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "[unit] estimateCostUsd imported from @/agents/cost returns 12 for usage of 1,000,000 input and 1,000,000 output tokens against rates of inputPer1M 2 and outputPer1M 10.",
+    "refined": "estimateCostUsd imported from '@/agents/cost', called with usage { inputTokens: 1000000, outputTokens: 1000000, cacheReadTokens: 0, cacheWriteTokens: 0 } and rates { inputPer1M: 2, outputPer1M: 10 }, returns exactly 12 (assert result === 12, allowing a small epsilon e.g. Math.abs(result - 12) < 1e-9).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-17",
+    "original": "[unit] estimateCostUsd prices 1,000,000 cache-read tokens at inputPer1M when cacheReadPer1M is unset.",
+    "refined": "estimateCostUsd called with usage { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1000000, cacheWriteTokens: 0 } and rates where cacheReadPer1M is undefined and inputPer1M === 2 returns exactly 2 (cache-read tokens billed at inputPer1M as fallback).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-18",
+    "original": "[unit] estimateCostUsd applies a tier inputPer1M when input-class usage is 250,000 and a tier has inputTokensAbove 200000.",
+    "refined": "estimateCostUsd called with input-class usage of 250000 tokens (e.g. { inputTokens: 250000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }) and rates with base inputPer1M 10 and one tier { inputTokensAbove: 200000, inputPer1M: 2 } prices those 250000 input tokens at the tier rate, returning exactly 0.5 (250000/1000000 * 2), not the base rate (which would be 2.5).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-19",
+    "original": "[unit] estimateCostUsd applies the base inputPer1M when input-class usage is 100,000 and a tier has inputTokensAbove 200000.",
+    "refined": "estimateCostUsd called with input-class usage of 100000 tokens (e.g. { inputTokens: 100000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }) and rates with base inputPer1M 10 and one tier { inputTokensAbove: 200000, inputPer1M: 2 } returns exactly 1 (100000/1000000 * 10), i.e. the base rate applies since usage does not exceed inputTokensAbove.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-20",
+    "original": "[unit] When an alias resolves but the catalog has no such provider/model, then resolveRateCard returns a fallback-rates card and the logger receives exactly one warning for that id.",
+    "refined": "With the alias map resolving 'sonnet' to a provider/model absent from the (stubbed empty) catalog, resolveRateCard('sonnet') returns a card with source === 'fallback-rates' and positive finite rates.inputPer1M and rates.outputPer1M, and a recording logger stub receives exactly 1 warning whose message contains the id 'sonnet'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-21",
+    "original": "[unit] When catalog loading rejects and resolveRateCard is called repeatedly, then each call returns a fallback-rates card and the logger receives exactly one warning for the load failure.",
+    "refined": "With defaultProviders stubbed to always reject, calling resolveRateCard three times for any ids results in: (a) all three calls returning cards with source === 'fallback-rates' and positive finite rates (no throw), and (b) a recording logger stub receiving exactly 1 warning total attributable to the catalog-load failure, regardless of the number of calls.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-22",
+    "original": "[integration] Invoking complete() with a stubbed resolveRateCard and a model whose card reports \"catalog-rates\" yields a CompleteResult whose pricingSource is \"catalog-rates\".",
+    "refined": "Integration test: stub resolveRateCard from @/agents/cost to return a RateCard with source=\"catalog-rates\", invoke complete(), then assert the returned CompleteResult.pricingSource === \"catalog-rates\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "[integration] Invoking sendTurn() on a session opened by createSession() with a stubbed resolveRateCard reporting \"catalog-rates\" yields a TurnResult whose pricingSource is \"catalog-rates\".",
+    "refined": "Integration test: stub resolveRateCard to return a RateCard with source=\"catalog-rates\", call createSession() then sendTurn(), then assert the returned TurnResult.pricingSource === \"catalog-rates\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "[integration] Invoking complete() for a model whose card reports \"fallback-rates\" yields a CompleteResult whose pricingSource is \"fallback-rates\".",
+    "refined": "Integration test: stub resolveRateCard to return a RateCard with source=\"fallback-rates\", invoke complete(), then assert the returned CompleteResult.pricingSource === \"fallback-rates\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "[integration] When sendTurn() is invoked twice on one session, then resolveRateCard is invoked exactly once.",
+    "refined": "Integration test: open a session via createSession() with a mocked resolveRateCard, call sendTurn() twice on the same session handle, then assert mock resolveRateCard toHaveBeenCalledTimes(1).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "[unit] buildTurnResult given a rateCard with inputPer1M 2 and outputPer1M 10 and accumulated usage of 1,000,000 input and 1,000,000 output tokens returns a TurnResult whose estimatedCostUsd is 12.",
+    "refined": "Unit test: call buildTurnResult with input rateCard.rates.inputPer1M = 2, rateCard.rates.outputPer1M = 10, and accumulated usage of 1,000,000 input tokens and 1,000,000 output tokens; assert the returned TurnResult.estimatedCostUsd === 12.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-27",
+    "original": "[unit] buildTurnResult given totalExactCostUsd of 0.42 returns a TurnResult whose exactCostUsd is 0.42, unchanged by the rate card.",
+    "refined": "Unit test: call buildTurnResult with totalExactCostUsd = 0.42 (and any rateCard); assert the returned TurnResult.exactCostUsd === 0.42, regardless of rateCard rates or source.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-28",
+    "original": "[integration] When a dispatch carries wire-reported exactCostUsd, then it records a cost row whose pricingSource is \"wire\", taking precedence over the card's source.",
+    "refined": "Integration test: execute a dispatch where the wire payload includes exactCostUsd while resolveRateCard returns a card with source=\"catalog-rates\"; assert the recorded cost row has pricingSource === \"wire\" and not \"catalog-rates\".",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-29",
+    "original": "[unit] buildTurnResult with timedOut true returns a TurnResult whose output is the empty string, unchanged by this story.",
+    "refined": "Unit test: call buildTurnResult with timedOut = true; assert the returned TurnResult.output === \"\" (regression: empty output for timed-out turns is preserved).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-30",
+    "original": "[unit] resolvePricingSource returns \"unknown-model\" when model is undefined, empty, or the literal \"unknown\".",
+    "refined": "Unit tests for resolvePricingSource assert: given input undefined, the empty string \"\", and the string \"unknown\", the function returns exactly \"unknown-model\" in each case. Each of the three inputs is covered by its own test case, and the return value is compared with toBe(\"unknown-model\").",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "[unit] resolvePricingSource returns \"fallback-rates\" when model is a non-empty resolved model name after the MODEL_PRICING branch is removed.",
+    "refined": "Unit tests for resolvePricingSource assert: given a non-empty resolved model name (e.g. a model string that previously existed in MODEL_PRICING, such as a known model id, plus at least one arbitrary non-empty string), the function returns exactly \"fallback-rates\" in every case (no model-rates branch remains). Return values are compared with toBe(\"fallback-rates\"), and the source file src/agents/cost/calculate.ts contains no reference to MODEL_PRICING (verified by static text/typecheck).",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]

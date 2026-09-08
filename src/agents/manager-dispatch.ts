@@ -152,7 +152,7 @@ export function buildCompleteEvent(input: {
    * — same omission-not-undefined discipline as the other optional fields
    * on this event.
    */
-  pricingSource?: "catalog-rates" | "config-override";
+  pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
 }): CompleteDispatchEvent {
   const { options } = input;
   return {
@@ -250,6 +250,9 @@ export function buildDispatchErrorEvent(input: {
   const tokenUsage = input.error instanceof SessionTurnError ? input.error.tokenUsage : undefined;
   const estimatedCostUsd = input.error instanceof SessionTurnError ? input.error.estimatedCostUsd : undefined;
   const exactCostUsd = input.error instanceof SessionTurnError ? input.error.exactCostUsd : undefined;
+  // US-002: the rate card that priced the failed dispatch's spent usage, so
+  // error rows can attribute their estimate the same way success rows do.
+  const pricingSource = input.error instanceof SessionTurnError ? input.error.pricingSource : undefined;
 
   // US-001: model attribution. The error path reuses the same resolver as
   // the success path, so a run-op that resolves modelDef="haiku" and then
@@ -280,6 +283,7 @@ export function buildDispatchErrorEvent(input: {
     ...(tokenUsage !== undefined ? { tokenUsage } : {}),
     ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
     ...(exactCostUsd !== undefined ? { exactCostUsd } : {}),
+    ...(pricingSource !== undefined ? { pricingSource } : {}),
     ...attribution,
   };
 }

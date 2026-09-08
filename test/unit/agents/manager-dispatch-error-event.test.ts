@@ -28,6 +28,7 @@ function makeSessionTurnErrorWithUsage(
     };
     estimatedCostUsd?: number;
     exactCostUsd?: number;
+    pricingSource?: "catalog-rates" | "fallback-rates";
   } = {},
 ): SessionTurnError {
   return new SessionTurnError(
@@ -37,6 +38,7 @@ function makeSessionTurnErrorWithUsage(
     overrides.tokenUsage ?? { inputTokens: 100, outputTokens: 50 },
     overrides.estimatedCostUsd ?? 0.005,
     overrides.exactCostUsd ?? 0.007,
+    overrides.pricingSource ?? "catalog-rates",
   );
 }
 
@@ -92,10 +94,25 @@ describe("buildDispatchErrorEvent (AC1-3)", () => {
 
     expect(event.exactCostUsd).toBe(0.0099);
   });
+
+  test("US-002: copies pricingSource from a SessionTurnError carrying it", () => {
+    const error = makeSessionTurnErrorWithUsage({ pricingSource: "fallback-rates" });
+
+    const event = buildDispatchErrorEvent({
+      origin: "runAsSession",
+      agentName: "claude",
+      stage: "run",
+      error,
+      resolvedPermissions: PERMS,
+      startedAt: Date.now(),
+    });
+
+    expect(event.pricingSource).toBe("fallback-rates");
+  });
 });
 
 describe("buildDispatchErrorEvent boundaries (AC4-5)", () => {
-  test("AC4: a plain Error leaves tokenUsage, estimatedCostUsd, and exactCostUsd undefined", () => {
+  test("AC4: a plain Error leaves tokenUsage, estimatedCostUsd, exactCostUsd, and pricingSource undefined", () => {
     const error = new Error("network blip");
 
     const event = buildDispatchErrorEvent({
@@ -111,6 +128,7 @@ describe("buildDispatchErrorEvent boundaries (AC4-5)", () => {
     expect(event.tokenUsage).toBeUndefined();
     expect(event.estimatedCostUsd).toBeUndefined();
     expect(event.exactCostUsd).toBeUndefined();
+    expect(event.pricingSource).toBeUndefined();
     // errorCode and errorMessage are still populated from the throwable.
     expect(event.errorCode).toBe("DISPATCH_ERROR");
     expect(event.errorMessage).toBe("network blip");

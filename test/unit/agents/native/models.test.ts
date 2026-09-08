@@ -6,9 +6,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { estimateCostUsd } from "@/agents/cost";
 import {
   buildRateCard,
-  estimateCostUsd,
   parseNativeModel,
   resolveContextWindow,
   toNaxTokenUsage,

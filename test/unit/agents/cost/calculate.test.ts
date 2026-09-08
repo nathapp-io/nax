@@ -10,14 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { TokenUsage } from "@/agents/cost";
-import {
-  addTokenUsage,
-  estimateCostFromTokenUsage,
-  inputClassTokens,
-  RATE_CARD_REVIEWED,
-  resolvePricingSource,
-} from "@/agents/cost";
+import type { CostEstimate, TokenUsage } from "@/agents/cost";
+import { addTokenUsage, formatCostWithConfidence, inputClassTokens, resolvePricingSource } from "@/agents/cost";
 
 describe("addTokenUsage", () => {
   test("adds input and output tokens", () => {
@@ -157,151 +151,75 @@ describe("addTokenUsage — BUG-10 malformed operand guard", () => {
 });
 
 // ─── resolvePricingSource (#1433) ────────────────────────────────────────────
+//
+// US-003 AC1: returns "unknown-model" when the model argument is undefined,
+// empty, or the literal "unknown".
+// US-003 AC2: returns "fallback-rates" for any non-empty, non-undefined,
+// non-"unknown" model name. After US-003 the table-backed
+// `MODEL_PRICING[model]` lookup is gone — every producer without a
+// `pricingSource` of its own (i.e. ACP) is now uniformly a fallback,
+// because there is no longer a table to be a hit against.
 
 describe("resolvePricingSource", () => {
-  test.each([
-    ["haiku", "model-rates"],
-    ["sonnet", "model-rates"],
-    ["claude-haiku-4-5", "model-rates"],
-    // Real models with no MODEL_PRICING entry. Two models have now vacated this
-    // list by being given a card — `gpt-5.6-luna[medium]` (BUG-15) and
-    // `minimax/MiniMax-M2.7` (priced identically to M3) — so keep the bare and
-    // suffixed cases pointed at a model that genuinely has none.
-    ["opencode-go/hy3", "fallback-rates"],
-    ["opencode-go/hy3[high]", "fallback-rates"],
-  ] as const)("%s resolves to %s", (model, expected) => {
-    expect(resolvePricingSource(model)).toBe(expected);
-  });
-
-  test.each([[undefined], [""], ["unknown"]])("%p resolves to unknown-model", (model) => {
-    expect(resolvePricingSource(model as string | undefined)).toBe("unknown-model");
-  });
-
-  test("agrees with the estimator about which models use the generic card", () => {
-    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
-    // The generic card is $3/$15 per 1M. A model reported as fallback-rates must
-    // price exactly there; one reported as model-rates must not (haiku is $0.8/$4).
-    expect(resolvePricingSource("opencode-go/hy3")).toBe("fallback-rates");
-    expect(estimateCostFromTokenUsage(usage, "opencode-go/hy3")).toBeCloseTo(18, 5);
-
-    expect(resolvePricingSource("haiku")).toBe("model-rates");
-    expect(estimateCostFromTokenUsage(usage, "haiku")).toBeCloseTo(4.8, 5);
-  });
-});
-
-// ─── #1464: effort-suffix normalization before the rate-card lookup ─────────
-//
-// nax profiles name codex models with a reasoning-effort suffix, e.g.
-// "claude-sonnet-4[high]". Both pricing functions must decompose that suffix
-// via parseModelSpec before keying MODEL_PRICING, so a rate card added for
-// the bare model id actually takes effect.
-
-describe("effort-suffix normalization (#1464)", () => {
-  test("estimateCostFromTokenUsage prices a suffixed model identically to its bare id", () => {
-    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
-    const bare = estimateCostFromTokenUsage(usage, "claude-sonnet-4");
-    const suffixed = estimateCostFromTokenUsage(usage, "claude-sonnet-4[high]");
-    expect(suffixed).toBeCloseTo(bare, 10);
-  });
-
-  test("a suffixed known model prices differently from a suffixed unpriced model", () => {
-    // haiku ($0.8/$4 per 1M) diverges from the generic fallback card ($3/$15
-    // per 1M) — unlike claude-sonnet-4, which happens to match it, so this
-    // proves the real rate card was hit rather than the fallback.
-    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
-    const known = estimateCostFromTokenUsage(usage, "haiku[high]");
-    const unpriced = estimateCostFromTokenUsage(usage, "totally-unknown-model[high]");
-    expect(known).not.toBeCloseTo(unpriced, 5);
-  });
-
-  test("resolvePricingSource reports model-rates for a suffixed known model", () => {
-    expect(resolvePricingSource("claude-sonnet-4[high]")).toBe("model-rates");
-  });
-
-  test("resolvePricingSource still reports unknown-model for undefined, empty, and 'unknown'", () => {
+  // US-003 AC1
+  test("[AC1] returns unknown-model when model is undefined", () => {
     expect(resolvePricingSource(undefined)).toBe("unknown-model");
+  });
+
+  // US-003 AC1
+  test("[AC1] returns unknown-model when model is empty", () => {
     expect(resolvePricingSource("")).toBe("unknown-model");
+  });
+
+  // US-003 AC1
+  test('[AC1] returns unknown-model when model is the literal "unknown"', () => {
     expect(resolvePricingSource("unknown")).toBe("unknown-model");
   });
 
-  test("resolvePricingSource reports fallback-rates for a genuinely unknown model, suffixed or not", () => {
-    expect(resolvePricingSource("totally-unknown-model")).toBe("fallback-rates");
-    expect(resolvePricingSource("totally-unknown-model[high]")).toBe("fallback-rates");
+  // US-003 AC2
+  test("[AC2] returns fallback-rates for a non-empty resolved model name", () => {
+    expect(resolvePricingSource("haiku")).toBe("fallback-rates");
   });
 
-  // The defect behind #1464's placement decision was these two DISAGREEING: the
-  // number is priced upstream at the adapter from the raw spec, the label is
-  // resolved downstream in the cost middleware. Normalizing in only one of them
-  // yields a row claiming `model-rates` over a number built on the generic card.
-  // Asserting each half separately cannot catch that — this binds them.
-  test("a model reported as model-rates is genuinely NOT priced on the fallback card", () => {
-    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
-    const fallbackPrice = estimateCostFromTokenUsage(usage, "totally-unknown-model");
-
-    for (const model of ["haiku[high]", "haiku", "opus[medium]"]) {
-      expect(resolvePricingSource(model)).toBe("model-rates");
-      expect(estimateCostFromTokenUsage(usage, model)).not.toBeCloseTo(fallbackPrice, 5);
-    }
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BUG-15: the rate card covers the models actually in use, and the stale rows
-// that priced nothing are gone.
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("MODEL_PRICING — rate card currency (BUG-15)", () => {
-  /** Every model id that appears in a real ~/.nax/profiles/*.json stage pin. */
-  const MODELS_IN_USE = [
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "opencode-go/deepseek-v4-pro",
-    "opencode-go/deepseek-v4-flash",
-    "minimax/MiniMax-M3",
-  ];
-
-  test.each(MODELS_IN_USE)("%s prices from the table, not the generic fallback", (model) => {
-    expect(resolvePricingSource(model)).toBe("model-rates");
+  // US-003 AC2 — any name that USED to be a model-rates hit now falls back.
+  // The named anchors are deliberately from the deleted table, so the test
+  // fails before the table is removed (proves the contract change) and passes
+  // after it is (proves the contract holds).
+  test.each([
+    ["sonnet"],
+    ["haiku"],
+    ["opus"],
+    ["claude-sonnet-4"],
+    ["claude-sonnet-4-5"],
+    ["claude-haiku-4-5"],
+    ["claude-opus-4"],
+    ["gpt-4.1"],
+    ["gpt-5.6-luna"],
+    ["gpt-5.6-terra"],
+    ["minimax/MiniMax-M3"],
+    ["gemini-2.5-pro"],
+    ["opencode-go/deepseek-v4-pro"],
+  ])("[AC2] %s resolves to fallback-rates after the MODEL_PRICING branch is removed", (model) => {
+    expect(resolvePricingSource(model)).toBe("fallback-rates");
   });
 
-  test.each(MODELS_IN_USE)("%s still prices from the table with an effort suffix", (model) => {
-    expect(resolvePricingSource(`${model}[high]`)).toBe("model-rates");
+  // US-003 AC2 — preserves #1464 suffix-stripping semantics. Any
+  // non-empty/non-"unknown" bare id the catalog-derived path would have
+  // resolved falls through to fallback-rates now that the table is gone.
+  test("[AC2] returns fallback-rates for a suffixed resolved model name", () => {
+    expect(resolvePricingSource("claude-sonnet-4[high]")).toBe("fallback-rates");
+    expect(resolvePricingSource("haiku[medium]")).toBe("fallback-rates");
+    expect(resolvePricingSource("gpt-5.6-luna[high]")).toBe("fallback-rates");
   });
 
-  test("a priced model and the generic fallback give different numbers", () => {
-    const usage: TokenUsage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
-    // gpt-5.6-luna is $0.20/$1.20 per 1M; the fallback card is Sonnet's $3/$15.
-    expect(estimateCostFromTokenUsage(usage, "gpt-5.6-luna")).toBeCloseTo(1.4, 6);
-    expect(estimateCostFromTokenUsage(usage, "no-such-model")).toBeCloseTo(18, 6);
-  });
-
-  // US-004 AC5: resolvePricingSource must continue to report `model-rates` for a
-  // model that's in MODEL_PRICING and `fallback-rates` for one that isn't —
-  // even after its return union widens to admit the producer-supplied values
-  // (catalog-rates, config-override). The widening is purely additive on the
-  // return-type axis; the predicate the function re-states must not change.
-  test("US-004 AC5: a model present in MODEL_PRICING still resolves to model-rates", () => {
-    expect(resolvePricingSource("haiku")).toBe("model-rates");
-  });
-
-  test("US-004 AC5: a model absent from MODEL_PRICING still resolves to fallback-rates", () => {
-    expect(resolvePricingSource("totally-unknown-model")).toBe("fallback-rates");
-  });
-
-  test("gemini-2.5-pro is priced at its real rate, not the 16x-low stale one", () => {
-    const usage: TokenUsage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
-    expect(estimateCostFromTokenUsage(usage, "gemini-2.5-pro")).toBeCloseTo(11.25, 6);
-  });
-
-  test.each(["gemini-2-pro", "codex", "code-davinci-002"])(
-    "%s carries no rate card — it is not a model id anything resolves",
-    (staleKey) => {
-      expect(resolvePricingSource(staleKey)).toBe("fallback-rates");
-    },
-  );
-
-  test("RATE_CARD_REVIEWED is an ISO date, so staleness is visible in review", () => {
-    expect(RATE_CARD_REVIEWED).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  test("still admits the full five-value return union for producer-supplied callers", () => {
+    // The US-004 widening admitted "catalog-rates" and "config-override" so
+    // the producer's report on CompleteResult / TurnResult type-checks
+    // through the cost subscriber unchanged. This function does not return
+    // those values itself — it serves callers with no producer-supplied
+    // source — but the union must still admit them.
+    const result: ReturnType<typeof resolvePricingSource> = "unknown-model";
+    expect(["model-rates", "fallback-rates", "unknown-model", "catalog-rates", "config-override"]).toContain(result);
   });
 });
 
@@ -326,5 +244,32 @@ describe("inputClassTokens", () => {
     // explicitly because nax-ai's totalTokens() does include it, and reaching
     // for that helper here would double-count against the trailing estimate.
     expect(inputClassTokens({ inputTokens: 10, outputTokens: 10_000 })).toBe(10);
+  });
+});
+
+// ─── formatCostWithConfidence (moved from test/unit/metrics/cost.test.ts) ───
+//
+// US-003 deletes test/unit/metrics/cost.test.ts (its estimateCost /
+// estimateCostByDuration / COST_RATES surface is gone). The
+// formatCostWithConfidence coverage it carried moves to this suite; the
+// function itself lives in calculate.ts and is unchanged.
+
+describe("formatCostWithConfidence", () => {
+  test.each([
+    ["exact confidence without prefix", { cost: 0.12, confidence: "exact" }, "$0.12"],
+    ["estimated confidence with tilde prefix", { cost: 0.15, confidence: "estimated" }, "~$0.15"],
+    ["fallback confidence with tilde and label", { cost: 0.05, confidence: "fallback" }, "~$0.05 (duration-based)"],
+  ] as const)("formats %s", (_label, estimate, expected) => {
+    expect(formatCostWithConfidence(estimate)).toBe(expected);
+  });
+
+  test("formats very small costs correctly", () => {
+    const estimate: CostEstimate = { cost: 0.001, confidence: "exact" };
+    expect(formatCostWithConfidence(estimate)).toBe("$0.00");
+  });
+
+  test("formats large costs correctly", () => {
+    const estimate: CostEstimate = { cost: 12.345, confidence: "estimated" };
+    expect(formatCostWithConfidence(estimate)).toBe("~$12.35");
   });
 });

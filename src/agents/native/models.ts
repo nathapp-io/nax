@@ -7,7 +7,7 @@
  */
 
 import type { Pricing, ThinkingLevel } from "@nathapp/nax-ai";
-import { inputClassTokens, type TokenUsage } from "@/agents/cost";
+import type { TokenUsage } from "@/agents/cost";
 import type { TokenPricing } from "@/config/schema-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
@@ -126,73 +126,11 @@ export function toNaxTokenUsage(usage: NativeUsage): TokenUsage {
   };
 }
 
-const PER_MILLION = 1_000_000;
-
 /**
- * Both sides express rates per 1M tokens (nax-ai's PricingRates is documented
- * so, and nax's TokenPricing is inputPer1M), so there is no unit conversion.
- *
- * Cache reads and cache writes each bill at their own optional rate
- * (`cacheReadPer1M` / `cacheCreationPer1M`) when the rate card supplies one.
- * When a rate is absent, that class of token falls back to `inputPer1M` --
- * the old behaviour, kept as the fallback so `execution.costLimit` stays
- * protective for every rate card that has not been extended with cache rates.
- * Cache writes are priced separately from reads rather than folded into the
- * same sum: vendors typically charge a write a premium over plain input, so
- * billing it at the input (or read) rate would under-report in the opposite
- * direction from the over-report this function used to make on reads.
+ * `estimateCostUsd` (and the tier-selection helper it relies on) was
+ * relocated to `src/agents/cost/` (US-001) so the ACP and native paths share
+ * one implementation. Native callers now import it from `@/agents/cost`.
  */
-/**
- * Select the tier that applies to this request, or the base rates when none
- * does (nax#1847). "The highest matching threshold applies to the whole
- * request" (nax-ai's own framing) -- this returns one rate card, never a
- * blend of base and tier rates.
- *
- * What counts toward `inputTokensAbove`: `inputTokens + cacheReadInputTokens
- * + cacheCreationInputTokens` -- ALL input-class tokens, not just fresh
- * input. nax-ai's doc comment says "total input usage", which reads most
- * literally as the total. This is an ASSUMPTION, not confirmed against a
- * real vendor bill: the alternative reading -- counting only fresh
- * `inputTokens` toward the threshold -- is also plausible, and would cross
- * the threshold later. Counting the total is the conservative direction (it
- * crosses sooner, so any error over-reports cost rather than under-reports
- * it), matching this repo's existing bias toward keeping
- * `execution.costLimit` protective. Revisit if this is ever checked against
- * a real bill.
- *
- * "Exceeds" (nax-ai's own wording) is strict: a request landing exactly on
- * a threshold does NOT cross it, so the base rate wins at that boundary.
- * `inputTokensAbove` values do not nest into further tiers by construction
- * (`PricingTier extends PricingRates`, not `Pricing`), so at most one
- * threshold ever needs comparing per candidate.
- */
-function selectRates(usage: TokenUsage, rates: TokenPricing): TokenPricing {
-  if (rates.tiers === undefined || rates.tiers.length === 0) return rates;
-
-  const totalInputTokens = inputClassTokens(usage);
-
-  let selected: TokenPricing | undefined;
-  let selectedThreshold = -1;
-  for (const tier of rates.tiers) {
-    if (totalInputTokens > tier.inputTokensAbove && tier.inputTokensAbove > selectedThreshold) {
-      selected = tier;
-      selectedThreshold = tier.inputTokensAbove;
-    }
-  }
-  return selected ?? rates;
-}
-
-export function estimateCostUsd(usage: TokenUsage, rates: TokenPricing): number {
-  const effectiveRates = selectRates(usage, rates);
-  const cacheReadRate = effectiveRates.cacheReadPer1M ?? effectiveRates.inputPer1M;
-  const cacheCreationRate = effectiveRates.cacheCreationPer1M ?? effectiveRates.inputPer1M;
-  const inputCost = (usage.inputTokens / PER_MILLION) * effectiveRates.inputPer1M;
-  const cacheReadCost = ((usage.cacheReadInputTokens ?? 0) / PER_MILLION) * cacheReadRate;
-  const cacheCreationCost = ((usage.cacheCreationInputTokens ?? 0) / PER_MILLION) * cacheCreationRate;
-  const outputCost = (usage.outputTokens / PER_MILLION) * effectiveRates.outputPer1M;
-  return inputCost + cacheReadCost + cacheCreationCost + outputCost;
-}
-
 /**
  * Turn nax-ai's catalog `Pricing` into nax's own `TokenPricing` shape,
  * carrying `cacheRead` / `cacheWrite` / `tiers` through instead of
@@ -207,10 +145,10 @@ export function estimateCostUsd(usage: TokenUsage, rates: TokenPricing): number 
  * rewrite rates the user configured on purpose.
  *
  * US-003 (#1817): reports which branch it took alongside the card, so the
- * adapter can stamp `pricingSource` on the result without re-deriving it
- * from `MODEL_PRICING[bareModel]` (which the catalog was chosen to avoid
- * maintaining). The card is the rate object; the source is the answer to
- * "which one did we use".
+ * adapter can stamp `pricingSource` on the result without re-deriving the
+ * rate-card branch (US-003 retired the table-backed `MODEL_PRICING` lookup
+ * this resolver was the successor to). The card is the rate object; the
+ * source is the answer to "which one did we use".
  */
 export function buildRateCard(
   catalog: Pricing,

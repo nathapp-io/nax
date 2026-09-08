@@ -16,7 +16,7 @@ import { join, relative, sep } from "node:path";
 
 const ROOT = process.argv[2] ?? process.cwd();
 const SCAN = join(ROOT, "src");
-const ALLOWED_PREFIX = join("src", "agents", "native") + sep;
+const ALLOWED_PREFIXES = [join("src", "agents", "native") + sep, join("src", "agents", "catalog") + sep];
 const IMPORT = /@nathapp\/nax-ai/;
 
 async function* walk(dir: string): AsyncGenerator<string> {
@@ -37,7 +37,7 @@ const violations: { file: string; line: number; text: string }[] = [];
 
 for await (const file of walk(SCAN)) {
   const rel = relative(ROOT, file);
-  if (rel.startsWith(ALLOWED_PREFIX)) continue;
+  if (ALLOWED_PREFIXES.some((prefix) => rel.startsWith(prefix))) continue;
 
   const source = await readFile(file, "utf8");
   source.split("\n").forEach((text, index) => {
@@ -48,7 +48,7 @@ for await (const file of walk(SCAN)) {
 }
 
 if (violations.length > 0) {
-  console.error("@nathapp/nax-ai may only be imported from src/agents/native/:");
+  console.error("@nathapp/nax-ai may only be imported from src/agents/native/ or src/agents/catalog/:");
   for (const v of violations) console.error(`  ${v.file}:${v.line}  ${v.text}`);
   process.exit(1);
 }

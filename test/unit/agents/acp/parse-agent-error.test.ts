@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseAgentError } from "@/agents/acp/parse-agent-error";
+import { classifyCompleteError, classifyParsedAgentError, parseAgentError } from "@/agents/acp/parse-agent-error";
+import { CompleteError } from "@/agents/types";
 
 describe("parseAgentError", () => {
   test("detects rate-limit from direct JSON type", () => {
@@ -187,5 +188,135 @@ describe("parseAgentError", () => {
         '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"some error","data":{"acpxCode":"RUNTIME"}}}';
       expect(parseAgentError(stderr).type).toBe("unknown");
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// classifyParsedAgentError — the degraded CompleteResult complete() returns
+// instead of throwing. Extracted from AcpAgentAdapter.complete()'s catch tail
+// (US-002 kept adapter.ts under the 600-line limit); these pin the mapping
+// that used to live inline there.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("classifyParsedAgentError", () => {
+  test("maps auth to a non-retriable availability/fail-auth failure", () => {
+    const result = classifyParsedAgentError({ type: "auth" }, "login fail: bad key");
+    expect(result?.output).toBe("login fail: bad key");
+    expect(result?.adapterFailure).toEqual({
+      category: "availability",
+      outcome: "fail-auth",
+      retriable: false,
+      message: "login fail: bad key",
+    });
+    expect(result?.tokenUsage).toEqual({ inputTokens: 0, outputTokens: 0 });
+    expect(result?.estimatedCostUsd).toBe(0);
+  });
+
+  test("maps rate-limit to a retriable availability/fail-rate-limit failure", () => {
+    const result = classifyParsedAgentError({ type: "rate-limit" }, "429 too many requests");
+    expect(result?.adapterFailure?.outcome).toBe("fail-rate-limit");
+    expect(result?.adapterFailure?.retriable).toBe(true);
+    expect(result?.adapterFailure?.category).toBe("availability");
+  });
+
+  test("carries retryAfterSeconds onto the failure when the parse supplied one", () => {
+    const result = classifyParsedAgentError({ type: "rate-limit", retryAfterSeconds: 42 }, "throttled");
+    expect(result?.adapterFailure?.retryAfterSeconds).toBe(42);
+  });
+
+  test("omits retryAfterSeconds when the parse supplied none", () => {
+    const result = classifyParsedAgentError({ type: "rate-limit" }, "throttled");
+    expect(result?.adapterFailure && "retryAfterSeconds" in result.adapterFailure).toBe(false);
+  });
+
+  test("maps model-not-available to a non-retriable quality/fail-adapter-error failure", () => {
+    const result = classifyParsedAgentError({ type: "model-not-available" }, 'Cannot apply --model "bad"');
+    expect(result?.adapterFailure).toEqual({
+      category: "quality",
+      outcome: "fail-adapter-error",
+      retriable: false,
+      message: 'Cannot apply --model "bad"',
+    });
+  });
+
+  test("truncates an oversized message to 500 chars on the failure", () => {
+    const huge = "x".repeat(2000);
+    const result = classifyParsedAgentError({ type: "auth" }, huge);
+    expect(result?.adapterFailure?.message.length).toBe(500);
+    // `output` is deliberately untruncated — the caller surfaces the full text.
+    expect(result?.output.length).toBe(2000);
+  });
+
+  test.each(["unknown", "timeout", "crash"] as const)(
+    "returns null for %s so the caller rethrows rather than degrading",
+    (type) => {
+      expect(classifyParsedAgentError({ type }, "boom")).toBeNull();
+    },
+  );
+
+  // Adversarial review: complete() resolves its rate card before dispatching,
+  // so a degraded result can name the card the call would have billed on.
+  // Without it the cost row falls back to resolvePricingSource(model), which
+  // can name a different card than the adapter actually resolved.
+  test.each(["auth", "rate-limit", "model-not-available"] as const)(
+    "carries a supplied pricingSource onto the %s degraded result",
+    (type) => {
+      expect(classifyParsedAgentError({ type }, "boom", "catalog-rates")?.pricingSource).toBe("catalog-rates");
+    },
+  );
+
+  test("carries fallback-rates through rather than normalising it", () => {
+    expect(classifyParsedAgentError({ type: "auth" }, "boom", "fallback-rates")?.pricingSource).toBe("fallback-rates");
+  });
+
+  test("omits pricingSource entirely when the caller supplies none", () => {
+    const result = classifyParsedAgentError({ type: "auth" }, "boom");
+    expect(result).not.toBeNull();
+    expect(result && "pricingSource" in result).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// classifyCompleteError — the transport-classified degraded result. Same
+// pricingSource concern as classifyParsedAgentError above (adversarial review):
+// complete() resolved the card before dispatching, so this path can name it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("classifyCompleteError", () => {
+  test("returns null when the transport reported no retryable verdict", () => {
+    expect(classifyCompleteError(new CompleteError("boom"))).toBeNull();
+  });
+
+  test.each([true, false])("classifies a retryable=%s verdict as fail-adapter-error", (retryable) => {
+    const result = classifyCompleteError(new CompleteError("stop reason is error", undefined, retryable));
+    expect(result?.adapterFailure).toEqual({
+      category: "quality",
+      outcome: "fail-adapter-error",
+      retriable: retryable,
+      message: "stop reason is error",
+    });
+    expect(result?.estimatedCostUsd).toBe(0);
+    expect(result?.tokenUsage).toEqual({ inputTokens: 0, outputTokens: 0 });
+  });
+
+  test("carries a supplied pricingSource onto the degraded result", () => {
+    const result = classifyCompleteError(new CompleteError("boom", undefined, true), "catalog-rates");
+    expect(result?.pricingSource).toBe("catalog-rates");
+  });
+
+  test("carries fallback-rates through rather than normalising it", () => {
+    const result = classifyCompleteError(new CompleteError("boom", undefined, true), "fallback-rates");
+    expect(result?.pricingSource).toBe("fallback-rates");
+  });
+
+  test("omits pricingSource entirely when the caller supplies none", () => {
+    const result = classifyCompleteError(new CompleteError("boom", undefined, true));
+    expect(result).not.toBeNull();
+    expect(result && "pricingSource" in result).toBe(false);
+  });
+
+  test("truncates an oversized message to 500 chars on the failure", () => {
+    const result = classifyCompleteError(new CompleteError("x".repeat(2000), undefined, true));
+    expect(result?.adapterFailure?.message.length).toBe(500);
   });
 });

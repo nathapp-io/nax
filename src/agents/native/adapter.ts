@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { estimateCostUsd } from "@/agents/cost";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import { getSafeLogger } from "@/logger";
@@ -21,7 +22,6 @@ import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
 import {
   buildRateCard,
-  estimateCostUsd,
   NATIVE_AGENT,
   parseNativeModel,
   resolveContextWindow,
@@ -201,7 +201,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         // US-003: stamp the branch buildRateCard took so cost rows can tell a
         // catalog-priced call from a config-overridden one. Single source of
         // truth — the same override !== undefined predicate the rate card was
-        // chosen on, reported rather than re-derived from MODEL_PRICING.
+        // chosen on, reported rather than re-derived by the cost subscriber.
         pricingSource,
       };
     } catch (err) {
@@ -386,6 +386,9 @@ export class NativeAgentAdapter implements AgentAdapter {
           adapterFailure.retriable,
           usage?.tokenUsage,
           usage?.costUsd,
+          undefined,
+          // pricingSource — the native protocol-fault path has no rate card
+          // to name here; left undefined (SessionTurnError.pricingSource).
           undefined,
           adapterFailure,
         );

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-09-08T03-43-22-638Z",
+    "feature": "acp-catalog-pricing",
+    "startedAt": "2026-09-08T03:43:22.638Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 26769
+  },
+  "progress": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 11.16571501,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-09-08T07:20:40.358Z",
+  "durationMs": 13037720,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-09-08T07:19:42.997Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-09-08T07:20:39.063Z"
+    }
+  },
+  "gates": {
+    "acceptance": "passed",
+    "regression": "passed"
+  }
+}

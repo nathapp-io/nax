@@ -5,8 +5,18 @@ import type { AgentError, CompleteError, CompleteResult } from "../types";
  * verdict (set by the acp adapter when acpx's stop-reason-error response included
  * `retryable`). Returning `null` means the caller should fall back to
  * `parseAgentError(error.message)`'s stderr-pattern classification instead.
+ *
+ * `pricingSource` is the rate card `complete()` resolved before dispatching
+ * (US-002). A degraded result reports zero cost, but the card is still the one
+ * this call would have billed on — carrying it forward stops the cost row from
+ * falling back to `resolvePricingSource(model)`, which can name a different
+ * card than the one the adapter actually resolved. Optional: callers with no
+ * card in scope omit it and the field stays absent, as before.
  */
-export function classifyCompleteError(error: CompleteError): CompleteResult | null {
+export function classifyCompleteError(
+  error: CompleteError,
+  pricingSource?: CompleteResult["pricingSource"],
+): CompleteResult | null {
   if (error.retryable === undefined) return null;
   // Transport (acpx) already classified this stop-reason-error turn as
   // retryable or not — preserve that instead of falling through to the
@@ -22,7 +32,69 @@ export function classifyCompleteError(error: CompleteError): CompleteResult | nu
       retriable: error.retryable,
       message: error.message.slice(0, 500),
     },
+    ...(pricingSource !== undefined ? { pricingSource } : {}),
   };
+}
+
+/**
+ * Map a `parseAgentError` verdict onto the degraded `CompleteResult` that
+ * `complete()` returns instead of throwing.
+ *
+ * Extracted from `AcpAgentAdapter.complete()`'s catch tail, which built three
+ * near-identical results inline. Lives beside `classifyCompleteError` because
+ * the two are the same decision from different inputs — a transport-supplied
+ * retryable verdict versus a stderr-pattern classification — and both produce
+ * the same `adapterFailure` envelope. Pure: no adapter state is involved.
+ *
+ * Returns `null` for `parseAgentError`'s unclassifiable verdicts (`unknown`,
+ * `timeout`, `crash`), which the caller must rethrow rather than degrade —
+ * swallowing an unrecognised fault into a fail-adapter-error would hide a bug
+ * in nax's own code behind a vendor-failure label.
+ *
+ * `pricingSource` carries the rate card `complete()` resolved before dispatch
+ * (US-002), for the same reason `classifyCompleteError` takes it: a degraded
+ * result reports zero cost, but leaving the field absent makes the cost row
+ * fall back to `resolvePricingSource(model)`, which can name a card the
+ * adapter never resolved. Optional — omitted by callers with no card in scope.
+ */
+export function classifyParsedAgentError(
+  parsed: AgentError,
+  message: string,
+  pricingSource?: CompleteResult["pricingSource"],
+): CompleteResult | null {
+  const base = {
+    output: message,
+    tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    estimatedCostUsd: 0,
+    ...(pricingSource !== undefined ? { pricingSource } : {}),
+  } as const;
+  const truncated = message.slice(0, 500);
+
+  switch (parsed.type) {
+    case "auth":
+      return {
+        ...base,
+        adapterFailure: { category: "availability", outcome: "fail-auth", retriable: false, message: truncated },
+      };
+    case "rate-limit":
+      return {
+        ...base,
+        adapterFailure: {
+          category: "availability",
+          outcome: "fail-rate-limit",
+          retriable: true,
+          message: truncated,
+          ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
+        },
+      };
+    case "model-not-available":
+      return {
+        ...base,
+        adapterFailure: { category: "quality", outcome: "fail-adapter-error", retriable: false, message: truncated },
+      };
+    default:
+      return null;
+  }
 }
 
 /**
