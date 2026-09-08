@@ -95,6 +95,7 @@ export function buildCodingToolSupport(args: {
   const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(grants, args.root, { execTouchedPaths }),
+    declaredCommands: new Set(declaredCommands.keys()),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     sink,
     extraTools:

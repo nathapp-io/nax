@@ -11,6 +11,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { deleteTool } from "./delete";
+import { redirectForArgv } from "./denial-redirect";
 import { editTool } from "./edit";
 import { gitTool } from "./git";
 import { gitCommitTool } from "./git-commit";
@@ -87,6 +88,8 @@ export function createCodingToolRuntime(opts: {
   storyId?: string;
   sink?: ToolAuditSink;
   extraTools?: readonly CodingTool[];
+  /** Declared command names, so a denial can name `testScoped` only when the project has one. */
+  declaredCommands?: ReadonlySet<string>;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -97,6 +100,11 @@ export function createCodingToolRuntime(opts: {
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
   const maxFileBytes = opts.maxFileBytes ?? DEFAULT_TOOL_MAX_FILE_BYTES;
   const granted = new Set(opts.policy.grantedTools());
+
+  // What `advertised()` actually returned, so a denial can name only tools the
+  // session really received. Recomputing from `granted` would be wrong: an op
+  // narrows the set by declaring fewer tools than it was granted.
+  let advertisedNames: ReadonlySet<string> = new Set();
 
   /**
    * One line per call, mirroring the pull-tool subsystem's `invoked` record.
@@ -164,6 +172,7 @@ export function createCodingToolRuntime(opts: {
         const tool = lookup(name);
         if (tool !== undefined) out.push(tool);
       }
+      advertisedNames = new Set(out.map((t) => t.name));
       return out;
     },
 
@@ -197,8 +206,13 @@ export function createCodingToolRuntime(opts: {
             root: opts.policy.root,
           });
         }
-        log(policyIdentity, "denied", verdict.reason.length, input, verdict.breach, verdict.reason);
-        return { kind: "denied", reason: verdict.reason, breach: verdict.breach };
+        const rawArgv = argvField === undefined ? undefined : input[argvField];
+        const extra = Array.isArray(rawArgv)
+          ? redirectForArgv(rawArgv as readonly string[], advertisedNames, opts.declaredCommands ?? new Set())
+          : undefined;
+        const reason = extra === undefined ? verdict.reason : `${verdict.reason} -- ${extra}`;
+        log(policyIdentity, "denied", reason.length, input, verdict.breach, reason);
+        return { kind: "denied", reason, breach: verdict.breach };
       }
 
       try {
