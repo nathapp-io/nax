@@ -127,6 +127,16 @@ change.
 
 ### 2. Resolver
 
+**Module boundary (amended after codebase grounding).**
+`scripts/check-nax-ai-imports.ts` restricts `@nathapp/nax-ai` to
+`src/agents/native/` and runs inside `bun run lint`, so the catalog lookup
+cannot live in `src/agents/cost/`. Importing it from `src/agents/native/`
+instead would close a `cost <-> native` runtime cycle (`native/models.ts:10`
+already imports `@/agents/cost`), which `check:import-cycles` fails. A new
+`src/agents/catalog/` module therefore owns the nax-ai boundary and is added as
+a second allowed prefix in the gate; it depends on neither `cost/` nor
+`native/`, so no cycle is created.
+
 New `src/agents/cost/rate-card.ts`:
 
 ```ts
@@ -160,13 +170,20 @@ is async behind a dynamic import and costs ~50 ms.
 
 ### 3. Cost math
 
-`estimateCostFromRates(usage, rates)` replaces
-`estimateCostFromTokenUsage(usage, model)`. It takes rates as an argument rather
-than reaching for a table, which makes it pure, synchronous, and testable
-without a catalog.
+**Amended after grounding: this function already exists.**
+`estimateCostUsd(usage, rates)` in `native/models.ts:185` is exactly it —
+pure, synchronous, tier-aware, taking rates as an argument. It is *moved* to
+`src/agents/cost/` rather than written, with `native/models.ts` importing it
+back from `@/agents/cost` (a direction that already exists, so no cycle). No
+`estimateCostFromRates` is introduced.
 
-Cache-class fallbacks are preserved from the current implementation: absent
-`cacheReadPer1M` falls back to 10% of input, absent `cacheCreationPer1M` to 33%.
+Sharing one implementation forces one cache-class fallback rule. The relocated
+function's existing semantics win: an absent `cacheReadPer1M` or
+`cacheCreationPer1M` falls back to `inputPer1M`. This **changes** ACP's current
+behaviour, which uses 10% and 33% of input respectively. `PricingRates` declares
+`cacheRead` and `cacheWrite` as required, so the catalog always supplies both and
+the fallback is reachable only via the generic fallback card or an explicit
+`modelDef.pricing` override.
 
 ### 4. Adapter wiring
 
@@ -214,7 +231,7 @@ must never take down a run.
 - `estimateCost` and `estimateCostByDuration` from `calculate.ts`. Neither has a
   production caller; both are exercised only by
   `test/unit/metrics/cost.test.ts`, which goes with them.
-- `estimateCostFromTokenUsage`, superseded by `estimateCostFromRates`.
+- `estimateCostFromTokenUsage`, superseded by the relocated `estimateCostUsd`.
 - `resolvePricingSource` loses its `MODEL_PRICING` branch and reduces to an
   `unknown-model` guard for callers that have no producer-supplied source.
 - Corresponding exports in `src/agents/index.ts`.
