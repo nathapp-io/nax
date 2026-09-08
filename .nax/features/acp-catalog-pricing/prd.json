@@ -3,7 +3,7 @@
   "feature": "acp-catalog-pricing",
   "branchName": "feat/acp-catalog-pricing",
   "createdAt": "2026-09-08T00:00:00.000Z",
-  "updatedAt": "2026-09-08T06:14:22.405Z",
+  "updatedAt": "2026-09-08T07:19:42.996Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,7 +30,8 @@
         "[unit] estimateCostUsd applies a tier inputPer1M when input-class usage is 250,000 and a tier has inputTokensAbove 200000.",
         "[unit] estimateCostUsd applies the base inputPer1M when input-class usage is 100,000 and a tier has inputTokensAbove 200000.",
         "[unit] When an alias resolves but the catalog has no such provider/model, then resolveRateCard returns a fallback-rates card and the logger receives exactly one warning for that id.",
-        "[unit] When catalog loading rejects and resolveRateCard is called repeatedly, then each call returns a fallback-rates card and the logger receives exactly one warning for the load failure."
+        "[unit] When catalog loading rejects and resolveRateCard is called repeatedly, then each call returns a fallback-rates card and the logger receives exactly one warning for the load failure.",
+        "estimateCostUsd continues to select the highest strictly exceeded inputTokensAbove tier using all input-class tokens."
       ],
       "tags": [
         "feature",
@@ -65,9 +66,6 @@
         "src/agents/cost/model-aliases.json",
         "test/unit/agents/catalog/pricing-lookup.test.ts",
         "test/unit/agents/cost/rate-card.test.ts"
-      ],
-      "suggestedCriteria": [
-        "estimateCostUsd continues to select the highest strictly exceeded inputTokensAbove tier using all input-class tokens."
       ],
       "modifiedFiles": [
         {
@@ -173,8 +171,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

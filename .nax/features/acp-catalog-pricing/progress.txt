@@ -1,2 +1,3 @@
 [2026-09-08T04:17:48.210Z] US-001 — PASSED — Catalog-backed rate resolution — Cost: $3.5896
 [2026-09-08T06:14:19.081Z] US-002 — PASSED — ACP adapter prices from the rate card — Cost: $4.9903
+[2026-09-08T06:41:58.081Z] US-003 — PASSED — Retire the hardcoded rate table — Cost: $1.3031
