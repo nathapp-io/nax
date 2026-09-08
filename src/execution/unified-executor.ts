@@ -182,9 +182,9 @@ export async function executeUnified(
       return buildResult("completed");
     }
 
-    // Pre-run pipeline (acceptance test setup with RED gate) — only when acceptance is configured
+    // Pre-run pipeline (acceptance test setup with RED gate). Skipped under dryRun (nax#1809).
     let preRunCtx: PipelineContext | undefined;
-    if (ctx.config.acceptance?.enabled) {
+    if (!ctx.dryRun && ctx.config.acceptance?.enabled) {
       logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
       preRunCtx = await runPreRunPipeline(
         {

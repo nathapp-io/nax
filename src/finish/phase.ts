@@ -66,7 +66,7 @@ function isFeatureBranch(branch: string): boolean {
 }
 
 /** Which clause of the gate blocked the phase, or `null` when it did not. */
-export type FinishSkipReason = "enabled" | "completed" | "failed" | "paused" | "branch";
+export type FinishSkipReason = "enabled" | "dry-run" | "completed" | "failed" | "paused" | "branch";
 
 /**
  * The gate, split out from `shouldRunFinish` so a caller can log or record
@@ -82,8 +82,11 @@ export function finishSkipReason(args: {
   enabled: boolean;
   branch: string;
   storySummary: { completed: number; failed: number; paused: number };
+  /** Dry run (nax#1809): finish commits, pushes and opens a PR — a dry run must never. */
+  dryRun?: boolean;
 }): FinishSkipReason | null {
   if (!args.enabled) return "enabled";
+  if (args.dryRun) return "dry-run";
   const s = args.storySummary;
   if (s.completed === 0) return "completed";
   if (s.failed > 0) return "failed";
@@ -102,6 +105,7 @@ export function shouldRunFinish(args: {
   enabled: boolean;
   branch: string;
   storySummary: { completed: number; failed: number; paused: number };
+  dryRun?: boolean;
 }): boolean {
   return finishSkipReason(args) === null;
 }
@@ -144,19 +148,22 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
     enabled: settings.enabled,
     branch: ctx.branch,
     storySummary: ctx.storySummary,
+    dryRun: ctx.runtime.dryRun,
   });
   if (skipReason) {
     // The disabled case is not recorded on status.json (only logged): writing
     // a `finish` key there for every finish-disabled run would add that key
     // for all consumers, which is a wider behaviour change than the #1671
-    // gate fix warrants. Every other clause is both logged and recorded —
-    // those runs already have `finish.enabled: true`, so a `finish` status
-    // entry is expected there regardless.
+    // gate fix warrants. The dry-run case (nax#1809) is treated the same way:
+    // a simulated run must not leave a `finish` status entry behind. Every
+    // other clause is both logged and recorded — those runs already have
+    // `finish.enabled: true`, so a `finish` status entry is expected there
+    // regardless.
     getSafeLogger()?.info("finish", "Finish phase skipped — gate did not pass", {
       storyId: "_run",
       reason: skipReason,
     });
-    if (skipReason !== "enabled") {
+    if (skipReason !== "enabled" && skipReason !== "dry-run") {
       writeFinishStatus(ctx, { status: "skipped", reason: skipReason });
     }
     return null;

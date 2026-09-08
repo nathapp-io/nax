@@ -167,7 +167,9 @@ export async function runExecutionPhase(
 
   const batchPlan = options.useBatch ? precomputeBatchPlan(readyStories, 4) : [];
 
-  if (options.useBatch) {
+  // nax#1809: batch LLM routing is a real model spend under a dry run — skip it;
+  // the batch path itself never dispatches under dryRun (unified-executor.ts).
+  if (options.useBatch && !options.dryRun) {
     await tryLlmBatchRoute(options.config, readyStories, "routing", {
       agentManager: options.agentManager,
       runtime: options.runtime,
