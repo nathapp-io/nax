@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { estimateCostUsd } from "@/agents/cost";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import { getSafeLogger } from "@/logger";
@@ -21,7 +22,6 @@ import { getNativeClient } from "./client";
 import { toAdapterFailure } from "./errors";
 import {
   buildRateCard,
-  estimateCostUsd,
   NATIVE_AGENT,
   parseNativeModel,
   resolveContextWindow,

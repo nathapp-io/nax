@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-09-08T03-21-30-376Z",
+    "feature": "acp-catalog-pricing",
+    "startedAt": "2026-09-08T03:21:30.376Z",
+    "status": "crashed",
+    "dryRun": false,
+    "pid": 25225,
+    "crashedAt": "2026-09-08T03:43:09.198Z",
+    "crashSignal": "SIGINT"
+  },
+  "progress": {
+    "total": 3,
+    "passed": 0,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 3
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 60
+  },
+  "current": {
+    "storyId": "US-001",
+    "title": "Catalog-backed rate resolution",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 0,
+  "updatedAt": "2026-09-08T03:43:09.198Z",
+  "durationMs": 1298822
+}
