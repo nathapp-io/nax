@@ -89,11 +89,35 @@ is recoverable".
 
 One subprocess per call. `Delete` is a rare operation, so this is not on a hot path.
 
-### Registration and declaration
+The directory check has to come **after** the tracked check, and it is load-bearing
+rather than defensive: `git ls-files --error-unmatch -- src/tools` exits 0 for a
+directory that contains tracked files, so a directory passes the tracked check and
+would otherwise reach `unlink` (which fails with `EISDIR`, an error the model cannot
+act on). Verified both branches:
 
-`Delete` is registered in `registerBuiltinCodingTools` (`src/tools/runtime.ts`)
-alongside `Write` and `Edit`, and declared by the same set of ops that receive `Git`
-in change 2.
+```
+src/tools (directory)    -> exit 0   passes tracked, must be caught by the dir check
+src/tools/write.ts       -> exit 0   tracked
+.git/index               -> non-zero refused, which is the safety boundary
+```
+
+### Registration, grant and declaration
+
+Three registration points, not one. Missing the second would deny every call:
+
+1. **Registry.** `Delete` is registered in `registerBuiltinCodingTools`
+   (`src/tools/runtime.ts`) alongside `Write` and `Edit`.
+2. **Permission grant.** `"Delete"` must be added to the `unrestricted` profile's
+   explicit tool list (`src/config/permissions.ts:167-176`, which names
+   `Write`/`Edit`/`Git`/`GitCommit`/`RunCommand`/`RequestCapability`/`Exec` beyond
+   `DEFAULT_CODING_TOOLS`). Without it `compiled.get("Delete")` is `undefined` and
+   `policy.check` refuses with `tool "Delete" is not permitted for this stage` on
+   every call — a tool that is registered, declared and advertised but never usable.
+   `CodingToolName` needs the name too.
+   `safe` grants only `DEFAULT_CODING_TOOLS` and must **not** gain `Delete`; `scoped`
+   resolves per-stage through `resolveScopedPermissions` and inherits whatever the
+   project's `execution.permissions` block names.
+3. **Op declaration.** Declared by the same set of ops that receive `Git` in change 2.
 
 That set is identical by measurement, not by coincidence of drafting: the ops
 declaring `Write`+`Edit` and the ops declaring `Exec` are the **same eight files**
@@ -213,7 +237,9 @@ here rather than in a follow-up because after this spec they are true.
   this repo's own `.nax/config.json`, not a nax defect. Worth raising separately.
 - **`Write` being able to reach `.git/`.** Real, predates this work, and fixing it
   properly means a path guard in the policy rather than a per-tool check. `Delete`
-  sidesteps it via tracked-only; the underlying exposure gets its own issue.
+  sidesteps it via tracked-only. Filed as **#1943**, which also records that the
+  default permission profile is `unrestricted`, so this is reachable without any
+  unusual configuration.
 - **Prompt-driven shell reaching.** The 8 redundant calls have their cause in
   #1800/#1906. Change 3 mitigates the symptom at denial time only.
 
@@ -224,8 +250,12 @@ Behavioural tests, following the repo's existing tool-test conventions.
 `Delete`:
 - deletes a tracked file; the file is gone and the result names the staging step
 - refuses an untracked file, and the message names the tracked-only rule
-- refuses a directory
+- refuses a directory (a directory passes `ls-files --error-unmatch`, so this
+  assertion pins a real branch rather than a redundant one)
 - refuses a missing path rather than reporting success
+- is denied outright if the permission grant is missing — a regression test that
+  `Delete` appears in the `unrestricted` profile's tool list, since without it every
+  other test here would still pass while the tool was unusable in production
 - refuses a path outside the permitted root (policy-level, mirroring `Write`'s case)
 - **refuses `.git/index`** — the property that makes tracked-only a safety boundary
 - end-to-end: `Delete` then `GitCommit` with the deleted path produces a commit
