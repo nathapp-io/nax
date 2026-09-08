@@ -257,11 +257,18 @@ export class AcpAgentAdapter implements AgentAdapter {
       return await tryOneAgent(this.name);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
+      // US-002: both degraded paths carry the card resolved above — zero cost,
+      // but still the card this call would have billed on. Without it the cost
+      // row falls back to resolvePricingSource(model), a different card.
       if (error instanceof CompleteError) {
-        const classified = classifyCompleteError(error);
+        const classified = classifyCompleteError(error, rateCard.source);
         if (classified) return classified;
       }
-      const degraded = classifyParsedAgentError(_fallbackDeps.parseAgentError(error.message), error.message);
+      const degraded = classifyParsedAgentError(
+        _fallbackDeps.parseAgentError(error.message),
+        error.message,
+        rateCard.source,
+      );
       if (degraded) return degraded;
       throw err;
     }
@@ -402,6 +409,9 @@ export class AcpAgentAdapter implements AgentAdapter {
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
         estimatedCostUsd: 0,
         internalRoundTrips: 0,
+        // US-002: openSession already resolved the card. Zero cost, but a
+        // consumer can still tell this row's card from the derived fallback.
+        pricingSource: rateCard.source,
       };
     }
 

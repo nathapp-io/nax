@@ -362,4 +362,164 @@ describe("openSession() + sendTurn() — pricingSource from resolveRateCard", ()
     expect(recorded[0].exactCostUsd).toBe(0.012);
     expect(recorded[0].confidence).toBe("exact");
   });
+
+  // Adversarial review: the early-abort return built its TurnResult before the
+  // card was consulted, so an aborted turn reported no pricingSource even
+  // though openSession had already resolved and retained one. A consumer then
+  // could not tell this row's card from the model-derived fallback label.
+  test("pre-aborted sendTurn() still reports the session's resolved card source", async () => {
+    const card = stubResolveRateCard(CATALOG_CARD);
+    _acpAdapterDeps.resolveRateCard = mock(card.fn);
+
+    const session = makeSession({ promptFn: async () => successResponse() });
+    _acpAdapterDeps.createClient = mock(() => makeClient(session));
+
+    const adapter = new AcpAgentAdapter("claude");
+    const handle = await adapter.openSession("nax-rate-card-abort", makeOpenSessionOpts());
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: NO_OP_INTERACTION_HANDLER,
+      signal: controller.signal,
+    });
+
+    // The abort short-circuit still reports zero spend...
+    expect(result.internalRoundTrips).toBe(0);
+    expect(result.estimatedCostUsd).toBe(0);
+    // ...but names the card it would have billed on.
+    expect(result.pricingSource).toBe("catalog-rates");
+  });
+
+  // Adversarial review: a fallback-rates session must report ITS card on the
+  // abort path too — pins that the value is read off the handle rather than
+  // hardcoded to "catalog-rates".
+  test("pre-aborted sendTurn() reports fallback-rates when the session resolved a fallback card", async () => {
+    const card = stubResolveRateCard(FALLBACK_CARD);
+    _acpAdapterDeps.resolveRateCard = mock(card.fn);
+
+    const session = makeSession({ promptFn: async () => successResponse() });
+    _acpAdapterDeps.createClient = mock(() => makeClient(session));
+
+    const adapter = new AcpAgentAdapter("claude");
+    const handle = await adapter.openSession("nax-rate-card-abort-fb", makeOpenSessionOpts());
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: NO_OP_INTERACTION_HANDLER,
+      signal: controller.signal,
+    });
+
+    expect(result.pricingSource).toBe("fallback-rates");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Degraded complete() results — adversarial review
+//
+// complete() resolves the card BEFORE dispatching, so every degraded return
+// built in its catch tail can name the card the call would have billed on.
+// Leaving pricingSource absent made the cost row fall back to
+// resolvePricingSource(model), which can name a different card than the one
+// the adapter actually resolved.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("complete() — degraded results carry the resolved card source", () => {
+  let origCreateClient: typeof _acpAdapterDeps.createClient;
+  let origSleep: typeof _acpAdapterDeps.sleep;
+  let origResolveRateCard: typeof _acpAdapterDeps.resolveRateCard;
+
+  beforeEach(() => {
+    origCreateClient = _acpAdapterDeps.createClient;
+    origSleep = _acpAdapterDeps.sleep;
+    origResolveRateCard = _acpAdapterDeps.resolveRateCard;
+    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
+  });
+
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    _acpAdapterDeps.sleep = origSleep;
+    _acpAdapterDeps.resolveRateCard = origResolveRateCard;
+    mock.restore();
+  });
+
+  // parseAgentError -> rate-limit branch (classifyParsedAgentError).
+  test("a rate-limit degraded result reports the resolved card source", async () => {
+    const card = stubResolveRateCard(CATALOG_CARD);
+    _acpAdapterDeps.resolveRateCard = mock(card.fn);
+
+    const session = makeSession({
+      promptFn: async () => {
+        throw new Error('{"statusCode":429}');
+      },
+    });
+    _acpAdapterDeps.createClient = mock(() => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").complete("hi", makeCompleteOptions());
+    expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
+    expect(result.pricingSource).toBe("catalog-rates");
+  });
+
+  // parseAgentError -> auth branch. A fallback card here pins that the value
+  // is the card's own branch, not a hardcoded "catalog-rates".
+  test("an auth degraded result reports the resolved card source", async () => {
+    const card = stubResolveRateCard(FALLBACK_CARD);
+    _acpAdapterDeps.resolveRateCard = mock(card.fn);
+
+    const session = makeSession({
+      promptFn: async () => {
+        throw new Error('{"statusCode":401}');
+      },
+    });
+    _acpAdapterDeps.createClient = mock(() => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").complete("hi", makeCompleteOptions());
+    expect(result.adapterFailure?.outcome).toBe("fail-auth");
+    expect(result.pricingSource).toBe("fallback-rates");
+  });
+
+  // classifyCompleteError branch: a stop-reason-error response carrying an
+  // explicit `retryable` flag is classified by transport, not by stderr
+  // patterns — that path builds its result in parse-agent-error.ts and also
+  // dropped the card.
+  test("a transport-classified retryable stop-reason error reports the resolved card source", async () => {
+    const card = stubResolveRateCard(CATALOG_CARD);
+    _acpAdapterDeps.resolveRateCard = mock(card.fn);
+
+    const session = makeSession({
+      promptFn: async () => ({
+        messages: [],
+        stopReason: "error" as const,
+        error: "QUEUE_DISCONNECTED_BEFORE_COMPLETION: queue disconnected",
+        retryable: true,
+      }),
+    });
+    _acpAdapterDeps.createClient = mock(() => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").complete("hi", makeCompleteOptions());
+    expect(result.adapterFailure?.retriable).toBe(true);
+    expect(result.pricingSource).toBe("catalog-rates");
+  });
+
+  // The cancelled-but-billable path already carried the source; pinned here so
+  // the whole degraded family is covered in one place.
+  test("a cancelled-but-billable result reports the resolved card source", async () => {
+    const card = stubResolveRateCard(CATALOG_CARD);
+    _acpAdapterDeps.resolveRateCard = mock(card.fn);
+
+    const session = makeSession({
+      promptFn: async () => ({
+        messages: [],
+        stopReason: "error" as const,
+        cancelled: true,
+        cumulative_token_usage: { input_tokens: 500, output_tokens: 200 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock(() => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").complete("hi", makeCompleteOptions());
+    expect(result.cancelled).toBe(true);
+    expect(result.pricingSource).toBe("catalog-rates");
+  });
 });

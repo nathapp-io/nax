@@ -1,5 +1,11 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!.worktrees/**"
+    ]
+  },
   "assist": {
     "actions": {
       "source": {
