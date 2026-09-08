@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolScope } from "@/tools";
-import { compileToolPolicy } from "@/tools";
+import { compileToolPolicy, resolveWithin } from "@/tools";
 
 const PATH_SCOPE: ToolScope = { pathFields: ["path"] };
 let root: string;
@@ -18,6 +18,20 @@ beforeAll(() => {
   mkdirSync(outside, { recursive: true });
   writeFileSync(join(outside, "secret.txt"), "no");
   symlinkSync(outside, join(root, "escape-link"));
+
+  // Fixture for the .git-exclusion describe block below (nax#1943).
+  mkdirSync(join(root, ".git"), { recursive: true });
+  writeFileSync(join(root, ".git", "index"), "not a real index");
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(root, ".github", "workflows", "ci.yml"), "name: ci\n");
+  writeFileSync(join(root, ".gitignore"), "node_modules\n");
+  writeFileSync(join(root, ".gitattributes"), "* text=auto\n");
+  mkdirSync(join(root, "vendor", "nested-repo", ".git"), { recursive: true });
+  writeFileSync(join(root, "vendor", "nested-repo", ".git", "config"), "[core]\n");
+  symlinkSync(join(root, ".git", "index"), join(root, "link-into-git"));
+  // Lives OUTSIDE the root and resolves INTO .git/, which is the only shape
+  // that reaches resolveWithin's execTouchedPaths branch at all.
+  symlinkSync(join(root, ".git", "index"), join(outside, "touched-link"));
 });
 
 describe("compileToolPolicy — patterns", () => {
@@ -275,5 +289,93 @@ describe("compileToolPolicy — Exec argv matching", () => {
     const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["test"] }], "/repo");
     const scope: ToolScope = { pathFields: [], verbField: "command", allowedVerbs: ["test"], argvField: "argv" };
     expect(policy.check("RunCommand", scope, { command: "test" }).allowed).toBe(true);
+  });
+});
+
+/**
+ * `.git/` is INSIDE the permitted root, so containment alone never bars it,
+ * and an unconditional ("*") grant -- what every non-Exec tool gets under the
+ * default `unrestricted` profile -- skips glob matching entirely. Without a
+ * dedicated exclusion, any path-bearing tool could corrupt `.git/index` or
+ * rewrite `.git/config` (nax#1943). Both `resolveWithin` directly (the seam
+ * `glob.ts` and `package-managers.ts` call without going through `check()`)
+ * and `check()`'s denial message are covered here.
+ */
+describe("compileToolPolicy — .git/ is excluded at the resolveWithin seam", () => {
+  test("resolveWithin denies a top-level .git path even though it is inside root", () => {
+    expect(resolveWithin(root, ".git/index")).toBeNull();
+    expect(resolveWithin(root, ".git")).toBeNull();
+  });
+
+  test("resolveWithin denies a NON-leading .git segment (nested repo / submodule)", () => {
+    expect(resolveWithin(root, "vendor/nested-repo/.git/config")).toBeNull();
+    expect(resolveWithin(root, "vendor/nested-repo/.git")).toBeNull();
+  });
+
+  test("resolveWithin still permits paths that merely LOOK like .git by substring", () => {
+    // A naive startsWith(".git") would wrongly swallow all three of these.
+    expect(resolveWithin(root, ".gitignore")).not.toBeNull();
+    expect(resolveWithin(root, ".gitattributes")).not.toBeNull();
+    expect(resolveWithin(root, ".github/workflows/ci.yml")).not.toBeNull();
+  });
+
+  test("resolveWithin denies a symlink whose target lives under .git/", () => {
+    expect(resolveWithin(root, "link-into-git")).toBeNull();
+  });
+
+  test("a path spelled from OUTSIDE the root that resolves into .git/ is refused", () => {
+    // `isInside` resolves symlinks on both sides, so this is caught by the
+    // in-root branch rather than falling through to the execTouchedPaths
+    // carve-out -- which is precisely why that carve-out needs no .git check
+    // of its own. Passing the touched path too asserts it cannot re-admit the
+    // path by a route the in-root spelling would not have.
+    const gitIndex = join(root, ".git", "index");
+    const viaOutside = join(outside, "touched-link");
+    expect(resolveWithin(root, viaOutside)).toBeNull();
+    expect(resolveWithin(root, viaOutside, [gitIndex])).toBeNull();
+  });
+
+  test("check() denies a .git/ path even under an unconditional '*' grant", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    const verdict = policy.check("Write", PATH_SCOPE, { path: ".git/index" });
+    expect(verdict.allowed).toBe(false);
+  });
+
+  test("check()'s denial message names git metadata, not a generic 'outside the root' claim", () => {
+    // The path IS inside the root, so the generic message would be actively
+    // misleading here -- it must get its own accurate reason (see
+    // outOfRootReason in policy.ts).
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    const verdict = policy.check("Write", PATH_SCOPE, { path: ".git/index" });
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.reason).toContain("git");
+      expect(verdict.reason).not.toContain("resolves outside the permitted root");
+    }
+  });
+
+  test("check() still denies an actually-out-of-root path with the generic message", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    const verdict = policy.check("Write", PATH_SCOPE, { path: join(outside, "secret.txt") });
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toContain("resolves outside the permitted root");
+  });
+
+  test("check() denials for .git/ are still breaches, the same as any other containment denial", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    const verdict = policy.check("Write", PATH_SCOPE, { path: ".git/index" });
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.breach).toBe(true);
+  });
+
+  test("a scoped glob grant does not accidentally re-admit .git/ via a wildcard", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["**"] }], root);
+    expect(policy.check("Write", PATH_SCOPE, { path: ".git/index" }).allowed).toBe(false);
+  });
+
+  test("ordinary paths are unaffected", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    expect(policy.check("Write", PATH_SCOPE, { path: "src/a.ts" }).allowed).toBe(true);
+    expect(policy.check("Write", PATH_SCOPE, { path: ".gitignore" }).allowed).toBe(true);
   });
 });

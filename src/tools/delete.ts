@@ -3,10 +3,12 @@
  *
  * Tracked-only, and that is a safety boundary rather than a convenience: a
  * tracked file's content is in git history, so removing it is an undo away,
- * while an untracked file exists only on disk. It also excludes everything
- * under `.git/` by construction -- nothing there is tracked -- which matters
- * because the policy confines paths to the permitted root and `.git` is inside
- * it (nax#1943).
+ * while an untracked file exists only on disk. `.git/` never reaches this
+ * point at all now -- `resolveWithin` (`src/tools/policy.ts`) excludes it for
+ * every path-bearing tool, so `ctx.resolvedPaths` cannot contain a `.git/`
+ * path in the first place (nax#1943). The tracked-only check happens to agree
+ * -- nothing under `.git/` is itself tracked -- but that is no longer why a
+ * `.git/` deletion is refused; it is refused before Delete ever runs.
  *
  * Not `git rm`: gitTool documents a deliberate read/write split, and `git rm`
  * both deletes and stages, folding two capabilities into one call. Plain

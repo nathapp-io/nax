@@ -20,11 +20,42 @@ import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
 import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 
 /**
- * Absolute, symlink-resolved form of `candidate` if it lies inside `root`.
+ * Does `resolved` (already absolute and symlink-resolved) enter a `.git`
+ * directory anywhere along its path relative to `root`?
+ *
+ * A path-SEGMENT match, never a prefix or substring one: `.gitignore` and
+ * `.github/` are ordinary tracked names a tool must still be able to reach,
+ * and `startsWith(".git")` would wrongly swallow both -- the exact defect
+ * this function exists to avoid (nax#1943).
+ *
+ * Matches ANY segment, not only a leading one. A nested repository or a
+ * submodule checked into the tree (`vendor/some-lib/.git`, which may be a
+ * directory or, for a submodule, a file pointing at the real gitdir
+ * elsewhere) carries the same integrity and containment risk `.git/` at the
+ * root does -- the ruling behind this function is "no path-bearing tool ever
+ * addresses git metadata", not "only the top-level repository's".
+ */
+function entersGitMetadata(root: string, resolved: string): boolean {
+  const rel = relative(realOrRaw(root), resolved);
+  if (rel === "" || rel.startsWith("..")) return false;
+  return rel.split(sep).includes(".git");
+}
+
+/**
+ * Absolute, symlink-resolved form of `candidate` if it lies inside `root`
+ * and is not itself, or does not lie under, `.git/`.
  *
  * The single containment seam. Multi-root support (a future configurable
  * extension) changes this function and nothing else, which is why every tool
- * receives an already-resolved path rather than resolving one itself.
+ * receives an already-resolved path rather than resolving one itself. The
+ * `.git/` exclusion lives here for the same reason: it applies to every
+ * path-bearing tool uniformly, reads included, rather than being
+ * re-remembered per tool -- which is exactly the failure mode a declaration
+ * on `ToolScope` would reintroduce (nax#1943). `.git/` sits INSIDE the root,
+ * so containment alone never bars it, and an unconditional ("*") grant --
+ * what every non-Exec tool gets under the default `unrestricted` profile --
+ * skips glob matching entirely, so nothing downstream of this function would
+ * catch it either.
  *
  * The one exception to the paragraph above, and it is not a profile widening:
  * a workspace package manager writes the root manifest and lockfile by design,
@@ -34,11 +65,21 @@ import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
  * exact (never a prefix — a single touched path must never widen a whole
  * directory), and the set is session-scoped: it is built fresh for one
  * dispatch hop and shared only between that hop's Exec and GitCommit calls,
- * never persisted across stories or sessions.
+ * never persisted across stories or sessions. That carve-out needs no `.git/`
+ * check of its own, and adding one would be dead code rather than defence in
+ * depth: it is reached only when `isInside` is false, and `isInside` resolves
+ * symlinks on BOTH sides (`src/utils/realpath.ts`), so any candidate whose
+ * real path lands under `.git/` -- however it is spelled, symlink included --
+ * is already refused by the branch above. A path that reaches the carve-out
+ * has a real path outside the root, and `entersGitMetadata` reports false for
+ * every such path by construction.
  */
 export function resolveWithin(root: string, candidate: string, execTouchedPaths?: readonly string[]): string | null {
   const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
-  if (isInside(root, absolute)) return realOrRaw(absolute);
+  if (isInside(root, absolute)) {
+    const resolved = realOrRaw(absolute);
+    return entersGitMetadata(root, resolved) ? null : resolved;
+  }
   const resolved = realOrRaw(absolute);
   if (execTouchedPaths?.some((touched) => realOrRaw(touched) === resolved)) return resolved;
   return null;
@@ -187,21 +228,28 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
   }
 
   /**
-   * The reason text for a path that resolved outside the root and found no
-   * `execTouchedPaths` match (fix round 1, Task 10).
+   * The reason text for a path `resolveWithin` refused (fix round 1, Task 10;
+   * `.git/` case added for nax#1943).
    *
    * A bare "resolves outside the permitted root" taught the model nothing
    * the last time this shape of denial mattered: in the run that motivated
    * this whole feature, that message is what led an agent to delete a
    * tsconfig entry instead of installing the package it needed. The design's
    * own rule is that a denial returns the reason AND what would have been
-   * allowed — so for GitCommit specifically, when the refused path LOOKS
-   * like a manifest or lockfile (`isKnownManifestOrLockfileName`, the same
-   * closed table `recordExecTouchedPaths` writes from), the message explains
-   * the actual rule: only a manifest/lockfile an Exec call touched IN THIS
-   * TURN can be staged from outside the story's own package root, and even
-   * when that is not this call, the run's completion-phase auto-commit sweep
-   * (`autoCommitIfDirty`, `src/utils/git.ts`) stages root-level changes
+   * allowed.
+   *
+   * A `.git/`-metadata refusal gets its own branch, checked first: unlike
+   * every other refusal this function handles, the candidate is genuinely
+   * INSIDE the root, so "resolves outside the permitted root" would be
+   * actively misleading rather than merely unhelpful.
+   *
+   * For GitCommit specifically, when the refused path is not `.git/`-shaped
+   * but LOOKS like a manifest or lockfile (`isKnownManifestOrLockfileName`,
+   * the same closed table `recordExecTouchedPaths` writes from), the message
+   * explains the actual rule: only a manifest/lockfile an Exec call touched
+   * IN THIS TURN can be staged from outside the story's own package root, and
+   * even when that is not this call, the run's completion-phase auto-commit
+   * sweep (`autoCommitIfDirty`, `src/utils/git.ts`) stages root-level changes
    * regardless, so the work is not silently lost.
    *
    * Every other refused path — including a manifest-shaped path for a tool
@@ -211,8 +259,15 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * never touched.
    */
   function outOfRootReason(tool: string, root: string, candidate: string): string {
+    const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
+    if (isInside(root, absolute) && entersGitMetadata(root, realOrRaw(absolute))) {
+      return (
+        "targets git metadata under .git/, which every tool is refused regardless of grant -- " +
+        "writing there can corrupt the repository beyond git's own recovery, and reading its " +
+        "config is a route to influencing what nax executes without passing through Exec (nax#1943)"
+      );
+    }
     if (tool === "GitCommit") {
-      const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
       if (isKnownManifestOrLockfileName(basename(absolute))) {
         return (
           "lies outside this story's package root; only a manifest or lockfile touched by an " +
