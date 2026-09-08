@@ -116,6 +116,8 @@ export interface SourceFixParams {
   diagnosisReasoning?: string;
   priorIterationsBlock?: string;
   acceptanceTestPath: string;
+  /** Declared `quality.commands.testScoped` key (#1939) — see buildTestRerunLine. */
+  scopedCommandName?: string;
 }
 
 export interface TestFixParams {
@@ -125,6 +127,42 @@ export interface TestFixParams {
   priorIterationsBlock?: string;
   failedACs: string[];
   acceptanceTestPath: string;
+  /** Declared `quality.commands.testScoped` key (#1939) — see buildTestRerunLine. */
+  scopedCommandName?: string;
+}
+
+/**
+ * #1939: acceptanceFixSourceOp/acceptanceFixTestOp already grant RunCommand
+ * (#1936/#1938) and `resolveAcceptanceFixTarget` already resolves `testCommand`
+ * to a runnable, placeholder-substituted string — but neither fix prompt ever
+ * told the agent it could run it. Named in the `self-verification.ts:33`
+ * register: the tool call first, the raw fallback second, because the prompt
+ * doesn't know which transport will read it (see that file's header comment).
+ *
+ * `scopedCommandName` is the declared `quality.commands.testScoped` key
+ * (usually literally `"testScoped"`) — RunCommand resolves declared keys, not
+ * ad-hoc strings, so the tool-call form is only safe to render when that key is
+ * actually configured. Without it, only the raw fallback is offered.
+ */
+function buildTestRerunLine(
+  testCommand: string | undefined,
+  acceptanceTestPath: string,
+  scopedCommandName?: string,
+): string {
+  if (!testCommand) return "";
+  // No path means no tool call to offer: RunCommand keeps an empty `files`
+  // value verbatim, and `bun test ''` exits 1 without running anything.
+  if (!scopedCommandName || !acceptanceTestPath) {
+    return `- Re-run the failing acceptance test before you finish: \`${testCommand}\`.\n\n`;
+  }
+  // JSON.stringify, not interpolation: the rendered line is a JSON literal the
+  // agent copies, and a path holding a quote or a backslash would otherwise
+  // produce something it cannot parse.
+  return (
+    "- Re-run the failing acceptance test before you finish:\n" +
+    `  RunCommand {"command": "${scopedCommandName}", "values": {"files": ${JSON.stringify(acceptanceTestPath)}}}\n` +
+    `  if that tool is available to you, otherwise \`${testCommand}\`.\n\n`
+  );
 }
 
 // ─── Builder ──────────────────────────────────────────────────────────────────
@@ -235,7 +273,8 @@ ${responseSchema}`;
     if (p.priorIterationsBlock) prompt += p.priorIterationsBlock;
     prompt += `ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}\n\n`;
     prompt += "Read the test file at the path above for context, then fix the source implementation. ";
-    prompt += "Do NOT modify the test file.";
+    prompt += "Do NOT modify the test file.\n\n";
+    prompt += buildTestRerunLine(p.testCommand, p.acceptanceTestPath, p.scopedCommandName);
     return prompt;
   }
 
@@ -401,7 +440,8 @@ Assert about HTTP responses, status codes, and API endpoint output.${framework}
     prompt += "Read the test file at the path above before editing. The fix should be ";
     prompt += "surgical — locate the failing AC blocks and adjust their assertions only. ";
     prompt += "Do NOT modify passing tests. Do NOT modify source code. ";
-    prompt += "Edit the test file in place.";
+    prompt += "Edit the test file in place.\n\n";
+    prompt += buildTestRerunLine(p.testCommand, p.acceptanceTestPath, p.scopedCommandName);
     return prompt;
   }
 }

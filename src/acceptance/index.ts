@@ -14,6 +14,7 @@ export {
   buildAcceptanceTestPrompt,
   generateSkeletonTests,
   parseAcceptanceCriteria,
+  substituteAcceptanceTestPath,
 } from "./generator";
 export type { HardeningContext, HardeningResult } from "./hardening";
 export { runHardeningPass } from "./hardening";

@@ -9,6 +9,7 @@ export interface AcceptanceFixSourceInput {
   diagnosisReasoning?: string;
   priorIterationsBlock?: string;
   acceptanceTestPath: string;
+  scopedCommandName?: string;
 }
 
 export interface AcceptanceFixTestInput {
@@ -18,6 +19,7 @@ export interface AcceptanceFixTestInput {
   priorIterationsBlock?: string;
   failedACs: string[];
   acceptanceTestPath: string;
+  scopedCommandName?: string;
 }
 
 export interface AcceptanceFixOutput {
@@ -29,7 +31,7 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
   name: "acceptance-fix-source",
   stage: "acceptance",
   session: { role: "source-fix", lifetime: "fresh" },
-  tools: ["Read", "Glob", "Grep", "Write", "Edit", "Exec", "RequestCapability"],
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "Exec", "RunCommand", "RequestCapability"],
   config: acceptanceFixConfigSelector,
   model: (_input, ctx) => ctx.config.acceptance.fix?.fixModel ?? ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
@@ -40,6 +42,11 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
       diagnosisReasoning: input.diagnosisReasoning,
       priorIterationsBlock: input.priorIterationsBlock,
       acceptanceTestPath: input.acceptanceTestPath,
+      // #1939: resolveAcceptanceFixTarget decides this — it alone knows whether
+      // the scoped template actually won and whether `{{files}}` is its sole
+      // placeholder. Re-deriving it from config here would name `testScoped`
+      // for a `{{package}}` template the resolver had already dropped.
+      scopedCommandName: input.scopedCommandName,
     });
     return {
       role: { id: "role", content: "", overridable: false },
@@ -56,7 +63,7 @@ export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, Acceptanc
   name: "acceptance-fix-test",
   stage: "acceptance",
   session: { role: "test-fix", lifetime: "fresh" },
-  tools: ["Read", "Glob", "Grep", "Write", "Edit", "Exec", "RequestCapability"],
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "Exec", "RunCommand", "RequestCapability"],
   config: acceptanceFixConfigSelector,
   model: (_input, ctx) => ctx.config.acceptance.fix?.fixModel ?? ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
@@ -68,6 +75,8 @@ export const acceptanceFixTestOp: RunOperation<AcceptanceFixTestInput, Acceptanc
       priorIterationsBlock: input.priorIterationsBlock,
       failedACs: input.failedACs,
       acceptanceTestPath: input.acceptanceTestPath,
+      // #1939: see acceptanceFixSourceOp.build above.
+      scopedCommandName: input.scopedCommandName,
     });
     return {
       role: { id: "role", content: "", overridable: false },

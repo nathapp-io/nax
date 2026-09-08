@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
+import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import { resolvePermissions } from "@/config/permissions";
 import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "@/operations/acceptance-fix";
+import { resolveDeclaredTools } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -74,6 +77,29 @@ describe("acceptanceFixSourceOp.build()", () => {
     expect(result.task.content).toContain("fn returns wrong value");
     expect(result.task.content).toContain("FAIL: expected true but got false");
   });
+
+  // #1939: the op does NOT re-derive this from config — resolveAcceptanceFixTarget
+  // alone knows whether the scoped template actually won and whether {{files}} is
+  // its sole placeholder, so the decision arrives on the input.
+  test("names RunCommand's testScoped key when the resolver supplied the scoped key", () => {
+    const ctx = makeSourceCtx();
+    const result = acceptanceFixSourceOp.build(
+      { ...SOURCE_INPUT, testCommand: "bun test /tmp/acceptance.test.ts", scopedCommandName: "testScoped" },
+      ctx,
+    );
+    expect(result.task.content).toContain('RunCommand {"command": "testScoped"');
+    expect(result.task.content).toContain('"files": "/tmp/acceptance.test.ts"');
+  });
+
+  test("omits the RunCommand form when the resolver supplied no scoped key", () => {
+    const ctx = makeSourceCtx();
+    const result = acceptanceFixSourceOp.build(
+      { ...SOURCE_INPUT, testCommand: "bun test /tmp/acceptance.test.ts" },
+      ctx,
+    );
+    expect(result.task.content).not.toContain("RunCommand");
+    expect(result.task.content).toContain("Re-run the failing acceptance test");
+  });
 });
 
 describe("acceptanceFixSourceOp.parse()", () => {
@@ -127,5 +153,48 @@ describe("acceptanceFixTestOp.parse()", () => {
     const ctx = makeTestCtx();
     const result = acceptanceFixTestOp.parse("Fix applied.", TEST_INPUT, ctx);
     expect(result.applied).toBe(true);
+  });
+});
+
+/**
+ * #1936: both ops declared "Exec" but not "RunCommand". Exec is only a marker
+ * that switches on RunCommand's argv branch (coding-tool-support.ts); it
+ * grants nothing on its own, so the RunCommand tool was built, wired, and
+ * then dropped by runtime.advertised() -- a fix session that cannot run a
+ * command cannot re-run the test it is fixing.
+ *
+ * Asserted two ways: against the barrel declaration, and against the real
+ * advertised set built the way a dispatch builds it, so a regression in
+ * coding-tool-support's filtering (rather than in the op's declared list)
+ * still fails here.
+ */
+describe("acceptance-fix RunCommand declaration (#1936)", () => {
+  test("acceptance-fix-source declares RunCommand", () => {
+    expect(resolveDeclaredTools(acceptanceFixSourceOp)).toContain("RunCommand");
+  });
+
+  test("acceptance-fix-test declares RunCommand", () => {
+    expect(resolveDeclaredTools(acceptanceFixTestOp)).toContain("RunCommand");
+  });
+
+  test("both ops keep the Exec marker alongside RunCommand", () => {
+    expect(resolveDeclaredTools(acceptanceFixSourceOp)).toContain("Exec");
+    expect(resolveDeclaredTools(acceptanceFixTestOp)).toContain("Exec");
+  });
+
+  test("RunCommand is actually advertised to a source-fix dispatch under an unrestricted profile", () => {
+    const config = makeNaxConfig({ execution: { permissionProfile: "unrestricted" } });
+    const resolved = resolvePermissions(config, "acceptance");
+    const grants = resolved.toolGrants ?? [];
+    const declaredCommands = new Map([["testScoped", "CI=1 AGENT=1 bun test --timeout=60000 {{files}}"]]);
+    const support = buildCodingToolSupport({
+      root: process.cwd(),
+      grants,
+      declared: resolveDeclaredTools(acceptanceFixSourceOp),
+      declaredCommands,
+      sessionName: "probe",
+    });
+
+    expect(support?.tools.map((t) => t.name)).toContain("RunCommand");
   });
 });

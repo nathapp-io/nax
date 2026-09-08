@@ -224,6 +224,34 @@ describe("builder.buildSourceFixPrompt()", () => {
   test("instructs not to modify test file", () => {
     expect(builder.buildSourceFixPrompt(base)).toContain("Do NOT modify the test file");
   });
+
+  // #1939: source-fix/test-fix already have a working RunCommand (#1936/#1938) but
+  // the prompt never said so — the test command was spent solely on the framework hint.
+  describe("re-run affordance (#1939)", () => {
+    test("names the RunCommand tool call with the acceptance path when scopedCommandName is given", () => {
+      const result = builder.buildSourceFixPrompt({
+        ...base,
+        testCommand: "bun test /abs/path.ts",
+        scopedCommandName: "testScoped",
+      });
+      expect(result).toContain("Re-run the failing acceptance test before you finish");
+      expect(result).toContain(
+        `RunCommand {"command": "testScoped", "values": {"files": "${base.acceptanceTestPath}"}}`,
+      );
+      expect(result).toContain("if that tool is available to you, otherwise `bun test /abs/path.ts`");
+    });
+
+    test("omits the RunCommand form when scopedCommandName is not given", () => {
+      const result = builder.buildSourceFixPrompt({ ...base, testCommand: "bun test /abs/path.ts" });
+      expect(result).toContain("Re-run the failing acceptance test before you finish: `bun test /abs/path.ts`");
+      expect(result).not.toContain("RunCommand");
+    });
+
+    test("omits the affordance entirely when no testCommand was resolved", () => {
+      const result = builder.buildSourceFixPrompt({ ...base, scopedCommandName: "testScoped" });
+      expect(result).not.toContain("Re-run the failing acceptance test");
+    });
+  });
 });
 
 // ─── buildTestFixPrompt ───────────────────────────────────────────────────────
@@ -271,5 +299,45 @@ describe("builder.buildTestFixPrompt()", () => {
     const result = builder.buildTestFixPrompt(base);
     expect(result).toContain("surgical");
     expect(result).toContain("Do NOT modify source code");
+  });
+
+  // #1939: same affordance gap as buildSourceFixPrompt.
+  describe("re-run affordance (#1939)", () => {
+    test("names the RunCommand tool call with the acceptance path when scopedCommandName is given", () => {
+      const result = builder.buildTestFixPrompt({
+        ...base,
+        testCommand: "bun test /abs/path.ts",
+        scopedCommandName: "testScoped",
+      });
+      expect(result).toContain("Re-run the failing acceptance test before you finish");
+      expect(result).toContain(
+        `RunCommand {"command": "testScoped", "values": {"files": "${base.acceptanceTestPath}"}}`,
+      );
+      expect(result).toContain("if that tool is available to you, otherwise `bun test /abs/path.ts`");
+    });
+
+    test("omits the RunCommand form when scopedCommandName is not given", () => {
+      const result = builder.buildTestFixPrompt({ ...base, testCommand: "bun test /abs/path.ts" });
+      expect(result).toContain("Re-run the failing acceptance test before you finish: `bun test /abs/path.ts`");
+      expect(result).not.toContain("RunCommand");
+    });
+
+    test("omits the affordance entirely when no testCommand was resolved", () => {
+      const result = builder.buildTestFixPrompt({ ...base, scopedCommandName: "testScoped" });
+      expect(result).not.toContain("Re-run the failing acceptance test");
+    });
+  });
+
+  test("omits the tool-call form when there is no acceptance test path to name", () => {
+    // RunCommand keeps an empty `files` value verbatim and `bun test ''` exits 1
+    // without running anything, so an empty path must degrade to the raw command.
+    const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt({
+      testOutput: "boom",
+      testCommand: "bun run test",
+      acceptanceTestPath: "",
+      scopedCommandName: "testScoped",
+    });
+    expect(prompt).not.toContain("RunCommand");
+    expect(prompt).toContain("`bun run test`");
   });
 });

@@ -2,17 +2,94 @@
  * Acceptance Helpers
  *
  * Extracted from acceptance-loop.ts for file size compliance.
- * Contains: stub detection, test-level failure detection, test content loading,
- * result building, and test regeneration.
+ * Contains: fix-target resolution, stub detection, test-level failure detection,
+ * test content loading, result building, and test regeneration.
  */
 
 import path from "node:path";
-import { isStubTestContent } from "@/acceptance";
+import { isStubTestContent, substituteAcceptanceTestPath } from "@/acceptance";
+import type { NaxConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "@/utils/path-filters";
-import type { AcceptanceLoopResult } from "./acceptance-loop";
+import type { AcceptanceLoopResult, AcceptanceTestPathEntry } from "./acceptance-loop";
+
+// ─── Fix-target resolution ───────────────────────────────────────────────────
+
+/**
+ * Resolve which acceptance test a fix cycle targets and the runnable command to
+ * re-run it. `config.quality.commands.test` is the FULL suite (`bun run test` in
+ * this repo) — handing a fix role the whole suite instead of the one failing
+ * acceptance test burns the session timeout and violates the never-run-the-bare-
+ * full-suite rule (#1939). `testScoped` — already the SSOT for "one file, not the
+ * suite" in src/test-runners/scoped-selection.ts — is tried first, and only when
+ * a real `acceptanceTestPath` exists to plug into its `{{files}}` placeholder;
+ * with neither a commandOverride nor a scoped template, the full suite is the
+ * last resort. Every candidate but that last resort supports {{files}}/{{file}}/
+ * {{FILE}}, substituted here so the returned command is runnable as-is — never a
+ * template a caller must remember to resolve itself.
+ */
+export function resolveAcceptanceFixTarget(
+  acceptanceTestPaths: AcceptanceTestPathEntry[] | undefined,
+  failedPackage: { testPath: string; packageDir: string; commandOverride?: string } | undefined,
+  config: NaxConfig,
+): {
+  acceptanceTestPath: string;
+  testCommand: string | undefined;
+  scopedCommandName: string | undefined;
+} {
+  const matchedEntry = failedPackage
+    ? acceptanceTestPaths?.find(
+        (entry) => entry.testPath === failedPackage.testPath || entry.packageDir === failedPackage.packageDir,
+      )
+    : undefined;
+  const selectedPathEntry = matchedEntry ?? acceptanceTestPaths?.[0];
+  // `||`, not `??`: a synthetic failed-package carries `testPath: ""`, and an
+  // empty path is absent for every purpose here — it would otherwise skip the
+  // scoped candidate and render an empty path into the prompt.
+  const acceptanceTestPath = failedPackage?.testPath || selectedPathEntry?.testPath || "";
+
+  const substituted = (candidate: string | undefined): string | undefined =>
+    candidate && acceptanceTestPath ? substituteAcceptanceTestPath(candidate, acceptanceTestPath) : candidate;
+  // A scoped template can carry `{{package}}` as well, which only
+  // resolveQualityTestCommands can fill — it reads package.json asynchronously
+  // (src/quality/command-resolver.ts) and this resolver is synchronous. A
+  // candidate still holding any placeholder after substitution is therefore not
+  // runnable, so it is dropped rather than rendered into a prompt as a template.
+  // For a turbo/nx orchestrator that is also the right answer: its scoped form
+  // is deliberately never file-expanded, so falling through to the suite
+  // command beats handing over syntax the runner would reject.
+  const runnable = (candidate: string | undefined): string | undefined =>
+    candidate !== undefined && !candidate.includes("{{") ? candidate : undefined;
+
+  const scopedTemplate = acceptanceTestPath ? config.quality?.commands?.testScoped : undefined;
+  const scopedCommand = runnable(substituted(scopedTemplate));
+  const overrideCommand =
+    runnable(substituted(failedPackage?.commandOverride)) ??
+    runnable(substituted(matchedEntry?.commandOverride)) ??
+    runnable(substituted(config.acceptance.command));
+
+  return {
+    acceptanceTestPath,
+    // The last resort is substituted too: `quality.commands.test` may itself
+    // carry a placeholder, and the invariant above admits no exceptions. It is
+    // NOT passed through `runnable()` — a residual placeholder there leaves
+    // nothing else to fall back to, so a template beats returning undefined.
+    testCommand: overrideCommand ?? scopedCommand ?? substituted(config.quality?.commands?.test),
+    // Named for the prompt ONLY when the scoped template is the candidate that
+    // actually won and `{{files}}` is its sole placeholder. RunCommand resolves
+    // a declared key by exact placeholder match, so naming `testScoped` when a
+    // `{{package}}` template was dropped, or when the template takes `{{file}}`
+    // or no placeholder at all, hands the agent a tool call that can only
+    // answer `placeholder {{package}} has no value` or `value "files" is not a
+    // placeholder in this command`.
+    scopedCommandName:
+      overrideCommand === undefined && scopedCommand !== undefined && scopedTemplate?.includes("{{files}}") === true
+        ? "testScoped"
+        : undefined,
+  };
+}
 
 // ─── Stub detection ─────────────────────────────────────────────────────────
 

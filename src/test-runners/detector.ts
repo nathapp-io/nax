@@ -54,10 +54,18 @@ export function isTestFile(filePath: string, testFilePatterns?: readonly string[
  * inline language-detection logic outside the SSOT module (ADR-009).
  */
 export function buildTestFrameworkHint(testCommand: string): string {
-  const cmd = testCommand.trim();
+  const raw = testCommand.trim();
   // #543: do not assume Bun when no command is configured — that falsely tells
   // Go / Python / Rust packages to run `bun test`.
-  if (!cmd) return "Use your project's test framework";
+  if (!raw) return "Use your project's test framework";
+  // #1939: a scoped command commonly carries leading env assignments (this repo's
+  // testScoped is "CI=1 AGENT=1 bun test --timeout=60000 {{files}}") — matched
+  // against the raw string every branch below misses and falls through to the
+  // generic hint even though the runner is plainly bun. Strip a run of leading
+  // `NAME=value` tokens (value = no whitespace, so it can't consume the command
+  // itself) before matching. A command that is ONLY env assignments strips to
+  // "" and still falls through to the same generic default as an empty command.
+  const cmd = raw.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
   if (cmd.startsWith("bun test")) return "Use Bun test (describe/test/expect)";
   if (cmd.startsWith("pytest") || cmd.startsWith("python -m pytest")) return "Use pytest";
   if (cmd.startsWith("cargo test")) return "Use Rust's cargo test";

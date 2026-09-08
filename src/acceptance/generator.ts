@@ -41,6 +41,20 @@ function resolvePytestBin(packageDir?: string): string {
   return "pytest";
 }
 
+/**
+ * Substitute `{{files}}` / `{{file}}` / `{{FILE}}` in a command template with a
+ * single resolved test path. Shared by `buildAcceptanceRunCommand` (per-argv-part,
+ * for the actual exec) and `resolveAcceptanceFixTarget` (whole-string, for the
+ * fix-role prompt) — one regex set so the placeholder dialect can't drift between
+ * the two call sites.
+ */
+export function substituteAcceptanceTestPath(command: string, testPath: string): string {
+  return command
+    .replace(/\{\{files\}\}/g, testPath)
+    .replace(/\{\{file\}\}/g, testPath)
+    .replace(/\{\{FILE\}\}/g, testPath);
+}
+
 export function buildAcceptanceRunCommand(
   testPath: string,
   testFramework?: string,
@@ -54,12 +68,7 @@ export function buildAcceptanceRunCommand(
     return commandOverride
       .trim()
       .split(/\s+/)
-      .map((part) =>
-        part
-          .replace(/\{\{files\}\}/g, testPath)
-          .replace(/\{\{file\}\}/g, testPath)
-          .replace(/\{\{FILE\}\}/g, testPath),
-      );
+      .map((part) => substituteAcceptanceTestPath(part, testPath));
   }
 
   switch (testFramework?.toLowerCase()) {

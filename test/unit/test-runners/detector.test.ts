@@ -49,6 +49,29 @@ describe("buildTestFrameworkHint", () => {
     expect(buildTestFrameworkHint("  pytest -v  ")).toBe("Use pytest");
     expect(buildTestFrameworkHint("  go test ./...  ")).toBe("Use Go's testing package");
   });
+
+  // #1939: a scoped command commonly carries leading env assignments (this
+  // repo's testScoped is "CI=1 AGENT=1 bun test --timeout=60000 {{files}}"),
+  // which used to miss every branch below and fall through to the generic hint.
+  test("strips leading env assignments before matching bun", () => {
+    expect(buildTestFrameworkHint("CI=1 AGENT=1 bun test --timeout=60000 /abs/x.test.ts")).toBe(
+      "Use Bun test (describe/test/expect)",
+    );
+    expect(buildTestFrameworkHint("CI=1 bun test")).toBe("Use Bun test (describe/test/expect)");
+  });
+
+  test("strips leading env assignments before matching pytest", () => {
+    expect(buildTestFrameworkHint("PYTHONPATH=. CI=1 pytest -x src/")).toBe("Use pytest");
+  });
+
+  test("falls through to the generic hint when the command is only env assignments (#543)", () => {
+    expect(buildTestFrameworkHint("CI=1 AGENT=1")).toBe("Use your project's test framework");
+  });
+
+  test("empty command still returns the generic hint unchanged (#543)", () => {
+    expect(buildTestFrameworkHint("")).toBe("Use your project's test framework");
+    expect(buildTestFrameworkHint("   ")).toBe("Use your project's test framework");
+  });
 });
 
 describe("detectFramework — rust & mocha", () => {
