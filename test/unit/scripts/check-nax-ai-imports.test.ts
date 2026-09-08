@@ -59,4 +59,30 @@ describe("check-nax-ai-imports", () => {
     rmSync(root, { recursive: true, force: true });
     expect(code).toBe(0);
   });
+
+  // US-001: the gate admits a second prefix (`src/agents/catalog/`) so the
+  // non-native side of nax can hold the @nathapp/nax-ai boundary without
+  // creating a cost <-> native cycle. Without this assertion the catalogue's
+  // own import would silently fail the gate.
+  test("passes when nax-ai is imported only from src/agents/catalog", () => {
+    const root = tree({
+      "src/agents/catalog/lookup.ts": 'import { defaultProviders } from "@nathapp/nax-ai";\n',
+      "src/agents/registry.ts": 'import { CatalogLookup } from "./catalog";\n',
+    });
+    const { code, out } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).toBe(0);
+    expect(out).toContain("clean");
+  });
+
+  test("passes when nax-ai is imported from BOTH native and catalog prefixes", () => {
+    const root = tree({
+      "src/agents/native/client.ts": 'import { createClient } from "@nathapp/nax-ai";\n',
+      "src/agents/catalog/lookup.ts": 'import { defaultProviders } from "@nathapp/nax-ai";\n',
+      "src/agents/registry.ts": 'import { CatalogLookup } from "./catalog";\n',
+    });
+    const { code } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).toBe(0);
+  });
 });
