@@ -16,6 +16,7 @@ function toolWithTouchedPaths(touchedPaths: string[]) {
     repoRoot: "/repo",
     packageWorkdir: "/repo/packages/foo",
     allowScripts: false,
+    patterns: ["bun add*"],
     touchedPaths,
   };
   return createRunCommandTool(new Map(), { exec });

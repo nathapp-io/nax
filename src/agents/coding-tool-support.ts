@@ -75,7 +75,8 @@ export function buildCodingToolSupport(args: {
   // must never reach runtime.advertised() itself, or the lookup for a tool
   // named "Exec" would simply fail and the marker would vanish from the
   // advertised set without a trace of why.
-  const allowExec = args.declared.includes(EXEC_TOOL_NAME) && grants.some((grant) => grant.tool === EXEC_TOOL_NAME);
+  const execGrant = grants.find((grant) => grant.tool === EXEC_TOOL_NAME);
+  const allowExec = args.declared.includes(EXEC_TOOL_NAME) && execGrant !== undefined;
   const advertised = args.declared.filter((name) => name !== EXEC_TOOL_NAME);
 
   const declaredCommands = args.declaredCommands ?? new Map<string, string>();
@@ -108,6 +109,14 @@ export function buildCodingToolSupport(args: {
                       packageWorkdir: args.root,
                       allowScripts: args.allowScripts ?? false,
                       touchedPaths: execTouchedPaths,
+                      // The compiled grant, not BUILT_IN_EXEC_PATTERNS -- a
+                      // project's own Exec(...) expression replaces that
+                      // list rather than extending it (see the comment on
+                      // BUILT_IN_EXEC_PATTERNS in src/config/permissions.ts).
+                      // `allowExec` is true only when execGrant is defined,
+                      // so this array is never actually empty at this call
+                      // site; the fallback exists only for the type.
+                      patterns: execGrant?.patterns ?? [],
                       ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
                     },
                   }
