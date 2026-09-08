@@ -25,15 +25,27 @@ describe("substituteCommand", () => {
     expect(substituteCommand("CI=1 bun test {{files}}", { files: "a.ts" })).toBe("CI=1 bun test 'a.ts'");
   });
 
-  test("refuses a placeholder the template does not declare", () => {
+  test("refuses a placeholder the template does not declare, naming the declared set", () => {
     expect(substituteCommand("bun test {{files}}", { nope: "x" })).toEqual({
-      error: 'value "nope" is not a placeholder in this command',
+      error: 'value "nope" is not a placeholder in this command (declared: files)',
     });
   });
 
-  test("refuses when a declared placeholder is left unfilled", () => {
+  test("refuses when a declared placeholder is left unfilled, naming the declared set", () => {
     expect(substituteCommand("bun test {{files}}", {})).toEqual({
-      error: "placeholder {{files}} has no value",
+      error: "placeholder {{files}} has no value (declared: files)",
+    });
+  });
+
+  test("names all declared placeholders, not just the offending one", () => {
+    expect(substituteCommand("bun test {{files}} {{grep}}", { nope: "x" })).toEqual({
+      error: 'value "nope" is not a placeholder in this command (declared: files, grep)',
+    });
+  });
+
+  test("a command with no placeholders reads naturally rather than printing an empty list", () => {
+    expect(substituteCommand("bun test", { nope: "x" })).toEqual({
+      error: 'value "nope" is not a placeholder in this command (this command declares no placeholders)',
     });
   });
 
@@ -47,6 +59,87 @@ describe("substituteCommand", () => {
     expect(substituteCommand("printf '%s\\n' $({{files}})", { files: "printf PWNED" })).toEqual({
       error: "placeholder {{files}} may not appear in a shell expansion",
     });
+  });
+});
+
+// #1924: the model guessed a placeholder key 22 times across three runs (18 of
+// them one session repeating the identical rejected call) because nothing --
+// neither the error nor the tool description -- ever told it which
+// placeholders a declared command actually has. The error-message half is
+// covered above; this covers the description, which is what lets the model
+// avoid the failed call altogether.
+describe("createRunCommandTool description names each command's placeholders", () => {
+  test("a command with a placeholder shows it inline", () => {
+    const tool = createRunCommandTool(new Map([["testScoped", "bun test {{files}}"]]));
+    expect(tool.description).toContain("testScoped ({{files}})");
+  });
+
+  test("a command with no placeholders reads naturally rather than printing empty parens", () => {
+    const tool = createRunCommandTool(new Map([["test", "bun test"]]));
+    expect(tool.description).toContain("test (no placeholders)");
+  });
+
+  test("multiple declared commands are each rendered with their own placeholders", () => {
+    const tool = createRunCommandTool(
+      new Map([
+        ["test", "bun test"],
+        ["testScoped", "bun test {{files}}"],
+      ]),
+    );
+    expect(tool.description).toContain("test (no placeholders)");
+    expect(tool.description).toContain("testScoped ({{files}})");
+  });
+
+  test("a command with several placeholders lists all of them", () => {
+    const tool = createRunCommandTool(new Map([["lint", "bun lint {{files}} --grep {{grep}}"]]));
+    expect(tool.description).toContain("lint ({{files}}, {{grep}})");
+  });
+
+  test("the non-exec description also renders placeholders, not bare keys", () => {
+    const tool = createRunCommandTool(new Map([["testScoped", "bun test {{files}}"]]));
+    expect(tool.description).not.toContain("declared commands: testScoped.");
+    expect(tool.description).toContain("testScoped ({{files}})");
+  });
+});
+
+// #1937 (first half): the argv branch's description advertised "only some
+// commands and forms are permitted" without ever naming them. Across three
+// runs the model guessed 32 times and was denied every time. The description
+// must name the actual compiled grant -- which may be a project override, not
+// the built-in list -- so the model can pick a legal form on the first try.
+describe("createRunCommandTool description names the Exec allowlist", () => {
+  function execTool(patterns: readonly string[]) {
+    return createRunCommandTool(new Map([["test", "bun test"]]), {
+      exec: {
+        repoRoot: "/repo",
+        packageWorkdir: "/repo",
+        allowScripts: false,
+        patterns,
+      },
+    });
+  }
+
+  test("no allowlist text appears when the Exec branch is not active", () => {
+    const tool = createRunCommandTool(new Map([["test", "bun test"]]));
+    expect(tool.description).not.toContain("permitted");
+    expect(tool.description).not.toContain("argv");
+  });
+
+  test("names the built-in install patterns when that is the compiled grant", () => {
+    const tool = execTool(["bun install", "bun add*", "npm ci"]);
+    expect(tool.description).toContain("bun install, bun add*, npm ci");
+  });
+
+  test("names a project-overridden grant, not the built-in list", () => {
+    const tool = execTool(["bun x tsc*"]);
+    expect(tool.description).toContain("bun x tsc*");
+    expect(tool.description).not.toContain("bun add*");
+  });
+
+  test('an unconditional "*" grant reads as any command permitted, not a literal asterisk', () => {
+    const tool = execTool(["*"]);
+    expect(tool.description).toMatch(/any command is permitted/i);
+    expect(tool.description).not.toMatch(/permitted forms:.*\*/);
   });
 });
 

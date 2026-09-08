@@ -43,6 +43,18 @@ export interface RunCommandExecOptions {
    * entirely means no carve-out is offered for this session.
    */
   readonly touchedPaths?: string[];
+  /**
+   * The Exec tool's compiled grant patterns, as `resolvePermissions` produced
+   * them for THIS project/stage -- not `BUILT_IN_EXEC_PATTERNS` imported
+   * directly, because a project's own `Exec(...)` expression REPLACES that
+   * built-in list rather than extending it (see the comment on
+   * `BUILT_IN_EXEC_PATTERNS` in src/config/permissions.ts). Read only to
+   * render the tool description (#1937): the policy check itself still runs
+   * against the runtime's own compiled grant in policy.ts, so this field
+   * being stale or absent could make the description wrong but can never
+   * widen what actually executes.
+   */
+  readonly patterns: readonly string[];
 }
 
 export interface RunCommandToolOptions {
@@ -89,17 +101,57 @@ function placeholderContextError(template: string): string | undefined {
   return undefined;
 }
 
+// A bare "no" is what produced the defect this exists to fix (#1924): denied
+// with no legal alternative named, the model repeated the identical rejected
+// call 18 times in one session because it was never told the placeholder
+// set. Matches git.ts's "valid for: ..." phrasing convention. A command with
+// no placeholders reads naturally rather than printing "(declared: )".
+function declaredPlaceholdersSuffix(declared: ReadonlySet<string>): string {
+  if (declared.size === 0) return "this command declares no placeholders";
+  return `declared: ${[...declared].join(", ")}`;
+}
+
 export function substituteCommand(template: string, values: Record<string, string>): string | { error: string } {
   const declared = new Set([...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string));
   for (const key of Object.keys(values)) {
-    if (!declared.has(key)) return { error: `value "${key}" is not a placeholder in this command` };
+    if (!declared.has(key)) {
+      return { error: `value "${key}" is not a placeholder in this command (${declaredPlaceholdersSuffix(declared)})` };
+    }
   }
   for (const key of declared) {
-    if (values[key] === undefined) return { error: `placeholder {{${key}}} has no value` };
+    if (values[key] === undefined) {
+      return { error: `placeholder {{${key}}} has no value (${declaredPlaceholdersSuffix(declared)})` };
+    }
   }
   const contextError = placeholderContextError(template);
   if (contextError !== undefined) return { error: contextError };
   return template.replaceAll(PLACEHOLDER, (_m, key: string) => shellQuoteArg(values[key] as string));
+}
+
+// #1924, second half: the description-only fix, which is what prevents the
+// repeated-call loop rather than merely explaining it after the first
+// failure. Renders each declared command with the placeholders its OWN
+// template actually contains, so the model can pick values before it
+// guesses -- e.g. "test (no placeholders), testScoped ({{files}})".
+function describeDeclaredCommand(name: string, template: string): string {
+  const placeholders = [...new Set([...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string))];
+  if (placeholders.length === 0) return `${name} (no placeholders)`;
+  return `${name} (${placeholders.map((p) => `{{${p}}}`).join(", ")})`;
+}
+
+function describeDeclaredCommands(declared: ReadonlyMap<string, string>): string {
+  return [...declared.entries()].map(([name, template]) => describeDeclaredCommand(name, template)).join(", ");
+}
+
+// #1937, first half: name the permitted argv forms instead of the bare "only
+// some commands and forms are permitted", which the model guessed against 32
+// times, denied every time, across three runs. `patterns` is the ACTUAL
+// compiled Exec grant for this project/stage (see RunCommandExecOptions),
+// never the built-in constant, so an overridden grant is described honestly.
+function describeExecAllowlist(patterns: readonly string[]): string {
+  if (patterns.includes("*")) return "any command is permitted";
+  if (patterns.length === 0) return "no forms are currently granted";
+  return `permitted forms: ${patterns.join(", ")}`;
 }
 
 export function createRunCommandTool(
@@ -107,14 +159,17 @@ export function createRunCommandTool(
   opts: RunCommandToolOptions = {},
 ): CodingTool {
   const keys = [...declared.keys()];
-  const hasExec = opts.exec !== undefined;
+  const exec = opts.exec;
+  const hasExec = exec !== undefined;
+  const commandDescriptions = describeDeclaredCommands(declared);
   return {
     name: "RunCommand",
     // A non-zero exit here is the agent's red/green loop, not a fault.
     routineErrors: true,
-    description: hasExec
-      ? `Two ways to run something. (1) Run one of this project's declared commands: ${keys.join(", ")} — supply "command" and, optionally, "values" for its placeholders. (2) Run an allowlisted external command via "argv" (an array, e.g. ["bun","add","left-pad"]) — no shell, so no quoting and no shell metacharacters; only some commands and forms are permitted. Supply exactly one of "command" or "argv".`
-      : `Run one of this project's declared commands: ${keys.join(", ")}. Supply values for its placeholders; you cannot write a command of your own.`,
+    description:
+      exec !== undefined
+        ? `Two ways to run something. (1) Run one of this project's declared commands: ${commandDescriptions} — supply "command" and, optionally, "values" for its placeholders. (2) Run an allowlisted external command via "argv" (an array, e.g. ["bun","add","left-pad"]) — no shell, so no quoting and no shell metacharacters; ${describeExecAllowlist(exec.patterns)}. Supply exactly one of "command" or "argv".`
+        : `Run one of this project's declared commands: ${commandDescriptions}. Supply values for its placeholders; you cannot write a command of your own.`,
     inputSchema: {
       type: "object",
       properties: {

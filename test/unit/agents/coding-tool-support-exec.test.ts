@@ -43,6 +43,43 @@ describe("buildCodingToolSupport with Exec", () => {
     expect(runCommand?.inputSchema.properties).not.toHaveProperty("argv");
     expect(runCommand?.inputSchema.required).toEqual(["command"]);
   });
+
+  // #1937 (first half): the RunCommand description's argv allowlist must
+  // reflect the ACTUAL compiled Exec grant, since a project's own `Exec(...)`
+  // expression replaces the built-in list entirely (src/config/permissions.ts
+  // comment at BUILT_IN_EXEC_PATTERNS). Threading `grants.find(...).patterns`
+  // through, rather than importing the built-in constant, is what keeps the
+  // description honest for such a project.
+  test("threads the compiled Exec grant's patterns into RunCommand's description", () => {
+    const support = buildCodingToolSupport({
+      root: "/repo",
+      repoRoot: "/repo",
+      grants: [
+        { tool: "RunCommand", patterns: ["*"] },
+        { tool: "Exec", patterns: ["bun install", "bun add*"] },
+      ],
+      declared: ["RunCommand", "Exec"],
+      declaredCommands: new Map([["test", "bun test"]]),
+    });
+    const runCommand = support?.tools.find((tool) => tool.name === "RunCommand");
+    expect(runCommand?.description).toContain("bun install, bun add*");
+  });
+
+  test("a project-overridden Exec grant is what appears, not the built-in list", () => {
+    const support = buildCodingToolSupport({
+      root: "/repo",
+      repoRoot: "/repo",
+      grants: [
+        { tool: "RunCommand", patterns: ["*"] },
+        { tool: "Exec", patterns: ["bun x tsc*"] },
+      ],
+      declared: ["RunCommand", "Exec"],
+      declaredCommands: new Map([["test", "bun test"]]),
+    });
+    const runCommand = support?.tools.find((tool) => tool.name === "RunCommand");
+    expect(runCommand?.description).toContain("bun x tsc*");
+    expect(runCommand?.description).not.toContain("bun add*");
+  });
 });
 
 describe("resolvePackageName", () => {

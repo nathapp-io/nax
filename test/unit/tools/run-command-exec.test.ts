@@ -6,7 +6,12 @@ import { EXEC_TIMEOUT_MS } from "@/tools/run-command-exec";
 import { createCodingToolRuntime } from "@/tools/runtime";
 
 const ctx: ToolRunContext = { root: "/repo", resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 };
-const exec: RunCommandExecOptions = { repoRoot: "/repo", packageWorkdir: "/repo", allowScripts: false };
+const exec: RunCommandExecOptions = {
+  repoRoot: "/repo",
+  packageWorkdir: "/repo",
+  allowScripts: false,
+  patterns: ["bun add*"],
+};
 
 function tool() {
   return createRunCommandTool(new Map([["test", "bun test"]]), { exec });
