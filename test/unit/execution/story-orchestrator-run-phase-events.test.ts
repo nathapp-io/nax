@@ -16,7 +16,7 @@ import { _storyOrchestratorDeps, runPhase } from "@/execution";
 import type { AnySlot } from "@/execution/story-orchestrator";
 import type { CallContext } from "@/operations";
 import { pipelineEventBus, type StoryPhaseCompletedEvent } from "@/pipeline";
-import type { CostScopeHandle } from "@/runtime";
+import type { CostScopeHandle, NaxRuntime } from "@/runtime";
 
 /**
  * The op slot `runPhase` accepts, NOT `callOp`'s parameter. `callOp` takes the
@@ -54,6 +54,36 @@ function makeOp(name: string): AnyOp {
 
 function makeSlot(opName: string) {
   return { op: makeOp(opName), input: {} };
+}
+
+/**
+ * #1960 — stub openScope so the phase's scope snapshot reports exactly the
+ * halves the test seeds. `openScope`'s own error handling is covered in
+ * cost-aggregator.test.ts; here the snapshot's contents are the fixture.
+ */
+function withScopeSnapshot(runtime: NaxRuntime, snap: { totalCostUsd: number; totalErrorCostUsd: number }): void {
+  const realOpenScope = runtime.costAggregator.openScope.bind(runtime.costAggregator);
+  runtime.costAggregator.openScope = ((scopeId?: string): CostScopeHandle => {
+    const handle = realOpenScope(scopeId);
+    return {
+      scopeId: handle.scopeId,
+      snapshot: () => ({
+        ...handle.snapshot(),
+        ...snap,
+      }),
+      close: handle.close,
+    };
+  }) as typeof runtime.costAggregator.openScope;
+}
+
+function ctxWithRuntime(runtime: NaxRuntime): CallContext {
+  return {
+    runtime,
+    packageView: runtime.packages.repo(),
+    packageDir: "/tmp/x",
+    agentName: "claude",
+    storyId: "US-002",
+  };
 }
 
 const origCallOp = _storyOrchestratorDeps.callOp;
@@ -355,5 +385,56 @@ describe("runPhase — story:phase:completed event emission", () => {
     const output = await runPhase(ctx, makeSlot("verifier"), {}, {});
     expect(output).toEqual({ passed: true });
     unsub();
+  });
+
+  test("#1960: costUsd folds failed-dispatch spend and errorCostUsd names the failed half", async () => {
+    const runtime = makeTestRuntime();
+    // The phase's scope recorded a successful 0.02 row and a failed 0.005 row.
+    withScopeSnapshot(runtime, { totalCostUsd: 0.02, totalErrorCostUsd: 0.005 });
+    _storyOrchestratorDeps.callOp = (async () => ({ passed: true })) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
+
+    const events: Array<{ costUsd: number; errorCostUsd?: number }> = [];
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      events.push({ costUsd: e.costUsd, errorCostUsd: e.errorCostUsd });
+    });
+
+    await runPhase(ctxWithRuntime(runtime), makeSlot("verifier"), {}, {});
+    unsub();
+
+    expect(events[0]?.costUsd).toBe(0.025);
+    expect(events[0]?.errorCostUsd).toBe(0.005);
+  });
+
+  test("#1960: errorCostUsd is absent when the phase had no failed dispatch", async () => {
+    // Same harness, aggregator seeded with a successful row only.
+    const runtime = makeTestRuntime();
+    withScopeSnapshot(runtime, { totalCostUsd: 0.02, totalErrorCostUsd: 0 });
+    _storyOrchestratorDeps.callOp = (async () => ({ passed: true })) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
+
+    const events: Array<{ costUsd: number; errorCostUsd?: number }> = [];
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      events.push({ costUsd: e.costUsd, errorCostUsd: e.errorCostUsd });
+    });
+
+    await runPhase(ctxWithRuntime(runtime), makeSlot("verifier"), {}, {});
+    unsub();
+
+    expect(events[0]?.costUsd).toBe(0.02);
+    expect(events[0]?.errorCostUsd).toBeUndefined();
+  });
+
+  test("#1960: phaseCosts accumulates total spend, not successful spend", async () => {
+    const runtime = makeTestRuntime();
+    withScopeSnapshot(runtime, { totalCostUsd: 0.02, totalErrorCostUsd: 0.005 });
+    _storyOrchestratorDeps.callOp = (async () => ({ passed: true })) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
+
+    const opName = "verifier";
+    const phaseCosts: Record<string, number> = {};
+    await runPhase(ctxWithRuntime(runtime), makeSlot(opName), phaseCosts, {});
+
+    expect(phaseCosts[opName]).toBe(0.025);
   });
 });

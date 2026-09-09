@@ -15,6 +15,7 @@ import {
   prepareSemanticReviewInput,
   recordReviewIteration,
 } from "@/review";
+import { totalSpendUsd } from "@/runtime";
 import { errorMessage } from "@/utils/errors";
 import { _gitDeps, captureGitRef } from "@/utils/git";
 import { captureTreeState as realCaptureTreeState } from "../checkpoint/resume-hydrate";
@@ -333,7 +334,12 @@ export async function runPhase(
     throw err;
   } finally {
     const snapshot = scope.snapshot();
-    phaseCosts[opName] = (phaseCosts[opName] ?? 0) + snapshot.totalCostUsd;
+    // #1960: phaseCosts means total spend. Nothing is threaded for the failed
+    // half -- phaseCosts is a flat number map that non-blocking-fix snapshots
+    // and restores by mutation, and a parallel map would have to be restored in
+    // lockstep. The split rides on the event below instead.
+    const phaseSpend = totalSpendUsd(snapshot);
+    phaseCosts[opName] = (phaseCosts[opName] ?? 0) + phaseSpend;
     scope.close();
     if (ctx.storyId) {
       const phaseDetails = buildPhaseDetails(
@@ -350,7 +356,8 @@ export async function runPhase(
         phase: opName,
         outcome,
         durationMs: Date.now() - phaseStartedAt,
-        costUsd: snapshot.totalCostUsd,
+        costUsd: phaseSpend,
+        ...(snapshot.totalErrorCostUsd > 0 ? { errorCostUsd: snapshot.totalErrorCostUsd } : {}),
         ...(ctx.phaseTelemetry
           ? {
               tier: ctx.phaseTelemetry.tier,

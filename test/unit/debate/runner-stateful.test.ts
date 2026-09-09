@@ -510,6 +510,7 @@ describe("runStateful() — two-scope cost tracking (US-005)", () => {
           totalOutputTokens: 0,
           callCount: 0,
           errorCount: 0,
+          totalErrorCostUsd: 0,
         }),
         close: mock(() => {
           closed.push(scopeId);

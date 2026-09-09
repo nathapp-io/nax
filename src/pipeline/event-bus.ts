@@ -56,6 +56,8 @@ export interface StoryCompletedEvent {
   runElapsedMs: number;
   /** Optional: passed by executor/stage for hook/reporter subscribers */
   cost?: number;
+  /** The failed-dispatch half of `cost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
   modelTier?: string;
   testStrategy?: string;
 }
@@ -69,8 +71,10 @@ export interface StoryFailedEvent {
   /** Optional: passed by executor for interaction subscriber */
   feature?: string;
   attempts?: number;
-  /** Total cost accumulated across all attempts for this story. */
+  /** Total spend across all attempts for this story — successful plus failed-dispatch spend. */
   cost?: number;
+  /** The failed-dispatch half of `cost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
 }
 
 export interface RegressionDetectedEvent {
@@ -129,7 +133,10 @@ export interface StoryPausedEvent {
   type: "story:paused";
   storyId: string;
   reason: string;
+  /** Total spend for this story — successful plus failed-dispatch spend. */
   cost: number;
+  /** The failed-dispatch half of `cost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
 }
 
 export interface StorySkippedEvent {
@@ -171,7 +178,10 @@ export interface StoryPhaseCompletedEvent {
   phase: string;
   outcome: "passed" | "failed" | "skipped" | "error";
   durationMs: number;
+  /** Total spend for this phase — successful plus failed-dispatch spend. */
   costUsd: number;
+  /** The failed-dispatch half of `costUsd` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
   tier?: string;
   testStrategy?: TestStrategy;
   sessionModel?: "single-session" | "three-session";

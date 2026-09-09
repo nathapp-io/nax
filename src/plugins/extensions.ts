@@ -336,7 +336,10 @@ export interface StoryCompleteEvent {
   storyId: string;
   status: "completed" | "failed" | "skipped" | "paused";
   runElapsedMs: number;
+  /** Total spend for this story — successful plus failed-dispatch spend. */
   cost: number;
+  /** The failed-dispatch half of `cost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
   tier: string;
   testStrategy: string;
 }
@@ -347,7 +350,10 @@ export interface StoryCompleteEvent {
 export interface RunEndEvent {
   runId: string;
   totalDurationMs: number;
+  /** Every dollar the run accounted for — successful plus failed-dispatch spend. */
   totalCost: number;
+  /** The failed-dispatch half of `totalCost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
   storySummary: {
     completed: number;
     failed: number;

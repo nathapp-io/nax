@@ -194,6 +194,7 @@ describe("deriveRunFallbackAggregates — exhausted rule is reachable (#1709)", 
     const failed = synthesizeBackfillMetric({
       storyId: "US-001",
       story: makeStory({ id: "US-001", status: "failed", attempts: 2 }),
+      errorCostUsd: 0,
       totalCostUsd: 2,
       config: makeNaxConfig(),
       defaultAgent: "claude",

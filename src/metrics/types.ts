@@ -150,8 +150,13 @@ export interface StoryMetrics {
   finalTier: string;
   /** Whether the story succeeded */
   success: boolean;
-  /** Total cost for this story (including all attempts) */
+  /** Total spend for this story (all attempts) — successful plus failed-dispatch spend. */
   cost: number;
+  /**
+   * The failed-dispatch half of `cost` (#1960). Absent when nothing threw, so
+   * its presence always means real money went to work that produced nothing.
+   */
+  errorCostUsd?: number;
   /** Total duration in milliseconds */
   durationMs: number;
   /** Whether it passed on the first attempt */

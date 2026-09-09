@@ -91,6 +91,7 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
     storiesCompleted: lastRun.storiesCompleted,
     storiesFailed: lastRun.storiesFailed,
     totalCost: lastRun.totalCost,
+    ...(lastRun.errorCostUsd !== undefined ? { errorCostUsd: lastRun.errorCostUsd } : {}),
     avgCostPerStory: reportedLastRun?.avgCostPerStory ?? 0,
   });
 

@@ -158,6 +158,7 @@ export function wireReporters(
                 status: "completed",
                 runElapsedMs: ev.runElapsedMs,
                 cost: ev.cost ?? 0,
+                ...(ev.errorCostUsd !== undefined ? { errorCostUsd: ev.errorCostUsd } : {}),
                 tier: ev.modelTier ?? "balanced",
                 testStrategy: ev.testStrategy ?? "test-after",
               });
@@ -183,7 +184,8 @@ export function wireReporters(
                 storyId: ev.storyId,
                 status: "failed",
                 runElapsedMs: Date.now() - startTime,
-                cost: 0,
+                cost: ev.cost ?? 0,
+                ...(ev.errorCostUsd !== undefined ? { errorCostUsd: ev.errorCostUsd } : {}),
                 tier: "balanced",
                 testStrategy: "test-after",
               });
@@ -209,7 +211,8 @@ export function wireReporters(
                 storyId: ev.storyId,
                 status: "paused",
                 runElapsedMs: Date.now() - startTime,
-                cost: 0,
+                cost: ev.cost ?? 0,
+                ...(ev.errorCostUsd !== undefined ? { errorCostUsd: ev.errorCostUsd } : {}),
                 tier: "balanced",
                 testStrategy: "test-after",
               });
@@ -257,6 +260,7 @@ export function wireReporters(
                 runId,
                 totalDurationMs: Date.now() - startTime,
                 totalCost: ev.totalCost ?? 0,
+                ...(ev.errorCostUsd !== undefined ? { errorCostUsd: ev.errorCostUsd } : {}),
                 storySummary: {
                   completed: ev.passedStories,
                   failed: ev.failedStories,

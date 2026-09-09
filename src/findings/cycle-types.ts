@@ -31,13 +31,13 @@ export interface FixApplied {
   /** Set when the agent explicitly signals it cannot resolve the findings. Triggers agent-gave-up exit. */
   unresolved?: string;
   /**
-   * Successful-dispatch spend for this fix, read from the run's cost ledger
-   * (#1932) unless the strategy's `extractApplied` supplied its own. Populated
-   * on every fix since #1932 — the `?` is retained only for the records the
-   * cycle's own exit paths build without a dispatch.
+   * Total spend for this fix — successful plus failed-dispatch (#1960) — read
+   * from the run's cost ledger (#1932) unless the strategy's `extractApplied`
+   * supplied its own. Populated on every fix since #1932 — the `?` is retained
+   * only for the records the cycle's own exit paths build without a dispatch.
    *
-   * Excludes failed-dispatch spend, mirroring `runPhase`'s `phaseCosts`; that
-   * spend is carried beside it in `errorCostUsd`. See cycle-cost.ts.
+   * Folds failed-dispatch spend, mirroring `runPhase`'s `phaseCosts`; the
+   * failed half is still carried beside it in `errorCostUsd`. See cycle-cost.ts.
    */
   costUsd?: number;
   /**
@@ -45,10 +45,10 @@ export interface FixApplied {
    * `callOp`'s retry loop keys under the same `callId` as the attempt that
    * eventually succeeded (#1948).
    *
-   * Deliberately a sibling of `costUsd` rather than part of it: folding the two
-   * together would re-base every run total that consumes `costUsd` against its
-   * own history. Omitted (rather than zero) when nothing failed, so its presence
-   * always means a dispatch attempt actually threw.
+   * The failed half of `costUsd`, which folds it in (#1960); carried here so
+   * wasted spend stays measurable, exactly like `RunMetrics.errorCostUsd`.
+   * Omitted (rather than zero) when nothing failed, so its presence always
+   * means a dispatch attempt actually threw.
    *
    * Unlike `costUsd`, a strategy's `extractApplied` cannot override this: it
    * knows what its successful call billed, not what the attempts that threw

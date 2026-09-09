@@ -10,6 +10,7 @@
 import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
 import { markStoryFailed, markStoryPaused, savePRD } from "@/prd";
+import { storySpendUsd } from "@/runtime";
 import type { FailureCategory } from "@/tdd/types";
 import { appendProgress } from "../progress";
 import { verifyEscalationQuotes } from "./quote-integrity";
@@ -47,11 +48,13 @@ export async function handleNoTierAvailable(
       );
     }
 
+    const spend = storySpendUsd(ctx.runtime?.costAggregator, ctx.story.id, ctx.totalCost);
     pipelineEventBus.emit({
       type: "story:paused",
       storyId: ctx.story.id,
       reason: pauseReason,
-      cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
+      cost: spend.cost,
+      ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
     });
 
     return { outcome: "paused", prdDirty: true, prd: pausedPrd };
@@ -70,13 +73,15 @@ export async function handleNoTierAvailable(
     await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — Execution failed`);
   }
 
+  const spend = storySpendUsd(ctx.runtime?.costAggregator, ctx.story.id, ctx.totalCost);
   pipelineEventBus.emit({
     type: "story:failed",
     storyId: ctx.story.id,
     story: { id: ctx.story.id, title: ctx.story.title, status: ctx.story.status, attempts: ctx.story.attempts },
     reason: "Execution failed",
     countsTowardEscalation: true,
-    cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
+    cost: spend.cost,
+    ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
   });
 
   return { outcome: "failed", prdDirty: true, prd: failedPrd };
@@ -113,11 +118,13 @@ export async function handleMaxAttemptsReached(
       );
     }
 
+    const spend = storySpendUsd(ctx.runtime?.costAggregator, ctx.story.id, ctx.totalCost);
     pipelineEventBus.emit({
       type: "story:paused",
       storyId: ctx.story.id,
       reason: pauseReason,
-      cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
+      cost: spend.cost,
+      ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
     });
 
     return { outcome: "paused", prdDirty: true, prd: pausedPrd };
@@ -137,13 +144,15 @@ export async function handleMaxAttemptsReached(
     await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — Max attempts reached`);
   }
 
+  const spend = storySpendUsd(ctx.runtime?.costAggregator, ctx.story.id, ctx.totalCost);
   pipelineEventBus.emit({
     type: "story:failed",
     storyId: ctx.story.id,
     story: { id: ctx.story.id, title: ctx.story.title, status: ctx.story.status, attempts: ctx.story.attempts },
     reason: "Max attempts reached",
     countsTowardEscalation: true,
-    cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
+    cost: spend.cost,
+    ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
   });
 
   return { outcome: "failed", prdDirty: true, prd: failedPrd };

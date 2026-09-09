@@ -88,11 +88,9 @@ export async function dispatchStrategy<F extends Finding>(
   }
 
   const extracted = await (strategy.extractApplied?.(output, input) ?? {});
-  // #1932/#1948: read both halves of the dispatch's real spend. An explicit
-  // `extractApplied.costUsd` still wins for the successful half — but only that
-  // half: a strategy that knows its own cost knows what its successful call
-  // billed, not what the attempts that threw before it burned, so the ledger
-  // remains the only source for `errorCostUsd`.
+  // #1932/#1960: the ledger read below already folds the failed half into
+  // `costUsd`. How an explicit `extractApplied.costUsd` interacts with that
+  // fold is the override further down.
   const spend = ledgerSpendFor(fixCtx, dispatchCallId);
   return {
     strategyName: strategy.name,
@@ -100,7 +98,12 @@ export async function dispatchStrategy<F extends Finding>(
     targetFiles: extracted.targetFiles ?? [],
     summary: extracted.summary ?? "",
     ...(extracted.unresolved ? { unresolved: extracted.unresolved } : {}),
-    costUsd: extracted.costUsd ?? spend.costUsd,
+    // A strategy that reports its own cost knows what its successful call
+    // billed, not what the attempts that threw before it burned -- so the
+    // ledger's failed half is added on top of an override rather than replaced.
+    // `spend.costUsd` already includes that half, so the non-override branch
+    // needs no addition.
+    costUsd: extracted.costUsd !== undefined ? extracted.costUsd + spend.errorCostUsd : spend.costUsd,
     ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
   };
 }
