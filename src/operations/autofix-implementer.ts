@@ -5,6 +5,7 @@ import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { ReviewCheckResult } from "../review/types";
+import { storyRoutingModel } from "./story-routing-model";
 import { parseTestEditDeclarations, type TestEditDeclaration } from "./test-edit-declaration";
 import type { RunOperation } from "./types";
 
@@ -43,6 +44,9 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
     "RequestCapability",
   ],
   config: autofixConfigSelector,
+  // Inherit the story's rung so an escalation or a profile pin reaches the fix
+  // cycle too — without this the op fell through to callOp's literal "balanced".
+  model: (input) => storyRoutingModel(input.story),
   build(input, _ctx) {
     const verifierFindings = input.findings?.filter((f) => f.source === "tdd-verifier");
     const useVerifierContext =

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeStory, makeTestRuntime } from "@test/helpers";
+import { makeStory, makeTestRuntime, opModelResolver } from "@test/helpers";
 import { autofixConfigSelector } from "@/config";
 import type { AutofixConfig } from "@/config/selectors";
 import { implementerRectifyOp } from "@/operations";
@@ -47,5 +47,33 @@ CHANGE: a! → a?`;
     const out = implementerRectifyOp.parse(output, input, ctx);
     expect(out.unresolvedReason).toBe("contradictory findings A and B");
     expect(out.testEditDeclarations).toHaveLength(1);
+  });
+});
+
+describe("implementerRectifyOp.model", () => {
+  test("the rectifier runs at the story's escalated tier, not a hardcoded balanced", () => {
+    const story = makeStory({
+      routing: { complexity: "simple", modelTier: "powerful", testStrategy: "tdd-simple", reasoning: "" },
+    });
+
+    expect(opModelResolver(implementerRectifyOp)({ failedChecks: [], story }, makeBuildCtx())).toBe("powerful");
+  });
+
+  test("the rectifier honours a profile's literal pin", () => {
+    const story = makeStory({
+      routing: {
+        complexity: "simple",
+        agent: "native",
+        profileModelPin: "openai-codex/gpt-5.6-terra",
+        modelTier: "balanced",
+        testStrategy: "tdd-simple",
+        reasoning: "",
+      },
+    });
+
+    expect(opModelResolver(implementerRectifyOp)({ failedChecks: [], story }, makeBuildCtx())).toEqual({
+      agent: "native",
+      model: "openai-codex/gpt-5.6-terra",
+    });
   });
 });
