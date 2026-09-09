@@ -28,6 +28,9 @@ export interface EvidenceCheckResult {
   observed?: string;
 }
 
+/** The four possible outcomes of a `checkFindingEvidence` run. */
+export type EvidenceStatus = EvidenceCheckResult["status"];
+
 export const _evidenceDeps = {
   getLogger: getSafeLogger,
 };
@@ -48,6 +51,15 @@ export interface FindingWithEvidence {
     line?: number;
     observed: string;
   };
+  /**
+   * Stamped by the framework during verify() — the outcome of running
+   * `checkFindingEvidence` against this finding, recorded regardless of
+   * whether the finding was blocking. Never authored by the model: any
+   * model-supplied `evidence` value is overwritten before this is set.
+   * Recording the outcome is deliberately separate from acting on it —
+   * only blocking findings are downgraded when it is unfavourable.
+   */
+  evidence?: { status: EvidenceStatus };
 }
 
 export async function substantiateSemanticEvidence(

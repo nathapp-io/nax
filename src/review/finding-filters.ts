@@ -20,6 +20,7 @@ export type {
   ScopeQuoteRejectionCode,
 } from "./ac-quote-validator";
 export { filterByAcGroundingMinimal, filterByAcQuote, filterByScopeQuote } from "./ac-quote-validator";
+export type { EvidenceStatus } from "./semantic-evidence";
 export {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
@@ -78,8 +79,10 @@ export function hasCorroboratedInspectionTrail(
 /**
  * Per-finding adversarial evidence substantiation.
  * Extracted from src/review/adversarial.ts:393-409.
- * Blocking findings whose verifiedBy.observed does not match HEAD are downgraded to
- * "unverifiable". Non-blocking findings pass through unchanged.
+ * Every finding is checked and stamped with its evidence outcome (#1910),
+ * regardless of severity. Blocking findings whose verifiedBy.observed does not
+ * match HEAD are additionally downgraded to "unverifiable". Non-blocking
+ * findings pass through with an unchanged severity and a recorded stamp.
  */
 export async function substantiateAdversarialFindings(opts: {
   findings: AdversarialLLMFinding[];
@@ -91,11 +94,12 @@ export async function substantiateAdversarialFindings(opts: {
   const { findings, workdir, storyId, blockingThreshold, repoRoot } = opts;
   return Promise.all(
     findings.map(async (finding) => {
-      if (!isBlockingSeverity(finding.severity, blockingThreshold)) return finding;
       const evidence = await checkFindingEvidence({ finding, workdir, repoRoot });
-      if (evidence.status !== "unmatched" && evidence.status !== "missing-observed") return finding;
+      const stamped = { ...finding, evidence: { status: evidence.status } };
+      if (!isBlockingSeverity(finding.severity, blockingThreshold)) return stamped;
+      if (evidence.status !== "unmatched" && evidence.status !== "missing-observed") return stamped;
       return downgradeUnsubstantiatedFinding({
-        finding,
+        finding: stamped,
         storyId,
         event: ADVERSARIAL_FINDING_DOWNGRADED_EVENT,
         file: evidence.file,
