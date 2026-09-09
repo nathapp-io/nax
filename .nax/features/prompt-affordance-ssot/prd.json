@@ -3,7 +3,7 @@
   "feature": "prompt-affordance-ssot",
   "branchName": "feat/prompt-affordance-ssot",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-09T09:27:28.548Z",
+  "updatedAt": "2026-09-09T10:16:58.408Z",
   "userStories": [
     {
       "id": "US-001",
@@ -92,8 +92,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -175,7 +175,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two existing builders are converted to defined registry shapes while retaining their ACP fallback behavior."
+        "reasoning": "Two existing builders are converted to defined registry shapes while retaining their ACP fallback behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/prompts/sections/protocol-region.ts",
@@ -195,7 +198,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "046eb707eff7b189571fb22cb8e4c52d5c19367c"
     },
     {
       "id": "US-004",
