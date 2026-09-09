@@ -44,7 +44,16 @@ export function promptWithToolPreamble(agentName: string, options: AgentRunOptio
  * protocol is derived. Every ACP agent gets the same rendering, so nothing here
  * varies with agent identity, and a future transport would extend the protocol
  * branch rather than add an agent to a list.
+ *
+ * `advertisedTools` (US-002) — required third parameter. A caller that cannot
+ * know the advertised tool set must explicitly say so; a future third
+ * dispatch site that omits the parameter fails at the type seam rather than
+ * silently ungating native rendering.
  */
-export function applyDiffAccessForAgentProtocol(agentName: string, prompt: string): string {
-  return applyDiffAccess(prompt, agentName === NATIVE_AGENT ? "native" : "acp");
+export function applyDiffAccessForAgentProtocol(
+  agentName: string,
+  prompt: string,
+  advertisedTools: readonly string[],
+): string {
+  return applyDiffAccess(prompt, agentName === NATIVE_AGENT ? "native" : "acp", advertisedTools);
 }

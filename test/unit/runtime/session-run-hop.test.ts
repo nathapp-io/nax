@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { cleanupTempDir, makeMockAgentManager, makeSessionManager, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTempDir } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
@@ -345,9 +345,24 @@ describe("createSessionRunHop — interaction budget", () => {
  * that looked configured was never connected. A unit test of the renderer alone
  * would pass in exactly that state, so this asserts on the prompt the session
  * actually receives.
+ *
+ * US-002 — the substitution now happens AFTER coding-tool support resolves.
+ * The advertised set is the gate: native rendering only fires when Git AND
+ * Read are advertised; without either, the hop falls back to the shell body.
+ * The tests below drive both ends of the gate by setting declaredTools +
+ * codingToolRoot on the run options and choosing the right permission profile
+ * via config.
  */
 describe("createSessionRunHop — diff-access substitution", () => {
-  async function promptSentTo(agentName: string): Promise<string> {
+  async function promptSentTo(
+    agentName: string,
+    overrides: {
+      declaredTools?: readonly import("@/tools").CodingToolName[];
+      codingToolRoot?: string;
+      permissionProfile?: "unrestricted" | "safe";
+      config?: AgentRunOptions["config"];
+    } = {},
+  ): Promise<string> {
     const sent: string[] = [];
     const handle: SessionHandle = { id: "nax-session", agentName };
     const turnResult: TurnResult = {
@@ -366,28 +381,123 @@ describe("createSessionRunHop — diff-access substitution", () => {
       closeSession: mock(async () => {}),
     });
 
-    const options = {
-      ...makeRunOptions(),
+    const baseOptions = makeRunOptions();
+    // Build the config: respect an explicit override, otherwise derive from
+    // `permissionProfile` (so the test can pick `safe` vs `unrestricted`
+    // without spelling out the whole NaxConfig slice).
+    const config =
+      overrides.config ??
+      (overrides.permissionProfile
+        ? makeNaxConfig({ execution: { permissionProfile: overrides.permissionProfile } })
+        : undefined);
+    const options: AgentRunOptions = {
+      ...baseOptions,
       prompt: `head\n${wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}tail`,
+      ...(overrides.declaredTools ? { declaredTools: overrides.declaredTools } : {}),
+      ...(overrides.codingToolRoot ? { codingToolRoot: overrides.codingToolRoot } : {}),
+      ...(config ? { config } : {}),
     };
     await createSessionRunHop(sessionManager)(agentName, options);
     return sent[0] ?? "";
   }
 
-  test("a native session receives tool-shaped diff instructions", async () => {
-    const prompt = await promptSentTo("native");
-    expect(prompt).toContain('"subcommand":"diff"');
-    expect(prompt).not.toContain("SHELL BODY");
+  test("a native session with Git+Read advertised receives tool-shaped diff instructions (AC10)", async () => {
+    // AC10 — native dispatch with grants advertising Git + Read → native
+    // rendering. The default `unrestricted` profile grants both; declaredTools
+    // includes them; codingToolRoot is set so resolveCodingToolSupport can
+    // resolve.
+    const root = makeTempDir("nax-hop-ac10-");
+    try {
+      const prompt = await promptSentTo("native", {
+        declaredTools: ["Read", "Glob", "Grep", "Git"],
+        codingToolRoot: root,
+        permissionProfile: "unrestricted",
+      });
+      expect(prompt).toContain('"subcommand":"diff"');
+      expect(prompt).not.toContain("SHELL BODY");
+    } finally {
+      cleanupTempDir(root);
+    }
   });
 
-  test("an ACP session receives the shell body unchanged", async () => {
-    const prompt = await promptSentTo("claude");
+  test("a native session whose grants advertise neither Git nor Read receives the shell body (AC11)", async () => {
+    // AC11 — native dispatch with grants advertising neither required tool
+    // → shell body. The `safe` profile grants Read/Glob/Grep but NOT Git;
+    // declaring Git does NOT make it advertised (the gate is the advertised
+    // set, not the declared list), so Git is dropped and the gate fails.
+    const root = makeTempDir("nax-hop-ac11-");
+    try {
+      const prompt = await promptSentTo("native", {
+        declaredTools: ["Read", "Glob", "Grep", "Git"],
+        codingToolRoot: root,
+        permissionProfile: "safe",
+      });
+      expect(prompt).toContain("SHELL BODY");
+      expect(prompt).not.toContain('"subcommand":"diff"');
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
+
+  test("AC11 (boundary): native + safe profile + declared [Read, Glob, Grep] (no Git) ⇒ shell body", async () => {
+    const root = makeTempDir("nax-hop-ac11b-");
+    try {
+      const prompt = await promptSentTo("native", {
+        declaredTools: ["Read", "Glob", "Grep"],
+        codingToolRoot: root,
+        permissionProfile: "safe",
+      });
+      expect(prompt).toContain("SHELL BODY");
+      expect(prompt).not.toContain('"subcommand":"diff"');
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
+
+  test("an ACP session receives the shell body unchanged regardless of the gating", async () => {
+    // ACP is the agent-side-of-non-native path; gating is irrelevant to it,
+    // and the existing byte-parity suite (test/unit/prompts/diff-access-acp-parity.test.ts)
+    // pins the exact text it receives. The test below only asserts that
+    // a no-tools ACP session still receives the shell body.
+    const prompt = await promptSentTo("claude", {});
     expect(prompt).toContain("SHELL BODY");
   });
 
   test("neither agent is ever shown a marker", async () => {
-    for (const agent of ["native", "claude"]) {
-      expect(await promptSentTo(agent)).not.toContain("nax:diff-access");
+    const root = makeTempDir("nax-hop-marker-");
+    try {
+      for (const agent of ["native", "claude"]) {
+        // Cover both gated and ungated branches in one sweep.
+        const ungated = await promptSentTo(agent, {});
+        const gatedUnrestricted = await promptSentTo(agent, {
+          declaredTools: ["Read", "Glob", "Grep", "Git"],
+          codingToolRoot: root,
+          permissionProfile: "unrestricted",
+        });
+        const gatedSafe = await promptSentTo(agent, {
+          declaredTools: ["Read", "Glob", "Grep", "Git"],
+          codingToolRoot: root,
+          permissionProfile: "safe",
+        });
+        for (const p of [ungated, gatedUnrestricted, gatedSafe]) {
+          expect(p).not.toContain("nax:diff-access");
+        }
+      }
+    } finally {
+      cleanupTempDir(root);
     }
+  });
+
+  test("AC10 (boundary): native without declaredTools falls back to the shell body (no tools declared → no native rendering)", async () => {
+    // Without declaredTools the resolveCodingToolSupport returns undefined —
+    // advertised tools are empty, the gate fails, and the shell body is
+    // returned. This is the contract that "do not silently ungate" pins.
+    const prompt = await promptSentTo("native", {
+      declaredTools: undefined,
+      codingToolRoot: undefined,
+      permissionProfile: "unrestricted",
+    });
+    expect(prompt).toContain("SHELL BODY");
+    expect(prompt).not.toContain('"subcommand":"diff"');
   });
 });

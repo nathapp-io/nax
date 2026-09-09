@@ -307,7 +307,10 @@ export function buildHopCallback(
     // the preamble for the same reason the preamble is placed after the swap
     // rewrites — those replace the prompt wholesale, and a region rendered
     // before one would be discarded.
-    prompt = applyDiffAccessForAgentProtocol(agentName, prompt);
+    // US-002: advertises tools from the resolved coding-support runtime. The
+    // real implementation lives in the next session; this stub keeps the
+    // compile green and lets the AC-failing tests exercise the seam.
+    prompt = applyDiffAccessForAgentProtocol(agentName, prompt, []);
 
     // Coding tools are resolved per hop rather than per run: a swap changes the
     // agent, and the grants are stage-scoped, so a runtime captured once above

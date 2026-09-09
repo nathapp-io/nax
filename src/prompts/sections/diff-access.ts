@@ -168,13 +168,11 @@ export function renderNative(spec: DiffAccessSpec): string {
   return lines.join("\n");
 }
 
-/**
- * Render every diff-access region for the protocol actually being dispatched.
- *
- * A region whose spec will not parse keeps its body: a damaged marker must cost
- * the native rendering, never the instructions.
- */
-export function applyDiffAccess(prompt: string, protocol: PromptProtocol): string {
+export function applyDiffAccess(
+  prompt: string,
+  protocol: PromptProtocol,
+  _advertisedTools?: readonly string[],
+): string {
   if (!prompt.includes(OPEN)) return prompt;
 
   return prompt.replace(REGION, (_whole, json: string, body: string) => {

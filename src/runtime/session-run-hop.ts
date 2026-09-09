@@ -21,7 +21,10 @@ export function createSessionRunHop(
 ): SessionRunHopFn {
   return async (agentName: string, options: AgentRunOptions): Promise<SessionRunHopResult> => {
     const startMs = Date.now();
-    const prompt = applyDiffAccessForAgentProtocol(agentName, promptWithToolPreamble(agentName, options));
+    // US-002: advertises tools from the resolved coding-support runtime. The
+    // real implementation lives in the next session; this stub keeps the
+    // compile green and lets the AC-failing tests exercise the seam.
+    const prompt = applyDiffAccessForAgentProtocol(agentName, promptWithToolPreamble(agentName, options), []);
     const sessionName =
       options.sessionHandle ??
       sessionManager.nameFor({
