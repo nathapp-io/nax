@@ -176,6 +176,20 @@ export interface Finding {
   actionRequired?: boolean;
 
   /**
+   * True when the adversarial AC-quote grounding filter dropped this finding and
+   * it was folded into `advisoryFindings` on a passing verdict (#1950), so it
+   * reaches the end-of-run report instead of vanishing into `acDropped`.
+   *
+   * First-class for the same reason as `actionRequired` above: nbf seeding
+   * branches on it to decide whether to spend an agent session. A dropped
+   * finding is by definition ungrounded — the reviewer could not tie it to an
+   * AC — which makes it the weakest-evidenced class to hand an un-reviewed
+   * source edit under `nonBlockingFix.scope: "triage"`. It is reported, not
+   * acted on. Whether nbf should ever act on it is a separate ruling.
+   */
+  acDropped?: boolean;
+
+  /**
    * Producer-specific extras — semantic review's verifiedBy evidence,
    * raw tool output, AC text, TS span, etc.
    *

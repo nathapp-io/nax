@@ -697,6 +697,29 @@ describe("actionableAdvisoryFindings", () => {
     expect(kept.map((f) => f.message)).toEqual(["real issue"]);
   });
 
+  test("drops AC-quote-dropped findings folded in for reporting (#1950)", () => {
+    // A drop reaches advisoryFindings so the end-of-run report shows it, but it is
+    // ungrounded by definition and must never buy an agent session — under
+    // `scope: "triage"` that would be an un-reviewed source edit.
+    const kept = actionableAdvisoryFindings([
+      advisory({ message: "real advisory" }),
+      advisory({ message: "ac-quote drop", acDropped: true }),
+    ]);
+    expect(kept.map((f) => f.message)).toEqual(["real advisory"]);
+  });
+
+  test("an advisory bucket of only AC-quote drops closes the NBF gate (#1950)", () => {
+    const cfg = {
+      enabled: true,
+      scope: "triage",
+      regressionAttempts: 1,
+      verifierGuard: true,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+    } as const;
+    const actionable = actionableAdvisoryFindings([advisory({ acDropped: true })]);
+    expect(shouldRunNonBlockingFix(cfg, actionable.length)).toBe(false);
+  });
+
   test("keeps findings that omit actionRequired — absent means actionable", () => {
     // Every producer predating #1359 omits the field; none of them may be dropped.
     expect(actionableAdvisoryFindings([advisory(), advisory({ actionRequired: true })])).toHaveLength(2);

@@ -108,6 +108,14 @@ export function formatAdvisorySummary(
       ),
     );
   }
+  const acDroppedCount = findings.filter((f) => f.acDropped).length;
+  if (acDroppedCount > 0) {
+    lines.push(
+      c.gray(
+        `  ${acDroppedCount} of ${findings.length} were AC-quote drops (blocking-severity findings the model could not ground in an AC — story passed)`,
+      ),
+    );
+  }
   const noActionCount = findings.filter((f) => f.actionRequired === false).length;
   if (noActionCount > 0) {
     lines.push(
@@ -126,6 +134,7 @@ export function formatAdvisorySummary(
       location,
       f.category,
       f.coverageGap ? "coverage-gap" : undefined,
+      f.acDropped ? "ac-dropped" : undefined,
       f.actionRequired === false ? "no-action" : undefined,
     ].filter((v): v is string => typeof v === "string" && v.length > 0);
     lines.push(`  ${c.gray(parts.join(" · "))}`);

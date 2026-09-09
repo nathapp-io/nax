@@ -156,3 +156,16 @@ export function toAdversarialReviewFindings(
     };
   });
 }
+
+/**
+ * Mark AC-quote-dropped findings folded into advisoryFindings (#1950) so the
+ * run-end summary + review-audit JSON can distinguish them from a genuine
+ * sub-threshold advisory — and so nbf seeding can leave them alone.
+ *
+ * Unlike `tagCoverageGap`, this writes a FIRST-CLASS field, not `meta`:
+ * `actionableAdvisoryFindings` branches on it to decide whether to spend an
+ * agent session, and `meta` is read-only-by-convention (see `Finding.meta`).
+ */
+export function tagAcDropped(findings: readonly Finding[]): Finding[] {
+  return findings.map((f) => ({ ...f, acDropped: true }));
+}

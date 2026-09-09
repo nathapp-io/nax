@@ -210,6 +210,84 @@ describe("splitDiffByFile — quoted paths", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// splitDiffByFile — non-ASCII quoted paths (#1951)
+//
+// Git quotes a path when it contains non-ASCII bytes, emitting ONE octal
+// escape per UTF-8 byte. Decoding each escape independently as a code point
+// (String.fromCharCode) mojibakes the path — Latin-1 decoding, not UTF-8.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("splitDiffByFile — non-ASCII quoted paths", () => {
+  test("decodes a 2-byte UTF-8 octal-escape run (é) correctly, not as mojibake", () => {
+    const diff = [
+      'diff --git "a/src/donn\\303\\251es.ts" "b/src/donn\\303\\251es.ts"',
+      "index abc..def 100644",
+      '--- "a/src/donn\\303\\251es.ts"',
+      '+++ "b/src/donn\\303\\251es.ts"',
+      "@@ -1,1 +1,1 @@",
+      "-old body",
+      "+new body",
+    ].join("\n");
+
+    const sections = splitDiffByFile(diff);
+
+    expect(Object.keys(sections)).toEqual(["src/données.ts"]);
+    expect(sections["src/données.ts"]).toContain("+new body");
+  });
+
+  test("decodes a 4-byte UTF-8 octal-escape run outside the BMP (🚀) without a surrogate-pair regression", () => {
+    const diff = [
+      'diff --git "a/src/\\360\\237\\232\\200.ts" "b/src/\\360\\237\\232\\200.ts"',
+      "index abc..def 100644",
+      '--- "a/src/\\360\\237\\232\\200.ts"',
+      '+++ "b/src/\\360\\237\\232\\200.ts"',
+      "@@ -1,1 +1,1 @@",
+      "-old body",
+      "+new body",
+    ].join("\n");
+
+    const sections = splitDiffByFile(diff);
+
+    expect(Object.keys(sections)).toEqual(["src/🚀.ts"]);
+    expect(sections["src/🚀.ts"]).toContain("+new body");
+  });
+
+  test("existing ASCII quoted path is unaffected (regression guard)", () => {
+    const diff = [
+      'diff --git "a/src/plain file.ts" "b/src/plain file.ts"',
+      "index abc..def 100644",
+      '--- "a/src/plain file.ts"',
+      '+++ "b/src/plain file.ts"',
+      "@@ -1,1 +1,1 @@",
+      "-old body",
+      "+new body",
+    ].join("\n");
+
+    const sections = splitDiffByFile(diff);
+
+    expect(Object.keys(sections)).toEqual(["src/plain file.ts"]);
+    expect(sections["src/plain file.ts"]).toContain("+new body");
+  });
+
+  test("\\n, \\r and escaped-quote handling still correct alongside an octal-escape run", () => {
+    const diff = [
+      'diff --git "a/src/donn\\303\\251es\\ttab.ts" "b/src/donn\\303\\251es\\ttab.ts"',
+      "index abc..def 100644",
+      '--- "a/src/donn\\303\\251es\\ttab.ts"',
+      '+++ "b/src/donn\\303\\251es\\ttab.ts"',
+      "@@ -1,1 +1,1 @@",
+      "-old body",
+      "+new body",
+    ].join("\n");
+
+    const sections = splitDiffByFile(diff);
+
+    expect(Object.keys(sections)).toEqual(["src/données\ttab.ts"]);
+    expect(sections["src/données\ttab.ts"]).toContain("+new body");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Shared fixtures for AC4-AC9 — build a chunk summary that shares enough
 // terms with the diff's added lines to trip the whole-diff baseline. The
 // scoped classifier must NOT trip on these because the scope excludes the
