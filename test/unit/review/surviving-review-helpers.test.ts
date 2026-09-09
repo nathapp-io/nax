@@ -56,9 +56,17 @@ describe("finding filters", () => {
         suggestion: "consider",
       },
     ];
-    await expect(
-      substantiateAdversarialFindings({ findings, workdir: "/tmp", storyId: "US-1", blockingThreshold: "error" }),
-    ).resolves.toEqual(findings);
+    const [stamped] = await substantiateAdversarialFindings({
+      findings,
+      workdir: "/tmp",
+      storyId: "US-1",
+      blockingThreshold: "error",
+    });
+    // Non-blocking findings keep their severity — the evidence check is now
+    // recorded, not acted on (#1910). This finding has no `verifiedBy`, so the
+    // check reports "missing-observed".
+    expect(stamped?.severity).toBe("info");
+    expect(stamped?.evidence?.status).toBe("missing-observed");
   });
 
   test("downgrades a blocking finding whose quoted source no longer matches", async () => {
@@ -82,6 +90,107 @@ describe("finding filters", () => {
         blockingThreshold: "error",
       });
       expect(finding?.severity).toBe("unverifiable");
+      expect(finding?.evidence?.status).toBe("unmatched");
+    });
+  });
+
+  test("non-blocking finding with matching evidence keeps its severity and is stamped 'matched'", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"));
+      writeFileSync(join(workdir, "src", "a.ts"), "export const current = true;\n");
+      const [finding] = await substantiateAdversarialFindings({
+        findings: [
+          {
+            severity: "warning",
+            category: "input",
+            file: "src/a.ts",
+            line: 1,
+            issue: "a warning with grounded evidence",
+            suggestion: "n/a",
+            verifiedBy: { file: "src/a.ts", line: 1, observed: "export const current = true;" },
+          },
+        ],
+        workdir,
+        storyId: "US-1",
+        blockingThreshold: "error",
+      });
+      expect(finding?.severity).toBe("warning");
+      expect(finding?.evidence?.status).toBe("matched");
+    });
+  });
+
+  test("non-blocking finding whose quoted evidence does not match is recorded but NOT downgraded", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"));
+      writeFileSync(join(workdir, "src", "a.ts"), "export const current = true;\n");
+      const [finding] = await substantiateAdversarialFindings({
+        findings: [
+          {
+            severity: "info",
+            category: "input",
+            file: "src/a.ts",
+            line: 1,
+            issue: "an info finding with stale evidence",
+            suggestion: "n/a",
+            verifiedBy: { file: "src/a.ts", line: 1, observed: "export const old = true;" },
+          },
+        ],
+        workdir,
+        storyId: "US-1",
+        blockingThreshold: "error",
+      });
+      // The whole point of #1910: non-blocking findings are never downgraded,
+      // even when their evidence is unmatched — only recorded.
+      expect(finding?.severity).toBe("info");
+      expect(finding?.evidence?.status).toBe("unmatched");
+    });
+  });
+
+  test("non-blocking finding whose cited file does not exist is stamped 'unreadable'", async () => {
+    await withTempDir(async (workdir) => {
+      const [finding] = await substantiateAdversarialFindings({
+        findings: [
+          {
+            severity: "warning",
+            category: "input",
+            file: "src/does-not-exist.ts",
+            line: 1,
+            issue: "cites a missing file",
+            suggestion: "n/a",
+            verifiedBy: { file: "src/does-not-exist.ts", line: 1, observed: "whatever" },
+          },
+        ],
+        workdir,
+        storyId: "US-1",
+        blockingThreshold: "error",
+      });
+      expect(finding?.severity).toBe("warning");
+      expect(finding?.evidence?.status).toBe("unreadable");
+    });
+  });
+
+  test("blocking finding with matching evidence stays 'error' and is stamped 'matched'", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"));
+      writeFileSync(join(workdir, "src", "a.ts"), "export const current = true;\n");
+      const [finding] = await substantiateAdversarialFindings({
+        findings: [
+          {
+            severity: "error",
+            category: "input",
+            file: "src/a.ts",
+            line: 1,
+            issue: "a blocking finding with grounded evidence",
+            suggestion: "n/a",
+            verifiedBy: { file: "src/a.ts", line: 1, observed: "export const current = true;" },
+          },
+        ],
+        workdir,
+        storyId: "US-1",
+        blockingThreshold: "error",
+      });
+      expect(finding?.severity).toBe("error");
+      expect(finding?.evidence?.status).toBe("matched");
     });
   });
 });

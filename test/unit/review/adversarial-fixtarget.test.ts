@@ -77,6 +77,19 @@ describe("test-path override — a blocking category in a test file goes to the 
   });
 });
 
+describe("toAdversarialReviewFindings — evidence stamp forwarding (#1910)", () => {
+  test("forwards a stamped evidence field into meta.evidence", () => {
+    const result = toAdversarialReviewFindings([makeAdversarialFinding({ evidence: { status: "matched" } })]);
+    expect(result[0].meta?.evidence).toEqual({ status: "matched" });
+  });
+
+  test("omits meta.evidence entirely when the finding carries no stamp", () => {
+    const result = toAdversarialReviewFindings([makeAdversarialFinding()]);
+    expect(result[0].meta?.evidence).toBeUndefined();
+    expect(result[0].meta === undefined || !("evidence" in result[0].meta)).toBe(true);
+  });
+});
+
 describe("review audit persistence — fixTarget rides through to disk", () => {
   let saved: typeof _reviewAuditDeps;
 

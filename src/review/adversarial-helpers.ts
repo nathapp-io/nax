@@ -9,6 +9,7 @@ import type { Finding } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { extractAcks } from "./acks";
 import { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
+import type { EvidenceStatus } from "./semantic-evidence";
 import type { Severity } from "./severity";
 import { isBlockingSeverity, normalizeSeverity } from "./severity";
 import type { ReviewAck } from "./types";
@@ -63,6 +64,12 @@ export interface AdversarialLLMFinding {
     line?: number;
     observed: string;
   };
+  /**
+   * Framework-stamped outcome of running `checkFindingEvidence` against this
+   * finding's `verifiedBy` (#1910). Set by `substantiateAdversarialFindings`
+   * for every finding regardless of severity — never authored by the model.
+   */
+  evidence?: { status: EvidenceStatus };
 }
 
 export interface AdversarialLLMResponse {
@@ -140,6 +147,7 @@ export function toAdversarialReviewFindings(
     // grounded scope finding from an unverifiable one.
     if (f.scopeQuote) metaExtras.scopeQuote = f.scopeQuote;
     if (f.scopeIndex != null) metaExtras.scopeIndex = f.scopeIndex;
+    if (f.evidence) metaExtras.evidence = f.evidence;
     return {
       source: "adversarial-review",
       severity: normalizeSeverity(f.severity),
