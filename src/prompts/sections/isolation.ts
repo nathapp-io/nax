@@ -29,12 +29,21 @@ function buildTestFilterRule(testCommand: string, scopedCommandName?: string): s
   if (!testCommand) {
     return `When running tests, run ONLY test files related to your changes (scope each run to the files you changed). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
   }
-  const sentence = `When running tests, run ONLY test files related to your changes (e.g. \`${testCommand} <path/to/test-file>\`). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
-  // Only wrap when a declared scoped key is supplied — the wrapping produces
-  // a `RunCommand {"command": "<scopedKey>", "values": {"files": ""}}` call
-  // and that tool call requires a key the project actually declared.
-  if (!scopedCommandName) return sentence;
-  return wrapAffordance("test-scope", { command: scopedCommandName, files: "" }, sentence);
+  // The shell example (only) is wrapped in a `test-scope` region so dispatch
+  // can substitute a `RunCommand {"command": "<key>", "values": {"files":
+  // ""}}` call. The surrounding full-suite warning sentence is NOT wrapped
+  // — the regional grammar would otherwise drop it on native dispatch
+  // (the body is replaced wholesale by the renderer's output), and dropping
+  // "NEVER run the full test suite without a filter" is exactly the
+  // behaviour the guardrail forbids. Under native, the agent sees the
+  // shell example as a `RunCommand` call AND the full-suite warning as
+  // plain prose; the two land in the same prompt because the wrapped
+  // example is the ACP body's only affordance-rendered segment.
+  const example = `e.g. \`${testCommand} <path/to/test-file>\``;
+  const exampleRegion = scopedCommandName
+    ? wrapAffordance("test-scope", { command: scopedCommandName, files: "" }, example)
+    : example;
+  return `When running tests, run ONLY test files related to your changes (${exampleRegion}). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
 }
 
 export function buildIsolationSection(

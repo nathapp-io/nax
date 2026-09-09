@@ -26,7 +26,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
-import type { FailureRecord } from "@/prompts";
+import type { Finding } from "@/findings/types";
 import { RectifierPromptBuilder } from "@/prompts";
 import { buildIsolationSection } from "@/prompts/sections/isolation";
 import {
@@ -34,7 +34,6 @@ import {
   PROTOCOL_REGION_MARKER_PREFIX,
   unwrapProtocolRegions,
 } from "@/prompts/sections/protocol-region";
-import type { TestFailure } from "@/verification";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -47,33 +46,24 @@ const STORY = makeStory({
 
 const TEST_CMD = "bun test test/unit/";
 
-const FAILURES: FailureRecord[] = [
-  {
-    test: "alpha passes",
-    file: "test/unit/alpha.test.ts",
-    message: "AssertionError",
-    output: "at test/unit/alpha.test.ts:1",
-  },
-  {
-    test: "beta passes",
-    file: "test/unit/beta.test.ts",
-    message: "AssertionError",
-    output: "at test/unit/beta.test.ts:1",
-  },
-];
+const SCOPED_TEMPLATE = "CI=1 AGENT=1 bun test --timeout=60000 {{files}}";
 
-const TEST_FAILURES: TestFailure[] = [
+const FINDINGS: Finding[] = [
   {
-    testName: "alpha passes",
+    source: "test-runner",
+    severity: "error",
+    category: "failed-test",
+    rule: "alpha passes",
     file: "test/unit/alpha.test.ts",
-    error: "AssertionError: expected 1 to be 2",
-    stackTrace: ["at test/unit/alpha.test.ts:42"],
+    message: "AssertionError: expected 1 to be 2",
   },
   {
-    testName: "beta passes",
+    source: "test-runner",
+    severity: "error",
+    category: "failed-test",
+    rule: "beta passes",
     file: "test/unit/beta.test.ts",
-    error: "AssertionError: expected 3 to be 4",
-    stackTrace: ["at test/unit/beta.test.ts:84"],
+    message: "AssertionError: expected 3 to be 4",
   },
 ];
 
@@ -113,6 +103,24 @@ describe("US-004 AC2 — isolation native with advertised RunCommand and scoped 
     // No marker survives dispatch.
     expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
   });
+
+  test("the full-suite warning sentence is preserved verbatim under native dispatch", () => {
+    // The wrap must NOT cover the "NEVER run the full test suite without a filter"
+    // sentence — the regional grammar replaces the wrapped body wholesale, so a
+    // region around the whole sentence would drop the guardrail under native
+    // dispatch and hand the agent a `RunCommand` call with `files: ""`, which
+    // resolves to the testScoped template run with no file filter — exactly
+    // what the guardrail forbids. The example is the only affordance-rendered
+    // segment; the surrounding prose is plain text in both transports.
+    const wrapped = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
+    const out = applyProtocolRegions(wrapped, {
+      protocol: "native",
+      advertisedTools: new Set(["RunCommand"]),
+    });
+
+    expect(out).toContain("NEVER run the full test suite without a filter");
+    expect(out).toContain("full suite output will flood your context window and cause failures");
+  });
 });
 
 // ─── AC3 — isolation with no configured test command emits the existing wording
@@ -146,54 +154,22 @@ describe("US-004 AC3 — isolation with no configured test command", () => {
   });
 });
 
-// ─── AC4 — escalated per-failing-file block + native + RunCommand → one call per file
-
-describe("US-004 AC4 — escalated per-failing-file block under native + RunCommand", () => {
-  test("renders one RunCommand call per failing file with that file in values.files", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      TEST_FAILURES,
-      STORY,
-      2,
-      "fast",
-      "powerful",
-      undefined,
-      "bun test",
-      "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
-      "testScoped",
-    );
-
-    const out = applyProtocolRegions(prompt, {
-      protocol: "native",
-      advertisedTools: new Set(["RunCommand"]),
-    });
-
-    // One call per failing file.
-    expect(out).toContain('RunCommand {"command": "testScoped", "values": {"files": "test/unit/alpha.test.ts"}}');
-    expect(out).toContain('RunCommand {"command": "testScoped", "values": {"files": "test/unit/beta.test.ts"}}');
-    // No raw scoped template survives — every entry was substituted.
-    expect(out).not.toContain("{{files}}");
-    expect(out).not.toContain("CI=1 AGENT=1 bun test");
-    // No marker survives dispatch.
-    expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
-  });
-});
-
-// ─── AC4b — regressionFailure per-failing-file block + native + RunCommand → one call per file
+// ─── AC4 — rectifier per-failing-file block + native + RunCommand → one call per file
 //
-// The same affordance must reach production through `regressionFailure` —
-// the fullSuiteRectifyOp is the only production path that uses the
-// `run-check` / `test-scope` regions end-to-end, so the per-failing-file
-// block lives there too. The test below exercises that production path.
+// The producer under test is `failingTestRectification` — the ONE the
+// `fullSuiteRectifyOp` dispatches (full-suite-rectify-op.ts:71). The other two
+// rectifier prompt producers on this builder (`escalated`, `regressionFailure`)
+// have no production call site, so threading affordance parameters through them
+// would render regions no dispatch ever sees; the ACs are pinned against the
+// reachable path instead.
 
-describe("US-004 AC4b — regressionFailure per-failing-file block under native + RunCommand", () => {
+describe("US-004 AC4 — rectifier per-failing-file block under native + RunCommand", () => {
   test("renders one RunCommand call per failing file with that file in values.files", () => {
-    const prompt = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
+    const prompt = RectifierPromptBuilder.failingTestRectification(FINDINGS, STORY, {
       testCommand: TEST_CMD,
-      scopedCommandName: "test",
-      testScopedTemplate: "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
-      scopedFileCommandName: "testScoped",
+      testCommandScopeCommandName: "test",
+      testScopedTemplate: SCOPED_TEMPLATE,
+      fileScopeCommandName: "testScoped",
     });
 
     const out = applyProtocolRegions(prompt, {
@@ -213,13 +189,11 @@ describe("US-004 AC4b — regressionFailure per-failing-file block under native 
 
 // ─── AC5 — rectifier full-suite block + native + RunCommand → names declared key test
 
-describe("US-004 AC5 — regressionFailure full-suite block under native + RunCommand", () => {
+describe("US-004 AC5 — rectifier full-suite block under native + RunCommand", () => {
   test('names the declared key `test` (RunCommand {"command": "test"})', () => {
-    const prompt = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
+    const prompt = RectifierPromptBuilder.failingTestRectification(FINDINGS, STORY, {
       testCommand: TEST_CMD,
-      scopedCommandName: "test",
+      testCommandScopeCommandName: "test",
     });
 
     const out = applyProtocolRegions(prompt, {
@@ -236,13 +210,11 @@ describe("US-004 AC5 — regressionFailure full-suite block under native + RunCo
 
 // ─── AC6 — rectifier full-suite block + acp → names the shell command the verifier replays
 
-describe("US-004 AC6 — regressionFailure full-suite block under acp", () => {
+describe("US-004 AC6 — rectifier full-suite block under acp", () => {
   test("names the same command string the verifier replays", () => {
-    const prompt = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
+    const prompt = RectifierPromptBuilder.failingTestRectification(FINDINGS, STORY, {
       testCommand: TEST_CMD,
-      scopedCommandName: "test",
+      testCommandScopeCommandName: "test",
     });
 
     const out = applyProtocolRegions(prompt, { protocol: "acp" });
@@ -253,17 +225,35 @@ describe("US-004 AC6 — regressionFailure full-suite block under acp", () => {
     // No marker survives dispatch.
     expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
   });
+
+  // AC6 says the block names "the same command string the verifier replays".
+  // The rendered body is the `quality.commands.test` slot verbatim — that slot
+  // IS the full suite by definition (acceptance-helpers.ts:21-23), and the
+  // full-suite rectification cycle replays the full suite. The override/scoped
+  // fallback chain in `resolveAcceptanceFixTarget` belongs to the ACCEPTANCE
+  // fix cycle, which re-runs one acceptance test rather than the suite, so it
+  // is deliberately not consulted here. This pins that equality so the parity
+  // is checked rather than assumed.
+  test("the rendered body is the configured full-suite slot verbatim", () => {
+    const prompt = RectifierPromptBuilder.failingTestRectification(FINDINGS, STORY, {
+      testCommand: TEST_CMD,
+      testCommandScopeCommandName: "test",
+    });
+
+    const acp = applyProtocolRegions(prompt, { protocol: "acp" });
+    const block = acp.slice(acp.indexOf("# TEST COMMAND"));
+
+    expect(block.split("\n").find((line) => line.startsWith("`"))).toBe(`\`${TEST_CMD}\``);
+  });
 });
 
 // ─── AC7 — rectifier blocks under native without advertised RunCommand → shell strings
 
 describe("US-004 AC7 — rectifier blocks under native without advertised RunCommand", () => {
-  test("regressionFailure full-suite block renders the shell command string that ships today", () => {
-    const prompt = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
+  test("full-suite block renders the shell command string that ships today", () => {
+    const prompt = RectifierPromptBuilder.failingTestRectification(FINDINGS, STORY, {
       testCommand: TEST_CMD,
-      scopedCommandName: "test",
+      testCommandScopeCommandName: "test",
     });
 
     // Native dispatch WITHOUT RunCommand advertised — gating keeps the ACP body.
@@ -280,18 +270,13 @@ describe("US-004 AC7 — rectifier blocks under native without advertised RunCom
     expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
   });
 
-  test("escalated per-failing-file block renders the shell command strings that ship today", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      TEST_FAILURES,
-      STORY,
-      2,
-      "fast",
-      "powerful",
-      undefined,
-      "bun test",
-      "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
-      "testScoped",
-    );
+  test("per-failing-file block renders the shell command strings that ship today", () => {
+    const prompt = RectifierPromptBuilder.failingTestRectification(FINDINGS, STORY, {
+      testCommand: TEST_CMD,
+      testCommandScopeCommandName: "test",
+      testScopedTemplate: SCOPED_TEMPLATE,
+      fileScopeCommandName: "testScoped",
+    });
 
     const out = applyProtocolRegions(prompt, {
       protocol: "native",
@@ -305,12 +290,10 @@ describe("US-004 AC7 — rectifier blocks under native without advertised RunCom
     expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
   });
 
-  test("regressionFailure without a scopedCommandName emits no region at all", () => {
-    // The wrapping fires only when the caller supplies the scoped key; without
+  test("without a declared command key the full-suite block emits no region at all", () => {
+    // The wrapping fires only when the caller supplies the declared key; without
     // it, today's plain-text command section is what the dispatch sees.
-    const prompt = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
+    const prompt = RectifierPromptBuilder.failingTestRectification(FINDINGS, STORY, {
       testCommand: TEST_CMD,
     });
 

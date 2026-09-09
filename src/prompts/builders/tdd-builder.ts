@@ -325,10 +325,14 @@ export class TddPromptBuilder {
       .constitution(opts.constitution)
       .testCommand(config.quality?.commands?.test)
       .scopedTestCommand(
-        // The declared key is always `"testScoped"` per `RunCommand`'s named-key
-        // resolution (src/execution/lifecycle/acceptance-helpers.ts:89). Only set
-        // when the project actually has a testScoped template to dispatch against.
-        config.quality?.commands?.testScoped ? "testScoped" : undefined,
+        // US-004 — gate the `test-scope` region on the SSOT for naming the
+        // `testScoped` key. `RunCommand` resolves a declared key by exact
+        // placeholder match; naming `testScoped` when the project actually
+        // declared a template taking `{{file}}`, `{{package}}`, or no
+        // placeholder at all hands the agent a tool call the runtime
+        // rejects (`value "files" is not a placeholder in this command`).
+        // The SSOT lives at src/execution/lifecycle/acceptance-helpers.ts:89.
+        config.quality?.commands?.testScoped?.includes("{{files}}") === true ? "testScoped" : undefined,
       )
       .hermeticConfig(config.quality?.testing)
       .build();

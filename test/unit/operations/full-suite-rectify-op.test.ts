@@ -152,17 +152,17 @@ describe("fullSuiteRectifyOp.build — scope: 'repo'", () => {
 // ─── US-004 — affordance-rendered test-command section in production wiring
 //
 // The story-scoped dispatch reads the resolved package's test command out of
-// the package view's config and, when set, dispatches the full
-// `RectifierPromptBuilder.regressionFailure` prompt (which contains the
-// `# TEST COMMAND` block wrapped in a `run-check` protocol region). The
-// dispatch seam then substitutes a `RunCommand {"command": "test"}` call
-// under native + advertised `RunCommand` (AC5); ACP keeps the shell string
-// the verifier replays (AC6). Without a configured test command the op
-// falls back to the pre-change `failingTestRectification` prompt so the
-// agent still sees the failing-test list.
+// the package view's config and, when set, appends a `# TEST COMMAND` block
+// (wrapped in a `run-check` protocol region) to the pre-change
+// `RectifierPromptBuilder.failingTestRectification` prompt. The dispatch seam
+// then substitutes a `RunCommand {"command": "test"}` call under native +
+// advertised `RunCommand` (AC5); ACP keeps the shell string the verifier
+// replays (AC6). Without a configured test command the op emits that
+// pre-change prompt unchanged, so the ACP text stays byte-for-byte what
+// shipped before US-004 (the story's Out of Scope #2).
 
 describe("fullSuiteRectifyOp.build — US-004 affordance wiring (AC5/AC6)", () => {
-  test("story-scoped dispatch with a configured `quality.commands.test` uses regressionFailure", () => {
+  test("story-scoped dispatch with a configured `quality.commands.test` appends the affordance block", () => {
     const config = makeNaxConfig({
       quality: { commands: { test: "bun test test/unit/" } },
     });
@@ -240,6 +240,42 @@ describe("fullSuiteRectifyOp.build — US-004 affordance wiring (AC5/AC6)", () =
     // region. The failing-file path is appended as `bun test <file>` with
     // no marker wrapping it.
     expect(result.task.content).not.toContain("<!--nax:test-scope:");
+    expect(result.task.content).toContain("## Per-failing-file run");
+    expect(result.task.content).toContain("bun test test/unit/ test/unit/foo.test.ts");
+  });
+
+  // Regression for the post-reviewer fix: a `testScoped` template that does
+  // NOT carry the `{{files}}` placeholder must NOT trigger a `test-scope`
+  // region. `RunCommand` resolves a declared key by exact placeholder
+  // match; a template that takes `{{file}}` / `{{package}}` / no placeholder
+  // hands the agent a tool call the runtime always rejects.
+  test("per-failing-file block stays as plain shell strings when testScoped template does not use {{files}}", () => {
+    const config = makeNaxConfig({
+      quality: {
+        commands: {
+          test: "bun test test/unit/",
+          // A `{{file}}` (singular) template — different placeholder
+          // shape than the `{{files}}` (plural) that `RunCommand` matches.
+          testScoped: "CI=1 bun test --timeout=60000 {{file}}",
+        },
+      },
+    });
+    const view = makeTestRuntime({ config, workdir: "/tmp/test" }).packages.repo();
+    const localCtx: BuildContext<AutofixConfig> = {
+      packageView: view,
+      config: view.select(autofixConfigSelector),
+    };
+
+    const result = fullSuiteRectifyOp.build({ story, findings: [finding] }, localCtx);
+
+    // The full-suite block still carries the run-check region (AC5).
+    expect(result.task.content).toContain("<!--nax:run-check:");
+    // No `test-scope` region — a `{{file}}` template would not match the
+    // `values.files` field the region would render.
+    expect(result.task.content).not.toContain("<!--nax:test-scope:");
+    // The per-failing-file block is plain shell strings using the full-suite
+    // command (a guaranteed-run, which is what the dispatch needs when
+    // there is no runnable scoped command that accepts `{{files}}`).
     expect(result.task.content).toContain("## Per-failing-file run");
     expect(result.task.content).toContain("bun test test/unit/ test/unit/foo.test.ts");
   });

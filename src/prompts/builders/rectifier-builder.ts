@@ -27,7 +27,6 @@ import {
   buildConventionsSection,
   buildIsolationSection,
   buildStorySection,
-  wrapAffordance,
 } from "../sections";
 import {
   adversarialRectification,
@@ -35,6 +34,8 @@ import {
   combinedLlmRectification,
   escapeHatchFor,
   exceptionCountWord,
+  type FailingTestRectificationOptions,
+  failingTestRectification,
   formatCheckErrors,
   formatFailingTestsList,
   mechanicalRectification,
@@ -506,13 +507,6 @@ Commit your fixes when done.${scopeConstraint}`;
     config?: RectificationConfig,
     testCommand?: string,
     testScopedTemplate?: string,
-    /** US-004 — declared `quality.commands.testScoped` key. When supplied
-     *  AND a scoped template is supplied, each per-failing-file line is
-     *  wrapped in a `test-scope` region so the dispatch seam can substitute
-     *  a `RunCommand {"command": "<key>", "values": {"files": "<path>"}}`
-     *  call under native + advertised `RunCommand` (AC4). ACP preserves the
-     *  shell string. Omit when no declared scoped key (AC7). */
-    scopedCommandName?: string,
   ): string {
     const maxChars = config?.maxFailureSummaryChars ?? 2000;
     const failureSummary = formatFailureSummary(failures, maxChars);
@@ -530,11 +524,6 @@ Commit your fixes when done.${scopeConstraint}`;
           : cmd
             ? `${cmd} ${file}`
             : file;
-        // US-004 — wrap the shell-form line in a `test-scope` region when
-        // the caller supplied both a scoped key and a scoped template.
-        if (scopedCommandName && testScopedTemplate) {
-          return `  ${wrapAffordance("test-scope", { command: scopedCommandName, files: file }, scopedCmd)}`;
-        }
         return `  ${scopedCmd}`;
       })
       .join("\n");
@@ -786,26 +775,6 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
     context?: string;
     promptPrefix?: string;
     guardrailLevel?: GuardrailLevel;
-    /** US-004 — declared `quality.commands.test` key. When supplied, the
-     *  `# TEST COMMAND` block's shell-string body is wrapped in a `run-check`
-     *  region so the dispatch seam can substitute a `RunCommand {"command":
-     *  "<key>"}` call under native + advertised `RunCommand` (AC5). ACP
-     *  preserves the shell string byte-for-byte (AC6). */
-    scopedCommandName?: string;
-    /** US-004 — declared `quality.commands.testScoped` key. When supplied
-     *  AND `testScopedTemplate` is supplied, the per-failing-file block
-     *  wraps each line in a `test-scope` region so dispatch can substitute
-     *  a `RunCommand {"command": "testScoped", "values": {"files": "<path>"}}`
-     *  call under native + advertised `RunCommand` (AC4). ACP preserves
-     *  the shell string (AC7). */
-    testScopedTemplate?: string;
-    /** US-004 — declared scoped key for the per-failing-file block
-     *  (`quality.commands.testScoped` slot, always `"testScoped"`). MUST
-     *  be supplied together with `testScopedTemplate`; without the
-     *  template the `test` command has no `{{files}}` placeholder and a
-     *  `test-scope` region naming it would render a tool call the
-     *  runtime rejects. */
-    scopedFileCommandName?: string;
   }): string {
     const parts: string[] = [];
 
@@ -844,55 +813,9 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
       parts.push("\n\n");
     }
 
-    // 6. Test command section — US-004: when the caller supplies the
-    // declared full-suite key, wrap the shell-string body in a `run-check`
-    // region so dispatch can substitute a `RunCommand {"command": "<key>"}`
-    // call under native + `RunCommand` (AC5). ACP keeps the shell string
-    // byte-for-byte (AC6). The task section further down still names the
-    // shell string the verifier replays, so a model that ignores the tool
-    // call can still run the right command.
-    const testCommandBody = `\`${opts.testCommand}\``;
-    const testCommandSection = opts.scopedCommandName
-      ? `# TEST COMMAND\n\n${wrapAffordance("run-check", { command: opts.scopedCommandName }, testCommandBody)}`
-      : `# TEST COMMAND\n\n${testCommandBody}`;
-    parts.push(testCommandSection);
+    // 6. Test command section
+    parts.push(`# TEST COMMAND\n\n\`${opts.testCommand}\``);
     parts.push("\n\n");
-
-    // 6.5. Per-failing-file section — US-004 (AC4): one shell-form command
-    // per failing test file. Wrapped in a `test-scope` region when the
-    // caller supplies both a scoped template and a scoped key, so dispatch
-    // can substitute a `RunCommand {"command": "testScoped", "values":
-    // {"files": "<path>"}}` call under native + `RunCommand`. ACP keeps
-    // the shell string byte-for-byte.
-    //
-    // The wrapping is gated on `testScopedTemplate` alone — not on
-    // `opts.scopedCommandName` — because the full-suite key (`test`) has
-    // no `{{files}}` placeholder. A region that named command `"test"`
-    // with a `values.files` value would render a tool call the
-    // `RunCommand` runtime rejects (`value "files" is not a placeholder
-    // in this command`). The scoped key (`testScoped`) is the only key
-    // the project's config may declare that accepts a files value.
-    if (opts.testCommand && opts.failures.length > 0) {
-      const failingFiles = Array.from(new Set(opts.failures.map((f) => f.file).filter((f): f is string => !!f)));
-      if (failingFiles.length > 0) {
-        const perFileLines = failingFiles
-          .map((file) => {
-            const scopedCmd = opts.testScopedTemplate
-              ? opts.testScopedTemplate.replace("{{files}}", file)
-              : `${opts.testCommand} ${file}`;
-            // Wrap only when the scoped key is set AND the template that
-            // expands to a `{{files}}` placeholder is supplied. The
-            // full-suite key alone is not a valid `test-scope` command —
-            // see the gate above.
-            if (opts.testScopedTemplate && opts.scopedFileCommandName) {
-              return `  ${wrapAffordance("test-scope", { command: opts.scopedFileCommandName, files: file }, scopedCmd)}`;
-            }
-            return `  ${scopedCmd}`;
-          })
-          .join("\n");
-        parts.push(`## Per-failing-file run\n\n${perFileLines}\n\n`);
-      }
-    }
 
     // 7. Isolation (optional)
     if (opts.isolation) {
@@ -966,16 +889,11 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
     return `${listing}\nFix the implementation (not the tests) to make all failing tests pass. Run the test suite to verify after each change.`;
   }
 
-  static failingTestRectification(findings: Finding[], story: UserStory): string {
-    const listing = formatFailingTestsList(findings);
-    const exCount = exceptionCountWord(story);
-    const prohibition = `Do NOT change test files or test behavior — see the ${exCount} narrow exceptions appended below.`;
-    const parts: string[] = [listing];
-    parts.push(
-      "\nFix the implementation (not the tests) to make all failing tests pass. Do not loosen assertions or weaken test expectations. Run the test suite to verify after each change.",
-    );
-    parts.push(`\n${testEditHeadline(story, prohibition)}`);
-    parts.push(escapeHatchFor(story));
-    return parts.join("\n");
+  static failingTestRectification(
+    findings: Finding[],
+    story: UserStory,
+    opts?: FailingTestRectificationOptions,
+  ): string {
+    return failingTestRectification(findings, story, opts);
   }
 }

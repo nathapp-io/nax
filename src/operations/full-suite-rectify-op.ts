@@ -2,7 +2,6 @@ import { autofixConfigSelector } from "../config";
 import type { AutofixConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
-import type { FailureRecord } from "../prompts";
 import { RectifierPromptBuilder, repoScopedRectification } from "../prompts";
 import { parseTestEditDeclarations, type TestEditDeclaration } from "./test-edit-declaration";
 import type { RunOperation } from "./types";
@@ -51,50 +50,33 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
         task: { id: "task", content: prompt, overridable: false },
       };
     }
-    // US-004 — story-scoped dispatch reads the full-suite test command out of
-    // the resolved package config (the same config the verifier replays
-    // against, so the prompt shows the agent what the verifier will run).
-    // `regressionFailure` renders the `# TEST COMMAND` block with a
-    // `run-check` region, so the dispatch seam can substitute a
-    // `RunCommand {"command": "test"}` call under native + advertised
-    // `RunCommand` (AC5). ACP keeps the shell string byte-for-byte (AC6).
-    // The declared key is always `"test"` per ADR convention — that is the
-    // `quality.commands.test` slot's name in the project config.
+    // US-004 — story-scoped dispatch extends the pre-change
+    // `failingTestRectification` prompt with a `# TEST COMMAND` block and
+    // an optional per-failing-file block, both wrapped in protocol regions.
+    // The pre-change ACP text (failing-test list, fix directive, escape
+    // hatch) is preserved verbatim; only the affordance-rendered blocks
+    // are appended. ACP byte-parity for the existing text is the gate per
+    // US-004's "Out of Scope #2"; the new blocks are accepted because
+    // AC5/AC6 require a `# TEST COMMAND` section and AC4 requires a
+    // per-failing-file section.
     const config = ctx.packageView.config;
     const testCommand = config.quality?.commands?.test;
-    const failureRecords: FailureRecord[] = (input.findings as Finding[]).map((f) => ({
-      test: f.rule ?? undefined,
-      file: f.file ?? undefined,
-      message: f.message,
-      output: undefined,
-    }));
-    if (testCommand) {
-      const testScopedTemplate = config.quality?.commands?.testScoped;
-      const hasScopedKey = !!testScopedTemplate;
-      const prompt = RectifierPromptBuilder.regressionFailure({
-        story: input.story,
-        failures: failureRecords,
-        testCommand,
-        scopedCommandName: "test",
-        // US-004 (AC4) — the per-failing-file block is wrapped in a
-        // `test-scope` region only when the project declares a scoped
-        // template. Without one, `testCommand + file` is the only runnable
-        // form, and `test-scope` requires a `{{files}}` placeholder.
-        ...(hasScopedKey
-          ? {
-              testScopedTemplate,
-              scopedFileCommandName: "testScoped",
-            }
-          : {}),
-      });
-      return {
-        role: { id: "role", content: "", overridable: false },
-        task: { id: "task", content: prompt, overridable: false },
-      };
-    }
-    // No test command configured (root or per-package) — fall back to the
-    // pre-change prompt shape so the agent still sees the failing test list.
-    const prompt = RectifierPromptBuilder.failingTestRectification(input.findings as Finding[], input.story);
+    const testScopedTemplate = config.quality?.commands?.testScoped;
+    // SSOT for naming the `testScoped` key: `RunCommand` resolves by
+    // exact placeholder match; a template that takes anything other than
+    // `{{files}}` hands the agent a tool call the runtime always rejects
+    // (`value "files" is not a placeholder in this command`). See
+    // src/execution/lifecycle/acceptance-helpers.ts:89.
+    const scopedCommandName = testScopedTemplate?.includes("{{files}}") === true ? "testScoped" : undefined;
+    const prompt = RectifierPromptBuilder.failingTestRectification(input.findings as Finding[], input.story, {
+      // US-004 (AC5/AC6) — `# TEST COMMAND` block always names the declared
+      // `test` key (per ADR convention — `quality.commands.test` slot).
+      ...(testCommand ? { testCommand, testCommandScopeCommandName: "test" } : {}),
+      // US-004 (AC4/AC7) — per-failing-file block uses the declared
+      // `testScoped` key, but only when the template carries the
+      // `{{files}}` placeholder (the SSOT gate at acceptance-helpers.ts:89).
+      ...(testCommand && scopedCommandName ? { testScopedTemplate, fileScopeCommandName: scopedCommandName } : {}),
+    });
     return {
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: prompt, overridable: false },
