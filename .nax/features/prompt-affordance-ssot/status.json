@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-09-09T06-20-19-435Z",
+    "feature": "prompt-affordance-ssot",
+    "startedAt": "2026-09-09T06:20:19.435Z",
+    "status": "crashed",
+    "dryRun": false,
+    "pid": 66403,
+    "crashedAt": "2026-09-09T07:44:43.251Z",
+    "crashSignal": "SIGINT"
+  },
+  "progress": {
+    "total": 5,
+    "passed": 0,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 4
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 60
+  },
+  "current": {
+    "storyId": "US-001",
+    "title": "Create the protocol-region affordance registry",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "powerful",
+    "attempt": 2,
+    "phase": "routing"
+  },
+  "iterations": 0,
+  "updatedAt": "2026-09-09T07:44:43.251Z",
+  "durationMs": 5063816
+}

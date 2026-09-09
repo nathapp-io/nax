@@ -291,8 +291,9 @@ nonce no later process can match.
     opening marker with a wrong nonce, applying with protocol `native` renders the genuine
     region's spec (its baseline ref), and the text between the forged marker and the genuine
     marker is still present in the result.
-12. `[unit]` `unwrapProtocolRegions` returns the ACP body for every region in its input and
-    leaves no substring equal to the exported marker prefix.
+12. `[unit]` `unwrapProtocolRegions(text)` returns a string equal to `text` with each region
+    replaced by its exact ACP body, preserving all text outside regions, and containing no
+    substring equal to the exported marker prefix.
 13. `[unit]` `applyProtocolRegions` applied twice to the same prompt returns the same string as
     applying it once (substitution is idempotent).
 
