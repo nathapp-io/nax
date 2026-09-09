@@ -3,7 +3,7 @@
   "feature": "prompt-affordance-ssot",
   "branchName": "feat/prompt-affordance-ssot",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-09T10:45:34.876Z",
+  "updatedAt": "2026-09-09T11:57:26.367Z",
   "userStories": [
     {
       "id": "US-001",
@@ -222,8 +222,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

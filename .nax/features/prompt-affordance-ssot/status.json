@@ -1,37 +1,37 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-09-09T06-20-19-435Z",
+    "id": "run-2026-09-09T07-57-54-473Z",
     "feature": "prompt-affordance-ssot",
-    "startedAt": "2026-09-09T06:20:19.435Z",
+    "startedAt": "2026-09-09T07:57:54.473Z",
     "status": "crashed",
     "dryRun": false,
-    "pid": 66403,
-    "crashedAt": "2026-09-09T07:44:43.251Z",
+    "pid": 73622,
+    "crashedAt": "2026-09-09T11:51:10.162Z",
     "crashSignal": "SIGINT"
   },
   "progress": {
     "total": 5,
-    "passed": 0,
-    "failed": 1,
+    "passed": 3,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 2
   },
   "cost": {
     "spent": 0,
     "limit": 60
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Create the protocol-region affordance registry",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "powerful",
-    "attempt": 2,
+    "storyId": "US-004",
+    "title": "Render scoped and full-suite test instructions through affordances",
+    "complexity": "medium",
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
+    "attempt": 1,
     "phase": "routing"
   },
   "iterations": 0,
-  "updatedAt": "2026-09-09T07:44:43.251Z",
-  "durationMs": 5063816
+  "updatedAt": "2026-09-09T11:51:10.162Z",
+  "durationMs": 13995689
 }
