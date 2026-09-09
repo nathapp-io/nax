@@ -156,3 +156,12 @@ export function toAdversarialReviewFindings(
     };
   });
 }
+
+/**
+ * Mark AC-quote-dropped findings folded into advisoryFindings (#1950) so the
+ * run-end summary + review-audit JSON can distinguish them from a genuine
+ * sub-threshold advisory. Mirrors `tagCoverageGap` in recurrence-demotion.ts.
+ */
+export function tagAcDropped<T extends { meta?: Record<string, unknown> }>(findings: readonly T[]): T[] {
+  return findings.map((f) => ({ ...f, meta: { ...(f.meta ?? {}), acDropped: true } }));
+}

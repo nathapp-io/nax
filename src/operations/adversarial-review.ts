@@ -9,6 +9,7 @@ import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts"
 import type { AdversarialLLMFinding } from "../review/adversarial-helpers";
 import {
   isBlockingSeverity,
+  tagAcDropped,
   toAdversarialReviewFindings,
   validateAdversarialShape,
 } from "../review/adversarial-helpers";
@@ -510,6 +511,15 @@ export const adversarialReviewOp: RunOperationWithHooks<
     // demotion/oscillation pass-through is unchanged.
     const passed = blocking.length === 0 && (parsed.passed || accepted.length > 0);
 
+    // #1950 — when the verdict passes, an AC-quote-dropped finding must still reach
+    // a human-facing surface. On its own `dropped` only feeds `acDropped`, a machine
+    // channel nothing renders; the run-end "NON-BLOCKING REVIEW FINDINGS" surface
+    // (log-format/summary.ts) reads `advisoryFindings` only. A dropped finding is by
+    // definition ungrounded, so it must never block — advisory is the correct lane.
+    // On a failing verdict, drops are left out: `accepted` is already empty in that
+    // shape (fail-closed), and folding would surface findings the story never acted on.
+    const acDroppedFindings = passed ? dropped.map((entry) => entry.finding) : [];
+
     return {
       ...parsed,
       passed,
@@ -523,6 +533,7 @@ export const adversarialReviewOp: RunOperationWithHooks<
       advisoryFindings: [
         ...toAdversarialReviewFindings(advisory, { isTestFile: testFileMatch }),
         ...tagCoverageGap(toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch })),
+        ...tagAcDropped(toAdversarialReviewFindings(acDroppedFindings, { isTestFile: testFileMatch })),
       ],
       acDropped: dropped,
     };

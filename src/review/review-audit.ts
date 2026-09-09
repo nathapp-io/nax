@@ -150,6 +150,12 @@ export interface AdvisoryFindingSummaryEntry {
   /** True when this advisory finding was recurrence-demoted (tagged `meta.coverageGap`). */
   coverageGap?: boolean;
   /**
+   * True when this advisory finding was dropped by the AC-quote grounding filter
+   * and folded into advisoryFindings on a passing verdict (tagged `meta.acDropped`,
+   * #1950) — distinct from a genuine sub-threshold advisory.
+   */
+  acDropped?: boolean;
+  /**
    * `false` when the reviewer marked the finding as requiring no change (#1359). Such
    * findings are excluded from the nbf fix pass but still reported here — the point is
    * to surface them, labelled, not to hide them.
@@ -271,6 +277,7 @@ function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSu
       // it must never be the normal case, which is what #1816 was.
       issue: f.message || "(no description)",
       coverageGap: f.meta?.coverageGap === true ? true : undefined,
+      acDropped: f.meta?.acDropped === true ? true : undefined,
       // #1359 — absent means actionable; only recorded when explicitly false.
       actionRequired: "actionRequired" in f && f.actionRequired === false ? false : undefined,
     };
