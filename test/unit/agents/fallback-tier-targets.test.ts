@@ -287,6 +287,95 @@ describe("tiered fallback retries", () => {
   });
 });
 
+describe("a same-agent, different-tier fallback target (native -> {agent: native, tier: glm})", () => {
+  // The schema accepts this shape and normaliseFallbackTarget/availableCandidates preserve
+  // it, but nextCandidate's exclusion was keyed on the bare agent name and markUnavailable's
+  // cooldown was keyed on the bare agent name too — so a same-agent target was filtered out
+  // before its tier was ever considered, and shouldSwap could say yes while nextCandidate
+  // always returned null. This reproduces the production call shape: nextCandidate is called
+  // with the CURRENT agent as `exclude`, after markUnavailable has already run for this hop.
+  const RATE_LIMIT_FAILURE: AdapterFailure = {
+    category: "availability",
+    outcome: "fail-rate-limit",
+    retriable: true,
+    message: "rate limited",
+  };
+
+  function makeRunOptions(config: AgentManagerConfig): AgentRunOptions {
+    return {
+      prompt: "do it",
+      workdir: "/tmp",
+      modelTier: "balanced",
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      timeoutSeconds: 60,
+      config,
+    };
+  }
+
+  test("nextCandidate(current, hops, current) still returns the different-tier target", () => {
+    const config = NaxConfigSchema.parse({
+      agent: {
+        default: "native",
+        fallback: { enabled: true, map: { native: [{ agent: "native", tier: "glm" }] } },
+      },
+    });
+    const manager = new AgentManager(config);
+
+    expect(manager.nextCandidate("native", 0, "native")).toEqual({ agent: "native", tier: "glm" });
+  });
+
+  test("markUnavailable(agent) does not cool down a different tier of the same agent", () => {
+    const config = NaxConfigSchema.parse({
+      agent: {
+        default: "native",
+        fallback: { enabled: true, map: { native: [{ agent: "native", tier: "glm" }] } },
+      },
+    });
+    const manager = new AgentManager(config);
+
+    manager.markUnavailable("native", RATE_LIMIT_FAILURE);
+
+    expect(manager.nextCandidate("native", 0, "native")).toEqual({ agent: "native", tier: "glm" });
+  });
+
+  test("the swap actually dispatches to native at tier glm on the second hop", async () => {
+    const config = NaxConfigSchema.parse({
+      agent: {
+        default: "native",
+        fallback: { enabled: true, map: { native: [{ agent: "native", tier: "glm" }] } },
+      },
+    });
+    const manager = new AgentManager(config);
+
+    const hops: { agent: string; hopKind: HopKind }[] = [];
+    const outcome = await manager.runWithFallback({
+      runOptions: makeRunOptions(config),
+      executeHop: async (agent, bundle, hopKind) => {
+        hops.push({ agent, hopKind });
+        const result =
+          hops.length === 1
+            ? {
+                success: false,
+                exitCode: 1,
+                output: "rate limited",
+                rateLimited: true,
+                durationMs: 0,
+                estimatedCostUsd: 0,
+                adapterFailure: RATE_LIMIT_FAILURE,
+              }
+            : { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
+        return { result, bundle };
+      },
+    });
+
+    expect(outcome.result.success).toBe(true);
+    expect(hops).toEqual([
+      { agent: "native", hopKind: { kind: "primary" } },
+      { agent: "native", hopKind: { kind: "swap", failure: RATE_LIMIT_FAILURE, tier: "glm" } },
+    ]);
+  });
+});
+
 describe("resolveHopCompleteOptions", () => {
   const base: ResolvedCompleteOptions = {
     modelDef: { provider: "anthropic", model: "primary-model" },
