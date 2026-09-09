@@ -24,36 +24,47 @@ import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import type { FixCycleContext } from "./cycle-types";
 
+/** Both halves of one dispatch's spend, kept apart on purpose (#1948). */
+export interface DispatchSpend {
+  /** Successful-dispatch spend — `CostSnapshot.totalCostUsd`. */
+  costUsd: number;
+  /** Failed-dispatch spend — `CostSnapshot.totalErrorCostUsd`. */
+  errorCostUsd: number;
+}
+
 /**
  * Spend recorded against one dispatch, read back from the run's cost ledger.
  *
- * Mirrors `runPhase`'s accounting: `totalCostUsd` is successful-dispatch spend,
- * so failed dispatches (`totalErrorCostUsd`) are excluded here too rather than
- * letting the fix-cycle number mean something different from the phase number
- * beside it. This is a deliberate exclusion, not an oversight, and it is the
- * one piece of fix-cycle spend this fix does NOT make visible:
+ * The ledger splits its rows by outcome and this read preserves that split
+ * rather than summing across it (#1948 Part A):
  *
- * - `callOp`'s complete-branch retry loop reuses the same `callId` across
- *   attempts, so a failed attempt's error row is keyed here but not summed.
- * - Rectification is failure-heavy by construction, which is where that would
- *   matter most.
+ * - `totalCostUsd` is successful-dispatch spend, and stays the meaning of
+ *   `FixApplied.costUsd` exactly — mirroring `runPhase`'s `phaseCosts`, so the
+ *   fix-cycle number never means something different from the phase number
+ *   beside it. Every run total that consumes it (`acceptance-loop`,
+ *   `run-regression`) is therefore comparable against its own history.
+ * - `totalErrorCostUsd` is real money too. `callOp`'s complete-branch retry
+ *   loop reuses one `callId` across attempts, so a failed attempt's error row
+ *   is keyed here; rectification is failure-heavy by construction, which is
+ *   where that spend clusters. #1932 read it and dropped it, leaving the
+ *   magnitude unmeasurable.
  *
- * Folding error spend in would silently re-base every run total that consumes
- * this number (`acceptance-loop`, `run-regression`) against its own history —
- * the split `CostSnapshot` keeps between `totalCostUsd` and `totalErrorCostUsd`
- * exists precisely to avoid that (US-001). Sizing the gap needs a measured run,
- * so it stays a separate question rather than a guess folded into this fix.
+ * Carrying it as a sibling field rather than folding it into `costUsd` is the
+ * same doctrine as `CostSnapshot`'s own split (US-001): nothing gets re-based,
+ * and whether the two belong together becomes a question that can be answered
+ * from data instead of guessed at (#1948 Part B).
  *
- * Returns 0, never undefined, when the aggregator has no rows for the call: a
- * deterministic strategy genuinely spends nothing, and a truthful 0 is what the
- * iteration log's `costUsd > 0` omission already means.
+ * Returns zeros, never undefined, when the aggregator has no rows for the call:
+ * a deterministic strategy genuinely spends nothing, and a truthful 0 is what
+ * the iteration log's `costUsd > 0` omission already means.
  */
-export function ledgerCostFor(ctx: FixCycleContext, callId: string): number {
+export function ledgerSpendFor(ctx: FixCycleContext, callId: string): DispatchSpend {
   try {
     // No optional chaining on `runtime.costAggregator`: it is a required field,
     // and `?.` would turn a genuinely broken wiring into a silent $0 — the very
     // failure shape this fix exists to remove. A real absence lands in the catch.
-    return ctx.runtime.costAggregator.byCall()[callId]?.totalCostUsd ?? 0;
+    const snap = ctx.runtime.costAggregator.byCall()[callId];
+    return { costUsd: snap?.totalCostUsd ?? 0, errorCostUsd: snap?.totalErrorCostUsd ?? 0 };
   } catch (err) {
     // Telemetry must never fail a fix cycle — but a swallowed failure that
     // leaves no trace is how #1932 stayed invisible, so say so.
@@ -62,6 +73,6 @@ export function ledgerCostFor(ctx: FixCycleContext, callId: string): number {
       callId,
       error: errorMessage(err),
     });
-    return 0;
+    return { costUsd: 0, errorCostUsd: 0 };
   }
 }

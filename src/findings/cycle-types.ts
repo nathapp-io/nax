@@ -36,10 +36,25 @@ export interface FixApplied {
    * on every fix since #1932 — the `?` is retained only for the records the
    * cycle's own exit paths build without a dispatch.
    *
-   * Excludes failed-dispatch spend, mirroring `runPhase`'s `phaseCosts`; see
-   * cycle-cost.ts.
+   * Excludes failed-dispatch spend, mirroring `runPhase`'s `phaseCosts`; that
+   * spend is carried beside it in `errorCostUsd`. See cycle-cost.ts.
    */
   costUsd?: number;
+  /**
+   * Failed-dispatch spend for this fix — the attempts that threw, which
+   * `callOp`'s retry loop keys under the same `callId` as the attempt that
+   * eventually succeeded (#1948).
+   *
+   * Deliberately a sibling of `costUsd` rather than part of it: folding the two
+   * together would re-base every run total that consumes `costUsd` against its
+   * own history. Omitted (rather than zero) when nothing failed, so its presence
+   * always means a dispatch attempt actually threw.
+   *
+   * Unlike `costUsd`, a strategy's `extractApplied` cannot override this: it
+   * knows what its successful call billed, not what the attempts that threw
+   * before it burned.
+   */
+  errorCostUsd?: number;
 }
 
 export interface Iteration<F extends Finding = Finding> {
@@ -93,6 +108,12 @@ export interface Iteration<F extends Finding = Finding> {
    * total is zero so the record stays free of zero-cost entries.
    */
   costUsd?: number;
+  /**
+   * Sum of `fixesApplied[].errorCostUsd` for this iteration — the spend of
+   * dispatch attempts that threw (#1948). Omitted at zero on the same reasoning
+   * as `costUsd`, so its presence always means a dispatch actually failed.
+   */
+  errorCostUsd?: number;
   outcome: IterationOutcome;
   startedAt: string; // ISO-8601
   finishedAt: string; // ISO-8601
@@ -148,6 +169,14 @@ export interface FixCycleResult<F extends Finding = Finding> {
 export type FixCycleContext = import("../operations/types").CallContext & {
   readonly storyId: string;
 };
+
+/**
+ * The `callOp` seam `runFixCycle` dispatches through, injectable for tests.
+ *
+ * Lives here rather than in cycle.ts so cycle-dispatch.ts can name it without
+ * an import edge back to its own caller; cycle.ts re-exports it.
+ */
+export type CallOpFn = <I, O, C>(ctx: FixCycleContext, op: Operation<I, O, C>, input: I) => Promise<O>;
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 

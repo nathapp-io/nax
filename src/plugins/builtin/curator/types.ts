@@ -172,6 +172,12 @@ export interface FixCycleIterationObservation extends BaseObservation {
     findingsBefore?: number;
     findingsAfter?: number;
     costUsd?: number;
+    /**
+     * Failed-dispatch spend for the iteration (#1948). Sibling of `costUsd`
+     * rather than part of it, so no existing reading is re-based; this is the
+     * field that makes the magnitude measurable.
+     */
+    errorCostUsd?: number;
   };
 }
 

@@ -10,10 +10,9 @@
 
 import type { Logger } from "@/logger";
 import { getSafeLogger } from "@/logger";
-import type { Operation } from "@/operations";
 import { callOp as _callOp, newCorrelationId } from "@/operations";
 import { errorMessage } from "@/utils/errors";
-import { ledgerCostFor } from "./cycle-cost";
+import { dispatchStrategy } from "./cycle-dispatch";
 import { recordIteration } from "./cycle-iteration-log";
 import { createDeclineLedger } from "./cycle-retirement";
 import {
@@ -24,6 +23,7 @@ import {
   selectExecutionGroup,
 } from "./cycle-selection";
 import type {
+  CallOpFn,
   FixApplied,
   FixCycle,
   FixCycleContext,
@@ -37,7 +37,10 @@ import { findingRecurrenceKey } from "./types";
 
 // ─── Injectable deps (for testing) ───────────────────────────────────────────
 
-export type CallOpFn = <I, O, C>(ctx: FixCycleContext, op: Operation<I, O, C>, input: I) => Promise<O>;
+// Declared in cycle-types.ts so cycle-dispatch.ts can name it without importing
+// this module back (the import-cycle ratchet counts type-only edges too);
+// re-exported here because that is where callers have always found it.
+export type { CallOpFn } from "./cycle-types";
 
 export const _cycleDeps = {
   callOp: _callOp as unknown as CallOpFn,
@@ -270,34 +273,17 @@ export async function runFixCycle<F extends Finding>(
     const fixesApplied: FixApplied[] = [];
 
     for (const strategy of group) {
-      const relevantFindings = findingsBefore.filter((f) => strategy.appliesTo(f));
-      const input = strategy.buildInput(relevantFindings, cycle.iterations, ctx);
-      // #1932: stamp the correlation id here rather than letting `callOp` mint
-      // one, so this layer can find the dispatch's rows in the cost ledger
-      // afterwards. See cycle-cost.ts for why a callId and not a cost scope.
-      const dispatchCallId = newCorrelationId();
-      const fixCtx: FixCycleContext = {
-        ...ctx,
-        callId: dispatchCallId,
-        fixStrategy: { name: strategy.name, findingsBefore: findingsBefore.length },
-        // #1654: a strategy may run under its own session role, which gives it a
-        // session of its own rather than continuing the one the previous
-        // strategy used. `callOp` resolves `sessionOverride.role ?? op.session.role`,
-        // so this isolates the dispatch without the op having to be duplicated.
-        ...(strategy.sessionRole ? { sessionOverride: { role: strategy.sessionRole } } : {}),
-      };
-      const output = await doCallOp(fixCtx, strategy.fixOp, input);
-      const extracted = await (strategy.extractApplied?.(output, input) ?? {});
-      fixesApplied.push({
-        strategyName: strategy.name,
-        op: strategy.fixOp.name,
-        targetFiles: extracted.targetFiles ?? [],
-        summary: extracted.summary ?? "",
-        ...(extracted.unresolved ? { unresolved: extracted.unresolved } : {}),
-        // #1932: read the dispatch's real spend from the ledger. An explicit
-        // `extractApplied.costUsd` still wins — see cycle-cost.ts.
-        costUsd: extracted.costUsd ?? ledgerCostFor(fixCtx, dispatchCallId),
-      });
+      // Correlation id, session override and both halves of the dispatch's
+      // spend live together in cycle-dispatch.ts, beside the ledger read they
+      // depend on. A throw propagates from here unchanged (#1948).
+      fixesApplied.push(
+        await dispatchStrategy(strategy, ctx, findingsBefore, cycle.iterations, {
+          callOp: doCallOp,
+          dispatchCallId: newCorrelationId(),
+          logger,
+          logCtx,
+        }),
+      );
     }
 
     // ── Handle agent-gave-up ──────────────────────────────────────────────────

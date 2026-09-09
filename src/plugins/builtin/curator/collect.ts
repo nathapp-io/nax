@@ -475,6 +475,9 @@ function collectFixCycleIteration(
       findingsBefore: numberValue(data.findingsBefore, 0),
       findingsAfter: numberValue(data.findingsAfter, 0),
       costUsd: numberValue(data.costUsd, 0),
+      // #1948: 0 rather than undefined for records written before the field
+      // existed — "no failed spend" is the truthful reading of their absence.
+      errorCostUsd: numberValue(data.errorCostUsd, 0),
     },
   };
 }
