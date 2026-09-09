@@ -57,6 +57,12 @@ export interface AgentRunOutcome {
   finalPrompt?: string;
   /** The agent that actually executed the final hop (may differ from the initial agent after a swap). */
   finalAgent?: string;
+  /**
+   * The resolved target the final hop ran on — agent AND the tier or literal model
+   * it was dispatched at. `finalAgent` alone cannot express a same-agent swap, where
+   * the name is unchanged and the model is the whole point (nax#1964).
+   */
+  finalTarget?: FallbackTarget;
 }
 
 export interface AgentCompleteOutcome {

@@ -18,6 +18,8 @@ import {
   normalizeSelector,
   recordAdapterFailure,
   recordAgentFallbacks,
+  recordStoryAgentTarget,
+  resolveDispatchTarget,
   resolveOpModel,
   resolveOpRetry,
   resolveTimeoutMs,
@@ -82,14 +84,20 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const config = ctx.runtime.configLoader.current();
   const defaultAgent = ctx.runtime.agentManager.getDefault();
   const opModel: ConfiguredModel = resolveOpModel(op, input, buildCtx) ?? "balanced";
-  // resolved.agent honors `{ agent, model }` pin (cross-agent overrides);
-  // resolved.modelTier is undefined when an explicit non-tier model is pinned.
-  // Fallback to DEFAULT_CONFIG.models when config.models is absent (e.g. partial test configs).
+  // resolved.agent honors `{ agent, model }` pin; resolved.modelTier is undefined when a
+  // non-tier model is pinned. Fallback to DEFAULT_CONFIG.models when config.models is absent.
   const effectiveModels = config.models ?? DEFAULT_CONFIG.models;
   const resolved = resolveConfiguredModel(effectiveModels, ctx.agentName, opModel, defaultAgent);
-  const dispatchAgent = resolved.agent;
   // Pin default: a pinned (tierless) resolution swaps via "balanced" unless the fallback map names a tier (spec §7).
   const effectiveTier = resolved.modelTier ?? "balanced";
+  // A swap this story already made outranks the op's own resolution — see resolveDispatchTarget (nax#1964).
+  const { agent: dispatchAgent, modelDef: dispatchModelDef } = resolveDispatchTarget(
+    ctx,
+    resolved,
+    effectiveModels,
+    effectiveTier,
+    defaultAgent,
+  );
 
   if (op.kind === "complete") {
     const completeOp = op as CompleteOperation<I, O, C>;
@@ -102,7 +110,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         ? computeAcpHandle(ctx.packageDir, ctx.featureName, ctx.storyId, sessionRole)
         : undefined;
     const completeOptions = {
-      modelDef: resolved.modelDef,
+      modelDef: dispatchModelDef,
       // nax#1739: `resolved.modelDef` belongs to `dispatchAgent`. When
       // completeWithFallback swaps agents it must dispatch the NEW agent's model,
       // or acpx receives a `--model` that agent never advertised. Mirrors the
@@ -111,7 +119,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       // other agent re-resolves from its own tier map.
       modelDefFor: (agent: string, tier?: string) =>
         agent === dispatchAgent && tier === undefined
-          ? resolved.modelDef
+          ? dispatchModelDef
           : resolveModelForAgent(effectiveModels, agent, tier ?? effectiveTier, defaultAgent),
       ...(resolved.modelTier !== undefined ? { modelTier: resolved.modelTier } : {}),
       pipelineStage: op.stage,
@@ -217,7 +225,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     prompt,
     workdir: ctx.packageDir,
     modelTier: effectiveTier,
-    modelDef: resolved.modelDef,
+    modelDef: dispatchModelDef,
     timeoutSeconds:
       timeoutMs !== undefined
         ? Math.ceil(timeoutMs / 1000)
@@ -460,6 +468,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // sequential success path. Parallel and failed stories build metrics elsewhere and do
   // not read this yet — see #1709.
   recordAgentFallbacks(ctx, outcome.fallbacks);
+  recordStoryAgentTarget(ctx, outcome.finalTarget, outcome.fallbacks.length > 0, resolved.modelTier);
   recordAdapterFailure(ctx, outcome.result.adapterFailure);
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),
