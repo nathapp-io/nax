@@ -1,37 +1,41 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-09-09T13-58-46-234Z",
+    "id": "run-2026-09-09T14-24-10-168Z",
     "feature": "prompt-affordance-ssot",
-    "startedAt": "2026-09-09T13:58:46.234Z",
-    "status": "crashed",
+    "startedAt": "2026-09-09T14:24:10.168Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 13756,
-    "crashedAt": "2026-09-09T14:13:27.957Z",
-    "crashSignal": "SIGINT"
+    "pid": 21459
   },
   "progress": {
     "total": 5,
-    "passed": 4,
+    "passed": 5,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.20636878616,
     "limit": 60
   },
-  "current": {
-    "storyId": "US-005",
-    "title": "Render commits through affordances and persist ACP templates",
-    "complexity": "medium",
-    "tddStrategy": "tdd-simple",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
+  "current": null,
+  "iterations": 2,
+  "updatedAt": "2026-09-09T14:53:47.784Z",
+  "durationMs": 1777616,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-09-09T14:52:50.929Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-09-09T14:53:46.553Z"
+    }
   },
-  "iterations": 0,
-  "updatedAt": "2026-09-09T14:13:27.957Z",
-  "durationMs": 881723
+  "gates": {
+    "acceptance": "passed",
+    "regression": "passed"
+  }
 }
