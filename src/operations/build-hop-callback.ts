@@ -314,7 +314,38 @@ export function buildHopCallback(
     // so a fallback swap that changes the protocol cannot change the tool set,
     // and the gate at dispatch matches the gate the agent is gated on at
     // call-time.
-    const codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
+    //
+    // `resolveCodingToolSupport` can throw `NaxError('CODING_TOOL_ROOT_MISSING')`
+    // when declared tools + grants exist but `codingToolRoot` is undefined
+    // (issue #1794 lesson — refuse rather than silently default to cwd). The
+    // hop MUST convert that into a failed AgentResult rather than letting the
+    // throw propagate: callers like `runWithFallback` rely on the hop always
+    // returning an AgentResult so the swap policy can classify the outcome.
+    // A propagated throw also skips the `finally` block's `closeSession` /
+    // `auditSink.flush()` — at this point neither has run yet (no session has
+    // been opened, no runtime was created), but the seam still matters for
+    // future maintainers who might add side-effects before this line.
+    let codingSupport: Awaited<ReturnType<typeof resolveCodingToolSupport>>;
+    try {
+      codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
+    } catch (err) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      return {
+        result: {
+          success: false,
+          exitCode: 1,
+          // Always prefix with agent name so downstream logs can attribute the
+          // failure even when the underlying error message doesn't carry it
+          // (e.g. bare `new Error("timeout")`).
+          output: `Agent "${agentName}" failed: ${errMessage}`,
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCostUsd: 0,
+        },
+        bundle: workingBundle,
+        prompt,
+      };
+    }
     const advertisedTools = codingSupport ? codingSupport.tools.map((t) => t.name) : [];
 
     // Unconditional, unlike the preamble above: a review prompt carries a
