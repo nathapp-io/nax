@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
-import { applyProtocolRegions, unwrapProtocolRegions } from "@/prompts/sections";
+import { applyProtocolRegions, PROTOCOL_REGION_MARKER_PREFIX, unwrapProtocolRegions } from "@/prompts/sections";
 import { buildRoleTaskSection } from "@/prompts/sections/role-task";
 
 const TEMPLATE_FILES = [
@@ -107,6 +107,7 @@ describe("promptsInitCommand — per-file checks (exists, content, header)", () 
       }
 
       // US-005 AC6: a written template carries no region marker under either protocol.
+      expect(content).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
       expect(applyProtocolRegions(content, { protocol: "acp" })).toBe(content);
       expect(applyProtocolRegions(content, { protocol: "native" })).toBe(content);
 
