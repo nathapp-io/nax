@@ -128,18 +128,18 @@ export function applyProtocolRegions(prompt: string, opts: ApplyProtocolRegionsO
   });
 }
 
-/** Extract each ACP body from a prompt that may carry regions.
+/** Strip every region marker from a prompt, returning the full unwrapped text.
  *
- *  Returns the bodies in source order. Foreign-nonce regions are skipped —
- *  they are not "our" regions and any text they contain was authored by
- *  someone else (a prior iteration's finding, an embedded diff, etc.). */
-export function unwrapProtocolRegions(text: string): readonly string[] {
-  if (!text.includes(PROTOCOL_REGION_MARKER_PREFIX)) return [];
-
-  const bodies: string[] = [];
-  for (const match of text.matchAll(REGION)) {
-    if (match[2] !== NONCE) continue;
-    bodies.push(match[4] as string);
-  }
-  return bodies;
+ *  Each region (of any kind and any nonce) is replaced by its ACP body, so
+ *  every surrounding character is preserved byte-for-byte. The result contains
+ *  every ACP body and no region marker at all — which is what a caller that
+ *  persists a prompt to disk needs: the marker grammar is internal bookkeeping
+ *  and must not ship with the recorded text.
+ *
+ *  A marker written by another process is not interpreted (its nonce is not
+ *  ours) — only its HTML-comment wrapper is removed and its content kept,
+ *  exactly as it appeared in the prompt. */
+export function unwrapProtocolRegions(text: string): string {
+  if (!text.includes(PROTOCOL_REGION_MARKER_PREFIX)) return text;
+  return text.replace(REGION, (_whole, _kind, _nonce, _spec, body) => body);
 }
