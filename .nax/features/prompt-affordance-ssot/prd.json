@@ -3,7 +3,7 @@
   "feature": "prompt-affordance-ssot",
   "branchName": "feat/prompt-affordance-ssot",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-09T10:16:58.408Z",
+  "updatedAt": "2026-09-09T10:45:34.876Z",
   "userStories": [
     {
       "id": "US-001",
@@ -168,8 +168,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -229,7 +229,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The story updates two prompt producers with established command data and ACP regression requirements."
+        "reasoning": "The story updates two prompt producers with established command data and ACP regression requirements.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/prompts/sections/protocol-region.ts",
@@ -249,7 +252,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "82d9e5a5962e1305fcb66789edef57abfdd12461"
     },
     {
       "id": "US-005",
