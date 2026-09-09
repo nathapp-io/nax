@@ -219,10 +219,16 @@ export interface DispatchTarget {
 }
 
 /**
- * A sticky target this story already swapped to outranks the op's own resolution
- * (nax#1964) — re-deriving the agent from `ctx.agentName` every op is what sent a
- * story back to a dead primary. Falls back to `resolved` unchanged when no swap
- * happened yet.
+ * Decide the agent and model `callOp` actually dispatches to for this invocation.
+ *
+ * A sticky target this story already swapped to (via `stickyAgentTarget`) outranks the
+ * op's own resolution (nax#1964) — re-deriving the agent from `ctx.agentName` every op
+ * is what sent a story back to a dead primary once it had swapped away. Falls back to
+ * `resolved` unchanged when no swap has happened yet at this rung.
+ *
+ * Called once, before `callOp` branches on `op.kind` — so a `kind:"run"` op and a
+ * `kind:"complete"` op of the same story resolve through the exact same sticky lookup
+ * rather than two independent copies that could drift.
  */
 export function resolveDispatchTarget(
   ctx: CallContext,

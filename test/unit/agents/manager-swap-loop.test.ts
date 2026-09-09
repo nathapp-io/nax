@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { makeMockCallContext, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { AgentRunOptions, HopKind } from "@/agents";
 import { _agentManagerDeps, AgentManager } from "@/agents";
-import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG, pickSelector } from "@/config";
 import { agentManagerConfigSelector } from "@/config/selectors";
 import type { ContextBundle } from "@/context/engine";
+import type { RunOperation } from "@/operations";
+import { _callOpDeps, callOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 const availFailure = {
   category: "availability" as const,
@@ -367,5 +371,106 @@ describe("AgentManager.runWithFallback — fail-stale retry", () => {
     } finally {
       _agentManagerDeps.sleep = origSleep;
     }
+  });
+});
+
+describe("callOp composite — real fallback stack + cross-op stickiness (nax#1964, nax#1966)", () => {
+  /**
+   * End-to-end across the two fixes on this branch, through the REAL decision stack —
+   * not the hand-rolled `managerSwapping` mock `call-sticky-target.test.ts` uses. A real
+   * `AgentManager` runs `nextCandidate` / `markUnavailable` / `decideSwap` / cooldown
+   * identity for real; only the hop's own dispatch (the adapter call) is replaced, via
+   * `_callOpDeps.buildHopCallback` — the same injectable seam
+   * `call-run-counter.test.ts` already uses for this purpose.
+   *
+   * The swap shape is a CROSS-AGENT literal-pin target (`{ agent, model: "<provider/model>" }`,
+   * nax#1966's fallback-model-targets.test.ts pattern), not a same-agent model swap: nax#1965
+   * is parked, so a same-agent swap is not demonstrable end to end. Cross-agent is.
+   */
+  const PIN = "openrouter/z-ai/glm-5.3-flash[high]";
+  const RATE_LIMIT_FAILURE = {
+    category: "availability" as const,
+    outcome: "fail-rate-limit" as const,
+    retriable: true,
+    message: "rate limited",
+  };
+  const testSel = pickSelector("swap-loop-composite-test", "routing");
+
+  function pinConfig(): NaxConfig {
+    return makeNaxConfig({
+      agent: {
+        protocol: "hybrid",
+        default: "claude",
+        fallback: { enabled: true, map: { claude: [{ agent: "native", model: PIN }] } },
+      },
+      models: { claude: { balanced: "claude-sonnet-4-5" }, native: { cheap: "opencode-go/glm-4-5" } },
+    });
+  }
+
+  function makeOp(name: string): RunOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
+    return {
+      kind: "run",
+      name,
+      stage: "run",
+      config: testSel,
+      session: { role: "implementer", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "You process input.", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      parse: (output) => output,
+    };
+  }
+
+  const createdRuntimes: NaxRuntime[] = [];
+  afterEach(async () => {
+    await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+    createdRuntimes.length = 0;
+  });
+
+  test("a cross-agent literal-pin swap through the real AgentManager sticks for a later op of the same story", async () => {
+    const config = pinConfig();
+    const agentManager = new AgentManager(config, undefined, { models: config.models });
+    const runtime = makeMockRuntime({ agentManager, config });
+    createdRuntimes.push(runtime);
+
+    const dispatched: Array<{ agent: string; hopKind: HopKind }> = [];
+    const origBuildHopCallback = _callOpDeps.buildHopCallback;
+    // Only the hop's own dispatch is stubbed — everything upstream of it (candidate
+    // selection, cooldown marking, the swap decision) is the real AgentManager.
+    _callOpDeps.buildHopCallback = () => async (agent, bundle, hopKind) => {
+      dispatched.push({ agent, hopKind });
+      const isDeadPrimary = agent === "claude";
+      return {
+        result: isDeadPrimary
+          ? {
+              success: false,
+              exitCode: 1,
+              output: "rate limited",
+              rateLimited: true,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              adapterFailure: RATE_LIMIT_FAILURE,
+            }
+          : { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
+        bundle,
+      };
+    };
+
+    try {
+      const ctx = makeMockCallContext({ runtime, agentName: "claude", storyId: "swap-loop-us-001" });
+
+      await callOp(ctx, makeOp("op-one"), "work");
+      await callOp(ctx, makeOp("op-two"), "work");
+    } finally {
+      _callOpDeps.buildHopCallback = origBuildHopCallback;
+    }
+
+    // op-one: claude (real primary, fails) -> native (the real nextCandidate's literal
+    // pin, dispatched with the pinned model). op-two: native directly — the sticky
+    // target op-one's swap recorded, not a re-probe of the dead primary.
+    expect(dispatched.map((d) => d.agent)).toEqual(["claude", "native", "native"]);
+    expect(dispatched[1]?.hopKind).toMatchObject({ kind: "swap", model: PIN, failure: RATE_LIMIT_FAILURE });
+    expect(dispatched[2]?.hopKind).toEqual({ kind: "primary" });
   });
 });
