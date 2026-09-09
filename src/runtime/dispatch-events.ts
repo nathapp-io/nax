@@ -205,12 +205,6 @@ export interface ReviewDecisionEvent {
   readonly acDropped?: readonly unknown[];
   /** Clipped preview of output that failed to parse, for post-hoc give-up diagnosis. */
   readonly unparsedPreview?: string;
-  /** Issue #986 — adversarial-only structural-gate counterfactual telemetry. */
-  readonly diffAvailable?: boolean;
-  readonly adversarialDropAnalysis?: readonly unknown[];
-  readonly adversarialAcceptAnalysis?: readonly unknown[];
-  /** Set when the adversarial check passed due to all drops being ac_quote_not_substring. */
-  readonly passReason?: string;
   /**
    * US-002 — the model's raw `passed` flag, before `verify()` applied
    * blockingThreshold. Carried on the dispatched event so the audit subscriber

@@ -291,10 +291,9 @@ export async function computeTestInventory(
 /**
  * Collect the list of file paths modified between `storyGitRef` and HEAD.
  *
- * Used by adversarial review (#986) in `mode: "ref"` to compute the
- * `fileInDiff` axis of the structural counterfactual telemetry without
- * inspecting an inline diff. Returns `undefined` on git failure so callers
- * can mark `diffAvailable: false`.
+ * Live caller: `pipeline/scope-files.ts`, which unions the diff with the story's
+ * declared sources. Returns `undefined` on git failure so callers can degrade
+ * rather than treat "git failed" as "nothing changed".
  */
 export async function collectDiffFileList(
   workdir: string,

@@ -13,7 +13,7 @@ const PASS_SEMANTIC = () => ({ output: JSON.stringify({ passed: true, findings: 
 // A blocking adversarial finding the reviewer emits every round with the SAME
 // fingerprint (file + category + issue prefix — see fingerprintFor in
 // src/review/recurrence-demotion.ts). category "assumption" is in
-// BLOCKING_CATEGORIES (src/review/ac-structural-counterfactual.ts) so it maps
+// BLOCKING_CATEGORIES (src/review/category-fix-target.ts) so it maps
 // to fixTarget "source" and is claimed by autofix-implementer, not the
 // test-writer (#1333 routing) — the fix session never actually touches disk
 // (scripted agents don't write files), so the SAME finding recurs untouched

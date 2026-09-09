@@ -1,5 +1,14 @@
 import type { FixTarget } from "../findings/types";
-import { BLOCKING_CATEGORIES } from "./ac-structural-counterfactual";
+
+/**
+ * Categories an adversarial finding must carry to block a story, and — the same
+ * thing said from the fix side — the categories the implementer owns.
+ *
+ * Locked at {input, error-path, abandonment, assumption}. The adversarial prompt
+ * (adversarial-review-builder.ts) emits `convention` and `test-gap` as advisory by
+ * design, so they are deliberately excluded.
+ */
+export const BLOCKING_CATEGORIES: ReadonlySet<string> = new Set(["input", "error-path", "abandonment", "assumption"]);
 
 /**
  * Maps an adversarial finding category to the fix lane that owns it.

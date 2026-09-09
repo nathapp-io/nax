@@ -132,6 +132,13 @@ export function emitReviewDecision(ctx: CallContext, opName: string, output: unk
     // same bug, never added to that rescued list (third pass over this seam) —
     // it joins them here, gated behind `parsed` like the other two: an unparsed
     // turn has no acks to report.
+    //
+    // F3's remaining three fields — `diffAvailable`, `adversarialDropAnalysis`
+    // and `adversarialAcceptAnalysis` — were NOT the same bug and are gone
+    // (#1926). Neither op ever computed them: their producer lived on the
+    // `src/review/adversarial.ts` reviewer, which the op path superseded and
+    // #1862 deleted. Nothing was dropped at this seam, so nothing is missing
+    // from the list below.
     result: payload.result,
     advisoryFindings: payload.parsed ? payload.advisoryFindings : undefined,
     acDropped: payload.parsed ? payload.acDropped : undefined,
