@@ -184,7 +184,8 @@ export function wireReporters(
                 storyId: ev.storyId,
                 status: "failed",
                 runElapsedMs: Date.now() - startTime,
-                cost: 0,
+                cost: ev.cost ?? 0,
+                ...(ev.errorCostUsd !== undefined ? { errorCostUsd: ev.errorCostUsd } : {}),
                 tier: "balanced",
                 testStrategy: "test-after",
               });
@@ -210,7 +211,8 @@ export function wireReporters(
                 storyId: ev.storyId,
                 status: "paused",
                 runElapsedMs: Date.now() - startTime,
-                cost: 0,
+                cost: ev.cost ?? 0,
+                ...(ev.errorCostUsd !== undefined ? { errorCostUsd: ev.errorCostUsd } : {}),
                 tier: "balanced",
                 testStrategy: "test-after",
               });

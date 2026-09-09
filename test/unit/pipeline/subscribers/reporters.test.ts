@@ -4,7 +4,13 @@ import { assertDefined } from "@test/helpers";
 import * as loggerModule from "@/logger";
 import { PipelineEventBus, wireReporters } from "@/pipeline";
 import type { PluginRegistry } from "@/plugins";
-import type { IReporter, PhaseCompleteEvent, PhaseStartEvent, RunStartEvent } from "@/plugins/types";
+import type {
+  IReporter,
+  PhaseCompleteEvent,
+  PhaseStartEvent,
+  RunStartEvent,
+  StoryCompleteEvent,
+} from "@/plugins/types";
 
 const STORY_SUMMARY = { id: "US-001", title: "US-001", status: "pending", attempts: 1 };
 
@@ -95,6 +101,31 @@ describe("wireReporters", () => {
     expect(reporter.calls).toContain("onStoryComplete:failed");
   });
 
+  test("story:failed forwards total and failed-dispatch spend to reporters", async () => {
+    const bus = new PipelineEventBus();
+    let received: StoryCompleteEvent | undefined;
+    const reporter: IReporter = {
+      name: "capture-reporter",
+      async onStoryComplete(event) {
+        received = event;
+      },
+    };
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
+
+    bus.emit({
+      type: "story:failed",
+      storyId: "US-001",
+      story: STORY_SUMMARY,
+      reason: "tests failed",
+      countsTowardEscalation: true,
+      cost: 0.025,
+      errorCostUsd: 0.005,
+    });
+
+    await bus.drain();
+    expect(received).toMatchObject({ status: "failed", cost: 0.025, errorCostUsd: 0.005 });
+  });
+
   test("story:paused fires onStoryComplete(paused)", async () => {
     const bus = new PipelineEventBus();
     const reporter = makeReporter();
@@ -104,6 +135,29 @@ describe("wireReporters", () => {
 
     await Promise.resolve();
     expect(reporter.calls).toContain("onStoryComplete:paused");
+  });
+
+  test("story:paused forwards total and failed-dispatch spend to reporters", async () => {
+    const bus = new PipelineEventBus();
+    let received: StoryCompleteEvent | undefined;
+    const reporter: IReporter = {
+      name: "capture-reporter",
+      async onStoryComplete(event) {
+        received = event;
+      },
+    };
+    wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
+
+    bus.emit({
+      type: "story:paused",
+      storyId: "US-001",
+      reason: "needs review",
+      cost: 0.025,
+      errorCostUsd: 0.005,
+    });
+
+    await bus.drain();
+    expect(received).toMatchObject({ status: "paused", cost: 0.025, errorCostUsd: 0.005 });
   });
 
   test("story:escalated fires onEscalation", async () => {
