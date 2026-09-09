@@ -800,9 +800,11 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
      *  the shell string (AC7). */
     testScopedTemplate?: string;
     /** US-004 — declared scoped key for the per-failing-file block
-     *  (`quality.commands.testScoped` slot, always `"testScoped"`). Defaults
-     *  to the same key as `scopedCommandName` for the full-suite block when
-     *  the caller passed a scoped template but no separate scoped key. */
+     *  (`quality.commands.testScoped` slot, always `"testScoped"`). MUST
+     *  be supplied together with `testScopedTemplate`; without the
+     *  template the `test` command has no `{{files}}` placeholder and a
+     *  `test-scope` region naming it would render a tool call the
+     *  runtime rejects. */
     scopedFileCommandName?: string;
   }): string {
     const parts: string[] = [];
@@ -862,18 +864,30 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
     // can substitute a `RunCommand {"command": "testScoped", "values":
     // {"files": "<path>"}}` call under native + `RunCommand`. ACP keeps
     // the shell string byte-for-byte.
+    //
+    // The wrapping is gated on `testScopedTemplate` alone — not on
+    // `opts.scopedCommandName` — because the full-suite key (`test`) has
+    // no `{{files}}` placeholder. A region that named command `"test"`
+    // with a `values.files` value would render a tool call the
+    // `RunCommand` runtime rejects (`value "files" is not a placeholder
+    // in this command`). The scoped key (`testScoped`) is the only key
+    // the project's config may declare that accepts a files value.
     if (opts.testCommand && opts.failures.length > 0) {
       const failingFiles = Array.from(new Set(opts.failures.map((f) => f.file).filter((f): f is string => !!f)));
       if (failingFiles.length > 0) {
-        const fileKey = opts.scopedFileCommandName ?? opts.scopedCommandName;
         const perFileLines = failingFiles
           .map((file) => {
             const scopedCmd = opts.testScopedTemplate
               ? opts.testScopedTemplate.replace("{{files}}", file)
               : `${opts.testCommand} ${file}`;
-            return fileKey
-              ? `  ${wrapAffordance("test-scope", { command: fileKey, files: file }, scopedCmd)}`
-              : `  ${scopedCmd}`;
+            // Wrap only when the scoped key is set AND the template that
+            // expands to a `{{files}}` placeholder is supplied. The
+            // full-suite key alone is not a valid `test-scope` command —
+            // see the gate above.
+            if (opts.testScopedTemplate && opts.scopedFileCommandName) {
+              return `  ${wrapAffordance("test-scope", { command: opts.scopedFileCommandName, files: file }, scopedCmd)}`;
+            }
+            return `  ${scopedCmd}`;
           })
           .join("\n");
         parts.push(`## Per-failing-file run\n\n${perFileLines}\n\n`);
