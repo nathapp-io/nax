@@ -178,8 +178,15 @@ function renderRunCommandTestScope(spec: RunCommandTestSpec): string {
  *  is added here because the surrounding role-task instruction (e.g. "stage
  *  and commit ALL changed files:") is left outside the region — only the
  *  shell string itself is wrapped, so that prose survives verbatim on both
- *  transports and this renderer only needs to substitute the call form. */
+ *  transports and this renderer only needs to substitute the call form.
+ *
+ *  Throws if the spec is missing or the message is not a non-empty string.
+ *  The caller (applyProtocolRegions) catches and preserves the ACP body —
+ *  a damaged spec must cost the native rendering, never the instructions. */
 function renderGitCommit(spec: CommitSpec): string {
+  if (typeof spec?.message !== "string" || spec.message.length === 0) {
+    throw new Error(`[protocol-region] commit renderer requires a non-empty message, got ${JSON.stringify(spec)}`);
+  }
   return `GitCommit {"message": ${JSON.stringify(spec.message)}}`;
 }
 
@@ -236,9 +243,9 @@ function hasUnterminatedOwnOpener(prompt: string): boolean {
 
 /** Substitute every matching region for the protocol being dispatched.
  *
- *  Failure paths (unknown kind, unparseable spec, foreign nonce, missing
- *  tool, unterminated region) keep the ACP body — a damaged marker must
- *  cost the native rendering, never the instructions. */
+ *  Failure paths (unknown kind, unparseable spec, damaged spec, foreign
+ *  nonce, missing tool, unterminated region) keep the ACP body — a damaged
+ *  marker must cost the native rendering, never the instructions. */
 export function applyProtocolRegions(prompt: string, opts: ApplyProtocolRegionsOpts): string {
   if (!prompt.includes(PROTOCOL_REGION_MARKER_PREFIX)) return prompt;
 
@@ -254,9 +261,11 @@ export function applyProtocolRegions(prompt: string, opts: ApplyProtocolRegionsO
     // ACP: strip markers, return the body.
     if (opts.protocol === "acp") return body;
 
-    // Native: look up the kind.
+    // Native: look up the kind. Use Object.hasOwn to avoid prototype key
+    // poisoning (constructor, __proto__, toString — all match the marker
+    // grammar `[a-z][a-z-]*`).
+    if (!Object.hasOwn(REGISTRY, kind)) return body;
     const renderer = REGISTRY[kind];
-    if (!renderer) return body;
 
     // Tool gating — only enforced when the caller supplied a tool set.
     if (opts.advertisedTools !== undefined) {
@@ -273,7 +282,14 @@ export function applyProtocolRegions(prompt: string, opts: ApplyProtocolRegionsO
       return body;
     }
 
-    return renderer.render(spec);
+    // Render; a damaged or misproduced spec keeps the body, never silently
+    // drops the instructions. Catches throw (e.g. missing required field in
+    // the commit spec producing undefined instead of a valid message string).
+    try {
+      return renderer.render(spec);
+    } catch {
+      return body;
+    }
   });
 }
 
