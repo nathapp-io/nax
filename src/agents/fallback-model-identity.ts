@@ -22,27 +22,38 @@
  * (see `resolveHopCompleteOptions` in manager-dispatch.ts).
  */
 
-import { MODEL_SHORTHAND_TIERS, resolveModelForAgent, resolveTierMembership } from "@/config";
+import { MODEL_SHORTHAND_TIERS, resolveModel, resolveModelForAgent, resolveTierMembership } from "@/config";
 import type { ModelsConfig } from "@/config/schema-types";
 import type { FallbackTarget } from "./swap-decision";
 
 /**
- * Resolve `agent`@`tier` to a stable model-identity string ("provider/model"),
- * or undefined when it cannot be resolved — no `models` injected, no `tier`
- * given (a tier-less plain-string target has no model to resolve until
- * dispatch chooses an effective tier — see the module doc), or the tier names
- * no entry for either `agent` or `defaultAgent` (the same `MODEL_NOT_FOUND`
- * case `resolveModelForAgent` throws for elsewhere). Callers fall back to
- * tier-based (or bare-agent) identity when this returns undefined, which is
- * exactly the pre-existing keying — so an unresolvable case degrades to the
- * prior fix, never to the pre-fix bare-agent-only behaviour.
+ * Resolve `agent`@`tier` (or a literal `modelPin`) to a stable model-identity
+ * string ("provider/model"), or undefined when it cannot be resolved — no
+ * `models` injected, no `tier`/`modelPin` given (a tier-less plain-string
+ * target has no model to resolve until dispatch chooses an effective tier —
+ * see the module doc), or the tier names no entry for either `agent` or
+ * `defaultAgent` (the same `MODEL_NOT_FOUND` case `resolveModelForAgent`
+ * throws for elsewhere). Callers fall back to tier-based (or bare-agent)
+ * identity when this returns undefined, which is exactly the pre-existing
+ * keying — so an unresolvable case degrades to the prior fix, never to the
+ * pre-fix bare-agent-only behaviour.
  */
 export function resolveFallbackModelId(
   models: ModelsConfig | undefined,
   agent: string,
   tier: string | undefined,
   defaultAgent: string,
+  modelPin?: string,
 ): string | undefined {
+  // A literal pin resolves without the tier map — this is the same call dispatch
+  // makes (`hopModelId` -> `resolveModel` in build-hop-callback.ts), so selection
+  // identity and dispatch identity finally name the same endpoint. Without it a
+  // pin was judged identity-less and collapsed onto the bare agent key, colliding
+  // with the tier-less primary hop (nax#1966).
+  if (modelPin !== undefined) {
+    const def = resolveModel(modelPin);
+    return `${def.provider}/${def.model}`;
+  }
   if (!tier || !models) return undefined;
   try {
     const def = resolveModelForAgent(models, agent, tier, defaultAgent);
@@ -50,6 +61,34 @@ export function resolveFallbackModelId(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Does candidate `agentA`@`tierA`(/`modelA`) name the SAME endpoint as `agentB`@`tierB`
+ * (/`modelB`)? Compares resolved identities when both sides resolve one; otherwise
+ * degrades to exact `(tier, model)` equality — the "prior fix" tier-based keying — never
+ * to bare-agent equality. Without that degradation, two same-agent targets with
+ * DIFFERENT tiers both collapse to `undefined` when no `models` config is injected and
+ * wrongly compare equal, re-excluding a same-agent/different-tier target that must
+ * survive (nax#1966; the regression this closes lives in
+ * `test/unit/agents/fallback-tier-targets.test.ts`, describe block
+ * "a same-agent, different-tier fallback target").
+ */
+export function sameFallbackHop(
+  models: ModelsConfig | undefined,
+  defaultAgent: string,
+  agentA: string,
+  agentB: string | undefined,
+  tierA?: string,
+  modelA?: string,
+  tierB?: string,
+  modelB?: string,
+): boolean {
+  if (agentA !== agentB || agentB === undefined) return false;
+  const idA = resolveFallbackModelId(models, agentA, tierA, defaultAgent, modelA);
+  const idB = resolveFallbackModelId(models, agentB, tierB, defaultAgent, modelB);
+  if (idA !== undefined && idB !== undefined) return idA === idB;
+  return tierA === tierB && modelA === modelB;
 }
 
 /**

@@ -29,12 +29,13 @@ export interface RunFallbackInput {
   readonly logger: LoggerLike | null | undefined;
   readonly getDefault: () => string;
   readonly isUnavailable: (agent: string, tier?: string) => boolean;
-  readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string) => void;
+  readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string, model?: string) => void;
   readonly nextCandidate: (
     current: string,
     hops: number,
     exclude?: string,
     excludeTier?: string,
+    excludeModel?: string,
   ) => FallbackTarget | null;
   readonly resolveExhaustion: (options: ExhaustionInput) => Promise<"retry" | "exhausted" | "cancelled">;
   readonly emitSwapAttempt: (fallback: AgentFallbackRecord) => void;
@@ -138,20 +139,13 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       }
 
       const failure = result.adapterFailure ?? unknownFailure();
-      // currentHopKind.tier is the tier of the hop that just failed — mark and
-      // exclude by that identity, not the bare agent name, so a same-agent,
-      // different-tier fallback target survives (see swap-decision.ts). Deliberately
-      // NOT defaulted to currentRunOptions.modelTier when unset (the healthy primary's
-      // first hop): that would narrow markUnavailable's cooldown key from bare-agent to
-      // agent+tier, which breaks resolveStartAgent's dead-primary skip — its
-      // `isUnavailable(primary)` check (hop-budget.ts) is intentionally tier-less and
-      // depends on the bare-agent key an agent-wide failure (fail-auth, fail-quota)
-      // writes. Model-identity exclusion therefore engages once a tier is NAMED by a
-      // hop (a swap target, or a dead-primary start that named one) — not retroactively
-      // for the very first, tier-less hop.
-      const currentTier = currentHopKind.tier;
-      input.markUnavailable(currentAgent, failure, currentTier);
-      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier);
+      // The primary hop carries no tier of its own, so record it at the tier the
+      // caller actually dispatched. Without this its cooldown lands on the bare
+      // agent key, which `CooldownStore._live` returns for any tier-less lookup
+      // regardless of scope — which is what excluded every literal-pin rung (nax#1966).
+      const failedTier = currentHopKind.tier ?? request.runOptions.modelTier;
+      input.markUnavailable(currentAgent, failure, failedTier, currentHopKind.model);
+      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, failedTier, currentHopKind.model);
       if (!next) {
         const outcome = await input.resolveExhaustion({
           failure,

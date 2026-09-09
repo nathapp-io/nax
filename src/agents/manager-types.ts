@@ -189,11 +189,19 @@ export interface IAgentManager {
    * Returns the next fallback target (agent, and its optional tier) for a given
    * current agent and hop count, excluding pruned (no credentials),
    * already-unavailable agents, and — when passed — the identity named by
-   * `exclude`/`excludeTier`. That identity match is agent+tier, not agent alone,
-   * so a same-agent, different-tier target survives exclusion of the tier that
-   * actually failed. Returns null when no candidate is available.
+   * `exclude`/`excludeTier`/`excludeModel`. That identity match is the candidate's
+   * resolved endpoint, not agent alone, so a same-agent, different-tier target
+   * survives exclusion of the tier that actually failed, and a literal pin naming
+   * the same model as that tier collides with it exactly as the tier spelling
+   * would (nax#1966). Returns null when no candidate is available.
    */
-  nextCandidate(current: string, hopsSoFar: number, exclude?: string, excludeTier?: string): FallbackTarget | null;
+  nextCandidate(
+    current: string,
+    hopsSoFar: number,
+    exclude?: string,
+    excludeTier?: string,
+    excludeModel?: string,
+  ): FallbackTarget | null;
 
   /**
    * Run the prompt with automatic agent-swap fallback on availability failures.

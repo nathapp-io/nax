@@ -673,3 +673,60 @@ describe("model-identity-aware fallback exclusion", () => {
     });
   });
 });
+
+const NATIVE_MODELS = {
+  native: {
+    balanced: "minimax/MiniMax-M3",
+    powerful: "opencode-go/deepseek-v4-flash",
+    glm: "openrouter/z-ai/glm-5.3-flash[high]",
+  },
+};
+
+function managerWithModels(map: Record<string, unknown[]>) {
+  const config = NaxConfigSchema.parse({
+    agent: { protocol: "hybrid", default: "native", fallback: { enabled: true, map, maxHopsPerStory: 3 } },
+    models: NATIVE_MODELS,
+  });
+  return new AgentManager(config, undefined, { models: NATIVE_MODELS });
+}
+
+const RL: AdapterFailure = {
+  category: "availability",
+  outcome: "fail-rate-limit",
+  retriable: true,
+  message: "rate limited",
+};
+
+describe("literal-pin fallback targets (nax#1966)", () => {
+  test("a literal-pin rung survives the primary agent's cooldown", () => {
+    const m = managerWithModels({
+      native: [
+        { agent: "native", model: "powerful" },
+        { agent: "native", model: "openrouter/z-ai/glm-5.3-flash[high]" },
+        "claude",
+      ],
+    });
+
+    // The primary hop failed at its dispatched tier, as runWithFallback now records it.
+    m.markUnavailable("native", RL, "balanced");
+    // Then rung 1 failed too.
+    m.markUnavailable("native", RL, "powerful");
+
+    expect(m.nextCandidate("native", 2, "native", "powerful")).toEqual({
+      agent: "native",
+      model: "openrouter/z-ai/glm-5.3-flash[high]",
+    });
+  });
+
+  test("a literal pin and the tier naming the same model share one identity", () => {
+    // The strings must match byte for byte, effort suffix included — that is what makes
+    // both spellings resolve through resolveModel to the same ModelDef.
+    const m = managerWithModels({
+      native: [{ agent: "native", model: "openrouter/z-ai/glm-5.3-flash[high]" }, "claude"],
+    });
+
+    m.markUnavailable("native", RL, "glm");
+
+    expect(m.nextCandidate("native", 1, "native", "glm")).toEqual({ agent: "claude" });
+  });
+});

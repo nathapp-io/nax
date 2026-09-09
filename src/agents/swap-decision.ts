@@ -112,11 +112,15 @@ export function normaliseFallbackTarget(value: FallbackMapValue): FallbackTarget
  * `{ claude: ["codex", "gemini"] }` walks correctly: unavailable agents drop out and
  * the next available candidate in order is returned.
  *
- * `isExcluded` also receives the candidate's tier so a caller can key exclusion on
- * agent+tier identity rather than the bare agent name — a same-agent, different-tier
- * target must survive exclusion of the tier that actually failed. A predicate that
- * ignores the second argument (every predicate written before this identity split)
- * keeps its original agent-only behaviour.
+ * `isExcluded` also receives the candidate's tier — and, for a `{ agent, model }`
+ * target naming a literal id rather than a tier, that literal pin — so a caller can
+ * key exclusion on the candidate's resolved identity rather than the bare agent
+ * name: a same-agent, different-tier target must survive exclusion of the tier
+ * that actually failed, and a literal pin naming the same model as a tier spelling
+ * must collide with it exactly as that tier spelling would. A predicate that ignores
+ * the extra arguments (every predicate written before this identity split) keeps its
+ * original agent-only behaviour — TypeScript's function-parameter contravariance
+ * makes a narrower `(candidate: string) => boolean` assignable here.
  *
  * `resolve` runs BEFORE the filter, not after: a `{ agent, model }` target naming a
  * tier does not carry `.tier` until it is folded in, so filtering first judged it
@@ -128,13 +132,13 @@ export function normaliseFallbackTarget(value: FallbackMapValue): FallbackTarget
 export function availableCandidates(
   map: FallbackMap | undefined,
   agent: string,
-  isExcluded: (candidate: string, tier?: string) => boolean,
+  isExcluded: (candidate: string, tier?: string, model?: string) => boolean,
   resolve: (target: FallbackTarget) => FallbackTarget = (target) => target,
 ): FallbackTarget[] {
   return (map?.[agent] ?? [])
     .map(normaliseFallbackTarget)
     .map(resolve)
-    .filter((candidate) => !isExcluded(candidate.agent, candidate.tier));
+    .filter((candidate) => !isExcluded(candidate.agent, candidate.tier, candidate.model));
 }
 
 /**
