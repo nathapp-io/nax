@@ -458,9 +458,7 @@ export function buildHopCallback(
         // SEC-3: thread per-package config so monorepo permissionProfile is honored.
         config,
         modelDef,
-        // See the pin rationale above — a pinned modelDef has no meaningful tier.
-        // See the pin rationale above — neither a caller pin nor a hop-level
-        // literal pin has a meaningful tier to report.
+        // Neither a caller pin nor a hop-level literal pin has a meaningful tier to report.
         ...(pinned || (hopPin && !pinnedModelDef) ? {} : { modelTier: tier }),
         timeoutSeconds:
           resolvedRunOptions.timeoutSeconds ??
@@ -473,16 +471,14 @@ export function buildHopCallback(
       });
     }
 
-    // Record the descriptor handoff for any swap, whether or not a bundle was rebuilt.
-    // nax#1722: callOp carries no sessionId, so fall back to the session NAME — without
-    // it the descriptor kept naming the failed primary on every production swap.
+    // Record the descriptor handoff for any swap, whether or not a bundle was rebuilt. nax#1722:
+    // callOp carries no sessionId, so otherwise the descriptor kept naming the failed primary on every production swap.
     if (hopKind.kind === "swap") {
       if (sessionId) sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
       else recordAgentHandoff(sessionManager, sessionName, agentName, hopKind.failure.outcome);
     }
 
     let timedOut = false;
-
     try {
       // Bound `send` closure: each call dispatches one turn through AgentManager
       // (so middleware fires) against the current hop's handle. Reused by both
