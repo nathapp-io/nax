@@ -53,8 +53,12 @@ export type PromptProtocol = "native" | "acp";
  * Unpredictable per process, and shared by the wrap and the substitution because
  * both run in the same process: a builder composes the prompt and dispatch
  * rewrites it a few frames later, never across a process boundary.
+ *
+ * Re-exported by `protocol-region.ts` (US-001) so `wrapAffordance` and
+ * `applyProtocolRegions` can produce markers with the same nonce and
+ * substitute prompts the legacy `wrapDiffAccess` produced.
  */
-const NONCE = randomUUID().slice(0, 8);
+export const NONCE = randomUUID().slice(0, 8);
 const OPEN = `<!--nax:diff-access:${NONCE} `;
 const CLOSE = "<!--/nax:diff-access-->";
 
@@ -104,8 +108,13 @@ function diffCall(ref: string, paths: readonly string[] | undefined, extra: Reco
  * path globs. That is moot today (`scoped` is rejected at config load, #374),
  * and it becomes live the moment scoped grants land, because this text now
  * recommends those pathspecs to every reviewer.
+ *
+ * Exported for `protocol-region.ts` — the affordance registry uses it as the
+ * native renderer for the `diff-access` kind. The two entry points
+ * (`applyDiffAccess` and `applyProtocolRegions`) share the same per-process
+ * nonce and produce equivalent native renderings.
  */
-function renderNative(spec: DiffAccessSpec): string {
+export function renderNative(spec: DiffAccessSpec): string {
   const lines = [
     "## Diff Access",
     "",

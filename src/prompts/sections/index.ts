@@ -14,6 +14,13 @@ export { buildIsolationSection } from "./isolation";
 export { buildModifiedFilesLines } from "./modified-files";
 export { buildNaxArtifactsSection } from "./nax-artifacts";
 export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./out-of-scope";
+export type { AffordanceNativeRenderer, ApplyProtocolRegionsOpts } from "./protocol-region";
+export {
+  applyProtocolRegions,
+  PROTOCOL_REGION_MARKER_PREFIX,
+  unwrapProtocolRegions,
+  wrapAffordance,
+} from "./protocol-region";
 export { buildRoleTaskSection } from "./role-task";
 export { buildSelfVerificationSection } from "./self-verification";
 export { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "./story";
