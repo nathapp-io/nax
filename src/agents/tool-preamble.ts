@@ -17,7 +17,7 @@
  * drift, and a third would otherwise be written without the guard.
  */
 
-import { applyDiffAccess } from "../prompts/sections/diff-access";
+import { applyProtocolRegions } from "../prompts/sections";
 import { buildContextToolPreamble } from "./acp/adapter-output";
 import { NATIVE_AGENT } from "./native/models";
 import type { AgentRunOptions } from "./types";
@@ -28,7 +28,7 @@ export function promptWithToolPreamble(agentName: string, options: AgentRunOptio
 }
 
 /**
- * Render every diff-access region for the protocol actually being dispatched.
+ * Substitute every protocol-region marker for the protocol being dispatched.
  *
  * Sits beside the tool-preamble branch for the same reason it does: this is a
  * dispatch question, decided after any fallback swap, and the builders that
@@ -39,6 +39,14 @@ export function promptWithToolPreamble(agentName: string, options: AgentRunOptio
  * the markers stripped even though it keeps the body, so an agent never sees
  * one. Its two call sites must not drift, which is why it is a helper here
  * rather than a condition written out at each.
+ *
+ * US-003 — the registered kinds are `diff-access`, `run-check` and `run-test`
+ * (US-005 will add `commit`). Each kind carries its own `requires` list and
+ * native renderer; `applyProtocolRegions` substitutes every region in one
+ * pass and gates each on its `requires` set. The legacy `applyDiffAccess`
+ * entry point is retained for its existing test suite as a thin adapter,
+ * but the dispatch seam routes through the SSOT so a new kind added to the
+ * registry is substituted without further dispatch changes.
  *
  * Named for the protocol, not the agent: the agent name is only how the
  * protocol is derived. Every ACP agent gets the same rendering, so nothing here
@@ -55,5 +63,8 @@ export function applyDiffAccessForAgentProtocol(
   prompt: string,
   advertisedTools: readonly string[],
 ): string {
-  return applyDiffAccess(prompt, agentName === NATIVE_AGENT ? "native" : "acp", advertisedTools);
+  return applyProtocolRegions(prompt, {
+    protocol: agentName === NATIVE_AGENT ? "native" : "acp",
+    advertisedTools: new Set(advertisedTools),
+  });
 }

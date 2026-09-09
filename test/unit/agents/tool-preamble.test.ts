@@ -4,6 +4,7 @@ import { makeNaxConfig } from "@test/helpers";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "@/agents/tool-preamble";
 import type { AgentRunOptions } from "@/agents/types";
 import { wrapDiffAccess } from "@/prompts/sections/diff-access";
+import { wrapAffordance } from "@/prompts/sections/protocol-region";
 
 function makeOptions(overrides: Partial<AgentRunOptions> = {}, prompt = "do the thing"): AgentRunOptions {
   return {
@@ -104,6 +105,85 @@ describe("applyDiffAccessForAgentProtocol", () => {
     for (const tools of [["Git", "Read"], [], ["Read", "Glob", "Grep"]] as const) {
       for (const agent of ["native", "claude"]) {
         expect(applyDiffAccessForAgentProtocol(agent, prompt, tools)).not.toContain("nax:diff-access");
+      }
+    }
+  });
+});
+
+/**
+ * US-003 — the dispatch seam must substitute every registered kind, not only
+ * diff-access. `run-check` and `run-test` regions produced by
+ * self-verification.ts and acceptance-builder.ts reach the agent through this
+ * helper; without these tests a regression that reverted the helper to its
+ * pre-US-003 behaviour would still pass every other suite in the repo
+ * (the kind-registration tests in `protocol-region.test.ts` exercise the
+ * renderer in isolation, and the legacy `applyDiffAccess` tests cover the
+ * diff-access path). The tests here pin the end-to-end contract: a region
+ * written by a builder reaches the agent with the right body for its
+ * protocol + advertised tools.
+ */
+describe("applyDiffAccessForAgentProtocol — run-check / run-test regions (US-003)", () => {
+  // AC3 — native + advertised RunCommand ⇒ RunCommand call on the typecheck line.
+  test('AC3: native + advertised RunCommand substitutes a run-check region to RunCommand {"command": "typecheck"}', () => {
+    const region = wrapAffordance("run-check", { command: "typecheck" }, "`bun x tsc --noEmit`");
+    const prompt = `head\n${region}tail`;
+    const out = applyDiffAccessForAgentProtocol("native", prompt, ["RunCommand"]);
+
+    expect(out).toContain('RunCommand {"command": "typecheck"}');
+    // No shell string leaks through on the native path when RunCommand is advertised.
+    expect(out).not.toContain("bun x tsc --noEmit");
+    // No marker survives dispatch.
+    expect(out).not.toContain("nax:run-check");
+  });
+
+  // AC4 — native without RunCommand ⇒ ACP body (the shell string).
+  test("AC4: native without RunCommand in advertisedTools keeps the run-check ACP body", () => {
+    const region = wrapAffordance("run-check", { command: "typecheck" }, "`bun x tsc --noEmit`");
+    const prompt = `head\n${region}tail`;
+    const out = applyDiffAccessForAgentProtocol("native", prompt, ["Read", "Glob", "Grep"]);
+
+    expect(out).toContain("bun x tsc --noEmit");
+    expect(out).not.toContain("RunCommand");
+    expect(out).not.toContain("nax:run-check");
+  });
+
+  // ACP path — markers stripped, ACP body kept.
+  test("strips a run-check region under ACP, leaving the shell string", () => {
+    const region = wrapAffordance("run-check", { command: "typecheck" }, "`bun x tsc --noEmit`");
+    const prompt = `head\n${region}tail`;
+    const out = applyDiffAccessForAgentProtocol("claude", prompt, ["Git", "Read", "RunCommand"]);
+
+    expect(out).toContain("bun x tsc --noEmit");
+    expect(out).not.toContain("RunCommand");
+    expect(out).not.toContain("nax:run-check");
+  });
+
+  // AC6 — native + advertised RunCommand ⇒ RunCommand call on the rerun line.
+  test("AC6: native + advertised RunCommand substitutes a run-test region to the call carrying values.files", () => {
+    const region = wrapAffordance(
+      "run-test",
+      { command: "testScoped", files: "/abs/path.test.ts" },
+      "`bun test /abs/path.test.ts`",
+    );
+    const prompt = `head\n${region}tail`;
+    const out = applyDiffAccessForAgentProtocol("native", prompt, ["RunCommand"]);
+
+    expect(out).toContain('RunCommand {"command": "testScoped", "values": {"files": "/abs/path.test.ts"}}');
+    expect(out).not.toContain("bun test /abs/path.test.ts");
+    expect(out).not.toContain("nax:run-test");
+  });
+
+  // Marker hygiene — every registered kind's marker is stripped at dispatch.
+  test("strips a run-test region's markers on both protocols", () => {
+    const region = wrapAffordance(
+      "run-test",
+      { command: "testScoped", files: "/abs/path.test.ts" },
+      "`bun test /abs/path.test.ts`",
+    );
+    const prompt = `head\n${region}tail`;
+    for (const tools of [["RunCommand"], [], ["Read", "Glob", "Grep"]] as const) {
+      for (const agent of ["native", "claude"]) {
+        expect(applyDiffAccessForAgentProtocol(agent, prompt, tools)).not.toContain("nax:run-test");
       }
     }
   });
