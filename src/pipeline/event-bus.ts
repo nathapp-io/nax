@@ -87,7 +87,14 @@ export interface RunCompletedEvent {
   skippedStories: number;
   pausedStories: number;
   durationMs: number;
+  /** Every dollar the run accounted for — successful spend plus failed-dispatch spend. */
   totalCost?: number;
+  /**
+   * The failed-dispatch half of `totalCost` — spend on dispatches that threw.
+   * Absent when nothing failed, so its presence always means real money went
+   * to work that produced nothing.
+   */
+  errorCostUsd?: number;
   /**
    * Run-level agent-swap aggregates (ADR-012).
    * Absent when no swaps occurred in this run. Subscribers (reporters,

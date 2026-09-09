@@ -29,7 +29,7 @@ export type {
   CostSnapshot,
   ICostAggregator,
 } from "./cost-aggregator";
-export { _costAggDeps, CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
+export { _costAggDeps, CostAggregator, createNoOpCostAggregator, totalSpendUsd } from "./cost-aggregator";
 export type { DispatchContext } from "./dispatch-context";
 export type {
   CompleteDispatchEvent,

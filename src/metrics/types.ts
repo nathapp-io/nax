@@ -296,8 +296,16 @@ export interface RunMetrics {
   startedAt: string;
   /** Run completion timestamp */
   completedAt: string;
-  /** Total cost for the run */
+  /** Total cost for the run — successful spend plus failed-dispatch spend. */
   totalCost: number;
+  /**
+   * The failed-dispatch half of `totalCost`. Absent when nothing failed.
+   *
+   * Kept separate rather than only summed: a sum cannot be un-summed, and
+   * "spend that produced work" vs "spend that produced nothing" is the
+   * distinction any analysis of a failure-heavy run needs.
+   */
+  errorCostUsd?: number;
   /** Total number of stories in the run */
   totalStories: number;
   /** Number of stories completed successfully */

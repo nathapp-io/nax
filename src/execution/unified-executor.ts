@@ -1,7 +1,8 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
 import { pipelineEventBus } from "@/pipeline";
-import { checkCostExceeded, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
+import { totalSpendUsd } from "@/runtime";
+import { checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import { type StoryMetrics, toFallbackHops } from "../metrics";
 import { logPipelineOutcome, runPipeline } from "../pipeline/runner";
@@ -19,6 +20,7 @@ import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
 import { precomputeBatchPlan } from "./batching";
+import { enforceCostLimit } from "./cost-guard";
 import { maybeSendCostWarning } from "./cost-warning";
 import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, type DeferredReviewResult, runDeferredReview } from "./deferred-review";
@@ -52,42 +54,6 @@ async function closeStoryIfTerminal(
   if (!isTerminal) return;
   if (ctx.sessionManager) await closeStorySessions(ctx.sessionManager, storyId, ctx.agentGetFn);
   ctx.agentManager?.resetTransientUnavailable?.();
-}
-
-/**
- * BUG-6 / D-4: shared costLimit gate for all three dispatch paths (parallel batch,
- * single-story, sequential). Emits `run:paused` and returns `stop: true` unless the
- * cost-exceeded trigger is enabled and the user approves continuing (`run:resumed`).
- */
-async function enforceCostLimit(
-  ctx: SequentialExecutionContext,
-  totalCost: number,
-  costLimit: number,
-  storyId?: string,
-): Promise<{ stop: boolean; enforcedCost: number }> {
-  const enforcedCost = Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd);
-  if (enforcedCost < costLimit) return { stop: false, enforcedCost };
-
-  const shouldProceed =
-    ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
-      ? await checkCostExceeded(
-          { featureName: ctx.feature, cost: enforcedCost, limit: costLimit },
-          ctx.config,
-          ctx.interactionChain,
-        )
-      : false;
-
-  if (!shouldProceed) {
-    pipelineEventBus.emit({
-      type: "run:paused",
-      reason: `Cost limit reached: $${enforcedCost.toFixed(2)}`,
-      ...(storyId !== undefined ? { storyId } : {}),
-      cost: enforcedCost,
-    });
-    return { stop: true, enforcedCost };
-  }
-  pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
-  return { stop: false, enforcedCost };
 }
 
 export async function executeUnified(
@@ -630,7 +596,9 @@ export async function executeUnified(
       await closeStoryIfTerminal(ctx, selection.story.id, iter);
       warningSent = await maybeSendCostWarning(
         ctx,
-        Math.max(totalCost, ctx.runtime.costAggregator.snapshot().totalCostUsd),
+        // Same reading as the hard guard — a warning that fires on a different
+        // number than the stop would warn late, or not at all.
+        Math.max(totalCost, totalSpendUsd(ctx.runtime.costAggregator.snapshot())),
         costLimit,
         warningSent,
       );

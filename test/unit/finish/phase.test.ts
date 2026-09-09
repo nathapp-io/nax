@@ -5,6 +5,27 @@ import { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } f
 import { pipelineEventBus } from "@/pipeline";
 import type { PipelineEvent } from "@/pipeline/event-bus";
 
+describe("_finishPhaseDeps.snapshotCost", () => {
+  test("counts failed-dispatch spend as money the phase spent", () => {
+    // The finish phase's reported cost is a before/after delta of this reading.
+    // Taking only `totalCostUsd` would report a phase that burned money on
+    // dispatches that threw as having cost less than it did.
+    const runtime = makeTestRuntime();
+    // Capture the real aggregator first: reading `runtime.costAggregator`
+    // inside the replacement resolves to the replacement itself and recurses.
+    const realAggregator = runtime.costAggregator;
+    Object.defineProperty(runtime, "costAggregator", {
+      value: {
+        ...realAggregator,
+        snapshot: () => ({ ...realAggregator.snapshot(), totalCostUsd: 2, totalErrorCostUsd: 3 }),
+      },
+      writable: true,
+    });
+
+    expect(_finishPhaseDeps.snapshotCost(runtime)).toBeCloseTo(5, 5);
+  });
+});
+
 describe("shouldRunFinish", () => {
   const base = { enabled: true, branch: "feat/x", storySummary: { completed: 2, failed: 0, paused: 0 } };
 

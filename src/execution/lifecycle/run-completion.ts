@@ -20,6 +20,7 @@ import { pipelineEventBus } from "@/pipeline";
 import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";
 import { clearLanguageCache } from "@/project";
+import { totalSpendUsd } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import { purgeStaleScratch } from "@/session";
 import { clearWorkspaceCache } from "@/test-runners/detect";
@@ -355,7 +356,17 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   }
 
   const aggSnap = options.runtime.costAggregator.snapshot();
-  const reportedTotal = aggSnap.totalCostUsd;
+  // Bug 909 fixed the completion-phase half of "the aggregator captured it and
+  // nobody read it". This is the other half: `totalErrorCostUsd` had no consumer
+  // anywhere in nax, so spend on dispatches that threw was billed to the user
+  // and reported nowhere. What a run cost is both halves.
+  const reportedTotal = totalSpendUsd(aggSnap);
+  // Carried beside the total, never in place of it: a sum cannot be un-summed,
+  // and "spend that produced work" vs "spend that produced nothing" is the
+  // distinction any analysis of a failure-heavy run needs. Omitted at zero, so
+  // its presence always means dispatches actually failed.
+  const errorCostUsd = aggSnap.totalErrorCostUsd;
+  const errorCostField = errorCostUsd > 0 ? { errorCostUsd } : {};
 
   const aggByStage = options.runtime.costAggregator.byStage();
   const aggByStory = options.runtime.costAggregator.byStory();
@@ -420,6 +431,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     pausedStories: finalCounts.paused,
     durationMs,
     totalCost: reportedTotal,
+    ...errorCostField,
     ...(fallbackAggregate && { fallback: fallbackAggregate }),
   });
   // Drain async subscriber Promises (reporter.onRunEnd file writes, etc.) before
@@ -433,6 +445,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     startedAt,
     completedAt: runCompletedAt,
     totalCost: reportedTotal,
+    ...errorCostField,
     totalStories: allStoryMetrics.length,
     storiesCompleted,
     storiesFailed: finalCounts.failed,
@@ -514,6 +527,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     storiesFailed: finalCounts.failed,
     storiesPending: finalCounts.pending,
     totalCost: reportedTotal,
+    ...errorCostField,
     ...(contextCostUsd > 0 && { contextCostUsd }),
     ...(Object.keys(aggByStage).length > 0 && { costByStage: aggByStage }),
     ...(Object.keys(aggByStory).length > 0 && { costByStory: aggByStory }),
