@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { projectConfigDir } from "../config/paths";
+import { unwrapProtocolRegions } from "../prompts/sections";
 import { buildRoleTaskSection } from "../prompts/sections/role-task";
 import { atomicWriteText, loadJsonFileStrict } from "../utils/json-file";
 
@@ -79,10 +80,14 @@ export async function promptsInitCommand(options: PromptsInitCommandOptions): Pr
 
   for (const template of TEMPLATE_ROLES) {
     const filePath = join(templatesDir, template.file);
-    const roleBody =
+    // US-005: an override file is loaded by a later process, whose nonce can
+    // never match the one that wrote it — a region here would never render
+    // natively. Persist the ACP body with no region markers.
+    const roleBody = unwrapProtocolRegions(
       template.role === "implementer"
         ? buildRoleTaskSection(template.role, template.variant)
-        : buildRoleTaskSection(template.role);
+        : buildRoleTaskSection(template.role),
+    );
     const content = TEMPLATE_HEADER + roleBody;
     await Bun.write(filePath, content);
     written.push(filePath);

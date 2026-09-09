@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
+import { applyProtocolRegions, unwrapProtocolRegions } from "@/prompts/sections";
 import { buildRoleTaskSection } from "@/prompts/sections/role-task";
 
 const TEMPLATE_FILES = [
@@ -78,8 +79,12 @@ describe("promptsInitCommand — per-file checks (exists, content, header)", () 
       const content = await Bun.file(filePath).text();
       expect(content.length, `${file} non-empty`).toBeGreaterThan(0);
 
-      const expected = buildRoleTaskSection(...ROLE_SECTION_ARGS[file]);
+      const expected = unwrapProtocolRegions(buildRoleTaskSection(...ROLE_SECTION_ARGS[file]));
       expect(content, `${file} role section`).toContain(expected);
+
+      // US-005 AC6: a written template carries no region marker under either protocol.
+      expect(applyProtocolRegions(content, { protocol: "acp" })).toBe(content);
+      expect(applyProtocolRegions(content, { protocol: "native" })).toBe(content);
 
       expect(content, `${file} header comment`).toMatch(/<!--[\s\S]+?-->/);
       expect(content.toLowerCase(), `${file} mentions override/controls`).toMatch(

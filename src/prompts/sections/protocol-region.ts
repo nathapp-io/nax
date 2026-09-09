@@ -74,8 +74,8 @@ const REGION = new RegExp(
 const OWN_OPEN = new RegExp(`<!--nax:[a-z][a-z-]*:${NONCE} `, "g");
 
 /**
- * The registry. Today: `diff-access`, `run-check`, `run-test`, `test-scope`.
- * US-005 will add `commit`. The `requires` list is consulted when
+ * The registry. Today: `diff-access`, `run-check`, `run-test`, `test-scope`,
+ * `commit`. The `requires` list is consulted when
  * `advertisedTools` is supplied. When `advertisedTools` is `undefined`,
  * gating is skipped (a caller that does not know which tools the agent
  * advertises must still get the native rendering).
@@ -111,7 +111,16 @@ const REGISTRY: Record<string, AffordanceNativeRenderer> = {
     requires: ["RunCommand"],
     render: (spec) => renderRunCommandTestScope(spec as RunCommandTestSpec),
   },
+  commit: {
+    requires: ["GitCommit"],
+    render: (spec) => renderGitCommit(spec as CommitSpec),
+  },
 };
+
+/** Spec shape for `commit`: the commit message the role-task instruction names. */
+export interface CommitSpec {
+  readonly message: string;
+}
 
 /** Spec shape for `run-check`: a declared key the project's
  *  `quality.commands` map carries. */
@@ -162,6 +171,16 @@ function renderRunCommandTestScope(spec: RunCommandTestSpec): string {
     "Run only the test files related to your changes:\n" +
     `RunCommand {"command": ${JSON.stringify(spec.command)}, "values": {"files": ${JSON.stringify(spec.files)}}}`
   );
+}
+
+/** US-005 — the `commit` renderer replaces `git commit -m '<message>'` shell
+ *  text with a `GitCommit` call carrying the same message. No framing prose
+ *  is added here because the surrounding role-task instruction (e.g. "stage
+ *  and commit ALL changed files:") is left outside the region — only the
+ *  shell string itself is wrapped, so that prose survives verbatim on both
+ *  transports and this renderer only needs to substitute the call form. */
+function renderGitCommit(spec: CommitSpec): string {
+  return `GitCommit {"message": ${JSON.stringify(spec.message)}}`;
 }
 
 /** Wrap ACP text behind opening/closing markers carrying the spec and kind.

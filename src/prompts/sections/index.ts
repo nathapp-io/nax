@@ -17,6 +17,7 @@ export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./out-of-scope
 export type {
   AffordanceNativeRenderer,
   ApplyProtocolRegionsOpts,
+  CommitSpec,
   RunCommandSpec,
   RunCommandTestSpec,
 } from "./protocol-region";

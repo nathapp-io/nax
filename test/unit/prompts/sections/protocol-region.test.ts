@@ -718,3 +718,41 @@ describe("applyProtocolRegions — run-check / run-test native rendering (US-003
     expect(applyProtocolRegions(prompt, { protocol: "native" })).toBe(prompt);
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-005 — the `commit` kind. ACP renders the `git commit -m` shell string
+// (the body); native, with `GitCommit` advertised, renders a `GitCommit`
+// call carrying the same message; native without `GitCommit` falls back to
+// the ACP body, same gating shape as every other registered kind.
+// ---------------------------------------------------------------------------
+describe("applyProtocolRegions — commit native rendering (US-005)", () => {
+  const COMMIT_BODY = "git commit -m 'feat(US-005): render commits through affordances'";
+
+  test("native rendering with GitCommit advertised replaces the shell string with a GitCommit call", () => {
+    const region = wrapAffordance(
+      "commit",
+      { message: "feat(US-005): render commits through affordances" },
+      COMMIT_BODY,
+    );
+    const out = applyProtocolRegions(region, { protocol: "native", advertisedTools: new Set(["GitCommit"]) });
+
+    expect(out).toBe('GitCommit {"message": "feat(US-005): render commits through affordances"}');
+    expect(out).not.toContain("git commit -m");
+  });
+
+  test("native without GitCommit advertised keeps the ACP body", () => {
+    const region = wrapAffordance("commit", { message: "feat(US-005): x" }, "git commit -m 'feat(US-005): x'");
+    const out = applyProtocolRegions(region, { protocol: "native", advertisedTools: new Set(["Read"]) });
+
+    expect(out).toBe("git commit -m 'feat(US-005): x'");
+    expect(out).not.toContain("GitCommit {");
+  });
+
+  test("applied with acp, keeps the ACP body and emits no GitCommit call or marker", () => {
+    const region = wrapAffordance("commit", { message: "feat(US-005): x" }, "git commit -m 'feat(US-005): x'");
+    const out = applyProtocolRegions(region, { protocol: "acp" });
+
+    expect(out).toBe("git commit -m 'feat(US-005): x'");
+    expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+  });
+});

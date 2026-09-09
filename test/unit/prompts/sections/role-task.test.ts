@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { applyProtocolRegions, PROTOCOL_REGION_MARKER_PREFIX } from "@/prompts/sections";
 import { buildRoleTaskSection } from "@/prompts/sections/role-task";
 
 // ---------------------------------------------------------------------------
@@ -393,4 +394,77 @@ describe("backwards-compat: old API buildRoleTaskSection('standard'/'lite')", ()
     const lite = buildRoleTaskSection("implementer", "lite");
     expect(standard).not.toEqual(lite);
   });
+});
+
+// ---------------------------------------------------------------------------
+// US-005: commit-naming role-task variants render through the `commit`
+// protocol region. AC1-AC5 mirrored at the role-task level: every variant's
+// commit instruction is a region whose ACP body is the unchanged
+// `git commit -m` line, and whose native rendering (when `GitCommit` is
+// advertised) is a `GitCommit` call carrying the same message.
+// ---------------------------------------------------------------------------
+
+const COMMIT_VARIANTS = [
+  [
+    "no-test",
+    () => buildRoleTaskSection("no-test", undefined, undefined, undefined, undefined, "story-1"),
+    "feat(story-1): <description>",
+  ],
+  [
+    "implementer standard",
+    () => buildRoleTaskSection("implementer", "standard", undefined, undefined, undefined, "story-1"),
+    "feat(story-1): <description>",
+  ],
+  [
+    "implementer lite",
+    () => buildRoleTaskSection("implementer", "lite", undefined, undefined, undefined, "story-1"),
+    "feat(story-1): <description>",
+  ],
+  [
+    "single-session",
+    () => buildRoleTaskSection("single-session", undefined, undefined, undefined, undefined, "story-1"),
+    "feat(story-1): <description>",
+  ],
+  ["batch", () => buildRoleTaskSection("batch"), "feat(<story-id>): <description>"],
+  [
+    "tdd-simple",
+    () => buildRoleTaskSection("tdd-simple", undefined, undefined, undefined, undefined, "story-1"),
+    "feat(story-1): <description>",
+  ],
+] as const;
+
+describe("US-005: commit-naming role-task variants render via protocol regions", () => {
+  test.each(COMMIT_VARIANTS)(
+    "%s — acp keeps the git commit -m instruction verbatim (AC1, AC4)",
+    (_label, build, message) => {
+      const raw = build();
+      const acp = applyProtocolRegions(raw, { protocol: "acp" });
+
+      expect(acp).toContain(`git commit -m '${message}'`);
+      expect(acp).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+    },
+  );
+
+  test.each(COMMIT_VARIANTS)(
+    "%s — native with GitCommit advertised renders a GitCommit call, no shell string (AC2, AC5)",
+    (_label, build, message) => {
+      const raw = build();
+      const native = applyProtocolRegions(raw, { protocol: "native", advertisedTools: new Set(["GitCommit"]) });
+
+      expect(native).toContain(`GitCommit {"message": ${JSON.stringify(message)}}`);
+      expect(native).not.toContain("git commit -m");
+      expect(native).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+    },
+  );
+
+  test.each(COMMIT_VARIANTS)(
+    "%s — native without GitCommit advertised keeps the git commit -m shell string (AC3)",
+    (_label, build, message) => {
+      const raw = build();
+      const native = applyProtocolRegions(raw, { protocol: "native", advertisedTools: new Set() });
+
+      expect(native).toContain(`git commit -m '${message}'`);
+      expect(native).not.toContain("GitCommit {");
+    },
+  );
 });
