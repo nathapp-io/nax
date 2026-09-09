@@ -115,6 +115,8 @@ type IterationOutcome =
   | "regressed-different-source";       // before had source A, after has source B
 ```
 
+**Amended 2026-09-09 (issue #1932):** `FixApplied.costUsd` was originally sourced from `FixStrategy.extractApplied` alone. No strategy ever supplied it, so the field — and everything derived from it, including `FixCycleResult.costUsd` and the `fix-cycle-iteration` curator observation — was structurally always 0 while rectification burned 35% of a run's spend. `runFixCycle` now stamps a fresh correlation id on each dispatch context and reads that dispatch's spend from the run's cost ledger (`costAggregator.byCall()`); an explicit `extractApplied.costUsd` still takes precedence. Keyed on `callId` rather than a cost scope because `runPhase` overwrites `scopeId` on the context it forwards, which would zero the rectification path. Failed-dispatch spend stays excluded, mirroring `runPhase`'s `phaseCosts`.
+
 `fixesApplied: FixApplied[]` (plural) accommodates current behaviour where one diagnose-fix iteration runs `acceptanceFixSourceOp` then `acceptanceFixTestOp` (verdict=both), and where autofix runs test-writer then implementer.
 
 **`classifyOutcome` algorithm — per-source bucket, then aggregate.** Mixed cross-source comparisons (e.g. `before: [lintA, lintB]`, `after: [lintA, typecheckC]`) are not meaningful at the unified level — severity comparisons across sources don't share a vocabulary. Algorithm:
