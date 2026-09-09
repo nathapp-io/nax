@@ -303,9 +303,9 @@ nonce no later process can match.
    against the helper-backed implementation.
 2. `[unit]` `applyDiffAccess` accepts an advertised-tool list as its third argument and returns
    the ACP body when protocol is `native` and `Git` is absent from that list.
-3. `[unit]` `applyDiffAccessForAgentProtocol` requires an advertised-tool list argument: called
-   with the native agent name and a list containing `Git` and `Read`, it returns the native
-   rendering; called with the same prompt and an empty list, it returns the ACP body.
+3. `[unit]` `applyDiffAccessForAgentProtocol`, called with the native agent name and an
+   advertised-tool list containing `Git` and `Read`, returns the native rendering; called with
+   the same prompt and an empty list, it returns the ACP body.
 4. `[integration]` Dispatching through the hop callback built by `buildHopCallback` with the
    native agent and a configuration whose resolved grants advertise `Git` and `Read` sends the
    agent a prompt whose diff-access section is the native rendering.
@@ -388,6 +388,10 @@ literal text by design.
 
 ## Verification notes
 
+- The required third parameter on `applyDiffAccessForAgentProtocol` is a compile-time contract,
+  not an acceptance criterion: `bun run typecheck` rejects a two-argument call site. Asserting it
+  as a test would need a `@ts-expect-error`, and `scripts/check-test-escape-hatches.ts` holds
+  `tsSuppress` as a closed invariant at 0.
 - Static gate for every story: `bun run lint` and `bun run typecheck`. `bun run lint` includes
   `check:file-sizes`, `check:alias-internals` and `check:import-cycles`; the new module must stay
   under the 600-line source limit.
