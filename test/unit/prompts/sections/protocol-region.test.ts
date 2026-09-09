@@ -265,14 +265,42 @@ describe("applyProtocolRegions — marker hygiene (AC8, AC9)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC10 — one call substitutes every region of different kinds
+// AC10 — one call substitutes every region (different kinds in one prompt)
 // ---------------------------------------------------------------------------
 describe("applyProtocolRegions — multiple regions (AC10)", () => {
   test("substitutes two regions of different kinds in a single call", () => {
-    // The "diff-access" kind is registered; a sibling "other-kind" is not
-    // (this story registers diff-access only) — but substituting it with a
-    // known-good wrap is what this AC verifies: one call handles both.
-    // Keep both as diff-access to focus on the per-region substitution shape:
+    // Two distinct kinds, two distinct bodies, two distinct fates in one call:
+    // "diff-access" is registered and gets its body swapped for native
+    // rendering; a sibling kind whose name is not in the registry is left
+    // with its body verbatim and its markers stripped (AC7's contract — the
+    // body is the fallback the spec ships when no native renderer exists).
+    // The loop has to walk the prompt once and reach both regions — otherwise
+    // one of these expectations fails.
+    const otherKindBody = "## Other Affordance\n\nplain prose for the sibling kind\n";
+    const prompt =
+      `${wrappedRegion("diff-access", DIFF_SPEC, ACP_BODY)}\nmiddle\n` +
+      `${wrappedRegion("sibling-kind", { ref: "abc123" }, otherKindBody)}`;
+    const out = applyProtocolRegions(prompt, {
+      protocol: "native",
+      advertisedTools: new Set(["Git", "Read"]),
+    });
+
+    // Registered kind: native rendering replaces the body — markers gone, baseline ref present.
+    expect(out).not.toMatch(/<!--nax:diff-access:/);
+    expect(out).toContain("abc123");
+    // Sibling kind: markers stripped (this is the ACP fallback path the impl
+    // returns for an unregistered kind), body kept verbatim. The two regions
+    // are distinguishable by their surviving content, not by a leftover opener.
+    expect(out).toContain(otherKindBody);
+    expect(out).not.toMatch(/<!--nax:sibling-kind:/);
+    // The "middle" inter-region text is unchanged — neither region ate it.
+    expect(out).toContain("middle");
+  });
+
+  test("substitutes two regions of the same kind in a single call", () => {
+    // The dispatch loop must keep walking after the first match. A
+    // not-quite-global replacement would resolve the first region and stop,
+    // leaving the second marker visible — covered here with two distinct refs.
     const prompt =
       `${wrappedRegion("diff-access", DIFF_SPEC, ACP_BODY)}\nmiddle\n` +
       `${wrappedRegion("diff-access", { ...DIFF_SPEC, ref: "def456" }, ACP_BODY)}`;
