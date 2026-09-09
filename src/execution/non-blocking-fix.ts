@@ -53,10 +53,10 @@ const MAX_LOGGED_REGRESSED_KEYS = 10;
  */
 export function actionableAdvisoryFindings(findings: readonly Finding[]): readonly Finding[] {
   // #1950 — AC-quote drops are folded into advisoryFindings so they reach the
-  // end-of-run report, but they must not buy an agent session: a drop is by
-  // definition ungrounded, and under `scope: "triage"` seeding one would hand
-  // un-reviewed source edits to the weakest-evidenced finding class there is.
-  // Reported, not acted on. Same seam and same rationale as `actionRequired`.
+  // end-of-run report, but they do not buy an agent session. This is a HOLD on
+  // #1801 (may an AC-ungrounded finding drive action?), not a claim that drops
+  // are weak: all three in the corpus are substantive and one shipped (#1951).
+  // Seeding them would settle #1801 through a side door. See `Finding.acDropped`.
   return findings.filter((f) => f.actionRequired !== false && f.acDropped !== true);
 }
 

@@ -698,9 +698,9 @@ describe("actionableAdvisoryFindings", () => {
   });
 
   test("drops AC-quote-dropped findings folded in for reporting (#1950)", () => {
-    // A drop reaches advisoryFindings so the end-of-run report shows it, but it is
-    // ungrounded by definition and must never buy an agent session — under
-    // `scope: "triage"` that would be an un-reviewed source edit.
+    // A drop reaches advisoryFindings so the end-of-run report shows it, but it does
+    // not buy an agent session: a HOLD on #1801 (may an AC-ungrounded finding drive
+    // action?), not a judgment on drop quality. See `Finding.acDropped`.
     const kept = actionableAdvisoryFindings([
       advisory({ message: "real advisory" }),
       advisory({ message: "ac-quote drop", acDropped: true }),
