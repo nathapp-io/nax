@@ -139,13 +139,23 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       }
 
       const failure = result.adapterFailure ?? unknownFailure();
-      // The primary hop carries no tier of its own, so record it at the tier the
-      // caller actually dispatched. Without this its cooldown lands on the bare
-      // agent key, which `CooldownStore._live` returns for any tier-less lookup
-      // regardless of scope — which is what excluded every literal-pin rung (nax#1966).
-      const failedTier = currentHopKind.tier ?? request.runOptions.modelTier;
-      input.markUnavailable(currentAgent, failure, failedTier, currentHopKind.model);
-      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, failedTier, currentHopKind.model);
+      // currentHopKind.tier is the tier of the hop that just failed — mark and
+      // exclude by that identity, not the bare agent name, so a same-agent,
+      // different-tier fallback target survives (see swap-decision.ts). Deliberately
+      // NOT defaulted to currentRunOptions.modelTier when unset (the healthy primary's
+      // first hop): that would narrow markUnavailable's cooldown key from bare-agent to
+      // agent+tier, which breaks resolveStartAgent's dead-primary skip — its
+      // `isUnavailable(primary)` check (hop-budget.ts) is intentionally tier-less and
+      // depends on the bare-agent key an agent-wide OR model-scoped failure
+      // (fail-auth, fail-quota, fail-rate-limit, fail-service-down, ...) writes when the
+      // failing hop named no tier. Model-identity exclusion therefore engages once a
+      // tier is NAMED by a hop (a swap target, or a dead-primary start that named one)
+      // — not retroactively for the very first, tier-less hop. `currentHopKind.model`
+      // still threads through: a literal-pin swap target DOES carry a tier-less model,
+      // and that pin's own identity is what nax#1966 needed — see fallback-model-identity.ts.
+      const currentTier = currentHopKind.tier;
+      input.markUnavailable(currentAgent, failure, currentTier, currentHopKind.model);
+      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, currentHopKind.model);
       if (!next) {
         const outcome = await input.resolveExhaustion({
           failure,
