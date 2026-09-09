@@ -31,10 +31,11 @@ export interface AgentFallbackConfig {
   /** Whether agent fallback is enabled (default: false) */
   enabled?: boolean;
   /**
-   * Fallback map: agent name → ordered list of fallback targets, each either a
-   * bare agent name or `{ agent, tier }` naming the tier the fallback should use.
+   * Fallback map: agent name → ordered list of fallback targets, each a bare
+   * agent name, `{ agent, tier }` naming the tier, or `{ agent, model }`
+   * (ConfiguredModel-style: `model` is a tier name or a literal id).
    */
-  map?: Record<string, (string | { agent: string; tier: string })[]>;
+  map?: Record<string, (string | { agent: string; tier: string } | { agent: string; model: string })[]>;
   /** Maximum fallback hops per story (default: 2, min 1, max 10) */
   maxHopsPerStory?: number;
   /** Whether to fall back on quality failure (default: false) */

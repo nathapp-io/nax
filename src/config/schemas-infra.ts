@@ -202,9 +202,14 @@ const PromptAuditConfigSchema = z.object({
   dir: z.string().optional(),
 });
 
+// { agent, model } mirrors ConfiguredModelObjectSchema (schemas-model.ts): `model`
+// is a tier name or a literal "provider/model" id, discriminated at runtime by
+// resolveFallbackDispatchTarget (fallback-model-identity.ts) — the schema itself
+// stays agnostic, same as ConfiguredModelSchema does for routing.agents targets.
 const FallbackTargetSchema = z.union([
   z.string().min(1),
   z.object({ agent: z.string().min(1), tier: z.string().min(1) }),
+  z.object({ agent: z.string().min(1), model: z.string().min(1) }),
 ]);
 
 const AgentFallbackConfigSchema = z.object({

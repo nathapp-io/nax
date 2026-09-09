@@ -7,9 +7,9 @@
  * nextCandidate that returns a bare string.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { resolveStartAgent, type StartAgentSource } from "@/agents/hop-budget";
-import { AgentManager } from "@/agents/manager";
+import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { resolveFinalDispatch, resolveHopCompleteOptions } from "@/agents/manager-dispatch";
 import type { AgentFallbackRecord, HopKind } from "@/agents/manager-types";
 import { availableCandidates, credentialCandidates, normaliseFallbackTarget } from "@/agents/swap-decision";
@@ -49,6 +49,22 @@ describe("fallback map schema", () => {
       }),
     ).toThrow();
   });
+
+  test("accepts a { agent, model } target — the ConfiguredModel spelling", () => {
+    const config = NaxConfigSchema.parse({
+      agent: { fallback: { enabled: true, map: { native: [{ agent: "native", model: "balanced" }] } } },
+    });
+    expect(config.agent?.fallback?.map.native).toEqual([{ agent: "native", model: "balanced" }]);
+  });
+
+  test("{ agent, model } also accepts a literal provider/model id", () => {
+    const config = NaxConfigSchema.parse({
+      agent: {
+        fallback: { enabled: true, map: { native: [{ agent: "native", model: "openrouter/z-ai/glm-5.3-flash" }] } },
+      },
+    });
+    expect(config.agent?.fallback?.map.native).toEqual([{ agent: "native", model: "openrouter/z-ai/glm-5.3-flash" }]);
+  });
 });
 
 describe("normaliseFallbackTarget", () => {
@@ -58,6 +74,13 @@ describe("normaliseFallbackTarget", () => {
 
   test("an object keeps its tier", () => {
     expect(normaliseFallbackTarget({ agent: "native", tier: "cheap" })).toEqual({ agent: "native", tier: "cheap" });
+  });
+
+  test("a { agent, model } object keeps its model, uninterpreted", () => {
+    expect(normaliseFallbackTarget({ agent: "native", model: "balanced" })).toEqual({
+      agent: "native",
+      model: "balanced",
+    });
   });
 });
 
@@ -456,5 +479,182 @@ describe("resolveFinalDispatch", () => {
 
   test("no tier leaves modelTier as the base had it", () => {
     expect(resolveFinalDispatch(base, "claude", swapped).options.modelTier).toBe("balanced");
+  });
+});
+
+describe("model-identity-aware fallback exclusion", () => {
+  // Follow-up to the tier-identity fix above: models.native can point two
+  // different tiers at the SAME underlying model (e.g. "fast" and "balanced"
+  // both resolving to one minimax entry). Keying exclusion/cooldown on tier
+  // name alone lets a swap "succeed" onto a target that is really the same
+  // dead provider under a different tier name. AgentManager resolves this via
+  // an injected `models` map (fallback-model-identity.ts) — never through
+  // AgentManagerConfig/agentManagerConfigSelector, which excludes `models`.
+  const RATE_LIMIT_FAILURE: AdapterFailure = {
+    category: "availability",
+    outcome: "fail-rate-limit",
+    retriable: true,
+    message: "rate limited",
+  };
+  const SAME_MODEL = { native: { fast: "minimax/MiniMax-M2.7", balanced: "minimax/MiniMax-M2.7" } };
+  const DIFFERENT_MODEL = { native: { fast: "minimax/MiniMax-M2.7", balanced: "openrouter/z-ai/glm-5.3-flash" } };
+
+  function makeRunOptions(config: AgentManagerConfig): AgentRunOptions {
+    return {
+      prompt: "do it",
+      workdir: "/tmp",
+      modelTier: "balanced",
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      timeoutSeconds: 60,
+      config,
+    };
+  }
+
+  const originalSleep = _agentManagerDeps.sleep;
+  afterEach(() => {
+    _agentManagerDeps.sleep = originalSleep;
+  });
+  /** defaultRetryStrategy backs off fail-rate-limit before giving up — avoid real waits. */
+  function stubSleep(): void {
+    _agentManagerDeps.sleep = async () => {};
+  }
+
+  describe("nextCandidate / isUnavailable (unit level)", () => {
+    test("marking one tier unavailable also cools down a different tier resolving to the SAME model", () => {
+      const config = NaxConfigSchema.parse({
+        agent: {
+          default: "native",
+          fallback: { enabled: true, map: { native: [{ agent: "native", tier: "balanced" }] } },
+        },
+      });
+      const manager = new AgentManager(config, undefined, { models: SAME_MODEL });
+
+      manager.markUnavailable("native", RATE_LIMIT_FAILURE, "fast");
+
+      expect(manager.isUnavailable("native", "balanced")).toBe(true);
+      expect(manager.nextCandidate("native", 0, "native", "fast")).toBeNull();
+    });
+
+    test("marking one tier unavailable leaves a different tier resolving to a DIFFERENT model untouched", () => {
+      const config = NaxConfigSchema.parse({
+        agent: {
+          default: "native",
+          fallback: { enabled: true, map: { native: [{ agent: "native", tier: "balanced" }] } },
+        },
+      });
+      const manager = new AgentManager(config, undefined, { models: DIFFERENT_MODEL });
+
+      manager.markUnavailable("native", RATE_LIMIT_FAILURE, "fast");
+
+      expect(manager.isUnavailable("native", "balanced")).toBe(false);
+      expect(manager.nextCandidate("native", 0, "native", "fast")).toEqual({ agent: "native", tier: "balanced" });
+    });
+  });
+
+  // These two hop chains start on "claude" (not "native") deliberately: a HEALTHY
+  // primary's own first hop carries no tier in HopKind (AgentRunOptions.modelTier is
+  // caller-only context that markUnavailable/nextCandidate never see — threading it in
+  // was tried and reverted, see the "known limitation" note in the PR description,
+  // because it narrows markUnavailable's cooldown key from bare-agent to agent+tier,
+  // which broke resolveStartAgent's dead-primary skip in 3 existing tests). Model
+  // identity therefore engages from the SECOND hop onward, once a swap target has
+  // named a real tier — exactly the shape a claude -> native@fast -> native@balanced
+  // chain produces.
+  describe("runWithFallback (end to end)", () => {
+    test("a fallback target resolving to the SAME model as the tier that just failed is excluded", async () => {
+      stubSleep();
+      const config = NaxConfigSchema.parse({
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: true,
+            map: {
+              claude: [
+                { agent: "native", tier: "fast" },
+                { agent: "native", tier: "balanced" },
+              ],
+            },
+          },
+        },
+      });
+      const manager = new AgentManager(config, undefined, { models: SAME_MODEL });
+
+      const hops: { agent: string; hopKind: HopKind }[] = [];
+      const outcome = await manager.runWithFallback({
+        runOptions: makeRunOptions(config),
+        executeHop: async (agent, bundle, hopKind) => {
+          hops.push({ agent, hopKind });
+          return {
+            result: {
+              success: false,
+              exitCode: 1,
+              output: "rate limited",
+              rateLimited: true,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              adapterFailure: RATE_LIMIT_FAILURE,
+            },
+            bundle,
+          };
+        },
+      });
+
+      // native@fast and native@balanced resolve to the SAME model — once native@fast
+      // fails, native@balanced must never be offered as a fresh candidate. No hop ever
+      // names "balanced" (after nextCandidate excludes it, the run backs off and retries
+      // the SAME dead native@fast hop per defaultRetryStrategy before exhausting — hence
+      // checking the whole sequence rather than an exact hop count).
+      expect(hops[0]).toEqual({ agent: "claude", hopKind: { kind: "primary" } });
+      expect(hops.slice(1).every((h) => h.agent === "native" && h.hopKind.tier === "fast")).toBe(true);
+      expect(outcome.fallbacks).toHaveLength(1);
+      expect(outcome.result.success).toBe(false);
+    });
+
+    test("a fallback target resolving to a DIFFERENT model still dispatches", async () => {
+      stubSleep();
+      const config = NaxConfigSchema.parse({
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: true,
+            map: {
+              claude: [
+                { agent: "native", tier: "fast" },
+                { agent: "native", tier: "balanced" },
+              ],
+            },
+          },
+        },
+      });
+      const manager = new AgentManager(config, undefined, { models: DIFFERENT_MODEL });
+
+      const hops: { agent: string; hopKind: HopKind }[] = [];
+      const outcome = await manager.runWithFallback({
+        runOptions: makeRunOptions(config),
+        executeHop: async (agent, bundle, hopKind) => {
+          hops.push({ agent, hopKind });
+          const result =
+            hops.length <= 2
+              ? {
+                  success: false,
+                  exitCode: 1,
+                  output: "rate limited",
+                  rateLimited: true,
+                  durationMs: 0,
+                  estimatedCostUsd: 0,
+                  adapterFailure: RATE_LIMIT_FAILURE,
+                }
+              : { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
+          return { result, bundle };
+        },
+      });
+
+      expect(hops).toEqual([
+        { agent: "claude", hopKind: { kind: "primary" } },
+        { agent: "native", hopKind: { kind: "swap", failure: RATE_LIMIT_FAILURE, tier: "fast" } },
+        { agent: "native", hopKind: { kind: "swap", failure: RATE_LIMIT_FAILURE, tier: "balanced" } },
+      ]);
+      expect(outcome.result.success).toBe(true);
+    });
   });
 });

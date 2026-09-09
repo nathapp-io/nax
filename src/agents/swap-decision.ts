@@ -76,22 +76,31 @@ export function decideSwap(
   return { swap: true };
 }
 
-/** A fallback target, after both config spellings are reduced to one shape. */
+/**
+ * A fallback target, after all config spellings are reduced to one shape.
+ * `tier` and `model` are mutually exclusive — at most one is ever set, mirroring
+ * `ConfiguredModel`'s `{ agent, model }` (`model` is a tier name or a literal id;
+ * see `resolveFallbackDispatchTarget` in fallback-model-identity.ts for how a
+ * `.model` target that names a tier is later folded into `.tier`).
+ */
 export interface FallbackTarget {
   readonly agent: string;
   readonly tier?: string;
+  readonly model?: string;
 }
 
-export type FallbackMapValue = string | { agent: string; tier: string };
+export type FallbackMapValue = string | { agent: string; tier: string } | { agent: string; model: string };
 export type FallbackMap = Record<string, readonly FallbackMapValue[]>;
 
 /**
- * Both spellings reduce here, and nothing downstream sees the raw union.
+ * All three spellings reduce here, and nothing downstream sees the raw union.
  * A plain string is a target with no tier — which is what every existing
  * config is, so the no-tier path must stay the untouched one.
  */
 export function normaliseFallbackTarget(value: FallbackMapValue): FallbackTarget {
-  return typeof value === "string" ? { agent: value } : { agent: value.agent, tier: value.tier };
+  if (typeof value === "string") return { agent: value };
+  if ("tier" in value) return { agent: value.agent, tier: value.tier };
+  return { agent: value.agent, model: value.model };
 }
 
 /**

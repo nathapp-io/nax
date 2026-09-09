@@ -34,19 +34,27 @@ export class CooldownStore {
    * agent. On the native path the provider lives in the model id string
    * (`models.native.<tier>`), so one tier's rate-limit must not park every
    * other tier of the same agent — those point at unrelated providers.
+   *
+   * `modelId`, when the caller can resolve one, scopes it narrower still: two
+   * tiers that resolve to the SAME model (e.g. `fast` and `balanced` both
+   * pointing at one minimax entry) must share one cooldown, or a rate-limit on
+   * one tier leaves the other looking healthy while it dispatches to the same
+   * dead provider. Preferred over `tier` when given; falls back to the
+   * tier/agent key otherwise, so an unresolvable model degrades to the
+   * pre-existing tier-scoped identity, never to bare-agent.
    */
-  mark(agent: string, failure: AdapterFailure, tier?: string): void {
+  mark(agent: string, failure: AdapterFailure, tier?: string, modelId?: string): void {
     const expiresAt = resolveCooldownExpiry(failure, this._now());
     if (expiresAt === null) return;
-    this._entries.set(identityKey(agent, tier), { failure, expiresAt });
+    this._entries.set(identityKey(agent, tier, modelId), { failure, expiresAt });
   }
 
-  isCooling(agent: string, tier?: string): boolean {
-    return this._live(agent, tier) !== undefined;
+  isCooling(agent: string, tier?: string, modelId?: string): boolean {
+    return this._live(agent, tier, modelId) !== undefined;
   }
 
-  failureFor(agent: string, tier?: string): AdapterFailure | undefined {
-    return this._live(agent, tier)?.failure;
+  failureFor(agent: string, tier?: string, modelId?: string): AdapterFailure | undefined {
+    return this._live(agent, tier, modelId)?.failure;
   }
 
   /**
@@ -65,8 +73,8 @@ export class CooldownStore {
   }
 
   /** Returns the entry only while it is still in force; expires it lazily. */
-  private _live(agent: string, tier?: string): CooldownEntry | undefined {
-    const key = identityKey(agent, tier);
+  private _live(agent: string, tier?: string, modelId?: string): CooldownEntry | undefined {
+    const key = identityKey(agent, tier, modelId);
     const entry = this._entries.get(key);
     if (!entry) return undefined;
     if (entry.expiresAt === "run") return entry;
@@ -77,9 +85,11 @@ export class CooldownStore {
 }
 
 /**
- * Cooldown identity: the bare agent name, unless a tier scopes it narrower.
- * A tier-less caller (every existing config) keys exactly as before.
+ * Cooldown identity: the bare agent name, unless a tier or resolved model
+ * scopes it narrower. A tier-less, model-less caller (every existing config)
+ * keys exactly as before.
  */
-function identityKey(agent: string, tier?: string): string {
+function identityKey(agent: string, tier?: string, modelId?: string): string {
+  if (modelId) return `${agent}::model::${modelId}`;
   return tier ? `${agent}::${tier}` : agent;
 }

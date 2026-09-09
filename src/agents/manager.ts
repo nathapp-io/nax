@@ -1,6 +1,7 @@
 /** AgentManager owns agent lifecycle and fallback policy (ADR-012). */
 
 import { EventEmitter } from "node:events";
+import type { ModelsConfig } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
@@ -18,6 +19,7 @@ import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
+import { resolveFallbackDispatchTarget, resolveFallbackModelId } from "./fallback-model-identity";
 import { StoryHopBudget } from "./hop-budget";
 import {
   buildCompleteCallPreamble,
@@ -33,11 +35,13 @@ import { runWithFallback } from "./manager-run-fallback";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
+  AgentManagerCtorOpts,
   AgentManagerEventName,
   AgentManagerEvents,
   AgentRunOutcome,
   AgentRunRequest,
   IAgentManager,
+  LoggerLike,
   RunAsSessionOpts,
   SendPromptFn,
   SessionRunHopFn,
@@ -54,11 +58,6 @@ import {
   logSwapDecline,
 } from "./swap-decision";
 import type { AgentResult, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
-
-type LoggerLike = {
-  warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
-  info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
-};
 
 /** Finite listener ceiling: concurrent stories exceed Node's default of 10. */
 const MAX_EMITTER_LISTENERS = 100;
@@ -91,21 +90,10 @@ export class AgentManager implements IAgentManager {
   private _dispatchEvents: IDispatchEventBus;
   private _pidRegistry: PidRegistry | undefined;
   private readonly _retryStrategy: RetryStrategy;
+  private readonly _models: ModelsConfig | undefined;
   readonly events: AgentManagerEvents;
 
-  constructor(
-    config: AgentManagerConfig,
-    registry?: AgentRegistry,
-    opts?: {
-      logger?: LoggerLike;
-      middleware?: MiddlewareChain;
-      runId?: string;
-      sendPrompt?: SendPromptFn;
-      runHop?: SessionRunHopFn;
-      dispatchEvents?: IDispatchEventBus;
-      retryStrategy?: RetryStrategy;
-    },
-  ) {
+  constructor(config: AgentManagerConfig, registry?: AgentRegistry, opts?: AgentManagerCtorOpts) {
     this._config = config;
     this._registry = registry;
     this._loggerOverride = opts?.logger;
@@ -116,6 +104,7 @@ export class AgentManager implements IAgentManager {
     this._runHop = opts?.runHop;
     this._dispatchEvents = opts?.dispatchEvents ?? new DispatchEventBus();
     this._retryStrategy = opts?.retryStrategy ?? defaultRetryStrategy;
+    this._models = opts?.models;
     this.events = {
       on: (event, listener) => {
         this._emitter.on(event as AgentManagerEventName, listener as (...args: unknown[]) => void);
@@ -146,11 +135,11 @@ export class AgentManager implements IAgentManager {
   }
 
   isUnavailable(agent: string, tier?: string): boolean {
-    return this._cooldowns.isCooling(agent, tier);
+    return this._cooldowns.isCooling(agent, tier, resolveFallbackModelId(this._models, agent, tier, this.getDefault()));
   }
 
   markUnavailable(agent: string, reason: AdapterFailure, tier?: string): void {
-    this._cooldowns.mark(agent, reason, tier);
+    this._cooldowns.mark(agent, reason, tier, resolveFallbackModelId(this._models, agent, tier, this.getDefault()));
     this._emitter.emit("onAgentUnavailable", { agent, tier, failure: reason });
   }
 
@@ -196,7 +185,8 @@ export class AgentManager implements IAgentManager {
 
   nextCandidate(current: string, _hopsSoFar: number, exclude?: string, excludeTier?: string): FallbackTarget | null {
     const excluded = (c: string, t?: string): boolean => (c === exclude && t === excludeTier) || this._isExcluded(c, t);
-    return availableCandidates(this._config.agent?.fallback?.map, current, excluded)[0] ?? null;
+    const candidate = availableCandidates(this._config.agent?.fallback?.map, current, excluded)[0];
+    return candidate ? resolveFallbackDispatchTarget(this._models, this.getDefault(), candidate) : null;
   }
 
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {

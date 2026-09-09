@@ -282,3 +282,28 @@ export type SendPromptFn = (
 ) => Promise<import("./types").TurnResult>;
 
 export type { SessionRunHopFn };
+
+/** Minimal logger surface AgentManager and its collaborators need. */
+export type LoggerLike = {
+  warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
+  info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
+};
+
+/**
+ * `AgentManager`'s constructor opts, named so the constructor signature stays
+ * one line — manager.ts is at its 600-line ratchet ceiling. `import(...)` types
+ * for middleware/dispatchEvents/retryStrategy/models keep this file cycle-free
+ * (per the file header) — a type-only inline import is erased and never
+ * registers a runtime edge, unlike a static `import type ... from ...`.
+ */
+export interface AgentManagerCtorOpts {
+  logger?: LoggerLike;
+  middleware?: import("../runtime/agent-middleware").MiddlewareChain;
+  runId?: string;
+  sendPrompt?: SendPromptFn;
+  runHop?: SessionRunHopFn;
+  dispatchEvents?: import("../runtime/dispatch-events").IDispatchEventBus;
+  retryStrategy?: import("./retry/types").RetryStrategy;
+  /** Not part of `AgentManagerConfig` — agentManagerConfigSelector excludes `models` (ADR-019). */
+  models?: import("@/config").ModelsConfig;
+}
