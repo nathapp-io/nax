@@ -170,63 +170,21 @@ and the three entry points. Ships with the `diff-access` registry entry only; la
 entries.
 
 - Creates: `src/prompts/sections/protocol-region.ts`, `test/unit/prompts/protocol-region.test.ts`
-- Context Files: `src/prompts/sections/diff-access.ts`, `src/tools/registry.ts`,
-  `src/prompts/sections/index.ts`
 
 **US-002 — Diff access on the helper, gated on advertised tools** *(depends on US-001)*
 
 Re-express diff access through the helper, thread the advertised tool names into both dispatch
 hops, and move substitution into the bound `send` closure so follow-up turns are covered.
 
-- Context Files: `src/agents/coding-tool-support.ts`, `src/operations/call.ts`
-- Modifies:
-  - **US-002** `src/prompts/sections/diff-access.ts` — `applyDiffAccess` gains a third
-    `advertisedTools` parameter and delegates to `applyProtocolRegions`; the invariant that
-    replaces the old one is that native rendering additionally requires `Git` and `Read` to be advertised.
-  - **US-002** `src/agents/tool-preamble.ts` — `applyDiffAccessForAgentProtocol` takes a
-    required third parameter; every dispatch site passes the advertised names.
-  - **US-002** `src/operations/build-hop-callback.ts` — coding-tool support resolves before
-    substitution, and `send` substitutes each turn prompt.
-  - **US-002** `src/runtime/session-run-hop.ts` — coding-tool support resolves before the
-    prompt is substituted.
-  - **US-002** `test/unit/agents/tool-preamble.test.ts` — its calls pin the two-argument
-    `applyDiffAccessForAgentProtocol`; the invariant that replaces it is that the advertised
-    tool list is a required argument.
-  - **US-002** `test/unit/operations/build-hop-callback-diff-access.test.ts` — asserts native
-    rendering from protocol alone; the invariant that replaces it is native rendering only when
-    `Git` and `Read` are advertised.
-  - **US-002** `test/unit/runtime/session-run-hop.test.ts` — same protocol-only assumption on
-    the second hop.
-
 **US-003 — Static-check affordance** *(depends on US-002)*
 
 Move the two hand-written registers onto the `run-check` and `run-test` entries so neither
 carries the "if that tool is available to you" hedge.
 
-- Context Files: `src/prompts/sections/self-verification.ts`,
-  `src/prompts/builders/acceptance-builder.ts`, `src/quality/self-verification.ts`
-- Modifies:
-  - **US-003** `test/unit/prompts/sections/self-verification.test.ts` — asserts the hedge
-    wording in the rendered check lines; the invariant that replaces it is that the section
-    renders one region whose body is the shell string.
-  - **US-003** `test/unit/prompts/acceptance-builder.test.ts` — asserts the hedge wording in the
-    test-rerun line (lines 241 and 316); same replacement invariant.
-
 **US-004 — Scoped-test affordance** *(depends on US-002)*
 
 Move the test-command instructions onto the `run-test` entry: the isolation section's example
 and the rectifier's per-file and full-suite command blocks.
-
-- Context Files: `src/prompts/sections/isolation.ts`, `src/prompts/builders/rectifier-builder.ts`,
-  `src/prompts/builders/rectifier-builder-helpers.ts`
-- Modifies:
-  - **US-004** `test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap` — a snapshot
-    (closed-world) covering both the `# TEST COMMAND` block and the isolation section's
-    full-suite warning line; the invariant that replaces it is the same prompt text with each
-    command carried inside a region, so the snapshot is re-recorded.
-  - **US-004** `test/unit/prompts/rectifier-builder.test.ts` — asserts the `# TEST COMMAND`
-    block as literal text; the invariant that replaces it is that the block is a region whose
-    body is that literal text.
 
 **US-005 — Commit affordance and template persistence** *(depends on US-002)*
 
@@ -234,16 +192,64 @@ Move the six `git commit -m` instructions onto the `commit` entry, and unwrap re
 `nax prompts init` persists a section to disk — a marker written in one process carries a
 nonce no later process can match.
 
-- Context Files: `src/prompts/sections/role-task.ts`, `src/cli/prompts-init.ts`,
-  `src/prompts/loader.ts`
-- Modifies:
-  - **US-005** `test/unit/prompts/sections/role-task.test.ts` — asserts the literal
-    `git commit -m` lines; the invariant that replaces it is that each is a region whose body is
-    that line.
-  - **US-005** `test/unit/prompts/builder.test.ts` — asserts a composed prompt carries the
-    literal `git commit -m` instruction; same replacement invariant.
-  - **US-005** `test/unit/cli/prompts-init.test.ts` — asserts written template content; the
-    invariant that replaces it is that no written template contains a region marker.
+### Context Files
+
+**US-001**
+
+- `src/prompts/sections/diff-access.ts` — the region mechanism being generalised; its markers, nonce and `renderNative` move behind the registry.
+- `src/tools/registry.ts` — `RESERVED_TOOL_NAMES`, the closed set each registry entry's `requires` names are drawn from.
+- `src/prompts/sections/index.ts` — the sections barrel the new module is exported from.
+
+**US-002**
+
+- `src/agents/coding-tool-support.ts` — `resolveCodingToolSupport` returns the advertised `tools`; it reads only `options`, so it can resolve before substitution.
+- `src/operations/call.ts` — the parse-retry loop that dispatches follow-up prompts through the bound `send` closure.
+
+**US-003**
+
+- `src/prompts/sections/self-verification.ts` — the first hand-written register.
+- `src/prompts/builders/acceptance-builder.ts` — `buildTestRerunLine`, the second register and the correct scoped `values.files` shape.
+- `src/quality/self-verification.ts` — `SelfVerificationPromptInput`, the source of the configured lint/typecheck command strings.
+
+**US-004**
+
+- `src/prompts/sections/isolation.ts` — the scoped-test example rendered for every code-touching role.
+- `src/prompts/builders/rectifier-builder.ts` — the per-failing-file and full-suite command blocks.
+- `src/prompts/builders/rectifier-builder-helpers.ts` — the no-test isolation path that must stay unchanged.
+
+**US-005**
+
+- `src/prompts/sections/role-task.ts` — the six commit instructions.
+- `src/cli/prompts-init.ts` — writes section bodies to `.nax/templates/` in one process.
+- `src/prompts/loader.ts` — reads those template files back in a later process, where the nonce cannot match.
+
+### Modifies
+
+**US-002**
+
+- `src/prompts/sections/diff-access.ts` — `applyDiffAccess` gains a third `advertisedTools` parameter and delegates to `applyProtocolRegions`; the invariant that replaces the old one is that native rendering additionally requires `Git` and `Read` to be advertised.
+- `src/agents/tool-preamble.ts` — `applyDiffAccessForAgentProtocol` takes a required third parameter; every dispatch site passes the advertised names.
+- `src/operations/build-hop-callback.ts` — coding-tool support resolves before substitution, and the bound `send` closure substitutes each turn prompt it is handed.
+- `src/runtime/session-run-hop.ts` — coding-tool support resolves before the prompt is substituted.
+- `test/unit/agents/tool-preamble.test.ts` — its calls pin the two-argument `applyDiffAccessForAgentProtocol`; the invariant that replaces it is that the advertised tool list is a required argument.
+- `test/unit/operations/build-hop-callback-diff-access.test.ts` — asserts native rendering from protocol alone; the invariant that replaces it is native rendering only when `Git` and `Read` are advertised.
+- `test/unit/runtime/session-run-hop.test.ts` — carries the same protocol-only assumption on the second hop; same replacement invariant.
+
+**US-003**
+
+- `test/unit/prompts/sections/self-verification.test.ts` — asserts the hedge wording in the rendered check lines; the invariant that replaces it is that the section renders one region whose body is the shell string.
+- `test/unit/prompts/acceptance-builder.test.ts` — asserts the hedge wording in the test-rerun line at lines 241 and 316; the invariant that replaces it is that the line renders one region whose body is the shell string.
+
+**US-004**
+
+- `test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap` — a snapshot (closed-world) covering both the `# TEST COMMAND` block and the isolation section's full-suite warning line; the invariant that replaces it is the same prompt text with each command carried inside a region, so the snapshot is re-recorded.
+- `test/unit/prompts/rectifier-builder.test.ts` — asserts the `# TEST COMMAND` block as literal text; the invariant that replaces it is that the block is a region whose body is that literal text.
+
+**US-005**
+
+- `test/unit/prompts/sections/role-task.test.ts` — asserts the literal `git commit -m` lines; the invariant that replaces it is that each is a region whose body is that line.
+- `test/unit/prompts/builder.test.ts` — asserts a composed prompt carries the literal `git commit -m` instruction; same replacement invariant.
+- `test/unit/cli/prompts-init.test.ts` — asserts the content written for each template; the invariant that replaces it is that a written template carries the ACP body and no region marker.
 
 ### Seams
 
@@ -251,7 +257,7 @@ nonce no later process can match.
   diff-access adapter on the real dispatch path. Pinned by US-002's AC that dispatching through
   the hop callback renders the native diff section, and by its AC that no marker survives.
 - **US-001 → US-005:** `unwrapProtocolRegions` is invoked by `promptsInitCommand`. Pinned by
-  US-005's AC that a written template file contains no marker and keeps the shell body.
+  US-005's AC that a written template file carries no marker and keeps the shell body.
 - **US-002 → US-003/US-004/US-005:** each later story's section emits a region; its rendering is
   proven end-to-end by dispatching that section's prompt through `applyDiffAccessForAgentProtocol`
   with, and without, the required tool advertised.
