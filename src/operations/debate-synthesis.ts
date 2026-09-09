@@ -19,7 +19,6 @@ export const synthesisOp: CompleteOperation<DebateSynthesisInput, string, Debate
   kind: "complete",
   name: "debate-synthesis",
   stage: "review",
-  jsonMode: false,
   config: debateConfigSelector,
   model: (input) => ({ agent: input.resolverAgent, model: input.resolverModel }),
   timeoutMs: (input) => (input.timeoutSeconds ?? 600) * 1000,

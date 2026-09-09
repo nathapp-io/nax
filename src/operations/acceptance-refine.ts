@@ -23,7 +23,6 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
   kind: "complete",
   name: "acceptance-refine",
   stage: "acceptance",
-  jsonMode: true,
   config: acceptanceConfigSelector,
   // Retry once on empty output. In practice empty output arrives as fail-unknown
   // (ACP process crash) which completeWithFallback does NOT retry — making this

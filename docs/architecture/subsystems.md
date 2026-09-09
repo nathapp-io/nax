@@ -1264,7 +1264,6 @@ interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
 
 interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "complete";
-  readonly jsonMode?: boolean;
 }
 ```
 

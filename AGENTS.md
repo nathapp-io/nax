@@ -161,7 +161,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
   capability gate, not a router — it decides which are permitted. See ADR-027.
 - **nax-ai is importable only from `src/agents/native/` and `src/agents/catalog/`**, enforced by
   `bun run check:nax-ai-imports`.
-- **LLM fallback rule:** Any code needing LLM calls MUST resolve the agent via the canonical accessors — `ctx.agentManager?.getDefault() ?? "claude"` in pipeline stages, or `resolveDefaultAgent(config)` in standalone modules. Never inline stubs, never read `config.autoMode.defaultAgent` (removed in ADR-012 Phase 6). Use `agent.complete(prompt, { jsonMode: true })` for one-shot calls.
+- **LLM fallback rule:** Any code needing LLM calls MUST resolve the agent via the canonical accessors — `ctx.agentManager?.getDefault() ?? "claude"` in pipeline stages, or `resolveDefaultAgent(config)` in standalone modules. Never inline stubs, never read `config.autoMode.defaultAgent` (removed in ADR-012 Phase 6). Use `agent.complete(prompt)` for one-shot calls.
 - **Forward-compatible:** `getAgent()` returns the active adapter — calling code doesn't depend on the protocol.
 - See `docs/architecture/design-patterns.md` §11 (Adapter) for full pattern.
 

@@ -41,7 +41,6 @@ export const noopOp: FixStrategy<Finding, unknown, unknown>["fixOp"] = {
     task: { id: "task", content: "", overridable: false },
   }),
   parse: () => null,
-  jsonMode: false,
 };
 
 export function makeStrategy(

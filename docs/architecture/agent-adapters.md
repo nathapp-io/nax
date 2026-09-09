@@ -106,7 +106,6 @@ booleans:
 // ✅ Correct — sessionless one-shot
 await ctx.runtime.agentManager.completeAs(agentName, prompt, {
   pipelineStage: "decompose",
-  jsonMode: true,
   config,
 });
 
