@@ -22,6 +22,7 @@ import { checkReviewGate, isTriggerEnabled } from "@/interaction";
 import { getLogger } from "@/logger";
 import { collectBatchMetrics, collectStoryMetrics } from "@/metrics";
 import { countStories, markStoryPassed, savePRD } from "@/prd";
+import { storySpendUsd } from "@/runtime";
 import { errorMessage } from "@/utils/errors";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
@@ -65,7 +66,8 @@ export const completionStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
     const isBatch = ctx.stories.length > 1;
-    const sessionCost = ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? 0;
+    const sessionSpend = storySpendUsd(ctx.runtime.costAggregator, ctx.story.id, 0);
+    const sessionCost = sessionSpend.cost;
     // In parallel worktree mode, a shared PRD and prd.json file is managed by the
     // unified executor. Worktree pipelines must not race on it — skip both the in-memory
     // mutation and the disk write when skipPrdPersistence is set.
@@ -141,6 +143,7 @@ export const completionStage: PipelineStage = {
       }
 
       const costPerStory = sessionCost / ctx.stories.length;
+      const errorCostPerStory = sessionSpend.errorCostUsd / ctx.stories.length;
       logger.info("completion", "Story passed", {
         storyId: completedStory.id,
         cost: costPerStory,
@@ -175,6 +178,7 @@ export const completionStage: PipelineStage = {
           passed: true,
           runElapsedMs: storyMetric?.durationMs ?? 0,
           cost: costPerStory,
+          ...(errorCostPerStory > 0 ? { errorCostUsd: errorCostPerStory } : {}),
           modelTier: ctx.routing?.modelTier,
           testStrategy: ctx.routing?.testStrategy,
         });

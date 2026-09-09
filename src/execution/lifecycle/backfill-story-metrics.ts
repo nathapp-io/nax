@@ -30,12 +30,14 @@ export interface BackfillMetricArgs {
   /** The story from the PRD, if found. */
   story: UserStory | undefined;
   /**
-   * Aggregator cost for this story. May be `0`: nax#1714 — a story can fail having
-   * spent nothing (a fallback chain whose candidates all fail auth instantly), and
-   * its hops and crash retries are still worth recording. Nothing below branches on
-   * this being positive.
+   * Total spend for this story (successful plus failed-dispatch). May be `0`:
+   * nax#1714 — a story can fail having spent nothing (a fallback chain whose
+   * candidates all fail auth instantly), and its hops and crash retries are still
+   * worth recording. Nothing below branches on this being positive.
    */
   totalCostUsd: number;
+  /** The failed-dispatch half of `totalCostUsd` (#1960). Omitted from the metric when zero. */
+  errorCostUsd: number;
   config: NaxConfig;
   /** Resolved default agent, used only for the completion-phase placeholder. */
   defaultAgent: string;
@@ -75,7 +77,8 @@ export function isExecutionFailure(story: UserStory | undefined): boolean {
  * Pure over its inputs — exported for unit testing.
  */
 export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics {
-  const { storyId, story, totalCostUsd, config, defaultAgent, timestamp, fallbackHops, runtimeCrashes } = args;
+  const { storyId, story, totalCostUsd, errorCostUsd, config, defaultAgent, timestamp, fallbackHops, runtimeCrashes } =
+    args;
 
   if (story != null && isExecutionFailure(story)) {
     const tier = story.routing?.modelTier ?? "balanced";
@@ -101,6 +104,7 @@ export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics
       finalTier,
       success: false,
       cost: totalCostUsd,
+      ...(errorCostUsd > 0 ? { errorCostUsd } : {}),
       durationMs: 0, // per-story execution duration is not persisted on the story
       firstPassSuccess: false,
       startedAt: timestamp,
@@ -121,6 +125,7 @@ export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics
     finalTier: "balanced",
     success: story?.passes ?? false,
     cost: totalCostUsd,
+    ...(errorCostUsd > 0 ? { errorCostUsd } : {}),
     durationMs: 0,
     firstPassSuccess: story?.passes ?? false,
     startedAt: timestamp,
@@ -193,7 +198,7 @@ export function hasBackfillEvidence(input: {
  */
 export function applyBackfill(input: {
   allStoryMetrics: StoryMetrics[];
-  aggByStory: Record<string, { totalCostUsd: number }>;
+  aggByStory: Record<string, { totalCostUsd: number; totalErrorCostUsd: number }>;
   stories: readonly UserStory[];
   agentFallbacks: ReadonlyMap<string, AgentFallbackRecord[]>;
   runtimeCrashRetries: ReadonlyMap<string, number>;
@@ -215,7 +220,9 @@ export function applyBackfill(input: {
   });
 
   for (const storyId of domain) {
-    const totalCostUsd = aggByStory[storyId]?.totalCostUsd ?? 0;
+    const snap = aggByStory[storyId];
+    const errorCostUsd = snap?.totalErrorCostUsd ?? 0;
+    const totalCostUsd = (snap?.totalCostUsd ?? 0) + errorCostUsd;
     // nax#1709: the run-scoped stores outlive the per-attempt PipelineContext, so a
     // story that failed in the execution stage still has its swap hops and crash
     // retries here even though it never reached collectStoryMetrics.
@@ -237,6 +244,7 @@ export function applyBackfill(input: {
           storyId,
           story,
           totalCostUsd,
+          errorCostUsd,
           config,
           defaultAgent,
           timestamp,
@@ -248,7 +256,11 @@ export function applyBackfill(input: {
     }
     const existing = allStoryMetrics[existingIdx];
     if (totalCostUsd > (existing.cost ?? 0)) {
-      allStoryMetrics[existingIdx] = { ...existing, cost: totalCostUsd };
+      allStoryMetrics[existingIdx] = {
+        ...existing,
+        cost: totalCostUsd,
+        ...(errorCostUsd > 0 ? { errorCostUsd } : {}),
+      };
     }
   }
 }

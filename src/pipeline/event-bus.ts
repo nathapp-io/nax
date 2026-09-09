@@ -56,6 +56,8 @@ export interface StoryCompletedEvent {
   runElapsedMs: number;
   /** Optional: passed by executor/stage for hook/reporter subscribers */
   cost?: number;
+  /** The failed-dispatch half of `cost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
   modelTier?: string;
   testStrategy?: string;
 }

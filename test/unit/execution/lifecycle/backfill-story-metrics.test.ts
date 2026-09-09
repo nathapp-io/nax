@@ -23,6 +23,7 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     const m = synthesizeBackfillMetric({
       storyId: "US-001",
       story,
+      errorCostUsd: 0,
       totalCostUsd: 2.15,
       config,
       defaultAgent: "opencode",
@@ -49,6 +50,7 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     const m = synthesizeBackfillMetric({
       storyId: "US-2",
       story,
+      errorCostUsd: 0,
       totalCostUsd: 1,
       config,
       defaultAgent: "opencode",
@@ -73,6 +75,7 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     const m = synthesizeBackfillMetric({
       storyId: "US-3",
       story,
+      errorCostUsd: 0,
       totalCostUsd: 1,
       config,
       defaultAgent: "opencode",
@@ -96,6 +99,7 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     const m = synthesizeBackfillMetric({
       storyId: "US-4",
       story,
+      errorCostUsd: 0,
       totalCostUsd: 1,
       config,
       defaultAgent: "opencode",
@@ -110,6 +114,7 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     const m = synthesizeBackfillMetric({
       storyId: "US-5",
       story,
+      errorCostUsd: 0,
       totalCostUsd: 1,
       config,
       defaultAgent: "ghost",
@@ -130,6 +135,7 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     const m = synthesizeBackfillMetric({
       storyId: "US-6",
       story,
+      errorCostUsd: 0,
       totalCostUsd: 0.5,
       config,
       defaultAgent: "opencode",
@@ -145,6 +151,7 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     const m = synthesizeBackfillMetric({
       storyId: "ghost",
       story: undefined,
+      errorCostUsd: 0,
       totalCostUsd: 0.1,
       config,
       defaultAgent: "opencode",
@@ -181,6 +188,7 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
     const m = synthesizeBackfillMetric({
       storyId: "US-001",
       story: failedStory(),
+      errorCostUsd: 0,
       totalCostUsd: 2.15,
       config,
       defaultAgent: "claude",
@@ -197,6 +205,7 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
     const m = synthesizeBackfillMetric({
       storyId: "US-001",
       story: failedStory(),
+      errorCostUsd: 0,
       totalCostUsd: 1,
       config,
       defaultAgent: "claude",
@@ -211,6 +220,7 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
     const m = synthesizeBackfillMetric({
       storyId: "US-001",
       story: failedStory(),
+      errorCostUsd: 0,
       totalCostUsd: 1,
       config,
       defaultAgent: "claude",
@@ -226,6 +236,7 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
     const m = synthesizeBackfillMetric({
       storyId: "US-009",
       story: makeStory({ id: "US-009", status: "passed", attempts: 0 }),
+      errorCostUsd: 0,
       totalCostUsd: 0.5,
       config,
       defaultAgent: "claude",
@@ -271,6 +282,7 @@ describe("synthesizeBackfillMetric — zero-cost failed stories (#1714)", () => 
     const m = synthesizeBackfillMetric({
       storyId: "US-001",
       story: makeStory({ id: "US-001", status: "failed", attempts: 0, routing: routing({}) }),
+      errorCostUsd: 0,
       totalCostUsd: 0,
       config,
       defaultAgent: "claude",
@@ -287,6 +299,7 @@ describe("synthesizeBackfillMetric — zero-cost failed stories (#1714)", () => 
     const m = synthesizeBackfillMetric({
       storyId: "US-001",
       story: makeStory({ id: "US-001", status: "failed", attempts: 0, routing: routing({}) }),
+      errorCostUsd: 0,
       totalCostUsd: 0,
       config,
       defaultAgent: "claude",
@@ -300,6 +313,7 @@ describe("synthesizeBackfillMetric — zero-cost failed stories (#1714)", () => 
     const m = synthesizeBackfillMetric({
       storyId: "US-009",
       story: makeStory({ id: "US-009", status: "passed", attempts: 0 }),
+      errorCostUsd: 0,
       totalCostUsd: 0,
       config,
       defaultAgent: "claude",
