@@ -116,14 +116,28 @@ export interface RunCommandTestSpec {
 }
 
 function renderRunCommandCheck(spec: RunCommandSpec): string {
-  return `RunCommand {"command": ${JSON.stringify(spec.command)}}`;
+  // The prose that frames the call is not optional: the native agent receives
+  // ONLY this renderer output (the ACP body is dropped at substitution), so
+  // a context-less "RunCommand ..." would leave it without an instruction.
+  // The framing mirrors the prose the ACP body carried before US-003, so the
+  // two transports read the same intent in their own affordance.
+  return (
+    `Run the project's declared \`${spec.command}\` check:\n` +
+    `RunCommand {"command": ${JSON.stringify(spec.command)}}`
+  );
 }
 
 function renderRunCommandTest(spec: RunCommandTestSpec): string {
-  // JSON.stringify, not interpolation: the rendered line is a JSON literal the
-  // agent copies, and a path holding a quote or a backslash would otherwise
-  // produce something it cannot parse.
-  return `RunCommand {"command": ${JSON.stringify(spec.command)}, "values": {"files": ${JSON.stringify(spec.files)}}}`;
+  // Same shape as run-check: the prose that frames the call survives only
+  // here, not in the ACP body. The framing tells the native agent what the
+  // call is for and what file it should target.
+  // JSON.stringify, not interpolation: the rendered call is a JSON literal
+  // the agent copies, and a path holding a quote or a backslash would
+  // otherwise produce something it cannot parse.
+  return (
+    "Re-run the failing acceptance test before you finish:\n" +
+    `RunCommand {"command": ${JSON.stringify(spec.command)}, "values": {"files": ${JSON.stringify(spec.files)}}}`
+  );
 }
 
 /** Wrap ACP text behind opening/closing markers carrying the spec and kind.

@@ -637,3 +637,84 @@ describe("cross-entry seam with the retained diff-access adapter", () => {
     expect(underNative).toContain("suffix");
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-003 — native renderings of `run-check` and `run-test`. The ACP body
+// carries the prose framing the call. When `applyProtocolRegions` substitutes
+// a region on the native path, the ACP body is replaced wholesale by the
+// renderer output — so the prose MUST survive inside the renderer, or the
+// native agent receives a context-less tool call. Mirrors the diff-access
+// shape: renderNative reproduces complete instruction prose alongside the
+// tool call it teaches.
+// ---------------------------------------------------------------------------
+describe("applyProtocolRegions — run-check / run-test native rendering (US-003)", () => {
+  // AC3 follow-up: under native + advertised RunCommand, the typecheck
+  // region's native rendering carries both the framing prose ("run the
+  // project's declared `typecheck` check") AND the RunCommand call. Without
+  // the framing, the native agent has the call but not the instruction.
+  test("run-check native rendering frames the RunCommand call with instruction prose", () => {
+    const region = wrapAffordance("run-check", { command: "typecheck" }, "ACP BODY\n");
+    const out = applyProtocolRegions(region, {
+      protocol: "native",
+      advertisedTools: new Set(["RunCommand"]),
+    });
+
+    expect(out).toContain("Run the project's declared `typecheck` check");
+    expect(out).toContain('RunCommand {"command": "typecheck"}');
+    // No shell string — AC3 says "no shell command string".
+    expect(out).not.toContain("ACP BODY");
+  });
+
+  // AC4 follow-up: when RunCommand is not advertised, the renderer is NOT
+  // consulted and the ACP body is kept verbatim (no framing needs to be
+  // reconstructed because the original prose survives).
+  test("run-check, native without RunCommand, keeps the ACP body (no prose reconstruction needed)", () => {
+    const region = wrapAffordance("run-check", { command: "typecheck" }, "- typecheck: run `bun x tsc --noEmit`\n");
+    const out = applyProtocolRegions(region, {
+      protocol: "native",
+      advertisedTools: new Set(["Read"]),
+    });
+    expect(out).toContain("- typecheck: run `bun x tsc --noEmit`");
+    expect(out).not.toContain("RunCommand");
+  });
+
+  // AC2 follow-up: under ACP, the framing lives in the ACP body. The
+  // renderer's framing prose is irrelevant — only the body reaches the
+  // agent.
+  test("run-check, applied with acp, keeps the ACP body's framing and emits no RunCommand", () => {
+    const region = wrapAffordance(
+      "run-check",
+      { command: "typecheck" },
+      "- typecheck: run the project's declared `typecheck` check: `bun x tsc --noEmit`",
+    );
+    const out = applyProtocolRegions(region, { protocol: "acp" });
+    expect(out).toContain("run the project's declared `typecheck` check");
+    expect(out).not.toContain("RunCommand");
+  });
+
+  // AC6 follow-up: under native + advertised RunCommand, the run-test
+  // region's native rendering carries the framing prose ("Re-run the failing
+  // acceptance test before you finish") AND the RunCommand call with the
+  // values.files field.
+  test("run-test native rendering frames the RunCommand call with instruction prose", () => {
+    const region = wrapAffordance("run-test", { command: "testScoped", files: "/abs/path.test.ts" }, "ACP BODY\n");
+    const out = applyProtocolRegions(region, {
+      protocol: "native",
+      advertisedTools: new Set(["RunCommand"]),
+    });
+
+    expect(out).toContain("Re-run the failing acceptance test before you finish");
+    expect(out).toContain('RunCommand {"command": "testScoped", "values": {"files": "/abs/path.test.ts"}}');
+    // No shell string survives — the native renderer substitutes the
+    // shell-form fallback the ACP body had with the tool-call form.
+    expect(out).not.toContain("ACP BODY");
+  });
+
+  // AC7 follow-up: with no resolved scoped key, the producer omits the
+  // region entirely — neither protocol renders a marker or a call.
+  test("an unrun-test-shaped prompt (no region at all) is a no-op on both protocols", () => {
+    const prompt = "- Re-run the failing acceptance test: `bun test /abs/path.test.ts`.\n";
+    expect(applyProtocolRegions(prompt, { protocol: "acp" })).toBe(prompt);
+    expect(applyProtocolRegions(prompt, { protocol: "native" })).toBe(prompt);
+  });
+});
