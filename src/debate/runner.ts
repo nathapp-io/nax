@@ -4,7 +4,7 @@ import { callOp } from "../operations/call";
 import { debateProposeOp } from "../operations/debate-propose";
 import { debateRebutOp } from "../operations/debate-rebut";
 import type { CallContext } from "../operations/types";
-import { createNoOpCostAggregator } from "../runtime";
+import { createNoOpCostAggregator, totalSpendUsd } from "../runtime";
 import type { ISessionManager } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
@@ -88,7 +88,10 @@ export class DebateRunner {
         resolverCallContext: { ...this.ctx, scopeId: resolverScope.scopeId },
       };
       const result = await runner(ctxWithScopes, prompt);
-      return { ...result, totalCostUsd: debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd };
+      return {
+        ...result,
+        totalCostUsd: totalSpendUsd(debaterScope.snapshot()) + totalSpendUsd(resolverScope.snapshot()),
+      };
     } finally {
       debaterScope.close();
       resolverScope.close();
@@ -144,10 +147,10 @@ export class DebateRunner {
         (this.config?.debate as { maxConcurrentDebaters?: number } | undefined)?.maxConcurrentDebaters ?? 2;
 
       const scopeTotal = (): number =>
-        prePhaseScope.snapshot().totalCostUsd +
-        debaterScope.snapshot().totalCostUsd +
-        resolverScope.snapshot().totalCostUsd +
-        verifierScope.snapshot().totalCostUsd;
+        totalSpendUsd(prePhaseScope.snapshot()) +
+        totalSpendUsd(debaterScope.snapshot()) +
+        totalSpendUsd(resolverScope.snapshot()) +
+        totalSpendUsd(verifierScope.snapshot());
 
       // Pre-debate phase: run before parallel proposer fan-out
       let taskContext = prompt;

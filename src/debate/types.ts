@@ -168,7 +168,7 @@ export interface DebateResult {
   resolverType: ResolverType;
   /** Per-debater proposals with identity and output */
   proposals: Proposal[];
-  /** Total cost across all complete() calls (USD) */
+  /** Total spend across the debate's scopes — successful plus failed-dispatch spend (#1960). */
   totalCostUsd: number;
   /** Optional human-readable summary from the resolver */
   summary?: string;
