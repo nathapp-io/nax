@@ -178,7 +178,10 @@ export interface StoryPhaseCompletedEvent {
   phase: string;
   outcome: "passed" | "failed" | "skipped" | "error";
   durationMs: number;
+  /** Total spend for this phase — successful plus failed-dispatch spend. */
   costUsd: number;
+  /** The failed-dispatch half of `costUsd` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
   tier?: string;
   testStrategy?: TestStrategy;
   sessionModel?: "single-session" | "three-session";
