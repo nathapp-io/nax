@@ -181,11 +181,20 @@ export interface Finding {
    * reaches the end-of-run report instead of vanishing into `acDropped`.
    *
    * First-class for the same reason as `actionRequired` above: nbf seeding
-   * branches on it to decide whether to spend an agent session. A dropped
-   * finding is by definition ungrounded — the reviewer could not tie it to an
-   * AC — which makes it the weakest-evidenced class to hand an un-reviewed
-   * source edit under `nonBlockingFix.scope: "triage"`. It is reported, not
-   * acted on. Whether nbf should ever act on it is a separate ruling.
+   * branches on it to decide whether to spend an agent session.
+   *
+   * It is reported, not acted on — but NOT because a drop is weak evidence.
+   * All three drops in the audit corpus carry `ac_quote_does_not_constrain_locus`
+   * (the quote was verbatim-real; only the locus test failed), all three are
+   * substantive, and one was a real defect that shipped (#1951). Nor does this
+   * codebase hold "ungrounded ⇒ not worth fixing": `filterByAcQuote` is
+   * blocking-only, so nbf already acts on sub-threshold findings that face no
+   * grounding gate at all. AC grounding decides whether a finding may BLOCK.
+   *
+   * The exclusion is a HOLD. Whether an AC-ungrounded finding may drive action
+   * is #1801, held pending #1910's telemetry; seeding these into nbf would
+   * settle that ruling through a side door. When #1801 rules, this predicate
+   * in `actionableAdvisoryFindings` is the only thing to revisit.
    */
   acDropped?: boolean;
 
