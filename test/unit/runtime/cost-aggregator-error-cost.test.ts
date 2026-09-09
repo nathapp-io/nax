@@ -14,7 +14,13 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
-import { _costAggDeps, CostAggregator, type CostErrorEvent, type CostEvent } from "@/runtime/cost-aggregator";
+import {
+  _costAggDeps,
+  CostAggregator,
+  type CostErrorEvent,
+  type CostEvent,
+  totalSpendUsd,
+} from "@/runtime/cost-aggregator";
 
 function makeCostEvent(overrides: Partial<CostEvent> = {}): CostEvent {
   return {
@@ -129,5 +135,27 @@ describe("CostAggregator.drain — failed-spend rows reach the JSONL (AC13)", ()
         _costAggDeps.write = origWrite;
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// totalSpendUsd — the SSOT for "what did this actually cost"
+// ---------------------------------------------------------------------------
+
+describe("totalSpendUsd", () => {
+  test("sums successful and failed spend", () => {
+    expect(totalSpendUsd({ totalCostUsd: 6, totalErrorCostUsd: 2.5 })).toBeCloseTo(8.5, 5);
+  });
+
+  test("equals totalCostUsd when nothing failed — every historical run is this case", () => {
+    // Error rows carried no cost before the usage-lifting landed, so folding
+    // failed spend into run totals moves no number that already exists.
+    expect(totalSpendUsd({ totalCostUsd: 6.21, totalErrorCostUsd: 0 })).toBeCloseTo(6.21, 5);
+  });
+
+  test("reports failed spend even when no dispatch succeeded", () => {
+    // A run that only ever failed still cost money. Reading totalCostUsd alone
+    // reports $0 for a run that was genuinely billed.
+    expect(totalSpendUsd({ totalCostUsd: 0, totalErrorCostUsd: 3.75 })).toBeCloseTo(3.75, 5);
   });
 });

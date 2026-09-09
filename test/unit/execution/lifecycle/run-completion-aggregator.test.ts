@@ -263,3 +263,78 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
     expect(capturedEvent?.totalCost).toBeCloseTo(5.42, 2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Failed-dispatch spend in the reported total
+// ---------------------------------------------------------------------------
+
+describe("handleRunCompletion — failed-dispatch spend is real money and is reported", () => {
+  test("the reported total includes failed-dispatch spend", async () => {
+    // The Bug 909 shape, one level down: the aggregator captured the spend,
+    // nobody read it. `totalErrorCostUsd` had no consumer anywhere in nax, so a
+    // run that burned money on dispatches that threw under-reported what it cost.
+    const prd = makePRD(["US-001"]);
+    const aggregator = makeMockAggregator({
+      snapshot: () => ({
+        ...makeEmptySnapshot(),
+        totalCostUsd: 6,
+        totalErrorCostUsd: 2.5,
+        callCount: 5,
+        errorCount: 2,
+      }),
+    });
+
+    let capturedEvent: RunCompletedEvent | undefined;
+    pipelineEventBus.on("run:completed", (e) => {
+      capturedEvent = e;
+    });
+
+    const result = await handleRunCompletion(makeOpts(prd, [], aggregator, 0));
+
+    expect(capturedEvent?.totalCost).toBeCloseTo(8.5, 5);
+    expect(result.reportedTotal).toBeCloseTo(8.5, 5);
+  });
+
+  test("the two halves stay separable — the total does not erase the split", async () => {
+    // Folding without also carrying the split would destroy the distinction
+    // between spend that produced work and spend that produced nothing.
+    const prd = makePRD(["US-001"]);
+    const aggregator = makeMockAggregator({
+      snapshot: () => ({
+        ...makeEmptySnapshot(),
+        totalCostUsd: 6,
+        totalErrorCostUsd: 2.5,
+        callCount: 5,
+        errorCount: 2,
+      }),
+    });
+
+    let capturedEvent: RunCompletedEvent | undefined;
+    pipelineEventBus.on("run:completed", (e) => {
+      capturedEvent = e;
+    });
+
+    await handleRunCompletion(makeOpts(prd, [], aggregator, 0));
+
+    expect(capturedEvent?.errorCostUsd).toBeCloseTo(2.5, 5);
+  });
+
+  test("a run with no failed dispatches reports exactly what it did before", async () => {
+    // The no-regression case. Every historical run is this one: error rows
+    // carried no cost before the usage-lifting landed, so no past total moves.
+    const prd = makePRD(["US-001"]);
+    const aggregator = makeMockAggregator({
+      snapshot: () => ({ ...makeEmptySnapshot(), totalCostUsd: 6.21, callCount: 5 }),
+    });
+
+    let capturedEvent: RunCompletedEvent | undefined;
+    pipelineEventBus.on("run:completed", (e) => {
+      capturedEvent = e;
+    });
+
+    const result = await handleRunCompletion(makeOpts(prd, [], aggregator, 0));
+
+    expect(result.reportedTotal).toBeCloseTo(6.21, 5);
+    expect(capturedEvent?.errorCostUsd).toBeUndefined();
+  });
+});

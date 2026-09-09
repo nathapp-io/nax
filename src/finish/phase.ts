@@ -17,6 +17,7 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
 import type { NaxRuntime } from "@/runtime";
+import { totalSpendUsd } from "@/runtime";
 import { errorMessage } from "../utils/errors";
 import type { AuditTarget } from "./audit";
 import type { FinishSettings } from "./config";
@@ -43,7 +44,9 @@ export const _finishPhaseDeps = {
    * `check:test-as-unknown-as` is baselined at 830 and must not grow. With
    * the seam a test stubs one function and uses a real `makeTestRuntime()`.
    */
-  snapshotCost: (runtime: NaxRuntime): number => runtime.costAggregator.snapshot().totalCostUsd,
+  // Both halves: the phase's reported cost is a delta of this reading, and a
+  // dispatch that threw spent real money on this phase's behalf.
+  snapshotCost: (runtime: NaxRuntime): number => totalSpendUsd(runtime.costAggregator.snapshot()),
 };
 
 export interface FinishPhaseContext {

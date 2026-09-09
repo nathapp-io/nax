@@ -184,6 +184,23 @@ export interface CostSnapshot {
   readonly totalErrorCostUsd: number;
 }
 
+/**
+ * Every dollar a snapshot accounts for — successful spend plus the spend of
+ * dispatches that threw.
+ *
+ * The SSOT for "what did this actually cost", and the only reading that should
+ * ever reach a user, a budget guard, or a run total. `totalCostUsd` alone
+ * answers a narrower question — "what did the work that succeeded cost" — and
+ * using it where money is meant understates the bill by exactly the failures.
+ *
+ * The split behind it is preserved on purpose (US-001): a sum cannot be
+ * un-summed, so both halves stay on the snapshot and callers that care about
+ * wasted spend read `totalErrorCostUsd` directly.
+ */
+export function totalSpendUsd(snap: Pick<CostSnapshot, "totalCostUsd" | "totalErrorCostUsd">): number {
+  return snap.totalCostUsd + snap.totalErrorCostUsd;
+}
+
 export interface CostScopeHandle {
   /** The scopeId this handle filters by. */
   readonly scopeId: string;
