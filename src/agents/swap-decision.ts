@@ -102,13 +102,21 @@ export function normaliseFallbackTarget(value: FallbackMapValue): FallbackTarget
  * PRIMARY agent, not the most-recently-failed one, so a flat map like
  * `{ claude: ["codex", "gemini"] }` walks correctly: unavailable agents drop out and
  * the next available candidate in order is returned.
+ *
+ * `isExcluded` also receives the candidate's tier so a caller can key exclusion on
+ * agent+tier identity rather than the bare agent name — a same-agent, different-tier
+ * target must survive exclusion of the tier that actually failed. A predicate that
+ * ignores the second argument (every predicate written before this identity split)
+ * keeps its original agent-only behaviour.
  */
 export function availableCandidates(
   map: FallbackMap | undefined,
   agent: string,
-  isExcluded: (candidate: string) => boolean,
+  isExcluded: (candidate: string, tier?: string) => boolean,
 ): FallbackTarget[] {
-  return (map?.[agent] ?? []).map(normaliseFallbackTarget).filter((candidate) => !isExcluded(candidate.agent));
+  return (map?.[agent] ?? [])
+    .map(normaliseFallbackTarget)
+    .filter((candidate) => !isExcluded(candidate.agent, candidate.tier));
 }
 
 /**

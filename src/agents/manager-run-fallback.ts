@@ -28,9 +28,14 @@ export interface RunFallbackInput {
   readonly dispatchEvents: IDispatchEventBus;
   readonly logger: LoggerLike | null | undefined;
   readonly getDefault: () => string;
-  readonly isUnavailable: (agent: string) => boolean;
-  readonly markUnavailable: (agent: string, failure: AdapterFailure) => void;
-  readonly nextCandidate: (current: string, hops: number, exclude?: string) => FallbackTarget | null;
+  readonly isUnavailable: (agent: string, tier?: string) => boolean;
+  readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string) => void;
+  readonly nextCandidate: (
+    current: string,
+    hops: number,
+    exclude?: string,
+    excludeTier?: string,
+  ) => FallbackTarget | null;
   readonly resolveExhaustion: (options: ExhaustionInput) => Promise<"retry" | "exhausted" | "cancelled">;
   readonly emitSwapAttempt: (fallback: AgentFallbackRecord) => void;
 }
@@ -122,8 +127,12 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       }
 
       const failure = result.adapterFailure ?? unknownFailure();
-      input.markUnavailable(currentAgent, failure);
-      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
+      // currentHopKind.tier is the tier of the hop that just failed — mark and
+      // exclude by that identity, not the bare agent name, so a same-agent,
+      // different-tier fallback target survives (see swap-decision.ts).
+      const currentTier = currentHopKind.tier;
+      input.markUnavailable(currentAgent, failure, currentTier);
+      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier);
       if (!next) {
         const outcome = await input.resolveExhaustion({
           failure,

@@ -137,11 +137,15 @@ export interface IAgentManager {
   /** Resolve the default agent name. Reads config.agent.default (falls back to built-in "claude"). */
   getDefault(): string;
 
-  /** True if the agent has been marked unavailable for this run. */
-  isUnavailable(agent: string): boolean;
+  /**
+   * True if the agent has been marked unavailable for this run. `tier` narrows the
+   * check to that tier's own cooldown, distinct from the bare agent's — one tier's
+   * provider failure must not blanket-exclude every other tier of the same agent.
+   */
+  isUnavailable(agent: string, tier?: string): boolean;
 
-  /** Mark an agent unavailable for this run (auth/quota/service-down). */
-  markUnavailable(agent: string, reason: AdapterFailure): void;
+  /** Mark an agent unavailable for this run (auth/quota/service-down). `tier` scopes the cooldown to that tier alone. */
+  markUnavailable(agent: string, reason: AdapterFailure, tier?: string): void;
 
   /** Reset per-run state. Called at run boundary. */
   reset(): void;
@@ -176,10 +180,12 @@ export interface IAgentManager {
   /**
    * Returns the next fallback target (agent, and its optional tier) for a given
    * current agent and hop count, excluding pruned (no credentials),
-   * already-unavailable agents, and — when passed — the agent named by
-   * `exclude`. Returns null when no candidate is available.
+   * already-unavailable agents, and — when passed — the identity named by
+   * `exclude`/`excludeTier`. That identity match is agent+tier, not agent alone,
+   * so a same-agent, different-tier target survives exclusion of the tier that
+   * actually failed. Returns null when no candidate is available.
    */
-  nextCandidate(current: string, hopsSoFar: number, exclude?: string): FallbackTarget | null;
+  nextCandidate(current: string, hopsSoFar: number, exclude?: string, excludeTier?: string): FallbackTarget | null;
 
   /**
    * Run the prompt with automatic agent-swap fallback on availability failures.

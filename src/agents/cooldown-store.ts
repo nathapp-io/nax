@@ -27,19 +27,26 @@ export class CooldownStore {
 
   constructor(private readonly _now: () => number) {}
 
-  /** Records a cooldown. A policy cooldown of `none` records nothing. */
-  mark(agent: string, failure: AdapterFailure): void {
+  /**
+   * Records a cooldown. A policy cooldown of `none` records nothing.
+   *
+   * `tier` scopes the cooldown to that tier's identity rather than the whole
+   * agent. On the native path the provider lives in the model id string
+   * (`models.native.<tier>`), so one tier's rate-limit must not park every
+   * other tier of the same agent — those point at unrelated providers.
+   */
+  mark(agent: string, failure: AdapterFailure, tier?: string): void {
     const expiresAt = resolveCooldownExpiry(failure, this._now());
     if (expiresAt === null) return;
-    this._entries.set(agent, { failure, expiresAt });
+    this._entries.set(identityKey(agent, tier), { failure, expiresAt });
   }
 
-  isCooling(agent: string): boolean {
-    return this._live(agent) !== undefined;
+  isCooling(agent: string, tier?: string): boolean {
+    return this._live(agent, tier) !== undefined;
   }
 
-  failureFor(agent: string): AdapterFailure | undefined {
-    return this._live(agent)?.failure;
+  failureFor(agent: string, tier?: string): AdapterFailure | undefined {
+    return this._live(agent, tier)?.failure;
   }
 
   /**
@@ -48,8 +55,8 @@ export class CooldownStore {
    * outcomes by hand, but sources the distinction from the policy table.
    */
   sweepTransient(): void {
-    for (const [agent, entry] of this._entries) {
-      if (entry.expiresAt !== "run") this._entries.delete(agent);
+    for (const [key, entry] of this._entries) {
+      if (entry.expiresAt !== "run") this._entries.delete(key);
     }
   }
 
@@ -58,12 +65,21 @@ export class CooldownStore {
   }
 
   /** Returns the entry only while it is still in force; expires it lazily. */
-  private _live(agent: string): CooldownEntry | undefined {
-    const entry = this._entries.get(agent);
+  private _live(agent: string, tier?: string): CooldownEntry | undefined {
+    const key = identityKey(agent, tier);
+    const entry = this._entries.get(key);
     if (!entry) return undefined;
     if (entry.expiresAt === "run") return entry;
     if (entry.expiresAt > this._now()) return entry;
-    this._entries.delete(agent);
+    this._entries.delete(key);
     return undefined;
   }
+}
+
+/**
+ * Cooldown identity: the bare agent name, unless a tier scopes it narrower.
+ * A tier-less caller (every existing config) keys exactly as before.
+ */
+function identityKey(agent: string, tier?: string): string {
+  return tier ? `${agent}::${tier}` : agent;
 }
