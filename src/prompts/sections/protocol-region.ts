@@ -64,6 +64,9 @@ const REGION = new RegExp(
   "g",
 );
 
+/** `<!--nax:<kind>:<own nonce> ` — an opening marker written by this process. */
+const OWN_OPEN = new RegExp(`<!--nax:[a-z][a-z-]*:${NONCE} `, "g");
+
 /**
  * The registry. Today: `diff-access` only — US-002 will add the next kind,
  * US-003 / US-004 will register their producers, and US-005 will persist.
@@ -90,6 +93,23 @@ export function wrapAffordance(kind: string, spec: unknown, acpBody: string): st
   return `<!--nax:${kind}:${NONCE} ${JSON.stringify(spec)}-->\n${acpBody}<!--/nax:${kind}-->\n`;
 }
 
+/** True when the prompt carries an own-nonce opener that never closes.
+ *
+ *  AC9 mandates that such a prompt is returned whole. Content spliced from
+ *  other sources (prior findings, embedded diffs) cannot forge this process's
+ *  nonce, so an own-nonce opener without a matching close can only be genuine
+ *  damage — the freeze suppresses no legitimate rendering and cannot be
+ *  triggered by untrusted text. */
+function hasUnterminatedOwnOpener(prompt: string): boolean {
+  const ownOpeners = Array.from(prompt.matchAll(OWN_OPEN)).length;
+  if (ownOpeners === 0) return false;
+
+  // Every well-formed own opener yields exactly one own REGION match; one
+  // that never closes (or closes under the wrong kind) matches nothing.
+  const matched = Array.from(prompt.matchAll(REGION)).filter((m) => m[2] === NONCE).length;
+  return matched < ownOpeners;
+}
+
 /** Substitute every matching region for the protocol being dispatched.
  *
  *  Failure paths (unknown kind, unparseable spec, foreign nonce, missing
@@ -97,6 +117,11 @@ export function wrapAffordance(kind: string, spec: unknown, acpBody: string): st
  *  cost the native rendering, never the instructions. */
 export function applyProtocolRegions(prompt: string, opts: ApplyProtocolRegionsOpts): string {
   if (!prompt.includes(PROTOCOL_REGION_MARKER_PREFIX)) return prompt;
+
+  // AC9: an own-nonce opener with no matching close leaves the whole prompt
+  // unchanged — nothing is substituted and no characters are removed. Scoped
+  // to our own nonce, so foreign-nonce forgeries never trigger the freeze.
+  if (hasUnterminatedOwnOpener(prompt)) return prompt;
 
   return prompt.replace(REGION, (whole, kind: string, nonce: string, json: string, body: string) => {
     // Foreign nonce — leave byte-for-byte untouched.
