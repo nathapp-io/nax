@@ -3,7 +3,7 @@
   "feature": "prompt-affordance-ssot",
   "branchName": "feat/prompt-affordance-ssot",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-09T08:40:41.799Z",
+  "updatedAt": "2026-09-09T09:27:28.548Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,8 +30,8 @@
         "protocol"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -99,7 +99,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "This modifies a compatibility API plus both live dispatch paths and the multi-turn closure seam."
+        "reasoning": "This modifies a compatibility API plus both live dispatch paths and the multi-turn closure seam.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/prompts/sections/protocol-region.ts",
@@ -141,7 +144,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e7aec01eccddbb726acc7a42b997549d264b0151"
     },
     {
       "id": "US-003",
