@@ -69,8 +69,10 @@ export interface StoryFailedEvent {
   /** Optional: passed by executor for interaction subscriber */
   feature?: string;
   attempts?: number;
-  /** Total cost accumulated across all attempts for this story. */
+  /** Total spend across all attempts for this story — successful plus failed-dispatch spend. */
   cost?: number;
+  /** The failed-dispatch half of `cost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
 }
 
 export interface RegressionDetectedEvent {
@@ -129,7 +131,10 @@ export interface StoryPausedEvent {
   type: "story:paused";
   storyId: string;
   reason: string;
+  /** Total spend for this story — successful plus failed-dispatch spend. */
   cost: number;
+  /** The failed-dispatch half of `cost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
 }
 
 export interface StorySkippedEvent {

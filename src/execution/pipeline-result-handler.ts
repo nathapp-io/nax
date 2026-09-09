@@ -20,6 +20,7 @@ import type { PostRunStatusWriter } from "../prd";
 import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
+import { storySpendUsd } from "../runtime";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
@@ -117,6 +118,7 @@ async function failStoryAfterMerge(ctx: PipelineHandlerContext, prd: PRD, reason
   // `story:completed` is already on the bus for this story. Without this
   // correction every reporter, hook and the TUI keeps showing a success the
   // PRD no longer claims.
+  const spend = storySpendUsd(ctx.runtime.costAggregator, ctx.story.id, ctx.totalCost);
   pipelineEventBus.emit({
     type: "story:failed",
     storyId: ctx.story.id,
@@ -125,7 +127,8 @@ async function failStoryAfterMerge(ctx: PipelineHandlerContext, prd: PRD, reason
     countsTowardEscalation: false,
     feature: ctx.feature,
     attempts: ctx.story.attempts,
-    cost: ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
+    cost: spend.cost,
+    ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
   });
 }
 
@@ -353,11 +356,13 @@ export async function handlePipelineFailure(
       if (hasWorktree(ctx.workdir, ctx.story.id)) {
         await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
       }
+      const spend = storySpendUsd(ctx.runtime.costAggregator, ctx.story.id, ctx.totalCost);
       pipelineEventBus.emit({
         type: "story:paused",
         storyId: ctx.story.id,
         reason: pipelineResult.reason || "Pipeline paused",
-        cost: ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
+        cost: spend.cost,
+        ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
       });
       break;
     }
@@ -372,7 +377,7 @@ export async function handlePipelineFailure(
       prdDirty = true;
       break;
 
-    case "fail":
+    case "fail": {
       markStoryFailed(
         prd,
         ctx.story.id,
@@ -397,6 +402,7 @@ export async function handlePipelineFailure(
         await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — ${pipelineResult.reason}`);
       }
 
+      const spend = storySpendUsd(ctx.runtime.costAggregator, ctx.story.id, ctx.totalCost);
       pipelineEventBus.emit({
         type: "story:failed",
         storyId: ctx.story.id,
@@ -405,7 +411,8 @@ export async function handlePipelineFailure(
         countsTowardEscalation: true,
         feature: ctx.feature,
         attempts: ctx.story.attempts,
-        cost: ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
+        cost: spend.cost,
+        ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
       });
 
       if (
@@ -421,6 +428,7 @@ export async function handlePipelineFailure(
         });
       }
       break;
+    }
 
     case "escalate": {
       // US-002: derive runtimeCrashResult for same-tier retry. handleTierEscalation's

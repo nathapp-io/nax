@@ -16,6 +16,7 @@ import { pipelineEventBus } from "@/pipeline";
 import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
 import { markStoryFailed, savePRD } from "@/prd";
 import type { RoutingDecision } from "@/routing";
+import { storySpendUsd } from "@/runtime";
 import type { FailureCategory } from "@/tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { appendProgress } from "../progress";
@@ -299,6 +300,7 @@ export async function preIterationTierCheck(
   // Calling fireHook directly here as well double-fired the hook for every
   // terminal tier-exhaustion. Matches the sibling emitters in tier-outcome.ts.
   const failedStory = failedPrd.userStories.find((s) => s.id === story.id) ?? story;
+  const spend = storySpendUsd(runtime?.costAggregator, story.id, totalCost);
   pipelineEventBus.emit({
     type: "story:failed",
     storyId: story.id,
@@ -307,7 +309,8 @@ export async function preIterationTierCheck(
     countsTowardEscalation: true,
     feature,
     attempts: failedStory.attempts,
-    cost: runtime?.costAggregator.byStory()[story.id]?.totalCostUsd ?? totalCost,
+    cost: spend.cost,
+    ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
   });
 
   // Skip to next iteration (will pick next story)
