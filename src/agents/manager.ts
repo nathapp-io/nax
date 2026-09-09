@@ -24,11 +24,13 @@ import { StoryHopBudget } from "./hop-budget";
 import {
   buildCompleteCallPreamble,
   buildCompleteEvent,
+  buildCompleteOutcome,
   buildDispatchErrorEvent,
   buildFallbackRecord,
   buildSessionTurnEvent,
   resolveFinalDispatch,
   resolveHopCompleteOptions,
+  validateAgentCredentials,
 } from "./manager-dispatch";
 import { type ManagerExhaustionOptions, resolveManagerExhaustion } from "./manager-exhaustion";
 import { runWithFallback } from "./manager-run-fallback";
@@ -154,23 +156,13 @@ export class AgentManager implements IAgentManager {
   }
   async validateCredentials(): Promise<void> {
     const primary = this.getDefault();
-    for (const name of credentialCandidates(this._config.agent?.fallback?.map, primary)) {
-      const adapter = this._resolveRegistry().getAgent(name);
-      if (!adapter || typeof adapter.hasCredentials !== "function") continue;
-      const ok = await adapter.hasCredentials();
-      if (ok) continue;
-      if (name === primary) {
-        throw new NaxError(`Primary agent "${name}" has no usable credentials`, "AGENT_CREDENTIALS_MISSING", {
-          stage: "run-setup",
-          agent: name,
-        });
-      }
-      this._logger.warn("agent-manager", "Fallback candidate pruned — missing credentials", {
-        primary,
-        pruned: name,
-      });
-      this._prunedFallback.add(name);
-    }
+    const { pruned } = await validateAgentCredentials({
+      primary,
+      candidates: credentialCandidates(this._config.agent?.fallback?.map, primary),
+      getAgent: (name) => this._resolveRegistry().getAgent(name),
+      logger: this._logger,
+    });
+    for (const name of pruned) this._prunedFallback.add(name);
   }
 
   private readonly _modelId = (agent: string, tier?: string, model?: string): string | undefined =>
@@ -227,6 +219,7 @@ export class AgentManager implements IAgentManager {
     let currentAgent = primaryAgent;
     let currentTier: string | undefined;
     let currentModel: string | undefined;
+    let currentTarget: FallbackTarget = { agent: primaryAgent };
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     let rateLimitRetry = 0;
@@ -287,7 +280,7 @@ export class AgentManager implements IAgentManager {
 
         if (!result.adapterFailure) {
           _finalStatus = "ok";
-          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+          return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
         }
 
         const isFailStale = result.adapterFailure.outcome === "fail-stale";
@@ -333,14 +326,14 @@ export class AgentManager implements IAgentManager {
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
-            return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+            return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
           }
           if (outcome === "retry") {
             rateLimitRetry += 1;
             continue;
           }
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
-          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+          return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
         }
 
         this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined);
@@ -359,14 +352,14 @@ export class AgentManager implements IAgentManager {
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
-            return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+            return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
           }
           if (outcome === "retry") {
             rateLimitRetry += 1;
             continue;
           }
           _finalStatus = "exhausted";
-          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+          return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
         }
 
         hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);
@@ -391,6 +384,7 @@ export class AgentManager implements IAgentManager {
 
         _agentChain.push(next.agent);
         [currentAgent, currentTier, currentModel] = [next.agent, next.tier, next.model];
+        currentTarget = next;
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({

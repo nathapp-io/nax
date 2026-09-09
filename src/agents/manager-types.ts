@@ -70,6 +70,8 @@ export interface AgentCompleteOutcome {
   fallbacks: AgentFallbackRecord[];
   /** Tier of the hop that actually ran, when a fallback target named one. */
   finalTier?: string;
+  /** The resolved target the final hop ran on — see `AgentRunOutcome.finalTarget` (nax#1964). */
+  finalTarget?: FallbackTarget;
 }
 
 export type AgentManagerEventName = "onAgentSelected" | "onSwapAttempt" | "onAgentUnavailable" | "onSwapExhausted";

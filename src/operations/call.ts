@@ -17,8 +17,7 @@ import {
   normalizeRunOutcome,
   normalizeSelector,
   recordAdapterFailure,
-  recordAgentFallbacks,
-  recordStoryAgentTarget,
+  recordDispatchOutcome,
   resolveDispatchTarget,
   resolveOpModel,
   resolveOpRetry,
@@ -144,7 +143,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         );
         // nax#1712: mirror the run branch at the bottom of this file — a swap taken
         // inside completeWithFallback is only attributable to a story here.
-        recordAgentFallbacks(ctx, completeOutcome.fallbacks);
+        recordDispatchOutcome(ctx, completeOutcome.fallbacks, completeOutcome.finalTarget, resolved.modelTier);
         const raw = completeOutcome.result;
         const parsedComplete = op.parse(raw.output, input, buildCtx);
         return await runPostParse(op, parsedComplete, input, buildCtx);
@@ -467,8 +466,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // store instead, so hops from every op in the story reach StoryMetrics.fallback on the
   // sequential success path. Parallel and failed stories build metrics elsewhere and do
   // not read this yet — see #1709.
-  recordAgentFallbacks(ctx, outcome.fallbacks);
-  recordStoryAgentTarget(ctx, outcome.finalTarget, outcome.fallbacks.length > 0, resolved.modelTier);
+  recordDispatchOutcome(ctx, outcome.fallbacks, outcome.finalTarget, resolved.modelTier);
   recordAdapterFailure(ctx, outcome.result.adapterFailure);
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),

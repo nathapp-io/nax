@@ -14,7 +14,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { assertDefined, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import type { CallContext, RunOperation } from "@/operations";
+import type { CallContext, CompleteOperation, RunOperation } from "@/operations";
 import { callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
@@ -82,6 +82,79 @@ function managerSwapping(deadAgent: string, liveAgent: string, dispatched: strin
   });
 }
 
+function makeCompleteOp(name: string): CompleteOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
+  return {
+    kind: "complete",
+    name,
+    stage: "complete",
+    config: testSel,
+    build: (input) => ({
+      role: { id: "role", content: "You process input.", overridable: false },
+      task: { id: "task", content: input, overridable: false },
+    }),
+    parse: (output) => output,
+  };
+}
+
+/**
+ * Reports a swap away from `deadAgent` on the complete() path: `completeAsWithFallback`
+ * receives the agent callOp resolved to dispatch on (its first argument), so calling it
+ * with `deadAgent` again — rather than the sticky target — is exactly the regression
+ * this pins.
+ */
+function managerSwappingComplete(deadAgent: string, liveAgent: string, dispatched: string[]) {
+  return makeMockAgentManager({
+    completeAsWithFallbackFn: async (agentName) => {
+      dispatched.push(agentName);
+      const swapped = agentName === deadAgent;
+      const fallbacks = swapped ? [hop({ priorAgent: deadAgent, newAgent: liveAgent })] : [];
+      return {
+        result: { output: "done", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
+        fallbacks,
+        finalTarget: { agent: swapped ? liveAgent : agentName },
+      };
+    },
+  });
+}
+
+/** Like `managerSwapping`, but also answers `completeAsWithFallback` (no swap on that path). */
+function managerSwappingRunAndComplete(
+  deadAgent: string,
+  liveAgent: string,
+  dispatchedRun: string[],
+  dispatchedComplete: string[],
+) {
+  return makeMockAgentManager({
+    runWithFallbackFn: async (req, primaryAgentOverride) => {
+      const agent = primaryAgentOverride ?? deadAgent;
+      dispatchedRun.push(agent);
+      const swapped = agent === deadAgent;
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop(swapped ? liveAgent : agent, undefined, { kind: "primary" }, req.runOptions);
+      const fallbacks = swapped ? [hop({ priorAgent: deadAgent, newAgent: liveAgent })] : [];
+      return {
+        result: { ...hopResult.result, agentFallbacks: fallbacks },
+        fallbacks,
+        finalTarget: { agent: swapped ? liveAgent : agent },
+      };
+    },
+    completeAsWithFallbackFn: async (agentName) => {
+      dispatchedComplete.push(agentName);
+      return {
+        result: { output: "done", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
+        fallbacks: [],
+      };
+    },
+    runAsSessionFn: async () => ({
+      output: "done",
+      estimatedCostUsd: 0,
+      internalRoundTrips: 0,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  });
+}
+
 function makeCtx(opts: { runtime: NaxRuntime; storyId: string; agentName: string }): CallContext {
   return {
     runtime: opts.runtime,
@@ -126,5 +199,33 @@ describe("callOp sticks a story to the agent it swapped to (#1964)", () => {
     await callOp(makeCtx({ runtime, storyId: "US-001", agentName: "native" }), makeOp("op-two", "powerful"), "work");
 
     expect(dispatched).toEqual(["native", "native"]);
+  });
+
+  test("a later complete-kind op of the same story dispatches on the agent an earlier complete-kind op swapped to", async () => {
+    const dispatched: string[] = [];
+    const runtime = makeMockRuntime({ agentManager: managerSwappingComplete("native", "claude", dispatched) });
+    createdRuntimes.push(runtime);
+    const ctx = makeCtx({ runtime, storyId: "US-001", agentName: "native" });
+
+    await callOp(ctx, makeCompleteOp("complete-op-one"), "work");
+    await callOp(ctx, makeCompleteOp("complete-op-two"), "work");
+
+    expect(dispatched).toEqual(["native", "claude"]);
+  });
+
+  test("a complete-kind op honours the target a run-kind op of the same story already swapped to", async () => {
+    const dispatchedRun: string[] = [];
+    const dispatchedComplete: string[] = [];
+    const runtime = makeMockRuntime({
+      agentManager: managerSwappingRunAndComplete("native", "claude", dispatchedRun, dispatchedComplete),
+    });
+    createdRuntimes.push(runtime);
+    const ctx = makeCtx({ runtime, storyId: "US-001", agentName: "native" });
+
+    await callOp(ctx, makeOp("run-op"), "work");
+    await callOp(ctx, makeCompleteOp("complete-op"), "work");
+
+    expect(dispatchedRun).toEqual(["native"]);
+    expect(dispatchedComplete).toEqual(["claude"]);
   });
 });

@@ -191,6 +191,21 @@ export function recordStoryAgentTarget(
   ctx.runtime.storyAgentTargets.set(storyFixKey(ctx.storyId, tier, ctx.agentName), target);
 }
 
+/**
+ * Record both sinks a dispatch outcome feeds: the story's swap-hop ledger, and — only
+ * when a swap actually happened — the sticky target this story's later ops should reuse.
+ * Shared by callOp's run-kind and complete-kind branches so neither drifts from the other.
+ */
+export function recordDispatchOutcome(
+  ctx: CallContext,
+  fallbacks: readonly AgentFallbackRecord[],
+  finalTarget: FallbackTarget | undefined,
+  tier: string | undefined,
+): void {
+  recordAgentFallbacks(ctx, fallbacks);
+  recordStoryAgentTarget(ctx, finalTarget, fallbacks.length > 0, tier);
+}
+
 /** The target this story already swapped to at this rung, if any. */
 export function stickyAgentTarget(ctx: CallContext, tier: string | undefined): FallbackTarget | undefined {
   if (!ctx.storyId) return undefined;
