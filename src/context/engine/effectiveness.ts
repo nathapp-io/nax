@@ -267,11 +267,35 @@ function readGitPath(input: string, start: number): { path: string; next: number
 
   if (input[i] === '"') {
     let path = "";
+    // Consecutive octal escapes are one UTF-8 byte each (git emits one
+    // \NNN escape per byte of a non-ASCII filename). Buffer them and decode
+    // the whole run as UTF-8 once a non-escape byte breaks the run, rather
+    // than mapping each byte to a code point (which mojibakes as Latin-1).
+    let octalBytes: number[] = [];
+    const flushOctalBytes = () => {
+      if (octalBytes.length === 0) return;
+      path += new TextDecoder().decode(new Uint8Array(octalBytes));
+      octalBytes = [];
+    };
     i++;
     while (i < input.length && input[i] !== '"') {
       const ch = input[i];
       if (ch === "\\" && i + 1 < input.length) {
         const esc = input[i + 1];
+        if (esc >= "0" && esc <= "7") {
+          let code = 0;
+          let digits = 0;
+          let j = i + 1;
+          while (j < input.length && digits < 3 && input[j] >= "0" && input[j] <= "7") {
+            code = code * 8 + (input.charCodeAt(j) - 48);
+            digits++;
+            j++;
+          }
+          octalBytes.push(code & 0xff);
+          i = j;
+          continue;
+        }
+        flushOctalBytes();
         if (esc === '"' || esc === "\\") {
           path += esc;
           i += 2;
@@ -292,23 +316,12 @@ function readGitPath(input: string, start: number): { path: string; next: number
           i += 2;
           continue;
         }
-        if (esc >= "0" && esc <= "7") {
-          let code = 0;
-          let digits = 0;
-          let j = i + 1;
-          while (j < input.length && digits < 3 && input[j] >= "0" && input[j] <= "7") {
-            code = code * 8 + (input.charCodeAt(j) - 48);
-            digits++;
-            j++;
-          }
-          path += String.fromCharCode(code);
-          i = j;
-          continue;
-        }
       }
+      flushOctalBytes();
       path += ch;
       i++;
     }
+    flushOctalBytes();
     if (i < input.length && input[i] === '"') i++;
     return { path, next: i };
   }
