@@ -201,6 +201,34 @@ export function totalSpendUsd(snap: Pick<CostSnapshot, "totalCostUsd" | "totalEr
   return snap.totalCostUsd + snap.totalErrorCostUsd;
 }
 
+/** Both halves of one story's spend. Mirrors `RunMetrics.totalCost` / `errorCostUsd`. */
+export interface StorySpend {
+  /** Every dollar the story accounted for — successful spend plus failed-dispatch spend. */
+  cost: number;
+  /** The failed half of `cost`. Zero when nothing threw; callers omit the field at zero. */
+  errorCostUsd: number;
+}
+
+/**
+ * Read one story's spend out of the aggregator, folding failed-dispatch spend in.
+ *
+ * `fallbackUsd` is returned ONLY when the story has no rows at all. This is the
+ * distinction #1960 turns on: an error row creates the `byStory()` key, so the
+ * pre-#1960 `?.totalCostUsd ?? fallback` saw a snapshot whose successful total
+ * was 0, never fired the fallback, and reported `cost: 0` for a story that had
+ * burned real money. Pricing failed dispatches made that number strictly worse;
+ * reading through here is what fixes it.
+ */
+export function storySpendUsd(
+  costAggregator: ICostAggregator | undefined,
+  storyId: string,
+  fallbackUsd: number,
+): StorySpend {
+  const snap = costAggregator?.byStory()[storyId];
+  if (snap === undefined) return { cost: fallbackUsd, errorCostUsd: 0 };
+  return { cost: totalSpendUsd(snap), errorCostUsd: snap.totalErrorCostUsd };
+}
+
 export interface CostScopeHandle {
   /** The scopeId this handle filters by. */
   readonly scopeId: string;
