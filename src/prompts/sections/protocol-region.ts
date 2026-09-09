@@ -74,18 +74,25 @@ const REGION = new RegExp(
 const OWN_OPEN = new RegExp(`<!--nax:[a-z][a-z-]*:${NONCE} `, "g");
 
 /**
- * The registry. Today: `diff-access`, `run-check`, `run-test`. US-005 will add
- * `commit`. The `requires` list is consulted when `advertisedTools` is
- * supplied. When `advertisedTools` is `undefined`, gating is skipped (a caller
- * that does not know which tools the agent advertises must still get the
- * native rendering).
+ * The registry. Today: `diff-access`, `run-check`, `run-test`, `test-scope`.
+ * US-005 will add `commit`. The `requires` list is consulted when
+ * `advertisedTools` is supplied. When `advertisedTools` is `undefined`,
+ * gating is skipped (a caller that does not know which tools the agent
+ * advertises must still get the native rendering).
  *
- * `run-check` and `run-test` render a `RunCommand` call whose `command` is the
- * declared key the spec carries. The `command` field in the spec MUST be a key
- * the project actually declared under `quality.commands` — `RunCommand`'s own
- * schema is the runtime check, and a declared key the schema rejects is a
- * shape error the model should never see. Producers are responsible for
- * shaping the spec correctly; the renderer trusts them.
+ * `run-check` and `run-test` and `test-scope` render a `RunCommand` call
+ * whose `command` is the declared key the spec carries. The `command` field
+ * in the spec MUST be a key the project actually declared under
+ * `quality.commands` — `RunCommand`'s own schema is the runtime check, and
+ * a declared key the schema rejects is a shape error the model should never
+ * see. Producers are responsible for shaping the spec correctly; the
+ * renderer trusts them.
+ *
+ * `test-scope` is the kind the isolation section and the escalated
+ * rectification prompt use to wrap shell-form test instructions whose
+ * native rendering is "run only the named test files". The framing differs
+ * from `run-test` because the agent is not re-running a failing acceptance
+ * test — it is scoping a routine test invocation to its own changed files.
  */
 const REGISTRY: Record<string, AffordanceNativeRenderer> = {
   "diff-access": {
@@ -99,6 +106,10 @@ const REGISTRY: Record<string, AffordanceNativeRenderer> = {
   "run-test": {
     requires: ["RunCommand"],
     render: (spec) => renderRunCommandTest(spec as RunCommandTestSpec),
+  },
+  "test-scope": {
+    requires: ["RunCommand"],
+    render: (spec) => renderRunCommandTestScope(spec as RunCommandTestSpec),
   },
 };
 
@@ -136,6 +147,19 @@ function renderRunCommandTest(spec: RunCommandTestSpec): string {
   // otherwise produce something it cannot parse.
   return (
     "Re-run the failing acceptance test before you finish:\n" +
+    `RunCommand {"command": ${JSON.stringify(spec.command)}, "values": {"files": ${JSON.stringify(spec.files)}}}`
+  );
+}
+
+/** US-004 — framing for `test-scope`: the isolation section's "scope each
+ *  run to the files you changed" rule and the escalated rectification
+ *  prompt's per-failing-file lines. Distinct from `run-test`'s framing
+ *  ("Re-run the failing acceptance test...") because the agent is not
+ *  re-running a failing acceptance test — it is invoking the project's
+ *  scoped test command on a specific file. */
+function renderRunCommandTestScope(spec: RunCommandTestSpec): string {
+  return (
+    "Run only the test files related to your changes:\n" +
     `RunCommand {"command": ${JSON.stringify(spec.command)}, "values": {"files": ${JSON.stringify(spec.files)}}}`
   );
 }

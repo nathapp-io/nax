@@ -27,6 +27,7 @@ import {
   buildConventionsSection,
   buildIsolationSection,
   buildStorySection,
+  wrapAffordance,
 } from "../sections";
 import {
   adversarialRectification,
@@ -505,6 +506,13 @@ Commit your fixes when done.${scopeConstraint}`;
     config?: RectificationConfig,
     testCommand?: string,
     testScopedTemplate?: string,
+    /** US-004 — declared `quality.commands.testScoped` key. When supplied
+     *  AND a scoped template is supplied, each per-failing-file line is
+     *  wrapped in a `test-scope` region so the dispatch seam can substitute
+     *  a `RunCommand {"command": "<key>", "values": {"files": "<path>"}}`
+     *  call under native + advertised `RunCommand` (AC4). ACP preserves the
+     *  shell string. Omit when no declared scoped key (AC7). */
+    scopedCommandName?: string,
   ): string {
     const maxChars = config?.maxFailureSummaryChars ?? 2000;
     const failureSummary = formatFailureSummary(failures, maxChars);
@@ -522,6 +530,11 @@ Commit your fixes when done.${scopeConstraint}`;
           : cmd
             ? `${cmd} ${file}`
             : file;
+        // US-004 — wrap the shell-form line in a `test-scope` region when
+        // the caller supplied both a scoped key and a scoped template.
+        if (scopedCommandName && testScopedTemplate) {
+          return `  ${wrapAffordance("test-scope", { command: scopedCommandName, files: file }, scopedCmd)}`;
+        }
         return `  ${scopedCmd}`;
       })
       .join("\n");
@@ -773,6 +786,12 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
     context?: string;
     promptPrefix?: string;
     guardrailLevel?: GuardrailLevel;
+    /** US-004 — declared `quality.commands.test` key. When supplied, the
+     *  `# TEST COMMAND` block's shell-string body is wrapped in a `run-check`
+     *  region so the dispatch seam can substitute a `RunCommand {"command":
+     *  "<key>"}` call under native + advertised `RunCommand` (AC5). ACP
+     *  preserves the shell string byte-for-byte (AC6). */
+    scopedCommandName?: string;
   }): string {
     const parts: string[] = [];
 
@@ -811,8 +830,18 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
       parts.push("\n\n");
     }
 
-    // 6. Test command section
-    parts.push(`# TEST COMMAND\n\n\`${opts.testCommand}\``);
+    // 6. Test command section — US-004: when the caller supplies the
+    // declared full-suite key, wrap the shell-string body in a `run-check`
+    // region so dispatch can substitute a `RunCommand {"command": "<key>"}`
+    // call under native + `RunCommand` (AC5). ACP keeps the shell string
+    // byte-for-byte (AC6). The task section further down still names the
+    // shell string the verifier replays, so a model that ignores the tool
+    // call can still run the right command.
+    const testCommandBody = `\`${opts.testCommand}\``;
+    const testCommandSection = opts.scopedCommandName
+      ? `# TEST COMMAND\n\n${wrapAffordance("run-check", { command: opts.scopedCommandName }, testCommandBody)}`
+      : `# TEST COMMAND\n\n${testCommandBody}`;
+    parts.push(testCommandSection);
     parts.push("\n\n");
 
     // 7. Isolation (optional)

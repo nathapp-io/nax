@@ -11,14 +11,30 @@
  * Backwards compatible: also accepts old API (mode only)
  * - buildIsolationSection("strict") → test-writer, strict
  * - buildIsolationSection("lite") → test-writer, lite
+ *
+ * US-004 — when a configured test command AND a declared scoped key are
+ * both supplied, the test-filter rule's shell example is wrapped in a
+ * `test-scope` protocol region. Dispatch substitutes a `RunCommand` tool
+ * call under native + `RunCommand`; otherwise the ACP body (the shell
+ * example and the surrounding full-suite warning sentence) is preserved
+ * verbatim. The shell example is omitted entirely (no region) when no
+ * test command is configured — the `#543` fallback (`scope each run to the
+ * files you changed`) is what ships under that branch.
  */
 
-function buildTestFilterRule(testCommand: string): string {
+import { wrapAffordance } from "./protocol-region";
+
+function buildTestFilterRule(testCommand: string, scopedCommandName?: string): string {
   // #543: do not invent a `bun test` example for Go / Python / Rust packages.
-  const example = testCommand
-    ? `e.g. \`${testCommand} <path/to/test-file>\``
-    : "scope each run to the files you changed";
-  return `When running tests, run ONLY test files related to your changes (${example}). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
+  if (!testCommand) {
+    return `When running tests, run ONLY test files related to your changes (scope each run to the files you changed). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
+  }
+  const sentence = `When running tests, run ONLY test files related to your changes (e.g. \`${testCommand} <path/to/test-file>\`). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
+  // Only wrap when a declared scoped key is supplied — the wrapping produces
+  // a `RunCommand {"command": "<scopedKey>", "values": {"files": ""}}` call
+  // and that tool call requires a key the project actually declared.
+  if (!scopedCommandName) return sentence;
+  return wrapAffordance("test-scope", { command: scopedCommandName, files: "" }, sentence);
 }
 
 export function buildIsolationSection(
@@ -34,10 +50,11 @@ export function buildIsolationSection(
     | "lite",
   mode?: "strict" | "lite",
   testCommand?: string,
+  scopedCommandName?: string,
 ): string {
   // Old API support: buildIsolationSection("strict") or buildIsolationSection("lite")
   if ((roleOrMode === "strict" || roleOrMode === "lite") && mode === undefined) {
-    return buildIsolationSection("test-writer", roleOrMode, testCommand);
+    return buildIsolationSection("test-writer", roleOrMode, testCommand, scopedCommandName);
   }
 
   const role = roleOrMode as
@@ -51,7 +68,7 @@ export function buildIsolationSection(
   const testCmd = testCommand ?? "";
 
   const header = "# Isolation Rules";
-  const footer = `\n\n${buildTestFilterRule(testCmd)}`;
+  const footer = `\n\n${buildTestFilterRule(testCmd, scopedCommandName)}`;
 
   if (role === "no-test") {
     return "";
