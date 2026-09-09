@@ -20,6 +20,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { applyDiffAccess, DIFF_ACCESS_MARKER_PREFIX, wrapDiffAccess } from "@/prompts/sections/diff-access";
+import { applyProtocolRegions, wrapAffordance } from "@/prompts/sections/protocol-region";
 
 const SPEC = {
   ref: "abc123",
@@ -118,14 +119,59 @@ describe("AC2 — applyDiffAccess with native protocol gates on advertisedTools"
     expect(out).toContain("abc123");
   });
 
-  test("AC2 (boundary): both implementations agree on the same input (acp body when Git omitted)", () => {
-    // Defence against a silent drift between the legacy adapter and the new
-    // helper: the body the legacy adapter returns for an ungated native call
-    // MUST match what the helper returns for the same input. If they drift,
+  test("AC2 (boundary): legacy applyDiffAccess and applyProtocolRegions agree byte-for-byte on the same input", () => {
+    // Defence against silent drift between the legacy `applyDiffAccess`
+    // (build-hop-callback / session-run-hop dispatch path) and the new
+    // `applyProtocolRegions` helper (US-001's affordance registry). The two
+    // MUST produce byte-identical output for every input — if they drift,
     // the legacy suite passes for one reason and the new suite passes for
     // another and a real prompt ships mixed text.
-    const legacyUngated = applyDiffAccess(wrapped(), "native");
-    expect(legacyUngated).toContain("abc123");
-    expect(legacyUngated).not.toContain(SHELL_BODY);
+    //
+    // Three axes that have historically diverged:
+    //   1. Protocol alone — native (no gating) must match the helper's native
+    //      path with `advertisedTools: undefined` (preserves today's behaviour).
+    //   2. ACP — both must strip markers and return the shell body byte-for-byte.
+    //   3. Gate enforcement — when `Git` is omitted from `advertisedTools`,
+    //      the legacy adapter must fall back to the ACP body, exactly like the
+    //      helper does. A legacy path that ignores `advertisedTools` and always
+    //      renders natively would diverge here, which is the regression the
+    //      helper exists to prevent.
+    //
+    // Both inputs are derived from `wrapDiffAccess` so the legacy suite's
+    // marker grammar is the one under test, not the new one. `wrapAffordance`
+    // is exercised separately so the assertion does not silently depend on a
+    // marker shape that `applyDiffAccess` does not understand.
+
+    // 1. Native, no gating — both must produce the native rendering.
+    const legacyNativeUngated = applyDiffAccess(wrapped(), "native");
+    const helperNativeUngated = applyProtocolRegions(wrapped(), { protocol: "native" });
+    expect(legacyNativeUngated).toBe(helperNativeUngated);
+
+    // 2. ACP — both must strip markers and return the shell body byte-for-byte.
+    const legacyAcp = applyDiffAccess(wrapped(), "acp");
+    const helperAcp = applyProtocolRegions(wrapped(), { protocol: "acp" });
+    expect(legacyAcp).toBe(helperAcp);
+    expect(legacyAcp).toBe(`before\n${SHELL_BODY}after\n`);
+
+    // 3. Gate enforcement — when Git is omitted, the legacy adapter must
+    // fall back to the ACP body, matching the helper's gated behaviour.
+    const legacyGated = applyDiffAccess(wrapped(), "native", ["Read"]);
+    const helperGated = applyProtocolRegions(wrapped(), {
+      protocol: "native",
+      advertisedTools: new Set(["Read"]),
+    });
+    expect(legacyGated).toBe(helperGated);
+    expect(legacyGated).toContain(SHELL_BODY);
+
+    // 4. Wrap-shape independence — the assertion holds for both wrap paths.
+    // `wrapAffordance` emits the same nonce-protected marker grammar (US-001
+    // cross-entry seam), so both implementations must read it identically.
+    const affordanceWrapped = `head\n${wrapAffordance("diff-access", SPEC, SHELL_BODY)}tail`;
+    const legacyFromAffordance = applyDiffAccess(affordanceWrapped, "native", ["Git", "Read"]);
+    const helperFromAffordance = applyProtocolRegions(affordanceWrapped, {
+      protocol: "native",
+      advertisedTools: new Set(["Git", "Read"]),
+    });
+    expect(legacyFromAffordance).toBe(helperFromAffordance);
   });
 });
