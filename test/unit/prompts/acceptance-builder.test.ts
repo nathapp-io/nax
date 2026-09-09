@@ -11,6 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { AcceptancePromptBuilder } from "@/prompts";
+import { applyProtocolRegions } from "@/prompts/sections";
 
 const builder = new AcceptancePromptBuilder();
 
@@ -227,18 +228,21 @@ describe("builder.buildSourceFixPrompt()", () => {
 
   // #1939: source-fix/test-fix already have a working RunCommand (#1936/#1938) but
   // the prompt never said so — the test command was spent solely on the framework hint.
-  describe("re-run affordance (#1939)", () => {
-    test("names the RunCommand tool call with the acceptance path when scopedCommandName is given", () => {
+  // US-003 replaced the hedge wording ("if that tool is available to you")
+  // with a protocol-region: the ACP body is the shell string, the native
+  // body is the RunCommand call, and dispatch selects between them.
+  describe("re-run affordance (#1939 / US-003)", () => {
+    test("renders one region whose body is the shell command when scopedCommandName is given", () => {
       const result = builder.buildSourceFixPrompt({
         ...base,
         testCommand: "bun test /abs/path.ts",
         scopedCommandName: "testScoped",
       });
       expect(result).toContain("Re-run the failing acceptance test before you finish");
-      expect(result).toContain(
-        `RunCommand {"command": "testScoped", "values": {"files": "${base.acceptanceTestPath}"}}`,
-      );
-      expect(result).toContain("if that tool is available to you, otherwise `bun test /abs/path.ts`");
+      // The shell string is the ACP body of the region.
+      expect(result).toContain("`bun test /abs/path.ts`");
+      // No hedge wording survives.
+      expect(result).not.toContain("if that tool is available to you");
     });
 
     test("omits the RunCommand form when scopedCommandName is not given", () => {
@@ -250,6 +254,53 @@ describe("builder.buildSourceFixPrompt()", () => {
     test("omits the affordance entirely when no testCommand was resolved", () => {
       const result = builder.buildSourceFixPrompt({ ...base, scopedCommandName: "testScoped" });
       expect(result).not.toContain("Re-run the failing acceptance test");
+    });
+  });
+
+  // US-003 AC6: the rerun line, applied with native + advertised RunCommand,
+  // renders a RunCommand call whose command is the scoped key and whose
+  // values.files equals the acceptance test path.
+  describe("re-run affordance (US-003)", () => {
+    test("the rerun line, applied with native + RunCommand, renders a call carrying the scoped key and the acceptance path in values.files (US-003 AC6)", () => {
+      const result = builder.buildSourceFixPrompt({
+        ...base,
+        testCommand: "bun test /abs/path.ts",
+        scopedCommandName: "testScoped",
+      });
+      const native = applyProtocolRegions(result, {
+        protocol: "native",
+        advertisedTools: new Set(["RunCommand"]),
+      });
+      expect(native).toContain(
+        'RunCommand {"command": "testScoped", "values": {"files": "/project/.nax/features/feat/.nax-acceptance.test.ts"}}',
+      );
+    });
+
+    // US-003 AC7: with no resolved scoped key, the rerun line renders ONLY
+    // the raw command string under both protocols and no RunCommand call.
+    test("the rerun line without a scoped key renders only the raw command string under acp and no RunCommand call (US-003 AC7)", () => {
+      const result = builder.buildSourceFixPrompt({ ...base, testCommand: "bun test /abs/path.ts" });
+      const acp = applyProtocolRegions(result, { protocol: "acp" });
+      expect(acp).toContain("`bun test /abs/path.ts`");
+      expect(acp).not.toContain("RunCommand");
+    });
+
+    test("the rerun line without a scoped key renders only the raw command string under native and no RunCommand call (US-003 AC7)", () => {
+      const result = builder.buildSourceFixPrompt({ ...base, testCommand: "bun test /abs/path.ts" });
+      const native = applyProtocolRegions(result, { protocol: "native" });
+      expect(native).toContain("`bun test /abs/path.ts`");
+      expect(native).not.toContain("RunCommand");
+    });
+
+    // US-003 AC8: the rerun line contains no "if that tool is available to
+    // you" hedge — it now renders one region whose body is the shell string.
+    test("the rerun line contains no 'if that tool is available to you' phrase (US-003 AC8)", () => {
+      const result = builder.buildSourceFixPrompt({
+        ...base,
+        testCommand: "bun test /abs/path.ts",
+        scopedCommandName: "testScoped",
+      });
+      expect(result).not.toContain("if that tool is available to you");
     });
   });
 });
@@ -302,18 +353,19 @@ describe("builder.buildTestFixPrompt()", () => {
   });
 
   // #1939: same affordance gap as buildSourceFixPrompt.
-  describe("re-run affordance (#1939)", () => {
-    test("names the RunCommand tool call with the acceptance path when scopedCommandName is given", () => {
+  // US-003 replaced the hedge wording ("if that tool is available to you")
+  // with a protocol-region: the ACP body is the shell string, the native
+  // body is the RunCommand call, and dispatch selects between them.
+  describe("re-run affordance (#1939 / US-003)", () => {
+    test("renders one region whose body is the shell command when scopedCommandName is given", () => {
       const result = builder.buildTestFixPrompt({
         ...base,
         testCommand: "bun test /abs/path.ts",
         scopedCommandName: "testScoped",
       });
       expect(result).toContain("Re-run the failing acceptance test before you finish");
-      expect(result).toContain(
-        `RunCommand {"command": "testScoped", "values": {"files": "${base.acceptanceTestPath}"}}`,
-      );
-      expect(result).toContain("if that tool is available to you, otherwise `bun test /abs/path.ts`");
+      expect(result).toContain("`bun test /abs/path.ts`");
+      expect(result).not.toContain("if that tool is available to you");
     });
 
     test("omits the RunCommand form when scopedCommandName is not given", () => {
@@ -325,6 +377,49 @@ describe("builder.buildTestFixPrompt()", () => {
     test("omits the affordance entirely when no testCommand was resolved", () => {
       const result = builder.buildTestFixPrompt({ ...base, scopedCommandName: "testScoped" });
       expect(result).not.toContain("Re-run the failing acceptance test");
+    });
+  });
+
+  // US-003: same affordance through the protocol region registry. The
+  // rerun line now carries a region; the tests pin the ACs across both
+  // builders.
+  describe("re-run affordance (US-003)", () => {
+    test("the rerun line, applied with native + RunCommand, renders a call carrying the scoped key and the acceptance path in values.files (US-003 AC6)", () => {
+      const result = builder.buildTestFixPrompt({
+        ...base,
+        testCommand: "bun test /abs/path.ts",
+        scopedCommandName: "testScoped",
+      });
+      const native = applyProtocolRegions(result, {
+        protocol: "native",
+        advertisedTools: new Set(["RunCommand"]),
+      });
+      expect(native).toContain(
+        'RunCommand {"command": "testScoped", "values": {"files": "/project/.nax/features/feat/.nax-acceptance.test.ts"}}',
+      );
+    });
+
+    test("the rerun line without a scoped key renders only the raw command string under acp and no RunCommand call (US-003 AC7)", () => {
+      const result = builder.buildTestFixPrompt({ ...base, testCommand: "bun test /abs/path.ts" });
+      const acp = applyProtocolRegions(result, { protocol: "acp" });
+      expect(acp).toContain("`bun test /abs/path.ts`");
+      expect(acp).not.toContain("RunCommand");
+    });
+
+    test("the rerun line without a scoped key renders only the raw command string under native and no RunCommand call (US-003 AC7)", () => {
+      const result = builder.buildTestFixPrompt({ ...base, testCommand: "bun test /abs/path.ts" });
+      const native = applyProtocolRegions(result, { protocol: "native" });
+      expect(native).toContain("`bun test /abs/path.ts`");
+      expect(native).not.toContain("RunCommand");
+    });
+
+    test("the rerun line contains no 'if that tool is available to you' phrase (US-003 AC8)", () => {
+      const result = builder.buildTestFixPrompt({
+        ...base,
+        testCommand: "bun test /abs/path.ts",
+        scopedCommandName: "testScoped",
+      });
+      expect(result).not.toContain("if that tool is available to you");
     });
   });
 

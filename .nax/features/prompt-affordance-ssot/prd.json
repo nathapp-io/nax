@@ -1,0 +1,334 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "prompt-affordance-ssot",
+  "branchName": "feat/prompt-affordance-ssot",
+  "createdAt": "2025-02-14T00:00:00.000Z",
+  "updatedAt": "2026-09-09T14:47:20.120Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create the protocol-region affordance registry",
+      "description": "**Goal** — Create the single prompt-affordance registry, nonce-protected marker grammar, and ACP-safe rendering APIs.\n\n**Motivation** — `src/prompts/sections/diff-access.ts` already carries the whole mechanism: a per-process nonce, an `OPEN`/`CLOSE` delimited region whose body IS the ACP text, and `applyDiffAccess` swapping in a native rendering at dispatch.\n\n**Approach** — Delimited regions with a per-process nonce, not placeholder tokens, and not a builder-time protocol branch. The rationale is unchanged from `diff-access.ts`'s header and is inherited wholesale: the builder cannot know the protocol (resolved after the prompt string exists, and a fallback swap can change it again); a placeholder degrades to a prompt with *no* instructions, while a region degrades to the pre-change text; and a prompt is not all trusted text — findings from earlier iterations and embedded diffs are spliced into the same string, so a marker that content could forge would let it capture the genuine region. One nonce and one marker grammar for all kinds, with `kind` inside the marker. A single `PROTOCOL_REGION_MARKER_PREFIX` then makes \"no marker survives dispatch\" checkable in one place.\n\n**Scope** — In: create and barrel-export `src/prompts/sections/protocol-region.ts`, with the `diff-access` registry entry only. Out: adapter/dispatch work (US-002), run affordance producers (US-003/US-004), and commit persistence (US-005).\n\n**Interface** — Sections call `wrapAffordance(kind, spec, acpBody)`; dispatch calls `applyProtocolRegions(prompt, { protocol, advertisedTools })`; anything that persists a prompt to disk calls `unwrapProtocolRegions(text)`. The native rendering is emitted only when **every** name in `requires` is present in `advertisedTools`; otherwise the ACP body is kept. Every failure path (unknown kind, unparseable spec, foreign nonce, missing tool, unterminated region) yields the text that shipped before this feature existed.",
+      "acceptanceCriteria": [
+        "When importing from the prompt-sections module, then `wrapAffordance` is available and wrapping returns a string containing the supplied ACP body verbatim and unmodified between opening and closing markers.",
+        "When `applyProtocolRegions` applies a wrapped body with protocol `acp`, then it returns exactly the ACP body with no marker text and unchanged surrounding prompt characters.",
+        "When `applyProtocolRegions` applies `diff-access` with protocol `native` and advertised `Git` and `Read`, then it returns native rendering naming the spec baseline ref and containing no shell command.",
+        "When `applyProtocolRegions` applies `diff-access` with protocol `native` and advertised tools omit `Git`, then it returns the ACP body unchanged.",
+        "When `applyProtocolRegions` applies `diff-access` with protocol `native` and `advertisedTools` is `undefined`, then it returns native rendering without tool gating.",
+        "When a matching region has invalid JSON spec text and native protocol is applied, then it returns that ACP body.",
+        "When a matching region has an unregistered affordance kind and native protocol is applied, then it returns that ACP body.",
+        "When a marker has another process nonce, then `applyProtocolRegions` leaves it byte-for-byte untouched under both protocols.",
+        "When a prompt has an opening marker without a matching close marker, then `applyProtocolRegions` returns the prompt unchanged without removing characters.",
+        "When a prompt contains two regions of different kinds, then one `applyProtocolRegions` call substitutes both regions.",
+        "Given wrong-nonce forged content before a genuine region, when native protocol is applied, then the result renders the genuine baseline ref and retains text between forged and genuine markers.",
+        "When `unwrapProtocolRegions(text)` receives a prompt containing regions, then it returns a string equal to `text` with each region replaced by its exact ACP body, preserving all text outside regions, and leaving no substring equal to the exported marker prefix.",
+        "When `applyProtocolRegions` is applied twice to the same prompt, then its second result equals its first result."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "protocol"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "A new shared parser/registry must safely handle nonce-authenticated regions and multiple conservative failure paths.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prompts/sections/diff-access.ts",
+        "src/prompts/sections/index.ts",
+        "src/tools/registry.ts"
+      ],
+      "expectedFiles": [
+        "src/prompts/sections/protocol-region.ts",
+        "test/unit/prompts/protocol-region.test.ts"
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted: The reviewer's finding states that `unwrapProtocolRegions` should preserve surrounding prompt text (i.e., return the unwrapped prompt as a string). However, the AC12 test \"returns each ACP body across two regions\" asserts `expect(bodies.length).toBe(2)`, which structurally requires array return (a 2-character string cannot contain `ACP_BODY`). Changing the implementation to return a string breaks this test. No test-modification exception applies: Exception 2 requires a literal signature contradiction in the PRD, but the PRD's interface description (\"anything that persists a prompt to disk calls `unwrapProtocolRegions(text)`\") does not specify the return type; Exception 4 requires that \"the only path to satisfy the ACs\" needs a structural test rewrite, but AC12 is satisfiable as written (the array interpretation matches \"returns each ACP body\" and \"leaves no substring equal to the exported marker prefix\" — both assertions hold for an array of marker-free bodies). The reviewer's concern about the persistence use case (US-005) is valid but out of scope for this story per its explicit scope statement (\"Out: ... commit persistence (US-005)\"). For US-001, the implementation matches AC12 and every test in `test/unit/prompts/sections/protocol-region.test.ts` passes. Resolving this requires either (a) renaming the function or (b) changing the AC12 test's `expect(bodies.length).toBe(2)` assertion, both of which are test-scope edits that no exception covers here."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted: The reviewer's finding states that `unwrapProtocolRegions` should preserve surrounding prompt text (i.e., return the unwrapped prompt as a string). However, the AC12 test \"returns each ACP body across two regions\" asserts `expect(bodies.length).toBe(2)`, which structurally requires array return (a 2-character string cannot contain `ACP_BODY`). Changing the implementation to return a string breaks this test. No test-modification exception applies: Exception 2 requires a literal signature contradiction in the PRD, but the PRD's interface description (\"anything that persists a prompt to disk calls `unwrapProtocolRegions(text)`\") does not specify the return type; Exception 4 requires that \"the only path to satisfy the ACs\" needs a structural test rewrite, but AC12 is satisfiable as written (the array interpretation matches \"returns each ACP body\" and \"leaves no substring equal to the exported marker prefix\" — both assertions hold for an array of marker-free bodies). The reviewer's concern about the persistence use case (US-005) is valid but out of scope for this story per its explicit scope statement (\"Out: ... commit persistence (US-005)\"). For US-001, the implementation matches AC12 and every test in `test/unit/prompts/sections/protocol-region.test.ts` passes. Resolving this requires either (a) renaming the function or (b) changing the AC12 test's `expect(bodies.length).toBe(2)` assertion, both of which are test-scope edits that no exception covers here.",
+          "cost": 1.5619973149999997,
+          "timestamp": "2026-09-09T07:06:40.152Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "3f0ac3f5f66694f7fdbc2ea9b3dd570930618a8a"
+    },
+    {
+      "id": "US-002",
+      "title": "Gate diff access by advertised tools at every dispatch turn",
+      "description": "**Goal** — Re-express diff access through the helper and substitute regions using coding tools actually advertised on every dispatch turn.\n\n**Motivation** — `native` does not imply `RunCommand` or `GitCommit` exist.\n\n**Approach** — `resolveCodingToolSupport` resolves **before** the substitution call, and the bound `send` closure substitutes each turn prompt it is handed. The hop's returned `prompt` stays the substituted initial prompt. `resolveCodingToolSupport(options)` is hoisted above substitution because it reads only `options` and no session handle.\n\n**Scope** — In: helper-backed diff adapters, required advertised-tool parameter at the agent adapter, both dispatch seams, and follow-up `send` substitution. Out: non-diff registry entries and their producers (US-003–US-005).\n\n**Interface** — `applyDiffAccess(prompt: string, protocol: PromptProtocol, advertisedTools?: readonly string[]): string`, delegating to `applyProtocolRegions`. `undefined` means \"tool set unknown — do not gate\", preserving today's behaviour for callers that cannot know it. `wrapDiffAccess(spec, shellBody)` keeps its signature and delegates to `wrapAffordance(\"diff-access\", …). `applyDiffAccessForAgentProtocol(agentName: string, prompt: string, advertisedTools: readonly string[]): string` — third parameter **required**, so a future third dispatch site cannot silently ungate.",
+      "acceptanceCriteria": [
+        "When `wrapDiffAccess` is called with its existing two arguments and applied with protocol `acp`, then it yields the ACP body, preserving the diff-access suite’s existing expectations.",
+        "When `applyDiffAccess` receives native protocol and advertised tools omit `Git`, then it returns the ACP body.",
+        "When `applyDiffAccessForAgentProtocol` is invoked for a native agent with advertised `Git` and `Read`, then it returns native diff rendering.",
+        "When `applyDiffAccessForAgentProtocol` is invoked for a native agent with an empty advertised-tool list, then it returns the ACP body.",
+        "When `buildHopCallback` dispatches a native agent whose resolved grants advertise `Git` and `Read`, then the agent receives native diff rendering.",
+        "When `buildHopCallback` dispatches a native agent with only `Read`, `Glob`, and `Grep`, then the agent receives the shell body.",
+        "When `buildHopCallback` dispatches a non-native agent with a region, then the agent receives no exported marker-prefix substring.",
+        "When a hop body calls its bound `send` with a region-containing prompt, then the agent receives a substituted prompt with no marker prefix.",
+        "When a hop callback returns its initial prompt, then that prompt is substituted and contains no marker prefix.",
+        "When the session run hop dispatches native with grants advertising `Git` and `Read`, then it sends native rendering.",
+        "When the session run hop dispatches native with grants advertising neither required tool, then it sends the shell body."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "dispatch"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This modifies a compatibility API plus both live dispatch paths and the multi-turn closure seam.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prompts/sections/protocol-region.ts",
+        "src/agents/coding-tool-support.ts",
+        "src/agents/tool-preamble.ts",
+        "src/operations/build-hop-callback.ts",
+        "src/runtime/session-run-hop.ts",
+        "src/operations/call.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/prompts/sections/diff-access.ts",
+          "reason": "`applyDiffAccess` gains a third `advertisedTools` parameter and delegates to `applyProtocolRegions`; the invariant that replaces the old one is that native rendering additionally requires `Git` and `Read` to be advertised."
+        },
+        {
+          "path": "src/agents/tool-preamble.ts",
+          "reason": "`applyDiffAccessForAgentProtocol` takes a required third parameter; every dispatch site passes the advertised names."
+        },
+        {
+          "path": "src/operations/build-hop-callback.ts",
+          "reason": "coding-tool support resolves before substitution, and the bound `send` closure substitutes each turn prompt it is handed."
+        },
+        {
+          "path": "src/runtime/session-run-hop.ts",
+          "reason": "coding-tool support resolves before the prompt is substituted."
+        },
+        {
+          "path": "test/unit/agents/tool-preamble.test.ts",
+          "reason": "its calls pin the two-argument `applyDiffAccessForAgentProtocol`; the invariant that replaces it is that the advertised tool list is a required argument."
+        },
+        {
+          "path": "test/unit/operations/build-hop-callback-diff-access.test.ts",
+          "reason": "asserts native rendering from protocol alone; the invariant that replaces it is native rendering only when `Git` and `Read` are advertised."
+        },
+        {
+          "path": "test/unit/runtime/session-run-hop.test.ts",
+          "reason": "carries the same protocol-only assumption on the second hop; same replacement invariant."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e7aec01eccddbb726acc7a42b997549d264b0151"
+    },
+    {
+      "id": "US-003",
+      "title": "Render static checks through run affordances",
+      "description": "**Goal** — Replace the two static-check hedges with `run-check` and `run-test` protocol regions.\n\n**Motivation** — The hedge is spreading.\n\n**Approach** — `run-check` requires `RunCommand` and natively renders `RunCommand {\"command\": \"<label>\"}` for a declared check key. `run-test` requires `RunCommand` and natively renders `RunCommand {\"command\": \"<scopedKey>\", \"values\": {\"files\": \"<path>\"}}`.\n\n**Scope** — In: configured self-verification checks and acceptance test-rerun lines. Out: isolation/rectifier test blocks (US-004) and commits (US-005).\n\n**Interface** — Sections call `wrapAffordance(kind, spec, acpBody)`; native rendering is emitted only when every required tool is advertised, otherwise ACP body is kept.",
+      "acceptanceCriteria": [
+        "When self-verification has configured `typecheck`, then its output contains no `if that tool is available to you` phrase.",
+        "When configured self-verification is applied with `acp`, then it renders the configured typecheck command and no `RunCommand` call.",
+        "When configured self-verification is applied with native protocol and advertised `RunCommand`, then it renders a call whose command is declared key `typecheck` and no shell command string.",
+        "When configured self-verification is applied with native protocol without `RunCommand`, then it renders the configured shell command string.",
+        "When a self-verification command is unconfigured, then it renders the existing unconfigured line and emits no region.",
+        "When the acceptance rerun line has a resolved scoped key and native protocol advertises `RunCommand`, then it renders that key and acceptance path in `values.files`.",
+        "When the acceptance rerun line has no resolved scoped key, then it renders only the raw command string under both protocols and no `RunCommand` call.",
+        "When the acceptance rerun line is built, then it contains no `if that tool is available to you` phrase."
+      ],
+      "tags": [
+        "feature",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing builders are converted to defined registry shapes while retaining their ACP fallback behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prompts/sections/protocol-region.ts",
+        "src/prompts/sections/self-verification.ts",
+        "src/prompts/builders/acceptance-builder.ts",
+        "src/quality/self-verification.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/prompts/sections/self-verification.test.ts",
+          "reason": "asserts the hedge wording in the rendered check lines; the invariant that replaces it is that the section renders one region whose body is the shell string."
+        },
+        {
+          "path": "test/unit/prompts/acceptance-builder.test.ts",
+          "reason": "asserts the hedge wording in the test-rerun line at lines 241 and 316; the invariant that replaces it is that the line renders one region whose body is the shell string."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "046eb707eff7b189571fb22cb8e4c52d5c19367c"
+    },
+    {
+      "id": "US-004",
+      "title": "Render scoped and full-suite test instructions through affordances",
+      "description": "**Goal** — Convert isolation and rectifier shell test instructions to `run-test` affordance regions.\n\n**Motivation** — A prompt section cannot know which transport will receive it, nor which coding tools that transport was actually handed.\n\n**Approach** — `run-test` requires `RunCommand` and natively renders `RunCommand {\"command\": \"<scopedKey>\", \"values\": {\"files\": \"<path>\"}}`. Native rendering is emitted only when every required tool is advertised; otherwise ACP body is kept.\n\n**Scope** — In: isolation scoped-test example and rectifier per-file/full-suite command blocks. Out: no-test isolation path; US-003 static checks; US-005 commits.\n\n**Interface** — Sections call `wrapAffordance(kind, spec, acpBody)`; dispatch calls `applyProtocolRegions(prompt, { protocol, advertisedTools })`.",
+      "acceptanceCriteria": [
+        "When configured isolation is applied with `acp`, then it renders exactly the existing shell example including the surrounding full-suite warning sentence.",
+        "When configured isolation for a project with a declared scoped key is applied natively with advertised `RunCommand`, then it renders a `RunCommand` call with `values.files` and no shell command.",
+        "When isolation has no configured test command, then it renders the existing `scope each run to the files you changed` wording and emits no region.",
+        "When the rectifier per-failing-file block is applied natively with advertised `RunCommand`, then it renders one call per failing file with that file in `values.files`.",
+        "When the rectifier full-suite block is applied natively with advertised `RunCommand`, then it names declared key `test`.",
+        "When the rectifier full-suite block is applied with `acp`, then it names the same command string the verifier replays.",
+        "When rectifier blocks are applied natively without advertised `RunCommand`, then they render shell command strings that ship today."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "tests"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The story updates two prompt producers with established command data and ACP regression requirements.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prompts/sections/protocol-region.ts",
+        "src/prompts/sections/isolation.ts",
+        "src/prompts/builders/rectifier-builder.ts",
+        "src/prompts/builders/rectifier-builder-helpers.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap",
+          "reason": "a snapshot (closed-world) covering both the `# TEST COMMAND` block and the isolation section's full-suite warning line; the invariant that replaces it is the same prompt text with each command carried inside a region, so the snapshot is re-recorded."
+        },
+        {
+          "path": "test/unit/prompts/rectifier-builder.test.ts",
+          "reason": "asserts the `# TEST COMMAND` block as literal text; the invariant that replaces it is that the block is a region whose body is that literal text."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "82d9e5a5962e1305fcb66789edef57abfdd12461"
+    },
+    {
+      "id": "US-005",
+      "title": "Render commits through affordances and persist ACP templates",
+      "description": "**Goal** — Convert role-task commit instructions to `commit` regions and remove regions before generated templates are written to disk.\n\n**Motivation** — an override file named by `prompts.overrides.<role>` replaces the role-task section wholesale, so persisted template text is loaded in a **later process** than the one that wrote it.\n\n**Approach** — `commit` requires `GitCommit` and natively renders `GitCommit {\"message\": \"<msg>\"}`. Anything that persists a prompt to disk calls `unwrapProtocolRegions(text)`. A marker written in one process cannot match in a later process, so persisted output contains ACP body rather than a region.\n\n**Scope** — In: all six role-task `git commit -m` instructions and `promptsInitCommand` output. Out: rendering native affordances inside user-authored override templates; US-003/US-004 test affordances.\n\n**Interface** — Sections call `wrapAffordance(kind, spec, acpBody)`; persistence calls `unwrapProtocolRegions(text)`.",
+      "acceptanceCriteria": [
+        "When implementer role-task output is applied with `acp`, then it renders the `git commit -m` instruction exactly as it ships today, including the story commit message.",
+        "When implementer role-task output is applied natively with advertised `GitCommit`, then it renders a `GitCommit` call carrying that message and no `git commit` shell string.",
+        "When role-task output is applied natively without advertised `GitCommit`, then it renders the `git commit -m` shell string.",
+        "When every commit-naming role-task variant is applied with `acp`, then no result contains the marker prefix.",
+        "When every commit-naming role-task variant is applied natively with advertised `GitCommit`, then no result contains a `git commit` shell string.",
+        "When `promptsInitCommand` writes templates, then each written template is returned unchanged by `applyProtocolRegions` under both protocols because no region survives persistence.",
+        "When `promptsInitCommand` writes the implementer template, then its content equals the template header followed by ACP role-task rendering, including the same commit instruction ACP receives."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "cli"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "It changes several role-output branches and the CLI persistence boundary while relying on the helper.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prompts/sections/protocol-region.ts",
+        "src/prompts/sections/role-task.ts",
+        "src/cli/prompts-init.ts",
+        "src/prompts/loader.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/prompts/sections/role-task.test.ts",
+          "reason": "asserts the literal `git commit -m` lines; the invariant that replaces it is that each is a region whose body is that line."
+        },
+        {
+          "path": "test/unit/prompts/builder.test.ts",
+          "reason": "asserts a composed prompt carries the literal `git commit -m` instruction; same replacement invariant."
+        },
+        {
+          "path": "test/unit/cli/prompts-init.test.ts",
+          "reason": "asserts the content written for each template; the invariant that replaces it is that a written template carries the ACP body and no region marker."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0a26d24bc1e5deebec7faa224b4ca9b04640e28d",
+      "outOfScope": [
+        "rendering a native affordance inside a user-supplied override template — an override is loaded in a later process, whose nonce cannot match, and is treated as literal text by design."
+      ]
+    }
+  ],
+  "analysis": "Audit findings: the original draft omitted the US-001 requirement that `wrapAffordance` be importable through the prompt-sections barrel and omitted the new helper test file from expectedFiles. This revision restores both and preserves every stated AC, including ACP byte-parity/unchanged wording and all six failure-table cases. Codebase fit: src/prompts/sections/diff-access.ts:42-184 is the current nonce/region implementation; src/agents/tool-preamble.ts:43-45 is the agent-to-protocol adapter; src/operations/build-hop-callback.ts:296-318 substitutes before resolving coding support and its send closure at :419-450 currently does not substitute follow-up turns; src/runtime/session-run-hop.ts:22-24 has the same ordering problem. `resolveCodingToolSupport` supplies the dispatch-advertised `tools`, therefore tools.map(tool => tool.name), not agent protocol, must drive native affordance gating. Producers are self-verification (src/prompts/sections/self-verification.ts:28-34), acceptance rerun (src/prompts/builders/acceptance-builder.ts:136-166), isolation (src/prompts/sections/isolation.ts:13-18), rectifier (src/prompts/builders/rectifier-builder.ts), and role-task (src/prompts/sections/role-task.ts). prompts-init currently persists raw role-task content at src/cli/prompts-init.ts:81-88. Architecture is a new shared protocol-region module with a per-process nonce, one grammar, registry, wrap/apply/unwrap APIs, conservative parsing, and diff-access compatibility adapters. A known advertised tool set gates native rendering on every required tool; an undefined set intentionally retains legacy protocol-only behavior. Foreign nonce and unterminated regions remain untouched; malformed JSON, unknown kind, and absent tools retain ACP text. Migration order is helper, dispatch/diff adapter, then run-check/run-test, then commit/persistence. Main risks are forged marker capture, marker survival in retry turns, ACP text drift, native calls for tools never advertised, and nonces persisted across processes.",
+  "outOfScope": [
+    "Deleting or renaming `wrapDiffAccess`, `applyDiffAccess`, `DiffAccessSpec` or `DIFF_ACCESS_MARKER_PREFIX`: the diff-access API is retained as a thin adapter over the new helper so its existing suites remain the regression evidence for this change.",
+    "Changing any ACP-arm prompt text. Every ACP rendering must stay byte-for-byte what ships today; the ACP byte-parity suite is the gate.",
+    "Native renderings for prompt text that names no affordance (framework hints, install-command prose such as `rectifier-builder.ts:460`, review checklists).",
+    "User-authored override templates under `.nax/templates/`: a template a user has edited is literal text and receives no native rendering. Only the templates nax itself writes are covered, and only to the extent that they must contain no markers.",
+    "Widening `BUILT_IN_EXEC_PATTERNS`, or any change to what the `Exec` argv branch admits.",
+    "Adding new coding tools, or changing which ops declare which tools in `src/operations/*.ts`.",
+    "Scoped tool grants (`#374`) and the pathspec interaction noted in `diff-access.ts`'s `renderNative` warning.",
+    "The third hand-written register, `src/operations/lint-check.ts:156` and `src/operations/typecheck-check.ts:170`, which carry the same hedge inside a `Finding.message`. Findings are persisted to the review-audit artifacts and re-read by a later process, where a per-process nonce cannot match, so a region there would never render natively. Covering them needs a marker whose lifetime outlives the process, which this spec does not design.",
+    "Their existing gate stays as-is: those two sites already withhold the `RunCommand` key when the command was auto-detected rather than declared (`typecheck-check.ts:161-170`).",
+    "The dead `src/session/session-keeper.ts` dispatch path (no production constructor found); it is not wired into the substitution seam by this spec."
+  ],
+  "routingProfile": "native"
+}

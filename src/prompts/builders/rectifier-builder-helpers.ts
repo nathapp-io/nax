@@ -10,7 +10,7 @@ import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckResult } from "@/review/types";
-import { buildIsolationSection, buildNaxArtifactsSection } from "../sections";
+import { buildIsolationSection, buildNaxArtifactsSection, wrapAffordance } from "../sections";
 
 interface CheckErrorFormatOptions {
   blockingThreshold?: "error" | "warning" | "info";
@@ -469,4 +469,87 @@ export function repoScopedRectification(findings: Finding[], story: UserStory): 
   }
   const hatch = buildEscapeHatch({ includeMockHandoff: false, includeSiblingScope: false });
   return [formatFailingTestsList(findings), REPO_SCOPE_MANDATE, hatch].join("\n");
+}
+
+/**
+ * US-004 — options for the failing-test rectification prompt's affordance
+ * regions. Absent options render the pre-change prompt verbatim.
+ */
+export interface FailingTestRectificationOptions {
+  /** The resolved full-suite test command (`quality.commands.test` slot). When
+   *  supplied, a `# TEST COMMAND` block is appended with a `run-check` region
+   *  wrapping the shell string — the dispatch seam substitutes a
+   *  `RunCommand {"command": "test"}` call under native + advertised
+   *  `RunCommand` (AC5). ACP keeps the shell string byte-for-byte (AC6). */
+  testCommand?: string;
+  /** Declared `quality.commands.test` key name (always `"test"` per ADR
+   *  convention). When supplied, the `# TEST COMMAND` block carries a
+   *  `run-check` region. */
+  testCommandScopeCommandName?: string;
+  /** The resolved scoped-test template (`quality.commands.testScoped` slot).
+   *  With `fileScopeCommandName`, the per-failing-file block wraps each line in
+   *  a `run-test` region so dispatch can substitute a
+   *  `RunCommand {"command": "testScoped", "values": {"files": "<path>"}}` call
+   *  under native + advertised `RunCommand` (AC4). ACP preserves the shell
+   *  string (AC7). */
+  testScopedTemplate?: string;
+  /** Declared `quality.commands.testScoped` key name. */
+  fileScopeCommandName?: string;
+}
+
+/**
+ * Build the failing-test rectification prompt, optionally carrying US-004
+ * affordance regions for the full-suite and per-failing-file test commands.
+ */
+export function failingTestRectification(
+  findings: Finding[],
+  story: UserStory,
+  opts?: FailingTestRectificationOptions,
+): string {
+  const listing = formatFailingTestsList(findings);
+  const exCount = exceptionCountWord(story);
+  const prohibition = `Do NOT change test files or test behavior — see the ${exCount} narrow exceptions appended below.`;
+  const parts: string[] = [listing];
+  parts.push(
+    "\nFix the implementation (not the tests) to make all failing tests pass. Do not loosen assertions or weaken test expectations. Run the test suite to verify after each change.",
+  );
+  // US-004 (AC5/AC6) — `# TEST COMMAND` block, appended AFTER the existing
+  // prompt so the pre-change ACP text is preserved verbatim. The body
+  // carries a `run-check` region so the dispatch seam substitutes a
+  // `RunCommand {"command": "<testCommandScopeCommandName>"}` call under
+  // native + advertised `RunCommand`; ACP keeps the shell string
+  // byte-for-byte.
+  if (opts?.testCommand) {
+    const body = `\`${opts.testCommand}\``;
+    const section = opts.testCommandScopeCommandName
+      ? `# TEST COMMAND\n\n${wrapAffordance("run-check", { command: opts.testCommandScopeCommandName }, body)}`
+      : `# TEST COMMAND\n\n${body}`;
+    parts.push(`\n\n${section}`);
+  }
+  // US-004 (AC4/AC7) — per-failing-file block, appended AFTER the
+  // `# TEST COMMAND` block. Wraps each line in a `run-test` region when
+  // both a scoped template and a scoped key are supplied (the gate that
+  // `RunCommand`'s exact-placeholder match enforces — see
+  // acceptance-helpers.ts:89). Without the template, the line is plain
+  // shell strings of the form `<testCommand> <file>`.
+  if (opts?.testCommand && findings.length > 0) {
+    const failingFiles = Array.from(new Set(findings.map((f) => f.file).filter((f): f is string => !!f)));
+    if (failingFiles.length > 0) {
+      const perFileLines = failingFiles
+        .map((file) => {
+          const scopedCmd = opts.testScopedTemplate
+            ? opts.testScopedTemplate.replace("{{files}}", file)
+            : `${opts.testCommand} ${file}`;
+          if (opts.testScopedTemplate && opts.fileScopeCommandName) {
+            return `  ${wrapAffordance("run-test", { command: opts.fileScopeCommandName, files: file }, scopedCmd)}`;
+          }
+          return `  ${scopedCmd}`;
+        })
+        .join("\n");
+      parts.push(`\n\n## Per-failing-file run\n\n${perFileLines}`);
+    }
+  }
+  parts.push(`\n${testEditHeadline(story, prohibition)}`);
+  parts.push(escapeHatchFor(story));
+  return parts.join("\n");
 }

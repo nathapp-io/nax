@@ -42,11 +42,41 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
   // attempt, so nothing resumes its session — keeping it warm would strand one.
   // The story-scoped dispatch keeps the op's declared `warm` lifetime.
   keepOpen: (input) => input.scope !== "repo",
-  build(input, _ctx) {
-    const prompt =
-      input.scope === "repo"
-        ? repoScopedRectification(input.findings as Finding[], input.story)
-        : RectifierPromptBuilder.failingTestRectification(input.findings as Finding[], input.story);
+  build(input, ctx) {
+    if (input.scope === "repo") {
+      const prompt = repoScopedRectification(input.findings as Finding[], input.story);
+      return {
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: prompt, overridable: false },
+      };
+    }
+    // US-004 — story-scoped dispatch extends the pre-change
+    // `failingTestRectification` prompt with a `# TEST COMMAND` block and
+    // an optional per-failing-file block, both wrapped in protocol regions.
+    // The pre-change ACP text (failing-test list, fix directive, escape
+    // hatch) is preserved verbatim; only the affordance-rendered blocks
+    // are appended. ACP byte-parity for the existing text is the gate per
+    // US-004's "Out of Scope #2"; the new blocks are accepted because
+    // AC5/AC6 require a `# TEST COMMAND` section and AC4 requires a
+    // per-failing-file section.
+    const config = ctx.packageView.config;
+    const testCommand = config.quality?.commands?.test;
+    const testScopedTemplate = config.quality?.commands?.testScoped;
+    // SSOT for naming the `testScoped` key: `RunCommand` resolves by
+    // exact placeholder match; a template that takes anything other than
+    // `{{files}}` hands the agent a tool call the runtime always rejects
+    // (`value "files" is not a placeholder in this command`). See
+    // src/execution/lifecycle/acceptance-helpers.ts:89.
+    const scopedCommandName = testScopedTemplate?.includes("{{files}}") === true ? "testScoped" : undefined;
+    const prompt = RectifierPromptBuilder.failingTestRectification(input.findings as Finding[], input.story, {
+      // US-004 (AC5/AC6) — `# TEST COMMAND` block always names the declared
+      // `test` key (per ADR convention — `quality.commands.test` slot).
+      ...(testCommand ? { testCommand, testCommandScopeCommandName: "test" } : {}),
+      // US-004 (AC4/AC7) — per-failing-file block uses the declared
+      // `testScoped` key, but only when the template carries the
+      // `{{files}}` placeholder (the SSOT gate at acceptance-helpers.ts:89).
+      ...(testCommand && scopedCommandName ? { testScopedTemplate, fileScopeCommandName: scopedCommandName } : {}),
+    });
     return {
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: prompt, overridable: false },

@@ -1,0 +1,324 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When importing from the prompt-sections module, then `wrapAffordance` is available and wrapping returns a string containing the supplied ACP body verbatim and unmodified between opening and closing markers.",
+    "refined": "`import { wrapAffordance } from 'src/prompts/sections/protocol-region'` succeeds (exported via the prompt-sections barrel). Given `wrapAffordance('diff-access', spec, acpBody)`, the returned string satisfies: `result.includes(acpBody)` is true, the substring between the opening marker and the closing marker equals `acpBody` exactly (byte-for-byte, `===`), and the result contains a nonce derived from the same per-process `PROTOCOL_REGION_NONCE` used by the marker grammar.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `applyProtocolRegions` applies a wrapped body with protocol `acp`, then it returns exactly the ACP body with no marker text and unchanged surrounding prompt characters.",
+    "refined": "Given `prompt = prefix + wrapAffordance('diff-access', spec, acpBody) + suffix` and `applyProtocolRegions(prompt, { protocol: 'acp' })`, the result satisfies `result === prefix + acpBody + suffix` exactly, `result.includes(PROTOCOL_REGION_MARKER_PREFIX)` is false, and every byte of `prefix`, `acpBody`, and `suffix` is preserved in order.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `applyProtocolRegions` applies `diff-access` with protocol `native` and advertised `Git` and `Read`, then it returns native rendering naming the spec baseline ref and containing no shell command.",
+    "refined": "Given a `diff-access` spec with `baselineRef: 'abc1234'` (and `requires` including 'Git'), `applyProtocolRegions(prompt, { protocol: 'native', advertisedTools: ['Git', 'Read'] })` returns a string where: the region is replaced by text containing the literal `'abc1234'`; `result.includes(PROTOCOL_REGION_MARKER_PREFIX)` is false; `result.match(/(?:git |sh -c|bash |`\\$\\()/i)` is null (no shell command text); and surrounding non-region prompt text is byte-identical to the input.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `applyProtocolRegions` applies `diff-access` with protocol `native` and advertised tools omit `Git`, then it returns the ACP body unchanged.",
+    "refined": "Given the same `diff-access` region but `applyProtocolRegions(prompt, { protocol: 'native', advertisedTools: ['Read'] })` (no 'Git'), the result equals `prefix + acpBody + suffix` exactly, with no native rendering injected and `result.includes(PROTOCOL_REGION_MARKER_PREFIX)` false.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `applyProtocolRegions` applies `diff-access` with protocol `native` and `advertisedTools` is `undefined`, then it returns native rendering without tool gating.",
+    "refined": "Given `applyProtocolRegions(prompt, { protocol: 'native', advertisedTools: undefined })` with a `diff-access` region whose baselineRef is 'abc1234', the result contains 'abc1234', does not contain `PROTOCOL_REGION_MARKER_PREFIX`, and the injected native rendering is byte-identical to the rendering produced when all `requires` names are advertised (i.e., tool gating is skipped entirely).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When a matching region has invalid JSON spec text and native protocol is applied, then it returns that ACP body.",
+    "refined": "Given a region whose spec field is the string `'{not json'` and `applyProtocolRegions(prompt, { protocol: 'native', advertisedTools: ['Git'] })`, the result satisfies `result === prefix + acpBody + suffix` exactly; no exception is thrown and no native rendering text appears.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When a matching region has an unregistered affordance kind and native protocol is applied, then it returns that ACP body.",
+    "refined": "Given a region with `kind` set to a value not in the registry (e.g. `'no-such-kind'`) and `applyProtocolRegions(prompt, { protocol: 'native', advertisedTools: ['Git'] })`, the result satisfies `result === prefix + acpBody + suffix` exactly; no exception is thrown.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When a marker has another process nonce, then `applyProtocolRegions` leaves it byte-for-byte untouched under both protocols.",
+    "refined": "Given a prompt containing a well-formed marker built with a nonce different from the current process nonce, calling `applyProtocolRegions` with `{ protocol: 'acp' }` and with `{ protocol: 'native', advertisedTools: ['Git'] }` each returns a string containing the foreign marker bytes exactly (`result.includes(foreignRegionText)` is true for the full foreign open/body/close text), with no substitution performed.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When a prompt has an opening marker without a matching close marker, then `applyProtocolRegions` returns the prompt unchanged without removing characters.",
+    "refined": "Given `prompt = prefix + openMarker + acpBody` (no close marker) and `applyProtocolRegions(prompt, { protocol: 'native', advertisedTools: ['Git'] })`, the result satisfies `result === prompt` byte-for-byte (`===`), `result.length === prompt.length`, and no exception is thrown.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When a prompt contains two regions of different kinds, then one `applyProtocolRegions` call substitutes both regions.",
+    "refined": "Given a prompt containing two wrapped regions (one 'diff-access' and one other registered kind) and a single call `applyProtocolRegions(prompt, { protocol: 'acp' })`, the result contains zero occurrences of `PROTOCOL_REGION_MARKER_PREFIX`, contains both regions' ACP bodies exactly once each, and preserves all interleaved non-region text in order (verified by comparing against `prefix + body1 + mid + body2 + suffix`).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given wrong-nonce forged content before a genuine region, when native protocol is applied, then the result renders the genuine baseline ref and retains text between forged and genuine markers.",
+    "refined": "Given `prompt = forgedOpen + forgedBody + genuineOpen + genuineAcpBody + close`, where `forgedOpen`/`forgedBody` use a foreign nonce and the genuine region uses the current process nonce with spec baselineRef 'abc1234', `applyProtocolRegions(prompt, { protocol: 'native', advertisedTools: ['Git'] })` returns a string where: it contains 'abc1234'; it contains `forgedOpen + forgedBody` verbatim; it does not contain `PROTOCOL_REGION_MARKER_PREFIX` for the genuine markers; and no exception is thrown.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `unwrapProtocolRegions(text)` receives a prompt containing regions, then it returns a string equal to `text` with each region replaced by its exact ACP body, preserving all text outside regions, and leaving no substring equal to the exported marker prefix.",
+    "refined": "Given `text = prefix + wrapAffordance(k1, s1, b1) + mid + wrapAffordance(k2, s2, b2) + suffix`, calling `unwrapProtocolRegions(text)` returns `result === prefix + b1 + mid + b2 + suffix` exactly, `result.includes(PROTOCOL_REGION_MARKER_PREFIX)` is false, and `unwrapProtocolRegions` is exported from `src/prompts/sections/protocol-region` and the prompt-sections barrel.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `applyProtocolRegions` is applied twice to the same prompt, then its second result equals its first result.",
+    "refined": "Given any prompt containing wrapped regions, let `r1 = applyProtocolRegions(prompt, opts)`. Then `applyProtocolRegions(prompt, opts) === r1` byte-for-byte (`===`), and additionally `applyProtocolRegions(r1, opts) === r1` (idempotency), for both `{ protocol: 'acp' }` and `{ protocol: 'native', advertisedTools: ['Git'] }`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `wrapDiffAccess` is called with its existing two arguments and applied with protocol `acp`, then it yields the ACP body, preserving the diff-access suite’s existing expectations.",
+    "refined": "Given wrapDiffAccess(spec, shellBody) invoked with its existing two-argument signature and spec protocol 'acp', the returned string equals the ACP protocol body produced by wrapAffordance('diff-access', ...), matching all existing diff-access suite snapshot/equality assertions exactly.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `applyDiffAccess` receives native protocol and advertised tools omit `Git`, then it returns the ACP body.",
+    "refined": "Given applyDiffAccess(prompt, 'native', ['Read']) (advertised tools array lacking 'Git'), the returned string equals the ACP protocol body (the shellBody input) and contains no native diff rendering markers.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `applyDiffAccessForAgentProtocol` is invoked for a native agent with advertised `Git` and `Read`, then it returns native diff rendering.",
+    "refined": "Given applyDiffAccessForAgentProtocol(agentName, prompt, ['Git', 'Read']) where the agent resolves to native protocol, the returned string equals the native diff rendering output (native protocol body) for the given prompt.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `applyDiffAccessForAgentProtocol` is invoked for a native agent with an empty advertised-tool list, then it returns the ACP body.",
+    "refined": "Given applyDiffAccessForAgentProtocol(agentName, prompt, []) where the agent resolves to native protocol, the returned string equals the ACP protocol body (the shell body for the prompt).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `buildHopCallback` dispatches a native agent whose resolved grants advertise `Git` and `Read`, then the agent receives native diff rendering.",
+    "refined": "Given buildHopCallback resolves coding tool support to grants ['Git', 'Read'] for a native-protocol agent, the prompt passed to the agent's send/dispatch call equals the native diff rendering of the initial prompt (no ACP substitution applied).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When `buildHopCallback` dispatches a native agent with only `Read`, `Glob`, and `Grep`, then the agent receives the shell body.",
+    "refined": "Given buildHopCallback resolves coding tool support to grants ['Read', 'Glob', 'Grep'] for a native-protocol agent (missing 'Git'), the prompt passed to the agent's send/dispatch call equals the substituted ACP shell body (diff-access regions gated).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `buildHopCallback` dispatches a non-native agent with a region, then the agent receives no exported marker-prefix substring.",
+    "refined": "Given buildHopCallback dispatches an agent whose protocol is non-native and whose prompt contains a diff-access region, the prompt string received by the agent does not contain any exported marker-prefix substring (asserted via string.includes(markerPrefix) === false for each exported marker constant).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When a hop body calls its bound `send` with a region-containing prompt, then the agent receives a substituted prompt with no marker prefix.",
+    "refined": "Given the bound send closure created in buildHopCallback is invoked with a prompt containing diff-access region markers, the prompt forwarded to the underlying transport equals applyDiffAccess applied to that prompt and contains no marker prefix (string.includes(markerPrefix) === false).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When a hop callback returns its initial prompt, then that prompt is substituted and contains no marker prefix.",
+    "refined": "Given the hop callback's returned result exposes a 'prompt' field, that value equals the substituted initial prompt (result of applyDiffAccess on the original initial prompt with resolved advertised tools) and contains no exported marker-prefix substring.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When the session run hop dispatches native with grants advertising `Git` and `Read`, then it sends native rendering.",
+    "refined": "Given the session run hop resolves grants ['Git', 'Read'] for a native-protocol agent, the prompt transmitted to the agent equals the native diff rendering of the turn prompt.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When the session run hop dispatches native with grants advertising neither required tool, then it sends the shell body.",
+    "refined": "Given the session run hop resolves grants that include neither 'Git' nor 'Read' for a native-protocol agent, the prompt transmitted to the agent equals the ACP shell body (diff-access regions gated via applyDiffAccess substitution).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When self-verification has configured `typecheck`, then its output contains no `if that tool is available to you` phrase.",
+    "refined": "When self-verification renders with configured check key 'typecheck', the generated output string does not contain the substring 'if that tool is available to you'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When configured self-verification is applied with `acp`, then it renders the configured typecheck command and no `RunCommand` call.",
+    "refined": "When self-verification is wrapped with kind 'acp' and a configured typecheck entry, the output contains the configured shell command string for typecheck and does not contain any 'RunCommand' occurrence",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When configured self-verification is applied with native protocol and advertised `RunCommand`, then it renders a call whose command is declared key `typecheck` and no shell command string.",
+    "refined": "When native rendering is used with the 'RunCommand' tool advertised, the output contains a run-check region rendering RunCommand with command field equal to 'typecheck' and does not contain the configured shell command string",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When configured self-verification is applied with native protocol without `RunCommand`, then it renders the configured shell command string.",
+    "refined": "When native rendering is used and 'RunCommand' is not advertised, the output contains the configured shell command string verbatim and contains no run-check region for the check",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When a self-verification command is unconfigured, then it renders the existing unconfigured line and emits no region.",
+    "refined": "When a check key has no configured command, the output contains the existing unconfigured placeholder line unchanged and contains no run-check region for that key",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When the acceptance rerun line has a resolved scoped key and native protocol advertises `RunCommand`, then it renders that key and acceptance path in `values.files`.",
+    "refined": "When the acceptance rerun line wraps with native protocol, 'RunCommand' is advertised, and a scoped key is resolved, the output contains RunCommand with command equal to the scoped key and values object containing files equal to the acceptance path",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When the acceptance rerun line has no resolved scoped key, then it renders only the raw command string under both protocols and no `RunCommand` call.",
+    "refined": "When the acceptance rerun line has no resolved scoped key, both the 'acp' and native protocol outputs contain the raw command string and neither contains any 'RunCommand' occurrence",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When the acceptance rerun line is built, then it contains no `if that tool is available to you` phrase.",
+    "refined": "The generated acceptance rerun line string does not contain the substring 'if that tool is available to you' under any protocol configuration",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When configured isolation is applied with `acp`, then it renders exactly the existing shell example including the surrounding full-suite warning sentence.",
+    "refined": "Given a configured isolation section with an ACP body and protocol 'acp', wrapAffordance returns a string equal byte-for-byte to the existing shell example text, including the full-suite warning sentence immediately surrounding it, with no protocol region markers or RunCommand JSON injected.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When configured isolation for a project with a declared scoped key is applied natively with advertised `RunCommand`, then it renders a `RunCommand` call with `values.files` and no shell command.",
+    "refined": "Given protocol with advertisedTools containing 'RunCommand' and a project declaring scoped key '<scopedKey>', the rendered output contains exactly one parsed RunCommand object with command '<scopedKey>' and values.files set to the changed-files path, and contains no shell command string (e.g., no 'npm test --' or equivalent raw shell text).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When isolation has no configured test command, then it renders the existing `scope each run to the files you changed` wording and emits no region.",
+    "refined": "Given isolation with no configured test command, the rendered prompt contains the exact substring 'scope each run to the files you changed' and applyProtocolRegions produces zero protocol region markers (no run-test/RunCommand region appears in the output).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When the rectifier per-failing-file block is applied natively with advertised `RunCommand`, then it renders one call per failing file with that file in `values.files`.",
+    "refined": "Given N failing files and advertisedTools containing 'RunCommand', the rendered rectifier per-failing-file block contains exactly N RunCommand regions, one per failing file, each with values.files equal to that failing file's path; parsing all regions and comparing to the failing-file list yields a 1:1 match with no extras or omissions.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When the rectifier full-suite block is applied natively with advertised `RunCommand`, then it names declared key `test`.",
+    "refined": "Given the rectifier full-suite block applied natively with 'RunCommand' advertised, the rendered output contains a RunCommand region whose parsed command field equals the string 'test'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When the rectifier full-suite block is applied with `acp`, then it names the same command string the verifier replays.",
+    "refined": "Given the rectifier full-suite block rendered with protocol 'acp', the shell command string appearing in the rendered block equals exactly (string equality) the command string that the verifier replays when executing the full suite.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When rectifier blocks are applied natively without advertised `RunCommand`, then they render shell command strings that ship today.",
+    "refined": "Given advertisedTools not containing 'RunCommand', applyProtocolRegions on the rectifier blocks returns output identical (string equality) to the currently-shipping shell command strings, with zero RunCommand/protocol regions emitted.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When implementer role-task output is applied with `acp`, then it renders the `git commit -m` instruction exactly as it ships today, including the story commit message.",
+    "refined": "Applying the implementer role-task output through wrapAffordance with acp mode produces rendered text that contains the literal string 'git commit -m \"<story commit message>\"' byte-identical to the current shipped instruction text; a snapshot or golden-file comparison of the rendered section against the pre-change output passes with zero diffs.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-41",
+    "original": "When implementer role-task output is applied natively with advertised `GitCommit`, then it renders a `GitCommit` call carrying that message and no `git commit` shell string.",
+    "refined": "Given a client advertising the GitCommit affordance, applying the implementer role-task output natively yields rendered text containing exactly one GitCommit call whose message parameter equals the story commit message (equivalent to GitCommit {\"message\": \"<msg>\"}), and the rendered text contains zero occurrences of the substring 'git commit'.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-42",
+    "original": "When role-task output is applied natively without advertised `GitCommit`, then it renders the `git commit -m` shell string.",
+    "refined": "Given a client that does not advertise GitCommit, applying any commit-naming role-task output natively yields rendered text containing the literal 'git commit -m' shell string with the story commit message, and the rendered text contains no GitCommit affordance call.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-43",
+    "original": "When every commit-naming role-task variant is applied with `acp`, then no result contains the marker prefix.",
+    "refined": "For all six role-task variants that contain 'git commit -m', applying each in acp mode produces output where a scan for the ACP region marker prefix (the wrapAffordance marker token, e.g. the protocol region start sentinel) returns zero matches; a parameterized test iterating over the six variants asserts this for each.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-44",
+    "original": "When every commit-naming role-task variant is applied natively with advertised `GitCommit`, then no result contains a `git commit` shell string.",
+    "refined": "For all six commit-naming role-task variants, applying each natively with GitCommit advertised produces output where a substring search for 'git commit' returns zero matches and each output contains exactly one GitCommit affordance call with the expected message; a parameterized test iterating over the six variants asserts both conditions.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-45",
+    "original": "When `promptsInitCommand` writes templates, then each written template is returned unchanged by `applyProtocolRegions` under both protocols because no region survives persistence.",
+    "refined": "After promptsInitCommand runs and writes template files to disk, reading each written file back and calling unwrapProtocolRegions followed by applyProtocolRegions under both the acp and native protocols returns text identical to the file contents on disk (round-trip equality); a test asserts output === input for every written template under both protocols.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-46",
+    "original": "When `promptsInitCommand` writes the implementer template, then its content equals the template header followed by ACP role-task rendering, including the same commit instruction ACP receives.",
+    "refined": "The implementer template file written by promptsInitCommand satisfies the assertion: fileContent === headerText + acpRenderedRoleTaskSection, where acpRenderedRoleTaskSection is byte-identical to the role-task section produced by applying the implementer role-task output with acp mode; in particular the file contains the same 'git commit -m \"<message>\"' instruction text and contains no protocol region markers.",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

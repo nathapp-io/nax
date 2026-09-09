@@ -25,6 +25,12 @@ export async function handleThreeSessionTddPrompts(
   outputDir: string | undefined,
   logger: ReturnType<typeof getLogger>,
 ): Promise<void> {
+  // US-004 — gate the `run-test` region on the SSOT for naming the
+  // `testScoped` key (a template that takes anything other than
+  // `{{files}}` would render a tool call the `RunCommand` runtime
+  // rejects). The SSOT lives at src/execution/lifecycle/acceptance-helpers.ts:89.
+  const scopedTestCommand =
+    ctx.config.quality?.commands?.testScoped?.includes("{{files}}") === true ? "testScoped" : undefined;
   // Build prompts for each session using PromptBuilder
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = await Promise.all([
     PromptBuilder.for("test-writer", { isolation: "strict" })
@@ -33,6 +39,7 @@ export async function handleThreeSessionTddPrompts(
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
       .testCommand(ctx.config.quality?.commands?.test)
+      .scopedTestCommand(scopedTestCommand)
       .build(),
     PromptBuilder.for("implementer", { variant: "standard" })
       .withLoader(ctx.workdir, ctx.config)
@@ -40,6 +47,7 @@ export async function handleThreeSessionTddPrompts(
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
       .testCommand(ctx.config.quality?.commands?.test)
+      .scopedTestCommand(scopedTestCommand)
       .build(),
     PromptBuilder.for("verifier")
       .withLoader(ctx.workdir, ctx.config)
@@ -47,6 +55,7 @@ export async function handleThreeSessionTddPrompts(
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
       .testCommand(ctx.config.quality?.commands?.test)
+      .scopedTestCommand(scopedTestCommand)
       .build(),
   ]);
 

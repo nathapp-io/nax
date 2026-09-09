@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
+import { applyProtocolRegions, PROTOCOL_REGION_MARKER_PREFIX, unwrapProtocolRegions } from "@/prompts/sections";
 import { buildRoleTaskSection } from "@/prompts/sections/role-task";
 
 const TEMPLATE_FILES = [
@@ -27,6 +28,24 @@ const ROLE_SECTION_ARGS: Record<(typeof TEMPLATE_FILES)[number], Parameters<type
   "single-session.md": ["single-session"],
   "tdd-simple.md": ["tdd-simple"],
 };
+
+/** Mirrors the source constant in prompts-init.ts — the header injected
+ *  above every written template. Used to verify exact file content for AC7,
+ *  not merely containment. */
+const TEMPLATE_HEADER = `<!--
+  This file controls the role-body section of the nax prompt for this role.
+  Edit the content below to customize the task instructions given to the agent.
+
+  NON-OVERRIDABLE SECTIONS (always injected by nax, cannot be changed here):
+    - Isolation rules (scope, file access boundaries)
+    - Story context (acceptance criteria, description, dependencies)
+    - Conventions (project coding standards)
+
+  To activate overrides, add to your .nax/config.json:
+    { "prompts": { "overrides": { "<role>": ".nax/templates/<role>.md" } } }
+-->
+
+`;
 
 describe("promptsInitCommand — directory creation", () => {
   let tempDir: string;
@@ -78,8 +97,19 @@ describe("promptsInitCommand — per-file checks (exists, content, header)", () 
       const content = await Bun.file(filePath).text();
       expect(content.length, `${file} non-empty`).toBeGreaterThan(0);
 
-      const expected = buildRoleTaskSection(...ROLE_SECTION_ARGS[file]);
-      expect(content, `${file} role section`).toContain(expected);
+      const expected = unwrapProtocolRegions(buildRoleTaskSection(...ROLE_SECTION_ARGS[file]));
+      // US-005 AC7: the implementer template must equal the header followed by the ACP body,
+      // not merely contain it — otherwise extra/misplaced persisted content would pass.
+      if (file === "implementer.md") {
+        expect(content, `implementer.md equals header + ACP body`).toBe(TEMPLATE_HEADER + expected);
+      } else {
+        expect(content, `${file} role section`).toContain(expected);
+      }
+
+      // US-005 AC6: a written template carries no region marker under either protocol.
+      expect(content).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+      expect(applyProtocolRegions(content, { protocol: "acp" })).toBe(content);
+      expect(applyProtocolRegions(content, { protocol: "native" })).toBe(content);
 
       expect(content, `${file} header comment`).toMatch(/<!--[\s\S]+?-->/);
       expect(content.toLowerCase(), `${file} mentions override/controls`).toMatch(

@@ -21,7 +21,6 @@ export function createSessionRunHop(
 ): SessionRunHopFn {
   return async (agentName: string, options: AgentRunOptions): Promise<SessionRunHopResult> => {
     const startMs = Date.now();
-    const prompt = applyDiffAccessForAgentProtocol(agentName, promptWithToolPreamble(agentName, options));
     const sessionName =
       options.sessionHandle ??
       sessionManager.nameFor({
@@ -31,6 +30,49 @@ export function createSessionRunHop(
         role: options.sessionRole,
         pipelineStage: options.pipelineStage,
       });
+
+    // Resolved per hop, not per run: a swap changes the agent and the grants
+    // are stage-scoped, so a runtime captured earlier would outlive its
+    // dispatch. Mirrors build-hop-callback.ts — the two must not drift.
+    // Resolved BEFORE the substitution so the advertised tool set drives the
+    // gate at dispatch time. Without this, native rendering would apply even
+    // when the agent was not granted `Git` and `Read`, and the model would
+    // be taught a call the policy would then refuse at call-time — the
+    // failure mode AC11 guards against.
+    //
+    // `resolveCodingToolSupport` can throw `NaxError('CODING_TOOL_ROOT_MISSING')`
+    // when declared tools + grants exist but `codingToolRoot` is undefined
+    // (issue #1794 lesson — refuse rather than silently default to cwd). The
+    // hop MUST convert that into a failed AgentResult rather than letting the
+    // throw propagate: callers like `runWithFallback` rely on the hop always
+    // returning an AgentResult so the swap policy can classify the outcome.
+    // A propagated throw also skips the `finally` block's `closeSession` /
+    // `auditSink.flush()` — at this point neither has run yet (no session has
+    // been opened, no runtime was created), but the seam still matters for
+    // future maintainers who might add side-effects before this line.
+    let codingSupport: Awaited<ReturnType<typeof resolveCodingToolSupport>>;
+    try {
+      codingSupport = await resolveCodingToolSupport(options);
+    } catch (err) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      return {
+        prompt: applyDiffAccessForAgentProtocol(agentName, promptWithToolPreamble(agentName, options), []),
+        result: {
+          success: false,
+          exitCode: 1,
+          output: errMessage,
+          rateLimited: false,
+          durationMs: Date.now() - startMs,
+          estimatedCostUsd: 0,
+        },
+      };
+    }
+    const advertisedTools = codingSupport ? codingSupport.tools.map((t) => t.name) : [];
+    const prompt = applyDiffAccessForAgentProtocol(
+      agentName,
+      promptWithToolPreamble(agentName, options),
+      advertisedTools,
+    );
 
     const transcriptOwner = options.scopeId ?? options.callId;
     const handle = await sessionManager.openSession(sessionName, {
@@ -54,12 +96,6 @@ export function createSessionRunHop(
     // openSession leaves the descriptor's `agent` at the primary. No-op when unchanged.
     recordAgentHandoff(sessionManager, sessionName, agentName, "agent-swap");
 
-    // Resolved per hop, not per run: a swap changes the agent and the grants
-    // are stage-scoped, so a runtime captured earlier would outlive its
-    // dispatch. Mirrors build-hop-callback.ts — the two must not drift.
-    // Declared above the try so the finally block can flush the audit sink.
-    let codingSupport: Awaited<ReturnType<typeof resolveCodingToolSupport>>;
-
     try {
       const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
       // `maxInteractionTurns` is the human Q&A budget (config-descriptions.ts),
@@ -72,7 +108,6 @@ export function createSessionRunHop(
           ? (options.maxInteractionTurns ?? 10)
           : (options.maxInteractionTurns ?? 1);
 
-      codingSupport = await resolveCodingToolSupport(options);
       const interactionHandler = buildRunInteractionHandler({
         ...options,
         ...(codingSupport ? { codingToolRuntime: codingSupport.runtime } : {}),

@@ -16,6 +16,16 @@
  */
 
 import { buildTestFrameworkHint } from "@/test-runners";
+import { wrapAffordance } from "./protocol-region";
+
+/** US-005 — wrap the `git commit -m` shell text in a `commit` protocol
+ *  region so dispatch can substitute a `GitCommit` call when the agent
+ *  advertises it. Only the shell string itself is wrapped; the surrounding
+ *  instruction prose stays outside the region and survives on both
+ *  transports unchanged. */
+function gitCommitInstruction(message: string): string {
+  return wrapAffordance("commit", { message }, `git commit -m '${message}'`);
+}
 
 export function buildRoleTaskSection(
   roleOrVariant:
@@ -61,7 +71,7 @@ Instructions:
 - Implement the change as described in the story
 - Do NOT create or modify test files
 - Justification for no tests: ${justification}
-- When done, stage and commit ALL changed files with: git commit -m '${commitMsg}'
+- When done, stage and commit ALL changed files with: ${gitCommitInstruction(commitMsg)}
 - Goal: change implemented, no test files created or modified, all changes committed`;
   }
 
@@ -78,7 +88,7 @@ Workflow:
 3. Break the work into small steps before writing: for each step, note the source change and the failing test that verifies it (step -> verify). Resolve ambiguities now, not mid-edit.
 4. Implement source code in the package's source location (the project context names it).
 5. After each meaningful change, re-run only the scoped test files — never the full suite.
-6. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+6. When all scoped tests pass, stage and commit ALL changed files: \`${gitCommitInstruction(commitMsg)}\`.
 
 Rules:
 - Do NOT modify test files. Three narrow exceptions: (a) a lint-only fix to a test, (b) a contract drift where the test imports a removed/renamed symbol, (c) a sibling test file rename forced by your source change. Name which exception applies in the commit body before editing any test file.
@@ -99,7 +109,7 @@ Workflow:
 4. Replace stubs with real implementations. A stub is one of: a type-only declaration, a function returning a placeholder/throwing "not implemented", or a const placeholder.
 5. If any AC has no test, add one before implementing — do not implement uncovered behavior.
 6. Re-run only the scoped test files after each meaningful change.
-7. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+7. When all scoped tests pass, stage and commit ALL changed files: \`${gitCommitInstruction(commitMsg)}\`.
 
 Rules:
 - Three test-modification exceptions apply (lint-only fix, contract drift, sibling rename). Name the exception in the commit body before editing any test the test-writer wrote.
@@ -180,7 +190,7 @@ Workflow:
 3. Run the tests to confirm they fail with ASSERTION failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
 4. Implement source code in the package's source location to make the tests pass.
 5. After each meaningful change, re-run only the scoped test files — never the full suite.
-6. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+6. When all scoped tests pass, stage and commit ALL changed files: \`${gitCommitInstruction(commitMsg)}\`.
 
 Rules:
 - Each test name describes ONE behavior; use AC IDs when available.
@@ -202,7 +212,7 @@ Per-story workflow (RED → GREEN):
 2. RED — run the new test files. Confirm assertion failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
 3. GREEN — implement source code in the package's source location.
 4. GREEN — re-run only the scoped test files after each meaningful change.
-5. Commit the story with its ID: \`git commit -m 'feat(<story-id>): <description>'\`.
+5. Commit the story with its ID: \`${gitCommitInstruction("feat(<story-id>): <description>")}\`.
 
 Rules:
 - One commit per story — never bundle stories.
@@ -224,7 +234,7 @@ Workflow (RED → GREEN → REFACTOR):
 3. GREEN — implement minimum source code in the package's source location to make the tests pass.
 4. GREEN — re-run only the scoped test files after each meaningful change.
 5. REFACTOR — clean up while keeping tests green. No new behavior; no expanded scope.
-6. Stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+6. Stage and commit ALL changed files: \`${gitCommitInstruction(commitMsg)}\`.
 
 Rules:
 - Each test name describes ONE behavior; use AC IDs when available.

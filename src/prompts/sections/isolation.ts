@@ -11,14 +11,39 @@
  * Backwards compatible: also accepts old API (mode only)
  * - buildIsolationSection("strict") → test-writer, strict
  * - buildIsolationSection("lite") → test-writer, lite
+ *
+ * US-004 — when a configured test command AND a declared scoped key are
+ * both supplied, the test-filter rule's shell example is wrapped in a
+ * `run-test` protocol region. Dispatch substitutes a `RunCommand` tool
+ * call under native + `RunCommand`; otherwise the ACP body (the shell
+ * example and the surrounding full-suite warning sentence) is preserved
+ * verbatim. The shell example is omitted entirely (no region) when no
+ * test command is configured — the `#543` fallback (`scope each run to the
+ * files you changed`) is what ships under that branch.
  */
 
-function buildTestFilterRule(testCommand: string): string {
+import { wrapAffordance } from "./protocol-region";
+
+function buildTestFilterRule(testCommand: string, scopedCommandName?: string): string {
   // #543: do not invent a `bun test` example for Go / Python / Rust packages.
-  const example = testCommand
-    ? `e.g. \`${testCommand} <path/to/test-file>\``
-    : "scope each run to the files you changed";
-  return `When running tests, run ONLY test files related to your changes (${example}). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
+  if (!testCommand) {
+    return `When running tests, run ONLY test files related to your changes (scope each run to the files you changed). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
+  }
+  // The shell example (only) is wrapped in a `run-test` region so dispatch
+  // can substitute the declared scoped command using the example path. The
+  // surrounding full-suite warning sentence is NOT wrapped
+  // — the regional grammar would otherwise drop it on native dispatch
+  // (the body is replaced wholesale by the renderer's output), and dropping
+  // "NEVER run the full test suite without a filter" is exactly the
+  // behaviour the guardrail forbids. Under native, the agent sees the
+  // shell example as a `RunCommand` call AND the full-suite warning as
+  // plain prose; the two land in the same prompt because the wrapped
+  // example is the ACP body's only affordance-rendered segment.
+  const example = `e.g. \`${testCommand} <path/to/test-file>\``;
+  const exampleRegion = scopedCommandName
+    ? wrapAffordance("run-test", { command: scopedCommandName, files: "<path/to/test-file>" }, example)
+    : example;
+  return `When running tests, run ONLY test files related to your changes (${exampleRegion}). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
 }
 
 export function buildIsolationSection(
@@ -34,10 +59,11 @@ export function buildIsolationSection(
     | "lite",
   mode?: "strict" | "lite",
   testCommand?: string,
+  scopedCommandName?: string,
 ): string {
   // Old API support: buildIsolationSection("strict") or buildIsolationSection("lite")
   if ((roleOrMode === "strict" || roleOrMode === "lite") && mode === undefined) {
-    return buildIsolationSection("test-writer", roleOrMode, testCommand);
+    return buildIsolationSection("test-writer", roleOrMode, testCommand, scopedCommandName);
   }
 
   const role = roleOrMode as
@@ -51,7 +77,7 @@ export function buildIsolationSection(
   const testCmd = testCommand ?? "";
 
   const header = "# Isolation Rules";
-  const footer = `\n\n${buildTestFilterRule(testCmd)}`;
+  const footer = `\n\n${buildTestFilterRule(testCmd, scopedCommandName)}`;
 
   if (role === "no-test") {
     return "";

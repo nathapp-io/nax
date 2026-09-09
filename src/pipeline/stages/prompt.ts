@@ -86,6 +86,13 @@ export const promptStage: PipelineStage = {
     }
 
     let prompt: string;
+    // US-004 — gate the `run-test` region on the SSOT for naming the
+    // `testScoped` key (`RunCommand` resolves by exact placeholder match;
+    // a template that takes `{{file}}` / `{{package}}` / no placeholder
+    // would render a tool call the runtime rejects). The SSOT lives at
+    // src/execution/lifecycle/acceptance-helpers.ts:89.
+    const scopedTestCommand =
+      ctx.config.quality?.commands?.testScoped?.includes("{{files}}") === true ? "testScoped" : undefined;
     if (isBatch) {
       const builder = PromptBuilder.for("batch")
         .withLoader(ctx.workdir, ctx.config)
@@ -95,6 +102,7 @@ export const promptStage: PipelineStage = {
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
+        .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification);
       if (acceptanceEntries.length > 0) builder.acceptanceContext(acceptanceEntries);
@@ -110,6 +118,7 @@ export const promptStage: PipelineStage = {
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
+        .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification)
         .noTestJustification(ctx.story.routing?.noTestJustification);

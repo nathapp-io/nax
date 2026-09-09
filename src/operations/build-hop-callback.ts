@@ -301,18 +301,61 @@ export function buildHopCallback(
       });
     }
 
+    // Coding tools are resolved per hop rather than per run: a swap changes the
+    // agent, and the grants are stage-scoped, so a runtime captured once above
+    // would outlive the dispatch it was resolved for.
+    //
+    // US-002 — the substitution happens AFTER coding-tool support resolves,
+    // not before. Native rendering additionally requires `Git` AND `Read` to
+    // be advertised, and the resolved runtime is the single source of truth
+    // for what the agent will advertise: the intersection of the operation's
+    // declared tools with the policy grants at this pipeline stage. The
+    // advertised names are read directly from the runtime (see CodingToolRuntime.advertised),
+    // so a fallback swap that changes the protocol cannot change the tool set,
+    // and the gate at dispatch matches the gate the agent is gated on at
+    // call-time.
+    //
+    // `resolveCodingToolSupport` can throw `NaxError('CODING_TOOL_ROOT_MISSING')`
+    // when declared tools + grants exist but `codingToolRoot` is undefined
+    // (issue #1794 lesson — refuse rather than silently default to cwd). The
+    // hop MUST convert that into a failed AgentResult rather than letting the
+    // throw propagate: callers like `runWithFallback` rely on the hop always
+    // returning an AgentResult so the swap policy can classify the outcome.
+    // A propagated throw also skips the `finally` block's `closeSession` /
+    // `auditSink.flush()` — at this point neither has run yet (no session has
+    // been opened, no runtime was created), but the seam still matters for
+    // future maintainers who might add side-effects before this line.
+    let codingSupport: Awaited<ReturnType<typeof resolveCodingToolSupport>>;
+    try {
+      codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
+    } catch (err) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      return {
+        result: {
+          success: false,
+          exitCode: 1,
+          // Always prefix with agent name so downstream logs can attribute the
+          // failure even when the underlying error message doesn't carry it
+          // (e.g. bare `new Error("timeout")`).
+          output: `Agent "${agentName}" failed: ${errMessage}`,
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCostUsd: 0,
+        },
+        bundle: workingBundle,
+        prompt,
+      };
+    }
+    const advertisedTools = codingSupport ? codingSupport.tools.map((t) => t.name) : [];
+
     // Unconditional, unlike the preamble above: a review prompt carries a
     // diff-access region whether or not the op also has context pull tools, and
     // ACP needs the markers stripped even though it keeps the body. Placed after
     // the preamble for the same reason the preamble is placed after the swap
     // rewrites — those replace the prompt wholesale, and a region rendered
-    // before one would be discarded.
-    prompt = applyDiffAccessForAgentProtocol(agentName, prompt);
-
-    // Coding tools are resolved per hop rather than per run: a swap changes the
-    // agent, and the grants are stage-scoped, so a runtime captured once above
-    // would outlive the dispatch it was resolved for.
-    const codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
+    // before one would be discarded. Placed after `codingSupport` resolves for
+    // the same reason: the gate depends on the advertised tools.
+    prompt = applyDiffAccessForAgentProtocol(agentName, prompt, advertisedTools);
 
     // A bridge is no longer required: without a handler, sendPrompt falls back
     // to NO_OP_INTERACTION_HANDLER and a well-formed tool call goes unanswered.
@@ -415,9 +458,7 @@ export function buildHopCallback(
         // SEC-3: thread per-package config so monorepo permissionProfile is honored.
         config,
         modelDef,
-        // See the pin rationale above — a pinned modelDef has no meaningful tier.
-        // See the pin rationale above — neither a caller pin nor a hop-level
-        // literal pin has a meaningful tier to report.
+        // Neither a caller pin nor a hop-level literal pin has a meaningful tier to report.
         ...(pinned || (hopPin && !pinnedModelDef) ? {} : { modelTier: tier }),
         timeoutSeconds:
           resolvedRunOptions.timeoutSeconds ??
@@ -430,49 +471,59 @@ export function buildHopCallback(
       });
     }
 
-    // Record the descriptor handoff for any swap, whether or not a bundle was rebuilt.
-    // nax#1722: callOp carries no sessionId, so fall back to the session NAME — without
-    // it the descriptor kept naming the failed primary on every production swap.
+    // Record the descriptor handoff for any swap, whether or not a bundle was rebuilt. nax#1722:
+    // callOp carries no sessionId, so otherwise the descriptor kept naming the failed primary on every production swap.
     if (hopKind.kind === "swap") {
       if (sessionId) sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
       else recordAgentHandoff(sessionManager, sessionName, agentName, hopKind.failure.outcome);
     }
 
     let timedOut = false;
-
     try {
       // Bound `send` closure: each call dispatches one turn through AgentManager
       // (so middleware fires) against the current hop's handle. Reused by both
       // the default single-prompt path and any caller-supplied hopBody.
+      //
+      // US-002 — the closure substitutes every turn prompt it is handed, so a
+      // hopBody's follow-up turn is gated on the same advertised tools the
+      // initial prompt was. Without this, the substitution that happens for
+      // the initial prompt is the only one and a region-bearing prompt sent
+      // from inside the body would reach the agent verbatim — the very
+      // failure AC8 guards against.
       const send = (turnPrompt: string): Promise<TurnResult> =>
-        agentManager.runAsSession(agentName, handle, turnPrompt, {
-          storyId: story.id,
-          featureName,
-          workdir,
-          projectDir,
-          pipelineStage: stage,
-          // SEC-3: thread per-package config so monorepo permissionProfile is honored.
-          config,
-          sessionRole: resolvedRunOptions.sessionRole,
-          signal: resolvedRunOptions.abortSignal,
-          contextPullTools,
-          contextToolRuntime,
-          codingTools: codingSupport?.tools,
-          ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
-          ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
-          ...(interactionHandler ? { interactionHandler } : {}),
-          // Context tools need at least one extra round-trip to answer a call;
-          // the adapter default of a single turn leaves no room. Mirrors
-          // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
-          // Mirrors session-run-hop.ts — the two must not drift. Forwarded as
-          // the Q&A budget it is documented to be; the native loop no longer
-          // spends it on round-trips.
-          ...(hasContextTools
-            ? { maxInteractions: maxInteractionTurns ?? 10 }
-            : maxInteractionTurns !== undefined
-              ? { maxInteractions: maxInteractionTurns }
-              : {}),
-        });
+        agentManager.runAsSession(
+          agentName,
+          handle,
+          applyDiffAccessForAgentProtocol(agentName, turnPrompt, advertisedTools),
+          {
+            storyId: story.id,
+            featureName,
+            workdir,
+            projectDir,
+            pipelineStage: stage,
+            // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+            config,
+            sessionRole: resolvedRunOptions.sessionRole,
+            signal: resolvedRunOptions.abortSignal,
+            contextPullTools,
+            contextToolRuntime,
+            codingTools: codingSupport?.tools,
+            ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
+            ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
+            ...(interactionHandler ? { interactionHandler } : {}),
+            // Context tools need at least one extra round-trip to answer a call;
+            // the adapter default of a single turn leaves no room. Mirrors
+            // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
+            // Mirrors session-run-hop.ts — the two must not drift. Forwarded as
+            // the Q&A budget it is documented to be; the native loop no longer
+            // spends it on round-trips.
+            ...(hasContextTools
+              ? { maxInteractions: maxInteractionTurns ?? 10 }
+              : maxInteractionTurns !== undefined
+                ? { maxInteractions: maxInteractionTurns }
+                : {}),
+          },
+        );
 
       const turnResult = hopBody ? await hopBody(prompt, { send, input: hopBodyInput }) : await send(prompt);
       // Capture timedOut from the TurnResult so the finally block can force-close
