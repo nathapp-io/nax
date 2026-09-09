@@ -130,7 +130,7 @@ describe("adversarialReviewOp.verify() — AC-dropped findings surfaced on a pas
       const advisory = output.advisoryFindings ?? [];
       expect(advisory).toHaveLength(1);
       expect(advisory[0]?.message).toContain("No acQuote");
-      expect(advisory[0]?.meta?.acDropped).toBe(true);
+      expect(advisory[0]?.acDropped).toBe(true);
     });
   });
 
@@ -184,7 +184,7 @@ describe("adversarialReviewOp.verify() — AC-dropped findings surfaced on a pas
       const advisory = output.advisoryFindings ?? [];
       expect(advisory).toHaveLength(1);
       expect(advisory[0]?.message).toBe("Advisory only");
-      expect(advisory[0]?.meta?.acDropped).toBeUndefined();
+      expect(advisory[0]?.acDropped).toBeUndefined();
     });
   });
 });

@@ -277,7 +277,7 @@ function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSu
       // it must never be the normal case, which is what #1816 was.
       issue: f.message || "(no description)",
       coverageGap: f.meta?.coverageGap === true ? true : undefined,
-      acDropped: f.meta?.acDropped === true ? true : undefined,
+      acDropped: f.acDropped === true ? true : undefined,
       // #1359 — absent means actionable; only recorded when explicitly false.
       actionRequired: "actionRequired" in f && f.actionRequired === false ? false : undefined,
     };

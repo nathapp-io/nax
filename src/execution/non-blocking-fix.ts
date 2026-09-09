@@ -52,7 +52,12 @@ const MAX_LOGGED_REGRESSED_KEYS = 10;
  * there would delete the very visibility that made this diagnosable.
  */
 export function actionableAdvisoryFindings(findings: readonly Finding[]): readonly Finding[] {
-  return findings.filter((f) => f.actionRequired !== false);
+  // #1950 — AC-quote drops are folded into advisoryFindings so they reach the
+  // end-of-run report, but they must not buy an agent session: a drop is by
+  // definition ungrounded, and under `scope: "triage"` seeding one would hand
+  // un-reviewed source edits to the weakest-evidenced finding class there is.
+  // Reported, not acted on. Same seam and same rationale as `actionRequired`.
+  return findings.filter((f) => f.actionRequired !== false && f.acDropped !== true);
 }
 
 /** Run the pass only when enabled and there is at least one advisory finding. */
