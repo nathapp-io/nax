@@ -3,12 +3,15 @@
  * survive `emitReviewDecision` onto the dispatched `ReviewDecisionEvent`.
  *
  * This is the seam F3 of docs/findings/2026-08-01-review-pipeline-gap-analysis.md
- * diagnosed for `advisoryFindings` / `diffAvailable` / `adversarialDropAnalysis` /
- * `adversarialAcceptAnalysis`: both ops compute a field, `ReviewDecisionEvent`
+ * diagnosed for `advisoryFindings`: an op computes a field, `ReviewDecisionEvent`
  * declares it, the audit middleware forwards it — and `emitReviewDecision` alone
- * drops it, so 100% of persisted review-audit records carry it as null. `acks`
- * and `blockingThreshold` were the same bug, never added to that rescued list
- * (this is the third pass over the seam).
+ * drops it, so 100% of persisted review-audit records carry it as null. `acDropped`,
+ * `acks` and `blockingThreshold` were the same bug, never added to that rescued
+ * list (this is the third pass over the seam).
+ *
+ * F3 also named `diffAvailable` / `adversarialDropAnalysis` /
+ * `adversarialAcceptAnalysis`, but those were never a drop at this seam — no op
+ * ever computed them (#1926). They have been removed.
  *
  * Drives the REAL `adversarialReviewOp.verify()` / `semanticReviewOp.verify()`
  * (not a hand-authored fixture — see the audit-shape.test.ts rationale) so a

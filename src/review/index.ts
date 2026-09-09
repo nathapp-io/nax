@@ -5,7 +5,6 @@
  */
 
 export * from "./ac-quote-validator";
-export * from "./ac-structural-counterfactual";
 // Review acknowledgements (#1423) — shared read path for both reviewers.
 export { extractAcks, MAX_ACKS } from "./acks";
 // Projection of adversarial LLM findings to the ADR-021 wire format. Already consumed
@@ -14,7 +13,7 @@ export { extractAcks, MAX_ACKS } from "./acks";
 export { toAdversarialReviewFindings, validateAdversarialShape } from "./adversarial-helpers";
 export * from "./categorization";
 export type { ResolveFixTargetArgs } from "./category-fix-target";
-export { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
+export { BLOCKING_CATEGORIES, categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
 export * from "./diff-utils";
 // Promoted from finding-filters: not re-exported by adversarial.ts (verify if that changes)
 export { hasInspectionTrail, substantiateAdversarialFindings } from "./finding-filters";
