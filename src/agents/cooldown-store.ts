@@ -14,7 +14,7 @@
  */
 
 import type { AdapterFailure } from "@/context/engine";
-import { resolveCooldownExpiry } from "./retry/failure-policy";
+import { failurePolicyFor, resolveCooldownExpiry } from "./retry/failure-policy";
 
 /** `"run"` means no expiry — cleared only by a story-boundary sweep or `clear()`. */
 interface CooldownEntry {
@@ -46,7 +46,12 @@ export class CooldownStore {
   mark(agent: string, failure: AdapterFailure, tier?: string, modelId?: string): void {
     const expiresAt = resolveCooldownExpiry(failure, this._now());
     if (expiresAt === null) return;
-    this._entries.set(identityKey(agent, tier, modelId), { failure, expiresAt });
+    // The policy decides the SCOPE; this only chooses the key that expresses it.
+    // An agent-scoped fault (bad credentials, exhausted account quota) is shared
+    // by every model the agent serves, so it is keyed on the bare agent name and
+    // `_live` finds it from any lookup.
+    const key = failurePolicyFor(failure.outcome).cooldownScope === "agent" ? agent : identityKey(agent, tier, modelId);
+    this._entries.set(key, { failure, expiresAt });
   }
 
   isCooling(agent: string, tier?: string, modelId?: string): boolean {
@@ -72,9 +77,29 @@ export class CooldownStore {
     this._entries.clear();
   }
 
-  /** Returns the entry only while it is still in force; expires it lazily. */
+  /**
+   * Returns the entry only while it is still in force; expires it lazily.
+   *
+   * Checks the narrow identity first, then the bare agent key — but the bare key
+   * counts only when the entry there is itself agent-scoped. An agent-scoped
+   * cooldown must block EVERY tier/model of that agent, or the swap re-dispatches
+   * the same broken credentials under a different tier name and buys a second
+   * identical failure. A MODEL-scoped entry can also land on the bare key (the
+   * failing hop named no tier, so there was no narrower identity to record), and
+   * that one must NOT blanket the agent: it says one dispatch was rate-limited,
+   * not that the agent's other models are unusable. When no tier/model is given
+   * the two keys coincide and a tier-less caller reads exactly as it always did.
+   */
   private _live(agent: string, tier?: string, modelId?: string): CooldownEntry | undefined {
-    const key = identityKey(agent, tier, modelId);
+    const narrow = identityKey(agent, tier, modelId);
+    const own = this._at(narrow);
+    if (own || narrow === agent) return own;
+    const agentWide = this._at(agent);
+    return agentWide && failurePolicyFor(agentWide.failure.outcome).cooldownScope === "agent" ? agentWide : undefined;
+  }
+
+  /** One key's entry, expired lazily. */
+  private _at(key: string): CooldownEntry | undefined {
     const entry = this._entries.get(key);
     if (!entry) return undefined;
     if (entry.expiresAt === "run") return entry;

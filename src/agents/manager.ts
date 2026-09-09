@@ -175,8 +175,12 @@ export class AgentManager implements IAgentManager {
 
   private readonly _isExcluded = (c: string, t?: string) => this._prunedFallback.has(c) || this.isUnavailable(c, t);
 
+  /** Folds a `{ agent, model }` target naming a tier into `{ agent, tier }`. */
+  private readonly _resolveTarget = (t: FallbackTarget): FallbackTarget =>
+    resolveFallbackDispatchTarget(this._models, this.getDefault(), t);
+
   resolveFallbackChain(agent: string, _failure: AdapterFailure): import("./swap-decision").FallbackTarget[] {
-    return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded);
+    return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded, this._resolveTarget);
   }
 
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number): boolean {
@@ -185,8 +189,8 @@ export class AgentManager implements IAgentManager {
 
   nextCandidate(current: string, _hopsSoFar: number, exclude?: string, excludeTier?: string): FallbackTarget | null {
     const excluded = (c: string, t?: string): boolean => (c === exclude && t === excludeTier) || this._isExcluded(c, t);
-    const candidate = availableCandidates(this._config.agent?.fallback?.map, current, excluded)[0];
-    return candidate ? resolveFallbackDispatchTarget(this._models, this.getDefault(), candidate) : null;
+    const map = this._config.agent?.fallback?.map;
+    return availableCandidates(map, current, excluded, this._resolveTarget)[0] ?? null;
   }
 
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {

@@ -117,14 +117,23 @@ export function normaliseFallbackTarget(value: FallbackMapValue): FallbackTarget
  * target must survive exclusion of the tier that actually failed. A predicate that
  * ignores the second argument (every predicate written before this identity split)
  * keeps its original agent-only behaviour.
+ *
+ * `resolve` runs BEFORE the filter, not after: a `{ agent, model }` target naming a
+ * tier does not carry `.tier` until it is folded in, so filtering first judged it
+ * tier-less and excluded it — while the identical target spelled `{ agent, tier }`
+ * survived. Two spellings of one target must be indistinguishable here, which is
+ * the whole point of accepting the ConfiguredModel spelling. The default is
+ * identity, so a caller that cannot resolve (no `models`) keeps the raw shapes.
  */
 export function availableCandidates(
   map: FallbackMap | undefined,
   agent: string,
   isExcluded: (candidate: string, tier?: string) => boolean,
+  resolve: (target: FallbackTarget) => FallbackTarget = (target) => target,
 ): FallbackTarget[] {
   return (map?.[agent] ?? [])
     .map(normaliseFallbackTarget)
+    .map(resolve)
     .filter((candidate) => !isExcluded(candidate.agent, candidate.tier));
 }
 

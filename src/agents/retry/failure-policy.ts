@@ -27,6 +27,15 @@ export interface FailurePolicy {
    */
   readonly swap: "never" | "immediate" | "after-retry-lane" | "quality-gated";
   readonly cooldown: FailureCooldown;
+  /**
+   * What the cooldown applies to. `"agent"` is a fault of the agent itself —
+   * credentials, an exhausted account quota — which every model it serves shares,
+   * so parking one tier while its siblings look healthy only buys a second
+   * identical failure. `"model"` is a fault of the model/provider actually
+   * dispatched (a 429, that provider being down), which says nothing about the
+   * agent's other models. Read by `CooldownStore` to choose the entry's key.
+   */
+  readonly cooldownScope: "agent" | "model";
   /** Whether `resolveExhaustion` consults the retry strategy on a terminal exit. */
   readonly terminalBackoff: boolean;
 }
@@ -43,36 +52,76 @@ const TRANSIENT_COOLDOWN_MS = 60_000;
  * forgets a row here, which is the point of the Record type.
  */
 const POLICIES: Readonly<Record<AdapterFailure["outcome"], FailurePolicy>> = Object.freeze({
-  "fail-auth": { sameAgentRetry: "none", swap: "immediate", cooldown: "run", terminalBackoff: false },
-  "fail-quota": { sameAgentRetry: "none", swap: "immediate", cooldown: "run", terminalBackoff: false },
+  "fail-auth": {
+    sameAgentRetry: "none",
+    swap: "immediate",
+    cooldown: "run",
+    cooldownScope: "agent",
+    terminalBackoff: false,
+  },
+  "fail-quota": {
+    sameAgentRetry: "none",
+    swap: "immediate",
+    cooldown: "run",
+    cooldownScope: "agent",
+    terminalBackoff: false,
+  },
   "fail-rate-limit": {
     sameAgentRetry: "none",
     swap: "immediate",
     cooldown: { ms: TRANSIENT_COOLDOWN_MS },
+    cooldownScope: "model",
     terminalBackoff: true,
   },
   "fail-service-down": {
     sameAgentRetry: "adapter-error",
     swap: "immediate",
     cooldown: { ms: TRANSIENT_COOLDOWN_MS },
+    cooldownScope: "model",
     terminalBackoff: true,
   },
   "fail-stale": {
     sameAgentRetry: "stale",
     swap: "immediate",
     cooldown: { ms: TRANSIENT_COOLDOWN_MS },
+    cooldownScope: "model",
     terminalBackoff: true,
   },
-  "fail-timeout": { sameAgentRetry: "timeout", swap: "after-retry-lane", cooldown: "none", terminalBackoff: false },
+  "fail-timeout": {
+    sameAgentRetry: "timeout",
+    swap: "after-retry-lane",
+    cooldown: "none",
+    cooldownScope: "model",
+    terminalBackoff: false,
+  },
   "fail-adapter-error": {
     sameAgentRetry: "adapter-error",
     swap: "quality-gated",
     cooldown: "none",
+    cooldownScope: "model",
     terminalBackoff: false,
   },
-  "fail-quality": { sameAgentRetry: "none", swap: "quality-gated", cooldown: "none", terminalBackoff: false },
-  "fail-unknown": { sameAgentRetry: "none", swap: "quality-gated", cooldown: "none", terminalBackoff: false },
-  "fail-aborted": { sameAgentRetry: "none", swap: "never", cooldown: "none", terminalBackoff: false },
+  "fail-quality": {
+    sameAgentRetry: "none",
+    swap: "quality-gated",
+    cooldown: "none",
+    cooldownScope: "model",
+    terminalBackoff: false,
+  },
+  "fail-unknown": {
+    sameAgentRetry: "none",
+    swap: "quality-gated",
+    cooldown: "none",
+    cooldownScope: "model",
+    terminalBackoff: false,
+  },
+  "fail-aborted": {
+    sameAgentRetry: "none",
+    swap: "never",
+    cooldown: "none",
+    cooldownScope: "model",
+    terminalBackoff: false,
+  },
 });
 
 export function failurePolicyFor(outcome: AdapterFailure["outcome"]): FailurePolicy {
