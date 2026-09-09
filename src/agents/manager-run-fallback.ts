@@ -47,7 +47,11 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   const storyId = request.runOptions.storyId;
   const start = resolveStartAgent(input, primaryAgent, config.agent?.fallback?.enabled, storyId, logger);
   let currentAgent = start.agent;
-  let currentHopKind: HopKind = "tier" in start ? { kind: "primary", tier: start.tier } : { kind: "primary" };
+  let currentHopKind: HopKind = {
+    kind: "primary",
+    ...("tier" in start && start.tier !== undefined ? { tier: start.tier } : {}),
+    ...("model" in start && start.model !== undefined ? { model: start.model } : {}),
+  };
   let hopsSoFar = budget.spent(storyId);
   let rateLimitRetry = 0;
   let staleRetryAttempts = 0;
@@ -75,7 +79,14 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
 
       const retry = trySameAgentRetry(
         result,
-        { staleRetryAttempts, timeoutRetryAttempts, adapterErrorRetries, currentRunOptions, tier: currentHopKind.tier },
+        {
+          staleRetryAttempts,
+          timeoutRetryAttempts,
+          adapterErrorRetries,
+          currentRunOptions,
+          tier: currentHopKind.tier,
+          model: currentHopKind.model,
+        },
         { config, requestRunOptions: request.runOptions, signal: request.signal },
       );
       if (retry) {
@@ -163,7 +174,12 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       hopsSoFar = budget.spend(storyId, hopsSoFar);
       rateLimitRetry = 0;
       currentBundle = updatedBundle;
-      currentHopKind = { kind: "swap", failure, ...(next.tier ? { tier: next.tier } : {}) };
+      currentHopKind = {
+        kind: "swap",
+        failure,
+        ...(next.tier ? { tier: next.tier } : {}),
+        ...(next.model ? { model: next.model } : {}),
+      };
       const fallback = buildFallbackRecord({
         storyId,
         priorAgent: currentAgent,

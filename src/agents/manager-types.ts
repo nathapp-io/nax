@@ -13,11 +13,19 @@ import type { FallbackTarget } from "./swap-decision";
  * Replaces the old `failure: AdapterFailure | undefined` encoding, which
  * conflated "primary" and "stale-retry" as both `undefined`.
  */
+/**
+ * `tier` names a tier in `models.<agent>`; `model` is a LITERAL model id a
+ * fallback target pinned (`{ agent, model }` where the model names no tier —
+ * ConfiguredModel semantics). They are mutually exclusive: a tier-naming
+ * `model` is resolved to `tier` before dispatch (resolveFallbackDispatchTarget),
+ * so only a literal pin ever arrives as `model`, and a pin has no tier to
+ * report — the tier map cannot serve it.
+ */
 export type HopKind =
-  | { kind: "primary"; tier?: string } // tier present when an op started on a fallback that named one
-  | { kind: "stale-retry"; attempt: number; tier?: string } // same agent, reuse existing session
-  | { kind: "timeout-retry"; attempt: number; tier?: string } // same agent, fresh session after fail-timeout
-  | { kind: "swap"; failure: AdapterFailure; tier?: string }; // new agent, fresh session
+  | { kind: "primary"; tier?: string; model?: string } // tier/model present when an op started on a fallback that named one
+  | { kind: "stale-retry"; attempt: number; tier?: string; model?: string } // same agent, reuse existing session
+  | { kind: "timeout-retry"; attempt: number; tier?: string; model?: string } // same agent, fresh session after fail-timeout
+  | { kind: "swap"; failure: AdapterFailure; tier?: string; model?: string }; // new agent, fresh session
 
 import type { SessionRunHopFn } from "../runtime/session-run-hop";
 import type {

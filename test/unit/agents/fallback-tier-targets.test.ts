@@ -420,6 +420,21 @@ describe("resolveHopCompleteOptions", () => {
     // only that the schema parsed would pass while the feature is inert.
     expect(resolveHopCompleteOptions(base, "native", "claude", "cheap").modelDef.model).toBe("native:cheap");
   });
+
+  test("a swapped hop dispatches a literal model pin instead of consulting the tier map", () => {
+    // modelDefFor resolves THROUGH the tier map, so it cannot serve a pin that
+    // names no tier — it would answer "native:default", the caller's own
+    // effective tier under a different name. The pin must win outright.
+    const pinned = resolveHopCompleteOptions(
+      base,
+      "native",
+      "claude",
+      undefined,
+      "openrouter/z-ai/glm-5.3-flash[high]",
+    );
+    expect(pinned.modelDef.model).toBe("openrouter/z-ai/glm-5.3-flash[high]");
+    expect(pinned.modelDef.model).not.toBe("native:default");
+  });
 });
 
 describe("an unknown tier on a fallback target", () => {
@@ -656,5 +671,77 @@ describe("model-identity-aware fallback exclusion", () => {
       ]);
       expect(outcome.result.success).toBe(true);
     });
+  });
+});
+
+describe("a literal model pin as a fallback target (claude -> {agent: native, model: openrouter/...})", () => {
+  // `{ agent, model }` follows ConfiguredModel: `model` may name a tier OR a literal
+  // model id. A tier-naming target is converted to `{ agent, tier }` before dispatch;
+  // a LITERAL id has no tier to convert to, and the dispatch seam understood only
+  // tiers — so the pin was accepted and selected, then dispatched at the caller's own
+  // effective tier. The operator asks for one provider and silently gets another.
+  const PIN = "openrouter/z-ai/glm-5.3-flash[high]";
+  const RATE_LIMIT_FAILURE: AdapterFailure = {
+    category: "availability",
+    outcome: "fail-rate-limit",
+    retriable: true,
+    message: "rate limited",
+  };
+
+  function pinConfig() {
+    return NaxConfigSchema.parse({
+      agent: {
+        protocol: "hybrid",
+        default: "claude",
+        fallback: { enabled: true, map: { claude: [{ agent: "native", model: PIN }] } },
+      },
+      models: { claude: { balanced: "claude-sonnet-4-5" }, native: { cheap: "opencode-go/glm-4-5" } },
+    });
+  }
+
+  test("nextCandidate keeps the literal pin instead of degrading it to a tier", () => {
+    const config = pinConfig();
+    const manager = new AgentManager(config, undefined, { models: config.models });
+
+    expect(manager.nextCandidate("claude", 0, "claude")).toEqual({ agent: "native", model: PIN });
+  });
+
+  test("the swap hop carries the literal pin so the hop dispatches at that model", async () => {
+    const config = pinConfig();
+    const manager = new AgentManager(config, undefined, { models: config.models });
+    const hops: { agent: string; hopKind: HopKind }[] = [];
+
+    const outcome = await manager.runWithFallback({
+      runOptions: {
+        prompt: "do it",
+        workdir: "/tmp",
+        modelTier: "balanced",
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+        timeoutSeconds: 60,
+        config,
+      },
+      executeHop: async (agent, bundle, hopKind) => {
+        hops.push({ agent, hopKind });
+        const result =
+          hops.length === 1
+            ? {
+                success: false,
+                exitCode: 1,
+                output: "rate limited",
+                rateLimited: true,
+                durationMs: 0,
+                estimatedCostUsd: 0,
+                adapterFailure: RATE_LIMIT_FAILURE,
+              }
+            : { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
+        return { result, bundle };
+      },
+    });
+
+    expect(outcome.result.success).toBe(true);
+    expect(hops).toEqual([
+      { agent: "claude", hopKind: { kind: "primary" } },
+      { agent: "native", hopKind: { kind: "swap", failure: RATE_LIMIT_FAILURE, model: PIN } },
+    ]);
   });
 });

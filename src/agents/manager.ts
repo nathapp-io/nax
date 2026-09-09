@@ -217,6 +217,7 @@ export class AgentManager implements IAgentManager {
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
     let currentTier: string | undefined;
+    let currentModel: string | undefined;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     let rateLimitRetry = 0;
@@ -229,7 +230,7 @@ export class AgentManager implements IAgentManager {
 
     try {
       while (true) {
-        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent, currentTier);
+        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent, currentTier, currentModel);
         const adapter = this._resolveRegistry().getAgent(currentAgent);
         if (!adapter) {
           _finalStatus = "error";
@@ -380,7 +381,7 @@ export class AgentManager implements IAgentManager {
         });
 
         _agentChain.push(next.agent);
-        [currentAgent, currentTier] = [next.agent, next.tier];
+        [currentAgent, currentTier, currentModel] = [next.agent, next.tier, next.model];
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({

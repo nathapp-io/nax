@@ -24,7 +24,6 @@
 
 import { MODEL_SHORTHAND_TIERS, resolveModelForAgent, resolveTierMembership } from "@/config";
 import type { ModelsConfig } from "@/config/schema-types";
-import { getSafeLogger } from "@/logger";
 import type { FallbackTarget } from "./swap-decision";
 
 /**
@@ -63,14 +62,13 @@ export function resolveFallbackModelId(
  * target that was always spelled with `tier`, so it dispatches and gets
  * model-identity-keyed exclusion exactly like one.
  *
- * A literal (non-tier) `model` is NOT converted: `HopKind`/`resolveHopCompleteOptions`/
- * `build-hop-callback.ts`'s dispatch machinery only understands a tier name, not
- * an arbitrary model id, and wiring a true literal-pin swap target through those
- * is a larger change than this identity fix. The target is returned unchanged —
- * it still dispatches, but degrades to the caller's own effective tier (the same
- * behaviour a plain-string target has today), and a warning is logged so the gap
- * is visible rather than silent. `.tier`-shaped and tier-resolving `.model`-shaped
- * targets are unaffected by this limitation.
+ * A literal (non-tier) `model` is returned unchanged, and stays a pin all the way
+ * to dispatch: `HopKind` carries it, and both seams resolve it directly rather
+ * than through the tier map (`hopModelId` in build-hop-callback.ts for the run
+ * path, `resolveHopCompleteOptions` for the complete path). The ModelDef that
+ * produces is identical to the one the same id yields as a `models.<agent>.<tier>`
+ * entry — both resolve through `resolveModel` — so a pin and a tier naming the
+ * same model dispatch the same way.
  */
 export function resolveFallbackDispatchTarget(
   models: ModelsConfig | undefined,
@@ -81,10 +79,5 @@ export function resolveFallbackDispatchTarget(
   const aliased = MODEL_SHORTHAND_TIERS[target.model.toLowerCase()] ?? target.model;
   const membership = resolveTierMembership(models, target.agent, aliased, defaultAgent);
   if (membership.isTier) return { agent: target.agent, tier: aliased };
-  getSafeLogger()?.warn(
-    "agent-manager",
-    "Fallback target names a literal model — swap dispatch is not wired for literal pins yet, falling back to the caller's effective tier",
-    { agent: target.agent, model: target.model },
-  );
   return target;
 }
