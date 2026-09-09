@@ -23,7 +23,13 @@
  * makes "no marker survives dispatch" checkable in one place.
  */
 
+import { NaxError } from "@/errors";
 import { NONCE as DIFF_NONCE, type DiffAccessSpec, renderNative } from "./diff-access";
+
+/** Kinds the marker grammar accepts: lowercase, kebab-cased. The grammar's
+ *  `[a-z][a-z-]*` group only matches such kinds, so any other shape silently
+ *  produces an opener that REGION can never read. */
+const KIND_PATTERN = /^[a-z][a-z-]*$/;
 
 /** Per-process nonce. Re-exported here so `wrapAffordance` and
  *  `applyProtocolRegions` produce markers with the same nonce as
@@ -88,8 +94,32 @@ const REGISTRY: Record<string, AffordanceNativeRenderer> = {
  *  The spec is JSON-encoded into the opening marker. A spec containing the
  *  literal "-->" would break the region; none of the registered specs can
  *  produce one (specs are built from configured test globs and the fixed
- *  nax metadata paths, never from model input). */
+ *  nax metadata paths, never from model input).
+ *
+ *  Validation: the kind must match the marker grammar (`[a-z][a-z-]*`) and
+ *  the spec must be a JSON object — the grammar's `(\{.*?\})` group only
+ *  matches an object-literal JSON. Without this guard a producer passing an
+ *  uppercase kind or a non-object spec (array, string, number, null) silently
+ *  emits an opener that REGION cannot match: `applyProtocolRegions` will not
+ *  strip it under ACP, `unwrapProtocolRegions` will not strip it for
+ *  persistence, and the AC9 freeze will not even recognise the opener as one
+ *  of ours. Marker text would ship into dispatched and persisted prompts with
+ *  no error. Throw at the wrap site so the producer fixes the call. */
 export function wrapAffordance(kind: string, spec: unknown, acpBody: string): string {
+  if (typeof kind !== "string" || !KIND_PATTERN.test(kind)) {
+    throw new NaxError(
+      `wrapAffordance: kind must match ${KIND_PATTERN.source} (got ${JSON.stringify(kind)})`,
+      "AFFORDANCE_KIND_INVALID",
+      { stage: "protocol-region", kind },
+    );
+  }
+  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) {
+    throw new NaxError(
+      `wrapAffordance: spec must be a JSON object so REGION can parse it (got ${spec === null ? "null" : typeof spec})`,
+      "AFFORDANCE_SPEC_INVALID",
+      { stage: "protocol-region", kind },
+    );
+  }
   return `<!--nax:${kind}:${NONCE} ${JSON.stringify(spec)}-->\n${acpBody}<!--/nax:${kind}-->\n`;
 }
 

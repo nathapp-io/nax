@@ -14,6 +14,7 @@
  * anything.
  */
 import { describe, expect, test } from "bun:test";
+import { NaxError } from "@/errors";
 import {
   applyProtocolRegions,
   PROTOCOL_REGION_MARKER_PREFIX,
@@ -75,6 +76,49 @@ describe("wrapAffordance (AC1)", () => {
     expect(b).toContain("extra");
     // The two wraps embed distinct bodies — neither is a clone of the other.
     expect(a).not.toBe(b);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adversarial finding — `wrapAffordance` must reject kinds / specs the marker
+// grammar cannot read. Otherwise the producer silently emits an opener REGION
+// will not match, and the marker leaks into dispatched and persisted prompts.
+// ---------------------------------------------------------------------------
+describe("wrapAffordance — input validation (adversarial)", () => {
+  test("rejects an uppercase kind with AFFORDANCE_KIND_INVALID", () => {
+    let caught: unknown;
+    try {
+      wrapAffordance("BadKind", DIFF_SPEC, ACP_BODY);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught instanceof NaxError).toBe(true);
+    if (caught instanceof NaxError) expect(caught.code).toBe("AFFORDANCE_KIND_INVALID");
+  });
+
+  test("rejects a kind with digits or a leading non-letter", () => {
+    for (const kind of ["1diff-access", "diff_access", "diff access", "Diff-Access", ""]) {
+      expect(() => wrapAffordance(kind, DIFF_SPEC, ACP_BODY)).toThrow(NaxError);
+    }
+  });
+
+  test("rejects a non-object spec (array, string, number, null) with AFFORDANCE_SPEC_INVALID", () => {
+    for (const spec of [[1, 2, 3], "string-spec", 42, null]) {
+      let caught: unknown;
+      try {
+        wrapAffordance("diff-access", spec, ACP_BODY);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught instanceof NaxError).toBe(true);
+      if (caught instanceof NaxError) expect(caught.code).toBe("AFFORDANCE_SPEC_INVALID");
+    }
+  });
+
+  test("a rejected kind produces no marker at all (no half-built string escapes)", () => {
+    // If the guard short-circuited after concatenating, the caller could
+    // persist a partial marker. Throw before any string is built.
+    expect(() => wrapAffordance("BadKind", DIFF_SPEC, ACP_BODY)).toThrow(NaxError);
   });
 });
 
