@@ -169,24 +169,27 @@ describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)", (
     expect(r.costUsd).toBeCloseTo(0.8, 5);
   });
 
-  test("failed-dispatch spend is recorded beside costUsd, never folded into it (#1948)", async () => {
-    // #1932 left this spend invisible; #1948 Part A surfaces it as its own
-    // field. `costUsd` keeps its exact meaning — mirroring `runPhase`'s
-    // `phaseCosts` — so no existing total is re-based. See cycle-cost.ts.
+  test("failed-dispatch spend is folded into costUsd and still carried beside it (#1960)", async () => {
+    // #1960 reverses #1948's split-at-the-fix-cycle reading: `costUsd` mirrors
+    // `runPhase`'s `phaseCosts`, which folds the failed half in, so it does
+    // too. The half is still carried beside it, so wasted spend stays
+    // measurable. See cycle-cost.ts.
     const s = makeStrategy({ name: "implementer", maxAttempts: 1 });
     const callOp = makeErrorRowCallOpMock(5);
     const cycle = makeCycle([lintA], [s], async () => [lintA]);
 
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp });
 
-    expect(r.costUsd).toBe(0);
+    expect(r.costUsd).toBeCloseTo(5, 5);
+    expect(cycle.iterations[0]?.fixesApplied[0]?.costUsd).toBeCloseTo(5, 5);
     expect(cycle.iterations[0]?.fixesApplied[0]?.errorCostUsd).toBeCloseTo(5, 5);
   });
 
   test("an explicit extractApplied costUsd does not suppress the ledger's errorCostUsd", async () => {
     // The override is scoped to the half a strategy can actually know. It knows
     // what its successful call billed; it cannot know what the attempts that
-    // threw beforehand burned, so that half still comes from the ledger.
+    // threw beforehand burned, so #1960 adds that half on top of the override
+    // rather than letting it replace the ledger reading (cycle-dispatch.ts).
     const s = makeStrategy({
       name: "implementer",
       maxAttempts: 1,
@@ -197,7 +200,7 @@ describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)", (
 
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp });
 
-    expect(r.costUsd).toBeCloseTo(2, 5);
+    expect(r.costUsd).toBeCloseTo(3.75, 5);
     expect(cycle.iterations[0]?.fixesApplied[0]?.errorCostUsd).toBeCloseTo(1.75, 5);
   });
 
@@ -276,10 +279,20 @@ describe("ledgerSpendFor", () => {
     return { ...base, runtime: { ...base.runtime, costAggregator: aggregator } } as typeof base;
   }
 
-  test("returns the successful and the failed spend for the call, kept apart", () => {
+  test("returns the total spend for the call, failed half broken out beside it", () => {
     const ctx = ctxWithByCall(() => ({ "call-1": { totalCostUsd: 1.25, totalErrorCostUsd: 0.5 } }));
 
-    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 1.25, errorCostUsd: 0.5 });
+    // #1960: costUsd is total spend -- 1.25 successful plus 0.5 failed.
+    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 1.75, errorCostUsd: 0.5 });
+  });
+
+  test("#1960: costUsd folds failed-dispatch spend, mirroring phaseCosts", () => {
+    // cycle-cost.ts pins its meaning to runPhase's phaseCosts. #1960 folded
+    // phaseCosts, so this folds too -- the fix-cycle number must never mean
+    // something different from the phase number beside it.
+    const ctx = ctxWithByCall(() => ({ "call-1": { totalCostUsd: 0.02, totalErrorCostUsd: 0.005 } }));
+
+    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 0.025, errorCostUsd: 0.005 });
   });
 
   test("returns zeros when the ledger holds no row for the call", () => {
