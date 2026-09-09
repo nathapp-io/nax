@@ -44,7 +44,6 @@ export const debateProposeOp: CompleteOperation<DebateProposeInput, string, Deba
   kind: "complete",
   name: "debate-propose",
   stage: "review",
-  jsonMode: false,
   config: debateConfigSelector,
   model: (input) => {
     const debater = input.debaters[input.debaterIndex];

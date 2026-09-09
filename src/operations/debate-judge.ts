@@ -18,7 +18,6 @@ export const judgeOp: CompleteOperation<DebateJudgeInput, string, DebateConfig> 
   kind: "complete",
   name: "debate-judge",
   stage: "review",
-  jsonMode: false,
   config: debateConfigSelector,
   model: (input) => ({ agent: input.resolverAgent, model: input.resolverModel }),
   timeoutMs: (input) => (input.timeoutSeconds ?? 600) * 1000,

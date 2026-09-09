@@ -33,9 +33,6 @@ describe("classifyRouteOp shape", () => {
   test("name is classify-route", () => {
     expect(classifyRouteOp.name).toBe("classify-route");
   });
-  test("jsonMode is true", () => {
-    expect(classifyRouteOp.jsonMode).toBe(true);
-  });
 
   test("model resolves from routing.llm.model config", () => {
     const config = makeNaxConfig({

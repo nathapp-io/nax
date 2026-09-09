@@ -39,9 +39,6 @@ describe("acceptanceRefineOp shape", () => {
   test("name is acceptance-refine", () => {
     expect(acceptanceRefineOp.name).toBe("acceptance-refine");
   });
-  test("jsonMode is true", () => {
-    expect(acceptanceRefineOp.jsonMode).toBe(true);
-  });
   test("stage is acceptance", () => {
     expect(acceptanceRefineOp.stage).toBe("acceptance");
   });

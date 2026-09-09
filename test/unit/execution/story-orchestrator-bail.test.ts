@@ -39,7 +39,6 @@ function baseStrategy(): FixStrategy<Finding, unknown, unknown, unknown> {
       task: { id: "task", content: "", overridable: false },
     }),
     parse: () => null,
-    jsonMode: false,
   };
   return {
     name: "autofix-test-writer",

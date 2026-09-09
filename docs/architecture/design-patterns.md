@@ -135,7 +135,6 @@ All pipeline stages, routing, TDD, and acceptance generators dispatch through th
 const agentName = ctx.agentManager?.getDefault() ?? "claude"; // or resolveDefaultAgent(config) in standalone modules
 const result = await ctx.runtime.agentManager.completeAs(agentName, prompt, {
   pipelineStage: "decompose",
-  jsonMode: true,
   config,
 });
 

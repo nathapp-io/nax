@@ -22,7 +22,6 @@ export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRout
   kind: "complete",
   name: "classify-route",
   stage: "run",
-  jsonMode: true,
   config: routingConfigSelector,
   model: (_input, ctx) => ctx.config.routing.llm?.model ?? "balanced",
   retry: (_input, ctx) => ({
@@ -64,7 +63,6 @@ export const classifyRouteBatchOp: CompleteOperation<UserStory[], Map<string, Ro
   kind: "complete",
   name: "classify-route-batch",
   stage: "run",
-  jsonMode: true,
   config: routingConfigSelector,
   model: (_input, ctx) => ctx.config.routing.llm?.model ?? "balanced",
   retry: (_input, ctx) => ({

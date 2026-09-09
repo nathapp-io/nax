@@ -304,7 +304,6 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
 
 export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "complete";
-  readonly jsonMode?: boolean;
   /**
    * Model selection for this call. Accepts a `ConfiguredModel` literal or a
    * resolver `(input, ctx) => ConfiguredModel | undefined`. Resolver returning

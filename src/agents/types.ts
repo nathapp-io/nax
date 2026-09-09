@@ -274,8 +274,6 @@ export interface AgentCapabilities {
 export interface CompleteOptions extends TrackedSpawnDeadlineOptions {
   /** Maximum tokens for the response */
   maxTokens?: number;
-  /** Request JSON-formatted output (adds --output-format json) */
-  jsonMode?: boolean;
   /**
    * Resolved model definition — the adapter uses modelDef.model directly to set
    * the --model flag on acpx. Set by callOp / completeAs callers before passing to the adapter.
