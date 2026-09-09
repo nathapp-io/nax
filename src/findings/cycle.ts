@@ -11,8 +11,9 @@
 import type { Logger } from "@/logger";
 import { getSafeLogger } from "@/logger";
 import type { Operation } from "@/operations";
-import { callOp as _callOp } from "@/operations";
+import { callOp as _callOp, newCorrelationId } from "@/operations";
 import { errorMessage } from "@/utils/errors";
+import { ledgerCostFor } from "./cycle-cost";
 import { recordIteration } from "./cycle-iteration-log";
 import { createDeclineLedger } from "./cycle-retirement";
 import {
@@ -271,8 +272,13 @@ export async function runFixCycle<F extends Finding>(
     for (const strategy of group) {
       const relevantFindings = findingsBefore.filter((f) => strategy.appliesTo(f));
       const input = strategy.buildInput(relevantFindings, cycle.iterations, ctx);
+      // #1932: stamp the correlation id here rather than letting `callOp` mint
+      // one, so this layer can find the dispatch's rows in the cost ledger
+      // afterwards. See cycle-cost.ts for why a callId and not a cost scope.
+      const dispatchCallId = newCorrelationId();
       const fixCtx: FixCycleContext = {
         ...ctx,
+        callId: dispatchCallId,
         fixStrategy: { name: strategy.name, findingsBefore: findingsBefore.length },
         // #1654: a strategy may run under its own session role, which gives it a
         // session of its own rather than continuing the one the previous
@@ -288,7 +294,9 @@ export async function runFixCycle<F extends Finding>(
         targetFiles: extracted.targetFiles ?? [],
         summary: extracted.summary ?? "",
         ...(extracted.unresolved ? { unresolved: extracted.unresolved } : {}),
-        costUsd: extracted.costUsd,
+        // #1932: read the dispatch's real spend from the ledger. An explicit
+        // `extractApplied.costUsd` still wins — see cycle-cost.ts.
+        costUsd: extracted.costUsd ?? ledgerCostFor(fixCtx, dispatchCallId),
       });
     }
 

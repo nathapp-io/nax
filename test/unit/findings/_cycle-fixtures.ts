@@ -1,6 +1,6 @@
 /**
  * Shared fixtures for the runFixCycle test files (cycle.test.ts,
- * cycle-retirement.test.ts). Extracted when the cycle tests were split under the
+ * cycle-cost.test.ts, cycle-retirement.test.ts). Extracted when the cycle tests were split under the
  * 800-line cap — two copies of an 80-line context/strategy fixture would drift
  * silently, and the drift would look like a behaviour difference between the files.
  *

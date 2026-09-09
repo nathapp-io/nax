@@ -30,6 +30,15 @@ export interface FixApplied {
   summary: string;
   /** Set when the agent explicitly signals it cannot resolve the findings. Triggers agent-gave-up exit. */
   unresolved?: string;
+  /**
+   * Successful-dispatch spend for this fix, read from the run's cost ledger
+   * (#1932) unless the strategy's `extractApplied` supplied its own. Populated
+   * on every fix since #1932 — the `?` is retained only for the records the
+   * cycle's own exit paths build without a dispatch.
+   *
+   * Excludes failed-dispatch spend, mirroring `runPhase`'s `phaseCosts`; see
+   * cycle-cost.ts.
+   */
   costUsd?: number;
 }
 
@@ -117,7 +126,15 @@ export interface FixCycleResult<F extends Finding = Finding> {
   bailDetail?: string;
   /** Reason text from the agent's UNRESOLVED sentinel. Set when exitReason is "agent-gave-up". */
   unresolvedDetail?: string;
-  /** Total cost of all fix attempts in the cycle. Only present when strategies surface cost via extractApplied. */
+  /**
+   * Total cost of all fix attempts in the cycle.
+   *
+   * Sourced from the run's cost ledger, keyed on the `callId` `runFixCycle`
+   * stamps onto each dispatch (#1932); a strategy's own
+   * `extractApplied.costUsd` overrides that when it supplies one. Before #1932
+   * this read from `extractApplied` alone and no implementation supplied it, so
+   * it was structurally always 0.
+   */
   costUsd?: number;
 }
 
@@ -178,8 +195,13 @@ export interface FixStrategy<
 
   /**
    * Optional: extract targetFiles, summary, and cost from the op output for FixApplied
-   * record-keeping. When absent, targetFiles defaults to [], summary to "", and costUsd
-   * is omitted ( FixApplied.costUsd stays undefined).
+   * record-keeping. When absent, targetFiles defaults to [] and summary to "".
+   *
+   * `costUsd` is the exception: since #1932 the cycle reads the dispatch's spend
+   * from the cost ledger, so `FixApplied.costUsd` is populated whether or not
+   * this hook is defined. Return a `costUsd` here only when the strategy knows
+   * its own cost better than the ledger does — e.g. it dispatches outside
+   * `callOp` — because an explicit value overrides the ledger reading.
    */
   extractApplied?: (
     output: O,
