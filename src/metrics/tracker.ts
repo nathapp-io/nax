@@ -14,7 +14,7 @@ import { loadContextManifests } from "../context/engine/manifest-store";
 import { computePollutionMetrics } from "../context/engine/pollution";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
-import type { CostSnapshot } from "../runtime/cost-aggregator";
+import { type CostSnapshot, totalSpendUsd } from "../runtime/cost-aggregator";
 import { errorMessage } from "../utils/errors";
 import { loadJsonFile, loadJsonFileStrict, saveJsonFile } from "../utils/json-file";
 import { withPathFileLock } from "../utils/path-file-lock";
@@ -324,7 +324,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     attempts,
     finalTier,
     success: agentResult?.success || false,
-    cost: costSnapshot?.totalCostUsd ?? 0,
+    cost: costSnapshot !== undefined ? totalSpendUsd(costSnapshot) : 0,
     durationMs: agentResult?.durationMs || 0,
     firstPassSuccess,
     startedAt: storyStartTime,
@@ -338,6 +338,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     ...(tokens !== undefined ? { tokens, tokenAttribution: "direct" as const } : {}),
     ...(contextMetrics !== undefined && { context: contextMetrics }),
     ...(fallbackHops.length > 0 && { fallback: { hops: fallbackHops } }),
+    ...(costSnapshot?.totalErrorCostUsd > 0 ? { errorCostUsd: costSnapshot.totalErrorCostUsd } : {}),
   };
 }
 
@@ -371,9 +372,8 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
   const agentResult = ctx.agentResult;
 
   const batchSnapshot = ctx.runtime.costAggregator.byStory()[ctx.story.id];
-  const batchTotal = batchSnapshot?.totalCostUsd ?? 0;
+  const errorCostPerStory = (batchSnapshot?.totalErrorCostUsd ?? 0) / stories.length;
   const totalDuration = agentResult?.durationMs || 0;
-  const costPerStory = batchTotal / stories.length;
   const durationPerStory = totalDuration / stories.length;
   const tokensPerStory = tokensFromSnapshot(batchSnapshot, stories.length);
 
@@ -413,7 +413,8 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
       attempts: 1, // batch stories don't escalate individually
       finalTier: routing.modelTier,
       success: true, // if batch succeeded, all stories succeeded
-      cost: costPerStory,
+      cost: (batchSnapshot !== undefined ? totalSpendUsd(batchSnapshot) : 0) / stories.length,
+      ...(errorCostPerStory > 0 ? { errorCostUsd: errorCostPerStory } : {}),
       durationMs: durationPerStory,
       firstPassSuccess: true, // batch = first pass success
       startedAt: storyStartTime,
