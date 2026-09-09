@@ -21,10 +21,6 @@ export function createSessionRunHop(
 ): SessionRunHopFn {
   return async (agentName: string, options: AgentRunOptions): Promise<SessionRunHopResult> => {
     const startMs = Date.now();
-    // US-002: advertises tools from the resolved coding-support runtime. The
-    // real implementation lives in the next session; this stub keeps the
-    // compile green and lets the AC-failing tests exercise the seam.
-    const prompt = applyDiffAccessForAgentProtocol(agentName, promptWithToolPreamble(agentName, options), []);
     const sessionName =
       options.sessionHandle ??
       sessionManager.nameFor({
@@ -34,6 +30,22 @@ export function createSessionRunHop(
         role: options.sessionRole,
         pipelineStage: options.pipelineStage,
       });
+
+    // Resolved per hop, not per run: a swap changes the agent and the grants
+    // are stage-scoped, so a runtime captured earlier would outlive its
+    // dispatch. Mirrors build-hop-callback.ts — the two must not drift.
+    // Resolved BEFORE the substitution so the advertised tool set drives the
+    // gate at dispatch time. Without this, native rendering would apply even
+    // when the agent was not granted `Git` and `Read`, and the model would
+    // be taught a call the policy would then refuse at call-time — the
+    // failure mode AC11 guards against.
+    const codingSupport = await resolveCodingToolSupport(options);
+    const advertisedTools = codingSupport ? codingSupport.tools.map((t) => t.name) : [];
+    const prompt = applyDiffAccessForAgentProtocol(
+      agentName,
+      promptWithToolPreamble(agentName, options),
+      advertisedTools,
+    );
 
     const transcriptOwner = options.scopeId ?? options.callId;
     const handle = await sessionManager.openSession(sessionName, {
@@ -57,12 +69,6 @@ export function createSessionRunHop(
     // openSession leaves the descriptor's `agent` at the primary. No-op when unchanged.
     recordAgentHandoff(sessionManager, sessionName, agentName, "agent-swap");
 
-    // Resolved per hop, not per run: a swap changes the agent and the grants
-    // are stage-scoped, so a runtime captured earlier would outlive its
-    // dispatch. Mirrors build-hop-callback.ts — the two must not drift.
-    // Declared above the try so the finally block can flush the audit sink.
-    let codingSupport: Awaited<ReturnType<typeof resolveCodingToolSupport>>;
-
     try {
       const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
       // `maxInteractionTurns` is the human Q&A budget (config-descriptions.ts),
@@ -75,7 +81,6 @@ export function createSessionRunHop(
           ? (options.maxInteractionTurns ?? 10)
           : (options.maxInteractionTurns ?? 1);
 
-      codingSupport = await resolveCodingToolSupport(options);
       const interactionHandler = buildRunInteractionHandler({
         ...options,
         ...(codingSupport ? { codingToolRuntime: codingSupport.runtime } : {}),

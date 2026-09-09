@@ -73,7 +73,9 @@ const REGION = new RegExp(
   "g",
 );
 
-/** Any diff-access opener, nonce or not — used to assert none survives dispatch. */
+/**
+ * Any diff-access opener, nonce or not — used to assert none survives dispatch.
+ */
 export const DIFF_ACCESS_MARKER_PREFIX = "<!--nax:diff-access";
 
 /**
@@ -168,15 +170,44 @@ export function renderNative(spec: DiffAccessSpec): string {
   return lines.join("\n");
 }
 
-export function applyDiffAccess(
-  prompt: string,
-  protocol: PromptProtocol,
-  _advertisedTools?: readonly string[],
-): string {
+/**
+ * The tools that must be advertised for native rendering to apply. Mirrors the
+ * entry `protocol-region.ts` registers for the `diff-access` affordance — the
+ * two must agree, since the dispatch seam consults the registry and the legacy
+ * shim consults this set. A caller that imports the shim directly is gated by
+ * this list; a caller that goes through `applyProtocolRegions` is gated by the
+ * registry.
+ */
+const DIFF_ACCESS_REQUIRED_TOOLS: readonly string[] = ["Git", "Read"];
+
+/**
+ * Substitute the diff-access region for the protocol being dispatched.
+ *
+ * US-002 — the third argument is the set of coding tools the agent will
+ * actually advertise at dispatch. Native rendering additionally requires
+ * `Git` AND `Read` to be advertised; either absent, the dispatch falls back
+ * to the ACP body. `undefined` means "tool set unknown — do not gate",
+ * preserving today's behaviour for callers that cannot read the advertised
+ * set from the agent descriptor.
+ *
+ * This entry point is retained as a thin pass-through (US-001 "Out of
+ * Scope": the diff-access API is retained as a thin adapter over the new
+ * helper so its existing suites remain the regression evidence). It does
+ * not delegate to `applyProtocolRegions` because doing so would create a
+ * runtime import cycle with `protocol-region.ts` (which imports the
+ * `renderNative` exporter from this file). The substitution logic is small
+ * enough to keep alongside the renderer.
+ */
+export function applyDiffAccess(prompt: string, protocol: PromptProtocol, advertisedTools?: readonly string[]): string {
   if (!prompt.includes(OPEN)) return prompt;
 
   return prompt.replace(REGION, (_whole, json: string, body: string) => {
     if (protocol === "acp") return body;
+    if (advertisedTools !== undefined) {
+      for (const tool of DIFF_ACCESS_REQUIRED_TOOLS) {
+        if (!advertisedTools.includes(tool)) return body;
+      }
+    }
     try {
       return renderNative(JSON.parse(json) as DiffAccessSpec);
     } catch {

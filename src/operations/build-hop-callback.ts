@@ -301,21 +301,30 @@ export function buildHopCallback(
       });
     }
 
+    // Coding tools are resolved per hop rather than per run: a swap changes the
+    // agent, and the grants are stage-scoped, so a runtime captured once above
+    // would outlive the dispatch it was resolved for.
+    //
+    // US-002 — the substitution happens AFTER coding-tool support resolves,
+    // not before. Native rendering additionally requires `Git` AND `Read` to
+    // be advertised, and the resolved runtime is the single source of truth
+    // for what the agent will advertise: the intersection of the operation's
+    // declared tools with the policy grants at this pipeline stage. The
+    // advertised names are read directly from the runtime (see CodingToolRuntime.advertised),
+    // so a fallback swap that changes the protocol cannot change the tool set,
+    // and the gate at dispatch matches the gate the agent is gated on at
+    // call-time.
+    const codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
+    const advertisedTools = codingSupport ? codingSupport.tools.map((t) => t.name) : [];
+
     // Unconditional, unlike the preamble above: a review prompt carries a
     // diff-access region whether or not the op also has context pull tools, and
     // ACP needs the markers stripped even though it keeps the body. Placed after
     // the preamble for the same reason the preamble is placed after the swap
     // rewrites — those replace the prompt wholesale, and a region rendered
-    // before one would be discarded.
-    // US-002: advertises tools from the resolved coding-support runtime. The
-    // real implementation lives in the next session; this stub keeps the
-    // compile green and lets the AC-failing tests exercise the seam.
-    prompt = applyDiffAccessForAgentProtocol(agentName, prompt, []);
-
-    // Coding tools are resolved per hop rather than per run: a swap changes the
-    // agent, and the grants are stage-scoped, so a runtime captured once above
-    // would outlive the dispatch it was resolved for.
-    const codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
+    // before one would be discarded. Placed after `codingSupport` resolves for
+    // the same reason: the gate depends on the advertised tools.
+    prompt = applyDiffAccessForAgentProtocol(agentName, prompt, advertisedTools);
 
     // A bridge is no longer required: without a handler, sendPrompt falls back
     // to NO_OP_INTERACTION_HANDLER and a well-formed tool call goes unanswered.
@@ -447,35 +456,47 @@ export function buildHopCallback(
       // Bound `send` closure: each call dispatches one turn through AgentManager
       // (so middleware fires) against the current hop's handle. Reused by both
       // the default single-prompt path and any caller-supplied hopBody.
+      //
+      // US-002 — the closure substitutes every turn prompt it is handed, so a
+      // hopBody's follow-up turn is gated on the same advertised tools the
+      // initial prompt was. Without this, the substitution that happens for
+      // the initial prompt is the only one and a region-bearing prompt sent
+      // from inside the body would reach the agent verbatim — the very
+      // failure AC8 guards against.
       const send = (turnPrompt: string): Promise<TurnResult> =>
-        agentManager.runAsSession(agentName, handle, turnPrompt, {
-          storyId: story.id,
-          featureName,
-          workdir,
-          projectDir,
-          pipelineStage: stage,
-          // SEC-3: thread per-package config so monorepo permissionProfile is honored.
-          config,
-          sessionRole: resolvedRunOptions.sessionRole,
-          signal: resolvedRunOptions.abortSignal,
-          contextPullTools,
-          contextToolRuntime,
-          codingTools: codingSupport?.tools,
-          ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
-          ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
-          ...(interactionHandler ? { interactionHandler } : {}),
-          // Context tools need at least one extra round-trip to answer a call;
-          // the adapter default of a single turn leaves no room. Mirrors
-          // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
-          // Mirrors session-run-hop.ts — the two must not drift. Forwarded as
-          // the Q&A budget it is documented to be; the native loop no longer
-          // spends it on round-trips.
-          ...(hasContextTools
-            ? { maxInteractions: maxInteractionTurns ?? 10 }
-            : maxInteractionTurns !== undefined
-              ? { maxInteractions: maxInteractionTurns }
-              : {}),
-        });
+        agentManager.runAsSession(
+          agentName,
+          handle,
+          applyDiffAccessForAgentProtocol(agentName, turnPrompt, advertisedTools),
+          {
+            storyId: story.id,
+            featureName,
+            workdir,
+            projectDir,
+            pipelineStage: stage,
+            // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+            config,
+            sessionRole: resolvedRunOptions.sessionRole,
+            signal: resolvedRunOptions.abortSignal,
+            contextPullTools,
+            contextToolRuntime,
+            codingTools: codingSupport?.tools,
+            ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
+            ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
+            ...(interactionHandler ? { interactionHandler } : {}),
+            // Context tools need at least one extra round-trip to answer a call;
+            // the adapter default of a single turn leaves no room. Mirrors
+            // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
+            // Mirrors session-run-hop.ts — the two must not drift. Forwarded as
+            // the Q&A budget it is documented to be; the native loop no longer
+            // spends it on round-trips.
+            ...(hasContextTools
+              ? { maxInteractions: maxInteractionTurns ?? 10 }
+              : maxInteractionTurns !== undefined
+                ? { maxInteractions: maxInteractionTurns }
+                : {}),
+          },
+        );
 
       const turnResult = hopBody ? await hopBody(prompt, { send, input: hopBodyInput }) : await send(prompt);
       // Capture timedOut from the TurnResult so the finally block can force-close
