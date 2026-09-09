@@ -61,6 +61,12 @@ export class TddPromptBuilder {
   private loaderWorkdir_: string | undefined;
   private loaderConfig_: PromptLoaderConfig | undefined;
   private testCommand_: string | undefined;
+  /** US-004 — declared `quality.commands.testScoped` key (always `"testScoped"`).
+   *  When set, the isolation section's test-filter rule is wrapped in a
+   *  `test-scope` protocol region so dispatch can substitute a
+   *  `RunCommand {"command": "testScoped", "values": {"files": ""}}` call
+   *  under native + advertised `RunCommand` (AC2). */
+  private scopedTestCommand_: string | undefined;
   private hermeticConfig_: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined;
   private noTestJustification_: string | undefined;
   private acceptanceEntries_: AcceptanceEntry[] | undefined;
@@ -117,6 +123,15 @@ export class TddPromptBuilder {
 
   testCommand(cmd: string | undefined): this {
     if (cmd) this.testCommand_ = cmd;
+    return this;
+  }
+
+  /** US-004 — declared scoped-test command key. When supplied, the
+   *  isolation section wraps the test-filter rule in a `test-scope`
+   *  region (AC2). Pass the declared key (always `"testScoped"` per
+   *  `RunCommand`'s named-key resolution) — not the resolved command. */
+  scopedTestCommand(key: string | undefined): this {
+    if (key) this.scopedTestCommand_ = key;
     return this;
   }
 
@@ -217,7 +232,9 @@ export class TddPromptBuilder {
       this.role === "implementer" && this.options.variant === "lite"
         ? "lite"
         : (this.options.isolation as "strict" | "lite" | undefined);
-    acc.add(this.s("isolation", buildIsolationSection(this.role, isolation, this.testCommand_)));
+    acc.add(
+      this.s("isolation", buildIsolationSection(this.role, isolation, this.testCommand_, this.scopedTestCommand_)),
+    );
 
     // (6.5) TDD language convention
     const tddLang = buildTddLanguageSection(this.loaderConfig_?.project?.language);
@@ -307,6 +324,12 @@ export class TddPromptBuilder {
       .featureContext(opts.contextBundle ? undefined : opts.featureContextMarkdown)
       .constitution(opts.constitution)
       .testCommand(config.quality?.commands?.test)
+      .scopedTestCommand(
+        // The declared key is always `"testScoped"` per `RunCommand`'s named-key
+        // resolution (src/execution/lifecycle/acceptance-helpers.ts:89). Only set
+        // when the project actually has a testScoped template to dispatch against.
+        config.quality?.commands?.testScoped ? "testScoped" : undefined,
+      )
       .hermeticConfig(config.quality?.testing)
       .build();
   }

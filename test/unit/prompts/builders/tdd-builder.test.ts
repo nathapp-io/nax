@@ -221,3 +221,64 @@ describe("TddPromptBuilder.verdictRetryCondensed", () => {
     expect(out).toContain("allMet");
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-004 — TddPromptBuilder threads the declared `testScoped` key into
+// buildIsolationSection so the test-filter rule is wrapped in a `test-scope`
+// region when the project has a scoped template. Native dispatch then
+// substitutes a `RunCommand {"command": "testScoped", "values": {"files":
+// ""}}` call (AC2); without a scoped template the wrapping is skipped.
+// ---------------------------------------------------------------------------
+
+describe("US-004 — TddPromptBuilder scopes test-command key into isolation", () => {
+  test("test-writer + scoped template → wrapped region; native dispatch substitutes RunCommand call", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: {
+        commands: {
+          test: "bun test",
+          testScoped: "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
+        },
+      },
+    });
+    const prompt = await TddPromptBuilder.buildForRole("test-writer", "/tmp", config, story, {});
+
+    // The shell example is preserved verbatim (the surrounding text is
+    // byte-for-byte what ships today — AC1).
+    expect(prompt).toContain("`bun test <path/to/test-file>`");
+    // Wrapped region from the affordance registry.
+    expect(prompt).toContain("<!--nax:test-scope:");
+    // Full-suite warning is preserved verbatim (AC1).
+    expect(prompt).toContain("NEVER run the full test suite without a filter");
+  });
+
+  test("test-writer without scoped template → no region (unconfigured fallback)", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: {
+        commands: { test: "bun test" },
+      },
+    });
+    const prompt = await TddPromptBuilder.buildForRole("test-writer", "/tmp", config, story, {});
+
+    // No `test-scope` marker when no scoped key is configured.
+    expect(prompt).not.toContain("<!--nax:test-scope:");
+    // Shell example still appears.
+    expect(prompt).toContain("`bun test <path/to/test-file>`");
+  });
+
+  test("implementer + scoped template → isolation section also wraps the test-filter rule", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: {
+        commands: {
+          test: "bun test",
+          testScoped: "CI=1 bun test {{files}}",
+        },
+      },
+    });
+    const prompt = await TddPromptBuilder.buildForRole("implementer", "/tmp", config, story, {});
+
+    expect(prompt).toContain("<!--nax:test-scope:");
+  });
+});

@@ -178,6 +178,39 @@ describe("US-004 AC4 — escalated per-failing-file block under native + RunComm
   });
 });
 
+// ─── AC4b — regressionFailure per-failing-file block + native + RunCommand → one call per file
+//
+// The same affordance must reach production through `regressionFailure` —
+// the fullSuiteRectifyOp is the only production path that uses the
+// `run-check` / `test-scope` regions end-to-end, so the per-failing-file
+// block lives there too. The test below exercises that production path.
+
+describe("US-004 AC4b — regressionFailure per-failing-file block under native + RunCommand", () => {
+  test("renders one RunCommand call per failing file with that file in values.files", () => {
+    const prompt = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      scopedCommandName: "test",
+      testScopedTemplate: "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
+      scopedFileCommandName: "testScoped",
+    });
+
+    const out = applyProtocolRegions(prompt, {
+      protocol: "native",
+      advertisedTools: new Set(["RunCommand"]),
+    });
+
+    // One call per failing file.
+    expect(out).toContain('RunCommand {"command": "testScoped", "values": {"files": "test/unit/alpha.test.ts"}}');
+    expect(out).toContain('RunCommand {"command": "testScoped", "values": {"files": "test/unit/beta.test.ts"}}');
+    // No raw scoped template survives — every entry was substituted.
+    expect(out).not.toContain("{{files}}");
+    // No marker survives dispatch.
+    expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+  });
+});
+
 // ─── AC5 — rectifier full-suite block + native + RunCommand → names declared key test
 
 describe("US-004 AC5 — regressionFailure full-suite block under native + RunCommand", () => {

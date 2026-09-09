@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeStory, makeTestRuntime } from "@test/helpers";
+import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import { autofixConfigSelector } from "@/config";
 import type { AutofixConfig } from "@/config/selectors";
 import type { Finding } from "@/findings/types";
@@ -146,6 +146,71 @@ describe("fullSuiteRectifyOp.build — scope: 'repo'", () => {
     // delete the failing assertion.
     const result = fullSuiteRectifyOp.build({ story, findings: [finding], scope: "repo" }, ctx);
     expect(result.task.content).toContain("TEST_EDIT_REASON");
+  });
+});
+
+// ─── US-004 — affordance-rendered test-command section in production wiring
+//
+// The story-scoped dispatch reads the resolved package's test command out of
+// the package view's config and, when set, dispatches the full
+// `RectifierPromptBuilder.regressionFailure` prompt (which contains the
+// `# TEST COMMAND` block wrapped in a `run-check` protocol region). The
+// dispatch seam then substitutes a `RunCommand {"command": "test"}` call
+// under native + advertised `RunCommand` (AC5); ACP keeps the shell string
+// the verifier replays (AC6). Without a configured test command the op
+// falls back to the pre-change `failingTestRectification` prompt so the
+// agent still sees the failing-test list.
+
+describe("fullSuiteRectifyOp.build — US-004 affordance wiring (AC5/AC6)", () => {
+  test("story-scoped dispatch with a configured `quality.commands.test` uses regressionFailure", () => {
+    const config = makeNaxConfig({
+      quality: { commands: { test: "bun test test/unit/" } },
+    });
+    const view = makeTestRuntime({ config, workdir: "/tmp/test" }).packages.repo();
+    const localCtx: BuildContext<AutofixConfig> = {
+      packageView: view,
+      config: view.select(autofixConfigSelector),
+    };
+
+    const result = fullSuiteRectifyOp.build({ story, findings: [finding] }, localCtx);
+
+    // The # TEST COMMAND block is the affordance-gated section: it carries the
+    // run-check region so native dispatch can substitute the RunCommand call.
+    expect(result.task.content).toContain("# TEST COMMAND");
+    expect(result.task.content).toContain("`bun test test/unit/`");
+    expect(result.task.content).toContain("<!--nax:run-check:");
+  });
+
+  test("the same dispatch with a declared scoped key emits the `test` key name in the run-check region AND test-scope regions per file", () => {
+    const config = makeNaxConfig({
+      quality: {
+        commands: {
+          test: "bun test test/unit/",
+          // The presence of a scoped key is what flips the run-check spec
+          // from "key was auto-detected" to "key was declared" — but the
+          // full-suite block is `test`, not `testScoped`. The per-failing-file
+          // block uses the `testScoped` key, since the scoped template
+          // expands per file.
+          testScoped: "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
+        },
+      },
+    });
+    const view = makeTestRuntime({ config, workdir: "/tmp/test" }).packages.repo();
+    const localCtx: BuildContext<AutofixConfig> = {
+      packageView: view,
+      config: view.select(autofixConfigSelector),
+    };
+
+    const result = fullSuiteRectifyOp.build({ story, findings: [finding] }, localCtx);
+
+    // AC5 — full-suite block: the run-check region names the declared `test` key.
+    expect(result.task.content).toContain("<!--nax:run-check:");
+    expect(result.task.content).toContain('"command":"test"');
+    // AC4 — per-failing-file block: a `test-scope` region per failing file,
+    // naming the declared `testScoped` key.
+    expect(result.task.content).toContain("<!--nax:test-scope:");
+    expect(result.task.content).toContain('"command":"testScoped"');
+    expect(result.task.content).toContain('"files":"test/unit/foo.test.ts"');
   });
 });
 

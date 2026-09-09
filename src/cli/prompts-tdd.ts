@@ -25,6 +25,11 @@ export async function handleThreeSessionTddPrompts(
   outputDir: string | undefined,
   logger: ReturnType<typeof getLogger>,
 ): Promise<void> {
+  // US-004 — declared `quality.commands.testScoped` key, only when the project
+  // has a scoped template. The isolation section's test-filter rule is then
+  // wrapped in a `test-scope` region so dispatch can substitute a
+  // `RunCommand {"command": "testScoped", ...}` call under native.
+  const scopedTestCommand = ctx.config.quality?.commands?.testScoped ? "testScoped" : undefined;
   // Build prompts for each session using PromptBuilder
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = await Promise.all([
     PromptBuilder.for("test-writer", { isolation: "strict" })
@@ -33,6 +38,7 @@ export async function handleThreeSessionTddPrompts(
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
       .testCommand(ctx.config.quality?.commands?.test)
+      .scopedTestCommand(scopedTestCommand)
       .build(),
     PromptBuilder.for("implementer", { variant: "standard" })
       .withLoader(ctx.workdir, ctx.config)
@@ -40,6 +46,7 @@ export async function handleThreeSessionTddPrompts(
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
       .testCommand(ctx.config.quality?.commands?.test)
+      .scopedTestCommand(scopedTestCommand)
       .build(),
     PromptBuilder.for("verifier")
       .withLoader(ctx.workdir, ctx.config)
@@ -47,6 +54,7 @@ export async function handleThreeSessionTddPrompts(
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
       .testCommand(ctx.config.quality?.commands?.test)
+      .scopedTestCommand(scopedTestCommand)
       .build(),
   ]);
 

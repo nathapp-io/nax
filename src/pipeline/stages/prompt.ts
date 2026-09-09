@@ -86,6 +86,11 @@ export const promptStage: PipelineStage = {
     }
 
     let prompt: string;
+    // US-004 — declared `quality.commands.testScoped` key, only when the project
+    // has a scoped template. The isolation section's test-filter rule is then
+    // wrapped in a `test-scope` region so dispatch can substitute a
+    // `RunCommand {"command": "testScoped", ...}` call under native.
+    const scopedTestCommand = ctx.config.quality?.commands?.testScoped ? "testScoped" : undefined;
     if (isBatch) {
       const builder = PromptBuilder.for("batch")
         .withLoader(ctx.workdir, ctx.config)
@@ -95,6 +100,7 @@ export const promptStage: PipelineStage = {
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
+        .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification);
       if (acceptanceEntries.length > 0) builder.acceptanceContext(acceptanceEntries);
@@ -110,6 +116,7 @@ export const promptStage: PipelineStage = {
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
         .testCommand(ctx.config.quality?.commands?.test)
+        .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification)
         .noTestJustification(ctx.story.routing?.noTestJustification);

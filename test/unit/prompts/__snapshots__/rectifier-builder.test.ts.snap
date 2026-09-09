@@ -32,6 +32,10 @@ at test/unit/rate-limiter.test.ts:34
 
 \`bun test test/unit/\`
 
+## Per-failing-file run
+
+  bun test test/unit/ test/unit/rate-limiter.test.ts
+
 # Behavioral Guardrails
 
 - Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
@@ -208,6 +212,10 @@ at test/unit/rate-limiter.test.ts:34
 # TEST COMMAND
 
 \`bun test test/unit/\`
+
+## Per-failing-file run
+
+  bun test test/unit/ test/unit/rate-limiter.test.ts
 
 # Isolation Rules
 

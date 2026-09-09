@@ -792,6 +792,18 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
      *  "<key>"}` call under native + advertised `RunCommand` (AC5). ACP
      *  preserves the shell string byte-for-byte (AC6). */
     scopedCommandName?: string;
+    /** US-004 — declared `quality.commands.testScoped` key. When supplied
+     *  AND `testScopedTemplate` is supplied, the per-failing-file block
+     *  wraps each line in a `test-scope` region so dispatch can substitute
+     *  a `RunCommand {"command": "testScoped", "values": {"files": "<path>"}}`
+     *  call under native + advertised `RunCommand` (AC4). ACP preserves
+     *  the shell string (AC7). */
+    testScopedTemplate?: string;
+    /** US-004 — declared scoped key for the per-failing-file block
+     *  (`quality.commands.testScoped` slot, always `"testScoped"`). Defaults
+     *  to the same key as `scopedCommandName` for the full-suite block when
+     *  the caller passed a scoped template but no separate scoped key. */
+    scopedFileCommandName?: string;
   }): string {
     const parts: string[] = [];
 
@@ -843,6 +855,30 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
       : `# TEST COMMAND\n\n${testCommandBody}`;
     parts.push(testCommandSection);
     parts.push("\n\n");
+
+    // 6.5. Per-failing-file section — US-004 (AC4): one shell-form command
+    // per failing test file. Wrapped in a `test-scope` region when the
+    // caller supplies both a scoped template and a scoped key, so dispatch
+    // can substitute a `RunCommand {"command": "testScoped", "values":
+    // {"files": "<path>"}}` call under native + `RunCommand`. ACP keeps
+    // the shell string byte-for-byte.
+    if (opts.testCommand && opts.failures.length > 0) {
+      const failingFiles = Array.from(new Set(opts.failures.map((f) => f.file).filter((f): f is string => !!f)));
+      if (failingFiles.length > 0) {
+        const fileKey = opts.scopedFileCommandName ?? opts.scopedCommandName;
+        const perFileLines = failingFiles
+          .map((file) => {
+            const scopedCmd = opts.testScopedTemplate
+              ? opts.testScopedTemplate.replace("{{files}}", file)
+              : `${opts.testCommand} ${file}`;
+            return fileKey
+              ? `  ${wrapAffordance("test-scope", { command: fileKey, files: file }, scopedCmd)}`
+              : `  ${scopedCmd}`;
+          })
+          .join("\n");
+        parts.push(`## Per-failing-file run\n\n${perFileLines}\n\n`);
+      }
+    }
 
     // 7. Isolation (optional)
     if (opts.isolation) {

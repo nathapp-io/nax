@@ -4,7 +4,7 @@
     "src/execution/unified-executor.ts": 734,
     "src/interaction/plugins/telegram.ts": 613,
     "src/prd/schema.ts": 629,
-    "src/prompts/builders/rectifier-builder.ts": 931,
+    "src/prompts/builders/rectifier-builder.ts": 967,
     "src/session/manager.ts": 679,
     "test/unit/agents/acp/spawn-client.test.ts": 810,
     "test/unit/cli/plan.test.ts": 1201,
