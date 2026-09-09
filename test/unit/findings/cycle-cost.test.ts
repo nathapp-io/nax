@@ -13,9 +13,9 @@
  *   test/unit/operations/call-correlation.test.ts
  */
 import { describe, expect, test } from "bun:test";
-import { assertDefined } from "@test/helpers";
+import { assertDefined, makeLogger } from "@test/helpers";
 import { runFixCycle } from "@/findings";
-import { ledgerCostFor } from "@/findings/cycle-cost";
+import { ledgerSpendFor } from "@/findings/cycle-cost";
 import { createNoOpCostAggregator } from "@/runtime";
 import { lintA, makeCallOpMock, makeCtx, makeCycle, makeStrategy } from "./_cycle-fixtures";
 
@@ -45,6 +45,28 @@ describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)", (
       return null;
     });
     return { callOp, seenCallIds };
+  }
+
+  /**
+   * Record an ERROR row the way the cost middleware does when a dispatch
+   * throws: same callId, but summed into `totalErrorCostUsd` rather than
+   * `totalCostUsd` (`accumulateError`).
+   */
+  function makeErrorRowCallOpMock(errorCostPerCall: number) {
+    return makeCallOpMock(({ ctx }) => {
+      ctx.runtime.costAggregator.recordError({
+        kind: "error",
+        ts: Date.now(),
+        runId: "run-1",
+        agentName: "claude",
+        storyId: ctx.storyId,
+        callId: ctx.callId,
+        errorCode: "timeout",
+        costUsd: errorCostPerCall,
+        durationMs: 1,
+      });
+      return null;
+    });
   }
 
   test("a strategy with no extractApplied still reports its real spend", async () => {
@@ -117,7 +139,7 @@ describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)", (
 
   test("a dispatch with NO ledger rows reports zero, not undefined-by-omission", async () => {
     // The deterministic-op shape: `callOp` returns before any cost tracking, so
-    // nothing is ever recorded under this callId and `ledgerCostFor`'s `?? 0`
+    // nothing is ever recorded under this callId and `ledgerSpendFor`'s `?? 0`
     // fallback is the branch that runs. Recording a zero-cost row instead would
     // leave that fallback untested.
     const s = makeStrategy({ name: "mechanical-lintfix", maxAttempts: 1 });
@@ -147,10 +169,72 @@ describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)", (
     expect(r.costUsd).toBeCloseTo(0.8, 5);
   });
 
-  test("failed-dispatch spend is deliberately excluded, mirroring runPhase's phaseCosts", async () => {
-    // Pins the decision so it reads as a choice, not an accident: an error row
-    // for this dispatch's callId lands in `totalErrorCostUsd`, which this
-    // number does not sum. See cycle-cost.ts for why.
+  test("failed-dispatch spend is recorded beside costUsd, never folded into it (#1948)", async () => {
+    // #1932 left this spend invisible; #1948 Part A surfaces it as its own
+    // field. `costUsd` keeps its exact meaning — mirroring `runPhase`'s
+    // `phaseCosts` — so no existing total is re-based. See cycle-cost.ts.
+    const s = makeStrategy({ name: "implementer", maxAttempts: 1 });
+    const callOp = makeErrorRowCallOpMock(5);
+    const cycle = makeCycle([lintA], [s], async () => [lintA]);
+
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp });
+
+    expect(r.costUsd).toBe(0);
+    expect(cycle.iterations[0]?.fixesApplied[0]?.errorCostUsd).toBeCloseTo(5, 5);
+  });
+
+  test("an explicit extractApplied costUsd does not suppress the ledger's errorCostUsd", async () => {
+    // The override is scoped to the half a strategy can actually know. It knows
+    // what its successful call billed; it cannot know what the attempts that
+    // threw beforehand burned, so that half still comes from the ledger.
+    const s = makeStrategy({
+      name: "implementer",
+      maxAttempts: 1,
+      extractApplied: () => ({ summary: "", costUsd: 2 }),
+    });
+    const callOp = makeErrorRowCallOpMock(1.75);
+    const cycle = makeCycle([lintA], [s], async () => [lintA]);
+
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp });
+
+    expect(r.costUsd).toBeCloseTo(2, 5);
+    expect(cycle.iterations[0]?.fixesApplied[0]?.errorCostUsd).toBeCloseTo(1.75, 5);
+  });
+
+  test("the iteration record and its log sum failed-dispatch spend across the group", async () => {
+    const a = makeStrategy({ name: "fix-a", maxAttempts: 1, coRun: "co-run-sequential" });
+    const b = makeStrategy({ name: "fix-b", maxAttempts: 1, coRun: "co-run-sequential" });
+    const callOp = makeErrorRowCallOpMock(1.5);
+    const cycle = makeCycle([lintA], [a, b], async () => [lintA]);
+    const logger = makeLogger();
+
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp, logger });
+
+    expect(cycle.iterations[0]?.errorCostUsd).toBeCloseTo(3, 5);
+    const completed = logger.calls.find((c) => c.message === "iteration completed");
+    expect(completed?.data?.errorCostUsd).toBeCloseTo(3, 5);
+  });
+
+  test("an iteration with no failed spend omits errorCostUsd rather than carrying a zero", async () => {
+    // Mirrors how `costUsd` is omitted at zero, so the record stays free of
+    // fields that only ever mean "nothing went wrong".
+    const s = makeStrategy({ name: "implementer", maxAttempts: 1 });
+    const { callOp } = makeLedgerCallOpMock(0.3);
+    const cycle = makeCycle([lintA], [s], async () => [lintA]);
+    const logger = makeLogger();
+
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp, logger });
+
+    expect(cycle.iterations[0]).not.toHaveProperty("errorCostUsd");
+    const completed = logger.calls.find((c) => c.message === "iteration completed");
+    expect(completed?.data).not.toHaveProperty("errorCostUsd");
+  });
+
+  test("a dispatch that throws has its spend logged before the throw propagates (#1948)", async () => {
+    // The throw escapes `runFixCycle`, so no iteration is ever recorded and
+    // there is no `FixApplied` left to carry the number. The log line is the
+    // only channel remaining — and it is the one the curator collects from, so
+    // the spend stays attributable instead of vanishing entirely.
     const s = makeStrategy({ name: "implementer", maxAttempts: 1 });
     const callOp = makeCallOpMock(({ ctx }) => {
       ctx.runtime.costAggregator.recordError({
@@ -161,63 +245,50 @@ describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)", (
         storyId: ctx.storyId,
         callId: ctx.callId,
         errorCode: "timeout",
-        costUsd: 5,
+        costUsd: 4,
         durationMs: 1,
       });
-      return null;
-    });
-
-    const r = await runFixCycle(
-      makeCycle([lintA], [s], async () => [lintA]),
-      makeCtx(),
-      "test-cycle",
-      { callOp },
-    );
-
-    expect(r.costUsd).toBe(0);
-  });
-
-  test("known gap: a dispatch that throws loses its spend — the ledger read is never reached", async () => {
-    // Pinned as known behaviour rather than left to be rediscovered as a fresh
-    // #1932. The throw propagates out of runFixCycle before `ledgerCostFor`
-    // runs, so whatever that dispatch burned is not attributed here.
-    const s = makeStrategy({ name: "implementer", maxAttempts: 1 });
-    const callOp = makeCallOpMock(() => {
       throw new Error("dispatch exploded");
     });
     const cycle = makeCycle([lintA], [s], async () => [lintA]);
+    const logger = makeLogger();
 
-    await expect(runFixCycle(cycle, makeCtx(), "test-cycle", { callOp })).rejects.toThrow("dispatch exploded");
+    await expect(runFixCycle(cycle, makeCtx(), "test-cycle", { callOp, logger })).rejects.toThrow("dispatch exploded");
+
     expect(cycle.iterations).toHaveLength(0);
+    const thrown = logger.calls.find((c) => c.message === "dispatch threw — spend recorded here, not on an iteration");
+    expect(thrown?.level).toBe("warn");
+    expect(thrown?.data?.errorCostUsd).toBeCloseTo(4, 5);
+    expect(thrown?.data?.strategyName).toBe("implementer");
   });
 });
 
-// ─── ledgerCostFor — direct unit coverage of the read itself ─────────────────
+// ─── ledgerSpendFor — direct unit coverage of the read itself ────────────────
 
-describe("ledgerCostFor", () => {
+describe("ledgerSpendFor", () => {
   /**
    * A ctx whose aggregator behaves as `byCall` is told to. Built from the
    * real no-op aggregator so the shape cannot drift from `ICostAggregator`.
    */
-  function ctxWithByCall(byCall: () => Record<string, { totalCostUsd: number }>) {
+  function ctxWithByCall(byCall: () => Record<string, { totalCostUsd: number; totalErrorCostUsd: number }>) {
     const base = makeCtx();
     const aggregator = { ...createNoOpCostAggregator(), byCall };
     return { ...base, runtime: { ...base.runtime, costAggregator: aggregator } } as typeof base;
   }
 
-  test("returns the recorded spend for the call", () => {
-    const ctx = ctxWithByCall(() => ({ "call-1": { totalCostUsd: 1.25 } }));
+  test("returns the successful and the failed spend for the call, kept apart", () => {
+    const ctx = ctxWithByCall(() => ({ "call-1": { totalCostUsd: 1.25, totalErrorCostUsd: 0.5 } }));
 
-    expect(ledgerCostFor(ctx, "call-1")).toBeCloseTo(1.25, 5);
+    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 1.25, errorCostUsd: 0.5 });
   });
 
-  test("returns 0 when the ledger holds no row for the call", () => {
-    const ctx = ctxWithByCall(() => ({ "some-other-call": { totalCostUsd: 9 } }));
+  test("returns zeros when the ledger holds no row for the call", () => {
+    const ctx = ctxWithByCall(() => ({ "some-other-call": { totalCostUsd: 9, totalErrorCostUsd: 9 } }));
 
-    expect(ledgerCostFor(ctx, "call-1")).toBe(0);
+    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 0, errorCostUsd: 0 });
   });
 
-  test("returns 0 instead of throwing when the ledger read fails", () => {
+  test("returns zeros instead of throwing when the ledger read fails", () => {
     // Telemetry must never fail a fix cycle. Exercises the catch branch — the
     // one place a genuine wiring failure now lands, and logs rather than
     // vanishing silently.
@@ -225,7 +296,7 @@ describe("ledgerCostFor", () => {
       throw new Error("aggregator exploded");
     });
 
-    expect(() => ledgerCostFor(ctx, "call-1")).not.toThrow();
-    expect(ledgerCostFor(ctx, "call-1")).toBe(0);
+    expect(() => ledgerSpendFor(ctx, "call-1")).not.toThrow();
+    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 0, errorCostUsd: 0 });
   });
 });

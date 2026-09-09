@@ -48,6 +48,7 @@ export function recordIteration<F extends Finding>(
   const findingRecurrenceKeysBefore = input.findingsBefore.map(findingRecurrenceKey);
   const findingRecurrenceKeysAfter = input.findingsAfter.map(findingRecurrenceKey);
   const costUsd = input.fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+  const errorCostUsd = input.fixesApplied.reduce((sum, fa) => sum + (fa.errorCostUsd ?? 0), 0);
   const seenTargetFiles = new Set<string>();
   const fixTargetFiles: string[] = [];
   for (const fa of input.fixesApplied) {
@@ -73,6 +74,9 @@ export function recordIteration<F extends Finding>(
     findingRecurrenceKeysAfter,
     ...(hasFixes ? { fixTargetFiles, fixSummaries } : {}),
     ...(costUsd > 0 ? { costUsd } : {}),
+    // #1948: omitted at zero on the same reasoning as `costUsd`, so its
+    // presence in a record always means a dispatch actually failed.
+    ...(errorCostUsd > 0 ? { errorCostUsd } : {}),
   };
   cycle.iterations.push(iteration);
 
@@ -91,6 +95,9 @@ export function recordIteration<F extends Finding>(
     findingRecurrenceKeysAfter,
     ...(hasFixes ? { fixTargetFiles, fixSummaries } : {}),
     ...(costUsd > 0 ? { costUsd } : {}),
+    // #1948: omitted at zero on the same reasoning as `costUsd`, so its
+    // presence in a record always means a dispatch actually failed.
+    ...(errorCostUsd > 0 ? { errorCostUsd } : {}),
   });
 
   return iteration;
