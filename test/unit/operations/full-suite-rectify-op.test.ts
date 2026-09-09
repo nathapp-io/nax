@@ -181,7 +181,7 @@ describe("fullSuiteRectifyOp.build — US-004 affordance wiring (AC5/AC6)", () =
     expect(result.task.content).toContain("<!--nax:run-check:");
   });
 
-  test("the same dispatch with a declared scoped key emits the `test` key name in the run-check region AND test-scope regions per file", () => {
+  test("the same dispatch with a declared scoped key emits the `test` key name in the run-check region AND run-test regions per file", () => {
     const config = makeNaxConfig({
       quality: {
         commands: {
@@ -206,15 +206,15 @@ describe("fullSuiteRectifyOp.build — US-004 affordance wiring (AC5/AC6)", () =
     // AC5 — full-suite block: the run-check region names the declared `test` key.
     expect(result.task.content).toContain("<!--nax:run-check:");
     expect(result.task.content).toContain('"command":"test"');
-    // AC4 — per-failing-file block: a `test-scope` region per failing file,
+    // AC4 — per-failing-file block: a `run-test` region per failing file,
     // naming the declared `testScoped` key.
-    expect(result.task.content).toContain("<!--nax:test-scope:");
+    expect(result.task.content).toContain("<!--nax:run-test:");
     expect(result.task.content).toContain('"command":"testScoped"');
     expect(result.task.content).toContain('"files":"test/unit/foo.test.ts"');
   });
 
   // Regression for the post-reviewer fix: the per-failing-file block must NOT
-  // be wrapped in a `test-scope` region when the project has `commands.test`
+  // be wrapped in a `run-test` region when the project has `commands.test`
   // but no `commands.testScoped`. The `test` template declares no
   // `{{files}}` placeholder, so a region naming command `"test"` with a
   // `values.files` value renders a tool call the `RunCommand` runtime
@@ -236,16 +236,16 @@ describe("fullSuiteRectifyOp.build — US-004 affordance wiring (AC5/AC6)", () =
     // The full-suite block still carries the run-check region (AC5).
     expect(result.task.content).toContain("<!--nax:run-check:");
     expect(result.task.content).toContain('"command":"test"');
-    // The per-failing-file block is plain shell strings — no `test-scope`
+    // The per-failing-file block is plain shell strings — no `run-test`
     // region. The failing-file path is appended as `bun test <file>` with
     // no marker wrapping it.
-    expect(result.task.content).not.toContain("<!--nax:test-scope:");
+    expect(result.task.content).not.toContain("<!--nax:run-test:");
     expect(result.task.content).toContain("## Per-failing-file run");
     expect(result.task.content).toContain("bun test test/unit/ test/unit/foo.test.ts");
   });
 
   // Regression for the post-reviewer fix: a `testScoped` template that does
-  // NOT carry the `{{files}}` placeholder must NOT trigger a `test-scope`
+  // NOT carry the `{{files}}` placeholder must NOT trigger a `run-test`
   // region. `RunCommand` resolves a declared key by exact placeholder
   // match; a template that takes `{{file}}` / `{{package}}` / no placeholder
   // hands the agent a tool call the runtime always rejects.
@@ -270,9 +270,9 @@ describe("fullSuiteRectifyOp.build — US-004 affordance wiring (AC5/AC6)", () =
 
     // The full-suite block still carries the run-check region (AC5).
     expect(result.task.content).toContain("<!--nax:run-check:");
-    // No `test-scope` region — a `{{file}}` template would not match the
+    // No `run-test` region — a `{{file}}` template would not match the
     // `values.files` field the region would render.
-    expect(result.task.content).not.toContain("<!--nax:test-scope:");
+    expect(result.task.content).not.toContain("<!--nax:run-test:");
     // The per-failing-file block is plain shell strings using the full-suite
     // command (a guaranteed-run, which is what the dispatch needs when
     // there is no runnable scoped command that accepts `{{files}}`).

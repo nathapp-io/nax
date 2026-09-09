@@ -488,7 +488,7 @@ export interface FailingTestRectificationOptions {
   testCommandScopeCommandName?: string;
   /** The resolved scoped-test template (`quality.commands.testScoped` slot).
    *  With `fileScopeCommandName`, the per-failing-file block wraps each line in
-   *  a `test-scope` region so dispatch can substitute a
+   *  a `run-test` region so dispatch can substitute a
    *  `RunCommand {"command": "testScoped", "values": {"files": "<path>"}}` call
    *  under native + advertised `RunCommand` (AC4). ACP preserves the shell
    *  string (AC7). */
@@ -527,7 +527,7 @@ export function failingTestRectification(
     parts.push(`\n\n${section}`);
   }
   // US-004 (AC4/AC7) — per-failing-file block, appended AFTER the
-  // `# TEST COMMAND` block. Wraps each line in a `test-scope` region when
+  // `# TEST COMMAND` block. Wraps each line in a `run-test` region when
   // both a scoped template and a scoped key are supplied (the gate that
   // `RunCommand`'s exact-placeholder match enforces — see
   // acceptance-helpers.ts:89). Without the template, the line is plain
@@ -541,7 +541,7 @@ export function failingTestRectification(
             ? opts.testScopedTemplate.replace("{{files}}", file)
             : `${opts.testCommand} ${file}`;
           if (opts.testScopedTemplate && opts.fileScopeCommandName) {
-            return `  ${wrapAffordance("test-scope", { command: opts.fileScopeCommandName, files: file }, scopedCmd)}`;
+            return `  ${wrapAffordance("run-test", { command: opts.fileScopeCommandName, files: file }, scopedCmd)}`;
           }
           return `  ${scopedCmd}`;
         })

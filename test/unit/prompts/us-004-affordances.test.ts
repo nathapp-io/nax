@@ -96,7 +96,7 @@ describe("US-004 AC2 — isolation native with advertised RunCommand and scoped 
     });
 
     // The RunCommand call is emitted with values.files and the declared key.
-    expect(out).toContain('RunCommand {"command": "testScoped", "values": {"files": ""}}');
+    expect(out).toContain('RunCommand {"command": "testScoped", "values": {"files": "<path/to/test-file>"}}');
     // The shell example does not survive dispatch — the native path replaces it
     // with the tool call.
     expect(out).not.toContain("`bun test <path/to/test-file>`");
@@ -108,9 +108,8 @@ describe("US-004 AC2 — isolation native with advertised RunCommand and scoped 
     // The wrap must NOT cover the "NEVER run the full test suite without a filter"
     // sentence — the regional grammar replaces the wrapped body wholesale, so a
     // region around the whole sentence would drop the guardrail under native
-    // dispatch and hand the agent a `RunCommand` call with `files: ""`, which
-    // resolves to the testScoped template run with no file filter — exactly
-    // what the guardrail forbids. The example is the only affordance-rendered
+    // dispatch and hand the agent a `RunCommand` call without a file filter.
+    // The example is the only affordance-rendered
     // segment; the surrounding prose is plain text in both transports.
     const wrapped = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
     const out = applyProtocolRegions(wrapped, {

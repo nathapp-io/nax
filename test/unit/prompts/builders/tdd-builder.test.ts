@@ -224,10 +224,10 @@ describe("TddPromptBuilder.verdictRetryCondensed", () => {
 
 // ---------------------------------------------------------------------------
 // US-004 — TddPromptBuilder threads the declared `testScoped` key into
-// buildIsolationSection so the test-filter rule is wrapped in a `test-scope`
+// buildIsolationSection so the test-filter rule is wrapped in a `run-test`
 // region when the project has a scoped template. Native dispatch then
 // substitutes a `RunCommand {"command": "testScoped", "values": {"files":
-// ""}}` call (AC2); without a scoped template the wrapping is skipped.
+// "<path/to/test-file>"}}` call (AC2); without a scoped template the wrapping is skipped.
 // ---------------------------------------------------------------------------
 
 describe("US-004 — TddPromptBuilder scopes test-command key into isolation", () => {
@@ -247,7 +247,7 @@ describe("US-004 — TddPromptBuilder scopes test-command key into isolation", (
     // byte-for-byte what ships today — AC1).
     expect(prompt).toContain("`bun test <path/to/test-file>`");
     // Wrapped region from the affordance registry.
-    expect(prompt).toContain("<!--nax:test-scope:");
+    expect(prompt).toContain("<!--nax:run-test:");
     // Full-suite warning is preserved verbatim (AC1).
     expect(prompt).toContain("NEVER run the full test suite without a filter");
   });
@@ -261,8 +261,8 @@ describe("US-004 — TddPromptBuilder scopes test-command key into isolation", (
     });
     const prompt = await TddPromptBuilder.buildForRole("test-writer", "/tmp", config, story, {});
 
-    // No `test-scope` marker when no scoped key is configured.
-    expect(prompt).not.toContain("<!--nax:test-scope:");
+    // No `run-test` marker when no scoped key is configured.
+    expect(prompt).not.toContain("<!--nax:run-test:");
     // Shell example still appears.
     expect(prompt).toContain("`bun test <path/to/test-file>`");
   });
@@ -279,6 +279,6 @@ describe("US-004 — TddPromptBuilder scopes test-command key into isolation", (
     });
     const prompt = await TddPromptBuilder.buildForRole("implementer", "/tmp", config, story, {});
 
-    expect(prompt).toContain("<!--nax:test-scope:");
+    expect(prompt).toContain("<!--nax:run-test:");
   });
 });

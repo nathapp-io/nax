@@ -63,7 +63,7 @@ export class TddPromptBuilder {
   private testCommand_: string | undefined;
   /** US-004 — declared `quality.commands.testScoped` key (always `"testScoped"`).
    *  When set, the isolation section's test-filter rule is wrapped in a
-   *  `test-scope` protocol region so dispatch can substitute a
+   *  `run-test` protocol region so dispatch can substitute a
    *  `RunCommand {"command": "testScoped", "values": {"files": ""}}` call
    *  under native + advertised `RunCommand` (AC2). */
   private scopedTestCommand_: string | undefined;
@@ -127,7 +127,7 @@ export class TddPromptBuilder {
   }
 
   /** US-004 — declared scoped-test command key. When supplied, the
-   *  isolation section wraps the test-filter rule in a `test-scope`
+   *  isolation section wraps the test-filter rule in a `run-test`
    *  region (AC2). Pass the declared key (always `"testScoped"` per
    *  `RunCommand`'s named-key resolution) — not the resolved command. */
   scopedTestCommand(key: string | undefined): this {
@@ -325,7 +325,7 @@ export class TddPromptBuilder {
       .constitution(opts.constitution)
       .testCommand(config.quality?.commands?.test)
       .scopedTestCommand(
-        // US-004 — gate the `test-scope` region on the SSOT for naming the
+        // US-004 — gate the `run-test` region on the SSOT for naming the
         // `testScoped` key. `RunCommand` resolves a declared key by exact
         // placeholder match; naming `testScoped` when the project actually
         // declared a template taking `{{file}}`, `{{package}}`, or no

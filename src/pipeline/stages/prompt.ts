@@ -86,7 +86,7 @@ export const promptStage: PipelineStage = {
     }
 
     let prompt: string;
-    // US-004 — gate the `test-scope` region on the SSOT for naming the
+    // US-004 — gate the `run-test` region on the SSOT for naming the
     // `testScoped` key (`RunCommand` resolves by exact placeholder match;
     // a template that takes `{{file}}` / `{{package}}` / no placeholder
     // would render a tool call the runtime rejects). The SSOT lives at

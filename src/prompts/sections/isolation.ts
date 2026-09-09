@@ -14,7 +14,7 @@
  *
  * US-004 — when a configured test command AND a declared scoped key are
  * both supplied, the test-filter rule's shell example is wrapped in a
- * `test-scope` protocol region. Dispatch substitutes a `RunCommand` tool
+ * `run-test` protocol region. Dispatch substitutes a `RunCommand` tool
  * call under native + `RunCommand`; otherwise the ACP body (the shell
  * example and the surrounding full-suite warning sentence) is preserved
  * verbatim. The shell example is omitted entirely (no region) when no
@@ -29,9 +29,9 @@ function buildTestFilterRule(testCommand: string, scopedCommandName?: string): s
   if (!testCommand) {
     return `When running tests, run ONLY test files related to your changes (scope each run to the files you changed). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
   }
-  // The shell example (only) is wrapped in a `test-scope` region so dispatch
-  // can substitute a `RunCommand {"command": "<key>", "values": {"files":
-  // ""}}` call. The surrounding full-suite warning sentence is NOT wrapped
+  // The shell example (only) is wrapped in a `run-test` region so dispatch
+  // can substitute the declared scoped command using the example path. The
+  // surrounding full-suite warning sentence is NOT wrapped
   // — the regional grammar would otherwise drop it on native dispatch
   // (the body is replaced wholesale by the renderer's output), and dropping
   // "NEVER run the full test suite without a filter" is exactly the
@@ -41,7 +41,7 @@ function buildTestFilterRule(testCommand: string, scopedCommandName?: string): s
   // example is the ACP body's only affordance-rendered segment.
   const example = `e.g. \`${testCommand} <path/to/test-file>\``;
   const exampleRegion = scopedCommandName
-    ? wrapAffordance("test-scope", { command: scopedCommandName, files: "" }, example)
+    ? wrapAffordance("run-test", { command: scopedCommandName, files: "<path/to/test-file>" }, example)
     : example;
   return `When running tests, run ONLY test files related to your changes (${exampleRegion}). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
 }

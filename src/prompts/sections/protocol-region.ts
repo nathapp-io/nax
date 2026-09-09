@@ -23,8 +23,87 @@
  * makes "no marker survives dispatch" checkable in one place.
  */
 
+import { randomUUID } from "node:crypto";
 import { NaxError } from "@/errors";
-import { NONCE as DIFF_NONCE, type DiffAccessSpec, renderNative } from "./diff-access";
+
+/** Everything the native diff renderer needs; ACP text remains the region body. */
+export interface DiffAccessSpec {
+  readonly ref: string;
+  readonly fullExclude?: readonly string[];
+  readonly productionExclude?: readonly string[];
+  readonly testGlobs?: readonly string[];
+  readonly testAudit?: boolean;
+}
+
+export type PromptProtocol = "native" | "acp";
+
+function call(tool: string, input: Record<string, unknown>): string {
+  return `${tool} ${JSON.stringify(input)}`;
+}
+
+function diffCall(ref: string, paths: readonly string[] | undefined, extra: Record<string, unknown> = {}): string {
+  return call("Git", {
+    subcommand: "diff",
+    refs: [`${ref}..HEAD`],
+    ...(paths ? { paths } : {}),
+    ...extra,
+  });
+}
+
+/** Native renderer for the diff-access registry entry and legacy adapter. */
+export function renderNative(spec: DiffAccessSpec): string {
+  const lines = [
+    "## Diff Access",
+    "",
+    "Fetch the diff yourself with the `Git` tool — do NOT ask for it to be provided.",
+    "",
+    "`Git` takes structured fields, not a command line. Put **no command-line flags** in",
+    "`refs` or `paths`; they are refused. Use the `nameOnly`, `diffFilter` and `oneline`",
+    "fields instead, and read a file with `Read` rather than a shell command.",
+    "",
+    `**Baseline ref (story start):** \`${spec.ref}\``,
+    "",
+    "Recommended calls:",
+    "",
+    "- Full diff including tests:",
+    `  \`${diffCall(spec.ref, spec.fullExclude)}\``,
+  ];
+
+  if (spec.productionExclude) {
+    lines.push("- Production diff only (excludes test files):", `  \`${diffCall(spec.ref, spec.productionExclude)}\``);
+  }
+
+  lines.push(
+    "- Commit history for this story:",
+    `  \`${call("Git", { subcommand: "log", refs: [`${spec.ref}..HEAD`], oneline: true })}\``,
+  );
+
+  if (spec.testAudit) {
+    lines.push(
+      "- Files added in this story (for the test-audit gap):",
+      `  \`${diffCall(spec.ref, spec.fullExclude, { nameOnly: true, diffFilter: "A" })}\``,
+    );
+  }
+
+  lines.push("- Read a specific file's full content:", `  \`${call("Read", { path: "path/to/file.ts" })}\``, "");
+
+  if (spec.testAudit) {
+    const guide =
+      spec.testGlobs && spec.testGlobs.length > 0
+        ? spec.testGlobs.map((glob) => `\`${glob}\``).join(", ")
+        : "the resolved project test-file patterns";
+    lines.push(
+      "**Test audit workflow:**",
+      `1. Call the added-files variant above (\`nameOnly\` with \`diffFilter: "A"\`).`,
+      `2. For each new source file, check whether a matching test file was added (patterns: ${guide}).`,
+      '3. If a new exported module has no test file, flag it as `"test-gap"`.',
+      "4. To focus only on production deltas while auditing test coverage, use the production diff call above.",
+      "",
+    );
+  }
+
+  return lines.join("\n");
+}
 
 /** Kinds the marker grammar accepts: lowercase, kebab-cased. The grammar's
  *  `[a-z][a-z-]*` group only matches such kinds, so any other shape silently
@@ -35,7 +114,7 @@ const KIND_PATTERN = /^[a-z][a-z-]*$/;
  *  `applyProtocolRegions` produce markers with the same nonce as
  *  `wrapDiffAccess`. Both entry points can then substitute each other's
  *  regions in the same process. */
-export const NONCE = DIFF_NONCE;
+export const NONCE = randomUUID().slice(0, 8);
 
 /** Every registered kind's opener begins with this prefix — the single
  *  check for "no marker survived dispatch". */
@@ -51,7 +130,7 @@ export interface AffordanceNativeRenderer {
 
 /** Type the tests use to construct an entry. */
 export type ApplyProtocolRegionsOpts = {
-  readonly protocol: "native" | "acp";
+  readonly protocol: PromptProtocol;
   readonly advertisedTools?: ReadonlySet<string>;
 };
 
@@ -74,13 +153,13 @@ const REGION = new RegExp(
 const OWN_OPEN = new RegExp(`<!--nax:[a-z][a-z-]*:${NONCE} `, "g");
 
 /**
- * The registry. Today: `diff-access`, `run-check`, `run-test`, `test-scope`,
+ * The registry. Today: `diff-access`, `run-check`, `run-test`,
  * `commit`. The `requires` list is consulted when
  * `advertisedTools` is supplied. When `advertisedTools` is `undefined`,
  * gating is skipped (a caller that does not know which tools the agent
  * advertises must still get the native rendering).
  *
- * `run-check` and `run-test` and `test-scope` render a `RunCommand` call
+ * `run-check` and `run-test` render a `RunCommand` call
  * whose `command` is the declared key the spec carries. The `command` field
  * in the spec MUST be a key the project actually declared under
  * `quality.commands` — `RunCommand`'s own schema is the runtime check, and
@@ -88,11 +167,6 @@ const OWN_OPEN = new RegExp(`<!--nax:[a-z][a-z-]*:${NONCE} `, "g");
  * see. Producers are responsible for shaping the spec correctly; the
  * renderer trusts them.
  *
- * `test-scope` is the kind the isolation section and the escalated
- * rectification prompt use to wrap shell-form test instructions whose
- * native rendering is "run only the named test files". The framing differs
- * from `run-test` because the agent is not re-running a failing acceptance
- * test — it is scoping a routine test invocation to its own changed files.
  */
 const REGISTRY: Record<string, AffordanceNativeRenderer> = {
   "diff-access": {
@@ -106,10 +180,6 @@ const REGISTRY: Record<string, AffordanceNativeRenderer> = {
   "run-test": {
     requires: ["RunCommand"],
     render: (spec) => renderRunCommandTest(spec as RunCommandTestSpec),
-  },
-  "test-scope": {
-    requires: ["RunCommand"],
-    render: (spec) => renderRunCommandTestScope(spec as RunCommandTestSpec),
   },
   commit: {
     requires: ["GitCommit"],
@@ -156,19 +226,6 @@ function renderRunCommandTest(spec: RunCommandTestSpec): string {
   // otherwise produce something it cannot parse.
   return (
     "Re-run the failing acceptance test before you finish:\n" +
-    `RunCommand {"command": ${JSON.stringify(spec.command)}, "values": {"files": ${JSON.stringify(spec.files)}}}`
-  );
-}
-
-/** US-004 — framing for `test-scope`: the isolation section's "scope each
- *  run to the files you changed" rule and the escalated rectification
- *  prompt's per-failing-file lines. Distinct from `run-test`'s framing
- *  ("Re-run the failing acceptance test...") because the agent is not
- *  re-running a failing acceptance test — it is invoking the project's
- *  scoped test command on a specific file. */
-function renderRunCommandTestScope(spec: RunCommandTestSpec): string {
-  return (
-    "Run only the test files related to your changes:\n" +
     `RunCommand {"command": ${JSON.stringify(spec.command)}, "values": {"files": ${JSON.stringify(spec.files)}}}`
   );
 }
