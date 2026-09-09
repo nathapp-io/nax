@@ -3,7 +3,7 @@
   "feature": "prompt-affordance-ssot",
   "branchName": "feat/prompt-affordance-ssot",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-09T11:57:26.367Z",
+  "updatedAt": "2026-09-09T14:24:10.363Z",
   "userStories": [
     {
       "id": "US-001",
@@ -283,7 +283,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "It changes several role-output branches and the CLI persistence boundary while relying on the helper."
+        "reasoning": "It changes several role-output branches and the CLI persistence boundary while relying on the helper.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/prompts/sections/protocol-region.ts",
@@ -308,6 +311,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "0a26d24bc1e5deebec7faa224b4ca9b04640e28d",
       "outOfScope": [
         "rendering a native affordance inside a user-supplied override template — an override is loaded in a later process, whose nonce cannot match, and is treated as literal text by design."
       ]
