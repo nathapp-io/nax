@@ -21,6 +21,18 @@ import {
   unwrapProtocolRegions,
   wrapAffordance,
 } from "@/prompts/sections";
+import { applyDiffAccess, wrapDiffAccess } from "@/prompts/sections/diff-access";
+
+/** Extract the per-process nonce from a marker produced by `wrapAffordance`.
+ *  Used to assert the cross-entry seam from observable output rather than
+ *  from a side-import — the contract under test is that markers the two
+ *  modules produce can be read by each other, which is exactly the seam
+ *  US-002 will exercise. */
+function nonceFromMarker(marker: string): string {
+  const m = /<!--nax:[a-z][a-z-]*:([a-f0-9]+) /.exec(marker);
+  if (!m) throw new Error(`no nonce found in marker: ${marker}`);
+  return m[1];
+}
 
 /** Baseline spec used in every diff-access test case. */
 const DIFF_SPEC = {
@@ -488,5 +500,140 @@ describe("applyProtocolRegions — idempotence (AC13)", () => {
     const second = applyProtocolRegions(first, { protocol: "native" });
 
     expect(second).toBe(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cross-entry seam with the retained diff-access adapter.
+//
+// This block is the seam contract that US-002 will exercise. Three live
+// producers (src/prompts/builders/review-builder.ts:356,
+// debate-builder.ts:464, adversarial-review-builder.ts:303) still wrap with
+// the legacy `wrapDiffAccess` — by design, the PRD's "Out of Scope" list
+// keeps that adapter as a thin pass-through. The replacement seam in
+// US-002 is `applyProtocolRegions(prompt, { protocol })` and
+// `unwrapProtocolRegions(text)`; for it to substitute the prompts those
+// builders ship today, `protocol-region.ts` and `diff-access.ts` MUST agree on:
+//
+//   1. the per-process NONCE — the only mechanism that lets a marker written
+//      by one module be matched by the other's REGION regex;
+//   2. the marker grammar — the exact bytes an opener carries (`<!--nax:
+//      <kind>:<nonce> <json>-->\n` and `<!--/nax:<kind>-->\n`).
+//
+// The rest of this file exercises markers derived from `wrapAffordance`, so
+// without these assertions a NONCE re-export decoupling or a REGION-grammar
+// divergence would leave every test green while the US-002 dispatch seam
+// silently ships literal markers to the agent under ACP.
+// ---------------------------------------------------------------------------
+describe("cross-entry seam with the retained diff-access adapter", () => {
+  test("NONCE equality — wrapAffordance and wrapDiffAccess produce markers carrying the same nonce", () => {
+    // The shared NONCE is the *only* mechanism by which a `wrapDiffAccess`
+    // opener can be matched by `applyProtocolRegions` (whose REGION regex
+    // does not hard-code any one module's nonce) and vice versa. If these
+    // ever diverge, every other cross-entry test below still passes for the
+    // wrong reason — each side happily substitutes its own markers.
+    const fromAffordance = nonceFromMarker(wrapAffordance("diff-access", DIFF_SPEC, ACP_BODY));
+    const fromLegacy = nonceFromMarker(wrapDiffAccess(DIFF_SPEC, ACP_BODY));
+
+    expect(fromAffordance).toBe(fromLegacy);
+  });
+
+  test("applyProtocolRegions substitutes a wrapDiffAccess-produced region under acp", () => {
+    // The documented US-002 dispatch seam: a `wrapDiffAccess` prompt
+    // (the only shape the three live builders produce today) fed to
+    // `applyProtocolRegions` under `acp` must strip the markers and return
+    // the body, with surrounding text preserved byte-for-byte.
+    const wrapped = wrapDiffAccess(DIFF_SPEC, ACP_BODY);
+    const prompt = `before\n${wrapped}after\n`;
+    const out = applyProtocolRegions(prompt, { protocol: "acp" });
+
+    expect(out).toBe(`before\n${ACP_BODY}after\n`);
+    expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+  });
+
+  test("applyProtocolRegions substitutes a wrapDiffAccess-produced region under native (Git + Read)", () => {
+    const wrapped = wrapDiffAccess(DIFF_SPEC, ACP_BODY);
+    const out = applyProtocolRegions(wrapped, {
+      protocol: "native",
+      advertisedTools: new Set(["Git", "Read"]),
+    });
+
+    // Native rendering must replace the ACP body — not coexist with it.
+    expect(out).not.toContain(ACP_BODY);
+    expect(out).not.toMatch(/git diff/);
+    expect(out).toContain("abc123");
+    // No marker survives dispatch.
+    expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+  });
+
+  test("applyProtocolRegions keeps a wrapDiffAccess-produced region's ACP body under native when Git is omitted", () => {
+    const wrapped = wrapDiffAccess(DIFF_SPEC, ACP_BODY);
+    const out = applyProtocolRegions(wrapped, {
+      protocol: "native",
+      advertisedTools: new Set(["Read"]),
+    });
+
+    expect(out).toContain(ACP_BODY);
+    expect(out).not.toMatch(/<!--nax:diff-access:/);
+  });
+
+  test("unwrapProtocolRegions strips markers from a wrapDiffAccess-produced region", () => {
+    // Persistence seam: any caller that writes a prompt to disk must be
+    // able to round-trip a `wrapDiffAccess` region through `unwrapProtocolRegions`.
+    const wrapped = wrapDiffAccess(DIFF_SPEC, ACP_BODY);
+    const out = unwrapProtocolRegions(`prefix\n${wrapped}suffix\n`);
+
+    expect(out).toBe(`prefix\n${ACP_BODY}suffix\n`);
+    expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+  });
+
+  test("applyDiffAccess (legacy) substitutes a wrapAffordance-produced region under acp", () => {
+    // The reverse seam direction: the legacy `applyDiffAccess` reads only
+    // markers whose nonce matches its own. Because the two modules share
+    // the same NONCE (asserted above), a `wrapAffordance("diff-access", ...)`
+    // opener looks identical to a `wrapDiffAccess` opener at the bytes level
+    // and the legacy path must read it. This pins the seam to the legacy
+    // module's REGION regex, not just to the new module's.
+    const wrapped = wrapAffordance("diff-access", DIFF_SPEC, ACP_BODY);
+    const prompt = `before\n${wrapped}after\n`;
+    const out = applyDiffAccess(prompt, "acp");
+
+    expect(out).toBe(`before\n${ACP_BODY}after\n`);
+    expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+  });
+
+  test("applyDiffAccess (legacy) substitutes a wrapAffordance-produced region under native", () => {
+    const wrapped = wrapAffordance("diff-access", DIFF_SPEC, ACP_BODY);
+    const out = applyDiffAccess(wrapped, "native");
+
+    expect(out).not.toContain(ACP_BODY);
+    expect(out).not.toMatch(/git diff/);
+    expect(out).toContain("abc123");
+    expect(out).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+  });
+
+  test("a mixed prompt (wrapDiffAccess + wrapAffordance of the same kind) is fully substituted in one applyProtocolRegions call", () => {
+    // Realistic mixed prompt: one legacy-wrapped region and one new-module
+    // region, identical spec. The dispatch loop must read both shapes in a
+    // single pass; otherwise one of them ships literal markers to the agent
+    // under ACP.
+    const legacyRegion = wrapDiffAccess(DIFF_SPEC, ACP_BODY);
+    const affordanceRegion = wrapAffordance("diff-access", DIFF_SPEC, ACP_BODY);
+    const prompt = `prefix\n${legacyRegion}middle\n${affordanceRegion}suffix\n`;
+
+    const underAcp = applyProtocolRegions(prompt, { protocol: "acp" });
+    expect(underAcp).toBe(`prefix\n${ACP_BODY}middle\n${ACP_BODY}suffix\n`);
+    expect(underAcp).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+
+    const underNative = applyProtocolRegions(prompt, {
+      protocol: "native",
+      advertisedTools: new Set(["Git", "Read"]),
+    });
+    expect(underNative).not.toContain(ACP_BODY);
+    expect(underNative).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
+    // Surrounding text preserved on the native path too.
+    expect(underNative).toContain("prefix");
+    expect(underNative).toContain("middle");
+    expect(underNative).toContain("suffix");
   });
 });
