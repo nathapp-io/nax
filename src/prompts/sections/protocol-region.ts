@@ -74,20 +74,57 @@ const REGION = new RegExp(
 const OWN_OPEN = new RegExp(`<!--nax:[a-z][a-z-]*:${NONCE} `, "g");
 
 /**
- * The registry. Today: `diff-access` only — US-002 will add the next kind,
- * US-003 / US-004 will register their producers, and US-005 will persist.
+ * The registry. Today: `diff-access`, `run-check`, `run-test`. US-005 will add
+ * `commit`. The `requires` list is consulted when `advertisedTools` is
+ * supplied. When `advertisedTools` is `undefined`, gating is skipped (a caller
+ * that does not know which tools the agent advertises must still get the
+ * native rendering).
  *
- * The `requires` list is consulted when `advertisedTools` is supplied. When
- * `advertisedTools` is `undefined`, gating is skipped (a caller that does
- * not know which tools the agent advertises must still get the native
- * rendering).
+ * `run-check` and `run-test` render a `RunCommand` call whose `command` is the
+ * declared key the spec carries. The `command` field in the spec MUST be a key
+ * the project actually declared under `quality.commands` — `RunCommand`'s own
+ * schema is the runtime check, and a declared key the schema rejects is a
+ * shape error the model should never see. Producers are responsible for
+ * shaping the spec correctly; the renderer trusts them.
  */
 const REGISTRY: Record<string, AffordanceNativeRenderer> = {
   "diff-access": {
     requires: ["Git", "Read"],
     render: (spec) => renderNative(spec as DiffAccessSpec),
   },
+  "run-check": {
+    requires: ["RunCommand"],
+    render: (spec) => renderRunCommandCheck(spec as RunCommandSpec),
+  },
+  "run-test": {
+    requires: ["RunCommand"],
+    render: (spec) => renderRunCommandTest(spec as RunCommandTestSpec),
+  },
 };
+
+/** Spec shape for `run-check`: a declared key the project's
+ *  `quality.commands` map carries. */
+export interface RunCommandSpec {
+  readonly command: string;
+}
+
+/** Spec shape for `run-test`: a declared scoped-test key (one whose template
+ *  carries the `{{files}}` placeholder) and the path the model passes for it. */
+export interface RunCommandTestSpec {
+  readonly command: string;
+  readonly files: string;
+}
+
+function renderRunCommandCheck(spec: RunCommandSpec): string {
+  return `RunCommand {"command": ${JSON.stringify(spec.command)}}`;
+}
+
+function renderRunCommandTest(spec: RunCommandTestSpec): string {
+  // JSON.stringify, not interpolation: the rendered line is a JSON literal the
+  // agent copies, and a path holding a quote or a backslash would otherwise
+  // produce something it cannot parse.
+  return `RunCommand {"command": ${JSON.stringify(spec.command)}, "values": {"files": ${JSON.stringify(spec.files)}}}`;
+}
 
 /** Wrap ACP text behind opening/closing markers carrying the spec and kind.
  *

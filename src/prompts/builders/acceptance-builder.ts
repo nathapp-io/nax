@@ -11,6 +11,7 @@
  */
 
 import type { PRD } from "@/prd/types";
+import { wrapAffordance } from "@/prompts/sections";
 import { buildTestFrameworkHint } from "@/test-runners";
 import { wrapJsonPrompt } from "@/utils/llm-json";
 import { formatTestOutputForFix } from "./acceptance-builder-helpers";
@@ -135,14 +136,20 @@ export interface TestFixParams {
  * #1939: acceptanceFixSourceOp/acceptanceFixTestOp already grant RunCommand
  * (#1936/#1938) and `resolveAcceptanceFixTarget` already resolves `testCommand`
  * to a runnable, placeholder-substituted string — but neither fix prompt ever
- * told the agent it could run it. Named in the `self-verification.ts:33`
- * register: the tool call first, the raw fallback second, because the prompt
- * doesn't know which transport will read it (see that file's header comment).
+ * told the agent it could run it.
+ *
+ * US-003: the rerun line is now a `run-test` protocol region: ACP body is
+ * the shell string (every transport with a shell can run it), native body is
+ * the `RunCommand` call (native has no shell, only the declared key).
+ * Dispatch selects between them at `applyProtocolRegions`. The "if that tool
+ * is available to you" hedge is gone — each transport receives exactly the
+ * affordance it has.
  *
  * `scopedCommandName` is the declared `quality.commands.testScoped` key
  * (usually literally `"testScoped"`) — RunCommand resolves declared keys, not
  * ad-hoc strings, so the tool-call form is only safe to render when that key is
- * actually configured. Without it, only the raw fallback is offered.
+ * actually configured. Without it, only the raw fallback is offered, and the
+ * emitted string carries no region at all (AC7).
  */
 function buildTestRerunLine(
   testCommand: string | undefined,
@@ -150,19 +157,17 @@ function buildTestRerunLine(
   scopedCommandName?: string,
 ): string {
   if (!testCommand) return "";
-  // No path means no tool call to offer: RunCommand keeps an empty `files`
-  // value verbatim, and `bun test ''` exits 1 without running anything.
+  // No scoped key means no tool call to offer: AC7 — the rerun line renders
+  // only the raw command string under both protocols.
   if (!scopedCommandName || !acceptanceTestPath) {
     return `- Re-run the failing acceptance test before you finish: \`${testCommand}\`.\n\n`;
   }
-  // JSON.stringify, not interpolation: the rendered line is a JSON literal the
-  // agent copies, and a path holding a quote or a backslash would otherwise
-  // produce something it cannot parse.
-  return (
-    "- Re-run the failing acceptance test before you finish:\n" +
-    `  RunCommand {"command": "${scopedCommandName}", "values": {"files": ${JSON.stringify(acceptanceTestPath)}}}\n` +
-    `  if that tool is available to you, otherwise \`${testCommand}\`.\n\n`
-  );
+  // The ACP body is the shell string. The native body is the RunCommand
+  // call (rendered by `run-test`'s registry entry). RunCommand keeps an empty
+  // `files` value verbatim and `bun test ''` exits 1 without running anything,
+  // so an empty path must never reach the region — guarded above.
+  const acpBody = `- Re-run the failing acceptance test before you finish: \`${testCommand}\`.\n\n`;
+  return wrapAffordance("run-test", { command: scopedCommandName, files: acceptanceTestPath }, acpBody);
 }
 
 // ─── Builder ──────────────────────────────────────────────────────────────────

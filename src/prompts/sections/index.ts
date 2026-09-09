@@ -14,7 +14,12 @@ export { buildIsolationSection } from "./isolation";
 export { buildModifiedFilesLines } from "./modified-files";
 export { buildNaxArtifactsSection } from "./nax-artifacts";
 export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./out-of-scope";
-export type { AffordanceNativeRenderer, ApplyProtocolRegionsOpts } from "./protocol-region";
+export type {
+  AffordanceNativeRenderer,
+  ApplyProtocolRegionsOpts,
+  RunCommandSpec,
+  RunCommandTestSpec,
+} from "./protocol-region";
 export {
   applyProtocolRegions,
   PROTOCOL_REGION_MARKER_PREFIX,

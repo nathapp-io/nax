@@ -4,6 +4,7 @@ import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import { resolvePermissions } from "@/config/permissions";
 import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "@/operations/acceptance-fix";
 import { resolveDeclaredTools } from "@/operations/types";
+import { applyProtocolRegions } from "@/prompts/sections";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -78,17 +79,26 @@ describe("acceptanceFixSourceOp.build()", () => {
     expect(result.task.content).toContain("FAIL: expected true but got false");
   });
 
-  // #1939: the op does NOT re-derive this from config — resolveAcceptanceFixTarget
+  // #1939 / US-003: the op does NOT re-derive this from config — resolveAcceptanceFixTarget
   // alone knows whether the scoped template actually won and whether {{files}} is
-  // its sole placeholder, so the decision arrives on the input.
-  test("names RunCommand's testScoped key when the resolver supplied the scoped key", () => {
+  // its sole placeholder, so the decision arrives on the input. The prompt now
+  // emits a `run-test` region whose native body is the RunCommand call (ACP body
+  // is the shell string); dispatch substitutes at applyProtocolRegions.
+  test("renders a run-test region whose native body names RunCommand's testScoped key when the resolver supplied the scoped key", () => {
     const ctx = makeSourceCtx();
     const result = acceptanceFixSourceOp.build(
       { ...SOURCE_INPUT, testCommand: "bun test /tmp/acceptance.test.ts", scopedCommandName: "testScoped" },
       ctx,
     );
-    expect(result.task.content).toContain('RunCommand {"command": "testScoped"');
-    expect(result.task.content).toContain('"files": "/tmp/acceptance.test.ts"');
+    // The raw prompt carries the region marker; the literal RunCommand text is
+    // the native body, substituted by applyProtocolRegions.
+    expect(result.task.content).toContain("<!--nax:run-test:");
+    const native = applyProtocolRegions(result.task.content, {
+      protocol: "native",
+      advertisedTools: new Set(["RunCommand"]),
+    });
+    expect(native).toContain('RunCommand {"command": "testScoped"');
+    expect(native).toContain('"files": "/tmp/acceptance.test.ts"');
   });
 
   test("omits the RunCommand form when the resolver supplied no scoped key", () => {
