@@ -4,7 +4,7 @@
 
 **Goal:** Make per-story and per-phase cost mean total spend (successful + failed-dispatch), with the failed half carried beside it, so `sum(stories[].cost) == RunMetrics.totalCost` stays exact once failed dispatches start carrying usage.
 
-**Architecture:** PR #1959 did this at run level: `RunMetrics.totalCost = totalSpendUsd(snap)` with a sibling `errorCostUsd` spread only when `> 0`. This plan applies the identical shape one level down — to `StoryMetrics`, the `story:*` events, `phaseCosts`, the debate scope totals and `FixApplied` — via a single new reader, `storySpendUsd`, so the eight near-identical `byStory()[id]?.totalCostUsd ?? ctx.totalCost` expressions collapse to one seam instead of being edited eight times.
+**Architecture:** PR #1959 did this at run level: `RunMetrics.totalCost = totalSpendUsd(snap)` with a sibling `errorCostUsd` spread only when `> 0`. This plan applies the identical shape one level down — to `StoryMetrics`, the `story:*` events, `phaseCosts`, the debate scope totals and `FixApplied`. The eight near-identical `byStory()[id]?.totalCostUsd ?? ctx.totalCost` expressions on the failure and pause paths collapse into one new reader, `storySpendUsd`, rather than being edited eight times; every other site already holds a `CostSnapshot` and folds it with the existing `totalSpendUsd`.
 
 **Tech Stack:** TypeScript, Bun (test runner + build), nax internal `CostAggregator` / `pipelineEventBus`.
 
@@ -12,23 +12,37 @@
 
 **Base:** branch `worktree-fix-1960-per-story-error-spend`, worktree `.claude/worktrees/fix-1960-per-story-error-spend`, cut from `origin/main` `d11c2b0b6` (the #1959 merge). Baseline suite green before any change: 1153 pass / 36 skip / 0 fail (integration) plus 98 pass / 0 fail (ui), all phases passed.
 
+## Handover state (as of 2026-09-09)
+
+Nothing is implemented yet. This document and the worktree are the entire handover.
+
+- **Work here, not in the main checkout.** `~/workspace/subrina-coder/projects/nax/repos/nax` is on `feat/prompt-affordance-ssot` and is actively being worked by someone else. Do not touch it.
+- The worktree is already created, on `origin/main` `d11c2b0b6`, dependencies installed (`bun install`), baseline suite green. Start at Task 1.
+- **`worktree.baseRef` in this repo is `head`, not `fresh`.** If you ever create another worktree here it will branch from whatever the main checkout's HEAD happens to be, not from `origin/main`. Reset it explicitly.
+- The three design decisions this plan encodes were ruled by the user on 2026-09-09 and are **not open for re-litigation**: (1) fold total spend into `cost` *and* keep an `errorCostUsd` sibling, mirroring #1959; (2) error-only spend counts as back-fill evidence; (3) scope reaches per-story, per-phase, debate, and the #1948 cycle-cost ruling. If implementation makes one look wrong, raise it — do not silently pick differently.
+- Two earlier drafts of this plan contained defects that are now fixed but worth knowing, because the wrong version is the intuitive one: a parallel `phaseErrorCosts` map (see Task 5's design note) and `storySpendUsd` used inside `tracker.ts` (see the reader note below).
+- You cannot observe the real symptom on this machine — `totalErrorCostUsd` is 0 on every run ever recorded here. The tests are the only signal; see "Manual verification" at the end for what can and cannot be checked live.
+
 ## Global Constraints
 
 - **Doctrine (from #1959 and `cost-aggregator.ts:190-199`): fold AND keep the sibling.** Every migrated number becomes `totalSpendUsd(snap)`; every migrated carrier gains an `errorCostUsd` sibling spread **only when `> 0`**, so its presence always means a dispatch actually threw. A sum cannot be un-summed — never drop the split.
 - **Fallback semantics must not change.** `?? ctx.totalCost` currently fires only when `byStory()` has **no entry at all** for the story. Preserve exactly that: fall back when the snapshot is `undefined`, never when it exists with `totalCostUsd === 0`.
-- **File-size gate: 600 lines for `src/`, 800 for `test/`, ratcheted by `bun run check:file-sizes` (part of `bun run lint`).** Headroom on files this plan touches: `execution-plan.ts` **600 — ZERO headroom, Task 6 must extract before it adds**; `tracker.ts` 598 (2 lines); `tier-escalation.ts` 595 (5); `cost-aggregator.ts` 542 (58); `run-phase.ts` 501; `pipeline-result-handler.ts` 479; `completion.ts` 414; `event-bus.ts` 392; `debate/runner.ts` 383; `metrics/types.ts` 381; `backfill-story-metrics.ts` 254; `tier-outcome.ts` 150; `cycle-cost.ts` 78.
+- **Line numbers in this plan are from `d11c2b0b6` and drift as you edit.** Re-locate every site by the symbol named beside it (`storySpendUsd`, `phaseCosts[opName]`, `hasBackfillEvidence`, …), never by line number alone. Several tasks edit the same file more than once.
+- **File-size gate: 600 lines for `src/`, 800 for `test/`, ratcheted by `bun run check:file-sizes` (part of `bun run lint`).** Headroom on files this plan touches: `tracker.ts` 598 (2 lines); `tier-escalation.ts` 595 (5); `cost-aggregator.ts` 542 (58); `run-phase.ts` 501; `pipeline-result-handler.ts` 479; `completion.ts` 414; `event-bus.ts` 392; `debate/runner.ts` 383; `metrics/types.ts` 381; `backfill-story-metrics.ts` 254; `tier-outcome.ts` 150; `cycle-cost.ts` 78. **`execution-plan.ts` is at exactly 600/600 — this plan deliberately makes no code change to it** (see Task 5); if you find yourself editing it, stop and re-read Task 5's design note.
+- **Where `storySpendUsd` is and is not the right reader.** Use it at the eight failure/pause sites, which have a real `ctx.totalCost` fallback. Do NOT use it where the caller already holds the `byStory()` snapshot (`tracker.ts`) or reads the map directly (`backfill-story-metrics.ts`) — calling it there would rebuild the whole `byStory()` map a second time. Those sites use `totalSpendUsd(snap)` and `snap.totalErrorCostUsd` directly.
 - **Do not add tests to these grandfathered test files — they may not grow:** `test/unit/execution/story-orchestrator.test.ts` (1998), `test/unit/execution/escalation/tier-escalation.test.ts` (1025), `test/unit/findings/cycle.test.ts` (933), `test/unit/debate/runner-plan.test.ts` (1038). Create new focused test files instead.
-- **`bun run test:coverage` is NOT part of `bun run test` or `check:all`.** Run it once at the end (Task 9) — this plan adds one new `src/` file (`run-summary.ts`, Task 6).
+- **`bun run test:coverage` is NOT part of `bun run test` or `check:all`.** Run it once at the end (Task 8). This plan adds no new `src/` file, but it adds six new test files and changes the meaning of numbers several suites assert on, so confirm coverage did not regress.
 - Quality commands (from `.nax/config.json`): `bun run test`, `bun run typecheck`, `bun run lint`, `bun run build`. Scoped: `CI=1 AGENT=1 bun test --timeout=60000 <files>`.
 - **Out of scope, do not touch:** `costDelta` in `pipeline-result-handler.ts:180` (`agentResult.estimatedCostUsd + stageCost`) — an independent executor accumulator feeding a log line and `ctx.totalCost`, not the metrics identity. Folding error spend there too would double-count.
+- **Meaning changes with no code change** — these consumers read a number whose definition this plan widens. Verify each still behaves, change none of them, and list them in the PR: `src/pipeline/subscribers/hooks.ts:77, 91, 105, 119` (hook payload `cost` for passed/failed/paused/skipped) and `:130` (`on-complete` `cost`); `src/execution/post-run.ts:157` (`estimatedCostUsd: … || planResult.phaseCosts[implementerOp.name]`); `src/pipeline/stages/completion.ts:157` (the `progress.txt` "Cost: $x" line); `src/tui/hooks/usePipelineBusEvents.ts:130-133` (the TUI's per-story accumulator, which is what stops jumping at run end once this lands).
 - No emojis in code, comments or commit messages. Conventional commits (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`).
-- **Test-fixture completeness:** Tasks 1, 3, 4, 8 and 9 carry complete, runnable test bodies. Tasks 2, 5, 6 and 7 give complete **assertions** but require you to build the surrounding context/harness by reading the named existing test file first (`tracker-provider-cost.test.ts`, `story-orchestrator.test.ts`, `runner.test.ts`). Those harnesses are large and repo-specific; copy their real shape rather than inventing fields — a fabricated context is the most likely way to waste a cycle here.
+- **Test-fixture completeness:** Tasks 1, 3, 4, 7 and 8 carry complete, runnable test bodies. Tasks 2, 5 and 6 give complete **assertions** but require you to build the surrounding harness by extending the named existing test file (`tracker-provider-cost.test.ts`, `story-orchestrator-run-phase-events.test.ts`, `debate/runner.test.ts`). Copy their real shape rather than inventing fields — a fabricated context is the most likely way to waste a cycle here.
 
 ---
 
 ### Task 1: The `storySpendUsd` seam
 
-The one reader all eight failure/pause sites and the two tracker sites will use. It fixes the dead-fallback bug in the same stroke: today an error-only story has a snapshot whose `totalCostUsd` is `0`, so `??` never fires and the site reports `cost: 0`.
+The one reader the eight failure/pause sites (Task 3) and `completion.ts` (Task 4) will use — the sites that carry a real `ctx.totalCost` fallback. It fixes the dead-fallback bug in the same stroke: today an error-only story has a snapshot whose `totalCostUsd` is `0`, so `??` never fires and the site reports `cost: 0`.
 
 **Files:**
 - Modify: `src/runtime/cost-aggregator.ts` (add beside `totalSpendUsd`, currently ending at `:202`)
@@ -37,7 +51,7 @@ The one reader all eight failure/pause sites and the two tracker sites will use.
 
 **Interfaces:**
 - Consumes: `ICostAggregator.byStory()`, `totalSpendUsd`, `CostSnapshot` — all existing.
-- Produces: `storySpendUsd(costAggregator: ICostAggregator | undefined, storyId: string, fallbackUsd: number): StorySpend` where `interface StorySpend { cost: number; errorCostUsd: number }`. Tasks 2, 3 and 4 all call this.
+- Produces: `storySpendUsd(costAggregator: ICostAggregator | undefined, storyId: string, fallbackUsd: number): StorySpend` where `interface StorySpend { cost: number; errorCostUsd: number }`. Called by Task 3 (eight sites) and Task 4 (`completion.ts`) only.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -48,8 +62,8 @@ Create `test/unit/runtime/story-spend.test.ts`:
  * #1960 — per-story spend reader.
  *
  * `storySpendUsd` is the single seam the story:failed / story:paused /
- * story:completed emitters and the metrics tracker read through, so the
- * fallback rule and the fold live in exactly one place.
+ * story:completed emitters read through, so the fallback rule and the fold
+ * live in exactly one place.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -197,8 +211,8 @@ git commit -m "feat(cost): add storySpendUsd, the per-story spend seam (#1960)"
 - Test: `test/unit/metrics/tracker-story-spend.test.ts` (new — `tracker-provider-cost.test.ts` exists but covers a different concern)
 
 **Interfaces:**
-- Consumes: `storySpendUsd` from Task 1.
-- Produces: `StoryMetrics.errorCostUsd?: number`. Tasks 4 and 9 rely on this field name.
+- Consumes: `totalSpendUsd` (existing, `cost-aggregator.ts:200`) — **not** `storySpendUsd`; see the Global Constraints note on which reader belongs where.
+- Produces: `StoryMetrics.errorCostUsd?: number`. Tasks 4 and 8 rely on this field name.
 
 > Headroom warning: `tracker.ts` is at 598/600. The edits below are line-neutral at `:327` and add at most 1 line at `:374`, landing at 599. Do not add anything else to this file.
 
@@ -300,33 +314,27 @@ Expected: FAIL — `metric.cost` is `0.02`, `errorCostUsd` undefined.
   errorCostUsd?: number;
 ```
 
-`src/metrics/tracker.ts` — add `storySpendUsd` to the existing `@/runtime` import, then at `:314`:
+`src/metrics/tracker.ts` — **do not call `storySpendUsd` here.** This function already holds the snapshot (`tokensFromSnapshot(costSnapshot)` on the next line needs it), and `storySpendUsd` would rebuild the entire `byStory()` map a second time on every story. Add `totalSpendUsd` to the existing `@/runtime` import and read both halves off the snapshot you already have.
+
+`collectStoryMetrics` — leave `:314` (`const costSnapshot = ...`) exactly as it is. Replace `:327`:
 
 ```ts
-  const costSnapshot = ctx.runtime.costAggregator.byStory()[story.id];
-  const spend = storySpendUsd(ctx.runtime.costAggregator, story.id, 0);
-```
-
-(`costSnapshot` stays — `tokensFromSnapshot(costSnapshot)` on the next line still needs it.)
-
-In the returned object, replace `:327`:
-
-```ts
-    cost: spend.cost,
+    cost: costSnapshot !== undefined ? totalSpendUsd(costSnapshot) : 0,
 ```
 
 and add, beside the existing conditional spreads at the end of that object:
 
 ```ts
-    ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
+    ...(costSnapshot !== undefined && costSnapshot.totalErrorCostUsd > 0
+      ? { errorCostUsd: costSnapshot.totalErrorCostUsd }
+      : {}),
 ```
 
-`collectBatchMetrics` at `:374` — replace:
+`collectBatchMetrics` at `:374` — `batchSnapshot` is already in hand one line above; replace:
 
 ```ts
-  const batchSpend = storySpendUsd(ctx.runtime.costAggregator, ctx.story.id, 0);
-  const batchTotal = batchSpend.cost;
-  const errorCostPerStory = batchSpend.errorCostUsd / stories.length;
+  const batchTotal = batchSnapshot !== undefined ? totalSpendUsd(batchSnapshot) : 0;
+  const errorCostPerStory = (batchSnapshot?.totalErrorCostUsd ?? 0) / stories.length;
 ```
 
 and on each produced batch metric, beside `cost: costPerStory`:
@@ -364,7 +372,7 @@ The concentration finding: `story:failed` and `story:paused` are where failed sp
 
 **Interfaces:**
 - Consumes: `storySpendUsd` (Task 1).
-- Produces: `StoryFailedEvent.errorCostUsd?: number`, `StoryPausedEvent.errorCostUsd?: number`. Task 9 forwards these.
+- Produces: `StoryFailedEvent.errorCostUsd?: number`, `StoryPausedEvent.errorCostUsd?: number`. Task 8 forwards these.
 
 > Headroom warning: `tier-escalation.ts` is at 595/600. Its single site adds 1 line (596). Do not add anything else there.
 
@@ -740,34 +748,65 @@ git commit -m "fix(execution): story:completed and the back-fill read total spen
 
 ### Task 5: Phase costs
 
-`run-phase.ts:336` is the number `cycle-cost.ts` cites; Task 8 moves that rationale with it.
+`run-phase.ts:336` is the number `cycle-cost.ts` cites; Task 7 moves that rationale with it.
+
+**Design note — read this before writing code.** The obvious implementation (a parallel `phaseErrorCosts` map beside `phaseCosts`) is wrong here, and an earlier draft of this plan proposed it. `phaseCosts` is a positional parameter threaded through `runPhase` at six call sites (`execution-plan.ts:161, 289, 361, 417` and `rectification.ts:335, 410`), through `runRectification`'s signature (`rectification.ts:226`), and through `runNonBlockingFix`'s args (`non-blocking-fix.ts:133`) — where it is **snapshotted and restored by mutation** for rollback (`:264`, `:414-426`). A second map would have to be threaded through all of that and restored in lockstep; forgetting the restore corrupts run totals *silently*, which is the worst possible failure mode for this particular fix.
+
+So: **fold only, thread nothing.** `phaseCosts` keeps its exact type (`Record<string, number>`) and gains a new meaning — total spend. The failed half becomes visible per phase on the `story:phase:completed` event, which is the carrier that has room for it. Consequences, all deliberate:
+
+- `execution-plan.ts:536` (`Object.values(phaseCosts).reduce(...)`) and `:591` need **no code change** — they now sum spend because their input does. This is also why `execution-plan.ts` stays at exactly 600 lines and never touches the size gate.
+- `non-blocking-fix.ts`'s snapshot/restore needs **no change** — still one flat number map, still a correct shallow copy.
+- `post-run.ts:157` (`estimatedCostUsd: capturedCostUsd || planResult.phaseCosts[implementerOp.name] || 0`) now reports total spend. No code change; note it in the PR.
+- `StoryOrchestratorResult` gets no `errorCostUsd` sibling. The issue asks that phase costs stop excluding failed spend, not that every intermediate rollup grow a field; the split lives on the event beside it.
 
 **Files:**
 - Modify: `src/pipeline/event-bus.ts` — `StoryPhaseCompletedEvent` (`:167-178`)
-- Modify: `src/execution/story-orchestrator/run-phase.ts:334-354`
-- Test: `test/unit/execution/story-orchestrator/phase-spend.test.ts` (new — do NOT add to `story-orchestrator.test.ts`, grandfathered at 1998)
+- Modify: `src/execution/story-orchestrator/run-phase.ts:334-354` (the `finally` block only)
+- Test: `test/unit/execution/story-orchestrator-run-phase-events.test.ts` (existing, 359/800 lines — extend it; it already has the `runPhase` + event-capture harness)
 
 **Interfaces:**
 - Consumes: `totalSpendUsd` (existing). Verified: `CostScopeHandle.snapshot()` runs scope-matching error rows through `accumulateError` (`cost-aggregator.ts:471-477`) and `CostErrorEvent` carries `scopeId`, so a scope snapshot's `totalErrorCostUsd` is meaningful — this task is not a no-op.
-- Produces: `StoryPhaseCompletedEvent.errorCostUsd?: number`; a `phaseErrorCosts: Record<string, number>` accumulator threaded alongside `phaseCosts`, consumed by Task 6.
+- Produces: `StoryPhaseCompletedEvent.errorCostUsd?: number`. No signature anywhere changes.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `test/unit/execution/story-orchestrator/phase-spend.test.ts`. Drive the orchestrator through the same entry point `story-orchestrator.test.ts` uses, with an injected `CostAggregator`, and assert:
+Extend `test/unit/execution/story-orchestrator-run-phase-events.test.ts` using its existing harness (the file already builds a ctx, calls `runPhase`, and captures `story:phase:completed` via `pipelineEventBus.on`). Seed the injected aggregator so the phase's scope records one priced error row, then:
 
 ```ts
-    // A phase whose scope recorded a priced error row folds it into costUsd
-    // and names it beside.
-    expect(phaseEvent.costUsd).toBe(0.025);
-    expect(phaseEvent.errorCostUsd).toBe(0.005);
+  test("#1960: costUsd folds failed-dispatch spend and errorCostUsd names the failed half", async () => {
+    // The phase's scope recorded a successful 0.02 row and a failed 0.005 row.
+    const events: Array<{ costUsd: number; errorCostUsd?: number }> = [];
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      events.push({ costUsd: e.costUsd, errorCostUsd: e.errorCostUsd });
+    });
+
+    await runPhase(/* ctx, slot, phaseCosts, phaseOutputs — copy the arg shape used above in this file */);
+    unsub();
+
+    expect(events[0]?.costUsd).toBe(0.025);
+    expect(events[0]?.errorCostUsd).toBe(0.005);
+  });
+
+  test("#1960: errorCostUsd is absent when the phase had no failed dispatch", async () => {
+    // Same harness, aggregator seeded with a successful row only.
+    expect(events[0]?.costUsd).toBe(0.02);
+    expect(events[0]?.errorCostUsd).toBeUndefined();
+  });
+
+  test("#1960: phaseCosts accumulates total spend, not successful spend", async () => {
+    const phaseCosts: Record<string, number> = {};
+    await runPhase(/* ..., phaseCosts, ... */);
+
+    expect(phaseCosts[opName]).toBe(0.025);
+  });
 ```
 
-plus a clean-phase case asserting `errorCostUsd` is undefined.
+To seed the scope, record the events with the `scopeId` `runPhase` opens. The existing file shows how its ctx supplies a `costAggregator`; record a success row and an error row carrying that same `scopeId` before the phase's `finally` runs, or assert against a stubbed `openScope` whose `snapshot()` returns a fixed `CostSnapshot` — the second is simpler and is enough, since `openScope`'s own error handling is already covered by `cost-aggregator.test.ts`.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `CI=1 AGENT=1 bun test --timeout=60000 test/unit/execution/story-orchestrator/phase-spend.test.ts`
-Expected: FAIL — `costUsd` excludes the error row; `errorCostUsd` undefined.
+Run: `CI=1 AGENT=1 bun test --timeout=60000 test/unit/execution/story-orchestrator-run-phase-events.test.ts`
+Expected: FAIL — `costUsd` is `0.02` (the error row excluded); `errorCostUsd` undefined.
 
 - [ ] **Step 3: Implement**
 
@@ -780,13 +819,16 @@ Expected: FAIL — `costUsd` excludes the error row; `errorCostUsd` undefined.
   errorCostUsd?: number;
 ```
 
-`src/execution/story-orchestrator/run-phase.ts` — in the `finally` block at `:334`:
+`src/execution/story-orchestrator/run-phase.ts` — in the `finally` block at `:334`, replace only these two reads:
 
 ```ts
     const snapshot = scope.snapshot();
+    // #1960: phaseCosts means total spend. Nothing is threaded for the failed
+    // half -- phaseCosts is a flat number map that non-blocking-fix snapshots
+    // and restores by mutation, and a parallel map would have to be restored in
+    // lockstep. The split rides on the event below instead.
     const phaseSpend = totalSpendUsd(snapshot);
     phaseCosts[opName] = (phaseCosts[opName] ?? 0) + phaseSpend;
-    phaseErrorCosts[opName] = (phaseErrorCosts[opName] ?? 0) + snapshot.totalErrorCostUsd;
 ```
 
 and in the emitted event at `:353`:
@@ -796,129 +838,24 @@ and in the emitted event at `:353`:
         ...(snapshot.totalErrorCostUsd > 0 ? { errorCostUsd: snapshot.totalErrorCostUsd } : {}),
 ```
 
-Thread `phaseErrorCosts` in alongside the existing `phaseCosts` parameter — same shape, same lifetime, same owner. Import `totalSpendUsd` from `@/runtime`.
+Import `totalSpendUsd` from `@/runtime`. Change nothing else in this file, and nothing at all in `execution-plan.ts`, `rectification.ts`, `non-blocking-fix.ts` or `post-run.ts`.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `CI=1 AGENT=1 bun test --timeout=60000 test/unit/execution/story-orchestrator/` then `bun run typecheck`
-Expected: PASS.
+Run: `bun run test` then `bun run lint`
+
+Expected: PASS. Pay attention to the 12 existing test files that read `phaseCosts` (`bun test` covers them all): `story-orchestrator.test.ts`, `tdd/orchestrator-totals.test.ts`, `non-blocking-fix.test.ts`, `post-run-isolation.test.ts`, `nbf-readonly-flake-triage.test.ts`, `execution-repo-scoped-fixes.test.ts`, `_post-run-fixtures.ts`, `scratch-per-role.test.ts`, `verdict-cleanup.test.ts`, `pipeline.test.ts`. None of them seed error rows, so all should be unaffected — **if one changes value, that is a real finding, not a test to update.** Investigate before touching it.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/pipeline/event-bus.ts src/execution/story-orchestrator/run-phase.ts test/unit/execution/story-orchestrator/phase-spend.test.ts
+git add src/pipeline/event-bus.ts src/execution/story-orchestrator/run-phase.ts test/unit/execution/story-orchestrator-run-phase-events.test.ts
 git commit -m "fix(orchestrator): phaseCosts and story:phase:completed report total spend (#1960)"
 ```
 
 ---
 
-### Task 6: The derived orchestrator rollup (extraction first)
-
-`execution-plan.ts` is at **exactly 600 lines with zero headroom**. Steps 1-3 extract before Step 6 adds — do them in that order or `bun run lint` fails on the ratchet.
-
-**Files:**
-- Create: `src/execution/story-orchestrator/run-summary.ts`
-- Modify: `src/execution/story-orchestrator/execution-plan.ts:536-570`
-- Modify: `src/execution/story-orchestrator/types.ts:53-60` (`StoryOrchestratorResult`)
-- Test: `test/unit/execution/story-orchestrator/run-summary.test.ts` (new)
-
-**Interfaces:**
-- Consumes: `phaseCosts`, `phaseErrorCosts` (Task 5).
-- Produces: `buildOrchestratorSummary(input): Record<string, unknown>` in `run-summary.ts`; `StoryOrchestratorResult.phaseErrorCosts` and `.errorCostUsd?`.
-
-- [ ] **Step 1: Extract the summary builder (pure refactor, no behavior change)**
-
-Move the `summary` construction — from `const failedPhases = [` through the `missingRequiredReviewPhases` block, stopping just before the `if (success)` logger call — into `src/execution/story-orchestrator/run-summary.ts`:
-
-```ts
-export function buildOrchestratorSummary(input: {
-  storyId: string;
-  success: boolean;
-  totalCostUsd: number;
-  errorCostUsd: number;
-  durationMs: number;
-  phaseOutputs: Record<string, unknown>;
-  failedPhaseEntries: string[];
-  verifierPassedSsot: boolean;
-  gateName: string;
-  phasePassed: (name: string, output: unknown, storyId: string) => boolean;
-  rectResult: {
-    rectificationExhausted?: boolean;
-    repoScopedFixes?: Array<{ triggeringTests: string[]; filesChanged: string[]; findingsCleared: number }>;
-    unfixedFindings?: unknown[];
-  };
-  missingRequiredReviewPhases: string[];
-  upstreamShortCircuited: boolean;
-  shortCircuitPhase: string | undefined;
-}): Record<string, unknown>;
-```
-
-Call it from `execution-plan.ts`, keeping the `logger?.info` / `logger?.warn` branch in place. Do not add `errorCostUsd` to the summary yet — that is Step 6.
-
-- [ ] **Step 2: Run the full suite and the size gate to verify the extraction changed nothing**
-
-Run: `bun run test` then `bun run lint`
-Expected: PASS, and `check:file-sizes` reports `execution-plan.ts` comfortably under 600.
-
-- [ ] **Step 3: Commit the extraction on its own**
-
-```bash
-git add src/execution/story-orchestrator/run-summary.ts src/execution/story-orchestrator/execution-plan.ts
-git commit -m "refactor(orchestrator): extract buildOrchestratorSummary to make room under the size gate"
-```
-
-- [ ] **Step 4: Write the failing test**
-
-Create `test/unit/execution/story-orchestrator/run-summary.test.ts` asserting that `StoryOrchestratorResult.totalCostUsd` equals `sum(phaseCosts)` (now spend), that `errorCostUsd` equals `sum(phaseErrorCosts)`, and that `errorCostUsd` is absent when every phase was clean.
-
-- [ ] **Step 5: Run the test to verify it fails**
-
-Run: `CI=1 AGENT=1 bun test --timeout=60000 test/unit/execution/story-orchestrator/run-summary.test.ts`
-Expected: FAIL — no `errorCostUsd` on the result.
-
-- [ ] **Step 6: Implement**
-
-`src/execution/story-orchestrator/types.ts`, in `StoryOrchestratorResult`:
-
-```ts
-  readonly phaseCosts: Record<string, number>;
-  /** Per-phase failed-dispatch spend (#1960). Same keys as `phaseCosts`. */
-  readonly phaseErrorCosts: Record<string, number>;
-  /** Total spend across phases — successful plus failed-dispatch spend. */
-  readonly totalCostUsd: number;
-  /** The failed-dispatch half of `totalCostUsd` (#1960). Absent when nothing threw. */
-  readonly errorCostUsd?: number;
-```
-
-`src/execution/story-orchestrator/execution-plan.ts:536`:
-
-```ts
-    const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
-    const errorCostUsd = Object.values(phaseErrorCosts).reduce((sum, cost) => sum + cost, 0);
-```
-
-pass `errorCostUsd` into `buildOrchestratorSummary`, have that function spread `...(errorCostUsd > 0 ? { errorCostUsd } : {})` into the summary object, and add to the returned result:
-
-```ts
-      phaseErrorCosts,
-      ...(errorCostUsd > 0 ? { errorCostUsd } : {}),
-```
-
-- [ ] **Step 7: Run the tests to verify they pass**
-
-Run: `bun run test` then `bun run lint` then `bun run typecheck`
-Expected: PASS.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add src/execution/story-orchestrator/types.ts src/execution/story-orchestrator/execution-plan.ts src/execution/story-orchestrator/run-summary.ts test/unit/execution/story-orchestrator/run-summary.test.ts
-git commit -m "fix(orchestrator): StoryOrchestratorResult carries failed-dispatch spend (#1960)"
-```
-
----
-
-### Task 7: Debate scope totals
+### Task 6: Debate scope totals
 
 The site-list correction: `debate/runner.ts` reads scope snapshots, unlike its siblings in `src/debate/`, which are local accumulators.
 
@@ -977,7 +914,7 @@ git commit -m "fix(debate): scope totals report total spend (#1960)"
 
 ---
 
-### Task 8: Re-read the #1948 fix-cycle ruling
+### Task 7: Re-read the #1948 fix-cycle ruling
 
 `cycle-cost.ts:41-45` justifies excluding failed spend from `FixApplied.costUsd` **by pointing at `phaseCosts`**. Task 5 moved `phaseCosts`, so the rationale must move with it or the two numbers beside each other mean different things again — the exact failure that comment exists to prevent.
 
@@ -991,36 +928,54 @@ git commit -m "fix(debate): scope totals report total spend (#1960)"
 - Consumes: `totalSpendUsd`, `ICostAggregator.byCall()` (both existing). `ledgerSpendFor`'s signature is unchanged.
 - Produces: `FixApplied.costUsd` now means total spend; `FixApplied.errorCostUsd` stays the sibling added by #1958, unchanged.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Update the existing assertion, then add the new one**
 
-Extend `test/unit/findings/cycle-cost.test.ts` using its existing context helper:
+`test/unit/findings/cycle-cost.test.ts` already pins the OLD behavior. Inside `describe("ledgerSpendFor")` (around `:281`) it asserts:
+
+```ts
+    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 1.25, errorCostUsd: 0.5 });
+```
+
+That assertion **is** the ruling this task reverses. Change it to the folded value and record why:
+
+```ts
+    // #1960: costUsd is total spend -- 1.25 successful plus 0.5 failed.
+    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 1.75, errorCostUsd: 0.5 });
+```
+
+The helper in that file is `ctxWithByCall(byCall)` — it builds a ctx from `createNoOpCostAggregator()` with `byCall` overridden. (There is no `ctxWithLedger`; an earlier draft of this plan named it wrongly.) Add the new case beside it:
 
 ```ts
   test("#1960: costUsd folds failed-dispatch spend, mirroring phaseCosts", () => {
     // cycle-cost.ts pins its meaning to runPhase's phaseCosts. #1960 folded
     // phaseCosts, so this folds too -- the fix-cycle number must never mean
     // something different from the phase number beside it.
-    const spend = ledgerSpendFor(ctxWithLedger({ costUsd: 0.02, errorCostUsd: 0.005 }), "call-1");
+    const ctx = ctxWithByCall(() => ({ "call-1": { totalCostUsd: 0.02, totalErrorCostUsd: 0.005 } }));
 
-    expect(spend.costUsd).toBe(0.025);
-    expect(spend.errorCostUsd).toBe(0.005);
+    expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 0.025, errorCostUsd: 0.005 });
   });
 ```
+
+The two neighbouring tests in that block ("returns zeros when the ledger holds no row for the call" and "returns zeros instead of throwing when the ledger read fails") must keep passing **unchanged** — both still hold under the new implementation. If either fails, the implementation is wrong, not the test.
+
+Also check the earlier `describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)")` block in the same file: any test there that seeds a `totalErrorCostUsd` and asserts on `FixApplied.costUsd` now expects the folded value. Tests seeding only successful spend are unaffected.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `CI=1 AGENT=1 bun test --timeout=60000 test/unit/findings/cycle-cost.test.ts`
-Expected: FAIL — `costUsd` is `0.02`.
+Expected: FAIL on both the edited assertion (`costUsd` is `1.25`, not `1.75`) and the new one (`0.02`, not `0.025`).
 
 - [ ] **Step 3: Implement**
 
-`src/findings/cycle-cost.ts:67`:
+`src/findings/cycle-cost.ts:67` — add `import { totalSpendUsd } from "@/runtime";` at the top of the file (it currently imports only `@/logger`, `@/utils/errors` and `./cycle-types`), then:
 
 ```ts
     const snap = ctx.runtime.costAggregator.byCall()[callId];
     if (snap === undefined) return { costUsd: 0, errorCostUsd: 0 };
     return { costUsd: totalSpendUsd(snap), errorCostUsd: snap.totalErrorCostUsd };
 ```
+
+Keep the existing comment above the `byCall()` line about not using optional chaining — its reasoning is unchanged.
 
 Replace the first bullet of the doc block at `:41-45` with:
 
@@ -1062,13 +1017,13 @@ git commit -m "fix(findings): fix-cycle costUsd folds failed spend, tracking pha
 
 ---
 
-### Task 9: Consumers, and the reconciliation guard
+### Task 8: Consumers, and the reconciliation guard
 
 The regression test that would have caught this whole class, plus the two surfaces that drop the line item.
 
 **Files:**
 - Modify: `src/pipeline/subscribers/reporters.ts:160, 259`
-- Modify: `src/plugins/types.ts` (`onRunEnd` / `onStoryComplete` payload types)
+- Modify: `src/plugins/extensions.ts:334` (`StoryCompleteEvent`) and `:347` (`RunEndEvent`) — these are the reporter payload types. They are **not** in `src/plugins/types.ts`; an earlier draft of this plan pointed there wrongly.
 - Modify: `src/cli/status-cost.ts:93`
 - Test: `test/unit/execution/lifecycle/run-metrics-reconcile.test.ts` (new)
 
@@ -1149,7 +1104,39 @@ and at `:160` for `onStoryComplete`:
                 ...(ev.errorCostUsd !== undefined ? { errorCostUsd: ev.errorCostUsd } : {}),
 ```
 
-Add the matching optional `errorCostUsd?: number` to both payload types in `src/plugins/types.ts`.
+Add the matching optional field to both payload types in `src/plugins/extensions.ts`:
+
+```ts
+export interface StoryCompleteEvent {
+  runId: string;
+  storyId: string;
+  status: "completed" | "failed" | "skipped" | "paused";
+  runElapsedMs: number;
+  /** Total spend for this story — successful plus failed-dispatch spend. */
+  cost: number;
+  /** The failed-dispatch half of `cost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
+  tier: string;
+  testStrategy: string;
+}
+
+export interface RunEndEvent {
+  runId: string;
+  totalDurationMs: number;
+  /** Every dollar the run accounted for — successful plus failed-dispatch spend. */
+  totalCost: number;
+  /** The failed-dispatch half of `totalCost` (#1960). Absent when nothing threw. */
+  errorCostUsd?: number;
+  storySummary: {
+    completed: number;
+    failed: number;
+    skipped: number;
+    paused: number;
+  };
+}
+```
+
+Both fields are optional, so no existing reporter plugin breaks. `src/plugins/validator.ts:355` validates handler *names* only and needs no change.
 
 `src/cli/status-cost.ts:93` — beside `totalCost: lastRun.totalCost`:
 
@@ -1165,12 +1152,12 @@ so `nax status --cost` names the failed half instead of leaving it inside an une
 bun run test && bun run typecheck && bun run lint && bun run build && bun run test:coverage
 ```
 
-Expected: all green. `test:coverage` runs here because Task 6 added `src/execution/story-orchestrator/run-summary.ts` and coverage is not part of `bun run test` or `check:all`.
+Expected: all green. `test:coverage` runs here because it is not part of `bun run test` or `check:all`, and this plan changed the meaning of numbers that several suites assert on.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/pipeline/subscribers/reporters.ts src/plugins/types.ts src/cli/status-cost.ts test/unit/execution/lifecycle/run-metrics-reconcile.test.ts
+git add src/pipeline/subscribers/reporters.ts src/plugins/extensions.ts src/cli/status-cost.ts test/unit/execution/lifecycle/run-metrics-reconcile.test.ts
 git commit -m "fix(reporters): forward errorCostUsd and guard the story/run reconciliation (#1960)"
 ```
 
@@ -1186,6 +1173,6 @@ The unit suite cannot observe the real symptom, because `totalErrorCostUsd` is 0
 
 ## PR notes to write
 
-- State plainly that Task 8 **reverses part of #1948's stated rationale**: `FixApplied.costUsd` now folds failed spend because `phaseCosts` does. The re-base is exactly $0 across all recorded history, but the reasoning changed, and reviewers of #1948 should see that called out rather than discover it in a diff.
+- State plainly that Task 7 **reverses part of #1948's stated rationale**: `FixApplied.costUsd` now folds failed spend because `phaseCosts` does. The re-base is exactly $0 across all recorded history, but the reasoning changed, and reviewers of #1948 should see that called out rather than discover it in a diff.
 - Note the back-fill behavior change: stories whose only spend threw now get a synthesized metric row. This adds rows, never removes them.
 - Link the issue's Verification section for the measurements the reconciliation test encodes.
