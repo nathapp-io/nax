@@ -76,22 +76,31 @@ export function decideSwap(
   return { swap: true };
 }
 
-/** A fallback target, after both config spellings are reduced to one shape. */
+/**
+ * A fallback target, after all config spellings are reduced to one shape.
+ * `tier` and `model` are mutually exclusive — at most one is ever set, mirroring
+ * `ConfiguredModel`'s `{ agent, model }` (`model` is a tier name or a literal id;
+ * see `resolveFallbackDispatchTarget` in fallback-model-identity.ts for how a
+ * `.model` target that names a tier is later folded into `.tier`).
+ */
 export interface FallbackTarget {
   readonly agent: string;
   readonly tier?: string;
+  readonly model?: string;
 }
 
-export type FallbackMapValue = string | { agent: string; tier: string };
+export type FallbackMapValue = string | { agent: string; tier: string } | { agent: string; model: string };
 export type FallbackMap = Record<string, readonly FallbackMapValue[]>;
 
 /**
- * Both spellings reduce here, and nothing downstream sees the raw union.
+ * All three spellings reduce here, and nothing downstream sees the raw union.
  * A plain string is a target with no tier — which is what every existing
  * config is, so the no-tier path must stay the untouched one.
  */
 export function normaliseFallbackTarget(value: FallbackMapValue): FallbackTarget {
-  return typeof value === "string" ? { agent: value } : { agent: value.agent, tier: value.tier };
+  if (typeof value === "string") return { agent: value };
+  if ("tier" in value) return { agent: value.agent, tier: value.tier };
+  return { agent: value.agent, model: value.model };
 }
 
 /**
@@ -102,13 +111,30 @@ export function normaliseFallbackTarget(value: FallbackMapValue): FallbackTarget
  * PRIMARY agent, not the most-recently-failed one, so a flat map like
  * `{ claude: ["codex", "gemini"] }` walks correctly: unavailable agents drop out and
  * the next available candidate in order is returned.
+ *
+ * `isExcluded` also receives the candidate's tier so a caller can key exclusion on
+ * agent+tier identity rather than the bare agent name — a same-agent, different-tier
+ * target must survive exclusion of the tier that actually failed. A predicate that
+ * ignores the second argument (every predicate written before this identity split)
+ * keeps its original agent-only behaviour.
+ *
+ * `resolve` runs BEFORE the filter, not after: a `{ agent, model }` target naming a
+ * tier does not carry `.tier` until it is folded in, so filtering first judged it
+ * tier-less and excluded it — while the identical target spelled `{ agent, tier }`
+ * survived. Two spellings of one target must be indistinguishable here, which is
+ * the whole point of accepting the ConfiguredModel spelling. The default is
+ * identity, so a caller that cannot resolve (no `models`) keeps the raw shapes.
  */
 export function availableCandidates(
   map: FallbackMap | undefined,
   agent: string,
-  isExcluded: (candidate: string) => boolean,
+  isExcluded: (candidate: string, tier?: string) => boolean,
+  resolve: (target: FallbackTarget) => FallbackTarget = (target) => target,
 ): FallbackTarget[] {
-  return (map?.[agent] ?? []).map(normaliseFallbackTarget).filter((candidate) => !isExcluded(candidate.agent));
+  return (map?.[agent] ?? [])
+    .map(normaliseFallbackTarget)
+    .map(resolve)
+    .filter((candidate) => !isExcluded(candidate.agent, candidate.tier));
 }
 
 /**

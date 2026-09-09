@@ -28,9 +28,14 @@ export interface RunFallbackInput {
   readonly dispatchEvents: IDispatchEventBus;
   readonly logger: LoggerLike | null | undefined;
   readonly getDefault: () => string;
-  readonly isUnavailable: (agent: string) => boolean;
-  readonly markUnavailable: (agent: string, failure: AdapterFailure) => void;
-  readonly nextCandidate: (current: string, hops: number, exclude?: string) => FallbackTarget | null;
+  readonly isUnavailable: (agent: string, tier?: string) => boolean;
+  readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string) => void;
+  readonly nextCandidate: (
+    current: string,
+    hops: number,
+    exclude?: string,
+    excludeTier?: string,
+  ) => FallbackTarget | null;
   readonly resolveExhaustion: (options: ExhaustionInput) => Promise<"retry" | "exhausted" | "cancelled">;
   readonly emitSwapAttempt: (fallback: AgentFallbackRecord) => void;
 }
@@ -42,7 +47,11 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   const storyId = request.runOptions.storyId;
   const start = resolveStartAgent(input, primaryAgent, config.agent?.fallback?.enabled, storyId, logger);
   let currentAgent = start.agent;
-  let currentHopKind: HopKind = "tier" in start ? { kind: "primary", tier: start.tier } : { kind: "primary" };
+  let currentHopKind: HopKind = {
+    kind: "primary",
+    ...("tier" in start && start.tier !== undefined ? { tier: start.tier } : {}),
+    ...("model" in start && start.model !== undefined ? { model: start.model } : {}),
+  };
   let hopsSoFar = budget.spent(storyId);
   let rateLimitRetry = 0;
   let staleRetryAttempts = 0;
@@ -70,7 +79,14 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
 
       const retry = trySameAgentRetry(
         result,
-        { staleRetryAttempts, timeoutRetryAttempts, adapterErrorRetries, currentRunOptions, tier: currentHopKind.tier },
+        {
+          staleRetryAttempts,
+          timeoutRetryAttempts,
+          adapterErrorRetries,
+          currentRunOptions,
+          tier: currentHopKind.tier,
+          model: currentHopKind.model,
+        },
         { config, requestRunOptions: request.runOptions, signal: request.signal },
       );
       if (retry) {
@@ -122,8 +138,20 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       }
 
       const failure = result.adapterFailure ?? unknownFailure();
-      input.markUnavailable(currentAgent, failure);
-      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
+      // currentHopKind.tier is the tier of the hop that just failed — mark and
+      // exclude by that identity, not the bare agent name, so a same-agent,
+      // different-tier fallback target survives (see swap-decision.ts). Deliberately
+      // NOT defaulted to currentRunOptions.modelTier when unset (the healthy primary's
+      // first hop): that would narrow markUnavailable's cooldown key from bare-agent to
+      // agent+tier, which breaks resolveStartAgent's dead-primary skip — its
+      // `isUnavailable(primary)` check (hop-budget.ts) is intentionally tier-less and
+      // depends on the bare-agent key an agent-wide failure (fail-auth, fail-quota)
+      // writes. Model-identity exclusion therefore engages once a tier is NAMED by a
+      // hop (a swap target, or a dead-primary start that named one) — not retroactively
+      // for the very first, tier-less hop.
+      const currentTier = currentHopKind.tier;
+      input.markUnavailable(currentAgent, failure, currentTier);
+      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier);
       if (!next) {
         const outcome = await input.resolveExhaustion({
           failure,
@@ -146,7 +174,12 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       hopsSoFar = budget.spend(storyId, hopsSoFar);
       rateLimitRetry = 0;
       currentBundle = updatedBundle;
-      currentHopKind = { kind: "swap", failure, ...(next.tier ? { tier: next.tier } : {}) };
+      currentHopKind = {
+        kind: "swap",
+        failure,
+        ...(next.tier ? { tier: next.tier } : {}),
+        ...(next.model ? { model: next.model } : {}),
+      };
       const fallback = buildFallbackRecord({
         storyId,
         priorAgent: currentAgent,

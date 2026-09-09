@@ -32,13 +32,15 @@ export interface SameAgentRetryState {
   adapterErrorRetries: number;
   currentRunOptions: AgentRunOptions;
   tier?: string;
+  /** Literal model pin carried by the hop being retried — see HopKind. */
+  model?: string;
 }
 
 export type SameAgentRetryResult =
   | {
       outcome: "stale-retry";
       staleRetryAttempts: number;
-      kind: { kind: "stale-retry"; attempt: number; tier?: string };
+      kind: { kind: "stale-retry"; attempt: number; tier?: string; model?: string };
       fallbackRecord: {
         outcome: AdapterFailure["outcome"];
         category: AdapterFailure["category"];
@@ -49,7 +51,7 @@ export type SameAgentRetryResult =
   | {
       outcome: "timeout-retry";
       timeoutRetryAttempts: number;
-      kind: { kind: "timeout-retry"; attempt: number; tier?: string };
+      kind: { kind: "timeout-retry"; attempt: number; tier?: string; model?: string };
       currentRunOptions: AgentRunOptions;
       fallbackRecord: {
         outcome: AdapterFailure["outcome"];
@@ -61,7 +63,7 @@ export type SameAgentRetryResult =
   | {
       outcome: "adapter-error";
       adapterErrorRetries: number;
-      kind: { kind: "stale-retry"; attempt: number; tier?: string };
+      kind: { kind: "stale-retry"; attempt: number; tier?: string; model?: string };
       fallbackRecord: {
         outcome: AdapterFailure["outcome"];
         category: AdapterFailure["category"];
@@ -83,7 +85,7 @@ export function trySameAgentRetry(
   state: SameAgentRetryState,
   deps: TrySameAgentRetryDeps,
 ): SameAgentRetryResult {
-  const { staleRetryAttempts, timeoutRetryAttempts, adapterErrorRetries, currentRunOptions, tier } = state;
+  const { staleRetryAttempts, timeoutRetryAttempts, adapterErrorRetries, currentRunOptions, tier, model } = state;
   const { config, requestRunOptions, signal } = deps;
 
   const outcome = result.adapterFailure?.outcome;
@@ -97,7 +99,12 @@ export function trySameAgentRetry(
     return {
       outcome: "stale-retry",
       staleRetryAttempts: newAttempts,
-      kind: { kind: "stale-retry", attempt: newAttempts, ...(tier !== undefined ? { tier } : {}) },
+      kind: {
+        kind: "stale-retry",
+        attempt: newAttempts,
+        ...(tier !== undefined ? { tier } : {}),
+        ...(model !== undefined ? { model } : {}),
+      },
       fallbackRecord: {
         outcome: result.adapterFailure?.outcome ?? "fail-stale",
         category: result.adapterFailure?.category ?? "availability",
@@ -116,7 +123,12 @@ export function trySameAgentRetry(
       return {
         outcome: "timeout-retry",
         timeoutRetryAttempts: newAttempts,
-        kind: { kind: "timeout-retry", attempt: newAttempts, ...(tier !== undefined ? { tier } : {}) },
+        kind: {
+          kind: "timeout-retry",
+          attempt: newAttempts,
+          ...(tier !== undefined ? { tier } : {}),
+          ...(model !== undefined ? { model } : {}),
+        },
         currentRunOptions: resolveTimeoutRetryOptions(
           currentRunOptions,
           timeoutConfig,
@@ -148,7 +160,12 @@ export function trySameAgentRetry(
       return {
         outcome: "adapter-error",
         adapterErrorRetries: newAttempts,
-        kind: { kind: "stale-retry", attempt: newAttempts, ...(tier !== undefined ? { tier } : {}) },
+        kind: {
+          kind: "stale-retry",
+          attempt: newAttempts,
+          ...(tier !== undefined ? { tier } : {}),
+          ...(model !== undefined ? { model } : {}),
+        },
         fallbackRecord: {
           outcome: result.adapterFailure?.outcome ?? "fail-adapter-error",
           category: result.adapterFailure?.category ?? "availability",

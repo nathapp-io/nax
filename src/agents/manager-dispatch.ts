@@ -9,7 +9,7 @@
  * event. All I/O (emitting, timing) stays with the manager.
  */
 
-import { trackedSpawnDeadlines } from "@/config";
+import { resolveModel, trackedSpawnDeadlines } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { type PipelineStage, type ResolvedPermissions, resolvePermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
@@ -340,14 +340,23 @@ export function buildCompleteCallPreamble(input: {
  * through to `modelDefFor`, so the swapped hop dispatches the model the operator
  * asked for rather than the caller's own effective tier. Absent means exactly
  * today's behaviour.
+ *
+ * `model` is a LITERAL model id the target pinned (`{ agent, model }` naming no
+ * tier). `modelDefFor` cannot serve it — it resolves through the tier map, and a
+ * pin has no tier key — so it is resolved directly here, producing exactly the
+ * ModelDef the same id would produce as a `models.<agent>.<tier>` entry (both go
+ * through `resolveModel`). Without this the pin was accepted, selected, and then
+ * dispatched at the caller's own effective tier.
  */
 export function resolveHopCompleteOptions(
   options: ResolvedCompleteOptions,
   currentAgent: string,
   primaryAgent: string,
   tier?: string,
+  model?: string,
 ): ResolvedCompleteOptions {
   if (currentAgent === primaryAgent) return options;
+  if (model !== undefined) return { ...options, modelDef: resolveModel(model) };
   return { ...options, modelDef: options.modelDefFor?.(currentAgent, tier) ?? options.modelDef };
 }
 

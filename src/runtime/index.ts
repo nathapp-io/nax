@@ -326,6 +326,11 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     sendPrompt: (handle, prompt, sendOpts) => sessionManager.sendPrompt(handle, prompt, sendOpts),
     runHop: createSessionRunHop(sessionManager, () => agentManager),
     dispatchEvents,
+    // Fallback swap identity resolution (fallback-model-identity.ts) needs `models`,
+    // which agentManagerConfigSelector deliberately excludes from AgentManagerConfig
+    // (ADR-019). This is the one place with the full NaxConfig in scope, so it is
+    // threaded in here as an explicit DI seam rather than widening the selector.
+    models: config.models,
   };
   if (opts?.agentManager instanceof AgentManager) {
     opts.agentManager.configureRuntime({ ...agentManagerOpts, pidRegistry });

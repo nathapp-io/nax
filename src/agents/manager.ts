@@ -1,6 +1,7 @@
 /** AgentManager owns agent lifecycle and fallback policy (ADR-012). */
 
 import { EventEmitter } from "node:events";
+import type { ModelsConfig } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
@@ -18,6 +19,7 @@ import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
+import { resolveFallbackDispatchTarget, resolveFallbackModelId } from "./fallback-model-identity";
 import { StoryHopBudget } from "./hop-budget";
 import {
   buildCompleteCallPreamble,
@@ -33,11 +35,13 @@ import { runWithFallback } from "./manager-run-fallback";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
+  AgentManagerCtorOpts,
   AgentManagerEventName,
   AgentManagerEvents,
   AgentRunOutcome,
   AgentRunRequest,
   IAgentManager,
+  LoggerLike,
   RunAsSessionOpts,
   SendPromptFn,
   SessionRunHopFn,
@@ -54,11 +58,6 @@ import {
   logSwapDecline,
 } from "./swap-decision";
 import type { AgentResult, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
-
-type LoggerLike = {
-  warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
-  info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
-};
 
 /** Finite listener ceiling: concurrent stories exceed Node's default of 10. */
 const MAX_EMITTER_LISTENERS = 100;
@@ -91,21 +90,10 @@ export class AgentManager implements IAgentManager {
   private _dispatchEvents: IDispatchEventBus;
   private _pidRegistry: PidRegistry | undefined;
   private readonly _retryStrategy: RetryStrategy;
+  private readonly _models: ModelsConfig | undefined;
   readonly events: AgentManagerEvents;
 
-  constructor(
-    config: AgentManagerConfig,
-    registry?: AgentRegistry,
-    opts?: {
-      logger?: LoggerLike;
-      middleware?: MiddlewareChain;
-      runId?: string;
-      sendPrompt?: SendPromptFn;
-      runHop?: SessionRunHopFn;
-      dispatchEvents?: IDispatchEventBus;
-      retryStrategy?: RetryStrategy;
-    },
-  ) {
+  constructor(config: AgentManagerConfig, registry?: AgentRegistry, opts?: AgentManagerCtorOpts) {
     this._config = config;
     this._registry = registry;
     this._loggerOverride = opts?.logger;
@@ -116,6 +104,7 @@ export class AgentManager implements IAgentManager {
     this._runHop = opts?.runHop;
     this._dispatchEvents = opts?.dispatchEvents ?? new DispatchEventBus();
     this._retryStrategy = opts?.retryStrategy ?? defaultRetryStrategy;
+    this._models = opts?.models;
     this.events = {
       on: (event, listener) => {
         this._emitter.on(event as AgentManagerEventName, listener as (...args: unknown[]) => void);
@@ -145,13 +134,13 @@ export class AgentManager implements IAgentManager {
     return "claude";
   }
 
-  isUnavailable(agent: string): boolean {
-    return this._cooldowns.isCooling(agent);
+  isUnavailable(agent: string, tier?: string): boolean {
+    return this._cooldowns.isCooling(agent, tier, resolveFallbackModelId(this._models, agent, tier, this.getDefault()));
   }
 
-  markUnavailable(agent: string, reason: AdapterFailure): void {
-    this._cooldowns.mark(agent, reason);
-    this._emitter.emit("onAgentUnavailable", { agent, failure: reason });
+  markUnavailable(agent: string, reason: AdapterFailure, tier?: string): void {
+    this._cooldowns.mark(agent, reason, tier, resolveFallbackModelId(this._models, agent, tier, this.getDefault()));
+    this._emitter.emit("onAgentUnavailable", { agent, tier, failure: reason });
   }
 
   reset(): void {
@@ -184,19 +173,24 @@ export class AgentManager implements IAgentManager {
     }
   }
 
-  private readonly _isExcluded = (c: string): boolean => this._prunedFallback.has(c) || this.isUnavailable(c);
+  private readonly _isExcluded = (c: string, t?: string) => this._prunedFallback.has(c) || this.isUnavailable(c, t);
+
+  /** Folds a `{ agent, model }` target naming a tier into `{ agent, tier }`. */
+  private readonly _resolveTarget = (t: FallbackTarget): FallbackTarget =>
+    resolveFallbackDispatchTarget(this._models, this.getDefault(), t);
 
   resolveFallbackChain(agent: string, _failure: AdapterFailure): import("./swap-decision").FallbackTarget[] {
-    return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded);
+    return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded, this._resolveTarget);
   }
 
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number): boolean {
     return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
-  nextCandidate(current: string, _hopsSoFar: number, exclude?: string): FallbackTarget | null {
-    const excluded = (candidate: string): boolean => candidate === exclude || this._isExcluded(candidate);
-    return availableCandidates(this._config.agent?.fallback?.map, current, excluded)[0] ?? null;
+  nextCandidate(current: string, _hopsSoFar: number, exclude?: string, excludeTier?: string): FallbackTarget | null {
+    const excluded = (c: string, t?: string): boolean => (c === exclude && t === excludeTier) || this._isExcluded(c, t);
+    const map = this._config.agent?.fallback?.map;
+    return availableCandidates(map, current, excluded, this._resolveTarget)[0] ?? null;
   }
 
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
@@ -209,9 +203,9 @@ export class AgentManager implements IAgentManager {
       dispatchEvents: this._dispatchEvents,
       logger: this._loggerOverride ?? getSafeLogger(),
       getDefault: () => this.getDefault(),
-      isUnavailable: (agent) => this.isUnavailable(agent),
-      markUnavailable: (agent, failure) => this.markUnavailable(agent, failure),
-      nextCandidate: (current, hops, exclude) => this.nextCandidate(current, hops, exclude),
+      isUnavailable: (agent, tier) => this.isUnavailable(agent, tier),
+      markUnavailable: (agent, failure, tier) => this.markUnavailable(agent, failure, tier),
+      nextCandidate: (current, hops, exclude, excludeTier) => this.nextCandidate(current, hops, exclude, excludeTier),
       resolveExhaustion: (options) => this._resolveExhaustion(options),
       emitSwapAttempt: (fallback) => this._emitter.emit("onSwapAttempt", fallback),
     });
@@ -227,6 +221,7 @@ export class AgentManager implements IAgentManager {
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
     let currentTier: string | undefined;
+    let currentModel: string | undefined;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     let rateLimitRetry = 0;
@@ -239,7 +234,7 @@ export class AgentManager implements IAgentManager {
 
     try {
       while (true) {
-        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent, currentTier);
+        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent, currentTier, currentModel);
         const adapter = this._resolveRegistry().getAgent(currentAgent);
         if (!adapter) {
           _finalStatus = "error";
@@ -343,8 +338,8 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
         }
 
-        this.markUnavailable(currentAgent, result.adapterFailure);
-        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent);
+        this.markUnavailable(currentAgent, result.adapterFailure, currentTier);
+        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier);
         if (!next) {
           const outcome = await this._resolveExhaustion({
             failure: result.adapterFailure,
@@ -390,7 +385,7 @@ export class AgentManager implements IAgentManager {
         });
 
         _agentChain.push(next.agent);
-        [currentAgent, currentTier] = [next.agent, next.tier];
+        [currentAgent, currentTier, currentModel] = [next.agent, next.tier, next.model];
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({

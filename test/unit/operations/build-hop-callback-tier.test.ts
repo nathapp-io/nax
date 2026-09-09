@@ -9,9 +9,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { resolveModelForAgent } from "@/config";
+import { resolveModel, resolveModelForAgent } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
-import { hopTier } from "@/operations/build-hop-callback";
+import { hopModelId, hopTier } from "@/operations/build-hop-callback";
 
 const SWAP_FAILURE: AdapterFailure = {
   category: "availability",
@@ -61,5 +61,52 @@ describe("hopTier", () => {
 
   test("a stale-retry uses the caller's effective tier", () => {
     expect(hopTier({ kind: "stale-retry", attempt: 1 }, "balanced")).toBe("balanced");
+  });
+});
+
+/**
+ * The run path applies a swapped hop's literal model pin.
+ *
+ * `{ agent, model }` may name a tier OR a literal model id (ConfiguredModel
+ * semantics). A tier-naming target is resolved to `{ agent, tier }` before it
+ * reaches here, so only a LITERAL pin arrives with `model` set — and the tier
+ * lookup cannot serve it: there is no tier key to look up. Without this the
+ * pin is accepted, selected, and then silently dispatched at the caller's own
+ * effective tier — the operator asks for one provider and gets another.
+ */
+describe("hopModelId", () => {
+  test("a primary hop names no literal model", () => {
+    expect(hopModelId({ kind: "primary" })).toBeUndefined();
+  });
+
+  test("a swap that named a tier names no literal model", () => {
+    expect(hopModelId({ kind: "swap", failure: SWAP_FAILURE, tier: "cheap" })).toBeUndefined();
+  });
+
+  test("a swap that named a literal model returns it", () => {
+    expect(hopModelId({ kind: "swap", failure: SWAP_FAILURE, model: "openrouter/z-ai/glm-5.3-flash[high]" })).toBe(
+      "openrouter/z-ai/glm-5.3-flash[high]",
+    );
+  });
+
+  test("a start-on-fallback primary hop that named a literal model returns it", () => {
+    expect(hopModelId({ kind: "primary", model: "openrouter/z-ai/glm-5.3-flash[high]" })).toBe(
+      "openrouter/z-ai/glm-5.3-flash[high]",
+    );
+  });
+
+  test("a timeout retry retains its fallback target's literal model", () => {
+    expect(hopModelId({ kind: "timeout-retry", attempt: 1, model: "openrouter/z-ai/glm-5.3-flash[high]" })).toBe(
+      "openrouter/z-ai/glm-5.3-flash[high]",
+    );
+  });
+
+  test("the literal pin resolves to the same ModelDef the tier map would produce for that id", () => {
+    // The dispatched def must be indistinguishable from writing the same id as a
+    // `models.native.<tier>` entry — that equivalence is the whole contract of a
+    // literal pin, and on the native path the provider is read from the id string
+    // (nax#1851), not from ModelDef.provider.
+    const id = "openrouter/z-ai/glm-5.3-flash[high]";
+    expect(resolveModel(id)).toEqual(resolveModelForAgent({ native: { glm: id } }, "native", "glm", "native"));
   });
 });

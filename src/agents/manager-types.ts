@@ -13,11 +13,19 @@ import type { FallbackTarget } from "./swap-decision";
  * Replaces the old `failure: AdapterFailure | undefined` encoding, which
  * conflated "primary" and "stale-retry" as both `undefined`.
  */
+/**
+ * `tier` names a tier in `models.<agent>`; `model` is a LITERAL model id a
+ * fallback target pinned (`{ agent, model }` where the model names no tier —
+ * ConfiguredModel semantics). They are mutually exclusive: a tier-naming
+ * `model` is resolved to `tier` before dispatch (resolveFallbackDispatchTarget),
+ * so only a literal pin ever arrives as `model`, and a pin has no tier to
+ * report — the tier map cannot serve it.
+ */
 export type HopKind =
-  | { kind: "primary"; tier?: string } // tier present when an op started on a fallback that named one
-  | { kind: "stale-retry"; attempt: number; tier?: string } // same agent, reuse existing session
-  | { kind: "timeout-retry"; attempt: number; tier?: string } // same agent, fresh session after fail-timeout
-  | { kind: "swap"; failure: AdapterFailure; tier?: string }; // new agent, fresh session
+  | { kind: "primary"; tier?: string; model?: string } // tier/model present when an op started on a fallback that named one
+  | { kind: "stale-retry"; attempt: number; tier?: string; model?: string } // same agent, reuse existing session
+  | { kind: "timeout-retry"; attempt: number; tier?: string; model?: string } // same agent, fresh session after fail-timeout
+  | { kind: "swap"; failure: AdapterFailure; tier?: string; model?: string }; // new agent, fresh session
 
 import type { SessionRunHopFn } from "../runtime/session-run-hop";
 import type {
@@ -137,11 +145,15 @@ export interface IAgentManager {
   /** Resolve the default agent name. Reads config.agent.default (falls back to built-in "claude"). */
   getDefault(): string;
 
-  /** True if the agent has been marked unavailable for this run. */
-  isUnavailable(agent: string): boolean;
+  /**
+   * True if the agent has been marked unavailable for this run. `tier` narrows the
+   * check to that tier's own cooldown, distinct from the bare agent's — one tier's
+   * provider failure must not blanket-exclude every other tier of the same agent.
+   */
+  isUnavailable(agent: string, tier?: string): boolean;
 
-  /** Mark an agent unavailable for this run (auth/quota/service-down). */
-  markUnavailable(agent: string, reason: AdapterFailure): void;
+  /** Mark an agent unavailable for this run (auth/quota/service-down). `tier` scopes the cooldown to that tier alone. */
+  markUnavailable(agent: string, reason: AdapterFailure, tier?: string): void;
 
   /** Reset per-run state. Called at run boundary. */
   reset(): void;
@@ -176,10 +188,12 @@ export interface IAgentManager {
   /**
    * Returns the next fallback target (agent, and its optional tier) for a given
    * current agent and hop count, excluding pruned (no credentials),
-   * already-unavailable agents, and — when passed — the agent named by
-   * `exclude`. Returns null when no candidate is available.
+   * already-unavailable agents, and — when passed — the identity named by
+   * `exclude`/`excludeTier`. That identity match is agent+tier, not agent alone,
+   * so a same-agent, different-tier target survives exclusion of the tier that
+   * actually failed. Returns null when no candidate is available.
    */
-  nextCandidate(current: string, hopsSoFar: number, exclude?: string): FallbackTarget | null;
+  nextCandidate(current: string, hopsSoFar: number, exclude?: string, excludeTier?: string): FallbackTarget | null;
 
   /**
    * Run the prompt with automatic agent-swap fallback on availability failures.
@@ -276,3 +290,28 @@ export type SendPromptFn = (
 ) => Promise<import("./types").TurnResult>;
 
 export type { SessionRunHopFn };
+
+/** Minimal logger surface AgentManager and its collaborators need. */
+export type LoggerLike = {
+  warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
+  info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
+};
+
+/**
+ * `AgentManager`'s constructor opts, named so the constructor signature stays
+ * one line — manager.ts is at its 600-line ratchet ceiling. `import(...)` types
+ * for middleware/dispatchEvents/retryStrategy/models keep this file cycle-free
+ * (per the file header) — a type-only inline import is erased and never
+ * registers a runtime edge, unlike a static `import type ... from ...`.
+ */
+export interface AgentManagerCtorOpts {
+  logger?: LoggerLike;
+  middleware?: import("../runtime/agent-middleware").MiddlewareChain;
+  runId?: string;
+  sendPrompt?: SendPromptFn;
+  runHop?: SessionRunHopFn;
+  dispatchEvents?: import("../runtime/dispatch-events").IDispatchEventBus;
+  retryStrategy?: import("./retry/types").RetryStrategy;
+  /** Not part of `AgentManagerConfig` — agentManagerConfigSelector excludes `models` (ADR-019). */
+  models?: import("@/config").ModelsConfig;
+}

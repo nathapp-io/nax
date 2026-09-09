@@ -13,6 +13,15 @@ export interface CreateAgentManagerOpts {
   sendPrompt?: SendPromptFn;
   runHop?: SessionRunHopFn;
   dispatchEvents?: IDispatchEventBus;
+  /**
+   * NOT part of `AgentManagerConfig` — `agentManagerConfigSelector` deliberately
+   * excludes `models` (ADR-019 puts model resolution at the callOp seam). This is
+   * a separate, explicit DI seam so fallback swap identity can follow the actual
+   * resolved model rather than just a tier name — see fallback-model-identity.ts.
+   * The one production caller (runtime/index.ts) has the full NaxConfig in scope
+   * and passes `config.models` through here; the selector itself is unchanged.
+   */
+  models?: import("@/config").ModelsConfig;
 }
 
 /**
