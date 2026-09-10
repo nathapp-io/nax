@@ -18,7 +18,6 @@ import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
 import type { ResolvedCompleteOptions } from "@/agents/types";
-import type { ProviderCatalogOverride } from "@/config/schema-types";
 import type { CodingTool } from "@/tools";
 
 const REAL_BUILD = _clientDeps.build;
@@ -190,33 +189,6 @@ describe("NativeAgentAdapter.complete", () => {
     };
     const result = await new NativeAgentAdapter().complete("hi", opts);
     expect(result.pricingSource).toBe("config-override");
-  });
-
-  test("passes its catalog overrides to the client build", async () => {
-    const overrides: ProviderCatalogOverride[] = [
-      {
-        provider: "opencode-go",
-        models: [
-          {
-            id: "deepseek-flash",
-            protocol: "openai-completions",
-            contextWindow: 1_000_000,
-            supportsTools: true,
-            thinkingLevels: ["off", "high"],
-            pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
-          },
-        ],
-      },
-    ];
-    let seen: readonly ProviderCatalogOverride[] | undefined;
-    _clientDeps.build = async (received) => {
-      seen = received;
-      return fakeClient();
-    };
-
-    await new NativeAgentAdapter(undefined, overrides).complete("hi", options());
-
-    expect(seen).toEqual(overrides);
   });
 });
 

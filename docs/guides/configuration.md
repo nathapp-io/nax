@@ -107,6 +107,13 @@ it explicitly rather than waiting on a dependency bump:
 Every value is operator-declared and complete: a wrong `contextWindow` or rate is
 your declaration, visible in config, rather than an id that cannot be named at all.
 
+Select it with an ordinary `{ agent, model }` pin — native reads provider and model
+from the model **string**, so the declared id is the whole address:
+
+```json
+"review": { "semantic": { "model": { "agent": "native", "model": "opencode-go/deepseek-flash" } } }
+```
+
 **Legacy keys are rejected, not stripped.** `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` were removed in ADR-012 Phase 6. Loading a config with them throws `NaxError code: CONFIG_LEGACY_AGENT_KEYS` with a migration hint. This is intentional — silently stripping would mask the migration.
 
 ---

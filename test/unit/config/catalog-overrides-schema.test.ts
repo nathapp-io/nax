@@ -50,6 +50,19 @@ describe("agent.native.catalogOverrides", () => {
     expect(() => parseNative({ catalogOverrides: [withUnknown] })).toThrow();
   });
 
+  test.each<[string, unknown]>([
+    ["a model-level unknown key", { ...VALID_OVERRIDE.models[0], contextWindowSize: 1 }],
+    [
+      "a tiers array inside pricing",
+      {
+        ...VALID_OVERRIDE.models[0],
+        pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0, tiers: [] },
+      },
+    ],
+  ])("rejects %s at the nested level instead of stripping it", (_label, model) => {
+    expect(() => parseNative({ catalogOverrides: [{ provider: "opencode-go", models: [model] }] })).toThrow();
+  });
+
   test("rejects an unknown thinking level", () => {
     const model = { ...VALID_OVERRIDE.models[0], thinkingLevels: ["turbo"] };
     expect(() => parseNative({ catalogOverrides: [{ provider: "opencode-go", models: [model] }] })).toThrow();

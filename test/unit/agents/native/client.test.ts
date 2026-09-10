@@ -162,7 +162,7 @@ describe("catalog overrides", () => {
     };
 
     const a = await getNativeClient(set);
-    const b = await getNativeClient(set);
+    const b = await getNativeClient(structuredClone(set));
 
     expect(seen).toEqual(set);
     expect(built).toBe(1);
@@ -178,7 +178,7 @@ describe("catalog overrides", () => {
     expect(err.code).toBe("NATIVE_CLIENT_OVERRIDES_MISMATCH");
   });
 
-  test("a failed build frees the override key, so a later different set can build", async () => {
+  test("a failed build is not memoised, so a later different set can build", async () => {
     let attempt = 0;
     _clientDeps.build = async () => {
       attempt += 1;
