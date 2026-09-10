@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { estimateCostUsd } from "@/agents/cost";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
+import type { ProviderCatalogOverride } from "@/config/schema-types";
 import { getSafeLogger } from "@/logger";
 import { createTurnDeadline } from "../turn-deadline";
 // Value import via the sibling path, matching acp/adapter.ts: the parent barrel
@@ -103,7 +104,10 @@ export class NativeAgentAdapter implements AgentAdapter {
    */
   private readonly oneShotKey = newSessionKey();
 
-  constructor(supportedTiers: readonly string[] = DEFAULT_TIERS) {
+  constructor(
+    supportedTiers: readonly string[] = DEFAULT_TIERS,
+    private readonly catalogOverrides: readonly ProviderCatalogOverride[] = [],
+  ) {
     this.capabilities = {
       supportedTiers: supportedTiers.length > 0 ? supportedTiers : DEFAULT_TIERS,
       maxContextTokens: CONSERVATIVE_CONTEXT_TOKENS,
@@ -168,7 +172,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     // string is the only source of truth.
     const { provider, model, effort } = parseNativeModel(options.modelDef.model);
     const thinking = toThinkingLevel(effort);
-    const client = await getNativeClient();
+    const client = await getNativeClient(this.catalogOverrides);
     const resolved = await client.model(provider, model);
 
     const controller = new AbortController();
@@ -229,7 +233,7 @@ export class NativeAgentAdapter implements AgentAdapter {
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const { provider, model, effort } = parseNativeModel(handle.modelDef?.model ?? "");
     const thinking = toThinkingLevel(effort);
-    const client = await getNativeClient();
+    const client = await getNativeClient(this.catalogOverrides);
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
     const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?.pricing);

@@ -1,6 +1,6 @@
 # The nax-ai surface the native adapter consumes
 
-Reference for `@nathapp/nax-ai` (pinned at **0.1.7**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
+Reference for `@nathapp/nax-ai` (pinned at **0.1.10**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
 
 `src/agents/native/client.ts` and its siblings are the ONLY files in `src/` permitted to import nax-ai (`scripts/check-nax-ai-imports.ts` enforces it).
 
@@ -65,7 +65,35 @@ const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer
 
 Windows are large: `claude-sonnet-5` is **1,000,000**, `gpt-5.6-terra` **272,000**. `execution.compaction.compactAtPercent` floors at 50, so on a million-token window compaction cannot fire below 500k tokens — a normal story will never trigger it.
 
-**The override seam exists but is unwired.** `ClientOptions.providerOverrides?: readonly ProviderOverride[]`, where `ProviderOverride.models?: readonly ResolvedModel[]` and `ResolvedModel` carries `contextWindow`. `git grep ProviderOverride -- src` is empty and `buildNativeClient` passes none. nax-ai constrains the type to *"declaration-data overrides only"* — a window value qualifies; behaviour changes do not.
+**The override seam is wired, via `agent.native.catalogOverrides`** (nax#1982).
+`ClientOptions.providerOverrides?: readonly ProviderOverride[]` accepts
+declaration-data overrides, and `buildNativeClient` now maps the configured list
+through `toProviderOverrides` (`src/agents/native/models.ts`) into `createClient`.
+nax-ai applies override models last in `normaliseCatalog`, replacing any same-id
+entry and lazily creating the provider bucket, so an id absent from the bundled
+pi-ai snapshot resolves after the override — the whole point of the field.
+
+```json
+"agent": {
+  "native": {
+    "catalogOverrides": [{
+      "provider": "opencode-go",
+      "models": [{
+        "id": "deepseek-flash",
+        "protocol": "openai-completions",
+        "contextWindow": 1000000,
+        "supportsTools": true,
+        "thinkingLevels": ["off", "low", "medium", "high"],
+        "pricing": { "input": 0.15, "output": 0.6, "cacheRead": 0.003, "cacheWrite": 0 }
+      }]
+    }]
+  }
+}
+```
+
+The client is built once per process, so every override in effect must be
+collected into this one list; a second, different set throws
+`NATIVE_CLIENT_OVERRIDES_MISMATCH` rather than silently reusing the first build.
 
 Overriding the window is safe: it never reaches the provider. It feeds only nax's own `shouldCompact` / `keepBudget` math, so lowering it makes compaction fire earlier against an otherwise real request.
 

@@ -78,8 +78,34 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.acp.promptRetries` | `0` | ACP only. Becomes acpx's `--prompt-retries`; the retry runs inside the spawned agent process. |
 | `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
 | `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
+| `agent.native.catalogOverrides` | `[]` | Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot. Provider-scoped; each entry is a **complete** record — `id`, `protocol`, `contextWindow`, `supportsTools`, `thinkingLevels`, and `pricing` in nax-ai's `input`/`output`/`cacheRead`/`cacheWrite` per-1M vocabulary. Applied below every pin route (tier entries, literal `{agent, model}` pins, fallback rungs). The client is built once per process, so keep one list. See [nax-ai surface](../architecture/nax-ai-surface.md#context-window). |
 
 **Scope — what this controls.** Only the *availability* retry layer (auth / 429 / service down). Transport retries (broken socket, stale session) stay on the same agent inside the adapter. Agent-internal retries (a stalled stream or a 502/503 inside one call) stay on the same agent too, in the spawned agent process on ACP and in the native turn loop on native — see `agent.acp.promptRetries` and `agent.native.transportRetry` above. Payload-shape retries (JSON parse fail) stay on the same agent inside the caller. See [Agents — How fallback works](agents.md#how-fallback-works) for the full split.
+
+**Declaring a model newer than the catalog (nax#1982).** When the provider's model
+exists on models.dev but not in nax's pinned `@earendil-works/pi-ai` snapshot, name
+it explicitly rather than waiting on a dependency bump:
+
+```json
+"agent": {
+  "native": {
+    "catalogOverrides": [{
+      "provider": "opencode-go",
+      "models": [{
+        "id": "deepseek-flash",
+        "protocol": "openai-completions",
+        "contextWindow": 1000000,
+        "supportsTools": true,
+        "thinkingLevels": ["off", "low", "medium", "high"],
+        "pricing": { "input": 0.15, "output": 0.6, "cacheRead": 0.003, "cacheWrite": 0 }
+      }]
+    }]
+  }
+}
+```
+
+Every value is operator-declared and complete: a wrong `contextWindow` or rate is
+your declaration, visible in config, rather than an id that cannot be named at all.
 
 **Legacy keys are rejected, not stripped.** `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` were removed in ADR-012 Phase 6. Loading a config with them throws `NaxError code: CONFIG_LEGACY_AGENT_KEYS` with a migration hint. This is intentional — silently stripping would mask the migration.
 
