@@ -180,7 +180,12 @@ export function buildHopCallback(
     hopBundle,
     hopKind,
     resolvedRunOptions,
-  ): Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }> => {
+  ): Promise<{
+    result: AgentResult;
+    bundle: ContextBundle | undefined;
+    prompt?: string;
+    endpoint?: HopEndpoint;
+  }> => {
     const logger = getLogger();
     let workingBundle = hopBundle;
     // Set by whichever hop-endpoint resolution branch runs below; Task 3 returns
@@ -509,7 +514,7 @@ export function buildHopCallback(
       // sendWithFileOutput → hopBody) synthesises a fail-timeout adapterFailure for
       // timedOut turns but the hop returns normally — the catch block never executes.
       if (turnResult.timedOut) timedOut = true;
-      return { result: turnResultToAgentResult(turnResult), bundle: workingBundle, prompt };
+      return { result: turnResultToAgentResult(turnResult), bundle: workingBundle, prompt, endpoint };
     } catch (err) {
       // Preserve typed adapter failure on SessionFailureError so runWithFallback's
       // swap policy sees the real outcome (rate-limit, auth, quota) instead of

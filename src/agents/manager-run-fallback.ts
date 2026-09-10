@@ -72,6 +72,10 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
     while (true) {
       const hop = await executeHop(input, currentAgent, currentBundle, currentHopKind, currentRunOptions);
       const { result } = hop;
+      // The endpoint this hop dispatched — the identity a failure must be recorded
+      // against. `currentHopKind.model` is a DECLARED literal pin and stays
+      // authoritative when present; otherwise the dispatched model id is the truth.
+      const dispatchedModel = currentHopKind.model ?? hop.endpoint?.modelDef.model;
       const updatedBundle = hop.bundle ?? currentBundle;
       finalPrompt = hop.prompt ?? finalPrompt;
       totalCostUsd += result.estimatedCostUsd ?? 0;
@@ -188,8 +192,8 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       // still threads through: a literal-pin swap target DOES carry a tier-less model,
       // and that pin's own identity is what nax#1966 needed — see fallback-model-identity.ts.
       const currentTier = currentHopKind.tier;
-      input.markUnavailable(currentAgent, failure, currentTier, currentHopKind.model);
-      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, currentHopKind.model);
+      input.markUnavailable(currentAgent, failure, currentTier, dispatchedModel);
+      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, dispatchedModel);
       if (!next) {
         const outcome = await input.resolveExhaustion({
           failure,

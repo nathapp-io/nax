@@ -111,7 +111,17 @@ export interface AgentRunRequest {
     bundle: ContextBundle | undefined,
     hopKind: HopKind,
     resolvedRunOptions: AgentRunOptions,
-  ) => Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }>;
+  ) => Promise<{
+    result: AgentResult;
+    bundle: ContextBundle | undefined;
+    prompt?: string;
+    /**
+     * The endpoint this hop actually dispatched. Cooldown marking and candidate
+     * exclusion key on THIS, not on the tier/model the HopKind declared — a
+     * config-default primary declares neither (nax#1965).
+     */
+    endpoint?: { readonly modelDef: import("../config/schema-types").ModelDef; readonly modelTier?: string };
+  }>;
   /**
    * When true, runWithFallback dispatches at most one hop on the primary agent
    * and never iterates the fallback chain. Used by ops that must preserve the
