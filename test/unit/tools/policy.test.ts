@@ -402,7 +402,9 @@ describe("verb denial names what is permitted (#1971)", () => {
     // `coverage` is an allowedVerb but NOT granted to this stage: naming it
     // would send the model straight back into the same denial.
     expect(verdict.allowed === false && verdict.reason).toContain("permitted: lint, test");
-    expect(verdict.allowed === false && verdict.reason).not.toContain("coverage,");
+    // Naming every allowedVerb would append "testScoped"; `coverage` alone is
+    // the denied verb and cannot contain it, so this only fails on the regression.
+    expect(verdict.allowed === false && verdict.reason).not.toContain("testScoped");
   });
 
   test("a grant with no usable verb says so rather than naming an empty list", () => {

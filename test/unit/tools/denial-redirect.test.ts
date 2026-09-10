@@ -156,6 +156,18 @@ describe("redirectForVerb (#1971)", () => {
     expect(redirectForVerb("Git", "diff", ALL, CMDS)).toBeUndefined();
   });
 
+  test("a multi-token git command line never redirects Git back at itself", () => {
+    // The tokens.length > 1 branch delegates to the argv table, which points
+    // git read verbs at Git -- the same contradiction the bare-verb guard
+    // above refuses, reached by a different route.
+    expect(redirectForVerb("Git", "git diff", ALL, CMDS)).toBeUndefined();
+    expect(redirectForVerb("Git", "git status", ALL, CMDS)).toBeUndefined();
+  });
+
+  test("a RunCommand multi-token git verb still redirects to Git", () => {
+    expect(redirectForVerb("RunCommand", "git diff", ALL, CMDS)).toContain("Git");
+  });
+
   test("says nothing when the target tool is not advertised", () => {
     expect(redirectForVerb("Git", "grep", ALL, CMDS)).toBeUndefined();
     expect(redirectForVerb("RunCommand", "ls -la", new Set(["Read"]), CMDS)).toBeUndefined();

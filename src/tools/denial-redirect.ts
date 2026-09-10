@@ -145,10 +145,15 @@ export function redirectForVerb(
     .filter((t) => t.length > 0);
   if (tokens.length === 0) return undefined;
 
-  // A multi-token verb IS a command line. No self-guard here: pointing
-  // RunCommand's raw-command-line slot at RunCommand's DECLARED-command slot is
-  // the whole point, not a contradiction.
-  if (tokens.length > 1) return redirectForArgv(tokens, available, declaredCommands);
+  // A multi-token verb IS a command line. Pointing RunCommand's raw-command-line
+  // slot at RunCommand's DECLARED-command slot is the whole point, not a
+  // contradiction -- but Git's is, so keep the same self-guard the bare-verb
+  // branch uses (RunCommand:testScoped is a different affordance and passes).
+  if (tokens.length > 1) {
+    const hit = intendedTool(tokens);
+    if (hit !== undefined && hit.tool === deniedTool) return undefined;
+    return redirectForArgv(tokens, available, declaredCommands);
+  }
 
   const hit = VERB_TOOLS.get(tokens[0] as string);
   if (hit === undefined) return undefined;
