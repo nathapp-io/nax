@@ -248,6 +248,7 @@ describe("adversarialReviewOp.verify() — recurrence stamps reach findings + ad
       expect(stamped.meta?.recurrence).toEqual({
         disposition: "blocking",
         rounds: 1,
+        wasBlocking: true,
       });
     });
   });

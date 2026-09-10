@@ -130,8 +130,8 @@ export type RecurrenceResult<T = AdversarialLLMFinding> = {
    */
   retired: T[];
   /**
-   * Every accepted finding stamped with `meta.recurrence.disposition` (and
-   * `rounds`, and `wasBlocking` for demoted/retired). Returned in input
+   * Every accepted finding stamped with `meta.recurrence.disposition`,
+   * `rounds`, and `wasBlocking`. Returned in input
    * order so callers can persist the stamped set.
    */
   classified: T[];
@@ -183,9 +183,9 @@ export interface RecurrenceCandidate {
  *   - else → advisory.
  *
  * `classified` carries every input finding in input order, stamped with
- * `meta.recurrence = { disposition, rounds, wasBlocking? }`. When
- * `cfg.enabled` is false, `classified` is empty and no `meta.recurrence` is
- * stamped — the legacy severity-only partition is preserved.
+ * `meta.recurrence = { disposition, rounds, wasBlocking }`. When
+ * `cfg.enabled` is false, `classified` is the unchanged input array and no
+ * `meta.recurrence` is stamped — the legacy severity-only partition is preserved.
  */
 export function classifyRecurrence<T extends RecurrenceCandidate>(
   accepted: T[],
@@ -203,7 +203,7 @@ export function classifyRecurrence<T extends RecurrenceCandidate>(
 
   if (!cfg.enabled) {
     for (const f of accepted) (isBlockingSeverity(f.severity, threshold) ? blocking : advisory).push(f);
-    return { blocking, advisory, demoted, retired, classified };
+    return { blocking, advisory, demoted, retired, classified: accepted };
   }
 
   const priorCounts = countPriorAppearances(priorIterations, source);
@@ -227,19 +227,16 @@ export function classifyRecurrence<T extends RecurrenceCandidate>(
     // advisory cap below.
     if (f.category === "test-gap" && testFileMatch(f.file) && isBlocking) {
       blocking.push(f);
-      // wasBlocking is reserved for demoted/retired per the `classified` docstring;
-      // carve-out findings never had a transition, so we don't stamp the key.
-      classified.push(stampRecurrence(f, "blocking", rounds, undefined));
+      classified.push(stampRecurrence(f, "blocking", rounds, true));
       continue;
     }
 
     let disposition: "blocking" | "advisory" | "demoted" | "retired";
-    let wasBlocking: boolean | undefined;
+    const wasBlocking = isBlocking;
 
     if (isBlocking) {
       if (rounds >= cfg.maxBlockingRounds + 1) {
         disposition = "demoted";
-        wasBlocking = true;
         demoted.push(f);
       } else if (rounds === 1 || prevWasBlocking) {
         disposition = "blocking";
@@ -250,7 +247,6 @@ export function classifyRecurrence<T extends RecurrenceCandidate>(
       }
     } else if (rounds >= maxAdvisory) {
       disposition = "retired";
-      wasBlocking = false;
       retired.push(f);
     } else {
       disposition = "advisory";
@@ -272,10 +268,9 @@ function stampRecurrence<T extends RecurrenceCandidate>(
   f: T,
   disposition: "blocking" | "advisory" | "demoted" | "retired",
   rounds: number,
-  wasBlocking: boolean | undefined,
+  wasBlocking: boolean,
 ): T {
-  const recurrence: Record<string, unknown> = { disposition, rounds };
-  if (wasBlocking !== undefined) recurrence.wasBlocking = wasBlocking;
+  const recurrence: Record<string, unknown> = { disposition, rounds, wasBlocking };
   const existingMeta = (f as { meta?: Record<string, unknown> }).meta;
   return {
     ...f,
