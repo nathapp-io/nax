@@ -356,3 +356,231 @@ describe("buildPriorIterationsBlock — token guard", () => {
     expect(output).not.toContain("FALSIFIED");
   });
 });
+
+// ─── US-004: retired findings (rendering change) ─────────────────────────────
+
+describe("buildPriorIterationsBlock — retired findings", () => {
+  // AC 1 — finding stamped meta.recurrence.disposition retired is omitted
+  // from the verdict-required list.
+  test("omits a retired-stamped finding from the verdict-required list", () => {
+    const retired = makeFinding({
+      source: "adversarial-review",
+      message: "tired warning that the implementer has seen enough times",
+      file: "src/lib/foo.ts",
+      category: "input",
+      meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+    });
+    const iter = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [retired],
+    });
+
+    const output = buildPriorIterationsBlock([iter]);
+
+    // The retired finding's message must not appear in the per-finding list
+    // (renderFinding is what produces the "Findings flagged previously:" entries).
+    expect(output).not.toContain("tired warning that the implementer has seen enough times");
+    // The iteration must not advertise it as a still-flaggable finding.
+    expect(output).not.toContain("Findings flagged previously:");
+  });
+
+  // AC 2 — acknowledgement section names the finding's file and category.
+  test("acknowledgement section names the retired finding's file and category", () => {
+    const retired = makeFinding({
+      source: "adversarial-review",
+      message: "tired advisory",
+      file: "src/lib/foo.ts",
+      category: "input",
+      meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+    });
+    const iter = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [retired],
+    });
+
+    const output = buildPriorIterationsBlock([iter]);
+
+    // The acknowledgement section must surface the file and category of every retired finding.
+    expect(output).toContain("src/lib/foo.ts");
+    expect(output).toContain("input");
+    // And it must be distinguishable from the verdict list.
+    expect(output).toContain("Acknowledg");
+  });
+
+  // AC 3 — acknowledgement section states the retired findings are closed and
+  // must not be re-flagged.
+  test("acknowledgement section states retired findings are closed and must not be re-flagged", () => {
+    const retired = makeFinding({
+      source: "adversarial-review",
+      message: "tired advisory",
+      file: "src/lib/foo.ts",
+      category: "input",
+      meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+    });
+    const iter = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [retired],
+    });
+
+    const output = buildPriorIterationsBlock([iter]);
+
+    // Both phrases are required by AC 3.
+    expect(output).toMatch(/closed/i);
+    expect(output).toMatch(/must not be re-?flagged/i);
+  });
+
+  // AC 4 — block is unchanged when no finding carries meta.recurrence.
+  test("returns the same block when no finding carries meta.recurrence", () => {
+    const f = makeFinding({
+      source: "adversarial-review",
+      message: "plain finding",
+      file: "src/lib/foo.ts",
+      category: "input",
+    });
+    const iter = makeIteration({
+      iterationNum: 1,
+      outcome: "regressed",
+      findingsBefore: [],
+      findingsAfter: [f],
+    });
+
+    const output = buildPriorIterationsBlock([iter]);
+
+    // Pre-feature behaviour: the finding appears in the verdict-required list and
+    // no acknowledgement section is rendered (no retired entries exist).
+    expect(output).toContain("Findings flagged previously:");
+    expect(output).toContain("plain finding");
+    expect(output).not.toContain("Acknowledg");
+  });
+
+  // AC 5 — verdict template count only includes non-retired findings.
+  test("verdict template counts only findings not stamped retired", () => {
+    const live = makeFinding({
+      source: "adversarial-review",
+      message: "still-blocking issue",
+      file: "src/lib/live.ts",
+      category: "input",
+    });
+    const retired = makeFinding({
+      source: "adversarial-review",
+      message: "tired issue",
+      file: "src/lib/tired.ts",
+      category: "input",
+      meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+    });
+    const iter = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [live, retired],
+    });
+
+    const output = buildPriorIterationsBlock([iter]);
+
+    // 1 live + 1 retired → count must be 1 (retired excluded from verdict count).
+    expect(output).toContain("classify each of the 1 prior finding(s) above");
+    expect(output).not.toContain("classify each of the 2 prior finding(s) above");
+  });
+
+  // AC 6 — an iteration whose findings are all retired renders no
+  // verdict-required list (the iteration body becomes acknowledgement-only).
+  test("an iteration whose findings are all stamped retired has no verdict-required list", () => {
+    const retired1 = makeFinding({
+      source: "adversarial-review",
+      message: "tired issue one",
+      file: "src/lib/a.ts",
+      category: "input",
+      meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+    });
+    const retired2 = makeFinding({
+      source: "adversarial-review",
+      message: "tired issue two",
+      file: "src/lib/b.ts",
+      category: "error-path",
+      meta: { recurrence: { disposition: "retired", rounds: 3, wasBlocking: false } },
+    });
+    const iter = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [retired1, retired2],
+    });
+
+    const output = buildPriorIterationsBlock([iter]);
+
+    // The verdict-required list is the per-finding block under "Findings flagged previously:".
+    expect(output).not.toContain("Findings flagged previously:");
+    // The verdict template must still appear, but its count is 0 (no live entries
+    // in this iteration).
+    expect(output).toContain("classify each of the 0 prior finding(s) above");
+    // And the acknowledgement section must list the two retired files/categories.
+    expect(output).toContain("src/lib/a.ts");
+    expect(output).toContain("src/lib/b.ts");
+  });
+
+  // AC 7 — across three rounds where a warning is emitted in round 1 and reaches
+  // maxAdvisoryRounds in round 2, the round-3 prior-iterations block lists it
+  // only in the acknowledgement section.
+  test("across three rounds the retired warning is listed only in the acknowledgement section", () => {
+    const w = (msg: string): Finding =>
+      makeFinding({
+        source: "adversarial-review",
+        message: msg,
+        file: "src/lib/w.ts",
+        category: "input",
+        severity: "warning",
+      });
+    const round1 = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [w("warning round 1")],
+    });
+    const round2 = makeIteration({
+      iterationNum: 2,
+      outcome: "unchanged",
+      findingsAfter: [
+        // Round 2 — stamped retired by classifyRecurrence (advisory cap reached).
+        {
+          ...w("warning round 2"),
+          meta: { recurrence: { disposition: "retired", rounds: 2, wasBlocking: false } },
+        },
+      ],
+    });
+    const round3 = makeIteration({
+      iterationNum: 3,
+      outcome: "unchanged",
+      findingsAfter: [],
+    });
+
+    // The block is what round 4 would see — three rounds of history.
+    const output = buildPriorIterationsBlock([round1, round2, round3]);
+
+    // Round-1 warning is still live → it appears in the verdict-required list.
+    expect(output).toContain("warning round 1");
+    // Round-2 warning is retired → its message must NOT appear in the verdict list.
+    expect(output).not.toContain("warning round 2");
+    // It must, however, appear in the acknowledgement section (named by file).
+    expect(output).toContain("src/lib/w.ts");
+  });
+
+  // Round 3 prior block — round-2 retired finding listed once in acknowledgement.
+  test("retired finding in round 2 is named only in round 2's acknowledgement section", () => {
+    const retired = makeFinding({
+      source: "adversarial-review",
+      message: "single tired message",
+      file: "src/lib/single.ts",
+      category: "input",
+      meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+    });
+    const iter1 = makeIteration({ iterationNum: 1, outcome: "unchanged", findingsAfter: [retired] });
+    const iter2 = makeIteration({ iterationNum: 2, outcome: "unchanged", findingsAfter: [] });
+
+    const output = buildPriorIterationsBlock([iter1, iter2]);
+
+    // The retired finding must appear once across the block — in iter1's acknowledgement,
+    // since iter2 carries no findings at all.
+    const occurrences = output.split("src/lib/single.ts").length - 1;
+    expect(occurrences).toBe(1);
+  });
+});

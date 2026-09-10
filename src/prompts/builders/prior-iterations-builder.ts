@@ -63,6 +63,49 @@ export function buildPriorIterationsBlock<F extends Finding>(iterations: Iterati
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+/**
+ * Is this finding stamped with the terminal-advisory `retired` disposition?
+ * US-004: a retired finding stays in the iteration store but moves out of the
+ * verdict-required list — telling the reviewer to "re-flag" it is the loop
+ * retirement exists to break — and into an acknowledgement block that states
+ * it is closed.
+ */
+function isRetired(f: Finding): boolean {
+  const rec = f.meta?.recurrence;
+  return typeof rec === "object" && rec !== null && (rec as { disposition?: unknown }).disposition === "retired";
+}
+
+/**
+ * Visible findings for the per-round verdict-required list — every entry in
+ * `findingsAfter` EXCEPT those stamped `disposition: "retired"`. The retired
+ * entries render once, in the acknowledgement section, named by file and
+ * category only.
+ */
+function visibleFindings<F extends Finding>(iter: Iteration<F>): F[] {
+  return iter.findingsAfter.filter((f) => !isRetired(f));
+}
+
+/**
+ * Retired findings from an iteration, in first-seen order. Each entry is
+ * summarised to the (file, category) pair the acknowledgement section names —
+ * the message and other fields are intentionally dropped so the section stays
+ * a compact index of "what was closed", not a duplicate verdict list.
+ */
+function retiredEntries<F extends Finding>(iter: Iteration<F>): Array<{ file: string; category: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ file: string; category: string }> = [];
+  for (const f of iter.findingsAfter) {
+    if (!isRetired(f)) continue;
+    const file = f.file ?? "(workdir-global)";
+    const category = f.category ?? "";
+    const key = `${file}|${category}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ file, category });
+  }
+  return out;
+}
+
 function applyTokenGuard<F extends Finding>(
   sections: string[],
   iterations: Iteration<F>[],
@@ -76,7 +119,7 @@ function applyTokenGuard<F extends Finding>(
     .slice(0, n - 2)
     .map(
       (iter) =>
-        `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${iter.findingsAfter.length} findings, omitted for brevity)`,
+        `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${visibleFindings(iter).length} findings, omitted for brevity)`,
     );
   const verbatim = sections.slice(n - 2);
 
@@ -84,12 +127,40 @@ function applyTokenGuard<F extends Finding>(
 }
 
 function renderIteration<F extends Finding>(iter: Iteration<F>): string {
+  const visible = visibleFindings(iter);
+  const retired = retiredEntries(iter);
   const header = `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${iter.findingsBefore.length} → ${iter.findingsAfter.length})`;
-  if (iter.findingsAfter.length === 0) {
+  if (visible.length === 0 && retired.length === 0) {
     return [header, "_All prior findings cleared._"].join("\n");
   }
-  const lines = iter.findingsAfter.map((f, i) => renderFinding(f, i + 1));
-  return [header, "Findings flagged previously:", ...lines].join("\n");
+  const parts: string[] = [header];
+  if (visible.length > 0) {
+    parts.push("Findings flagged previously:");
+    parts.push(...visible.map((f, i) => renderFinding(f, i + 1)));
+  }
+  if (retired.length > 0) {
+    parts.push(...renderAcknowledgement(retired));
+  }
+  return parts.join("\n");
+}
+
+/**
+ * Render the acknowledgement section for retired findings. Per AC 2 / AC 3:
+ * names each retired finding's file and category, and states the section is
+ * for closed findings that must not be re-flagged. One entry per
+ * (file, category) pair so a defect re-filed in the same locus across rounds
+ * does not produce a duplicated line within a single iteration's section.
+ */
+function renderAcknowledgement(entries: ReadonlyArray<{ file: string; category: string }>): string[] {
+  const lines = entries.map((e) => `- \`${e.file}\` [${e.category}]`);
+  return [
+    "Acknowledgement — closed findings (must not be re-flagged):",
+    ...lines,
+    "These findings reached their terminal advisory cap. They are reported, not",
+    "acted on — re-flagging them would re-introduce the loop retirement exists",
+    "to break. If you believe the close was wrong, surface a new finding with a",
+    "distinct `file`, `line`, `category`, and substantively different `message`.",
+  ];
 }
 
 function renderFinding<F extends Finding>(f: F, n: number): string {
@@ -103,7 +174,7 @@ function renderFinding<F extends Finding>(f: F, n: number): string {
 }
 
 function renderVerdictTemplate<F extends Finding>(iterations: Iteration<F>[]): string {
-  const total = iterations.reduce((sum, it) => sum + it.findingsAfter.length, 0);
+  const total = iterations.reduce((sum, it) => sum + visibleFindings(it).length, 0);
   const hasUnchanged = iterations.some((i) => i.outcome === "unchanged");
   const unchangedNote = hasUnchanged
     ? `\n\nWhen outcome is "unchanged", the prior hypothesis is FALSIFIED — the change did not affect what was tested. Choose a different category before producing a new verdict. Do NOT repeat fixes listed above.`
