@@ -16,6 +16,7 @@ import type { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
 import type { ProtocolIds } from "../runtime/protocol-types";
+import { decideReuse } from "./endpoint-identity";
 import { _sessionManagerDeps, deriveNativeTranscriptDir, resolveProjectDirFromScratchDir } from "./manager-deps";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { selectModel } from "./model-selection";
@@ -434,15 +435,14 @@ export class SessionManager implements ISessionManager {
 
   private async openSessionImpl(name: string, opts: OpenSessionRequest): Promise<SessionHandle> {
     const liveHandle = this._liveHandles.get(name);
-    if (liveHandle && liveHandle.agentName === opts.agentName) {
-      const liveDesc = this._findByName(name);
-      if (!liveDesc || (liveDesc.state !== "COMPLETED" && liveDesc.state !== "FAILED")) {
-        return liveHandle;
-      }
-      // Stale handle: keepOpen left it in _liveHandles but closeSession already
-      // transitioned the descriptor to a terminal state. Remove it so the full open path runs.
-      this._liveHandles.delete(name);
-    }
+    const reuse = decideReuse(liveHandle, this._findByName(name), opts);
+    if (liveHandle && reuse === "reuse") return liveHandle;
+    if (liveHandle && reuse === "close-then-reopen") {
+      // closeSession clears _busySessions for this name; openSession set that marker
+      // as its single-flight guard and still needs it for the rest of this open.
+      await this.closeSession(liveHandle);
+      this._busySessions.add(name);
+    } else if (liveHandle) this._liveHandles.delete(name);
 
     const adapter = this._getAdapter(opts.agentName);
     if (!adapter) {

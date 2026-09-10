@@ -37,7 +37,10 @@ export interface SessionHandle {
   /**
    * Model this session was opened with. Recorded on every turn's cost row so
    * spend is attributable to a model (#1433) — before this, cost rows carried
-   * the literal string "unknown". Attribution only; never branch on it.
+   * the literal string "unknown". Attribution, and the session's endpoint identity: `decideReuse`
+   * (session/endpoint-identity.ts) compares it to decide whether a re-open under
+   * the same session name may serve this handle, and the native adapter's
+   * `sendTurn` dispatches from it. Do not branch on it for anything else.
    */
   readonly modelDef?: ModelDef;
   /** Tier `modelDef` resolved from, when it came from one. Attribution only. */
