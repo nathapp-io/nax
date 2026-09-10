@@ -525,12 +525,14 @@ describe("buildPriorIterationsBlock — retired findings", () => {
   test("across three rounds the retired warning is listed only in the acknowledgement section", () => {
     // The store carries the SAME finding across rounds (same file/line/rule;
     // message may be re-worded by the reviewer, but classifyRecurrence matches
-    // it back via fingerprintFor). Round 1's copy is unstamped because the
-    // plain advisory bucket is never recurrence-stamped (US-001); round 2's
-    // copy is stamped retired because the advisory cap was reached. The
-    // round-3 prompt must NOT re-flag the defect from round 1's verdict list
-    // and acknowledge it in round 2's section at the same time — that's the
-    // loop retirement exists to break.
+    // it back via fingerprintFor's leading-clause prefix). Round 1's copy is
+    // unstamped because the plain advisory bucket is never recurrence-stamped
+    // (US-001); round 2's copy is stamped retired because the advisory cap was
+    // reached. The round-3 prompt must NOT re-flag the defect from round 1's
+    // verdict list and acknowledge it in round 2's section at the same time —
+    // that's the loop retirement exists to break. The leading clause is
+    // shared ("warning text") so fingerprintFor matches across rounds despite
+    // the reviewer rewording the tail.
     const w = (msg: string): Finding =>
       makeFinding({
         source: "adversarial-review",
@@ -543,16 +545,17 @@ describe("buildPriorIterationsBlock — retired findings", () => {
     const round1 = makeIteration({
       iterationNum: 1,
       outcome: "unchanged",
-      findingsAfter: [w("warning text")],
+      findingsAfter: [w("warning text appears in handling of expired sessions")],
     });
     const round2 = makeIteration({
       iterationNum: 2,
       outcome: "unchanged",
       findingsAfter: [
         // Round 2 — stamped retired by classifyRecurrence (advisory cap reached).
-        // Same file/line/rule, message re-worded by the reviewer.
+        // Same file/line/rule, message re-worded in the tail but the leading
+        // clause is unchanged so fingerprintFor matches.
         {
-          ...w("warning text reworded"),
+          ...w("warning text appears in handling of expired sessions, but the underlying assumption still holds"),
           meta: { recurrence: { disposition: "retired", rounds: 2, wasBlocking: false } },
         },
       ],
@@ -606,6 +609,8 @@ describe("buildPriorIterationsBlock — retired findings", () => {
   // while round 2's stamped copy tells the reviewer not to. The block
   // therefore looks at the WHOLE history and treats the finding as retired
   // for the purposes of the verdict list once any iteration has stamped it.
+  // The leading-clause prefix is shared across rounds (the prose fingerprint
+  // fingerprintFor produces) so the cross-round identity match fires.
   test("an unstamped round-1 copy of a defect retired in round 2 is suppressed from the verdict list", () => {
     const round1 = makeIteration({
       iterationNum: 1,
@@ -613,7 +618,7 @@ describe("buildPriorIterationsBlock — retired findings", () => {
       findingsAfter: [
         makeFinding({
           source: "adversarial-review",
-          message: "unstamped advisory copy",
+          message: "warning text describes a flaw in the session handling logic",
           file: "src/lib/dup.ts",
           line: 7,
           category: "input",
@@ -627,7 +632,7 @@ describe("buildPriorIterationsBlock — retired findings", () => {
       findingsAfter: [
         {
           source: "adversarial-review",
-          message: "stamped retired copy (re-worded)",
+          message: "warning text describes a flaw in the session handling logic, expanded",
           file: "src/lib/dup.ts",
           line: 7,
           category: "input",
@@ -650,5 +655,106 @@ describe("buildPriorIterationsBlock — retired findings", () => {
     expect(output).not.toMatch(/Findings flagged previously:[\s\S]*?src\/lib\/dup\.ts/);
     // The verdict template count must exclude the retired finding entirely.
     expect(output).toContain("classify each of the 0 prior finding(s) above");
+  });
+
+  // Adversarial review #5 — the suppression identity matches
+  // `fingerprintFor`, which deliberately excludes the LLM-reported `line`
+  // because the reviewer frequently cites a slightly shifted line on each
+  // round. Pin the cross-round suppression surviving a line drift so a
+  // regression that introduces a `findingRecurrenceKey`-style identity
+  // (which uses `line` directly) is caught: it would let round 1's
+  // unstamped copy escape, leaving the verdict list to tell the reviewer
+  // to re-flag a defect the acknowledgement simultaneously says is closed.
+  test("cross-round suppression survives a shifted line number", () => {
+    const leading = "session-handling logic fails to clear cached state on token rotation";
+    const round1 = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [
+        makeFinding({
+          source: "adversarial-review",
+          message: leading,
+          file: "src/lib/line-drift.ts",
+          line: 10,
+          category: "input",
+          severity: "warning",
+        }),
+      ],
+    });
+    const round2 = makeIteration({
+      iterationNum: 2,
+      outcome: "unchanged",
+      findingsAfter: [
+        // Same defect, same leading clause, but the LLM reported line 14
+        // instead of 10. The retirement identity must still match — and
+        // therefore the round-1 line-10 copy must still be suppressed.
+        {
+          source: "adversarial-review",
+          message: `${leading}, elaborated`,
+          file: "src/lib/line-drift.ts",
+          line: 14,
+          category: "input",
+          severity: "warning",
+          meta: { recurrence: { disposition: "retired", rounds: 2, wasBlocking: false } },
+        },
+      ],
+    });
+
+    const output = buildPriorIterationsBlock([round1, round2]);
+
+    // Same file across the block — the file path appears in the round-1
+    // header (`(0 → 1)`) and in the acknowledgement. The verdict list
+    // entry is what we are guarding against.
+    expect(output).not.toMatch(/Findings flagged previously:[\s\S]*?src\/lib\/line-drift\.ts/);
+    expect(output).toContain("Acknowledgement — closed findings");
+    expect(output).toContain("classify each of the 0 prior finding(s) above");
+  });
+
+  // Adversarial review #5 (paired guard) — the suppression identity keys
+  // on the leading-clause fingerprint, so a finding that shares a
+  // leading clause but is in a NEW file (the retired defect moved files
+  // through a refactor, or the reviewer has filed a parallel defect on
+  // a sibling file with the same opening words) must NOT be suppressed.
+  // Pin a regression that drifts to file-only identity.
+  test("a finding with a shared leading clause but a different file is NOT suppressed", () => {
+    const leading = "session-handling logic fails to clear cached state on token rotation";
+    const round1 = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [
+        // Already-retired defect on file A.
+        {
+          source: "adversarial-review",
+          message: leading,
+          file: "src/lib/a.ts",
+          category: "input",
+          severity: "warning",
+          meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+        },
+      ],
+    });
+    const round2 = makeIteration({
+      iterationNum: 2,
+      outcome: "unchanged",
+      findingsAfter: [
+        // A new finding on file B with the same leading clause — this is a
+        // NEW defect, the reviewer must be told to verdict it.
+        makeFinding({
+          source: "adversarial-review",
+          message: leading,
+          file: "src/lib/b.ts",
+          category: "input",
+          severity: "warning",
+        }),
+      ],
+    });
+
+    const output = buildPriorIterationsBlock([round1, round2]);
+
+    // The new file B finding must appear in the verdict-required list.
+    expect(output).toMatch(/Findings flagged previously:[\s\S]*?src\/lib\/b\.ts/);
+    // The retired file A finding appears in the acknowledgement only.
+    const aOccurrences = output.split("src/lib/a.ts").length - 1;
+    expect(aOccurrences).toBe(1);
   });
 });

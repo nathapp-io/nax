@@ -13,6 +13,7 @@
  * Measurement errors are fail-safe: also restored.
  */
 import type { NonBlockingFixConfig, TestPatternConfig } from "../config/selectors";
+import { isRecurrenceRetired } from "../findings/retirement-stamp";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import type { SnapshotRef } from "../tdd/rollback";
@@ -69,10 +70,7 @@ export function actionableAdvisoryFindings(findings: readonly Finding[]): readon
   return findings.filter((f) => {
     if (f.actionRequired === false) return false;
     if (f.acDropped === true) return false;
-    const rec = f.meta?.recurrence;
-    if (typeof rec === "object" && rec !== null && (rec as { disposition?: unknown }).disposition === "retired") {
-      return false;
-    }
+    if (isRecurrenceRetired(f)) return false;
     return true;
   });
 }

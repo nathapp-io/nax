@@ -14,6 +14,7 @@
  */
 
 import type { Finding, Iteration } from "@/findings";
+import { isRecurrenceRetired, retirementIdentity } from "@/findings/retirement-stamp";
 
 /**
  * Token guard: cap total rendered block at this character count. When exceeded,
@@ -54,12 +55,14 @@ export function buildPriorIterationsBlock<F extends Finding>(iterations: Iterati
   // retired in round N+1) and the prompt would simultaneously tell the reviewer
   // to re-flag it (verdict list of round N) and not re-flag it (acknowledgement
   // of round N+1). That's the loop retirement exists to break. Dedup uses
-  // `findingRecurrenceKey` (file+line+rule, message excluded) so the same
-  // defect re-worded across rounds is still recognised as one finding.
+  // `retirementIdentity` — the AC-anchored / (file, category, message) prose
+  // fingerprint `fingerprintFor` produces in `classifyRecurrence` — so the same
+  // defect re-worded across rounds, or with a shifted `line`, is still
+  // recognised as one finding.
   const retiredKeys = new Set<string>();
   for (const iter of iterations) {
     for (const f of iter.findingsAfter) {
-      if (isRetired(f)) retiredKeys.add(findingRecurrenceKey(f));
+      if (isRecurrenceRetired(f)) retiredKeys.add(retirementIdentity(f));
     }
   }
 
@@ -86,12 +89,9 @@ export function buildPriorIterationsBlock<F extends Finding>(iterations: Iterati
  * US-004: a retired finding stays in the iteration store but moves out of the
  * verdict-required list — telling the reviewer to "re-flag" it is the loop
  * retirement exists to break — and into an acknowledgement block that states
- * it is closed.
+ * it is closed. Predicate is imported from `src/findings/retirement-stamp.ts`
+ * so the prompt and the fix-lane filter key on the same guard.
  */
-function isRetired(f: Finding): boolean {
-  const rec = f.meta?.recurrence;
-  return typeof rec === "object" && rec !== null && (rec as { disposition?: unknown }).disposition === "retired";
-}
 
 /**
  * Is this finding globally retired — i.e. retired in some iteration of the
@@ -99,25 +99,7 @@ function isRetired(f: Finding): boolean {
  * finding whose later-round twin is stamped retired.
  */
 function isGloballyRetired(f: Finding, retiredKeys: ReadonlySet<string>): boolean {
-  return retiredKeys.has(findingRecurrenceKey(f));
-}
-
-/**
- * Local copy of `findingRecurrenceKey` from `@/findings/types`. The barrel
- * `@/findings` re-exports it but is downstream of `cycle.ts`, which is itself
- * reached from the operations barrel — importing the value through that
- * barrel pulls this builder into an existing runtime cycle that
- * `check:import-cycles` ratchets against. The function is a pure
- * JSON.stringify over (source, file, line, rule) with a `findingKey` fallback
- * when neither `line` nor `rule` is set, so the inline is faithful.
- */
-function findingRecurrenceKey(f: Finding): string {
-  if (f.line == null && f.rule == null) {
-    // findingKey fallback: include message so two message-distinct findings
-    // in the same file (no line, no rule) don't conflate.
-    return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null, f.message]);
-  }
-  return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null]);
+  return retiredKeys.has(retirementIdentity(f));
 }
 
 /**
@@ -127,7 +109,7 @@ function findingRecurrenceKey(f: Finding): string {
  * acknowledgement section instead, named by file and category only.
  */
 function visibleFindings<F extends Finding>(iter: Iteration<F>, retiredKeys: ReadonlySet<string>): F[] {
-  return iter.findingsAfter.filter((f) => !isRetired(f) && !isGloballyRetired(f, retiredKeys));
+  return iter.findingsAfter.filter((f) => !isRecurrenceRetired(f) && !isGloballyRetired(f, retiredKeys));
 }
 
 /**
@@ -147,7 +129,7 @@ function retiredEntriesGlobal<F extends Finding>(
   const out: Array<{ file: string; category: string }> = [];
   for (const iter of iterations) {
     for (const f of iter.findingsAfter) {
-      if (!isRetired(f)) continue;
+      if (!isRecurrenceRetired(f)) continue;
       const file = f.file ?? "(workdir-global)";
       const category = f.category ?? "";
       const key = `${file}|${category}`;
@@ -169,12 +151,12 @@ function applyTokenGuard<F extends Finding>(
   }
 
   const n = sections.length;
-  const collapsed = iterations
-    .slice(0, n - 2)
-    .map(
-      (iter) =>
-        `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${visibleFindings(iter, retiredKeys).length} findings, omitted for brevity)`,
-    );
+  const collapsed = iterations.slice(0, n - 2).map((iter) => {
+    const visibleCount = visibleFindings(iter, retiredKeys).length;
+    const retiredCount = iter.findingsAfter.filter((f) => isRecurrenceRetired(f)).length;
+    const retiredSuffix = retiredCount > 0 ? `, ${retiredCount} retired` : "";
+    return `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${visibleCount} findings${retiredSuffix}, omitted for brevity)`;
+  });
   const verbatim = sections.slice(n - 2);
 
   return { displaySections: [...collapsed, ...verbatim], visibleIterations: iterations.slice(n - 2) };
@@ -182,9 +164,22 @@ function applyTokenGuard<F extends Finding>(
 
 function renderIteration<F extends Finding>(iter: Iteration<F>, retiredKeys: ReadonlySet<string>): string {
   const visible = visibleFindings(iter, retiredKeys);
+  const totalRetired = iter.findingsAfter.filter((f) => isRecurrenceRetired(f)).length;
   const header = `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${iter.findingsBefore.length} → ${iter.findingsAfter.length})`;
-  if (visible.length === 0) {
+  if (visible.length === 0 && totalRetired === 0) {
     return [header, "_All prior findings cleared._"].join("\n");
+  }
+  if (visible.length === 0) {
+    // Per OOS #10, retired findings remain stored and reported — they are
+    // NOT cleared. The empty verdict-required list reflects the move-to-
+    // acknowledgement rendering, not a resolution; the line below names
+    // the count so an operator reading the round header alone does not
+    // mistake this for a fix. The acknowledgement block at the end of the
+    // whole block lists the actual closed findings by file+category.
+    return [
+      header,
+      `_No live findings in this round — ${totalRetired} finding(s) closed as retired, see Acknowledgement below._`,
+    ].join("\n");
   }
   const parts: string[] = [header, "Findings flagged previously:"];
   parts.push(...visible.map((f, i) => renderFinding(f, i + 1)));
@@ -207,8 +202,9 @@ function renderAcknowledgement(entries: ReadonlyArray<{ file: string; category: 
     ...lines,
     "These findings reached their terminal advisory cap. They are reported, not",
     "acted on — re-flagging them would re-introduce the loop retirement exists",
-    "to break. If you believe the close was wrong, surface a new finding with a",
-    "distinct `file`, `line`, `category`, and substantively different `message`.",
+    "to break. If you believe the close was wrong, surface a new finding at a",
+    "distinct `file` and `category` (and a substantively different `message`)",
+    "so the review does not route it back to this retired bucket.",
   ];
 }
 
