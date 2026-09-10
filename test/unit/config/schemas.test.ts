@@ -12,6 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
+import { QualityConfigSchema } from "@/config/schemas-execution";
 
 /** Minimal valid config base — everything except models */
 function baseConfig(models: unknown) {
@@ -389,6 +390,13 @@ describe("QualityConfigSchema — scopeTestThreshold (US-001)", () => {
   test.each([0, 1000])("scopeTestThreshold accepts %d", (value) => {
     const result = NaxConfigSchema.parse({ quality: { scopeTestThreshold: value } });
     expect(result.quality.scopeTestThreshold).toBe(value);
+  });
+
+  test("coverage survives the parse so RunCommand can declare it (#1971)", () => {
+    const parsed = QualityConfigSchema.parse({
+      commands: { lint: "bun run lint", coverage: "bun run test:coverage" },
+    });
+    expect(parsed.commands.coverage).toBe("bun run test:coverage");
   });
 });
 
