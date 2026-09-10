@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1597
+    "looseCast": 1593
   },
-  "updatedAt": "2026-09-10T11:35:00.000Z",
+  "updatedAt": "2026-09-10T12:00:00.000Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -554,9 +554,6 @@
     },
     "test/unit/operations/reviewer-verdict-invariant.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/operations/recurrence-stamps.test.ts": {
-      "looseCast": 4
     },
     "test/unit/operations/full-suite-gate.test.ts": {
       "looseCast": 1
