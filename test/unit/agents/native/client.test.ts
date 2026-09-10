@@ -8,8 +8,10 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { createClient, type ProtocolOptions } from "@nathapp/nax-ai";
+import { assertNaxError } from "@test/helpers";
 import { _clientDeps, _resetNativeClient, buildNativeClient, getNativeClient } from "@/agents/native/client";
 import { naxCredentialStore } from "@/agents/native/credentials";
+import type { ProviderCatalogOverride } from "@/config/schema-types";
 
 const REAL_BUILD = _clientDeps.build;
 // A real client with no providers and no protocols: constructing it loads no
@@ -103,5 +105,89 @@ describe("buildNativeClient", () => {
     }
 
     expect(seenCredentials).toBe(naxCredentialStore());
+  });
+});
+
+describe("catalog overrides", () => {
+  function override(id: string): ProviderCatalogOverride {
+    return {
+      provider: "opencode-go",
+      models: [
+        {
+          id,
+          protocol: "openai-completions",
+          contextWindow: 1_000_000,
+          supportsTools: true,
+          thinkingLevels: ["off"],
+          pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
+        },
+      ],
+    };
+  }
+
+  test("an override makes an id the bundled catalog does not know resolvable", async () => {
+    // buildNativeClient is reached directly, not through _clientDeps.build
+    // (test/preload.ts sentinels that). The real bundled catalog loads here,
+    // as in the existing "constructs a real client" test.
+    const client = await buildNativeClient([
+      {
+        provider: "anthropic",
+        models: [
+          {
+            id: "nax-1982-override-probe",
+            protocol: "anthropic-messages",
+            contextWindow: 123_456,
+            supportsTools: true,
+            thinkingLevels: ["off", "high"],
+            pricing: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0.2 },
+          },
+        ],
+      },
+    ]);
+
+    const resolved = await client.model("anthropic", "nax-1982-override-probe");
+    expect(resolved.provider).toBe("anthropic");
+    expect(resolved.contextWindow).toBe(123_456);
+    expect(resolved.pricing.input).toBe(1);
+  });
+
+  test("passes the override set to the builder and reuses one build for the same set", async () => {
+    const set = [override("deepseek-flash")];
+    let seen: readonly ProviderCatalogOverride[] | undefined;
+    let built = 0;
+    _clientDeps.build = async (received) => {
+      seen = received;
+      built += 1;
+      return FAKE_CLIENT;
+    };
+
+    const a = await getNativeClient(set);
+    const b = await getNativeClient(set);
+
+    expect(seen).toEqual(set);
+    expect(built).toBe(1);
+    expect(a).toBe(b);
+  });
+
+  test("throws when called again with a different override set", async () => {
+    _clientDeps.build = async () => FAKE_CLIENT;
+
+    await getNativeClient([override("deepseek-flash")]);
+    const err = await getNativeClient([override("mimo-v2-pro")]).catch((e: unknown) => e);
+    assertNaxError(err, "native client override mismatch");
+    expect(err.code).toBe("NATIVE_CLIENT_OVERRIDES_MISMATCH");
+  });
+
+  test("a failed build frees the override key, so a later different set can build", async () => {
+    let attempt = 0;
+    _clientDeps.build = async () => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("catalog unavailable");
+      return FAKE_CLIENT;
+    };
+
+    await expect(getNativeClient([override("deepseek-flash")])).rejects.toThrow("catalog unavailable");
+    await expect(getNativeClient([override("mimo-v2-pro")])).resolves.toBe(FAKE_CLIENT);
+    expect(attempt).toBe(2);
   });
 });
