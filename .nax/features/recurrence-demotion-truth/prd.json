@@ -3,7 +3,7 @@
   "feature": "recurrence-demotion-truth",
   "branchName": "feat/recurrence-demotion-truth",
   "createdAt": "2026-02-22T00:00:00.000Z",
-  "updatedAt": "2026-09-10T11:09:46.998Z",
+  "updatedAt": "2026-09-10T11:20:08.799Z",
   "userStories": [
     {
       "id": "US-001",
@@ -84,8 +84,8 @@
         "review"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -156,7 +156,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-module raw/audit and mapped data-flow changes with logging and dual operation integration."
+        "reasoning": "Cross-module raw/audit and mapped data-flow changes with logging and dual operation integration.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/review/adversarial-helpers.ts",
@@ -168,6 +171,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "e44c470e56afcb9c07b4827ea649e4fb132ba15d",
       "outOfScope": [
         "the computation of `passed`; enabling `recurrenceDemotion` for semantic-review, whose default stays `false`."
       ]
