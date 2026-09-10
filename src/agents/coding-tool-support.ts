@@ -52,6 +52,8 @@ export function buildCodingToolSupport(args: {
   packageName?: string;
   /** `config.install.allowScripts` (Task 8 adds the field); defaults to false. */
   allowScripts?: boolean;
+  /** `config.execution.denyPaths` (nax#1972); forwarded to createCodingToolRuntime verbatim. */
+  denyPaths?: readonly string[];
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -97,6 +99,7 @@ export function buildCodingToolSupport(args: {
     policy: compileToolPolicy(grants, args.root, { execTouchedPaths }),
     declaredCommands: new Set(declaredCommands.keys()),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
+    ...(args.denyPaths !== undefined ? { denyPaths: args.denyPaths } : {}),
     sink,
     extraTools:
       declaredCommands.size > 0 || allowExec
@@ -194,6 +197,10 @@ export async function resolveCodingToolSupport(
     ? quality.stripEnvVars.filter((value): value is string => typeof value === "string")
     : [];
   const allowScripts = widenedConfig?.install?.allowScripts ?? false;
+  // `execution` is already in agentManagerConfigSelector's pick, so this
+  // reads through the real (narrower) AgentRunOptions['config'] type -- no
+  // widening needed, unlike `install` above.
+  const denyPaths = options.config?.execution?.denyPaths;
   const declaredCommands = new Map(
     Object.entries(commands).filter((e): e is [string, string] => typeof e[1] === "string"),
   );
@@ -231,5 +238,6 @@ export async function resolveCodingToolSupport(
     sessionName,
     ...(packageName !== undefined ? { packageName } : {}),
     allowScripts,
+    ...(denyPaths !== undefined ? { denyPaths } : {}),
   });
 }

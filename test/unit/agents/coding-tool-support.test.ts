@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
 import { _codingToolDeps } from "@/tools";
+import { gitWithTimeout } from "@/utils/git";
 
 let root: string;
 
@@ -133,6 +134,34 @@ describe("resolveCodingToolSupport — ledger location", () => {
 
       const written = [...new Bun.Glob("*.json").scanSync(join(root, ".nax", "tool-audit", "auth-system"))];
       expect(written.length).toBe(1);
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
+});
+
+describe("resolveCodingToolSupport — denyPaths (nax#1972)", () => {
+  test("config.execution.denyPaths reaches Delete through resolveCodingToolSupport", async () => {
+    const root = makeTempDir("nax-denypaths-");
+    try {
+      await Bun.write(`${root}/tracked.ts`, "const a = 1;\n");
+      await gitWithTimeout(["init", "-q", "."], root, 30_000);
+      await gitWithTimeout(["config", "user.email", "t@example.com"], root, 30_000);
+      await gitWithTimeout(["config", "user.name", "t"], root, 30_000);
+      await gitWithTimeout(["add", "-A"], root, 30_000);
+      await gitWithTimeout(["commit", "-q", "-m", "init"], root, 30_000);
+
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["Delete"],
+        codingToolRoot: root,
+        pipelineStage: "run",
+        config: makeNaxConfig({ execution: { denyPaths: ["tracked.ts"] } }),
+      });
+
+      const outcome = await support?.runtime.callTool("Delete", { path: "tracked.ts" });
+      expect(outcome?.kind).toBe("error");
+      if (outcome?.kind !== "error") throw new Error("expected a tool-level refusal");
+      expect(outcome.content).toContain("denyPaths");
     } finally {
       cleanupTempDir(root);
     }
