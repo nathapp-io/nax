@@ -7,12 +7,12 @@
 
 import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import { resolveCodingToolSupport } from "../agents/coding-tool-support";
-import type { AgentRunRequest, HopKind, IAgentManager } from "../agents/manager-types";
+import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { NaxConfig } from "../config";
-import { DEFAULT_CONFIG, resolveModel, resolveModelForAgent } from "../config";
+import { DEFAULT_CONFIG, type resolveModelForAgent } from "../config";
 import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/engine";
 import {
   ContextOrchestrator,
@@ -28,6 +28,12 @@ import { timeoutRetry as defaultTimeoutRetry, RectifierPromptBuilder } from "../
 import type { ISessionManager } from "../session";
 import { recordAgentHandoff } from "../session";
 import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
+import type { HopEndpoint } from "./hop-endpoint";
+import { hopModelId, hopTier, resolveHopEndpoint } from "./hop-endpoint";
+
+// Re-exported from their new home so existing importers (and
+// test/unit/operations/build-hop-callback-tier.test.ts) are unaffected.
+export { hopModelId, hopTier };
 
 export const _buildHopCallbackDeps = {
   rebuildForAgent: (
@@ -115,31 +121,6 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
   };
 }
 
-/**
- * The tier a hop should resolve its model at.
- *
- * Only a swap, or a start-on-fallback that named one, can carry a tier.
- * Everything else is the caller's effective tier, which is what every hop did
- * before tier-aware targets existed.
- */
-export function hopTier(hopKind: HopKind, effectiveTier: string): string {
-  return "tier" in hopKind ? (hopKind.tier ?? effectiveTier) : effectiveTier;
-}
-
-/**
- * The literal model id a hop was pinned to, if any.
- *
- * Set only by a fallback target spelled `{ agent, model }` whose model names no
- * tier (ConfiguredModel semantics — a tier-naming one is converted to a tier
- * before it reaches here). The tier map cannot serve such a pin: there is no
- * tier key to look up. Without this the pin was accepted, selected, and then
- * dispatched at the caller's own effective tier — the operator asks for one
- * provider and silently gets another.
- */
-export function hopModelId(hopKind: HopKind): string | undefined {
-  return "model" in hopKind ? hopKind.model : undefined;
-}
-
 export function buildHopCallback(
   ctx: BuildHopCallbackContext,
   sessionId: string | undefined,
@@ -202,6 +183,9 @@ export function buildHopCallback(
   ): Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }> => {
     const logger = getLogger();
     let workingBundle = hopBundle;
+    // Set by whichever hop-endpoint resolution branch runs below; Task 3 returns
+    // this from the callback so the fallback loop can report the dispatched endpoint.
+    let endpoint: HopEndpoint | undefined;
     let prompt: string = resolvedRunOptions.prompt;
     const elapsedSincePriorHop = priorHopStartedAt ? Date.now() - priorHopStartedAt : 0;
     priorHopStartedAt = Date.now();
@@ -408,12 +392,14 @@ export function buildHopCallback(
           sessionName,
           attempt: hopKind.attempt,
         });
-        const hopPin = hopModelId(hopKind);
-        const modelDef =
-          pinnedModelDef ??
-          (hopPin
-            ? resolveModel(hopPin)
-            : resolveModelForAgent(config.models, agentName, hopTier(hopKind, effectiveTier), defaultAgent));
+        endpoint = resolveHopEndpoint({
+          hopKind,
+          pinnedModelDef,
+          models: config.models,
+          agentName,
+          effectiveTier,
+          defaultAgent,
+        });
         handle = await sessionManager.openSession(sessionName, {
           agentName,
           role: resolvedRunOptions.sessionRole ?? "implementer",
@@ -421,11 +407,8 @@ export function buildHopCallback(
           pipelineStage: stage,
           // SEC-3: thread per-package config so monorepo permissionProfile is honored.
           config,
-          modelDef,
-          // Only report a tier when one actually selected the model. A caller-pinned
-          // modelDef bypassed tier resolution, and `effectiveTier` is defaulted, so
-          // forwarding it there would record a tier that never applied (#1433).
-          ...(pinnedModelDef !== undefined || hopPin ? {} : { modelTier: hopTier(hopKind, effectiveTier) }),
+          modelDef: endpoint.modelDef,
+          ...(endpoint.modelTier ? { modelTier: endpoint.modelTier } : {}),
           timeoutSeconds:
             resolvedRunOptions.timeoutSeconds ??
             config.execution?.sessionTimeoutSeconds ??
@@ -437,18 +420,14 @@ export function buildHopCallback(
         });
       }
     } else {
-      const pinned = hopKind.kind === "primary" && pinnedModelDef !== undefined;
-      const tier = hopTier(hopKind, effectiveTier);
-      // A hop-level literal pin outranks the tier map for every hop kind but a
-      // caller-pinned primary, which keeps the model it was resolved with
-      // (nax#1722 — see pinnedModelAgent).
-      // A thunk, not a value: a caller-pinned primary must NOT resolve through
-      // the tier map at all — `??` short-circuits, and an eager resolve throws
-      // MODEL_NOT_FOUND for a pinned agent that declares no tiers.
-      const hopPin = hopModelId(hopKind);
-      const resolveForHop = () =>
-        hopPin ? resolveModel(hopPin) : resolveModelForAgent(config.models, agentName, tier, defaultAgent);
-      const modelDef = hopKind.kind === "primary" ? (pinnedModelDef ?? resolveForHop()) : resolveForHop();
+      endpoint = resolveHopEndpoint({
+        hopKind,
+        pinnedModelDef,
+        models: config.models,
+        agentName,
+        effectiveTier,
+        defaultAgent,
+      });
       // openSession errors propagate naturally — no handle, no closeSession needed
       handle = await sessionManager.openSession(sessionName, {
         agentName,
@@ -457,9 +436,8 @@ export function buildHopCallback(
         pipelineStage: stage,
         // SEC-3: thread per-package config so monorepo permissionProfile is honored.
         config,
-        modelDef,
-        // Neither a caller pin nor a hop-level literal pin has a meaningful tier to report.
-        ...(pinned || (hopPin && !pinnedModelDef) ? {} : { modelTier: tier }),
+        modelDef: endpoint.modelDef,
+        ...(endpoint.modelTier ? { modelTier: endpoint.modelTier } : {}),
         timeoutSeconds:
           resolvedRunOptions.timeoutSeconds ??
           config.execution?.sessionTimeoutSeconds ??
