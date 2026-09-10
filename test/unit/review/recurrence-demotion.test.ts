@@ -5,6 +5,7 @@ import {
   countPriorAppearances,
   fingerprintFor,
   normalizeIssueText,
+  stampRecurrenceMeta,
   tagCoverageGap,
 } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
@@ -310,6 +311,25 @@ describe("classifyRecurrence", () => {
     expect(r.advisory.length).toBe(1);
     expect(r.demoted.length).toBe(0);
   });
+
+  // Rectification — adversarial review #4: the test-gap carve-out stamps
+  // disposition="blocking" but must NOT carry wasBlocking (reserved for
+  // demoted/retired transition history). A reader that interprets
+  // wasBlocking=true as "this finding has a recurrence transition" gets a
+  // false positive on the carve-out path.
+  test("test-gap carve-out stamps blocking without wasBlocking key", () => {
+    const f = adv("error", { category: "test-gap", file: "test/store.spec.ts", issue: "carve-out gap" });
+    const r = classifyRecurrence([f], priorAdv("error", 5), CFG, isTest, "error");
+    const stamped = r.classified[0];
+    const rec = recurrenceOf(stamped);
+    expect(rec.disposition).toBe("blocking");
+    expect(rec.wasBlocking).toBeUndefined();
+    // The stamp must NOT carry the wasBlocking key at all (reserved for
+    // demoted/retired transition history — parallels AC7/AC8's toMatchObject
+    // pattern). not.toMatchObject with the absent key is the cleanest way to
+    // assert the key itself is missing without an `unknown` cast.
+    expect(stamped.meta?.recurrence).not.toMatchObject({ wasBlocking: expect.anything() });
+  });
 });
 
 describe("tagCoverageGap", () => {
@@ -464,6 +484,32 @@ describe("classifyRecurrence — terminal advisory retirement", () => {
     const r = classifyRecurrence([adv("warning")], priors, cfgNoAdvisory, noTest, "error");
     expect(r.retired.length).toBe(1);
     expect(r.advisory.length).toBe(0);
+  });
+
+  // Rectification — adversarial review #5: maxAdvisoryRounds <= 0 (or non-integer)
+  // would retire every sub-threshold finding on first sighting. Schema validation
+  // is US-002's job; here we clamp to the default so a misconfigured value cannot
+  // empty the advisory bucket wholesale.
+  test("maxAdvisoryRounds=0 is clamped to the default (does not retire on first sighting)", () => {
+    const cfgZero: { enabled: boolean; maxBlockingRounds: number; maxAdvisoryRounds: number } = {
+      enabled: true,
+      maxBlockingRounds: 2,
+      maxAdvisoryRounds: 0,
+    };
+    const r = classifyRecurrence([adv("warning")], [], cfgZero, noTest, "error");
+    expect(r.retired.length).toBe(0);
+    expect(r.advisory.length).toBe(1);
+  });
+
+  test("negative maxAdvisoryRounds is clamped to the default", () => {
+    const cfgNeg: { enabled: boolean; maxBlockingRounds: number; maxAdvisoryRounds: number } = {
+      enabled: true,
+      maxBlockingRounds: 2,
+      maxAdvisoryRounds: -3,
+    };
+    const r = classifyRecurrence([adv("warning")], [], cfgNeg, noTest, "error");
+    expect(r.retired.length).toBe(0);
+    expect(r.advisory.length).toBe(1);
   });
 });
 
@@ -684,5 +730,45 @@ describe("tagCoverageGap — preserves recurrence meta", () => {
     expect(tagged[0]?.meta?.coverageGap).toBe(true);
     expect(tagged[0]?.meta?.recurrence).toEqual({ disposition: "retired", rounds: 4, wasBlocking: false });
     expect(tagged[0]?.meta?.otherNote).toBe("untouched");
+  });
+});
+
+describe("stampRecurrenceMeta", () => {
+  // Rectification — adversarial review #2: the LLM→Finding mapper rebuilds
+  // meta from scratch, so stampRecurrenceMeta re-applies meta.recurrence from
+  // the parallel classified source after mapping.
+  type MappedFinding = { file: string; meta?: Record<string, unknown> };
+  type ClassifiedSource = { meta?: { recurrence?: unknown } };
+
+  test("forwards meta.recurrence from classified source onto mapped findings", () => {
+    const mapped: MappedFinding[] = [
+      { file: "a.ts", meta: { acQuote: "literal" } },
+      { file: "b.ts", meta: { acQuote: "literal2" } },
+    ];
+    const classified: ClassifiedSource[] = [
+      { meta: { recurrence: { disposition: "retired", rounds: 2, wasBlocking: false } } },
+      { meta: { recurrence: { disposition: "blocking", rounds: 1 } } },
+    ];
+    const stamped = stampRecurrenceMeta(mapped, classified);
+    expect(stamped[0]?.meta?.recurrence).toEqual({
+      disposition: "retired",
+      rounds: 2,
+      wasBlocking: false,
+    });
+    expect(stamped[0]?.meta?.acQuote).toBe("literal"); // existing meta preserved
+    expect(stamped[1]?.meta?.recurrence).toEqual({ disposition: "blocking", rounds: 1 });
+  });
+
+  test("leaves findings alone when classified source has no recurrence meta", () => {
+    const mapped: MappedFinding[] = [{ file: "a.ts", meta: { acQuote: "literal" } }];
+    const classified: ClassifiedSource[] = [{ meta: {} }];
+    const stamped = stampRecurrenceMeta(mapped, classified);
+    expect(stamped[0]?.meta?.recurrence).toBeUndefined();
+    expect(stamped[0]?.meta?.acQuote).toBe("literal");
+  });
+
+  test("throws NaxError on length mismatch", () => {
+    const mapped: MappedFinding[] = [{ file: "a.ts" }];
+    expect(() => stampRecurrenceMeta(mapped, [])).toThrow(/length mismatch/);
   });
 });

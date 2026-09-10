@@ -20,7 +20,7 @@ import {
   hasCorroboratedInspectionTrail,
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
-import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
+import { classifyRecurrence, stampRecurrenceMeta, tagCoverageGap } from "../review/recurrence-demotion";
 import type { AdversarialReviewConfig, ReviewAck, SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -480,7 +480,7 @@ export const adversarialReviewOp: RunOperationWithHooks<
     const patterns = input.resolvedTestPatterns?.regex ?? [];
     const testFileMatch = (file: string): boolean => patterns.some((re) => re.test(file));
 
-    const { blocking, advisory, demoted } = classifyRecurrence(
+    const { blocking, advisory, demoted, retired, classified } = classifyRecurrence(
       accepted,
       input.priorAdversarialIterations ?? [],
       recurrenceCfg,
@@ -533,6 +533,19 @@ export const adversarialReviewOp: RunOperationWithHooks<
       advisoryFindings: [
         ...toAdversarialReviewFindings(advisory, { isTestFile: testFileMatch }),
         ...tagCoverageGap(toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch })),
+        // Retired advisories remain REPORTED (per US-001 OOS #10); they are no
+        // longer rendered into the fix lane. Stamp applied AFTER mapping because
+        // toAdversarialReviewFindings rebuilds meta from scratch (parallels the
+        // coverageGap precedent). `classified` mirrors `accepted` in input order,
+        // and `retired` is a subset of `accepted` in input order, so by-index
+        // pairing is safe. The cast is necessary because `classified` is typed
+        // as `AdversarialLLMFinding[]` (the input T), but `stampRecurrence`
+        // attaches `meta.recurrence` at runtime; TS can't follow that through
+        // the generic bound, so we narrow manually.
+        ...stampRecurrenceMeta(
+          toAdversarialReviewFindings(retired, { isTestFile: testFileMatch }),
+          retired.map((f) => (classified[accepted.indexOf(f)] ?? {}) as { meta?: { recurrence?: unknown } }),
+        ),
         ...tagAcDropped(toAdversarialReviewFindings(acDroppedFindings, { isTestFile: testFileMatch })),
       ],
       acDropped: dropped,

@@ -1,3 +1,4 @@
+import { NaxError } from "../errors";
 import type { Finding, Iteration } from "../findings";
 import type { AdversarialLLMFinding } from "./adversarial-helpers";
 import { isBlockingSeverity } from "./adversarial-helpers";
@@ -134,6 +135,34 @@ export function tagCoverageGap<T extends { meta?: Record<string, unknown> }>(fin
   return findings.map((f) => ({ ...f, meta: { ...(f.meta ?? {}), coverageGap: true } }));
 }
 
+/**
+ * Forward `meta.recurrence` from a parallel classified source onto already-mapped
+ * findings. Both arrays MUST be 1:1 in order and length (the call site maps a
+ * subset of `accepted` in order, and `classified` mirrors `accepted` in order).
+ *
+ * Needed because the LLM→Finding mapper rebuilds `meta` from scratch and would
+ * otherwise drop the stamp — see the existing `coverageGap` precedent at
+ * `semantic-review.ts:434` ("Tag AFTER conversion"). Reading from `classified`
+ * is the source of truth so the helper stays free of bucket-dispatch logic.
+ */
+export function stampRecurrenceMeta<T extends { meta?: Record<string, unknown> }>(
+  findings: readonly T[],
+  classifiedSource: readonly { meta?: { recurrence?: unknown } }[],
+): T[] {
+  if (findings.length !== classifiedSource.length) {
+    throw new NaxError(
+      `[recurrence] stampRecurrenceMeta length mismatch: mapped=${findings.length} classified=${classifiedSource.length}`,
+      "RECURRENCE_STAMP_LENGTH_MISMATCH",
+      { stage: "recurrence" },
+    );
+  }
+  return findings.map((f, i) => {
+    const rec = classifiedSource[i]?.meta?.recurrence;
+    if (!rec) return f;
+    return { ...f, meta: { ...(f.meta ?? {}), recurrence: rec as Record<string, unknown> } };
+  });
+}
+
 export type RecurrenceConfig = {
   enabled: boolean;
   maxBlockingRounds: number;
@@ -175,8 +204,12 @@ export type RecurrenceResult<T = AdversarialLLMFinding> = {
  * boundary, so the test-gap carve-out below cannot fire for a semantic finding.
  *
  * `meta` is read so existing unrelated keys survive the stamp; the type is
- * widened from `AdversarialLLMFinding` so callers using the wire-format
- * `Finding` (which carries `meta`) also flow through this function.
+ * widened from `AdversarialLLMFinding` to a generic bound carrying an optional
+ * `meta` record. Note this is NOT the wire-format `Finding` shape — that type
+ * carries `message`, while `RecurrenceCandidate` requires `issue: string`.
+ * The widening is for callers that already have an LLMFinding-shaped object
+ * with its own `meta` map (e.g. pre-stamped findings that need to flow through
+ * classification without losing their existing meta keys).
  */
 export interface RecurrenceCandidate {
   severity: string;
@@ -232,7 +265,13 @@ export function classifyRecurrence<T extends RecurrenceCandidate>(
   }
 
   const priorCounts = countPriorAppearances(priorIterations, source);
-  const maxAdvisory = cfg.maxAdvisoryRounds ?? DEFAULT_MAX_ADVISORY_ROUNDS;
+  // `maxAdvisoryRounds` schema validation is US-002's job, but a value of 0 or
+  // negative retires every sub-threshold finding on its first sighting — silently
+  // emptying the advisory bucket and reproducing the surface-loss the doc warns
+  // about. Clamp to the default rather than trip the foot-gun here.
+  const rawMaxAdvisory = cfg.maxAdvisoryRounds ?? DEFAULT_MAX_ADVISORY_ROUNDS;
+  const maxAdvisory =
+    Number.isInteger(rawMaxAdvisory) && rawMaxAdvisory >= 1 ? rawMaxAdvisory : DEFAULT_MAX_ADVISORY_ROUNDS;
 
   for (const f of accepted) {
     const prior = lookupPriorAppearance(priorCounts, f);
@@ -246,7 +285,9 @@ export function classifyRecurrence<T extends RecurrenceCandidate>(
     // advisory cap below.
     if (f.category === "test-gap" && testFileMatch(f.file) && isBlocking) {
       blocking.push(f);
-      classified.push(stampRecurrence(f, "blocking", rounds, isBlocking));
+      // wasBlocking is reserved for demoted/retired per the `classified` docstring;
+      // carve-out findings never had a transition, so we don't stamp the key.
+      classified.push(stampRecurrence(f, "blocking", rounds, undefined));
       continue;
     }
 

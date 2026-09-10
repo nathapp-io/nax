@@ -17,7 +17,7 @@ import {
   toReviewFindings,
   validateLLMShape,
 } from "../review/finding-filters";
-import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
+import { classifyRecurrence, stampRecurrenceMeta, tagCoverageGap } from "../review/recurrence-demotion";
 import { parseRequoteResponse } from "../review/requote-response";
 import type { ReviewAck, SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -423,7 +423,7 @@ export const semanticReviewOp: RunOperationWithHooks<
     // blocking and is surfaced as a coverageGap-tagged advisory, so one
     // disputed finding cannot deadlock the story indefinitely.
     const recurrenceCfg = input.semanticConfig.recurrenceDemotion ?? { enabled: false, maxBlockingRounds: 2 };
-    const { blocking, advisory, demoted } = classifyRecurrence(
+    const { blocking, advisory, demoted, retired, classified } = classifyRecurrence(
       accepted,
       input.priorSemanticIterations ?? [],
       recurrenceCfg,
@@ -443,9 +443,19 @@ export const semanticReviewOp: RunOperationWithHooks<
     // non-blocking-fix.ts ("Applied at the SEEDING site only, never in the reviewer's
     // own output"), filtering does not belong here at all: adversarialReviewOp.verify()
     // forwards its identical `advisory` bucket unfiltered, and semantic now matches it.
+    //
+    // Retired advisories remain REPORTED (per US-001 OOS #10); they are no longer
+    // rendered into the fix lane. Stamp applied AFTER mapping because
+    // llmFindingToFinding rebuilds `meta` from scratch.
     const advisoryFindings = [
       ...toReviewFindings(advisory, { isTestFile }),
       ...tagCoverageGap(toReviewFindings(demoted, { isTestFile })),
+      // See adversarial-review.ts:544 — classified is typed as `LLMFinding[]` but
+      // carries `meta.recurrence` at runtime; cast to narrow.
+      ...stampRecurrenceMeta(
+        toReviewFindings(retired, { isTestFile }),
+        retired.map((f) => (classified[accepted.indexOf(f)] ?? {}) as { meta?: { recurrence?: unknown } }),
+      ),
     ];
     // Honour blockingThreshold: the verdict fails only when a blocking finding
     // survives. The model's raw `passed:false` must NOT fail the review when every
