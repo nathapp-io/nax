@@ -22,6 +22,7 @@
  * barrel rule).
  */
 
+import { fingerprintFor } from "../fingerprint";
 import type { Finding } from "../types";
 
 /**
@@ -76,57 +77,21 @@ export function readRecurrenceDisposition(f: Finding): RecurrenceDisposition | u
 
 /**
  * Identity for "is THIS finding the same defect a retired stamp was written
- * for?" Mirrors `fingerprintFor` in `src/review/recurrence-demotion.ts`
- * intentionally:
+ * for?" — `fingerprintFor` by another name.
  *
- *   - `meta.acIndex` (1-based, validated) when present — the AC-anchored
- *     identity US-001 uses for every blocking finding, and the path the
- *     retirement decision actually takes.
- *   - Otherwise, the prose fingerprint over (file, category, message).
- *     The line number is deliberately excluded because `fingerprintFor`
- *     excludes it too (the line shifts as the code under review changes;
- *     including it would split one defect across rounds and let the
- *     earlier-round copy escape the suppression).
- *   - Path normalization (`./` / `../` / backslashes) is mirrored because
- *     `fingerprintFor` normalises them — without that mirror, a reviewer
- *     citing the same file with different prefix depth would mint a
- *     different key and the cross-round suppression would miss.
+ * This is a THIN wrapper, deliberately: the identity that decides a finding is
+ * retired (`classifyRecurrence` in `src/review/recurrence-demotion.ts`) and the
+ * identity that suppresses the earlier-round / elsewhere copy of it must be the
+ * same function, not two implementations that agree today. Both read
+ * `@/findings/fingerprint`, the shared dependency-free module — a fork here
+ * (even a faithful one, with a "keep in sync" comment) fails silently: the
+ * prompt would keep a copy the classifier retired, or suppress one it did not,
+ * and each copy's own tests would stay green.
  *
- * Why this lives here and not in `src/review/recurrence-demotion.ts`:
- * that file's `fingerprintFor` is parameterised by the LLM-finding
- * interface (`issue` not `message`, no `meta`), and importing the value
- * from `src/review/...` into `src/prompts/...` (or `src/execution/...`)
- * pulls the barrel into the existing import cycle through
- * `src/operations/...`. The translation is mechanical and short enough
- * to keep a fork-free second copy here, anchored by this docblock as
- * the SSOT for the key shape.
+ * The `text` argument is the persisted `Finding.message`; the classifier passes
+ * the wire-shape `issue`. Same field, same normaliser.
  */
 export function retirementIdentity(f: Finding): string {
   const acIndex = typeof f.meta?.acIndex === "number" ? f.meta.acIndex : undefined;
-  const file = normalizeFile(f.file);
-  if (typeof acIndex === "number" && Number.isInteger(acIndex) && acIndex >= 1) {
-    return `${file}|ac${acIndex}`;
-  }
-  // Prose fingerprint: category + leading-clause prefix. The prefix length
-  // mirrors FP_ISSUE_PREFIX in recurrence-demotion.ts; if that constant
-  // moves, this one must move with it.
-  const prefix = normalizeMessagePrefix(f.message);
-  return `${file}|${f.category ?? ""}|${prefix}`;
-}
-
-/** Mirror of `normalizeFingerprintPath` in recurrence-demotion.ts. */
-function normalizeFile(file: string | undefined): string {
-  return (file ?? "").replace(/\\/g, "/").replace(/^(?:\.{1,2}\/)+/, "");
-}
-
-/**
- * Mirror of `normalizeIssueText` in recurrence-demotion.ts, then sliced to
- * the fingerprint's prose-prefix length. A backtick / whitespace /
- * casefolding normaliser plus a leading-clause clamp — the leading-clause
- * pattern (48 chars in recurrence-demotion.ts) is what makes the key
- * robust against tail rephrasing by the reviewer.
- */
-function normalizeMessagePrefix(text: string | undefined): string {
-  const norm = (text ?? "").replace(/`/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-  return norm.slice(0, 48);
+  return fingerprintFor(f.file, f.category, f.message ?? "", acIndex);
 }

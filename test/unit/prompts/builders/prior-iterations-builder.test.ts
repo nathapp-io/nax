@@ -278,84 +278,9 @@ describe("buildPriorIterationsBlock — multiple iterations", () => {
   });
 });
 
-// ─── Token guard ──────────────────────────────────────────────────────────────
-
-describe("buildPriorIterationsBlock — token guard", () => {
-  test("collapses oldest rounds to one-liners when content exceeds MAX_BLOCK_CHARS", () => {
-    // 4 findings × 5 iterations ≈ 6600 chars → exceeds 6000-char budget
-    const verboseMessage = "X".repeat(300);
-    const perRoundFindings = Array.from({ length: 4 }, (_, j) =>
-      makeFinding({ source: "adversarial-review", message: `${verboseMessage}-${j}`, file: "src/big.ts", line: j + 1 }),
-    );
-    const iterations = Array.from({ length: 5 }, (_, i) =>
-      makeIteration({ iterationNum: i + 1, outcome: "unchanged", findingsBefore: [], findingsAfter: perRoundFindings }),
-    );
-
-    const output = buildPriorIterationsBlock(iterations);
-
-    // Oldest rounds (1, 2, 3) collapsed to one-liners
-    expect(output).toContain("Round 1 — outcome: unchanged (4 findings, omitted for brevity)");
-    expect(output).toContain("Round 2 — outcome: unchanged (4 findings, omitted for brevity)");
-    expect(output).toContain("Round 3 — outcome: unchanged (4 findings, omitted for brevity)");
-    // Most recent 2 rounds (4, 5) rendered verbatim
-    expect(output).toContain("### Round 4 — outcome: unchanged");
-    expect(output).toContain("### Round 5 — outcome: unchanged");
-    expect(output).toContain("Message:");
-  });
-
-  test("never collapses when 2 or fewer iterations even if large", () => {
-    const verboseMessage = "Y".repeat(1000);
-    const f1 = makeFinding({ source: "adversarial-review", message: verboseMessage });
-    const f2 = makeFinding({ source: "adversarial-review", message: verboseMessage });
-    const iter1 = makeIteration({ iterationNum: 1, outcome: "partial", findingsAfter: [f1] });
-    const iter2 = makeIteration({ iterationNum: 2, outcome: "unchanged", findingsAfter: [f2] });
-
-    const output = buildPriorIterationsBlock([iter1, iter2]);
-
-    // Both rounds rendered verbatim even though content is large
-    expect(output).toContain("### Round 1 — outcome: partial");
-    expect(output).toContain("### Round 2 — outcome: unchanged");
-    expect(output).not.toContain("omitted for brevity");
-  });
-
-  test("verdict count uses only visible rounds after collapse", () => {
-    // iter1 (7) + iter2 (6) → collapsed; iter3 (3) + iter4 (3) → visible → total = 6
-    const verboseMessage = "Z".repeat(300);
-    const makeFindings = (count: number) =>
-      Array.from({ length: count }, (_, i) =>
-        makeFinding({ source: "adversarial-review", message: `${verboseMessage}-${i}`, file: "src/big.ts", line: i }),
-      );
-    const iter1 = makeIteration({ iterationNum: 1, outcome: "partial", findingsAfter: makeFindings(7) });
-    const iter2 = makeIteration({ iterationNum: 2, outcome: "unchanged", findingsAfter: makeFindings(6) });
-    const iter3 = makeIteration({ iterationNum: 3, outcome: "unchanged", findingsAfter: makeFindings(3) });
-    const iter4 = makeIteration({ iterationNum: 4, outcome: "unchanged", findingsAfter: makeFindings(3) });
-
-    const output = buildPriorIterationsBlock([iter1, iter2, iter3, iter4]);
-
-    // Only rounds 3 and 4 are visible (last 2), each with 3 findings → total = 6
-    expect(output).toContain("classify each of the 6 prior finding(s) above");
-  });
-
-  test("FALSIFIED note absent when only collapsed rounds have outcome=unchanged", () => {
-    // Rounds 1–2 are "unchanged" (will be collapsed); rounds 3–4 are "partial" (visible).
-    // verdictTemplate must NOT show the FALSIFIED note because no visible round is unchanged.
-    const verboseMessage = "W".repeat(300);
-    const makeFindings = (count: number) =>
-      Array.from({ length: count }, (_, i) =>
-        makeFinding({ source: "adversarial-review", message: `${verboseMessage}-${i}`, file: "src/big.ts", line: i }),
-      );
-    const iter1 = makeIteration({ iterationNum: 1, outcome: "unchanged", findingsAfter: makeFindings(5) });
-    const iter2 = makeIteration({ iterationNum: 2, outcome: "unchanged", findingsAfter: makeFindings(5) });
-    const iter3 = makeIteration({ iterationNum: 3, outcome: "partial", findingsAfter: makeFindings(5) });
-    const iter4 = makeIteration({ iterationNum: 4, outcome: "partial", findingsAfter: makeFindings(5) });
-
-    const output = buildPriorIterationsBlock([iter1, iter2, iter3, iter4]);
-
-    // Collapsed rounds are not shown verbatim, so FALSIFIED note must not appear
-    expect(output).toContain("omitted for brevity");
-    expect(output).not.toContain("FALSIFIED");
-  });
-});
+// The MAX_BLOCK_CHARS token-guard cases live in
+// `prior-iterations-builder-token-guard.test.ts` — split by describe block when
+// this file crossed the 800-line hard limit for test files.
 
 // ─── US-004: retired findings (rendering change) ─────────────────────────────
 
@@ -655,6 +580,11 @@ describe("buildPriorIterationsBlock — retired findings", () => {
     expect(output).not.toMatch(/Findings flagged previously:[\s\S]*?src\/lib\/dup\.ts/);
     // The verdict template count must exclude the retired finding entirely.
     expect(output).toContain("classify each of the 0 prior finding(s) above");
+    // Round 1's finding was NOT cleared — it was closed as retired (its twin in
+    // round 2 carries the stamp). Reporting "All prior findings cleared" here
+    // would tell the operator the defect was resolved.
+    expect(output).not.toContain("_All prior findings cleared._");
+    expect(output).toContain("1 finding(s) closed as retired");
   });
 
   // Adversarial review #5 — the suppression identity matches

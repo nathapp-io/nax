@@ -141,6 +141,21 @@ function retiredEntriesGlobal<F extends Finding>(
   return out;
 }
 
+/**
+ * How many of an iteration's stored findings were moved out of the
+ * verdict-required list because they were identified as retired — `retired` in
+ * this round, or the unstamped earlier copy of a defect retired in a later one.
+ *
+ * Derived from the SAME predicate `visibleFindings` filters on rather than
+ * counting the stamps again: a second, stamp-only count disagrees with the list
+ * it is describing whenever an unstamped twin is suppressed, and the round then
+ * reports "0 findings" (or "_All prior findings cleared._") for a round whose
+ * findings were not cleared at all — they were closed.
+ */
+function retiredCountFor<F extends Finding>(iter: Iteration<F>, retiredKeys: ReadonlySet<string>): number {
+  return iter.findingsAfter.length - visibleFindings(iter, retiredKeys).length;
+}
+
 function applyTokenGuard<F extends Finding>(
   sections: string[],
   iterations: Iteration<F>[],
@@ -153,7 +168,7 @@ function applyTokenGuard<F extends Finding>(
   const n = sections.length;
   const collapsed = iterations.slice(0, n - 2).map((iter) => {
     const visibleCount = visibleFindings(iter, retiredKeys).length;
-    const retiredCount = iter.findingsAfter.filter((f) => isRecurrenceRetired(f)).length;
+    const retiredCount = retiredCountFor(iter, retiredKeys);
     const retiredSuffix = retiredCount > 0 ? `, ${retiredCount} retired` : "";
     return `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${visibleCount} findings${retiredSuffix}, omitted for brevity)`;
   });
@@ -164,7 +179,7 @@ function applyTokenGuard<F extends Finding>(
 
 function renderIteration<F extends Finding>(iter: Iteration<F>, retiredKeys: ReadonlySet<string>): string {
   const visible = visibleFindings(iter, retiredKeys);
-  const totalRetired = iter.findingsAfter.filter((f) => isRecurrenceRetired(f)).length;
+  const totalRetired = retiredCountFor(iter, retiredKeys);
   const header = `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${iter.findingsBefore.length} → ${iter.findingsAfter.length})`;
   if (visible.length === 0 && totalRetired === 0) {
     return [header, "_All prior findings cleared._"].join("\n");
@@ -202,9 +217,10 @@ function renderAcknowledgement(entries: ReadonlyArray<{ file: string; category: 
     ...lines,
     "These findings reached their terminal advisory cap. They are reported, not",
     "acted on — re-flagging them would re-introduce the loop retirement exists",
-    "to break. If you believe the close was wrong, surface a new finding at a",
-    "distinct `file` and `category` (and a substantively different `message`)",
-    "so the review does not route it back to this retired bucket.",
+    "to break. If you believe the close was wrong, surface a finding that is",
+    "genuinely distinct — a different `file`, a different `category`, or a",
+    "substantively different `message`; re-stating the same defect with a",
+    "shifted `line` is still the same finding, and it stays closed.",
   ];
 }
 
