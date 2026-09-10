@@ -3,7 +3,7 @@
   "feature": "recurrence-demotion-truth",
   "branchName": "feat/recurrence-demotion-truth",
   "createdAt": "2026-02-22T00:00:00.000Z",
-  "updatedAt": "2026-09-10T10:43:08.255Z",
+  "updatedAt": "2026-09-10T11:09:46.998Z",
   "userStories": [
     {
       "id": "US-001",
@@ -38,8 +38,8 @@
         "recurrence"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -91,7 +91,10 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two additive schema fields and existing exact-default assertions."
+        "reasoning": "Two additive schema fields and existing exact-default assertions.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "src/config/schemas-review.ts",
@@ -111,6 +114,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "136029eb6f62184f990977ab3774ea3558b7114c",
       "outOfScope": [
         "the runtime default `classifyRecurrence` applies when the field is absent from a caller-supplied config object, which US-001 owns."
       ]
