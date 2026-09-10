@@ -115,4 +115,45 @@ describe("ladder depth cap", () => {
 
     expect(second).toHaveLength(3);
   });
+
+  // nax#1965 fix-round-1 CRITICAL 1: a story's sticky slot can pin a primary
+  // agent that is NOT config.agent.default (resolveDispatchTarget passes it as
+  // primaryAgentOverride — call-resolvers.ts). depthOf must root the ladder walk
+  // on THAT agent, not on getDefault() — otherwise every candidate is looked up
+  // in the wrong (often nonexistent) ladder, reads as depth 0, and nextCandidate
+  // returns null on the very first failure: fallback silently disabled, no error,
+  // no log.
+  test("a sticky non-default primary agent still descends its OWN ladder", async () => {
+    const config = makeNaxConfig({
+      agent: {
+        default: "claude", // deliberately NOT the sticky slot's agent below
+        protocol: "hybrid",
+        fallback: {
+          enabled: true,
+          // "claude" (the configured default) has no ladder entry at all here —
+          // if depthOf ever roots on getDefault() instead of the agent actually
+          // being walked, every rung below reads as depth 0.
+          map: { native: [{ agent: "native", model: "powerful" }, "claude"] },
+          maxHopsPerStory: 2,
+          onQualityFailure: false,
+          rebuildContext: false,
+        },
+      },
+      models: { native: { balanced: "minimax/MiniMax-M3", powerful: "opencode-go/deepseek-v4-flash[high]" } },
+    });
+    const mgr = new AgentManager(config, undefined, { models: config.models, retryStrategy: neverRetry });
+    const seen: string[] = [];
+
+    const outcome = await mgr.runWithFallback(
+      { runOptions: runOptions("US-STICKY"), startDepth: 0, executeHop: failingHop(seen) },
+      "native", // the sticky slot's primary — overrides config.agent.default ("claude")
+    );
+
+    // native's own 2-rung ladder must be walked to its cap, exactly as when
+    // native is the configured default ("an op starting at depth 0 descends
+    // twice" above). Before the fix this returned after ONE hop with
+    // finalDepth 0 — nextCandidate looked up "claude"'s (nonexistent) ladder.
+    expect(seen).toHaveLength(3);
+    expect(outcome.finalDepth).toBe(2);
+  });
 });

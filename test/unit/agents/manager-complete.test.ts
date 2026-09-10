@@ -280,3 +280,57 @@ describe("AgentManager.completeAs — SEC-3 per-package config threading", () =>
     expect(capturedOptions?.resolvedPermissions?.mode).toBe("approve-reads");
   });
 });
+
+// nax#1965 fix-round-1 CRITICAL 2: completeWithFallback's swap loop still fed
+// StoryHopBudget's swap-EVENT tally into nextCandidate's `hops` parameter, which
+// runWithFallback (Task 7) made a ladder-DEPTH parameter. A cooling middle rung
+// makes one swap event skip more than one ladder position, so the event tally
+// lags true depth — reopening the "wrong baseline fed into the depth filter"
+// defect class this feature exists to close, on the complete() path instead of
+// run().
+describe("AgentManager.completeWithFallback — depth vs event count (nax#1965 fix-round-1 CRITICAL 2)", () => {
+  test("passes ladder DEPTH, not the swap-event tally, into nextCandidate when a middle rung is cooling", async () => {
+    const config = makeNaxConfig({
+      agent: {
+        fallback: {
+          enabled: true,
+          map: { claude: ["codex", "gemini", "grok"] },
+          maxHopsPerStory: 3,
+          onQualityFailure: false,
+          rebuildContext: false,
+        },
+      },
+    });
+    const registry = makeRegistry({
+      claude: { output: "", failure: availFailure },
+      gemini: { output: "", failure: availFailure },
+      grok: { output: "from grok" },
+    });
+    const m = new AgentManager(config, registry);
+    // codex is already cooling before the walk starts, so the FIRST swap skips
+    // straight from claude to gemini: one swap EVENT, but a ladder DEPTH of 2.
+    m.markUnavailable("codex", availFailure);
+
+    const seenHops: number[] = [];
+    const originalNextCandidate = m.nextCandidate.bind(m);
+    m.nextCandidate = (cur, hops, exclude, tier, model) => {
+      seenHops.push(hops);
+      return originalNextCandidate(cur, hops, exclude, tier, model);
+    };
+
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
+
+    // First call: still on the primary — depth 0, no swap has happened yet.
+    // Second call: right after the first swap landed on gemini (real ladder
+    // depth 2, skipping the cooling codex). An event tally would report 1
+    // here (only one swap event occurred); depth must report 2, or every
+    // downstream depth-based decision (ladder-slot.ts's `nextLadderCandidate`)
+    // is evaluated against the wrong baseline. Before the fix this was [0, 1].
+    expect(seenHops).toEqual([0, 2]);
+    expect(outcome.result.output).toBe("from grok");
+  });
+});

@@ -172,11 +172,10 @@ export class AgentManager implements IAgentManager {
     this._prunedFallback.has(c) || this._cooldowns.isCooling(c, t, this._modelId(c, t, m));
   private readonly _resolveTarget = (t: FallbackTarget): FallbackTarget =>
     resolveFallbackDispatchTarget(this._models, this.getDefault(), t);
-  private readonly _depthOf = (t: FallbackTarget): number =>
-    resolveLadderDepth(this._models, this.getDefault(), this._config.agent?.fallback?.map, this._resolveTarget, t);
   private readonly _sameHop = (a: string, b: string | undefined, at?: string, am?: string, bt?: string, bm?: string) =>
     sameFallbackHop(this._models, this.getDefault(), a, b, at, am, bt, bm);
-
+  private readonly _depthOf = (agent: string, t: FallbackTarget): number =>
+    resolveLadderDepth(this._config.agent?.fallback?.map, this._resolveTarget, this._sameHop, agent, t);
   resolveFallbackChain(agent: string, _failure: AdapterFailure): import("./swap-decision").FallbackTarget[] {
     return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded, this._resolveTarget);
   }
@@ -188,7 +187,8 @@ export class AgentManager implements IAgentManager {
   nextCandidate(cur: string, hops: number, exclude?: string, tier?: string, model?: string): FallbackTarget | null {
     const map = this._config.agent?.fallback?.map;
     const query = { cur, hops, exclude, tier, model };
-    return resolveNextCandidate(map, this._resolveTarget, this._depthOf, this._sameHop, this._isExcluded, query);
+    const depthOf = (t: FallbackTarget) => this._depthOf(cur, t);
+    return resolveNextCandidate(map, this._resolveTarget, depthOf, this._sameHop, this._isExcluded, query);
   }
 
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
@@ -206,7 +206,7 @@ export class AgentManager implements IAgentManager {
       nextCandidate: (cur, hops, exclude, tier, model) => this.nextCandidate(cur, hops, exclude, tier, model),
       resolveExhaustion: (options) => this._resolveExhaustion(options),
       emitSwapAttempt: (fallback) => this._emitter.emit("onSwapAttempt", fallback),
-      depthOf: this._depthOf,
+      depthOf: (agent, t) => this._depthOf(agent, t),
     });
   }
 
@@ -223,7 +223,8 @@ export class AgentManager implements IAgentManager {
     let currentModel: string | undefined;
     let currentTarget: FallbackTarget = { agent: primaryAgent };
     let didSwap = false;
-    let hopsSoFar = this._budget.spent(options.storyId);
+    let hopsSoFar = this._budget.spent(options.storyId); // event tally: decideSwap cap / logging only
+    let depth = 0; // ladder position: the only thing nextCandidate may see (nax#1965)
     let staleRetryAttempts = 0;
     let rateLimitRetry = 0;
     const maxStaleRetries = resolveIdleWatchdogSettings(this._config.agent?.idleWatchdog).maxRetryAttempts;
@@ -340,7 +341,7 @@ export class AgentManager implements IAgentManager {
         }
 
         this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined);
-        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, undefined);
+        const next = this.nextCandidate(primaryAgent, depth, currentAgent, currentTier, undefined);
         if (!next) {
           const outcome = await this._resolveExhaustion({
             failure: result.adapterFailure,
@@ -366,6 +367,7 @@ export class AgentManager implements IAgentManager {
         }
 
         hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);
+        depth = this._depthOf(primaryAgent, next);
 
         const hop = buildFallbackRecord({
           storyId: options.storyId,

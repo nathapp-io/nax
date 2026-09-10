@@ -12,8 +12,6 @@
  * rate-limit protects a reviewer without overriding the reviewer's own model pin.
  */
 
-import type { ModelsConfig } from "@/config/schema-types";
-import { sameFallbackHop } from "./fallback-model-identity";
 import { availableCandidates, type FallbackMap, type FallbackTarget } from "./swap-decision";
 
 export interface LadderSlot {
@@ -61,20 +59,32 @@ export function ladderRungs(
 }
 
 /**
- * `AgentManager._depthOf` as a free function, taking `models`/`defaultAgent` the
- * same way `fallback-model-identity.ts` does — `manager.ts` is at its 600-line
- * hard limit and cannot afford the inline nested-arrow composition this needs.
+ * `AgentManager._depthOf` as a free function — manager.ts is at its 600-line hard
+ * limit and cannot afford the inline nested-arrow composition this needs.
+ *
+ * Takes `sameHop` (`AgentManager._sameHop`, already bound to `models`/`getDefault()`)
+ * rather than `models`/`defaultAgent` separately — one fewer positional argument to
+ * spell out at the call site.
+ *
+ * `agent` (the ladder ROOT to walk — `cur`/`primaryAgent` at the call site, which is
+ * `primaryAgentOverride` when a story's sticky slot pins a non-default primary, per
+ * `resolveDispatchTarget` in call-resolvers.ts) must NEVER be `sameHop`'s bound
+ * default agent: walking `ladderRungs(map, <default>, ...)` instead of
+ * `ladderRungs(map, agent, ...)` looks up every candidate in the DEFAULT agent's
+ * ladder even when the op is walking a different one — `map[<default>]` need not
+ * even exist for that agent, so every candidate comes back at depth 0 and
+ * `nextCandidate`'s `depthOf(candidate) > hops` filter is always false, silently
+ * disabling fallback for that operation.
  */
 export function resolveLadderDepth(
-  models: ModelsConfig | undefined,
-  defaultAgent: string,
   map: FallbackMap | undefined,
   resolveTarget: (t: FallbackTarget) => FallbackTarget,
+  sameHop: (a: string, b: string | undefined, at?: string, am?: string, bt?: string, bm?: string) => boolean,
+  agent: string,
   target: FallbackTarget,
 ): number {
-  const same = (a: FallbackTarget, b: FallbackTarget) =>
-    sameFallbackHop(models, defaultAgent, a.agent, b.agent, a.tier, a.model, b.tier, b.model);
-  return ladderDepthOf(ladderRungs(map, defaultAgent, resolveTarget), target, same);
+  const same = (a: FallbackTarget, b: FallbackTarget) => sameHop(a.agent, b.agent, a.tier, a.model, b.tier, b.model);
+  return ladderDepthOf(ladderRungs(map, agent, resolveTarget), target, same);
 }
 
 /**

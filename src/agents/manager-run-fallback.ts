@@ -40,7 +40,11 @@ export interface RunFallbackInput {
   ) => FallbackTarget | null;
   readonly resolveExhaustion: (options: ExhaustionInput) => Promise<"retry" | "exhausted" | "cancelled">;
   readonly emitSwapAttempt: (fallback: AgentFallbackRecord) => void;
-  readonly depthOf: (target: FallbackTarget) => number;
+  /** Ladder index of `target` on `agent`'s ladder — `agent` must be the ladder ROOT
+   * being walked (`primaryAgent` below), not `getDefault()`: a sticky slot's
+   * primaryAgentOverride routinely differs from the configured default (nax#1965
+   * fix-round-1 CRITICAL 1). */
+  readonly depthOf: (agent: string, target: FallbackTarget) => number;
 }
 
 export async function runWithFallback(input: RunFallbackInput): Promise<AgentRunOutcome> {
@@ -241,7 +245,8 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       }
       // The new position IS the rung's index — not "one more than before". A hop
       // may skip cooling rungs, so incrementing would under-count the descent.
-      hopsSoFar = input.depthOf(next);
+      // `primaryAgent` is the ladder root nextCandidate walked — NOT getDefault().
+      hopsSoFar = input.depthOf(primaryAgent, next);
       budget.record(storyId, hopsSoFar);
       rateLimitRetry = 0;
       currentBundle = updatedBundle;
