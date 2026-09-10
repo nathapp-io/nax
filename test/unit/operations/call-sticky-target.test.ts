@@ -71,6 +71,7 @@ function managerSwapping(deadAgent: string, liveAgent: string, dispatched: strin
         result: { ...hopResult.result, agentFallbacks: fallbacks },
         fallbacks,
         finalTarget: { agent: swapped ? liveAgent : agent },
+        didSwap: swapped,
       };
     },
     runAsSessionFn: async () => ({
@@ -112,6 +113,7 @@ function managerSwappingComplete(deadAgent: string, liveAgent: string, dispatche
         result: { output: "done", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
         fallbacks,
         finalTarget: { agent: swapped ? liveAgent : agentName },
+        didSwap: swapped,
       };
     },
   });
@@ -137,6 +139,7 @@ function managerSwappingRunAndComplete(
         result: { ...hopResult.result, agentFallbacks: fallbacks },
         fallbacks,
         finalTarget: { agent: swapped ? liveAgent : agent },
+        didSwap: swapped,
       };
     },
     completeAsWithFallbackFn: async (agentName) => {

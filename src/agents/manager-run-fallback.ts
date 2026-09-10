@@ -66,6 +66,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   const agentChain: string[] = [primaryAgent];
   let finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
   let totalCostUsd = 0;
+  let didSwap = false;
 
   try {
     while (true) {
@@ -79,6 +80,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
         return {
           result,
           fallbacks,
+          didSwap,
           finalBundle: updatedBundle,
           finalPrompt,
           finalAgent: currentAgent,
@@ -114,6 +116,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
         return {
           result,
           fallbacks,
+          didSwap,
           finalBundle: updatedBundle,
           finalPrompt,
           finalAgent: currentAgent,
@@ -135,6 +138,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           return {
             result,
             fallbacks,
+            didSwap,
             finalBundle: updatedBundle,
             finalPrompt,
             finalAgent: currentAgent,
@@ -160,6 +164,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
         return {
           result,
           fallbacks,
+          didSwap,
           finalBundle: updatedBundle,
           finalPrompt,
           finalAgent: currentAgent,
@@ -205,6 +210,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
         return {
           result,
           fallbacks,
+          didSwap,
           finalBundle: updatedBundle,
           finalPrompt,
           finalAgent: currentAgent,
@@ -230,6 +236,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       });
       fallbacks.push(fallback);
       input.emitSwapAttempt(fallback);
+      didSwap = true;
       logger?.info("agent-manager", "Agent swap triggered", {
         storyId,
         fromAgent: currentAgent,

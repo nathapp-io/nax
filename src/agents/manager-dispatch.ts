@@ -473,12 +473,14 @@ export async function validateAgentCredentials(input: {
 export function buildCompleteOutcome(
   result: CompleteResult,
   fallbacks: AgentFallbackRecord[],
+  didSwap: boolean,
   currentTier: string | undefined,
   currentTarget: FallbackTarget | undefined,
 ): AgentCompleteOutcome {
   return {
     result,
     fallbacks,
+    didSwap,
     ...(currentTier !== undefined ? { finalTier: currentTier } : {}),
     ...(currentTarget ? { finalTarget: currentTarget } : {}),
   };

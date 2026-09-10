@@ -51,6 +51,8 @@ export interface AgentFallbackRecord {
 export interface AgentRunOutcome {
   result: AgentResult;
   fallbacks: AgentFallbackRecord[];
+  /** True only when this operation selected a fallback target, not merely retried. */
+  didSwap?: boolean;
   /** The context bundle used by the final (successful or last failed) hop. */
   finalBundle?: ContextBundle;
   /** The prompt used by the final (successful or last failed) hop. */
@@ -68,6 +70,8 @@ export interface AgentRunOutcome {
 export interface AgentCompleteOutcome {
   result: CompleteResult;
   fallbacks: AgentFallbackRecord[];
+  /** True only when this operation selected a fallback target, not merely retried. */
+  didSwap?: boolean;
   /** Tier of the hop that actually ran, when a fallback target named one. */
   finalTier?: string;
   /** The resolved target the final hop ran on — see `AgentRunOutcome.finalTarget` (nax#1964). */

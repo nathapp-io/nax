@@ -220,6 +220,7 @@ export class AgentManager implements IAgentManager {
     let currentTier: string | undefined;
     let currentModel: string | undefined;
     let currentTarget: FallbackTarget = { agent: primaryAgent };
+    let didSwap = false;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     let rateLimitRetry = 0;
@@ -280,7 +281,7 @@ export class AgentManager implements IAgentManager {
 
         if (!result.adapterFailure) {
           _finalStatus = "ok";
-          return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
         }
 
         const isFailStale = result.adapterFailure.outcome === "fail-stale";
@@ -326,14 +327,14 @@ export class AgentManager implements IAgentManager {
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
-            return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
+            return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
           }
           if (outcome === "retry") {
             rateLimitRetry += 1;
             continue;
           }
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
-          return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
         }
 
         this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined);
@@ -352,14 +353,14 @@ export class AgentManager implements IAgentManager {
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
-            return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
+            return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
           }
           if (outcome === "retry") {
             rateLimitRetry += 1;
             continue;
           }
           _finalStatus = "exhausted";
-          return buildCompleteOutcome(result, fallbacks, currentTier, currentTarget);
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
         }
 
         hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);
@@ -373,6 +374,7 @@ export class AgentManager implements IAgentManager {
           costUsd: result.estimatedCostUsd,
         });
         fallbacks.push(hop);
+        didSwap = true;
         this._emitter.emit("onSwapAttempt", hop);
 
         logger?.info("agent-manager", "complete() swap triggered", {

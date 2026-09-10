@@ -91,6 +91,31 @@ function managerSwappingTo(newAgent: string) {
         result: { ...hopResult.result, agentFallbacks: fallbacks },
         fallbacks,
         finalTarget: { agent: newAgent },
+        didSwap: true,
+      };
+    },
+    runAsSessionFn: async () => ({
+      output: "done",
+      estimatedCostUsd: 0,
+      internalRoundTrips: 0,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  });
+}
+
+/** A manager that retried a stale session without selecting a fallback target. */
+function managerReportingStaleRetry() {
+  const fallbacks = [hop({ priorAgent: "claude", newAgent: "claude", outcome: "fail-stale" })];
+  return makeMockAgentManager({
+    runWithFallbackFn: async (req) => {
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+      return {
+        result: { ...hopResult.result, agentFallbacks: fallbacks },
+        fallbacks,
+        finalTarget: { agent: "claude" },
+        didSwap: false,
       };
     },
     runAsSessionFn: async () => ({
@@ -173,6 +198,16 @@ describe("callOp records the target a story swapped to (nax#1964)", () => {
 
     await callOp(ctxFor(runtime, "US-001"), makeOp("no-swap"), "input");
 
+    expect(runtime.storyAgentTargets.size).toBe(0);
+  });
+
+  test("does not make a stale retry sticky", async () => {
+    const runtime = makeMockRuntime({ agentManager: managerReportingStaleRetry() });
+    createdRuntimes.push(runtime);
+
+    await callOp(ctxFor(runtime, "US-001"), makeOp("stale-retry"), "input");
+
+    expect(runtime.agentFallbacks.get("US-001")).toHaveLength(1);
     expect(runtime.storyAgentTargets.size).toBe(0);
   });
 });
