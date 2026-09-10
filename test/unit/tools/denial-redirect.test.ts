@@ -104,4 +104,65 @@ describe("runtime appends the redirect to a denial", () => {
     if (outcome.kind !== "denied") throw new Error("expected a denial");
     expect(outcome.reason).not.toContain("Glob");
   });
+
+  test("a denied RunCommand verb names the tool the session already has (#1971)", async () => {
+    const policy = compileToolPolicy(
+      [
+        { tool: "Glob", patterns: ["*"] },
+        { tool: "RunCommand", patterns: ["lint"] },
+      ],
+      root,
+    );
+    const runtime = createCodingToolRuntime({
+      policy,
+      extraTools: [createRunCommandTool(new Map([["lint", "echo lint"]]))],
+      declaredCommands: new Set(["lint"]),
+    });
+    runtime.advertised(["Glob", "RunCommand"]);
+
+    const outcome = await runtime.callTool("RunCommand", { command: "ls -la" });
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind !== "denied") throw new Error("expected a denial");
+    expect(outcome.reason).toContain("Glob");
+  });
+});
+
+import { redirectForVerb } from "@/tools/denial-redirect";
+
+const WITH_GREP = new Set(["Glob", "Git", "Delete", "RunCommand", "Grep"]);
+
+describe("redirectForVerb (#1971)", () => {
+  test("a command line stuffed into the verb slot reuses the argv table", () => {
+    expect(redirectForVerb("RunCommand", "ls -la", ALL, CMDS)).toContain("Glob");
+    expect(redirectForVerb("RunCommand", "ls -la src", ALL, CMDS)).toContain("Glob");
+  });
+
+  test("a bare read-only git verb points at Git", () => {
+    expect(redirectForVerb("RunCommand", "diff", ALL, CMDS)).toContain("Git");
+    expect(redirectForVerb("RunCommand", "status", ALL, CMDS)).toContain("Git");
+  });
+
+  test("a bare git points at Git", () => {
+    expect(redirectForVerb("RunCommand", "git", ALL, CMDS)).toContain("Git");
+  });
+
+  test("grep points at Grep", () => {
+    expect(redirectForVerb("Git", "grep", WITH_GREP, CMDS)).toContain("Grep");
+  });
+
+  test("never redirects a tool back at itself", () => {
+    // Git {subcommand:"diff"} denied by a narrow grant: "you already have Git"
+    // is useless, and would read as a contradiction of the denial.
+    expect(redirectForVerb("Git", "diff", ALL, CMDS)).toBeUndefined();
+  });
+
+  test("says nothing when the target tool is not advertised", () => {
+    expect(redirectForVerb("Git", "grep", ALL, CMDS)).toBeUndefined();
+    expect(redirectForVerb("RunCommand", "ls -la", new Set(["Read"]), CMDS)).toBeUndefined();
+  });
+
+  test("says nothing for a verb that maps to no tool", () => {
+    expect(redirectForVerb("RunCommand", "test:coverage", WITH_GREP, CMDS)).toBeUndefined();
+    expect(redirectForVerb("RunCommand", "", WITH_GREP, CMDS)).toBeUndefined();
+  });
 });

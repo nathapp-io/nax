@@ -64,3 +64,52 @@ export function redirectForArgv(
   if (!available.has(hit.tool)) return undefined;
   return `this session already has \`${hit.tool}\` -- ${hit.how}`;
 }
+
+/**
+ * Bare verbs that are really a request for a first-class tool.
+ *
+ * Distinct from `intendedTool`: those are argv command lines, these are single
+ * words the model put in a `verbField` slot (`RunCommand {command:"diff"}`).
+ */
+const VERB_TOOLS: ReadonlyMap<string, { tool: string; how: string }> = new Map([
+  ["grep", { tool: "Grep", how: "Grep searches file contents" }],
+  ["git", { tool: "Git", how: `Git runs read-only git (${[...GIT_READ_VERBS].join(", ")})` }],
+  ...[...GIT_READ_VERBS].map(
+    (v) => [v, { tool: "Git", how: `Git runs read-only git (${[...GIT_READ_VERBS].join(", ")})` }] as const,
+  ),
+]);
+
+/**
+ * Name the tool that serves the intent behind a denied VERB call.
+ *
+ * `redirectForArgv` is unreachable for RunCommand and Git: they deny through
+ * `verbField`, where the policy sees no argv at all, so every such denial was a
+ * bare refusal (nax#1971). A verb slot carries either a mini command line the
+ * model stuffed there ("ls -la") -- tokenized here and handed to the same argv
+ * table, so the two branches can never disagree about what `ls -la` means --
+ * or a bare word ("grep"), handled by VERB_TOOLS.
+ */
+export function redirectForVerb(
+  deniedTool: string,
+  verb: string,
+  available: ReadonlySet<string>,
+  declaredCommands: ReadonlySet<string>,
+): string | undefined {
+  const tokens = verb
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0) return undefined;
+
+  // A multi-token verb IS a command line. No self-guard here: pointing
+  // RunCommand's raw-command-line slot at RunCommand's DECLARED-command slot is
+  // the whole point, not a contradiction.
+  if (tokens.length > 1) return redirectForArgv(tokens, available, declaredCommands);
+
+  const hit = VERB_TOOLS.get(tokens[0] as string);
+  if (hit === undefined) return undefined;
+  // Telling Git it already has Git reads as a contradiction of the denial.
+  if (hit.tool === deniedTool) return undefined;
+  if (!available.has(hit.tool)) return undefined;
+  return `this session already has \`${hit.tool}\` -- ${hit.how}`;
+}
