@@ -1,0 +1,359 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "classifyRecurrence returns blocking, advisory, demoted, retired, and classified arrays.",
+    "refined": "Given any RecurrenceConfig with enabled=true and a non-empty priorIterations, classifyRecurrence returns an object whose keys are exactly ['blocking','advisory','demoted','retired','classified'] and each value is an array.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given a warning finding at error threshold with appearances below maxAdvisoryRounds, classifyRecurrence places it in advisory and not retired.",
+    "refined": "Given cfg={enabled:true,maxBlockingRounds:2,maxAdvisoryRounds:3}, priorIterations containing 1 prior appearance of a warning-severity finding, and that finding as input, the result contains this finding in advisory, does not contain it in retired, and result.classified[0].meta.recurrence.disposition === 'advisory'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given a sub-threshold finding whose appearances including the current round meet maxAdvisoryRounds, classifyRecurrence places it in retired and not advisory.",
+    "refined": "Given cfg={enabled:true,maxBlockingRounds:2,maxAdvisoryRounds:3}, priorIterations containing exactly 2 prior appearances of a warning-severity finding, and that finding as input (so rounds === 3 === maxAdvisoryRounds), the result contains this finding in retired, does not contain it in advisory, and result.classified[0].meta.recurrence.disposition === 'retired'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given an error finding whose appearances including the current round meet maxBlockingRounds + 1, classifyRecurrence places it in demoted and not retired.",
+    "refined": "Given cfg={enabled:true,maxBlockingRounds:2,maxAdvisoryRounds:2}, priorIterations containing exactly 2 prior appearances of an error-severity finding, and that finding as input (so rounds === 3 === maxBlockingRounds + 1), the result contains this finding in demoted, does not contain it in retired, and result.classified[0].meta.recurrence.disposition === 'demoted'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When cfg omits maxAdvisoryRounds and a sub-threshold finding has two appearances including the current round, classifyRecurrence retires it using default 2.",
+    "refined": "Given cfg={enabled:true,maxBlockingRounds:2} (maxAdvisoryRounds undefined), priorIterations containing 1 prior appearance of a warning-severity finding, and that finding as input (so rounds === 2 === default maxAdvisoryRounds), the result contains this finding in retired and result.classified[0].meta.recurrence.disposition === 'retired'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Every finding in classified has meta.recurrence.disposition equal to its bucket name: blocking, advisory, demoted, or retired.",
+    "refined": "For every finding f in result.classified, f.meta is an object, f.meta.recurrence is an object, and f.meta.recurrence.disposition is the string 'blocking', 'advisory', 'demoted', or 'retired'; and for each of blocking, advisory, demoted, retired, every finding in that bucket has meta.recurrence.disposition equal to that bucket name.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "A finding in demoted has meta.recurrence.wasBlocking equal to true.",
+    "refined": "For every finding f in result.demoted, f.meta.recurrence.wasBlocking === true.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "A finding in retired has meta.recurrence.wasBlocking equal to false.",
+    "refined": "For every finding f in result.retired, f.meta.recurrence.wasBlocking === false.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Every finding in classified has meta.recurrence.rounds equal to its prior appearance count plus one.",
+    "refined": "For every finding f in result.classified, f.meta.recurrence.rounds === (number of matching prior appearances of f in priorIterations by fingerprint) + 1.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "classifyRecurrence returns classified with one entry per input finding in input order.",
+    "refined": "Given N input findings, result.classified has length N, and for each i, result.classified[i] corresponds to input finding i (same fingerprint fields file, issue, category, acIndex as inputs[i]) with input[i].file === result.classified[i].file and input[i].issue === result.classified[i].issue for all i in order.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When an input finding has no meta, classifyRecurrence leaves that input finding without meta after the call.",
+    "refined": "Given an input finding f where f.meta === undefined (or the 'meta' key is absent), after classifyRecurrence returns, f.meta === undefined (the 'meta' key is not added to f); mutation of the input object to add meta is not observed, and only the corresponding result.classified entry carries meta.recurrence.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When an input finding has an unrelated meta key, its classified entry retains that key alongside meta.recurrence.",
+    "refined": "Given an input finding with meta={traceId:'abc-123'}, the corresponding result.classified entry has meta.traceId === 'abc-123' and meta.recurrence defined with disposition and rounds properties.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When cfg.enabled is false, classifyRecurrence returns an empty retired array.",
+    "refined": "Given cfg={enabled:false,maxBlockingRounds:N} and any non-empty priorIterations, result.retired has length 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When cfg.enabled is false, no finding returned by classifyRecurrence carries meta.recurrence.",
+    "refined": "Given cfg={enabled:false,maxBlockingRounds:N} and any input findings, for every finding f in result.blocking, result.advisory, result.demoted, result.retired, and result.classified: f.meta is undefined or f.meta.recurrence === undefined.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When cfg.enabled is false, classifyRecurrence partitions findings into blocking and advisory by severity alone, matching its behaviour before this feature.",
+    "refined": "Given cfg={enabled:false,maxBlockingRounds:N}, input findings with mixed severities, and a non-empty priorIterations: all findings at or above the error threshold appear in result.blocking, all warning (sub-threshold) findings appear in result.advisory, and result.demoted and result.retired are empty arrays.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a finding with no acIndex, classifyRecurrence counts prior appearances through the existing file, category, and issue-prefix fingerprint fallback and its disposition is unaffected by the missing acIndex.",
+    "refined": "Given an input finding with acIndex undefined and a priorIterations entry for a finding with the same file, same category, and an issue string sharing the same prefix (per the existing fingerprint fallback), classifyRecurrence counts that prior appearance: the finding's result.classified[0].meta.recurrence.rounds === prior count + 1, and its disposition equals the disposition assigned by the same rules applied to a finding with acIndex set.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When priorIterations is empty, classifyRecurrence returns an empty retired array.",
+    "refined": "Given cfg={enabled:true,maxBlockingRounds:N,maxAdvisoryRounds:M} (any positive N, M) and priorIterations=[], result.retired has length 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When priorIterations is empty, every classified entry has meta.recurrence.rounds equal to 1.",
+    "refined": "Given cfg={enabled:true,maxBlockingRounds:N} and priorIterations=[], for every finding f in result.classified, f.meta.recurrence.rounds === 1.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given a test-gap finding in a test file at or above the blocking threshold, classifyRecurrence places it in blocking regardless of appearance count.",
+    "refined": "Given cfg={enabled:true,maxBlockingRounds:1,maxAdvisoryRounds:1} and a test-gap category finding (e.g. category identifying a coverage gap) located in a test file with severity at or above the error threshold and prior appearances exceeding maxBlockingRounds, the result contains this finding in blocking, not in demoted or retired, and result.classified[0].meta.recurrence.disposition === 'blocking'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given a test-gap finding in a test file below the blocking threshold, classifyRecurrence does not place it in blocking.",
+    "refined": "Given a test-gap category finding located in a test file with warning severity (below the error threshold) and any prior appearance count, result.blocking does not contain this finding; it appears in advisory or retired per the advisory cap rules.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When tagCoverageGap is applied to a finding carrying meta.recurrence, it returns a finding carrying that recurrence value and meta.coverageGap equal to true.",
+    "refined": "Given an input finding f with meta.recurrence defined (e.g. {disposition:'advisory',rounds:2,wasBlocking:false}), tagCoverageGap(f) returns a finding g where g.meta.recurrence deep-equals f.meta.recurrence and g.meta.coverageGap === true.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When adversarial recurrenceDemotion.maxAdvisoryRounds is unset, schema parsing resolves it to 2.",
+    "refined": "Parsing a review config object with an adversarial recurrenceDemotion block that omits maxAdvisoryRounds yields parsed.recurrenceDemotion.maxAdvisoryRounds === 2 (schema default applied).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When semantic recurrenceDemotion.maxAdvisoryRounds is unset, schema parsing resolves it to 2.",
+    "refined": "Parsing a review config object with a semantic recurrenceDemotion block that omits maxAdvisoryRounds yields parsed.recurrenceDemotion.maxAdvisoryRounds === 2 (schema default applied).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When semantic recurrenceDemotion.enabled is unset, schema parsing resolves it to false.",
+    "refined": "Parsing a review config object with a semantic recurrenceDemotion block that omits enabled yields parsed.recurrenceDemotion.enabled === false (schema default applied).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When either review config sets recurrenceDemotion.maxAdvisoryRounds to 0, schema validation rejects it.",
+    "refined": "For both the adversarial and semantic review config schemas, parsing a config with recurrenceDemotion.maxAdvisoryRounds = 0 throws a ZodError (safeParse returns success === false) due to the min(1) constraint.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When adversarial recurrenceDemotion.maxAdvisoryRounds is 5, schema parsing resolves it to 5.",
+    "refined": "Parsing a review config object with adversarial recurrenceDemotion.maxAdvisoryRounds = 5 yields parsed.recurrenceDemotion.maxAdvisoryRounds === 5 (explicit value preserved, not defaulted).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When toAdversarialReviewFindings receives an LLM finding with meta.recurrence, it returns a Finding with the same disposition, rounds, and wasBlocking values under meta.recurrence.",
+    "refined": "Given an LLM finding with meta.recurrence set to {disposition: 'retired'|'demoted', rounds: N, wasBlocking: boolean}, calling toAdversarialReviewFindings returns a Finding where meta.recurrence is deep-equal to the input {disposition, rounds, wasBlocking} values (expect(result.meta.recurrence).toEqual(inputMeta.recurrence)).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When toAdversarialReviewFindings receives an LLM finding with no meta, its returned Finding meta has no recurrence key.",
+    "refined": "Given an LLM finding with meta undefined (or meta without a recurrence key), the Finding returned by toAdversarialReviewFindings satisfies expect(result.meta?.recurrence).toBeUndefined() — i.e., Object.hasOwn(result.meta ?? {}, 'recurrence') is false.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When toAdversarialReviewFindings receives meta.recurrence and verifiedBy, its returned Finding carries both meta.recurrence and meta.verifiedBy.",
+    "refined": "Given an LLM finding with meta = {recurrence: {...}, verifiedBy: 'some-id'}, the Finding returned by toAdversarialReviewFindings has meta.recurrence deep-equal to the input recurrence object and meta.verifiedBy === 'some-id' (expect(result.meta).toEqual({recurrence: inputRecurrence, verifiedBy: 'some-id'})).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When llmFindingToFinding receives a semantic LLM finding with meta.recurrence, it returns a Finding with the same recurrence values.",
+    "refined": "Given a semantic LLM finding whose meta.recurrence is {disposition, rounds, wasBlocking}, calling llmFindingToFinding returns a Finding where result.meta.recurrence deep-equals the input recurrence object (expect(result.meta.recurrence).toEqual(input.meta.recurrence)).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When adversarialReviewOp.verify() accepts findings classified by recurrence, it returns one stamped findings entry per accepted finding.",
+    "refined": "Given an adversarialReviewOp.verify() run where N findings are classified with recurrence stamps and accepted, result.findings has length N and for each accepted finding there exists exactly one entry e such that e.file and e.category match the input finding and e.meta.recurrence is defined and deep-equals the classification's {disposition, rounds, wasBlocking}.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When adversarialReviewOp.verify() has retired classifications, advisoryFindings includes every retired entry in addition to advisory, demoted, and AC-dropped entries it already carries.",
+    "refined": "Given adversarialReviewOp.verify() with R retired classifications and existing A advisory, D demoted, and K AC-dropped entries, result.advisoryFindings has length A+D+K+R and contains one entry per retired finding (matched by file and category) each with meta.recurrence.disposition === 'retired'; all pre-existing advisory/demoted/AC-dropped entries are still present.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When adversarialReviewOp.verify() classifies retired findings, normalizedFindings contains only blocking entries so retired findings are never routable to the rectification cycle.",
+    "refined": "Given adversarialReviewOp.verify() with at least one finding classified retired, result.normalizedFindings contains no entry whose file+category matches a retired finding; every entry in normalizedFindings has wasBlocking === true (or corresponds to a blocking-severity finding), verified by checking normalizedFindings.find(e => e.file === retiredFile && e.category === retiredCategory) is undefined.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "Given a warning adversarial finding and sufficient matching priorAdversarialIterations to reach maxAdvisoryRounds, adversarialReviewOp.verify() returns it in advisoryFindings stamped disposition retired.",
+    "refined": "Given a warning-severity adversarial finding and priorAdversarialIterations whose matching count >= maxAdversarialRounds (maxAdvisoryRounds), classifyRecurrence classifies it retired and adversarialReviewOp.verify() returns result.advisoryFindings containing an entry for that finding's file+category with meta.recurrence.disposition === 'retired' and meta.recurrence.rounds >= maxAdvisoryRounds.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When classifyRecurrence returns retired findings, adversarialReviewOp.verify() emits one info review log per finding with event review.adversarial.recurrence_retired and its file and category.",
+    "refined": "Given R findings classified retired by classifyRecurrence, the logs emitted by adversarialReviewOp.verify() contain exactly R entries with level 'info' and event 'review.adversarial.recurrence_retired', and each entry's file and category fields equal the corresponding retired finding's file and category (no duplicate log entries per finding).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When classifyRecurrence returns demoted findings, adversarialReviewOp.verify() still emits one log per finding with event review.adversarial.recurrence_demoted.",
+    "refined": "Given D findings classified demoted by classifyRecurrence, the logs emitted by adversarialReviewOp.verify() contain exactly D entries with event 'review.adversarial.recurrence_demoted', one per demoted finding, each matching the finding's file and category — demotion logging behavior is unchanged from the pre-existing implementation.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When semantic recurrenceDemotion.enabled is true, semanticReviewOp.verify() returns one stamped findings entry per accepted finding.",
+    "refined": "Given semanticReviewOp.verify() with recurrenceDemotion.enabled === true and N accepted findings, result.findings has length N and each entry has meta.recurrence defined and deep-equal to that finding's classification {disposition, rounds, wasBlocking} (stamped via llmFindingToFinding's meta forwarding).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When semantic recurrenceDemotion uses its false default, semanticReviewOp.verify() returns advisoryFindings entries with no meta.recurrence.",
+    "refined": "Given semanticReviewOp.verify() with recurrenceDemotion.enabled unset/false (default), every entry in result.advisoryFindings satisfies expect(entry.meta?.recurrence).toBeUndefined() — no advisory entry carries a recurrence stamp.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When a review-audit entry is built from adversarial verify output with recurrence stamps, result.findings exposes those values so a passed record distinguishes a demoted error without replaying demotion state.",
+    "refined": "Given a demoted error finding (meta.recurrence.disposition === 'demoted') in adversarialReviewOp.verify() output, the built ReviewAuditEntry satisfies expect(auditEntry.result.findings.find(f => f.file === demotedFile && f.category === demotedCategory)?.meta?.recurrence?.disposition).toBe('demoted') — the raw stamped finding shape is persisted in ReviewAuditEntry.result.findings with no additional demotion recomputation required (per review-decision.ts:92 / semantic-helpers.ts:61-62 raw-op persistence).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When an error finding is demoted and blocking is empty, adversarialReviewOp.verify() returns passed equal to true, so the verdict rule is unchanged by this feature.",
+    "refined": "Given an error-severity finding classified demoted (moved to advisoryFindings) such that result.normalizedFindings is empty, adversarialReviewOp.verify() returns result.passed === true — verified by asserting expect(result.passed).toBe(true) and expect(result.normalizedFindings).toHaveLength(0), confirming the pass/fail computation is unchanged by recurrence stamping.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-41",
+    "original": "Given an iteration with a finding stamped meta.recurrence.disposition retired, buildPriorIterationsBlock omits that finding from its verdict-required list.",
+    "refined": "Given iterations=[{findings:[{file:'a.ts', category:'security', meta:{recurrence:{disposition:'retired', rounds:3, wasBlocking:true}}}]}], the string returned by buildPriorIterationsBlock(iterations) does not contain the finding's file path 'a.ts' within the verdict-required section (verdict section has 0 occurrences of 'a.ts').",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-42",
+    "original": "Given an iteration with a retired stamped finding, buildPriorIterationsBlock returns an acknowledgement section naming that finding's file and category.",
+    "refined": "Given a finding {file:'a.ts', category:'security', meta:{recurrence:{disposition:'retired', rounds:3, wasBlocking:true}}}, buildPriorIterationsBlock returns a string containing a distinct acknowledgement section (distinguishable from the verdict list, e.g. a heading like 'Acknowledged (closed) findings') whose body includes both 'a.ts' and 'security'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-43",
+    "original": "When buildPriorIterationsBlock renders retired findings, the acknowledgement section states they are closed and must not be re-flagged.",
+    "refined": "The acknowledgement section rendered by buildPriorIterationsBlock for a retired finding matches both /closed/i and /must not be re-flagged/i (i.e., section text contains a closed status statement and an explicit prohibition on re-flagging).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-44",
+    "original": "Given iterations whose findings have no meta.recurrence, buildPriorIterationsBlock returns the same block it returned before this feature.",
+    "refined": "For iterations whose findings have no meta.recurrence property, buildPriorIterationsBlock output is byte-identical (===) to a committed golden snapshot recorded from the pre-feature implementation; equivalently, output equals the pre-feature reference output for the same input fixture.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "buildPriorIterationsBlock's verdict template counts only findings not stamped retired.",
+    "refined": "Given iterations containing N total findings of which R have meta.recurrence.disposition==='retired', the verdict-required count rendered in buildPriorIterationsBlock output equals N-R (e.g., for 3 findings with 1 retired, the rendered count text contains '2'); retired findings are excluded from the count.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "Given an iteration whose findings are all stamped retired, buildPriorIterationsBlock returns no verdict-required list.",
+    "refined": "Given iterations where every finding has meta.recurrence.disposition==='retired', buildPriorIterationsBlock output contains no verdict-required section (the verdict section header/marker, e.g. /verdict required/i, does not appear, or the verdict list is absent/empty) while the acknowledgement section is present.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-47",
+    "original": "Given three consecutive review rounds where a warning is emitted in round 1 and reaches maxAdvisoryRounds in round 2, the round-3 prior-iterations block lists it only in the acknowledgement section.",
+    "refined": "Integration test: round 1 emits a finding (blocking/advisory warning), round 2 re-flags it and its meta.recurrence becomes disposition 'retired' at maxAdvisoryRounds; when building the round-3 prior-iterations block, the finding's file path appears exactly once in the output and that occurrence is inside the acknowledgement section, with zero occurrences in the verdict-required section.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-48",
+    "original": "When actionableAdvisoryFindings receives a finding stamped disposition retired, its returned list omits it.",
+    "refined": "actionableAdvisoryFindings([{file:'a.ts', meta:{recurrence:{disposition:'retired', rounds:3, wasBlocking:false}}}]) returns an empty array (length 0).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-49",
+    "original": "When actionableAdvisoryFindings receives a finding stamped disposition advisory, its returned list contains it.",
+    "refined": "actionableAdvisoryFindings([{file:'a.ts', meta:{recurrence:{disposition:'advisory', rounds:1, wasBlocking:true}}}]) returns an array of length 1 whose single element is reference-equal to the input finding.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-50",
+    "original": "When actionableAdvisoryFindings receives actionRequired false or acDropped true findings, its returned list continues to omit them.",
+    "refined": "actionableAdvisoryFindings([{actionRequired:false, meta:{recurrence:{disposition:'advisory', rounds:1, wasBlocking:true}}}]) returns length 0, and actionableAdvisoryFindings([{acDropped:true, meta:{recurrence:{disposition:'advisory', rounds:1, wasBlocking:true}}}]) returns length 0; both existing exclusion filters remain in effect alongside the retired filter.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-51",
+    "original": "When only retired advisory findings are provided to the non-blocking-fix seed path, shouldRunNonBlockingFix receives an advisory count excluding them and no fix pass is dispatched.",
+    "refined": "Given a seed path invoked with only findings stamped meta.recurrence.disposition==='retired' (with advisory-eligible flags otherwise), a spy on shouldRunNonBlockingFix records it was called with advisory count 0 (retired findings excluded), and shouldRunNonBlockingFix returns false such that the fix-pass dispatcher is invoked 0 times (dispatch spy call count === 0).",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

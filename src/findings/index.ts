@@ -45,6 +45,8 @@ export type {
   ValidateResult,
 } from "./cycle-types";
 export { rebaseToWorkdir } from "./path-utils";
+export type { RecurrenceDisposition, RecurrenceStamp } from "./retirement-stamp";
+export { isRecurrenceRetired, readRecurrenceDisposition, retirementIdentity } from "./retirement-stamp";
 export type { StoryFixHistory, StoryFixState } from "./story-fix-history";
 export {
   appendStoryFixIterations,

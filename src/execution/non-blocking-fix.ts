@@ -13,6 +13,7 @@
  * Measurement errors are fail-safe: also restored.
  */
 import type { NonBlockingFixConfig, TestPatternConfig } from "../config/selectors";
+import { isRecurrenceRetired } from "../findings/retirement-stamp";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import type { SnapshotRef } from "../tdd/rollback";
@@ -50,6 +51,15 @@ const MAX_LOGGED_REGRESSED_KEYS = 10;
  * Applied at the SEEDING site only, never in the reviewer's own output: the end-of-run
  * advisory report reads the op's `advisoryFindings` (`review-audit.ts`), and filtering
  * there would delete the very visibility that made this diagnosable.
+ *
+ * #1966 — a finding stamped `meta.recurrence.disposition === "retired"` is
+ * TERMINAL advisory: the advisory cap has been reached and the carry-forward
+ * prompt renders it in the acknowledgement section as "closed, do not re-flag"
+ * (US-004). Re-seeding it into NBF would re-introduce the very loop retirement
+ * exists to break — a paid implementer session dispatched against a finding the
+ * reviewer has been told to stop re-raising. The end-of-run report still reads
+ * `advisoryFindings` directly (the unfiltered bucket), so a retired finding is
+ * still reported; it is only its fix-lane eligibility that changes.
  */
 export function actionableAdvisoryFindings(findings: readonly Finding[]): readonly Finding[] {
   // #1950 — AC-quote drops are folded into advisoryFindings so they reach the
@@ -57,7 +67,12 @@ export function actionableAdvisoryFindings(findings: readonly Finding[]): readon
   // #1801 (may an AC-ungrounded finding drive action?), not a claim that drops
   // are weak: all three in the corpus are substantive and one shipped (#1951).
   // Seeding them would settle #1801 through a side door. See `Finding.acDropped`.
-  return findings.filter((f) => f.actionRequired !== false && f.acDropped !== true);
+  return findings.filter((f) => {
+    if (f.actionRequired === false) return false;
+    if (f.acDropped === true) return false;
+    if (isRecurrenceRetired(f)) return false;
+    return true;
+  });
 }
 
 /** Run the pass only when enabled and there is at least one advisory finding. */

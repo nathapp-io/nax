@@ -33,7 +33,7 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: "balanced",
       diffMode: "embedded",
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
@@ -48,7 +48,7 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: { agent: "codex", model: "gpt-5.4" },
       diffMode: "embedded",
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
@@ -62,7 +62,7 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: "balanced",
       diffMode: "embedded",
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
       resetRefOnRerun: false,
       rules: ["rule1", "rule2"],
       timeoutMs: 600_000,
@@ -80,7 +80,7 @@ describe("SemanticReviewConfig", () => {
       const config: SemanticReviewConfig = {
         model: tier,
         diffMode: "embedded",
-        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
@@ -110,7 +110,7 @@ describe("ReviewConfig semantic field", () => {
       expect(result.data.review.semantic).toEqual({
         model: "balanced",
         diffMode: "ref",
-        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
@@ -255,7 +255,7 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
     expect(DEFAULT_CONFIG.review.semantic).toEqual({
       model: "balanced",
       diffMode: "ref",
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,

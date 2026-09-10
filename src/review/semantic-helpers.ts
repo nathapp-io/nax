@@ -42,6 +42,13 @@ export interface LLMFinding {
     line?: number;
     observed: string;
   };
+  /**
+   * Optional producer-supplied metadata carried through to the Finding wire format.
+   * US-003: `meta.recurrence` is stamped by `classifyRecurrence` on every
+   * accepted semantic finding so the audit record and prompt builder can
+   * render the disposition. Forwarded through `llmFindingToFinding`.
+   */
+  meta?: Record<string, unknown>;
 }
 
 export interface LLMResponse {
@@ -83,6 +90,7 @@ export function validateLLMShape(parsed: unknown): LLMResponse | null {
     findings: (obj.findings as unknown[])
       .filter(isFindingShaped)
       .map(withNormalizedCategory)
+      .map(withStrippedModelRecurrence)
       .map(withNormalizedSeverity),
     ...(acks.length > 0 && { acks }),
   };
@@ -110,6 +118,26 @@ function withNormalizedCategory(f: LLMFinding): LLMFinding {
  */
 function withNormalizedSeverity(f: LLMFinding): LLMFinding {
   return { ...f, severity: normalizeSeverity(f.severity) };
+}
+
+/**
+ * US-003 — `meta.recurrence` is FRAMEWORK-OWNED. A reviewer LLM that authors
+ * its own `meta.recurrence` would otherwise have its forgery persisted verbatim
+ * through `llmFindingToFinding` (the allowlist forwards `meta.recurrence`
+ * verbatim) and reach the audit layer as if nax had stamped it. Strip it at
+ * the parse boundary. The in-repo precedent is `evidence`, which is
+ * framework-owned and overwritten wholesale by `substantiateAdversarialFindings`
+ * after the parse boundary (`evidence` is "never authored by the model"). The
+ * only legitimate source of `meta.recurrence` after this point is
+ * `classifyRecurrence`, which writes through `stampRecurrence` and only when
+ * `recurrenceDemotion.enabled` is true. Other `meta` keys are left alone —
+ * the reviewer owns them today, and a blanket strip is out of scope.
+ */
+function withStrippedModelRecurrence(f: LLMFinding): LLMFinding {
+  if (f.meta?.recurrence === undefined) return f;
+  const { recurrence: _drop, ...rest } = f.meta;
+  void _drop;
+  return Object.keys(rest).length > 0 ? { ...f, meta: rest } : { ...f, meta: undefined };
 }
 
 export function parseLLMResponse(raw: string): LLMResponse | null {
@@ -190,6 +218,12 @@ export function llmFindingToFinding(f: LLMFinding, opts: SemanticFindingOptions 
   if (f.verifiedBy) metaExtras.verifiedBy = f.verifiedBy;
   if (f.acQuote) metaExtras.acQuote = f.acQuote;
   if (f.acIndex != null) metaExtras.acIndex = f.acIndex;
+  // US-003 AC4 — `meta.recurrence` is stamped by `classifyRecurrence` on every
+  // accepted semantic finding (when `recurrenceDemotion.enabled` is true).
+  // Forward it verbatim so the disposition reaches the audit record and the
+  // prompt builder. Absent stays absent so a finding without recurrence does
+  // not advertise an empty `recurrence: {}` key.
+  if (f.meta?.recurrence !== undefined) metaExtras.recurrence = f.meta.recurrence;
   return {
     source: "semantic-review",
     severity: normalizeSeverity(f.severity),

@@ -78,8 +78,9 @@ export const SemanticReviewConfigSchema = z.object({
     .object({
       enabled: z.boolean().default(false),
       maxBlockingRounds: z.number().int().min(1).default(2),
+      maxAdvisoryRounds: z.number().int().min(1).default(2),
     })
-    .default({ enabled: false, maxBlockingRounds: 2 }),
+    .default({ enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 }),
 });
 
 /**
@@ -136,8 +137,9 @@ export const AdversarialReviewConfigSchema = z.object({
     .object({
       enabled: z.boolean().default(true),
       maxBlockingRounds: z.number().int().min(1).default(2),
+      maxAdvisoryRounds: z.number().int().min(1).default(2),
     })
-    .default({ enabled: true, maxBlockingRounds: 2 }),
+    .default({ enabled: true, maxBlockingRounds: 2, maxAdvisoryRounds: 2 }),
   /**
    * When true (default), in ref mode an empty-findings `passed:true` verdict that
    * reports no inspected files (`inspectedFiles` absent/empty) triggers exactly one

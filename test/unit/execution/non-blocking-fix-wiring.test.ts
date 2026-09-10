@@ -331,4 +331,84 @@ describe("non-blocking-fix runtime wiring", () => {
 
     expect(runNonBlockingFix).not.toHaveBeenCalled();
   });
+
+  test("non-blocking fix is SKIPPED when every advisory finding is stamped retired (#1966)", async () => {
+    // The wiring's own filter (actionableAdvisoryFindings at execution-plan.ts:402)
+    // must close the gate, and runNonBlockingFix must never be invoked. The unit
+    // suite in non-blocking-fix-retirement.test.ts asserts the same shape on the
+    // raw helpers; this test pins the production wiring against a future change
+    // that bypasses the filter or passes the raw bucket to the gate.
+    const runNonBlockingFix = mock(async () => ({ ran: true, kept: true, restored: false }));
+    _storyOrchestratorDeps.runNonBlockingFix = runNonBlockingFix;
+
+    const callOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
+      if (op.name === "adversarial-review") {
+        return {
+          success: true,
+          passed: true,
+          advisoryFindings: [
+            // Only retired entries — every one of them would have bought a paid
+            // implementer pass if the wiring had not dropped them at the seed.
+            {
+              source: "adversarial-review",
+              severity: "warning",
+              category: "input",
+              message: "retired advisory",
+              meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+            },
+          ],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+      review: {
+        adversarial: {
+          model: "balanced",
+          diffMode: "ref",
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+          nonBlockingFix: {
+            enabled: true,
+            scope: "triage",
+            regressionAttempts: 1,
+            verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          },
+        },
+      },
+    });
+    const story = makeStory({ attempts: 1 });
+    runtime = makeTestRuntime({ config });
+    const ctx = makeMockCallContext({ runtime });
+    const adversarialConfig = config.review.adversarial;
+    assertDefined(adversarialConfig, "config.review.adversarial");
+    const inputs = makeMockPlanInputs({
+      story,
+      implementer: { story },
+      fullSuiteGate: { story, workdir: "/tmp/test" },
+      verifier: { story },
+      adversarialReview: {
+        story,
+        workdir: "/tmp/test",
+        adversarialConfig,
+        mode: adversarialConfig.diffMode,
+      },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+
+    try {
+      const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+      await plan.run();
+      expect(runNonBlockingFix).not.toHaveBeenCalled();
+    } finally {
+      _storyOrchestratorDeps.callOp = callOp;
+    }
+  });
 });

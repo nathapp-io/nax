@@ -17,7 +17,7 @@ import {
   toReviewFindings,
   validateLLMShape,
 } from "../review/finding-filters";
-import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
+import { classifyRecurrence, stampRecurrenceMeta, tagCoverageGap } from "../review/recurrence-demotion";
 import { parseRequoteResponse } from "../review/requote-response";
 import type { ReviewAck, SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -423,7 +423,7 @@ export const semanticReviewOp: RunOperationWithHooks<
     // blocking and is surfaced as a coverageGap-tagged advisory, so one
     // disputed finding cannot deadlock the story indefinitely.
     const recurrenceCfg = input.semanticConfig.recurrenceDemotion ?? { enabled: false, maxBlockingRounds: 2 };
-    const { blocking, advisory, demoted } = classifyRecurrence(
+    const { blocking, advisory, demoted, retired, classified } = classifyRecurrence(
       accepted,
       input.priorSemanticIterations ?? [],
       recurrenceCfg,
@@ -443,9 +443,32 @@ export const semanticReviewOp: RunOperationWithHooks<
     // non-blocking-fix.ts ("Applied at the SEEDING site only, never in the reviewer's
     // own output"), filtering does not belong here at all: adversarialReviewOp.verify()
     // forwards its identical `advisory` bucket unfiltered, and semantic now matches it.
+    //
+    // Retired advisories remain REPORTED (per US-001 OOS #10); they are no longer
+    // rendered into the fix lane. Stamp applied AFTER mapping because
+    // llmFindingToFinding rebuilds `meta` from scratch.
     const advisoryFindings = [
       ...toReviewFindings(advisory, { isTestFile }),
-      ...tagCoverageGap(toReviewFindings(demoted, { isTestFile })),
+      // Demoted findings carry `meta.recurrence.disposition="demoted"` AND
+      // `meta.coverageGap=true` — the stamp first, then the coverage-gap tag
+      // on top. tagCoverageGap preserves existing `meta`, so the
+      // disposition stamp survives. The by-index lookup mirrors the retired
+      // branch below and relies on `classified` mirroring `accepted` in
+      // input order. Without this stamp, a demoted error renders identically
+      // to an ordinary advisory — a passed record with a demoted error would
+      // not be distinguishable from one without demotion.
+      ...tagCoverageGap(
+        stampRecurrenceMeta(
+          toReviewFindings(demoted, { isTestFile }),
+          demoted.map((f) => (classified[accepted.indexOf(f)] ?? {}) as { meta?: { recurrence?: unknown } }),
+        ),
+      ),
+      // See adversarial-review.ts:544 — classified is typed as `LLMFinding[]` but
+      // carries `meta.recurrence` at runtime; cast to narrow.
+      ...stampRecurrenceMeta(
+        toReviewFindings(retired, { isTestFile }),
+        retired.map((f) => (classified[accepted.indexOf(f)] ?? {}) as { meta?: { recurrence?: unknown } }),
+      ),
     ];
     // Honour blockingThreshold: the verdict fails only when a blocking finding
     // survives. The model's raw `passed:false` must NOT fail the review when every
@@ -455,11 +478,21 @@ export const semanticReviewOp: RunOperationWithHooks<
     // ungrounded (accepted empty): there we still respect the model's `passed` flag.
     const passed = blocking.length === 0 && (parsed.passed || accepted.length > 0);
 
+    // US-003 AC11 — `findings` is what `review-decision.ts` persists as
+    // `ReviewAuditEntry.result.findings`. When `recurrenceDemotion.enabled`
+    // is true (opt-in for semantic; default is `false` per US-003 OOS), every
+    // accepted finding surfaces in `findings` with `meta.recurrence` set by
+    // `classifyRecurrence`. When disabled, `classified` is the empty array and
+    // the field shape is unchanged from before. Cast mirrors the one used in
+    // adversarial: TS cannot follow `meta.recurrence` through the generic
+    // bound even though the runtime key is guaranteed when the config is on.
+    const stampedAccepted: LLMFinding[] = recurrenceCfg.enabled ? classified : accepted;
+
     return {
       ...parsed,
       passed,
       blockingThreshold: threshold,
-      findings: accepted,
+      findings: stampedAccepted,
       normalizedFindings: toReviewFindings(blocking, { isTestFile }),
       advisoryFindings,
       acDropped: dropped,

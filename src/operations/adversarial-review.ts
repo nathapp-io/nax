@@ -20,7 +20,7 @@ import {
   hasCorroboratedInspectionTrail,
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
-import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
+import { classifyRecurrence, stampRecurrenceMeta, tagCoverageGap } from "../review/recurrence-demotion";
 import type { AdversarialReviewConfig, ReviewAck, SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -480,7 +480,7 @@ export const adversarialReviewOp: RunOperationWithHooks<
     const patterns = input.resolvedTestPatterns?.regex ?? [];
     const testFileMatch = (file: string): boolean => patterns.some((re) => re.test(file));
 
-    const { blocking, advisory, demoted } = classifyRecurrence(
+    const { blocking, advisory, demoted, retired, classified } = classifyRecurrence(
       accepted,
       input.priorAdversarialIterations ?? [],
       recurrenceCfg,
@@ -492,6 +492,21 @@ export const adversarialReviewOp: RunOperationWithHooks<
       getSafeLogger()?.info("review", "Adversarial finding demoted to advisory (recurrence coverage-gap)", {
         storyId: input.story.id,
         event: "review.adversarial.recurrence_demoted",
+        file: f.file,
+        category: f.category,
+      });
+    }
+    // US-003 AC9 — one info record per RETIRED finding, in addition to the
+    // demoted log above. Retired findings are sub-threshold advisories whose
+    // appearances have reached `maxAdvisoryRounds`; they are still REPORTED via
+    // `advisoryFindings` (per US-001 OOS #10) but no longer enter the fix lane.
+    // The telemetry pair mirrors `recurrence_demoted` so Phase-0 numerators
+    // can be summed across both terminal dispositions (e.g. "X findings went
+    // terminal this run, broken down by kind").
+    for (const f of retired) {
+      getSafeLogger()?.info("review", "Adversarial finding retired (recurrence advisory-cap reached)", {
+        storyId: input.story.id,
+        event: "review.adversarial.recurrence_retired",
         file: f.file,
         category: f.category,
       });
@@ -520,19 +535,62 @@ export const adversarialReviewOp: RunOperationWithHooks<
     // shape (fail-closed), and folding would surface findings the story never acted on.
     const acDroppedFindings = passed ? dropped.map((entry) => entry.finding) : [];
 
+    // US-003 AC5 — `findings` is what `review-decision.ts` persists as
+    // `ReviewAuditEntry.result.findings`. It must carry `meta.recurrence` for
+    // every accepted finding so the audit record distinguishes a demoted error
+    // from an ordinary one without replaying classification state. `classified`
+    // mirrors `accepted` in input order (by `classifyRecurrence`'s contract),
+    // and every entry is `stampRecurrence`-stamped at the boundary (including
+    // carve-outs and demotions, which carry only the fields appropriate for
+    // their transition). When `recurrenceDemotion.enabled` is false,
+    // `classified` is the empty array (per `classifyRecurrence`'s early return)
+    // and `findings` falls back to the un-stamped `accepted` so the audit shape
+    // is unchanged. The cast mirrors the one already used for retired
+    // advisory: TS can't follow `meta.recurrence` through the generic bound
+    // even though the runtime key is guaranteed present.
+    const stampedAccepted: AdversarialLLMFinding[] = recurrenceCfg.enabled ? classified : accepted;
+
     return {
       ...parsed,
       passed,
       blockingThreshold: threshold,
       modelPassed,
-      findings: accepted,
+      findings: stampedAccepted,
       // #1368 — `testFileMatch` also decides the fix lane: a finding located in a
       // test file goes to the test-writer whatever its category says, because the
       // implementer may not edit test files and would answer UNRESOLVED.
       normalizedFindings: toAdversarialReviewFindings(blocking, { isTestFile: testFileMatch }),
       advisoryFindings: [
         ...toAdversarialReviewFindings(advisory, { isTestFile: testFileMatch }),
-        ...tagCoverageGap(toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch })),
+        // Demoted findings are reported with their disposition visible to the
+        // audit record — a demoted error must be distinguishable from an ordinary
+        // advisory without replaying classification state. Stamp `meta.recurrence`
+        // BEFORE coverageGap (tagCoverageGap preserves existing `meta`, so the
+        // stamp survives the merge). The pair-by-index lookup mirrors the retired
+        // branch below and relies on `classified` mirroring `accepted` in input
+        // order. Adding the stamp here also dovetails with the adversarial-review
+        // AC14 invariant: a passed record with a demoted error carries the
+        // disposition on `advisoryFindings[].meta.recurrence`, not on the
+        // `findings` lane that the audit layer reads.
+        ...tagCoverageGap(
+          stampRecurrenceMeta(
+            toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch }),
+            demoted.map((f) => (classified[accepted.indexOf(f)] ?? {}) as { meta?: { recurrence?: unknown } }),
+          ),
+        ),
+        // Retired advisories remain REPORTED (per US-001 OOS #10); they are no
+        // longer rendered into the fix lane. Stamp applied AFTER mapping because
+        // toAdversarialReviewFindings rebuilds meta from scratch (parallels the
+        // coverageGap precedent). `classified` mirrors `accepted` in input order,
+        // and `retired` is a subset of `accepted` in input order, so by-index
+        // pairing is safe. The cast is necessary because `classified` is typed
+        // as `AdversarialLLMFinding[]` (the input T), but `stampRecurrence`
+        // attaches `meta.recurrence` at runtime; TS can't follow that through
+        // the generic bound, so we narrow manually.
+        ...stampRecurrenceMeta(
+          toAdversarialReviewFindings(retired, { isTestFile: testFileMatch }),
+          retired.map((f) => (classified[accepted.indexOf(f)] ?? {}) as { meta?: { recurrence?: unknown } }),
+        ),
         ...tagAcDropped(toAdversarialReviewFindings(acDroppedFindings, { isTestFile: testFileMatch })),
       ],
       acDropped: dropped,
