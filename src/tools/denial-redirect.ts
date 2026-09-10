@@ -47,13 +47,57 @@ function intendedTool(argv: readonly string[]): { tool: string; how: string } | 
   return undefined;
 }
 
+/**
+ * Task-runner binaries. A detection heuristic ONLY: what gets named comes
+ * entirely from the project's declared commands, never from this list. A runner
+ * missing here degrades to the pre-#1971 message rather than to a wrong one.
+ */
+const TASK_RUNNERS = new Set([
+  "bun",
+  "npm",
+  "pnpm",
+  "yarn",
+  "deno",
+  "npx",
+  "make",
+  "just",
+  "task",
+  "go",
+  "cargo",
+  "uv",
+  "poetry",
+  "pipenv",
+  "tox",
+  "gradle",
+  "mvn",
+]);
+
+/**
+ * Install subcommands. These runners double as package managers, and an install
+ * attempt wants the granted install FORMS policy.ts already printed -- not a
+ * list of project gates that cannot install anything.
+ */
+const INSTALL_VERBS = new Set(["add", "install", "i", "ci", "get", "sync", "fetch", "mod", "download"]);
+
 export function redirectForArgv(
   argv: readonly string[],
   available: ReadonlySet<string>,
   declaredCommands: ReadonlySet<string>,
 ): string | undefined {
   const hit = intendedTool(argv);
-  if (hit === undefined) return undefined;
+  if (hit === undefined) {
+    // Nothing specific matched. If the model reached for a task runner, it
+    // wanted to run a project gate -- name the gates this project actually
+    // declared, rather than the package-manager install allowlist that
+    // policy.ts already printed and that is never the answer (nax#1971).
+    const av = argv[0] === "timeout" ? argv.slice(2) : argv;
+    const head = av[0];
+    if (head === undefined || !TASK_RUNNERS.has(head)) return undefined;
+    const sub = av[1];
+    if (sub !== undefined && INSTALL_VERBS.has(sub)) return undefined;
+    if (!available.has("RunCommand") || declaredCommands.size === 0) return undefined;
+    return `this session already has RunCommand with declared commands: ${[...declaredCommands].join(", ")}`;
+  }
 
   if (hit.tool === "RunCommand:testScoped") {
     // Conditioned on the project actually declaring the command, not hardcoded:

@@ -166,3 +166,42 @@ describe("redirectForVerb (#1971)", () => {
     expect(redirectForVerb("RunCommand", "", WITH_GREP, CMDS)).toBeUndefined();
   });
 });
+
+describe("declared-commands fallback (#1971)", () => {
+  test("a runner invoking an unknown script is told what the project declares", () => {
+    const r = redirectForArgv(["bun", "run", "check:all"], ALL, CMDS);
+    expect(r).toContain("RunCommand");
+    expect(r).toContain("test, testScoped, lint");
+  });
+
+  test("works for any runner, not just bun", () => {
+    expect(redirectForArgv(["npm", "run", "lint:ci"], ALL, CMDS)).toContain("RunCommand");
+    expect(redirectForArgv(["make", "check"], ALL, CMDS)).toContain("RunCommand");
+    expect(redirectForArgv(["uv", "run", "pytest"], ALL, CMDS)).toContain("RunCommand");
+  });
+
+  test("a specific row still wins over the fallback", () => {
+    // `bun test <file>` must stay pointed at testScoped, not the generic list.
+    expect(redirectForArgv(["bun", "test", "a.test.ts"], ALL, CMDS)).toContain("testScoped");
+  });
+
+  test("says nothing when the project declared no commands", () => {
+    expect(redirectForArgv(["bun", "run", "check:all"], ALL, new Set())).toBeUndefined();
+  });
+
+  test("says nothing when RunCommand is not advertised", () => {
+    expect(redirectForArgv(["bun", "run", "check:all"], new Set(["Read"]), CMDS)).toBeUndefined();
+  });
+
+  test("does not fire on non-runner argv", () => {
+    // Guards the existing unsupported-delete-form tests from silently changing.
+    expect(redirectForArgv(["rm", "-r", "directory"], ALL, CMDS)).toBeUndefined();
+    expect(redirectForArgv(["wc", "-l", "a.ts"], ALL, CMDS)).toBeUndefined();
+  });
+
+  test("does not fire on an install form, which wants the granted forms instead", () => {
+    expect(redirectForArgv(["bun", "add", "left-pad"], ALL, CMDS)).toBeUndefined();
+    expect(redirectForArgv(["pnpm", "install"], ALL, CMDS)).toBeUndefined();
+    expect(redirectForArgv(["go", "mod", "download"], ALL, CMDS)).toBeUndefined();
+  });
+});
