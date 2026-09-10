@@ -1,5 +1,6 @@
 /** Fallback dispatch loop for AgentManager's session-based run path. */
 
+import type { ModelDef } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
 import type { AdapterFailure } from "@/context/engine";
 import type { IDispatchEventBus } from "@/runtime/dispatch-events";
@@ -273,6 +274,9 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   }
 }
 
+/** Mirrors the `endpoint` shape `AgentRunRequest.executeHop` reports (manager-types.ts). */
+type HopEndpointLike = { readonly modelDef: ModelDef; readonly modelTier?: string };
+
 async function executeHop(
   input: RunFallbackInput,
   agent: string,
@@ -285,9 +289,17 @@ async function executeHop(
   const raw = await input.runHop(agent, options);
   const hop =
     "result" in raw && raw.result != null
-      ? (raw as { result: AgentResult; prompt?: string })
+      ? (raw as { result: AgentResult; prompt?: string; endpoint?: HopEndpointLike })
       : { result: raw as unknown as AgentResult };
-  return { ...hop, bundle };
+  // The `runHop` seam (SessionRunHopFn) reports no `endpoint` at all (nax#1965) — only
+  // `executeHop` does. Without a default here, a hop dispatched through this seam marks
+  // its cooldown with no identity to key on, collapsing onto the bare agent key and
+  // making the endpoint-aware dead-primary check (hop-budget.ts) unable to find it.
+  // `options.modelDef` is what this hop was actually dispatched with, so it is the same
+  // fallback identity `resolveHopEndpoint` reports for a pin-wins hop.
+  const endpoint: HopEndpointLike | undefined =
+    hop.endpoint ?? (options.modelDef ? { modelDef: options.modelDef } : undefined);
+  return { ...hop, bundle, endpoint };
 }
 
 function unboundResult(agent: string): AgentResult {

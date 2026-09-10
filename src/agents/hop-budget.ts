@@ -39,18 +39,9 @@ export interface StartEndpoint {
  * dispatch to — not the bare agent name: on the native transport one agent fronts
  * several providers, so "native is unavailable" must not be true just because some
  * OTHER tier of it is cooling.
- *
- * Falls back to the bare-agent probe when the narrow one misses and an endpoint was
- * named: a genuinely agent-wide fault (bad credentials, missing binary) and a
- * model-scoped fault whose own identity could not be resolved when it was recorded
- * (no endpoint to key on) both land on the bare agent key, and only a bare query
- * finds either — `CooldownStore` only treats that key as blanket-agent for the
- * former, but a bare *query* still surfaces it either way (see cooldown-store.ts).
  */
 function isPrimaryUnavailable(source: StartAgentSource, primary: string, endpoint: StartEndpoint | undefined): boolean {
-  if (source.isUnavailable(primary, endpoint?.tier, endpoint?.model)) return true;
-  const namedEndpoint = endpoint?.tier !== undefined || endpoint?.model !== undefined;
-  return namedEndpoint && source.isUnavailable(primary);
+  return source.isUnavailable(primary, endpoint?.tier, endpoint?.model);
 }
 
 /**

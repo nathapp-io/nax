@@ -221,3 +221,105 @@ describe("AgentManager — dead-primary skip", () => {
     expect(second.finalAgent).toBe("codex");
   });
 });
+
+/**
+ * nax#1965 fix-round-2: the dead-primary skip must key on the ENDPOINT an operation
+ * would actually dispatch to, not the bare agent name — one role's rate-limit must
+ * not divert every other role off its own configured tier/model of the same agent
+ * (native transport: one agent fronts several providers). But a genuinely
+ * agent-wide fault (bad credentials, missing binary) must still stop every
+ * endpoint of that agent. Both directions are asserted here, driven through real
+ * failed `runWithFallback` hops (not direct `markUnavailable` calls), the same way
+ * the #1970 regression test above does.
+ */
+describe("AgentManager — dead-primary skip is scoped to the dispatched endpoint", () => {
+  const rateLimitFailure: AdapterFailure = {
+    category: "availability",
+    outcome: "fail-rate-limit",
+    retriable: true,
+    message: "rate limited",
+  };
+
+  test("a rate-limit recorded against one endpoint does not block a different endpoint of the same agent", async () => {
+    const calls: string[] = [];
+    const m = new AgentManager(configWithFallback({ maxHopsPerStory: 2 }), undefined, {
+      runHop: async (name: string, options: AgentRunOptions) => {
+        calls.push(`${name}:${options.modelTier}`);
+        if (name === "claude" && options.modelTier === "balanced") {
+          return {
+            prompt: `prompt-${name}`,
+            result: {
+              success: false,
+              exitCode: 1,
+              output: "rate limited",
+              rateLimited: true,
+              durationMs: 1,
+              estimatedCostUsd: 0,
+              adapterFailure: rateLimitFailure,
+            },
+          };
+        }
+        return {
+          prompt: `prompt-${name}`,
+          result: {
+            success: true,
+            exitCode: 0,
+            output: `ok-${name}`,
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+          },
+        };
+      },
+    });
+
+    // First op dispatches "claude" at "balanced" and rate-limits, marking the
+    // cooldown against THAT endpoint, then swaps to codex.
+    const balancedOutcome = await m.runWithFallback({
+      runOptions: makeRunOptions({
+        storyId: "us-010a",
+        modelTier: "balanced",
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      }),
+    });
+    expect(balancedOutcome.result.success).toBe(true);
+    expect(balancedOutcome.finalAgent).toBe("codex");
+
+    // Second op — a different story (fresh hop budget) dispatching a DIFFERENT
+    // tier/model of the SAME agent — must still start on "claude": that endpoint
+    // was never marked, so the narrow, endpoint-aware probe must miss.
+    calls.length = 0;
+    const powerfulOutcome = await m.runWithFallback({
+      runOptions: makeRunOptions({
+        storyId: "us-010b",
+        modelTier: "powerful",
+        modelDef: { provider: "anthropic", model: "claude-opus-4-1" },
+      }),
+    });
+    expect(calls).toEqual(["claude:powerful"]);
+    expect(powerfulOutcome.result.success).toBe(true);
+    expect(powerfulOutcome.finalAgent).toBe("claude");
+  });
+
+  test("a genuinely agent-scoped failure (fail-auth) still blankets every endpoint of that agent", async () => {
+    const m = new AgentManager(configWithFallback({ maxHopsPerStory: 2 }), undefined, {
+      runHop: makeRunHop(["codex"], availFailure),
+    });
+    // Sticky, run-long fault — bad credentials, not tied to any one tier or model.
+    m.markUnavailable("claude", availFailure);
+
+    // Dispatching at a DIFFERENT tier/model than any prior op must still be
+    // diverted: an agent-wide fault blankets every endpoint of "claude".
+    const outcome = await m.runWithFallback({
+      runOptions: makeRunOptions({
+        storyId: "us-012",
+        modelTier: "powerful",
+        modelDef: { provider: "anthropic", model: "claude-opus-4-1" },
+      }),
+    });
+
+    expect(outcome.result.output).toBe("ok-codex");
+    expect(outcome.fallbacks).toHaveLength(0);
+    expect(outcome.finalAgent).toBe("codex");
+  });
+});
