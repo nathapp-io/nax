@@ -19,9 +19,7 @@ import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
-import { resolveFallbackDispatchTarget, resolveFallbackModelId, sameFallbackHop } from "./fallback-model-identity";
 import { StoryHopBudget } from "./hop-budget";
-import { resolveLadderDepth, resolveNextCandidate } from "./ladder-slot";
 import {
   buildCompleteCallPreamble,
   buildCompleteEvent,
@@ -34,6 +32,7 @@ import {
   validateAgentCredentials,
 } from "./manager-dispatch";
 import { type ManagerExhaustionOptions, resolveManagerExhaustion } from "./manager-exhaustion";
+import { createFallbackIdentityBindings, type FallbackIdentityBindings } from "./manager-fallback-bindings";
 import { runWithFallback } from "./manager-run-fallback";
 import type {
   AgentCompleteOutcome,
@@ -53,13 +52,7 @@ import type { AgentRegistry } from "./registry";
 import { createAgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
 import type { RetryStrategy } from "./retry/types";
-import {
-  availableCandidates,
-  credentialCandidates,
-  decideSwap,
-  type FallbackTarget,
-  logSwapDecline,
-} from "./swap-decision";
+import { credentialCandidates, decideSwap, type FallbackTarget, logSwapDecline } from "./swap-decision";
 import type { AgentResult, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 /** Finite listener ceiling: concurrent stories exceed Node's default of 10. */
@@ -93,7 +86,8 @@ export class AgentManager implements IAgentManager {
   private _dispatchEvents: IDispatchEventBus;
   private _pidRegistry: PidRegistry | undefined;
   private readonly _retryStrategy: RetryStrategy;
-  private readonly _models: ModelsConfig | undefined;
+  private _models: ModelsConfig | undefined;
+  private readonly _fallbackIdentity: FallbackIdentityBindings;
   readonly events: AgentManagerEvents;
 
   constructor(config: AgentManagerConfig, registry?: AgentRegistry, opts?: AgentManagerCtorOpts) {
@@ -108,6 +102,11 @@ export class AgentManager implements IAgentManager {
     this._dispatchEvents = opts?.dispatchEvents ?? new DispatchEventBus();
     this._retryStrategy = opts?.retryStrategy ?? defaultRetryStrategy;
     this._models = opts?.models;
+    this._fallbackIdentity = createFallbackIdentityBindings(
+      this._config,
+      () => this._models,
+      () => this.getDefault(),
+    );
     this.events = {
       on: (event, listener) => {
         this._emitter.on(event as AgentManagerEventName, listener as (...args: unknown[]) => void);
@@ -122,6 +121,7 @@ export class AgentManager implements IAgentManager {
     runHop?: SessionRunHopFn;
     dispatchEvents?: IDispatchEventBus;
     pidRegistry?: PidRegistry;
+    models?: ModelsConfig;
   }): void {
     if (opts.middleware) this._middleware = opts.middleware;
     if (opts.runId) this._runId = opts.runId;
@@ -129,6 +129,7 @@ export class AgentManager implements IAgentManager {
     if (opts.runHop) this._runHop = opts.runHop;
     if (opts.dispatchEvents) this._dispatchEvents = opts.dispatchEvents;
     if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
+    if (opts.models) this._models = opts.models;
   }
 
   getDefault(): string {
@@ -138,11 +139,11 @@ export class AgentManager implements IAgentManager {
   }
 
   isUnavailable(agent: string, tier?: string, model?: string): boolean {
-    return this._cooldowns.isCooling(agent, tier, this._modelId(agent, tier, model));
+    return this._cooldowns.isCooling(agent, tier, this._fallbackIdentity.modelId(agent, tier, model));
   }
 
   markUnavailable(agent: string, reason: AdapterFailure, tier?: string, model?: string): void {
-    this._cooldowns.mark(agent, reason, tier, this._modelId(agent, tier, model));
+    this._cooldowns.mark(agent, reason, tier, this._fallbackIdentity.modelId(agent, tier, model));
     this._emitter.emit("onAgentUnavailable", { agent, tier, failure: reason });
   }
 
@@ -166,18 +167,10 @@ export class AgentManager implements IAgentManager {
     for (const name of pruned) this._prunedFallback.add(name);
   }
 
-  private readonly _modelId = (agent: string, tier?: string, model?: string): string | undefined =>
-    resolveFallbackModelId(this._models, agent, tier, this.getDefault(), model);
   private readonly _isExcluded = (c: string, t?: string, m?: string): boolean =>
-    this._prunedFallback.has(c) || this._cooldowns.isCooling(c, t, this._modelId(c, t, m));
-  private readonly _resolveTarget = (t: FallbackTarget): FallbackTarget =>
-    resolveFallbackDispatchTarget(this._models, this.getDefault(), t);
-  private readonly _sameHop = (a: string, b: string | undefined, at?: string, am?: string, bt?: string, bm?: string) =>
-    sameFallbackHop(this._models, this.getDefault(), a, b, at, am, bt, bm);
-  private readonly _depthOf = (agent: string, t: FallbackTarget): number =>
-    resolveLadderDepth(this._config.agent?.fallback?.map, this._resolveTarget, this._sameHop, agent, t);
+    this._prunedFallback.has(c) || this._cooldowns.isCooling(c, t, this._fallbackIdentity.modelId(c, t, m));
   resolveFallbackChain(agent: string, _failure: AdapterFailure): import("./swap-decision").FallbackTarget[] {
-    return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded, this._resolveTarget);
+    return this._fallbackIdentity.chain(agent, this._isExcluded);
   }
 
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number): boolean {
@@ -185,12 +178,8 @@ export class AgentManager implements IAgentManager {
   }
 
   nextCandidate(cur: string, hops: number, exclude?: string, tier?: string, model?: string): FallbackTarget | null {
-    const map = this._config.agent?.fallback?.map;
-    const query = { cur, hops, exclude, tier, model };
-    const depthOf = (t: FallbackTarget) => this._depthOf(cur, t);
-    return resolveNextCandidate(map, this._resolveTarget, depthOf, this._sameHop, this._isExcluded, query);
+    return this._fallbackIdentity.nextCandidate({ cur, hops, exclude, tier, model }, this._isExcluded);
   }
-
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
     return runWithFallback({
       request,
@@ -206,7 +195,7 @@ export class AgentManager implements IAgentManager {
       nextCandidate: (cur, hops, exclude, tier, model) => this.nextCandidate(cur, hops, exclude, tier, model),
       resolveExhaustion: (options) => this._resolveExhaustion(options),
       emitSwapAttempt: (fallback) => this._emitter.emit("onSwapAttempt", fallback),
-      depthOf: (agent, t) => this._depthOf(agent, t),
+      depthOf: (agent, t) => this._fallbackIdentity.depthOf(agent, t),
     });
   }
 
@@ -367,7 +356,7 @@ export class AgentManager implements IAgentManager {
         }
 
         hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);
-        depth = this._depthOf(primaryAgent, next);
+        depth = this._fallbackIdentity.depthOf(primaryAgent, next);
 
         const hop = buildFallbackRecord({
           storyId: options.storyId,

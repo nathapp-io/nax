@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
 import type { CompleteOptions } from "@/agents/types";
+import { NaxConfigSchema } from "@/config/schemas";
 import { PidRegistry } from "@/execution/pid-registry";
 
 const availFailure = {
@@ -107,6 +108,37 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
 
     expect(capturedOptions?.onPidSpawned).toBeUndefined();
     expect(capturedOptions?.onPidExited).toBeUndefined();
+  });
+
+  test("backfills models so an injected AgentManager resolves a { agent, model } tier-naming rung", () => {
+    // runtime/index.ts builds `agentManagerOpts` including `models: config.models` and,
+    // when an AgentManager is injected via opts.agentManager, spreads that whole object
+    // into configureRuntime(...). Before models is accepted there, it was silently
+    // dropped: an injected manager's `_models` stayed undefined forever, so a fallback
+    // rung shaped like `{ agent: "native", model: "powerful" }` never folded to
+    // `{ agent: "native", tier: "powerful" }` — it dispatched the literal string
+    // "powerful" as a model id, with no error and no log.
+    const config = NaxConfigSchema.parse({
+      agent: {
+        protocol: "hybrid",
+        default: "native",
+        fallback: { enabled: true, map: { native: [{ agent: "native", model: "powerful" }] } },
+      },
+    });
+    // Constructed with no `models` — mirrors the injected-`opts.agentManager` path,
+    // which never passes `models` to the constructor.
+    const manager = new AgentManager(config);
+
+    // With no models available yet, "powerful" cannot be recognised as a tier name,
+    // so it stays a literal pin.
+    expect(manager.nextCandidate("native", 0, "native")).toEqual({ agent: "native", model: "powerful" });
+
+    manager.configureRuntime({ models: { native: { powerful: "opencode-go/deepseek-v4-flash" } } });
+
+    // Once backfilled, "powerful" is recognised as a real tier key and folds to
+    // `{ agent, tier }` — proving `_models` actually reached fallback identity
+    // resolution, not just that `configureRuntime` accepted the option inertly.
+    expect(manager.nextCandidate("native", 0, "native")).toEqual({ agent: "native", tier: "powerful" });
   });
 });
 
