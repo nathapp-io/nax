@@ -10,6 +10,7 @@ import {
   validateDirectory,
   validateFilePath,
 } from "@/config/path-security";
+import { NaxError } from "@/errors";
 
 // Create a temporary test directory
 const testRoot = makeTempDir("nax-path-test-");
@@ -57,9 +58,18 @@ describe("Path Security", () => {
     });
 
     test("rejects non-existent directory", () => {
+      const target = join(testProject, "nonexistent");
       expect(() => {
-        validateDirectory(join(testProject, "nonexistent"));
+        validateDirectory(target);
       }).toThrow("Directory does not exist");
+      try {
+        validateDirectory(target);
+      } catch (error) {
+        expect(error).toBeInstanceOf(NaxError);
+        if (!(error instanceof NaxError)) throw error;
+        expect(error.code).toBe("PATH_DIRECTORY_NOT_FOUND");
+        expect(error.context).toMatchObject({ stage: "config", dirPath: target });
+      }
     });
 
     test("rejects file path (not a directory)", () => {
@@ -110,6 +120,14 @@ describe("Path Security", () => {
       expect(() => {
         validateFilePath(outsideFile, testProject);
       }).toThrow("Path is outside allowed directory");
+      try {
+        validateFilePath(outsideFile, testProject);
+      } catch (error) {
+        expect(error).toBeInstanceOf(NaxError);
+        if (!(error instanceof NaxError)) throw error;
+        expect(error.code).toBe("FILE_PATH_OUTSIDE_BASE");
+        expect(error.context).toMatchObject({ stage: "config", filePath: outsideFile });
+      }
     });
 
     test("accepts non-existent file within base directory", () => {

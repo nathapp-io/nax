@@ -4,7 +4,7 @@
 **Reviewer:** Subrina (AI, opencode)
 **Version:** 0.82.0-canary.7 (branch `fix/review-concrete-remediation`, based on `cf8e63fe5`)
 **Files:** 977 src (`~156k` LOC) + 1,421 test files (`~355k` LOC) + 49 scripts
-**Baseline:** 17,894 pass / 43 skip / 0 fail (17,937 ran) + e2e 33 pass / 0 fail; coverage 96.10% lines / 93.00% functions
+**Baseline:** 17,895 pass / 43 skip / 0 fail (17,938 ran) + e2e 33 pass / 0 fail; coverage 96.08% lines / 93.02% functions
 **Scope:** Deep review. Static analysis (typecheck, Biome, and repository custom gates), knowledge-graph hotspot analysis, targeted checklist sweeps (universal / node-general / react), dependency audit, and manual inspection of high-risk modules (agent spawn, webhook/telegram, locks, redaction, crash handling, acceptance templates).
 **Post-remediation verification:** On branch `fix/review-concrete-remediation`, `bun run typecheck`,
 `bun run lint`, `bun run test`, `bun run test:e2e`, and `bun run test:coverage:report` pass;
@@ -30,15 +30,15 @@ and a few very large/high-complexity functions.
 | Dimension | Score | Notes |
 |:---|:---:|:---|
 | Security | 17/20 | 1 critical + 3 high audits (1 dep unused, rest transitive); first-party controls strong |
-| Reliability | 19/20 | 17,894 tests green (+43 skips); one MEDIUM functional bug; careful concurrency everywhere else |
+| Reliability | 19/20 | 17,895 tests green (+43 skips); one MEDIUM functional bug; careful concurrency everywhere else |
 | API Design | 18/20 | Consistent, typed, justified `any`s; complexity hotspots in a few dispatchers |
-| Code Quality | 15/20 | 15 oversized files (only 5 src), 132 cyclic modules, 91 error-policy violations |
+| Code Quality | 15/20 | 15 oversized files (only 5 src), 132 cyclic modules, 77 error-policy violations |
 | Best Practices | 17/20 | Strong gates; file-size gate blind to `bin/`; dependency placement issues |
 | **Total** | **86** | **A−** |
 
 Context: the previous full review (`docs/20260829-review-nax.md`, graded A− 86/100) closed most of
 its findings. This review confirms the ratchets improved since then (cycles down 135→132,
-NaxError violations down 104→91) and focuses on what is still open plus newly found issues.
+NaxError violations down 104→77) and focuses on what is still open plus newly found issues.
 
 ---
 
@@ -233,34 +233,33 @@ will never execute; an unused devDependency carries a critical CVE.
 **Fix:** move `ink-testing-library` and `@types/react` to `devDependencies`; delete
 `react-devtools-core`. Re-run `bun audit` (expect the critical and the `ws@7` highs to vanish).
 
-#### ENH-2: 91 `throw new Error(...)` sites remain in `src/` against the project's own NaxError rule
+#### ENH-2: 77 `throw new Error(...)` sites remain in `src/` against the project's own NaxError rule
 
 **Severity:** MEDIUM | **Category:** Convention / Error Handling
-**Status:** DEFERRED — NaxError migration remains a cross-module refactor.
+**Status:** PARTIALLY RESOLVED — converted path-security and leaf-utility errors to `NaxError`;
+77 interaction, execution, and other cross-module sites remain.
 
 ```
 $ bun run scripts/check-nax-error.ts
-OK: 91 violations (baseline 104).
+OK: 77 violations (baseline 77).
 ```
 
 The rule (`.nax/rules/error-handling.md`, enforced by `scripts/check-nax-error.ts`) requires
 `NaxError` with an error code and stage. Remaining hot spots by file: `interaction/plugins/telegram.ts`
-(8), `config/path-security.ts` (7), `queue/manager.ts` (7), `interaction/plugins/cli.ts` (5),
-`interaction/plugins/webhook.ts` (5), `routing/strategies/llm-parsing.ts` (6), `utils/feature-name.ts`
-(4), `prd/validate.ts` (4), `worktree/merge.ts` (4). Representative sites:
+(8), `queue/manager.ts` (7), `routing/strategies/llm-parsing.ts` (6),
+`interaction/plugins/cli.ts` (5), `interaction/plugins/webhook.ts` (5), `prd/validate.ts` (4),
+and `worktree/merge.ts` (4). Representative sites:
 
 ```
-src/config/path-security.ts:53   throw new Error(`Path is outside allowed directory: ...`);
 src/interaction/plugins/webhook.ts:280  throw new Error(`Webhook POST failed (${response.status}): ...`);
 src/worktree/merge.ts:281        throw new Error(`Circular dependency detected involving ${storyId}`);
 ```
 
 **Risk:** errors crossing module boundaries lack machine-readable codes and stage/story context,
 degrading structured diagnostics and autofix routing; the ratchet also permits the count to grow
-up to 104 before failing.
-**Fix:** migrate the top offenders file-by-file as their tests are touched, then
-`bun run scripts/check-nax-error.ts --update-baseline` to lower the ceiling. Files like
-`path-security.ts` and `feature-name.ts` are small and testable in isolation.
+up to 77 before failing.
+**Fix:** migrate the remaining interaction and execution hot spots file-by-file as their tests are
+touched, then lower the ceiling after each verified tranche.
 
 #### MAINT-1: Six routines carry high cyclomatic/cognitive complexity
 
@@ -358,8 +357,8 @@ Checked, not assumed (each is an evidence-backed pass at this revision):
   including no direct `~/.nax` construction, feature-dir SSOT, alias internals, import-cycle and
   NaxError ratchets, log-format layering, file-size limits, no control bytes, generated review
   prompts, the nax-ai import boundary, bundle externals, and operation tool capability.
-- **Tests:** 16,642 unit + 1,154 integration + 98 UI (7 + 36 skips, 0 fail) and 33 e2e pass, 0 fail;
-  coverage 96.10% lines / 93.00% functions with 0 files below the per-file floor.
+- **Tests:** 16,643 unit + 1,154 integration + 98 UI (7 + 36 skips, 0 fail) and 33 e2e pass, 0 fail;
+  coverage 96.08% lines / 93.02% functions with 0 files below the per-file floor.
 - **Injection:** no `node:child_process` imports, no `eval`/`new Function` (the only `eval(`
   occurrence is a comment in `src/acceptance/generator-helpers.ts:140`), no `shell: true`. All
   first-party spawns are argv arrays. The two `/bin/sh -c` sites run the user's own configured
@@ -389,7 +388,7 @@ Checked, not assumed (each is an evidence-backed pass at this revision):
 | P1 | BUG-1 | S | Parse `$EDITOR` with `parseCommandToArgv`; catch spawn failure after writes |
 | P1 | ENH-1 | S | Move `ink-testing-library`, `@types/react` to devDependencies |
 | P1 | STYLE-1 | M | Add `bin/` to the file-size gate; start splitting `bin/nax.ts` |
-| P2 | ENH-2 | M | Migrate `path-security.ts`, `feature-name.ts`, webhook/telegram errors to NaxError; lower baseline |
+| P2 | ENH-2 | M | Continue with interaction and execution errors; lower the baseline after each verified tranche |
 | P2 | ARCH-1 | M | Break the small cycle components surfaced by `--list`; keep ratchet falling |
 | P2 | MAINT-1 | M | Split `validateStory`; extract `executeUnified`/`callOp` dispatch tables |
 | P3 | BUG-2 | S | Preserve empty quoted args in `parseCommandToArgv` |

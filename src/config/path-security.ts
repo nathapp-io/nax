@@ -6,6 +6,8 @@
 
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { basename, isAbsolute, normalize, relative, resolve } from "node:path";
+import { NaxError } from "../errors";
+import { errorMessage } from "../utils/errors";
 
 /** Maximum directory depth to prevent infinite loops */
 export const MAX_DIRECTORY_DEPTH = 10;
@@ -25,7 +27,10 @@ export function validateDirectory(dirPath: string, baseDir?: string): string {
 
   // Check if path exists
   if (!existsSync(resolved)) {
-    throw new Error(`Directory does not exist: ${dirPath}`);
+    throw new NaxError(`Directory does not exist: ${dirPath}`, "PATH_DIRECTORY_NOT_FOUND", {
+      stage: "config",
+      dirPath,
+    });
   }
 
   // Get real path (resolves symlinks)
@@ -33,17 +38,31 @@ export function validateDirectory(dirPath: string, baseDir?: string): string {
   try {
     realPath = realpathSync(resolved);
   } catch (error) {
-    throw new Error(`Failed to resolve path: ${dirPath} (${(error as Error).message})`);
+    throw new NaxError(
+      `Failed to resolve path: ${dirPath} (${errorMessage(error)})`,
+      "PATH_DIRECTORY_RESOLUTION_FAILED",
+      {
+        stage: "config",
+        dirPath,
+        cause: error,
+      },
+    );
   }
 
   // Check if it's a directory
+  let isDirectory: boolean;
   try {
-    const stats = lstatSync(realPath);
-    if (!stats.isDirectory()) {
-      throw new Error(`Not a directory: ${dirPath}`);
-    }
+    isDirectory = lstatSync(realPath).isDirectory();
   } catch (error) {
-    throw new Error(`Failed to stat path: ${dirPath} (${(error as Error).message})`);
+    throw new NaxError(`Failed to stat path: ${dirPath} (${errorMessage(error)})`, "PATH_DIRECTORY_STAT_FAILED", {
+      stage: "config",
+      dirPath,
+      realPath,
+      cause: error,
+    });
+  }
+  if (!isDirectory) {
+    throw new NaxError(`Not a directory: ${dirPath}`, "PATH_NOT_DIRECTORY", { stage: "config", dirPath, realPath });
   }
 
   // If baseDir provided, ensure realPath is within baseDir
@@ -52,7 +71,16 @@ export function validateDirectory(dirPath: string, baseDir?: string): string {
     const realBase = existsSync(resolvedBase) ? realpathSync(resolvedBase) : resolvedBase;
 
     if (!isWithinDirectory(realPath, realBase)) {
-      throw new Error(`Path is outside allowed directory: ${dirPath} (resolved to ${realPath}, base: ${realBase})`);
+      throw new NaxError(
+        `Path is outside allowed directory: ${dirPath} (resolved to ${realPath}, base: ${realBase})`,
+        "PATH_OUTSIDE_BASE",
+        {
+          stage: "config",
+          dirPath,
+          realPath,
+          basePath: realBase,
+        },
+      );
     }
   }
 
@@ -114,7 +142,11 @@ export function validateFilePath(filePath: string, baseDir: string): string {
       realPath = realpathSync(resolved);
     }
   } catch (error) {
-    throw new Error(`Failed to resolve path: ${filePath} (${(error as Error).message})`);
+    throw new NaxError(`Failed to resolve path: ${filePath} (${errorMessage(error)})`, "FILE_PATH_RESOLUTION_FAILED", {
+      stage: "config",
+      filePath,
+      cause: error,
+    });
   }
 
   // Ensure realPath is within baseDir
@@ -122,7 +154,16 @@ export function validateFilePath(filePath: string, baseDir: string): string {
   const realBase = existsSync(resolvedBase) ? realpathSync(resolvedBase) : resolvedBase;
 
   if (!isWithinDirectory(realPath, realBase)) {
-    throw new Error(`Path is outside allowed directory: ${filePath} (resolved to ${realPath}, base: ${realBase})`);
+    throw new NaxError(
+      `Path is outside allowed directory: ${filePath} (resolved to ${realPath}, base: ${realBase})`,
+      "FILE_PATH_OUTSIDE_BASE",
+      {
+        stage: "config",
+        filePath,
+        realPath,
+        basePath: realBase,
+      },
+    );
   }
 
   return realPath;
