@@ -1,9 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { makeTempDir } from "@test/helpers";
-import { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFilePath } from "@/config";
 import { findProjectDir } from "@/config/loader";
+import {
+  _pathSecurityDeps,
+  isWithinDirectory,
+  MAX_DIRECTORY_DEPTH,
+  validateDirectory,
+  validateFilePath,
+} from "@/config/path-security";
+import { NaxError } from "@/errors";
 
 // Create a temporary test directory
 const testRoot = makeTempDir("nax-path-test-");
@@ -51,9 +58,18 @@ describe("Path Security", () => {
     });
 
     test("rejects non-existent directory", () => {
+      const target = join(testProject, "nonexistent");
       expect(() => {
-        validateDirectory(join(testProject, "nonexistent"));
+        validateDirectory(target);
       }).toThrow("Directory does not exist");
+      try {
+        validateDirectory(target);
+      } catch (error) {
+        expect(error).toBeInstanceOf(NaxError);
+        if (!(error instanceof NaxError)) throw error;
+        expect(error.code).toBe("PATH_DIRECTORY_NOT_FOUND");
+        expect(error.context).toMatchObject({ stage: "config", dirPath: target });
+      }
     });
 
     test("rejects file path (not a directory)", () => {
@@ -104,6 +120,14 @@ describe("Path Security", () => {
       expect(() => {
         validateFilePath(outsideFile, testProject);
       }).toThrow("Path is outside allowed directory");
+      try {
+        validateFilePath(outsideFile, testProject);
+      } catch (error) {
+        expect(error).toBeInstanceOf(NaxError);
+        if (!(error instanceof NaxError)) throw error;
+        expect(error.code).toBe("FILE_PATH_OUTSIDE_BASE");
+        expect(error.context).toMatchObject({ stage: "config", filePath: outsideFile });
+      }
     });
 
     test("accepts non-existent file within base directory", () => {
@@ -114,6 +138,21 @@ describe("Path Security", () => {
   });
 
   describe("isWithinDirectory", () => {
+    test("accepts a Windows-style descendant path", () => {
+      const originalDeps = { ..._pathSecurityDeps };
+      Object.assign(_pathSecurityDeps, {
+        isAbsolute: win32.isAbsolute,
+        normalize: win32.normalize,
+        relative: win32.relative,
+      });
+
+      try {
+        expect(isWithinDirectory("C:\\project\\src", "C:\\project")).toBe(true);
+      } finally {
+        Object.assign(_pathSecurityDeps, originalDeps);
+      }
+    });
+
     test("returns true for path within directory", () => {
       expect(isWithinDirectory(join(testProject, "src"), testProject)).toBe(true);
     });

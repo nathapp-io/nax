@@ -64,9 +64,8 @@ describe("parseCommandToArgv", () => {
     expect(parseCommandToArgv('echo "unterminated')).toEqual(["echo", "unterminated"]);
   });
 
-  test("does not emit a token for an empty quoted segment", () => {
-    // current.length > 0 gates the push, so an empty quoted token is dropped.
-    expect(parseCommandToArgv("echo '' next")).toEqual(["echo", "next"]);
+  test("preserves an empty quoted segment as an argument", () => {
+    expect(parseCommandToArgv("echo '' next")).toEqual(["echo", "", "next"]);
   });
 
   test("expands a leading ~/ to $HOME on an unquoted token", () => {

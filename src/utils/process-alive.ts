@@ -36,7 +36,7 @@
  * @example
  * ```ts
  * if (isProcessAlive(lockPid)) {
- *   throw new Error(`nax is already running (PID ${lockPid})`);
+ *   throw new NaxError(`nax is already running (PID ${lockPid})`, "LOCK_ACQUISITION_FAILED", { stage: "file-lock" });
  * }
  * ```
  */

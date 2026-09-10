@@ -64,6 +64,7 @@
  */
 
 import { readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { NaxError } from "../errors";
 import { isProcessAlive } from "./process-alive";
 
 const DEFAULT_RETRY_MS = 10;
@@ -200,7 +201,15 @@ async function acquire(lockPath: string, options: FileLockOptions): Promise<() =
     }
     await _fileLockDeps.sleep(retryMs);
   }
-  throw new Error(`${options.errorPrefix} Timed out acquiring ${options.lockName} lock: ${lockPath}`);
+  throw new NaxError(
+    `${options.errorPrefix} Timed out acquiring ${options.lockName} lock: ${lockPath}`,
+    "FILE_LOCK_TIMEOUT",
+    {
+      stage: "file-lock",
+      lockName: options.lockName,
+      lockPath,
+    },
+  );
 }
 
 /**

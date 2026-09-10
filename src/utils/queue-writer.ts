@@ -6,6 +6,7 @@
  */
 
 import { appendFile } from "node:fs/promises";
+import { NaxError } from "../errors";
 import type { QueueCommand } from "../queue/types";
 import { withQueueFileLock } from "./queue-file-lock";
 
@@ -55,7 +56,10 @@ export async function writeQueueCommand(queueFilePath: string, command: QueueCom
       break;
     default: {
       const _exhaustive: never = command;
-      throw new Error(`Unhandled queue command: ${_exhaustive}`);
+      throw new NaxError(`Unhandled queue command: ${_exhaustive}`, "QUEUE_COMMAND_INVALID", {
+        stage: "queue",
+        type: (command as { type: string }).type,
+      });
     }
   }
 

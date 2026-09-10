@@ -172,9 +172,12 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     };
     Object.assign(_fileLockDeps, { readFile: gatedReadFile });
 
-    await expect(
-      withFileLock(lockPath, async () => {}, { ...PATH_LOCK_OPTS, timeoutMs: 150, retryMs: 10 }),
-    ).rejects.toThrow(/Timed out acquiring path lock/);
+    const timedOut = withFileLock(lockPath, async () => {}, { ...PATH_LOCK_OPTS, timeoutMs: 150, retryMs: 10 });
+    await expect(timedOut).rejects.toThrow(/Timed out acquiring path lock/);
+    await expect(timedOut).rejects.toMatchObject({
+      code: "FILE_LOCK_TIMEOUT",
+      context: { stage: "file-lock" },
+    });
 
     // The new live holder's lock was never touched by the gravedigger.
     expect((await Bun.file(lockPath).text()).trim()).toBe("7777");

@@ -19,6 +19,7 @@ import type { PruneResult, PruneRollupInput } from "../plugins/builtin/curator/r
 import { pruneRollup, scanProjectRunIds } from "../plugins/builtin/curator/rollup-prune";
 import type { Observation } from "../plugins/builtin/curator/types";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "../runtime/paths";
+import { parseCommandToArgv } from "../utils/command-argv";
 import { isRelativeAndSafe } from "../utils/path-security";
 import type { ResolvedProject, ResolveProjectOptions } from "./common";
 import { resolveProjectAsync } from "./common";
@@ -80,14 +81,21 @@ export const _curatorCmdDeps = {
       // File may not exist — ignore
     }
   },
-  openInEditor: async (filePath: string): Promise<void> => {
-    const editor = process.env.EDITOR ?? process.env.VISUAL ?? "vi";
-    const proc = Bun.spawnSync([editor, filePath], { stdio: ["inherit", "inherit", "inherit"] });
-    if (proc.exitCode !== 0) {
-      console.log(`[WARN] Editor exited with code ${proc.exitCode}`);
-    }
-  },
+  spawnSync: Bun.spawnSync as typeof Bun.spawnSync,
+  openInEditor: async (filePath: string): Promise<void> => openInEditor(filePath),
 };
+
+function openInEditor(filePath: string): void {
+  const [editor, ...args] = parseCommandToArgv(process.env.EDITOR ?? process.env.VISUAL ?? "vi");
+  if (!editor) return;
+
+  try {
+    const proc = _curatorCmdDeps.spawnSync([editor, ...args, filePath], { stdio: ["inherit", "inherit", "inherit"] });
+    if (proc.exitCode !== 0) console.log(`[WARN] Editor exited with code ${proc.exitCode}`);
+  } catch {
+    console.log(`[WARN] Failed to open editor: ${editor}`);
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

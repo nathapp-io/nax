@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { parseQueueFile } from "@/queue";
+import type { QueueCommand } from "@/queue/types";
 import { _writeChains, writeQueueCommand, writeRetryCommand } from "@/utils/queue-writer";
 
 describe("writeQueueCommand", () => {
@@ -35,6 +36,15 @@ describe("writeQueueCommand", () => {
       { type: "RETRY", storyId: "US-002" },
       { type: "PRIORITY", storyId: "US-003", value: 5 },
     ]);
+  });
+
+  test("throws a structured error for an unrecognized command", async () => {
+    const invalidCommand: QueueCommand = { type: "PAUSE" };
+    Reflect.set(invalidCommand, "type", "UNKNOWN");
+    await expect(writeQueueCommand(queueFile, invalidCommand)).rejects.toMatchObject({
+      code: "QUEUE_COMMAND_INVALID",
+      context: { stage: "queue", type: "UNKNOWN" },
+    });
   });
 
   test("serializes concurrent writes without clobbering (no read-modify-write race)", async () => {

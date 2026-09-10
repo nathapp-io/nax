@@ -4,6 +4,7 @@
  * checks below).
  */
 import { describe, expect, test } from "bun:test";
+import { NaxError } from "@/errors";
 import { validateFeatureName } from "@/utils/feature-name";
 
 describe("validateFeatureName", () => {
@@ -17,6 +18,14 @@ describe("validateFeatureName", () => {
 
   test("throws on an empty name", () => {
     expect(() => validateFeatureName("")).toThrow("Feature name must be non-empty");
+    try {
+      validateFeatureName("");
+    } catch (error) {
+      expect(error).toBeInstanceOf(NaxError);
+      if (!(error instanceof NaxError)) throw error;
+      expect(error.code).toBe("FEATURE_NAME_INVALID");
+      expect(error.context).toMatchObject({ stage: "feature-name", feature: "" });
+    }
   });
 
   test("throws on a whitespace-only name", () => {
