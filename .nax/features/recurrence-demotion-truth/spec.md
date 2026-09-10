@@ -322,11 +322,11 @@ predates this feature and is treated exactly as today.
 14. `[unit]` When `cfg.enabled` is `false`, no finding returned by `classifyRecurrence` carries `meta.recurrence`.
 15. `[unit]` When `cfg.enabled` is `false`, `classifyRecurrence` partitions findings into `blocking` and `advisory` by severity alone, matching its behaviour before this feature.
 16. `[unit]` Given a finding carrying no `acIndex`, `classifyRecurrence` counts its prior appearances using the existing file, category and issue-prefix fingerprint fallback, and its disposition is unaffected by the absence of `acIndex`.
-15. `[unit]` When `priorIterations` is empty, `classifyRecurrence` returns an empty `retired` array.
-16. `[unit]` When `priorIterations` is empty, every entry of `classified` carries `meta.recurrence.rounds` equal to 1.
-17. `[unit]` A finding whose `category` is `test-gap`, whose file matches the test-file predicate, and whose severity is at or above the blocking threshold is placed in `blocking` regardless of its appearance count.
-18. `[unit]` A finding whose `category` is `test-gap` and whose file matches the test-file predicate but whose severity is below the blocking threshold is not placed in `blocking`.
-19. `[unit]` `tagCoverageGap` applied to a finding already carrying `meta.recurrence` returns a finding carrying both `meta.recurrence` and `meta.coverageGap` equal to `true`.
+17. `[unit]` When `priorIterations` is empty, `classifyRecurrence` returns an empty `retired` array.
+18. `[unit]` When `priorIterations` is empty, every entry of `classified` carries `meta.recurrence.rounds` equal to 1.
+19. `[unit]` A finding whose `category` is `test-gap`, whose file matches the test-file predicate, and whose severity is at or above the blocking threshold is placed in `blocking` regardless of its appearance count.
+20. `[unit]` A finding whose `category` is `test-gap` and whose file matches the test-file predicate but whose severity is below the blocking threshold is not placed in `blocking`.
+21. `[unit]` `tagCoverageGap` applied to a finding already carrying `meta.recurrence` returns a finding carrying both `meta.recurrence` and `meta.coverageGap` equal to `true`.
 
 **Out of scope:** the wording of the reviewer prompt; the `meta.coverageGap` tag's own semantics, which are unchanged.
 
