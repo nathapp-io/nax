@@ -47,18 +47,36 @@ const MAX_BLOCK_CHARS = 6000;
 export function buildPriorIterationsBlock<F extends Finding>(iterations: Iteration<F>[]): string {
   if (iterations.length === 0) return "";
 
-  const sections = iterations.map((iter) => renderIteration(iter));
-  const { displaySections, visibleIterations } = applyTokenGuard(sections, iterations);
-  const verdictTemplate = renderVerdictTemplate(visibleIterations);
+  // A finding is "globally retired" if ANY iteration in the history carries it
+  // stamped `disposition: "retired"`. Once retired, it stays retired across the
+  // whole rendered block — including its earlier-round copy. Without this, the
+  // store would carry the same defect in two states (unstamped in round N, stamped
+  // retired in round N+1) and the prompt would simultaneously tell the reviewer
+  // to re-flag it (verdict list of round N) and not re-flag it (acknowledgement
+  // of round N+1). That's the loop retirement exists to break. Dedup uses
+  // `findingRecurrenceKey` (file+line+rule, message excluded) so the same
+  // defect re-worded across rounds is still recognised as one finding.
+  const retiredKeys = new Set<string>();
+  for (const iter of iterations) {
+    for (const f of iter.findingsAfter) {
+      if (isRetired(f)) retiredKeys.add(findingRecurrenceKey(f));
+    }
+  }
 
-  return [
-    "## Prior Iterations — verdict required before new analysis",
-    "",
-    ...displaySections,
-    "",
-    verdictTemplate,
-    "",
-  ].join("\n");
+  const sections = iterations.map((iter) => renderIteration(iter, retiredKeys));
+  const { displaySections, visibleIterations } = applyTokenGuard(sections, iterations, retiredKeys);
+  const verdictTemplate = renderVerdictTemplate(visibleIterations, retiredKeys);
+  const acknowledgement = retiredEntriesGlobal(iterations);
+
+  const parts: string[] = ["## Prior Iterations — verdict required before new analysis", ""];
+  parts.push(...displaySections);
+  if (acknowledgement.length > 0) {
+    parts.push("");
+    parts.push(...renderAcknowledgement(acknowledgement));
+  }
+  parts.push("", verdictTemplate, "");
+
+  return parts.join("\n");
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -76,32 +94,67 @@ function isRetired(f: Finding): boolean {
 }
 
 /**
- * Visible findings for the per-round verdict-required list — every entry in
- * `findingsAfter` EXCEPT those stamped `disposition: "retired"`. The retired
- * entries render once, in the acknowledgement section, named by file and
- * category only.
+ * Is this finding globally retired — i.e. retired in some iteration of the
+ * rendered block? Used to suppress the verdict-required list copy of a
+ * finding whose later-round twin is stamped retired.
  */
-function visibleFindings<F extends Finding>(iter: Iteration<F>): F[] {
-  return iter.findingsAfter.filter((f) => !isRetired(f));
+function isGloballyRetired(f: Finding, retiredKeys: ReadonlySet<string>): boolean {
+  return retiredKeys.has(findingRecurrenceKey(f));
 }
 
 /**
- * Retired findings from an iteration, in first-seen order. Each entry is
- * summarised to the (file, category) pair the acknowledgement section names —
- * the message and other fields are intentionally dropped so the section stays
- * a compact index of "what was closed", not a duplicate verdict list.
+ * Local copy of `findingRecurrenceKey` from `@/findings/types`. The barrel
+ * `@/findings` re-exports it but is downstream of `cycle.ts`, which is itself
+ * reached from the operations barrel — importing the value through that
+ * barrel pulls this builder into an existing runtime cycle that
+ * `check:import-cycles` ratchets against. The function is a pure
+ * JSON.stringify over (source, file, line, rule) with a `findingKey` fallback
+ * when neither `line` nor `rule` is set, so the inline is faithful.
  */
-function retiredEntries<F extends Finding>(iter: Iteration<F>): Array<{ file: string; category: string }> {
+function findingRecurrenceKey(f: Finding): string {
+  if (f.line == null && f.rule == null) {
+    // findingKey fallback: include message so two message-distinct findings
+    // in the same file (no line, no rule) don't conflate.
+    return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null, f.message]);
+  }
+  return JSON.stringify([f.source, f.file ?? null, f.line ?? null, f.rule ?? null]);
+}
+
+/**
+ * Visible findings for the per-round verdict-required list — every entry in
+ * `findingsAfter` EXCEPT those stamped `disposition: "retired"` AND those
+ * whose globally-retired twin exists. Retired entries render in the
+ * acknowledgement section instead, named by file and category only.
+ */
+function visibleFindings<F extends Finding>(iter: Iteration<F>, retiredKeys: ReadonlySet<string>): F[] {
+  return iter.findingsAfter.filter((f) => !isRetired(f) && !isGloballyRetired(f, retiredKeys));
+}
+
+/**
+ * Retired findings from the WHOLE history (deduplicated by file+category) so
+ * the acknowledgement section lists each closed defect once across all rounds.
+ * Renders once at the END of the block (before the verdict template) — not
+ * once per round — so the same defect retired in round 2 doesn't re-appear
+ * in round 3's section.
+ */
+function retiredEntriesGlobal<F extends Finding>(
+  iterations: readonly Iteration<F>[],
+): Array<{
+  file: string;
+  category: string;
+}> {
   const seen = new Set<string>();
   const out: Array<{ file: string; category: string }> = [];
-  for (const f of iter.findingsAfter) {
-    if (!isRetired(f)) continue;
-    const file = f.file ?? "(workdir-global)";
-    const category = f.category ?? "";
-    const key = `${file}|${category}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ file, category });
+  for (const iter of iterations) {
+    for (const f of iter.findingsAfter) {
+      if (!isRetired(f)) continue;
+      const file = f.file ?? "(workdir-global)";
+      const category = f.category ?? "";
+      const key = `${file}|${category}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ file, category });
+    }
   }
   return out;
 }
@@ -109,6 +162,7 @@ function retiredEntries<F extends Finding>(iter: Iteration<F>): Array<{ file: st
 function applyTokenGuard<F extends Finding>(
   sections: string[],
   iterations: Iteration<F>[],
+  retiredKeys: ReadonlySet<string>,
 ): { displaySections: string[]; visibleIterations: Iteration<F>[] } {
   if (sections.join("\n\n").length <= MAX_BLOCK_CHARS || sections.length <= 2) {
     return { displaySections: sections, visibleIterations: iterations };
@@ -119,37 +173,32 @@ function applyTokenGuard<F extends Finding>(
     .slice(0, n - 2)
     .map(
       (iter) =>
-        `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${visibleFindings(iter).length} findings, omitted for brevity)`,
+        `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${visibleFindings(iter, retiredKeys).length} findings, omitted for brevity)`,
     );
   const verbatim = sections.slice(n - 2);
 
   return { displaySections: [...collapsed, ...verbatim], visibleIterations: iterations.slice(n - 2) };
 }
 
-function renderIteration<F extends Finding>(iter: Iteration<F>): string {
-  const visible = visibleFindings(iter);
-  const retired = retiredEntries(iter);
+function renderIteration<F extends Finding>(iter: Iteration<F>, retiredKeys: ReadonlySet<string>): string {
+  const visible = visibleFindings(iter, retiredKeys);
   const header = `### Round ${iter.iterationNum} — outcome: ${iter.outcome} (${iter.findingsBefore.length} → ${iter.findingsAfter.length})`;
-  if (visible.length === 0 && retired.length === 0) {
+  if (visible.length === 0) {
     return [header, "_All prior findings cleared._"].join("\n");
   }
-  const parts: string[] = [header];
-  if (visible.length > 0) {
-    parts.push("Findings flagged previously:");
-    parts.push(...visible.map((f, i) => renderFinding(f, i + 1)));
-  }
-  if (retired.length > 0) {
-    parts.push(...renderAcknowledgement(retired));
-  }
+  const parts: string[] = [header, "Findings flagged previously:"];
+  parts.push(...visible.map((f, i) => renderFinding(f, i + 1)));
   return parts.join("\n");
 }
 
 /**
- * Render the acknowledgement section for retired findings. Per AC 2 / AC 3:
- * names each retired finding's file and category, and states the section is
- * for closed findings that must not be re-flagged. One entry per
- * (file, category) pair so a defect re-filed in the same locus across rounds
- * does not produce a duplicated line within a single iteration's section.
+ * Render the acknowledgement section for globally-retired findings. Per AC 2 /
+ * AC 3: names each retired finding's file and category, and states the section
+ * is for closed findings that must not be re-flagged. Rendered once at the end
+ * of the block (before the verdict template), not once per round — a defect
+ * that reached the retired bucket in round N does not need to be re-listed
+ * in every later round's section, and listing it per round would re-introduce
+ * the very re-flag mandate the section is meant to break.
  */
 function renderAcknowledgement(entries: ReadonlyArray<{ file: string; category: string }>): string[] {
   const lines = entries.map((e) => `- \`${e.file}\` [${e.category}]`);
@@ -173,8 +222,11 @@ function renderFinding<F extends Finding>(f: F, n: number): string {
   return `${n}. ${tag} ${loc}\n   Message: ${message}\n   Suggestion: ${suggestion}${acLine}`;
 }
 
-function renderVerdictTemplate<F extends Finding>(iterations: Iteration<F>[]): string {
-  const total = iterations.reduce((sum, it) => sum + visibleFindings(it).length, 0);
+function renderVerdictTemplate<F extends Finding>(
+  iterations: Iteration<F>[],
+  retiredKeys: ReadonlySet<string>,
+): string {
+  const total = iterations.reduce((sum, it) => sum + visibleFindings(it, retiredKeys).length, 0);
   const hasUnchanged = iterations.some((i) => i.outcome === "unchanged");
   const unchangedNote = hasUnchanged
     ? `\n\nWhen outcome is "unchanged", the prior hypothesis is FALSIFIED — the change did not affect what was tested. Choose a different category before producing a new verdict. Do NOT repeat fixes listed above.`

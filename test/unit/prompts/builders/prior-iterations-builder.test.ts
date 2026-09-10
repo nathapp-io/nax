@@ -523,26 +523,36 @@ describe("buildPriorIterationsBlock — retired findings", () => {
   // maxAdvisoryRounds in round 2, the round-3 prior-iterations block lists it
   // only in the acknowledgement section.
   test("across three rounds the retired warning is listed only in the acknowledgement section", () => {
+    // The store carries the SAME finding across rounds (same file/line/rule;
+    // message may be re-worded by the reviewer, but classifyRecurrence matches
+    // it back via fingerprintFor). Round 1's copy is unstamped because the
+    // plain advisory bucket is never recurrence-stamped (US-001); round 2's
+    // copy is stamped retired because the advisory cap was reached. The
+    // round-3 prompt must NOT re-flag the defect from round 1's verdict list
+    // and acknowledge it in round 2's section at the same time — that's the
+    // loop retirement exists to break.
     const w = (msg: string): Finding =>
       makeFinding({
         source: "adversarial-review",
         message: msg,
         file: "src/lib/w.ts",
+        line: 42,
         category: "input",
         severity: "warning",
       });
     const round1 = makeIteration({
       iterationNum: 1,
       outcome: "unchanged",
-      findingsAfter: [w("warning round 1")],
+      findingsAfter: [w("warning text")],
     });
     const round2 = makeIteration({
       iterationNum: 2,
       outcome: "unchanged",
       findingsAfter: [
         // Round 2 — stamped retired by classifyRecurrence (advisory cap reached).
+        // Same file/line/rule, message re-worded by the reviewer.
         {
-          ...w("warning round 2"),
+          ...w("warning text reworded"),
           meta: { recurrence: { disposition: "retired", rounds: 2, wasBlocking: false } },
         },
       ],
@@ -556,12 +566,15 @@ describe("buildPriorIterationsBlock — retired findings", () => {
     // The block is what round 4 would see — three rounds of history.
     const output = buildPriorIterationsBlock([round1, round2, round3]);
 
-    // Round-1 warning is still live → it appears in the verdict-required list.
-    expect(output).toContain("warning round 1");
-    // Round-2 warning is retired → its message must NOT appear in the verdict list.
-    expect(output).not.toContain("warning round 2");
-    // It must, however, appear in the acknowledgement section (named by file).
-    expect(output).toContain("src/lib/w.ts");
+    // The retired defect's file path must appear exactly once across the
+    // entire block (in the acknowledgement section). It MUST NOT appear in
+    // any round's verdict-required list.
+    const fileOccurrences = output.split("src/lib/w.ts").length - 1;
+    expect(fileOccurrences).toBe(1);
+    // The file/category pair is in the acknowledgement, not the verdict list.
+    expect(output).toContain("Acknowledgement — closed findings");
+    // The verdict-required list contains nothing for this round-1 finding.
+    expect(output).not.toMatch(/Findings flagged previously:[\s\S]*?src\/lib\/w\.ts/);
   });
 
   // Round 3 prior block — round-2 retired finding listed once in acknowledgement.
@@ -578,9 +591,64 @@ describe("buildPriorIterationsBlock — retired findings", () => {
 
     const output = buildPriorIterationsBlock([iter1, iter2]);
 
-    // The retired finding must appear once across the block — in iter1's acknowledgement,
-    // since iter2 carries no findings at all.
+    // The retired finding must appear once across the block — in the global
+    // acknowledgement section, since iter2 carries no findings at all.
     const occurrences = output.split("src/lib/single.ts").length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  // Adversarial review #1 (US-004) — when the same finding carries no stamp
+  // in round 1 but is stamped retired in round 2, the round-1 copy must NOT
+  // reappear in the verdict-required list. The store genuinely carries two
+  // states of the same defect (US-001 only stamps the retired entry, not
+  // earlier plain-advisory copies), and a per-iteration "is THIS copy
+  // retired?" check would let round 1's unstamped copy re-flag the defect
+  // while round 2's stamped copy tells the reviewer not to. The block
+  // therefore looks at the WHOLE history and treats the finding as retired
+  // for the purposes of the verdict list once any iteration has stamped it.
+  test("an unstamped round-1 copy of a defect retired in round 2 is suppressed from the verdict list", () => {
+    const round1 = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [
+        makeFinding({
+          source: "adversarial-review",
+          message: "unstamped advisory copy",
+          file: "src/lib/dup.ts",
+          line: 7,
+          category: "input",
+          severity: "warning",
+        }),
+      ],
+    });
+    const round2 = makeIteration({
+      iterationNum: 2,
+      outcome: "unchanged",
+      findingsAfter: [
+        {
+          source: "adversarial-review",
+          message: "stamped retired copy (re-worded)",
+          file: "src/lib/dup.ts",
+          line: 7,
+          category: "input",
+          severity: "warning",
+          meta: { recurrence: { disposition: "retired", rounds: 2, wasBlocking: false } },
+        },
+      ],
+    });
+
+    const output = buildPriorIterationsBlock([round1, round2]);
+
+    // The defect's file must appear EXACTLY once in the block (in the
+    // acknowledgement). It must NOT appear in the verdict-required list of
+    // round 1.
+    const fileOccurrences = output.split("src/lib/dup.ts").length - 1;
+    expect(fileOccurrences).toBe(1);
+    // The acknowledgement section names the retired file.
+    expect(output).toContain("Acknowledgement — closed findings");
+    // No "Findings flagged previously:" line should reference the retired file.
+    expect(output).not.toMatch(/Findings flagged previously:[\s\S]*?src\/lib\/dup\.ts/);
+    // The verdict template count must exclude the retired finding entirely.
+    expect(output).toContain("classify each of the 0 prior finding(s) above");
   });
 });
