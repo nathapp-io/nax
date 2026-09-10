@@ -42,6 +42,13 @@ export interface LLMFinding {
     line?: number;
     observed: string;
   };
+  /**
+   * Optional producer-supplied metadata carried through to the Finding wire format.
+   * US-003: `meta.recurrence` is stamped by `classifyRecurrence` on every
+   * accepted semantic finding so the audit record and prompt builder can
+   * render the disposition. Forwarded through `llmFindingToFinding`.
+   */
+  meta?: Record<string, unknown>;
 }
 
 export interface LLMResponse {

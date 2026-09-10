@@ -70,6 +70,14 @@ export interface AdversarialLLMFinding {
    * for every finding regardless of severity — never authored by the model.
    */
   evidence?: { status: EvidenceStatus };
+  /**
+   * Optional producer-supplied metadata carried through to the Finding wire format.
+   * US-003: `meta.recurrence` is stamped by `classifyRecurrence` on every
+   * accepted adversarial finding so downstream consumers (review audit,
+   * nbf seeding, prompt builder) can render the disposition without replaying
+   * demotion state. Forwarded through `toAdversarialReviewFindings`.
+   */
+  meta?: Record<string, unknown>;
 }
 
 export interface AdversarialLLMResponse {
