@@ -30,14 +30,17 @@ describe("fallback map schema", () => {
 
   test("accepts a { agent, tier } target", () => {
     const config = NaxConfigSchema.parse({
-      agent: { fallback: { enabled: true, map: { native: [{ agent: "native", tier: "cheap" }] } } },
+      agent: { protocol: "hybrid", fallback: { enabled: true, map: { native: [{ agent: "native", tier: "cheap" }] } } },
     });
     expect(config.agent?.fallback?.map.native).toEqual([{ agent: "native", tier: "cheap" }]);
   });
 
   test("accepts both forms mixed in one entry", () => {
     const config = NaxConfigSchema.parse({
-      agent: { fallback: { enabled: true, map: { claude: ["codex", { agent: "native", tier: "cheap" }] } } },
+      agent: {
+        protocol: "hybrid",
+        fallback: { enabled: true, map: { claude: ["codex", { agent: "native", tier: "cheap" }] } },
+      },
     });
     expect(config.agent?.fallback?.map.claude).toHaveLength(2);
   });
@@ -52,7 +55,10 @@ describe("fallback map schema", () => {
 
   test("accepts a { agent, model } target — the ConfiguredModel spelling", () => {
     const config = NaxConfigSchema.parse({
-      agent: { fallback: { enabled: true, map: { native: [{ agent: "native", model: "balanced" }] } } },
+      agent: {
+        protocol: "hybrid",
+        fallback: { enabled: true, map: { native: [{ agent: "native", model: "balanced" }] } },
+      },
     });
     expect(config.agent?.fallback?.map.native).toEqual([{ agent: "native", model: "balanced" }]);
   });
@@ -60,6 +66,7 @@ describe("fallback map schema", () => {
   test("{ agent, model } also accepts a literal provider/model id", () => {
     const config = NaxConfigSchema.parse({
       agent: {
+        protocol: "hybrid",
         fallback: { enabled: true, map: { native: [{ agent: "native", model: "openrouter/z-ai/glm-5.3-flash" }] } },
       },
     });
@@ -114,9 +121,9 @@ describe("credentialCandidates", () => {
 });
 
 describe("nextCandidate", () => {
-  function manager(map: Record<string, unknown[]>) {
+  function manager(map: Record<string, unknown[]>, protocol?: "hybrid") {
     const config = NaxConfigSchema.parse({
-      agent: { default: "claude", fallback: { enabled: true, map } },
+      agent: { protocol, default: "claude", fallback: { enabled: true, map } },
     });
     return new AgentManager(config);
   }
@@ -126,7 +133,7 @@ describe("nextCandidate", () => {
   });
 
   test("returns the tier for an object target", () => {
-    expect(manager({ claude: [{ agent: "native", tier: "cheap" }] }).nextCandidate("claude", 0)).toEqual({
+    expect(manager({ claude: [{ agent: "native", tier: "cheap" }] }, "hybrid").nextCandidate("claude", 0)).toEqual({
       agent: "native",
       tier: "cheap",
     });
@@ -189,7 +196,11 @@ describe("dead-primary start preserves a named tier on the run path", () => {
     // effective tier. The manager seeds currentHopKind from the start target,
     // and hopTier reads the tier off the primary kind.
     const config = NaxConfigSchema.parse({
-      agent: { default: "claude", fallback: { enabled: true, map: { claude: [{ agent: "native", tier: "cheap" }] } } },
+      agent: {
+        protocol: "hybrid",
+        default: "claude",
+        fallback: { enabled: true, map: { claude: [{ agent: "native", tier: "cheap" }] } },
+      },
     });
     const manager = new AgentManager(config);
     manager.markUnavailable("claude", AVAIL_FAILURE);
@@ -264,6 +275,7 @@ describe("tiered fallback retries", () => {
   test("a same-agent timeout retry preserves the fallback target's tier", async () => {
     const config = NaxConfigSchema.parse({
       agent: {
+        protocol: "hybrid",
         default: "claude",
         fallback: { enabled: true, map: { claude: [{ agent: "native", tier: "cheap" }] } },
         timeoutRetry: { maxAttempts: 1, budgetMultiplier: 0.5 },
@@ -338,6 +350,7 @@ describe("a same-agent, different-tier fallback target (native -> {agent: native
   test("nextCandidate(current, hops, current) still returns the different-tier target", () => {
     const config = NaxConfigSchema.parse({
       agent: {
+        protocol: "hybrid",
         default: "native",
         fallback: { enabled: true, map: { native: [{ agent: "native", tier: "glm" }] } },
       },
@@ -350,6 +363,7 @@ describe("a same-agent, different-tier fallback target (native -> {agent: native
   test("markUnavailable(agent) does not cool down a different tier of the same agent", () => {
     const config = NaxConfigSchema.parse({
       agent: {
+        protocol: "hybrid",
         default: "native",
         fallback: { enabled: true, map: { native: [{ agent: "native", tier: "glm" }] } },
       },
@@ -364,6 +378,7 @@ describe("a same-agent, different-tier fallback target (native -> {agent: native
   test("the swap actually dispatches to native at tier glm on the second hop", async () => {
     const config = NaxConfigSchema.parse({
       agent: {
+        protocol: "hybrid",
         default: "native",
         fallback: { enabled: true, map: { native: [{ agent: "native", tier: "glm" }] } },
       },
@@ -538,6 +553,7 @@ describe("model-identity-aware fallback exclusion", () => {
     test("marking one tier unavailable also cools down a different tier resolving to the SAME model", () => {
       const config = NaxConfigSchema.parse({
         agent: {
+          protocol: "hybrid",
           default: "native",
           fallback: { enabled: true, map: { native: [{ agent: "native", tier: "balanced" }] } },
         },
@@ -553,6 +569,7 @@ describe("model-identity-aware fallback exclusion", () => {
     test("marking one tier unavailable leaves a different tier resolving to a DIFFERENT model untouched", () => {
       const config = NaxConfigSchema.parse({
         agent: {
+          protocol: "hybrid",
           default: "native",
           fallback: { enabled: true, map: { native: [{ agent: "native", tier: "balanced" }] } },
         },
@@ -580,6 +597,7 @@ describe("model-identity-aware fallback exclusion", () => {
       stubSleep();
       const config = NaxConfigSchema.parse({
         agent: {
+          protocol: "hybrid",
           default: "claude",
           fallback: {
             enabled: true,
@@ -629,6 +647,7 @@ describe("model-identity-aware fallback exclusion", () => {
       stubSleep();
       const config = NaxConfigSchema.parse({
         agent: {
+          protocol: "hybrid",
           default: "claude",
           fallback: {
             enabled: true,
