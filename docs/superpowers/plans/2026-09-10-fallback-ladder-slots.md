@@ -14,7 +14,8 @@
 
 - **File-size ratchet is hard.** `bun run check:file-sizes` must pass and `scripts/baselines/` must show **zero diff** on this branch. Limits: 600 lines for `src/**/*.ts`, 800 for `test/**/*.test.ts`. `src/session/manager.ts` is grandfathered at **679** and may not grow by a single line; `src/operations/build-hop-callback.ts` is at exactly **600**. Every task that touches those two files must be net-neutral or net-negative there.
 - **Every log call carries `storyId`** (enforced by `bun run check:logger-storyid`).
-- **No `any`.** No test escape hatches (`bun run check:test-escape-hatches`).
+- **Test casts are gated, and the gates are hard errors.** In `test/**`: `as never` is banned (`biome-plugins/no-as-never.grit`), `as unknown as` is ratcheted at **0** (`check:test-as-unknown-as`), `any` and `!` non-null assertions are biome errors, and `@ts-expect-error` is baselined at 0. Build typed fixtures instead — `makeNaxConfig`, `makeMockCallContext`, `makeMockRuntime`, `makeAgentAdapter` from `@test/helpers`, and plain typed literals for `AdapterFailure` / `AgentRunOptions` (see `test/unit/agents/manager-swap-loop.test.ts` for the house pattern). A single `as T` is counted but permitted; use it only where no typed construction exists.
+- `AgentManager`'s first constructor parameter is `AgentManagerConfig`, which `makeNaxConfig()`'s `NaxConfig` satisfies structurally — no cast needed. `AgentRunRequest.bundle` is optional; omit it rather than faking a `ContextBundle`.
 - **Conventional commits**, no attribution footer.
 - Full gate before the branch is done: `bun run lint && bun run typecheck && bun run test`.
 - Endpoint identity is `ModelDef.provider` + `ModelDef.model`. `pricing`, `contextWindow` and `env` are metadata and never part of identity.
@@ -50,8 +51,17 @@ const model = (id: string, provider = "p"): ModelDef => ({ provider, model: id }
 
 const handle = (agentName: string, modelDef: ModelDef): SessionHandle => ({ id: "nax-x", agentName, modelDef });
 
-const desc = (state: SessionDescriptor["state"]): SessionDescriptor =>
-  ({ id: "sess-1", role: "implementer", state, agent: "native", workdir: "/w", protocolIds: null }) as SessionDescriptor;
+const desc = (state: SessionDescriptor["state"]): SessionDescriptor => ({
+  id: "sess-1",
+  role: "implementer",
+  state,
+  agent: "native",
+  workdir: "/w",
+  protocolIds: { recordId: null, sessionId: null },
+  completedStages: [],
+  createdAt: "2026-09-10T00:00:00.000Z",
+  lastActivityAt: "2026-09-10T00:00:00.000Z",
+});
 
 describe("sameEndpoint()", () => {
   test("provider and model both equal", () => {
@@ -199,9 +209,9 @@ function tracked() {
   const opened: OpenSessionOpts[] = [];
   const closed: SessionHandle[] = [];
   const adapter = makeAgentAdapter({
-    openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+    openSession: mock(async (name: string, opts: OpenSessionOpts): Promise<SessionHandle> => {
       opened.push(opts);
-      return { id: name, agentName: opts.agentName, modelDef: opts.modelDef } as SessionHandle;
+      return { id: name, agentName: opts.agentName, modelDef: opts.modelDef };
     }),
     closeSession: mock(async (handle: SessionHandle) => {
       closed.push(handle);
@@ -344,17 +354,23 @@ Create `test/unit/operations/hop-endpoint.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
+import type { ModelsConfig } from "@/config/schema-types";
 import type { AdapterFailure } from "@/context/engine";
 import { resolveHopEndpoint } from "@/operations/hop-endpoint";
 
-const MODELS = {
+const MODELS: ModelsConfig = {
   native: { balanced: "minimax/MiniMax-M3", powerful: "opencode-go/deepseek-v4-flash[high]" },
-} as const;
+};
 
-const FAILURE = { outcome: "fail-rate-limit", category: "availability" } as unknown as AdapterFailure;
+const FAILURE: AdapterFailure = {
+  category: "availability",
+  outcome: "fail-rate-limit",
+  retriable: true,
+  message: "429",
+};
 
 const base = {
-  models: MODELS as never,
+  models: MODELS,
   agentName: "native",
   effectiveTier: "balanced",
   defaultAgent: "native",
@@ -545,54 +561,86 @@ Create `test/unit/agents/hop-endpoint-marking.test.ts`:
 ```ts
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { AgentManager } from "@/agents/manager";
+import type { AgentRunOptions } from "@/agents";
+import { AgentManager } from "@/agents";
+import { DEFAULT_CONFIG } from "@/config";
+import { agentManagerConfigSelector } from "@/config/selectors";
 import type { AdapterFailure } from "@/context/engine";
 
-const MODELS = {
-  native: { balanced: "minimax/MiniMax-M3", powerful: "opencode-go/deepseek-v4-flash[high]" },
-} as const;
+const RATE_LIMIT: AdapterFailure = {
+  category: "availability",
+  outcome: "fail-rate-limit",
+  retriable: true,
+  message: "429",
+};
 
-const RATE_LIMIT = { outcome: "fail-rate-limit", category: "availability" } as unknown as AdapterFailure;
-
-function manager() {
-  const config = makeNaxConfig({
+function ladderConfig() {
+  return makeNaxConfig({
     agent: {
       default: "native",
       protocol: "hybrid",
-      fallback: { enabled: true, map: { native: [{ agent: "native", model: "powerful" }, "claude"] }, maxHopsPerStory: 2 },
+      fallback: {
+        enabled: true,
+        map: { native: [{ agent: "native", model: "powerful" }, "claude"] },
+        maxHopsPerStory: 2,
+        onQualityFailure: false,
+        rebuildContext: false,
+      },
     },
-    models: MODELS,
+    models: { native: { balanced: "minimax/MiniMax-M3", powerful: "opencode-go/deepseek-v4-flash[high]" } },
   });
-  return new AgentManager(config as never, undefined, { models: config.models } as never);
+}
+
+function runOptions(): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    modelTier: "balanced",
+    modelDef: { provider: "unknown", model: "minimax/MiniMax-M3" },
+    timeoutSeconds: 60,
+    storyId: "US-1",
+    config: agentManagerConfigSelector.select(DEFAULT_CONFIG),
+  };
 }
 
 describe("a failed hop marks the endpoint it dispatched", () => {
-  test("a tier-less primary that dispatched balanced cools ONLY balanced", async () => {
-    const mgr = manager();
-    const results: string[] = [];
+  test("a tier-less primary that dispatched balanced cools balanced, not the whole agent", async () => {
+    const config = ladderConfig();
+    const mgr = new AgentManager(config, undefined, { models: config.models });
+    const chain: string[] = [];
 
     await mgr.runWithFallback({
-      runOptions: { prompt: "p", workdir: "/w", storyId: "US-1", modelTier: "balanced" } as never,
-      bundle: undefined,
+      runOptions: runOptions(),
       executeHop: async (agent, bundle, kind) => {
-        results.push(`${agent}:${JSON.stringify(kind.kind)}`);
+        chain.push(`${agent}:${kind.kind}`);
+        const model = chain.length === 1 ? "minimax/MiniMax-M3" : "opencode-go/deepseek-v4-flash[high]";
         return {
-          result: { success: false, exitCode: 1, output: "429", rateLimited: true, durationMs: 1, estimatedCostUsd: 0, adapterFailure: RATE_LIMIT },
+          result: {
+            success: false,
+            exitCode: 1,
+            output: "429",
+            rateLimited: true,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            adapterFailure: RATE_LIMIT,
+          },
           bundle,
-          endpoint: { modelDef: { provider: "unknown", model: results.length === 1 ? "minimax/MiniMax-M3" : "opencode-go/deepseek-v4-flash[high]" } },
+          endpoint: { modelDef: { provider: "unknown", model } },
         };
       },
-    } as never);
+    });
 
-    // The primary's own endpoint is cooling...
+    // The primary's own endpoint is cooling, keyed on the model it dispatched...
     expect(mgr.isUnavailable("native", "balanced")).toBe(true);
-    // ...and so is the rung it swapped to, but they are DIFFERENT identities.
+    // ...as is the rung it swapped to — a DIFFERENT identity, not the same bare key.
     expect(mgr.isUnavailable("native", "powerful")).toBe(true);
-    // The swap did happen, i.e. the bare-agent key did not blanket the ladder.
-    expect(results).toEqual(["native:\"primary\"", "native:\"swap\"", "claude:\"swap\""]);
+    // And the ladder was still walked: the bare-agent key did not blanket it.
+    expect(chain).toEqual(["native:primary", "native:swap", "claude:swap"]);
   });
 });
 ```
+
+The two `isUnavailable` assertions rely on tier lookups and literal-pin marks resolving to the same identity string. Verified: `resolveModelForAgent(models, "native", "balanced", "native")` and `resolveModel("minimax/MiniMax-M3")` both yield `unknown/minimax/MiniMax-M3`.
 
 - [ ] **Step 2: Run it and confirm it fails**
 
@@ -815,7 +863,8 @@ git commit -m "feat(agents): add the ladder slot record and depth index"
 Replaces `runtime.storyAgentTargets` (keyed `storyId+tier+agent`, holding a bare target) with `runtime.ladderSlots` (keyed `storyId+tier+agent+role`, holding target and depth).
 
 **Files:**
-- Modify: `src/runtime/index.ts:180-190`, `src/operations/call-resolvers.ts:177-252`, `src/operations/call.ts:92-99, 209, 469`
+- Modify: `src/runtime/index.ts` (three sites: the interface field, the `new Map(...)` initialiser, and the object literal that assembles the runtime), `src/operations/call-resolvers.ts:177-252`, `src/operations/call.ts:92-99, 209, 469`
+- Modify (existing tests that read the old store): `test/unit/operations/call-fallback-recording.test.ts`, `test/unit/operations/call-sticky-target.test.ts`
 - Test: `test/unit/operations/ladder-slot-stickiness.test.ts`
 
 **Interfaces:**
@@ -828,22 +877,24 @@ Create `test/unit/operations/ladder-slot-stickiness.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
+import { makeMockCallContext } from "@test/helpers";
+import type { ModelsConfig, ResolvedConfiguredModel } from "@/config/schema-types";
 import { ladderSlotFor, recordLadderSlot, resolveDispatchTarget } from "@/operations/call-resolvers";
 import type { CallContext } from "@/operations/types";
 
-const MODELS = {
+const MODELS: ModelsConfig = {
   native: { balanced: "minimax/MiniMax-M3", powerful: "opencode-go/deepseek-v4-flash[high]" },
-} as const;
+};
 
 function ctx(): CallContext {
-  return {
-    storyId: "US-1",
-    agentName: "native",
-    runtime: { ladderSlots: new Map() },
-  } as unknown as CallContext;
+  return makeMockCallContext({ agentName: "native", storyId: "US-1" });
 }
 
-const resolved = { agent: "native", modelDef: { provider: "minimax", model: "minimax/MiniMax-M3" }, modelTier: "balanced" } as never;
+const resolved: ResolvedConfiguredModel = {
+  agent: "native",
+  modelDef: { provider: "unknown", model: "minimax/MiniMax-M3" },
+  modelTier: "balanced",
+};
 
 describe("ladder slot stickiness", () => {
   test("a swap is recorded and read back at the same role", () => {
@@ -873,14 +924,14 @@ describe("ladder slot stickiness", () => {
   test("a later op of the same role dispatches the sticky endpoint and its depth", () => {
     const c = ctx();
     recordLadderSlot(c, { agent: "native", tier: "powerful" }, 1, true, "balanced", "implementer");
-    const out = resolveDispatchTarget(c, resolved, MODELS as never, "balanced", "native", "implementer");
+    const out = resolveDispatchTarget(c, resolved, MODELS, "balanced", "native", "implementer");
     expect(out.agent).toBe("native");
     expect(out.modelDef.model).toBe("opencode-go/deepseek-v4-flash[high]");
     expect(out.startDepth).toBe(1);
   });
 
   test("with no slot, the op's own resolution wins at depth 0", () => {
-    const out = resolveDispatchTarget(ctx(), resolved, MODELS as never, "balanced", "native", "implementer");
+    const out = resolveDispatchTarget(ctx(), resolved, MODELS, "balanced", "native", "implementer");
     expect(out.modelDef.model).toBe("minimax/MiniMax-M3");
     expect(out.startDepth).toBe(0);
   });
@@ -998,15 +1049,28 @@ In `src/operations/call.ts`, the `run` branch already computes `const sessionRol
 
 Update both `recordDispatchOutcome(ctx, outcome, resolved.modelTier)` calls (lines 146 and 469) to pass `sessionRole` as the fourth argument.
 
-- [ ] **Step 6: Run the tests**
+- [ ] **Step 6: Migrate the two existing tests that read the old store**
+
+`test/unit/operations/call-fallback-recording.test.ts` and `test/unit/operations/call-sticky-target.test.ts` assert against `runtime.storyAgentTargets` keyed by `storyFixKey(storyId, tier, agent)`. Update both to read `runtime.ladderSlots` keyed by `ladderSlotKey(storyId, tier, agent, role)`, and to expect the slot shape rather than a bare target — e.g.
+
+```ts
+expect(runtime.ladderSlots.get(ladderSlotKey("US-001", "balanced", "claude", "implementer"))).toEqual({
+  target: { agent: "codex" },
+  depth: 1,
+});
+```
+
+The `role` argument must match the `session.role` of the op each test drives; read it from that op's definition rather than guessing. Do not weaken an assertion to make it pass — if a slot is missing, the wiring in Step 5 is wrong.
+
+- [ ] **Step 7: Run the tests**
 
 Run: `bun test test/unit/operations/ && bun run typecheck`
 Expected: PASS. Any remaining reference to `storyAgentTargets` is a typecheck error — fix each by switching to `ladderSlots`.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/runtime/index.ts src/operations/call-resolvers.ts src/operations/call.ts test/unit/operations/ladder-slot-stickiness.test.ts
+git add src/runtime/index.ts src/operations/call-resolvers.ts src/operations/call.ts test/unit/operations/
 git commit -m "feat(operations): key sticky fallback targets by role and depth"
 ```
 
@@ -1170,14 +1234,18 @@ Create `test/unit/agents/ladder-depth-cap.test.ts`:
 ```ts
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { AgentManager } from "@/agents/manager";
-import type { AdapterFailure } from "@/context/engine";
+import type { AgentRunOptions } from "@/agents";
+import { AgentManager } from "@/agents";
+import { DEFAULT_CONFIG } from "@/config";
+import { agentManagerConfigSelector } from "@/config/selectors";
+import type { AdapterFailure, ContextBundle } from "@/context/engine";
 
-const RATE_LIMIT = { outcome: "fail-rate-limit", category: "availability" } as unknown as AdapterFailure;
-
-const MODELS = {
-  native: { balanced: "minimax/MiniMax-M3", powerful: "opencode-go/deepseek-v4-flash[high]" },
-} as const;
+const RATE_LIMIT: AdapterFailure = {
+  category: "availability",
+  outcome: "fail-rate-limit",
+  retriable: true,
+  message: "429",
+};
 
 function manager() {
   const config = makeNaxConfig({
@@ -1194,19 +1262,42 @@ function manager() {
           ],
         },
         maxHopsPerStory: 2,
+        onQualityFailure: false,
+        rebuildContext: false,
       },
     },
-    models: MODELS,
+    models: { native: { balanced: "minimax/MiniMax-M3", powerful: "opencode-go/deepseek-v4-flash[high]" } },
   });
-  return new AgentManager(config as never, undefined, { models: config.models } as never);
+  return new AgentManager(config, undefined, { models: config.models });
 }
 
+function runOptions(storyId: string): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    modelTier: "balanced",
+    modelDef: { provider: "unknown", model: "minimax/MiniMax-M3" },
+    timeoutSeconds: 60,
+    storyId,
+    config: agentManagerConfigSelector.select(DEFAULT_CONFIG),
+  };
+}
+
+/** Every hop fails with a rate limit, so the ladder is walked to its cap. */
 function failingHop(seen: string[]) {
-  return async (agent: string, bundle: unknown) => {
+  return async (agent: string, bundle: ContextBundle | undefined) => {
     seen.push(agent);
     return {
-      result: { success: false, exitCode: 1, output: "429", rateLimited: true, durationMs: 1, estimatedCostUsd: 0, adapterFailure: RATE_LIMIT },
-      bundle: bundle as never,
+      result: {
+        success: false,
+        exitCode: 1,
+        output: "429",
+        rateLimited: true,
+        durationMs: 1,
+        estimatedCostUsd: 0,
+        adapterFailure: RATE_LIMIT,
+      },
+      bundle,
       endpoint: { modelDef: { provider: "unknown", model: `m${seen.length}` } },
     };
   };
@@ -1214,14 +1305,12 @@ function failingHop(seen: string[]) {
 
 describe("ladder depth cap", () => {
   test("an op starting at depth 1 may descend to 2 and no further", async () => {
-    const mgr = manager();
     const seen: string[] = [];
-    const outcome = await mgr.runWithFallback({
-      runOptions: { prompt: "p", workdir: "/w", storyId: "US-1", modelTier: "balanced" } as never,
-      bundle: undefined,
+    const outcome = await manager().runWithFallback({
+      runOptions: runOptions("US-1"),
       startDepth: 1,
       executeHop: failingHop(seen),
-    } as never);
+    });
 
     // Started on rung 1, descended to rung 2, then the cap refused rung 3.
     expect(seen).toHaveLength(2);
@@ -1229,14 +1318,12 @@ describe("ladder depth cap", () => {
   });
 
   test("an op starting at depth 0 descends twice", async () => {
-    const mgr = manager();
     const seen: string[] = [];
-    const outcome = await mgr.runWithFallback({
-      runOptions: { prompt: "p", workdir: "/w", storyId: "US-2", modelTier: "balanced" } as never,
-      bundle: undefined,
+    const outcome = await manager().runWithFallback({
+      runOptions: runOptions("US-2"),
       startDepth: 0,
       executeHop: failingHop(seen),
-    } as never);
+    });
 
     expect(seen).toHaveLength(3);
     expect(outcome.finalDepth).toBe(2);
@@ -1245,20 +1332,10 @@ describe("ladder depth cap", () => {
   test("depth is per story, not accumulated from another story's swaps", async () => {
     const mgr = manager();
     const first: string[] = [];
-    await mgr.runWithFallback({
-      runOptions: { prompt: "p", workdir: "/w", storyId: "US-A", modelTier: "balanced" } as never,
-      bundle: undefined,
-      startDepth: 0,
-      executeHop: failingHop(first),
-    } as never);
+    await mgr.runWithFallback({ runOptions: runOptions("US-A"), startDepth: 0, executeHop: failingHop(first) });
 
     const second: string[] = [];
-    await mgr.runWithFallback({
-      runOptions: { prompt: "p", workdir: "/w", storyId: "US-B", modelTier: "balanced" } as never,
-      bundle: undefined,
-      startDepth: 0,
-      executeHop: failingHop(second),
-    } as never);
+    await mgr.runWithFallback({ runOptions: runOptions("US-B"), startDepth: 0, executeHop: failingHop(second) });
 
     expect(second).toHaveLength(3);
   });
@@ -1307,40 +1384,73 @@ Replace `let hopsSoFar = budget.spent(storyId);` with:
 Replace `hopsSoFar = budget.spend(storyId, hopsSoFar);` in the swap branch with:
 
 ```ts
+      // The new position IS the rung's index — not "one more than before". A hop
+      // may skip cooling rungs, so incrementing would under-count the descent.
       hopsSoFar = input.depthOf(next);
-      budget.spend(storyId, hopsSoFar);
+      budget.record(storyId, hopsSoFar);
+```
+
+`StoryHopBudget.spend(storyId, hopsSoFar)` stores `hopsSoFar + 1`, which is wrong for an index. Add a sibling to `src/agents/hop-budget.ts` and leave `spend` in place for the callers that still count events (`completeWithFallback`):
+
+```ts
+  /** Record an absolute ladder position — the depth-index counterpart to `spend`. */
+  record(storyId: string | undefined, depth: number): void {
+    if (storyId) this._byStory.set(storyId, depth);
+  }
 ```
 
 Add `finalDepth: hopsSoFar,` to every `return { result, fallbacks, didSwap, ... }` object in the function (there are six).
 
 - [ ] **Step 5: Supply `depthOf` from the manager**
 
-In `src/agents/manager.ts`, add to the `runWithFallback` input object:
+`src/agents/manager.ts` is at **596** of a 600-line hard limit, so the body of this cannot live there. Add to `src/agents/ladder-slot.ts`:
 
 ```ts
-      depthOf: (target) =>
-        ladderDepthOf(
-          availableCandidates(this._config.agent?.fallback?.map, this.getDefault(), () => false, this._resolveTarget),
-          target,
-          (a, b) => this._sameHop(a.agent, b.agent, a.tier, a.model, b.tier, b.model),
-        ),
+/**
+ * The configured ladder for `primary`, resolved to dispatchable shape.
+ *
+ * Deliberately unfiltered: depth is a position in the CONFIGURED ladder, so it
+ * must not shift with which rungs happen to be cooling at this instant.
+ */
+export function ladderRungs(
+  map: FallbackMap | undefined,
+  primary: string,
+  resolve: (target: FallbackTarget) => FallbackTarget,
+): FallbackTarget[] {
+  return availableCandidates(map, primary, () => false, resolve);
+}
 ```
 
-with `import { ladderDepthOf } from "./ladder-slot";`. Note the `() => false` predicate: depth is a position in the **configured** ladder, so it must not be affected by which rungs happen to be cooling right now.
+with `import { availableCandidates, type FallbackMap, type FallbackTarget } from "./swap-decision";`.
+
+Then in `src/agents/manager.ts` add exactly two lines — one private arrow beside the existing `_isExcluded` / `_sameHop` / `_resolveTarget` properties, and one entry in the `runWithFallback` input object:
+
+```ts
+  private readonly _depthOf = (t: FallbackTarget): number =>
+    ladderDepthOf(ladderRungs(this._config.agent?.fallback?.map, this.getDefault(), this._resolveTarget), t, (a, b) =>
+      this._sameHop(a.agent, b.agent, a.tier, a.model, b.tier, b.model),
+    );
+```
+
+```ts
+      depthOf: this._depthOf,
+```
+
+with `import { ladderDepthOf, ladderRungs } from "./ladder-slot";`.
 
 - [ ] **Step 6: Pass startDepth from callOp**
 
 In `src/operations/call.ts`, add `startDepth,` to the `runWithFallback` request object (alongside `runOptions`, `signal`, `executeHop`, `noFallback`, `bundle`).
 
-- [ ] **Step 7: Run the tests**
+- [ ] **Step 7: Run the tests and the size gate**
 
-Run: `bun test test/unit/agents/ test/unit/operations/ && bun run typecheck`
-Expected: PASS.
+Run: `bun test test/unit/agents/ test/unit/operations/ && bun run typecheck && bun run check:file-sizes && wc -l src/agents/manager.ts src/operations/call.ts`
+Expected: PASS, and both files at most 600 lines. Tasks 6 and 7 both add to `src/agents/manager.ts` (596 at the start of this branch) — if the total pushes it past 600, extract `_depthOf` and `_sameHop` into `ladder-slot.ts` as free functions taking `(models, defaultAgent, map)` rather than trimming a test.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/agents/manager-types.ts src/agents/manager-run-fallback.ts src/agents/manager.ts src/operations/call.ts test/unit/agents/ladder-depth-cap.test.ts
+git add src/agents/manager-types.ts src/agents/manager-run-fallback.ts src/agents/manager.ts src/agents/ladder-slot.ts src/agents/hop-budget.ts src/operations/call.ts test/unit/agents/ladder-depth-cap.test.ts
 git commit -m "feat(agents): bound fallback by ladder depth per slot"
 ```
 
@@ -1410,9 +1520,9 @@ function recordingAdapter() {
   const dispatched: Array<{ agent: string; model: string }> = [];
   const closed: SessionHandle[] = [];
   const adapter = makeAgentAdapter({
-    openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+    openSession: mock(async (name: string, opts: OpenSessionOpts): Promise<SessionHandle> => {
       dispatched.push({ agent: opts.agentName, model: opts.modelDef.model });
-      return { id: name, agentName: opts.agentName, modelDef: opts.modelDef } as SessionHandle;
+      return { id: name, agentName: opts.agentName, modelDef: opts.modelDef };
     }),
     closeSession: mock(async (handle: SessionHandle) => {
       closed.push(handle);
@@ -1424,7 +1534,7 @@ function recordingAdapter() {
 describe("a story's ladder across three operations", () => {
   test("op 2 dispatches the endpoint op 1 swapped to, with THAT model on the handle", async () => {
     const { adapter, dispatched } = recordingAdapter();
-    const sm = new SessionManager({ getAdapter: () => adapter, config: ladderConfig() as never });
+    const sm = new SessionManager({ getAdapter: () => adapter, config: ladderConfig() });
 
     // Op 1 opens on the primary (balanced), then swaps to rung 1 (powerful).
     await sm.openSession(SESSION, {
@@ -1463,7 +1573,7 @@ describe("a story's ladder across three operations", () => {
 
   test("native -> claude closes the native handle and dispatches sonnet", async () => {
     const { adapter, dispatched, closed } = recordingAdapter();
-    const sm = new SessionManager({ getAdapter: () => adapter, config: ladderConfig() as never });
+    const sm = new SessionManager({ getAdapter: () => adapter, config: ladderConfig() });
 
     await sm.openSession(SESSION, {
       agentName: "native",
@@ -1491,7 +1601,7 @@ describe("a story's ladder across three operations", () => {
 
   test("claude -> native closes the acp handle rather than orphaning it", async () => {
     const { adapter, dispatched, closed } = recordingAdapter();
-    const sm = new SessionManager({ getAdapter: () => adapter, config: ladderConfig() as never });
+    const sm = new SessionManager({ getAdapter: () => adapter, config: ladderConfig() });
 
     await sm.openSession(SESSION, {
       agentName: "claude",
