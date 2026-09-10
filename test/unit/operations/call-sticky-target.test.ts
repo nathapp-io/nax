@@ -5,9 +5,10 @@
  * per-story hop budget was spent it could no longer swap away again.
  *
  * These pin `callOp`'s fix: the target a story actually swapped to (via `runWithFallback`'s
- * `finalTarget`) is recorded on the run-scoped `runtime.storyAgentTargets` store, keyed by
- * the full escalation rung (`storyFixKey(storyId, tier, agent)`), and a later op of the
- * same story at the same rung dispatches straight to it instead of re-resolving `ctx.agentName`.
+ * `finalTarget`) is recorded on the run-scoped `runtime.ladderSlots` store, keyed by the
+ * full escalation rung plus role (`ladderSlotKey(storyId, tier, agent, role)`), and a later
+ * op of the same story, same rung, and same role dispatches straight to it instead of
+ * re-resolving `ctx.agentName`.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -17,6 +18,7 @@ import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { CallContext, CompleteOperation, RunOperation } from "@/operations";
 import { callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
+import type { SessionRole } from "@/session";
 
 const testSel = pickSelector("sticky-target-test", "routing");
 const createdRuntimes: NaxRuntime[] = [];
@@ -158,13 +160,19 @@ function managerSwappingRunAndComplete(
   });
 }
 
-function makeCtx(opts: { runtime: NaxRuntime; storyId: string; agentName: string }): CallContext {
+function makeCtx(opts: {
+  runtime: NaxRuntime;
+  storyId: string;
+  agentName: string;
+  sessionRole?: SessionRole;
+}): CallContext {
   return {
     runtime: opts.runtime,
     packageView: opts.runtime.packages.repo(),
     packageDir: "/tmp",
     agentName: opts.agentName,
     storyId: opts.storyId,
+    ...(opts.sessionRole !== undefined ? { sessionOverride: { role: opts.sessionRole } } : {}),
   };
 }
 
@@ -216,14 +224,16 @@ describe("callOp sticks a story to the agent it swapped to (#1964)", () => {
     expect(dispatched).toEqual(["native", "claude"]);
   });
 
-  test("a complete-kind op honours the target a run-kind op of the same story already swapped to", async () => {
+  test("a complete-kind op honours the target a run-kind op of the same story and role already swapped to", async () => {
     const dispatchedRun: string[] = [];
     const dispatchedComplete: string[] = [];
     const runtime = makeMockRuntime({
       agentManager: managerSwappingRunAndComplete("native", "claude", dispatchedRun, dispatchedComplete),
     });
     createdRuntimes.push(runtime);
-    const ctx = makeCtx({ runtime, storyId: "US-001", agentName: "native" });
+    // A ladder slot is per (story, tier, agent, role) — makeOp() declares role "implementer",
+    // so the complete-kind op must share that role via sessionOverride to see the same slot.
+    const ctx = makeCtx({ runtime, storyId: "US-001", agentName: "native", sessionRole: "implementer" });
 
     await callOp(ctx, makeOp("run-op"), "work");
     await callOp(ctx, makeCompleteOp("complete-op"), "work");

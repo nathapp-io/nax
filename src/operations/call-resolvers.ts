@@ -12,6 +12,7 @@
  */
 
 import type { AgentRunOutcome } from "../agents";
+import { type LadderSlot, ladderSlotKey } from "../agents/ladder-slot";
 import type { AgentFallbackRecord } from "../agents/manager-types";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import { resolveRetryPreset } from "../agents/retry";
@@ -26,7 +27,6 @@ import type {
 } from "../config";
 import { pickSelector, resolveModel, resolveModelForAgent } from "../config";
 import { NaxError } from "../errors";
-import { storyFixKey } from "../findings";
 import type { UserStory } from "../prd";
 import type { BuildContext, CallContext, Operation } from "./types";
 
@@ -176,60 +176,73 @@ export function recordAdapterFailure(
 }
 
 /**
- * Record the target a story swapped to, so its later ops start there.
+ * Record the rung a story's slot landed on, so its later ops start there.
  *
- * Only a real swap is recorded: pinning a story to its primary would add nothing and
+ * Only a real swap is recorded: pinning a slot to its primary would add nothing and
  * would freeze a choice nothing had to make.
  */
-export function recordStoryAgentTarget(
+export function recordLadderSlot(
   ctx: CallContext,
   target: FallbackTarget | undefined,
+  depth: number,
   swapped: boolean,
   tier: string | undefined,
+  role: string | undefined,
 ): void {
   if (!swapped || !target || !ctx.storyId) return;
-  ctx.runtime.storyAgentTargets.set(storyFixKey(ctx.storyId, tier, ctx.agentName), target);
+  ctx.runtime.ladderSlots.set(ladderSlotKey(ctx.storyId, tier, ctx.agentName, role), { target, depth });
+}
+
+/** The slot this story's role already landed on at this rung, if any. */
+export function ladderSlotFor(
+  ctx: CallContext,
+  tier: string | undefined,
+  role: string | undefined,
+): LadderSlot | undefined {
+  if (!ctx.storyId) return undefined;
+  return ctx.runtime.ladderSlots.get(ladderSlotKey(ctx.storyId, tier, ctx.agentName, role));
 }
 
 interface FallbackDispatchOutcome {
   readonly fallbacks: readonly AgentFallbackRecord[];
   readonly finalTarget?: FallbackTarget;
   readonly didSwap?: boolean;
+  /** Ladder index `finalTarget` landed on. Populated once Task 7 wires the real dispatch outcome. */
+  readonly finalDepth?: number;
 }
 
 /**
  * Record both sinks a dispatch outcome feeds: the story's swap-hop ledger, and — only
- * when a swap actually happened — the sticky target this story's later ops should reuse.
- * Shared by callOp's run-kind and complete-kind branches so neither drifts from the other.
+ * when a swap actually happened — the sticky slot this story's later ops of the same
+ * role should reuse. Shared by callOp's run-kind and complete-kind branches so neither
+ * drifts from the other.
  */
 export function recordDispatchOutcome(
   ctx: CallContext,
   outcome: FallbackDispatchOutcome,
   tier: string | undefined,
+  role: string | undefined,
 ): void {
   recordAgentFallbacks(ctx, outcome.fallbacks);
-  recordStoryAgentTarget(ctx, outcome.finalTarget, outcome.didSwap === true, tier);
+  recordLadderSlot(ctx, outcome.finalTarget, outcome.finalDepth ?? 0, outcome.didSwap === true, tier, role);
 }
 
-/** The target this story already swapped to at this rung, if any. */
-export function stickyAgentTarget(ctx: CallContext, tier: string | undefined): FallbackTarget | undefined {
-  if (!ctx.storyId) return undefined;
-  return ctx.runtime.storyAgentTargets.get(storyFixKey(ctx.storyId, tier, ctx.agentName));
-}
-
-/** The agent and model callOp actually dispatches to, once any sticky swap is applied. */
+/** The agent, model, and ladder depth callOp actually dispatches to, once any sticky slot is applied. */
 export interface DispatchTarget {
   readonly agent: string;
   readonly modelDef: ModelDef;
+  /** Ladder index this dispatch starts from — 0 unless a slot moved it. */
+  readonly startDepth: number;
 }
 
 /**
- * Decide the agent and model `callOp` actually dispatches to for this invocation.
+ * Decide the agent, model, and ladder depth `callOp` actually dispatches to for this
+ * invocation.
  *
- * A sticky target this story already swapped to (via `stickyAgentTarget`) outranks the
+ * A sticky slot this story's role already landed on (via `ladderSlotFor`) outranks the
  * op's own resolution (nax#1964) — re-deriving the agent from `ctx.agentName` every op
  * is what sent a story back to a dead primary once it had swapped away. Falls back to
- * `resolved` unchanged when no swap has happened yet at this rung.
+ * `resolved` unchanged at depth 0 when no swap has happened yet at this rung.
  *
  * Called once, before `callOp` branches on `op.kind` — so a `kind:"run"` op and a
  * `kind:"complete"` op of the same story resolve through the exact same sticky lookup
@@ -241,12 +254,14 @@ export function resolveDispatchTarget(
   effectiveModels: ModelsConfig,
   effectiveTier: string,
   defaultAgent: string,
+  role: string | undefined,
 ): DispatchTarget {
-  const sticky = stickyAgentTarget(ctx, resolved.modelTier);
-  if (!sticky) return { agent: resolved.agent, modelDef: resolved.modelDef };
+  const slot = ladderSlotFor(ctx, resolved.modelTier, role);
+  if (!slot) return { agent: resolved.agent, modelDef: resolved.modelDef, startDepth: 0 };
+  const { target } = slot;
   const modelDef =
-    sticky.model !== undefined
-      ? resolveModel(sticky.model)
-      : resolveModelForAgent(effectiveModels, sticky.agent, sticky.tier ?? effectiveTier, defaultAgent);
-  return { agent: sticky.agent, modelDef };
+    target.model !== undefined
+      ? resolveModel(target.model)
+      : resolveModelForAgent(effectiveModels, target.agent, target.tier ?? effectiveTier, defaultAgent);
+  return { agent: target.agent, modelDef, startDepth: slot.depth };
 }

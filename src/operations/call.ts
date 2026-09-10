@@ -89,6 +89,9 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const resolved = resolveConfiguredModel(effectiveModels, ctx.agentName, opModel, defaultAgent);
   // Pin default: a pinned (tierless) resolution swaps via "balanced" unless the fallback map names a tier (spec §7).
   const effectiveTier = resolved.modelTier ?? "balanced";
+  // Sticky slots are keyed per role, so both branches need it before resolving dispatch.
+  const sessionRole =
+    ctx.sessionOverride?.role ?? (op.kind === "run" ? (op as RunOperation<I, O, C>).session.role : undefined);
   // A swap this story already made outranks the op's own resolution — see resolveDispatchTarget (nax#1964).
   const { agent: dispatchAgent, modelDef: dispatchModelDef } = resolveDispatchTarget(
     ctx,
@@ -96,11 +99,11 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     effectiveModels,
     effectiveTier,
     defaultAgent,
+    sessionRole,
   );
 
   if (op.kind === "complete") {
     const completeOp = op as CompleteOperation<I, O, C>;
-    const sessionRole = ctx.sessionOverride?.role;
     // Explicitly compute sessionName so callers (e.g. mocks) see it without relying
     // on ACP adapter's internal derivation. Only set when both sessionRole and a
     // non-empty packageDir are available (mirrors the adapter-lifecycle logic).
@@ -143,7 +146,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         );
         // nax#1712: mirror the run branch at the bottom of this file — a swap taken
         // inside completeWithFallback is only attributable to a story here.
-        recordDispatchOutcome(ctx, completeOutcome, resolved.modelTier);
+        recordDispatchOutcome(ctx, completeOutcome, resolved.modelTier, sessionRole);
         const raw = completeOutcome.result;
         const parsedComplete = op.parse(raw.output, input, buildCtx);
         return await runPostParse(op, parsedComplete, input, buildCtx);
@@ -206,7 +209,6 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const runOp = op as RunOperation<I, O, C>;
 
   const story = ctx.story ?? synthesizeStory(ctx.storyId);
-  const sessionRole = ctx.sessionOverride?.role ?? runOp.session.role;
 
   // Resolve run-kind retry strategy once before the first send.
   // op.retry and op.hopBody compose: when both are set, the user body receives
@@ -466,7 +468,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // store instead, so hops from every op in the story reach StoryMetrics.fallback on the
   // sequential success path. Parallel and failed stories build metrics elsewhere and do
   // not read this yet — see #1709.
-  recordDispatchOutcome(ctx, outcome, resolved.modelTier);
+  recordDispatchOutcome(ctx, outcome, resolved.modelTier, sessionRole);
   recordAdapterFailure(ctx, outcome.result.adapterFailure);
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),
