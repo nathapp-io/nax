@@ -3,7 +3,7 @@
   "feature": "recurrence-demotion-truth",
   "branchName": "feat/recurrence-demotion-truth",
   "createdAt": "2026-02-22T00:00:00.000Z",
-  "updatedAt": "2026-09-10T10:05:14.696Z",
+  "updatedAt": "2026-09-10T10:43:08.255Z",
   "userStories": [
     {
       "id": "US-001",
@@ -45,7 +45,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Focused recurrence module and type updates with behaviorally sensitive compatibility paths."
+        "reasoning": "Focused recurrence module and type updates with behaviorally sensitive compatibility paths.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/review/recurrence-demotion.ts",
@@ -55,6 +58,11 @@
       "expectedFiles": [
         "test/unit/review/recurrence-demotion-retirement.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "85108b0732a205e997f5163b0a1c607c09fffe15",
+      "failureStage": "execution",
       "outOfScope": [
         "the wording of the reviewer prompt; the `meta.coverageGap` tag's own semantics, which are unchanged."
       ]
@@ -90,9 +98,6 @@
         "test/unit/config/schemas-review.test.ts",
         "test/unit/config/semantic-review.test.ts"
       ],
-      "outOfScope": [
-        "the runtime default `classifyRecurrence` applies when the field is absent from a caller-supplied config object, which US-001 owns."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/config/schemas-review.test.ts",
@@ -102,6 +107,12 @@
           "path": "test/unit/config/semantic-review.test.ts",
           "reason": "the assertion at `:113` pins `result.data.review.semantic` with `toEqual`, including a nested `recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 }`. The new schema default breaks it against a correct implementation. US-002 owns updating it to the new invariant: the nested object also carries `maxAdvisoryRounds: 2`."
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "the runtime default `classifyRecurrence` applies when the field is absent from a caller-supplied config object, which US-001 owns."
       ]
     },
     {
@@ -150,6 +161,9 @@
         "src/operations/semantic-review.ts",
         "src/execution/story-orchestrator/review-decision.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "the computation of `passed`; enabling `recurrenceDemotion` for semantic-review, whose default stays `false`."
       ]
@@ -199,14 +213,17 @@
       "expectedFiles": [
         "test/unit/execution/non-blocking-fix-retirement.test.ts"
       ],
-      "outOfScope": [
-        "the run-end advisory report surface, which continues to read `advisoryFindings` and therefore still lists retired findings."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/prompts/builders/prior-iterations-builder.test.ts",
           "reason": "assertions over the rendered block's finding count and its verdict template. Under AC 1 and AC 5 a retired entry leaves the verdict list and the template count drops accordingly, so any count-based expectation over a fixture containing a stamped entry fails against a correct implementation. US-003 owns updating them to the new invariant: the verdict list and its template count only entries not stamped `disposition: \"retired\"`, and retired entries appear once in the acknowledgement section."
         }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "the run-end advisory report surface, which continues to read `advisoryFindings` and therefore still lists retired findings."
       ]
     }
   ],

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-09-10T10-08-53-985Z",
+    "feature": "recurrence-demotion-truth",
+    "startedAt": "2026-09-10T10:08:53.985Z",
+    "status": "crashed",
+    "dryRun": false,
+    "pid": 12108,
+    "crashedAt": "2026-09-10T10:31:43.483Z",
+    "crashSignal": "SIGINT"
+  },
+  "progress": {
+    "total": 4,
+    "passed": 0,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 3
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 60
+  },
+  "current": {
+    "storyId": "US-001",
+    "title": "Classify and stamp terminal advisory recurrence",
+    "complexity": "medium",
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
+    "attempt": 2,
+    "phase": "routing"
+  },
+  "iterations": 0,
+  "updatedAt": "2026-09-10T10:31:43.483Z",
+  "durationMs": 1369498
+}
