@@ -19,13 +19,38 @@ import type { FallbackTarget } from "./swap-decision";
 
 /** The `AgentManager` surface `resolveStartAgent` reads. */
 export interface StartAgentSource {
-  isUnavailable(agent: string): boolean;
+  isUnavailable(agent: string, tier?: string, model?: string): boolean;
   nextCandidate(current: string, hopsSoFar: number): FallbackTarget | null;
 }
 
 /** Minimal logger surface — `getSafeLogger()` and the manager's override both satisfy it. */
 export interface HopBudgetLogger {
   info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
+}
+
+/** The endpoint an operation would dispatch to if it started on its primary. */
+export interface StartEndpoint {
+  readonly tier?: string;
+  readonly model?: string;
+}
+
+/**
+ * Whether the primary is unavailable for the endpoint an operation would actually
+ * dispatch to — not the bare agent name: on the native transport one agent fronts
+ * several providers, so "native is unavailable" must not be true just because some
+ * OTHER tier of it is cooling.
+ *
+ * Falls back to the bare-agent probe when the narrow one misses and an endpoint was
+ * named: a genuinely agent-wide fault (bad credentials, missing binary) and a
+ * model-scoped fault whose own identity could not be resolved when it was recorded
+ * (no endpoint to key on) both land on the bare agent key, and only a bare query
+ * finds either — `CooldownStore` only treats that key as blanket-agent for the
+ * former, but a bare *query* still surfaces it either way (see cooldown-store.ts).
+ */
+function isPrimaryUnavailable(source: StartAgentSource, primary: string, endpoint: StartEndpoint | undefined): boolean {
+  if (source.isUnavailable(primary, endpoint?.tier, endpoint?.model)) return true;
+  const namedEndpoint = endpoint?.tier !== undefined || endpoint?.model !== undefined;
+  return namedEndpoint && source.isUnavailable(primary);
 }
 
 /**
@@ -44,8 +69,9 @@ export function resolveStartAgent(
   fallbackEnabled: boolean | undefined,
   storyId: string | undefined,
   logger: HopBudgetLogger | null | undefined,
+  endpoint?: StartEndpoint,
 ): FallbackTarget {
-  if (!fallbackEnabled || !source.isUnavailable(primary)) return { agent: primary };
+  if (!fallbackEnabled || !isPrimaryUnavailable(source, primary, endpoint)) return { agent: primary };
   const candidate = source.nextCandidate(primary, 0);
   if (!candidate) return { agent: primary };
   logger?.info("agent-manager", "Primary agent already unavailable — starting on fallback", {

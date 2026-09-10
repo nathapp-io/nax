@@ -28,7 +28,7 @@ export interface RunFallbackInput {
   readonly dispatchEvents: IDispatchEventBus;
   readonly logger: LoggerLike | null | undefined;
   readonly getDefault: () => string;
-  readonly isUnavailable: (agent: string, tier?: string) => boolean;
+  readonly isUnavailable: (agent: string, tier?: string, model?: string) => boolean;
   readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string, model?: string) => void;
   readonly nextCandidate: (
     current: string,
@@ -46,7 +46,10 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   const fallbacks: AgentFallbackRecord[] = [];
   const primaryAgent = input.primaryAgentOverride ?? input.getDefault();
   const storyId = request.runOptions.storyId;
-  const start = resolveStartAgent(input, primaryAgent, config.agent?.fallback?.enabled, storyId, logger);
+  const start = resolveStartAgent(input, primaryAgent, config.agent?.fallback?.enabled, storyId, logger, {
+    tier: request.runOptions.modelTier,
+    model: request.runOptions.modelDef?.model,
+  });
   let currentAgent = start.agent;
   let currentTarget: FallbackTarget = { ...start };
   let currentHopKind: HopKind = {

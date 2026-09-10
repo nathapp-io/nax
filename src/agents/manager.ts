@@ -200,7 +200,7 @@ export class AgentManager implements IAgentManager {
       dispatchEvents: this._dispatchEvents,
       logger: this._loggerOverride ?? getSafeLogger(),
       getDefault: () => this.getDefault(),
-      isUnavailable: (agent, tier) => this.isUnavailable(agent, tier),
+      isUnavailable: (agent, tier, model) => this.isUnavailable(agent, tier, model),
       markUnavailable: (agent, failure, tier, model) => this.markUnavailable(agent, failure, tier, model),
       nextCandidate: (cur, hops, exclude, tier, model) => this.nextCandidate(cur, hops, exclude, tier, model),
       resolveExhaustion: (options) => this._resolveExhaustion(options),
