@@ -1475,10 +1475,25 @@ drives the same native-A-fails-lands-on-B-fails-lands-on-C shape through `callOp
 (`nextCandidate`, depth-aware selection, `CooldownStore`), the real
 `agent.fallback.map` ladder resolution, a real `SessionManager` (`decideReuse`), and
 the real slot read/write path, with only the adapter's `openSession`/`sendTurn`
-stubbed. It does not re-drive the `native <-> claude` transitions through that full
-stack — those stay proven only at the `SessionManager`-only level below. Both files are
-required to substantiate the L4 verification claim; keep the description below (of
-`ladder-across-ops.test.ts` alone) scoped to what it actually tests.
+stubbed. A third file, `test/unit/agents/ladder-cross-transport-composite.test.ts`
+(also added in the final fix wave), closes the remaining gap: it drives
+`native -> claude` and `claude -> native` through that same full `callOp` /
+`AgentManager` / real-ladder / real-`SessionManager` / real-slot-path stack, with a
+`protocol: "hybrid"` config (required for a ladder mixing `native` with an acpx
+agent). It asserts the landing adapter is dispatched with its OWN configured model,
+and — the assertion this task exists for — that `adapter.closeSession` is called
+with the PRIOR handle in both directions, naming which agent it belonged to; before
+the branch's fix, a cross-agent swap overwrote `SessionManager`'s `_liveHandles`
+entry without closing it, which orphans the `acpx` subprocess specifically on
+`claude -> native` (the reverse direction leaks nothing, since `native` has no
+process). Verified to have teeth: reverting `decideReuse`'s agent-mismatch branch
+from `close-then-reopen` to `reopen` fails both new tests' close assertions, then
+restored clean. The `native <-> claude` close/reopen behaviour is now proven at both
+the `SessionManager`-only level (this task's file, below) and the full
+`callOp`/`AgentManager`/slot-path level (the third file) — no residual gap remains at
+this layer. All three files are required to substantiate the L4 verification claim;
+keep the description below (of `ladder-across-ops.test.ts` alone) scoped to what it
+actually tests.
 
 At the `SessionManager`-only level: a real `SessionManager`, with only adapter dispatch stubbed, proving `decideReuse`'s reuse/close-then-reopen behaviour across a hand-supplied model sequence.
 

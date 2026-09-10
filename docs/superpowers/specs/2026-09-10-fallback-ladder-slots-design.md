@@ -276,10 +276,23 @@ specifically.
   `callOp` wrote, not by the test supplying it. Only the adapter's `openSession` /
   `sendTurn` primitives are stubbed, scripted rate-limit / rate-limit / success so
   the real `nextCandidate` chooses native B then native C (asserted to be neither
-  `claude` nor native A). **Residual gap:** the composite test covers only the
-  native ladder (A -> B -> C); it does not re-drive the `native <-> claude`
-  close/reopen transitions through the full `callOp` stack — those remain proven
-  only at the `SessionManager`-only level in the first file.
+  `claude` nor native A).
+  `test/unit/agents/ladder-cross-transport-composite.test.ts` closes the
+  remaining cross-transport gap: it drives `native -> claude` and `claude ->
+  native` through the same `callOp` stack (real `AgentManager.nextCandidate`,
+  real ladder resolution from a `protocol: "hybrid"` `agent.fallback.map`, real
+  `SessionManager`, real slot path), asserting the landing adapter is invoked
+  with ITS OWN configured model (not the prior agent's), and — the assertion
+  that matters — that `adapter.closeSession` is called with the PRIOR handle in
+  both directions, identifying which agent it belonged to. That is the one this
+  branch exists for: before the fix, a cross-agent swap overwrote
+  `SessionManager`'s `_liveHandles` entry without closing it, orphaning the
+  `acpx` subprocess on `claude -> native` specifically. Confirmed to have teeth:
+  reverting `decideReuse`'s agent-mismatch branch from `close-then-reopen` to
+  `reopen` fails both new tests' close assertions. The `native <-> claude`
+  close/reopen behaviour is therefore now proven at both the `SessionManager`-only
+  level (first file) and the full `callOp`/`AgentManager`/slot-path level (this
+  file); no residual gap remains at this layer.
 - **L5 — live fallback-probe run.** The only end-to-end proof for the transports: a real
   run with a deliberately dead primary, reading the `model` field on the
   `Agent call started` line after each `Agent swap triggered`. Requires explicit approval
