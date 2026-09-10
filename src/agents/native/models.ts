@@ -6,9 +6,9 @@
  * (ADR-027 section 1). Under acpx the same string stays opaque.
  */
 
-import type { Pricing, ThinkingLevel } from "@nathapp/nax-ai";
+import type { Pricing, ProviderOverride, ThinkingLevel } from "@nathapp/nax-ai";
 import type { TokenUsage } from "@/agents/cost";
-import type { TokenPricing } from "@/config/schema-types";
+import type { ProviderCatalogOverride, TokenPricing } from "@/config/schema-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { parseModelSpec } from "../model-spec";
@@ -75,7 +75,7 @@ export function parseNativeModel(raw: string): NativeModelRef {
  * level upstream, this fails to COMPILE — a real gate, not a comment that can
  * silently drift out of sync with the union it mirrors.
  */
-const THINKING_LEVELS: Record<ThinkingLevel, true> = {
+export const THINKING_LEVELS: Record<ThinkingLevel, true> = {
   off: true,
   minimal: true,
   low: true,
@@ -124,6 +124,32 @@ export function toNaxTokenUsage(usage: NativeUsage): TokenUsage {
     ...(usage.cacheReadTokens !== undefined ? { cacheReadInputTokens: usage.cacheReadTokens } : {}),
     ...(usage.cacheWriteTokens !== undefined ? { cacheCreationInputTokens: usage.cacheWriteTokens } : {}),
   };
+}
+
+/**
+ * Translate nax's config-side catalog overrides (agent.native.catalogOverrides,
+ * nax#1982) into nax-ai's declaration-data `ProviderOverride` records.
+ *
+ * The override is a COMPLETE entry, not a patch: nax-ai's `normaliseCatalog`
+ * applies it last through `setModel`, which replaces any same-id entry and
+ * lazily creates the provider bucket — that is what makes an id absent from
+ * the bundled pi-ai snapshot resolvable (verified against nax-ai 0.1.10).
+ * `provider` is stamped from the outer record because nax-ai's `ResolvedModel`
+ * carries it per model.
+ */
+export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[]): ProviderOverride[] {
+  return overrides.map((override) => ({
+    provider: override.provider,
+    models: override.models.map((model) => ({
+      id: model.id,
+      provider: override.provider,
+      protocol: model.protocol,
+      pricing: model.pricing,
+      contextWindow: model.contextWindow,
+      supportsTools: model.supportsTools,
+      thinkingLevels: model.thinkingLevels,
+    })),
+  }));
 }
 
 /**
