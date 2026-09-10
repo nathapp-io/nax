@@ -134,11 +134,36 @@ export function tagCoverageGap<T extends { meta?: Record<string, unknown> }>(fin
   return findings.map((f) => ({ ...f, meta: { ...(f.meta ?? {}), coverageGap: true } }));
 }
 
-export type RecurrenceConfig = { enabled: boolean; maxBlockingRounds: number };
+export type RecurrenceConfig = {
+  enabled: boolean;
+  maxBlockingRounds: number;
+  /**
+   * Cap on sub-threshold (non-blocking) appearances before a finding is
+   * moved to the terminal `retired` bucket. Optional for back-compat;
+   * defaults to 2 when unset.
+   */
+  maxAdvisoryRounds?: number;
+};
+
+/** Default cap for sub-threshold advisory retirement when `maxAdvisoryRounds` is omitted. */
+export const DEFAULT_MAX_ADVISORY_ROUNDS = 2;
+
 export type RecurrenceResult<T = AdversarialLLMFinding> = {
   blocking: T[];
   advisory: T[];
   demoted: T[];
+  /**
+   * Sub-threshold findings whose appearances (including the current round)
+   * meet `maxAdvisoryRounds`. Terminal — the finding is reported but
+   * no longer rendered into the fix lane.
+   */
+  retired: T[];
+  /**
+   * Every accepted finding stamped with `meta.recurrence.disposition` (and
+   * `rounds`, and `wasBlocking` for demoted/retired). Returned in input
+   * order so callers can persist the stamped set.
+   */
+  classified: T[];
 };
 
 /**
@@ -148,6 +173,10 @@ export type RecurrenceResult<T = AdversarialLLMFinding> = {
  * disjointness is *enforced*, not merely intended: `validateLLMShape` maps any
  * off-taxonomy value (including a stray `test-gap`) to `other` at the parse
  * boundary, so the test-gap carve-out below cannot fire for a semantic finding.
+ *
+ * `meta` is read so existing unrelated keys survive the stamp; the type is
+ * widened from `AdversarialLLMFinding` so callers using the wire-format
+ * `Finding` (which carries `meta`) also flow through this function.
  */
 export interface RecurrenceCandidate {
   severity: string;
@@ -155,19 +184,33 @@ export interface RecurrenceCandidate {
   issue: string;
   category?: string;
   acIndex?: number;
+  meta?: Record<string, unknown>;
 }
 
 /**
- * Partition accepted adversarial findings into block / advisory / demoted.
+ * Partition accepted adversarial findings into block / advisory / demoted / retired,
+ * and stamp every accepted finding with its `meta.recurrence` so downstream
+ * consumers can render the stamped set without re-running classification.
  *
- * - test-gap (file matches a test-file pattern) → block (carve-out preserved).
- * - non-error severity → advisory.
- * - error, count n ≥ maxBlockingRounds+1 → demoted (recurrence coverage-gap).
- * - error, (n==1 OR prev sighting was error) → block (entry guard).
- * - error, else (n==2, prev not error) → advisory (oscillation suppressed).
+ * The recurrence count is computed for EVERY finding (AC: the severity gate
+ * selects which cap applies, the count does not depend on severity). Bucket
+ * selection then:
  *
- * `demoted` is a subset reported separately for coverage-gap logging; callers
- * surface it through advisoryFindings.
+ * - test-gap on a test-file path AND severity ≥ threshold → blocking (carve-out
+ *   preserved; bypasses the cap so a test-gap that has recurred 10 times still
+ *   blocks).
+ * - severity ≥ threshold:
+ *   - n ≥ maxBlockingRounds+1 → demoted (recurrence coverage-gap, wasBlocking=true).
+ *   - n == 1 OR prev sighting was blocking → blocking (entry guard).
+ *   - else (n==2, prev not blocking) → advisory (oscillation suppressed).
+ * - severity < threshold:
+ *   - n ≥ maxAdvisoryRounds (default 2) → retired (terminal advisory, wasBlocking=false).
+ *   - else → advisory.
+ *
+ * `classified` carries every input finding in input order, stamped with
+ * `meta.recurrence = { disposition, rounds, wasBlocking? }`. When
+ * `cfg.enabled` is false, `classified` is empty and no `meta.recurrence` is
+ * stamped — the legacy severity-only partition is preserved.
  */
 export function classifyRecurrence<T extends RecurrenceCandidate>(
   accepted: T[],
@@ -180,37 +223,79 @@ export function classifyRecurrence<T extends RecurrenceCandidate>(
   const blocking: T[] = [];
   const advisory: T[] = [];
   const demoted: T[] = [];
+  const retired: T[] = [];
+  const classified: T[] = [];
 
   if (!cfg.enabled) {
     for (const f of accepted) (isBlockingSeverity(f.severity, threshold) ? blocking : advisory).push(f);
-    return { blocking, advisory, demoted };
+    return { blocking, advisory, demoted, retired, classified };
   }
 
   const priorCounts = countPriorAppearances(priorIterations, source);
+  const maxAdvisory = cfg.maxAdvisoryRounds ?? DEFAULT_MAX_ADVISORY_ROUNDS;
 
   for (const f of accepted) {
-    // test-gap carve-out applies only to blocking severities (mirrors the
-    // upstream BLOCKING_SEVERITIES gate in ac-quote-validator.ts) — a warning/
-    // info test-gap must never block.
-    if (f.category === "test-gap" && testFileMatch(f.file) && isBlockingSeverity(f.severity, threshold)) {
-      blocking.push(f);
-      continue;
-    }
-    if (!isBlockingSeverity(f.severity, threshold)) {
-      advisory.push(f);
-      continue;
-    }
     const prior = lookupPriorAppearance(priorCounts, f);
-    const n = (prior?.count ?? 0) + 1;
+    const rounds = (prior?.count ?? 0) + 1;
+    const isBlocking = isBlockingSeverity(f.severity, threshold);
     const prevWasBlocking = prior !== undefined && isBlockingSeverity(prior.lastSeverity, threshold);
 
-    if (n >= cfg.maxBlockingRounds + 1) {
-      demoted.push(f);
-    } else if (n === 1 || prevWasBlocking) {
+    // test-gap carve-out applies only to blocking severities (mirrors the
+    // upstream BLOCKING_SEVERITIES gate in ac-quote-validator.ts) — a warning/
+    // info test-gap must never block, but it still participates in the
+    // advisory cap below.
+    if (f.category === "test-gap" && testFileMatch(f.file) && isBlocking) {
       blocking.push(f);
+      classified.push(stampRecurrence(f, "blocking", rounds, isBlocking));
+      continue;
+    }
+
+    let disposition: "blocking" | "advisory" | "demoted" | "retired";
+    let wasBlocking: boolean | undefined;
+
+    if (isBlocking) {
+      if (rounds >= cfg.maxBlockingRounds + 1) {
+        disposition = "demoted";
+        wasBlocking = true;
+        demoted.push(f);
+      } else if (rounds === 1 || prevWasBlocking) {
+        disposition = "blocking";
+        blocking.push(f);
+      } else {
+        disposition = "advisory";
+        advisory.push(f);
+      }
+    } else if (rounds >= maxAdvisory) {
+      disposition = "retired";
+      wasBlocking = false;
+      retired.push(f);
     } else {
+      disposition = "advisory";
       advisory.push(f);
     }
+
+    classified.push(stampRecurrence(f, disposition, rounds, wasBlocking));
   }
-  return { blocking, advisory, demoted };
+  return { blocking, advisory, demoted, retired, classified };
+}
+
+/**
+ * Stamp `meta.recurrence` onto a finding WITHOUT mutating the input. If the
+ * input has no `meta` it is left untouched (AC: "leaves that input finding
+ * without meta after the call"). If the input has unrelated `meta` keys they
+ * are preserved alongside `recurrence`.
+ */
+function stampRecurrence<T extends RecurrenceCandidate>(
+  f: T,
+  disposition: "blocking" | "advisory" | "demoted" | "retired",
+  rounds: number,
+  wasBlocking: boolean | undefined,
+): T {
+  const recurrence: Record<string, unknown> = { disposition, rounds };
+  if (wasBlocking !== undefined) recurrence.wasBlocking = wasBlocking;
+  const existingMeta = (f as { meta?: Record<string, unknown> }).meta;
+  return {
+    ...f,
+    meta: { ...(existingMeta ?? {}), recurrence },
+  };
 }
