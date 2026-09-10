@@ -44,6 +44,13 @@ export interface ToolRunContext {
    * maxBytes bounds only what the model is told -- see src/tools/bounded.ts.
    */
   readonly maxFileBytes: number;
+  /**
+   * Repo-configurable glob denylist (nax#1972, `execution.denyPaths` in
+   * config), narrowing what a tool may act on beyond containment and grants.
+   * Currently consumed by Delete only -- see src/tools/deny-paths.ts. Absent
+   * or empty means no additional narrowing.
+   */
+  readonly denyPaths?: readonly string[];
 }
 
 export interface CodingTool {

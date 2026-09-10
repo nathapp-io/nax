@@ -90,6 +90,13 @@ export function createCodingToolRuntime(opts: {
   extraTools?: readonly CodingTool[];
   /** Declared command names, so a denial can name `testScoped` only when the project has one. */
   declaredCommands?: ReadonlySet<string>;
+  /**
+   * Repo-configurable glob denylist (nax#1972, `execution.denyPaths`),
+   * forwarded verbatim into every ToolRunContext this runtime builds. See
+   * src/tools/deny-paths.ts for the matching semantics; today only Delete
+   * consults it.
+   */
+  denyPaths?: readonly string[];
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -228,6 +235,7 @@ export function createCodingToolRuntime(opts: {
           resolvedPaths: verdict.resolvedPaths,
           maxBytes,
           maxFileBytes,
+          ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
         });
         const kind = result.isError === true ? "error" : "ok";
         log(

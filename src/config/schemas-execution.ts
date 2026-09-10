@@ -233,6 +233,14 @@ export const ExecutionConfigSchema = z.object({
   typecheckCommand: z.string().nullable().optional(),
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
   permissions: PermissionsBlockSchema.optional(),
+  /**
+   * Repo-configurable glob denylist that narrows Delete beyond the
+   * tracked/gitignored rule (nax#1972). Checked before that rule, so it can
+   * refuse a path Delete would otherwise allow (e.g. a tracked file the repo
+   * wants protected regardless of git status). Optional, and narrows only --
+   * an empty or absent list changes nothing.
+   */
+  denyPaths: z.array(z.string()).optional(),
   smartTestRunner: smartTestRunnerFieldSchema,
   worktreeDependencies: WorktreeDependenciesConfigSchema.default({
     mode: "off",

@@ -166,6 +166,8 @@ export interface ExecutionConfig {
   flakeDetection: FlakeDetectionConfig;
   /** Mutation-check spot-check config (US-001) — opt-in mutation testing after GREEN. */
   mutationCheck: MutationCheckConfig;
+  /** Glob denylist narrowing Delete beyond tracked/gitignored (nax#1972). */
+  denyPaths?: string[];
 }
 
 export type { FlakeDetectionConfig, InstallConfig, MutationCheckConfig } from "./runtime-types-execution";

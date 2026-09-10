@@ -64,6 +64,27 @@ describe("Delete wiring", () => {
     expect(outcome.reason).toContain("outside the permitted root");
   });
 
+  // nax#1972 / nax#1943: Delete carries no .git-specific logic of its own --
+  // the exclusion lives once, in resolveWithin (src/tools/policy.ts), for
+  // every path-bearing tool. This pins that a real Delete call still cannot
+  // reach anything under .git/, through the actual policy + runtime a call
+  // takes in production, rather than re-asserting it inside delete.ts.
+  test("the policy refuses a path under .git/ before Delete ever runs", async () => {
+    const policy = compileToolPolicy([{ tool: "Delete", patterns: ["*"] }], root);
+    const runtime = createCodingToolRuntime({ policy });
+    const outcome = await runtime.callTool("Delete", { path: ".git/index" });
+    expect(outcome.kind).toBe("denied");
+  });
+
+  test("denyPaths passed to createCodingToolRuntime reaches Delete ahead of the tracked/ignored logic", async () => {
+    const policy = compileToolPolicy([{ tool: "Delete", patterns: ["*"] }], root);
+    const runtime = createCodingToolRuntime({ policy, denyPaths: ["src/tracked.ts"] });
+    const outcome = await runtime.callTool("Delete", { path: "src/tracked.ts" });
+    expect(outcome.kind).toBe("error");
+    if (outcome.kind !== "error") throw new Error("expected a tool-level refusal");
+    expect(outcome.content).toContain("denyPaths");
+  });
+
   test("Delete then GitCommit records the removal in a commit", async () => {
     const policy = compileToolPolicy(
       [
