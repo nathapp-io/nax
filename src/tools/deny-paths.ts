@@ -42,18 +42,34 @@ function globToRegExp(pattern: string): RegExp {
     }
     out += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
-  return new RegExp(`^${out}$`);
+  // Case-insensitive, and both sides NFC-normalized at the call site.
+  // macOS and Windows default to case-insensitive filesystems, where ".ENV"
+  // and ".env" are one file -- a case-sensitive compare there lets a denied
+  // path be deleted by respelling it (nax#1972, reproduced). Applying the
+  // flag unconditionally rather than probing the filesystem keeps the rule
+  // one predictable thing: on a case-sensitive filesystem this over-refuses
+  // a genuinely distinct ".ENV", which is the direction a denylist should
+  // fail in.
+  return new RegExp(`^${out}$`, "i");
 }
 
 /**
  * Does `relativePath` match any pattern in `denyPaths`?
  *
- * `relativePath` is the path as the caller wrote it (e.g. `input.path`),
- * matched exactly as a ToolGrant pattern would match a path field -- not the
- * resolved absolute path, which would make every pattern implicitly rooted
- * at the filesystem instead of at the repo.
+ * `relativePath` MUST already be canonical and repo-relative -- the caller
+ * derives it from the resolved entry, never from `input.path`. This is not a
+ * stylistic preference: matching the caller's own spelling means the denylist
+ * and the policy that approved the call are reading different strings, and
+ * every alternate spelling of one file ("./x", "x//y", "a/../x") walks past
+ * the denylist (nax#1972, reproduced). Repo-relative rather than absolute so
+ * a pattern is rooted at the repo, not at the filesystem.
+ *
+ * Both sides are NFC-normalized before comparison. macOS stores filenames
+ * decomposed (NFD), so a pattern typed in a config file and the path that
+ * comes back off disk can be byte-different while naming one file.
  */
 export function matchesDenyPaths(relativePath: string, denyPaths: readonly string[] | undefined): boolean {
   if (denyPaths === undefined || denyPaths.length === 0) return false;
-  return denyPaths.some((pattern) => globToRegExp(pattern).test(relativePath));
+  const candidate = relativePath.normalize("NFC");
+  return denyPaths.some((pattern) => globToRegExp(pattern.normalize("NFC")).test(candidate));
 }

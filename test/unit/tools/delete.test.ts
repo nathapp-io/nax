@@ -172,6 +172,22 @@ describe("deleteTool", () => {
     },
   );
 
+  // nax#1972: on a case-insensitive filesystem (macOS and Windows defaults)
+  // ".ENV" opens the very same inode as ".env", but `resolve`/`relative`
+  // preserve the caller's spelling, so a case-sensitive denylist compare let
+  // the agent delete a denied file by shouting its name. Reproduced before
+  // this test existed: denyPaths [".env"] + Delete ".ENV" removed .env and
+  // reported success. Matching is now case-insensitive everywhere -- a
+  // denylist that over-refuses a genuinely distinct ".ENV" on a
+  // case-sensitive filesystem fails in the safe direction; this one did not.
+  test("denyPaths refuses a case variant of a denied path", async () => {
+    const target = join(root, "src", "TRACKED.ts");
+    const res = await deleteTool.run({ path: "src/TRACKED.ts" }, { ...ctx([target]), denyPaths: ["src/tracked.ts"] });
+
+    expect(res.isError).toBe(true);
+    expect(existsSync(join(root, "src", "tracked.ts"))).toBe(true);
+  });
+
   test("denyPaths supports a glob", async () => {
     const target = join(root, "src", "also-tracked.ts");
     const res = await deleteTool.run({ path: "src/also-tracked.ts" }, ctx([target], ["src/**"]));
