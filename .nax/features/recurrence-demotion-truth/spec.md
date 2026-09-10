@@ -223,22 +223,38 @@ findings can carry `meta`, and stamp every returned finding with `meta.recurrenc
 #### Context Files
 - `src/review/recurrence-demotion.ts` — the function, its fingerprinting helpers, and `tagCoverageGap`
 - `src/review/types.ts` — the inline `recurrenceDemotion` shapes at `:132` and `:258`
-- `src/config/schemas-review.ts` — the two `recurrenceDemotion` schema blocks at `:77-82` and `:135-140`
-- `.nax/rules/config-patterns.md` — config-driven values, no hardcoded thresholds
+- `src/review/adversarial-helpers.ts` — `isBlockingSeverity` and the `RecurrenceCandidate` bound `tagCoverageGap` already uses
 
 #### Creates
 - `test/unit/review/recurrence-demotion-retirement.test.ts` — retirement and stamping tests; a sibling rather than growth, because `recurrence-demotion.test.ts` is already at the 400-line describe-split guidance in `.nax/rules/test-architecture.md`
 
 #### Modifies
 
-**US-001**
-- `test/unit/config/schemas-review.test.ts` — the test at `:6-9` asserts `expect(parsed.recurrenceDemotion).toEqual({ enabled: true, maxBlockingRounds: 2 })`, and `:10-15` makes the same exact-object assertion for the override case. `toEqual` is exact, so the schema's new `maxAdvisoryRounds` default fails both against a correct implementation. US-001 owns updating them to the new invariant: the parsed object also carries `maxAdvisoryRounds: 2`.
-- `test/unit/config/semantic-review.test.ts` — the assertion at `:113` pins `result.data.review.semantic` with `toEqual`, including a nested `recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 }`. The new schema default breaks it against a correct implementation. US-001 owns updating it to the new invariant: the nested object also carries `maxAdvisoryRounds: 2`.
-- `test/unit/config/semantic-review.test.ts` — the assertion at `:258` makes the same exact-object claim over `DEFAULT_CONFIG.review.semantic`. Same break, same replacing invariant.
+None. `recurrence-demotion.test.ts` keeps compiling because `maxAdvisoryRounds` is optional on `RecurrenceConfig`, and every sub-threshold fixture in it passes empty or blocking-severity priors, so no finding reaches the advisory cap.
 
-### US-002 — The stamp survives both mappers and reaches the audit record
+### US-002 — The advisory cap is a configured value
 
-Depends on: US-001.
+Depends on: nothing. Runs in parallel with US-001.
+
+Declare `maxAdvisoryRounds` on both `recurrenceDemotion` schema blocks so the cap is
+configuration rather than a literal. Split from US-001 because that story reaches the
+project's 24-AC cap without it.
+
+#### Context Files
+- `src/config/schemas-review.ts` — the two `recurrenceDemotion` schema blocks at `:77-82` and `:135-140`
+- `test/unit/config/schemas-review.test.ts` — the exact-object default assertions
+- `test/unit/config/semantic-review.test.ts` — the exact-object default assertions
+
+#### Modifies
+
+**US-002**
+- `test/unit/config/schemas-review.test.ts` — the test at `:6-9` asserts `expect(parsed.recurrenceDemotion).toEqual({ enabled: true, maxBlockingRounds: 2 })`, and `:10-15` makes the same exact-object assertion for the override case. `toEqual` is exact, so the schema's new `maxAdvisoryRounds` default fails both against a correct implementation. US-002 owns updating them to the new invariant: the parsed object also carries `maxAdvisoryRounds: 2`.
+- `test/unit/config/semantic-review.test.ts` — the assertion at `:113` pins `result.data.review.semantic` with `toEqual`, including a nested `recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 }`. The new schema default breaks it against a correct implementation. US-002 owns updating it to the new invariant: the nested object also carries `maxAdvisoryRounds: 2`.
+- `test/unit/config/semantic-review.test.ts` — the assertion at `:258` makes the same exact-object claim over `DEFAULT_CONFIG.review.semantic`. Same break, same replacing invariant. Listed separately from `:113` because a repeated path under one story is deduplicated by `nax plan`, so this bullet exists to keep the second assertion's reason on the record even though only one entry survives.
+
+### US-003 — The stamp survives both mappers and reaches the audit record
+
+Depends on: US-001, US-002.
 
 Give both LLM finding types an optional `meta`, forward `recurrence` through both mappers'
 allowlists, and have the review operations persist `classified` as `findings` and fold
@@ -260,9 +276,9 @@ None. The existing verify() tests survive: `adversarial-advisory-findings.test.t
 reaches the advisory cap and no `retired` entry is produced. `adversarial-review.test.ts`
 asserts on `findings` by length and `issue` only, which additive stamping does not disturb.
 
-### US-003 — Retirement takes effect in the prompt and in the fix lane
+### US-004 — Retirement takes effect in the prompt and in the fix lane
 
-Depends on: US-002.
+Depends on: US-003.
 
 Render retired findings in an acknowledgement block that forbids re-flagging rather than in
 the verdict list that mandates it, and stop seeding them into the non-blocking-fix lane.
@@ -270,8 +286,7 @@ the verdict list that mandates it, and stop seeding them into the non-blocking-f
 #### Context Files
 - `src/prompts/builders/prior-iterations-builder.ts` — `buildPriorIterationsBlock` at `:47`, `renderIteration` at `:86`, `renderFinding` at `:95`, `renderVerdictTemplate` at `:105`, and the `still-blocking` instruction at `:115`
 - `src/execution/non-blocking-fix.ts` — `actionableAdvisoryFindings` at `:54-60`
-- `src/execution/story-orchestrator/execution-plan.ts` — the nbf seed at `:396-402`
-- `src/review/recurrence-demotion.ts` — the stamp shape, created by US-001
+- `src/review/recurrence-demotion.ts` — the `meta.recurrence` stamp shape, created by US-001 and read by every filter in this story
 
 #### Creates
 - `test/unit/execution/non-blocking-fix-retirement.test.ts` — seed-filter tests; a sibling rather than growth, because `non-blocking-fix.test.ts` is 741 lines against the 800-line test limit
@@ -299,19 +314,27 @@ the verdict list that mandates it, and stop seeding them into the non-blocking-f
 12. `[unit]` A finding that already carries an unrelated `meta` key retains that key alongside `meta.recurrence` in `classified`.
 13. `[unit]` When `cfg.enabled` is `false`, `classifyRecurrence` returns an empty `retired` array.
 14. `[unit]` When `cfg.enabled` is `false`, no finding returned by `classifyRecurrence` carries `meta.recurrence`.
+15. `[unit]` When `cfg.enabled` is `false`, `classifyRecurrence` partitions findings into `blocking` and `advisory` by severity alone, matching its behaviour before this feature.
+16. `[unit]` Given a finding carrying no `acIndex`, `classifyRecurrence` counts its prior appearances using the existing file, category and issue-prefix fingerprint fallback, and its disposition is unaffected by the absence of `acIndex`.
 15. `[unit]` When `priorIterations` is empty, `classifyRecurrence` returns an empty `retired` array.
 16. `[unit]` When `priorIterations` is empty, every entry of `classified` carries `meta.recurrence.rounds` equal to 1.
 17. `[unit]` A finding whose `category` is `test-gap`, whose file matches the test-file predicate, and whose severity is at or above the blocking threshold is placed in `blocking` regardless of its appearance count.
 18. `[unit]` A finding whose `category` is `test-gap` and whose file matches the test-file predicate but whose severity is below the blocking threshold is not placed in `blocking`.
-19. `[unit]` Constructing the adversarial review config with `recurrenceDemotion.maxAdvisoryRounds` unset yields a resolved value of `2`.
-20. `[unit]` Constructing the semantic review config with `recurrenceDemotion.maxAdvisoryRounds` unset yields a resolved value of `2`.
-21. `[unit]` Constructing the semantic review config with `recurrenceDemotion.enabled` unset yields a resolved value of `false`.
-22. `[unit]` Constructing either review config with `recurrenceDemotion.maxAdvisoryRounds` set to `0` is rejected by schema validation.
-23. `[unit]` `tagCoverageGap` applied to a finding already carrying `meta.recurrence` returns a finding carrying both `meta.recurrence` and `meta.coverageGap` equal to `true`.
+19. `[unit]` `tagCoverageGap` applied to a finding already carrying `meta.recurrence` returns a finding carrying both `meta.recurrence` and `meta.coverageGap` equal to `true`.
 
 **Out of scope:** the wording of the reviewer prompt; the `meta.coverageGap` tag's own semantics, which are unchanged.
 
 ### US-002
+
+1. `[unit]` Constructing the adversarial review config with `recurrenceDemotion.maxAdvisoryRounds` unset yields a resolved value of `2`.
+2. `[unit]` Constructing the semantic review config with `recurrenceDemotion.maxAdvisoryRounds` unset yields a resolved value of `2`.
+3. `[unit]` Constructing the semantic review config with `recurrenceDemotion.enabled` unset yields a resolved value of `false`.
+4. `[unit]` Constructing either review config with `recurrenceDemotion.maxAdvisoryRounds` set to `0` is rejected by schema validation.
+5. `[unit]` Constructing the adversarial review config with `recurrenceDemotion.maxAdvisoryRounds` set to `5` yields a resolved value of `5`, so the cap is configuration rather than a literal.
+
+**Out of scope:** the runtime default `classifyRecurrence` applies when the field is absent from a caller-supplied config object, which US-001 owns.
+
+### US-003
 
 1. `[unit]` `toAdversarialReviewFindings` applied to an LLM finding carrying `meta.recurrence` returns a `Finding` whose `meta.recurrence` holds the same `disposition`, `rounds` and `wasBlocking` values.
 2. `[unit]` `toAdversarialReviewFindings` applied to an LLM finding carrying no `meta` returns a `Finding` whose `meta` does not include a `recurrence` key.
@@ -330,7 +353,7 @@ the verdict list that mandates it, and stop seeding them into the non-blocking-f
 
 **Out of scope:** the computation of `passed`; enabling `recurrenceDemotion` for semantic-review, whose default stays `false`.
 
-### US-003
+### US-004
 
 1. `[unit]` `buildPriorIterationsBlock` given an iteration whose findings include one stamped `meta.recurrence.disposition` equal to `retired` returns a block whose verdict-required list omits that finding.
 2. `[unit]` `buildPriorIterationsBlock` given that same iteration returns a block containing an acknowledgement section naming that finding's file and category.

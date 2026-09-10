@@ -1,0 +1,198 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "recurrence-demotion-truth",
+  "branchName": "feat/recurrence-demotion-truth",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-09-10T09:54:41.541Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Classify and stamp terminal advisory recurrence",
+      "description": "**Goal** — Add terminal advisory retirement and immutable disposition stamps to recurrence classification.\n\n**Motivation** — carried sub-threshold findings have no exit.\n\n**Approach** — The recurrence count is computed for every finding; the severity gate then selects which cap applies.\n\n`meta.recurrence` is written by `classifyRecurrence` on every finding it returns:\n\n```\n{\n  disposition: \"blocking\" | \"advisory\" | \"demoted\" | \"retired\",\n  rounds: number,          // this finding's appearance count including this round\n  wasBlocking: boolean     // severity was at or above the blocking threshold\n}\n```\n\n**Scope** — In: recurrence result/candidate/config types, recurrence algorithm, review schemas and inline config shapes. Out: mapper and review-operation propagation (US-002); prompt rendering and fix-lane seeding (US-003); Similarity-clustering or otherwise changing `fingerprintFor`. Retirement inherits whatever recurrence identity that function already provides.\n\n**Interface** —\n```typescript\nexport type RecurrenceConfig = { enabled: boolean; maxBlockingRounds: number; maxAdvisoryRounds?: number };\nexport type RecurrenceResult<T = AdversarialLLMFinding> = {\n  blocking: T[];\n  advisory: T[];\n  demoted: T[];\n  retired: T[];\n  classified: T[];\n};\nexport interface RecurrenceCandidate {\n  severity: string;\n  file: string;\n  issue: string;\n  category?: string;\n  acIndex?: number;\n  meta?: Record<string, unknown>;\n}\n```\n\nThe field is **optional in the type**, defaulted to `2` inside `classifyRecurrence`. Making it required would break 25 construction sites across `src/` and `test/`. The config schema still declares it with its own default, so configuration remains the source of the value.",
+      "acceptanceCriteria": [
+        "classifyRecurrence returns an object carrying retired and classified arrays in addition to blocking, advisory, and demoted arrays.",
+        "Given a warning finding, an error threshold, and fewer prior fingerprint appearances than maxAdvisoryRounds, classifyRecurrence places it in advisory and not retired.",
+        "Given a sub-threshold finding whose fingerprint appearance count including the current round is at or above maxAdvisoryRounds, classifyRecurrence places it in retired and not advisory.",
+        "Given an error-severity finding whose appearance count including the current round is at or above maxBlockingRounds + 1, classifyRecurrence places it in demoted and not retired.",
+        "When cfg omits maxAdvisoryRounds and a sub-threshold finding reaches appearance count 2, classifyRecurrence places it in retired using the documented default.",
+        "Every finding in classified carries meta.recurrence.disposition equal to the bucket name blocking, advisory, demoted, or retired that received it.",
+        "A finding in demoted carries meta.recurrence.wasBlocking equal to true.",
+        "A finding in retired carries meta.recurrence.wasBlocking equal to false.",
+        "Every finding in classified carries meta.recurrence.rounds equal to its prior appearance count plus one.",
+        "classified contains one entry per input finding in input order.",
+        "When an input finding has no meta, classifyRecurrence does not mutate it and it still has no meta after the call.",
+        "When an input finding carries an unrelated meta key, its classified entry retains that key alongside meta.recurrence.",
+        "When cfg.enabled is false, classifyRecurrence returns an empty retired array.",
+        "When cfg.enabled is false, no finding returned by classifyRecurrence carries meta.recurrence.",
+        "When cfg.enabled is false, classifyRecurrence partitions findings into blocking and advisory by severity exactly as before and returns classified as the unchanged input array.",
+        "When priorIterations is empty, classifyRecurrence returns an empty retired array.",
+        "When priorIterations is empty, every classified entry carries meta.recurrence.rounds equal to 1.",
+        "Given a finding without acIndex, classifyRecurrence uses the existing file, category, and issue-prefix fingerprint fallback and its disposition stamping remains unaffected.",
+        "Given a test-gap finding in a matching test file at or above the blocking threshold, classifyRecurrence places it in blocking regardless of appearance count.",
+        "Given a test-gap finding in a matching test file below the blocking threshold, classifyRecurrence does not place it in blocking.",
+        "When adversarial review config omits recurrenceDemotion.maxAdvisoryRounds, schema parsing resolves it to 2.",
+        "When semantic review config omits recurrenceDemotion.maxAdvisoryRounds, schema parsing resolves it to 2.",
+        "When semantic review config omits recurrenceDemotion.enabled, schema parsing resolves it to false.",
+        "When either review config sets recurrenceDemotion.maxAdvisoryRounds to 0, schema validation rejects it.",
+        "When tagCoverageGap is applied to a finding carrying meta.recurrence, it returns a finding carrying that meta.recurrence and meta.coverageGap equal to true."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "recurrence",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The algorithm changes a shared generic result contract and behavior across recurrence, schemas, types, and default assertions; isolated test and implementation sessions reduce regression risk."
+      },
+      "contextFiles": [
+        "src/review/recurrence-demotion.ts",
+        "src/review/types.ts",
+        "src/config/schemas-review.ts",
+        "test/unit/config/schemas-review.test.ts",
+        "test/unit/config/semantic-review.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/review/recurrence-demotion-retirement.test.ts"
+      ],
+      "outOfScope": [
+        "The wording of the reviewer prompt; the `meta.coverageGap` tag's own semantics, which are unchanged."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/config/schemas-review.test.ts",
+          "reason": "the test at `:6-9` asserts `expect(parsed.recurrenceDemotion).toEqual({ enabled: true, maxBlockingRounds: 2 })`, and `:10-15` makes the same exact-object assertion for the override case. `toEqual` is exact, so the schema's new `maxAdvisoryRounds` default fails both against a correct implementation. US-001 owns updating them to the new invariant: the parsed object also carries `maxAdvisoryRounds: 2`."
+        },
+        {
+          "path": "test/unit/config/semantic-review.test.ts",
+          "reason": "the assertion at `:113` pins `result.data.review.semantic` with `toEqual`, including a nested `recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 }`. The new schema default breaks it against a correct implementation. US-001 owns updating it to the new invariant: the nested object also carries `maxAdvisoryRounds: 2`."
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Propagate recurrence verdicts through review outputs",
+      "description": "**Goal** — Preserve recurrence stamps through LLM-to-Finding conversion and expose classified raw findings in review audit output.\n\n**Motivation** — a passing record can carry an `error` finding with no explanation.\n\n**Approach** — Both LLM finding types gain an optional `meta`, and both mappers gain one allowlist line forwarding `recurrence`.\n\nThe `result.findings` lane needs no mapper at all: per `semantic-helpers.ts:61-62` and #1861, the review audit persists the **raw op shape**, so a stamp on the LLM finding reaches `ReviewAuditEntry.result.findings` directly through `review-decision.ts:92`. That is the nax#1928 evidence surface, and it comes free.\n\n**Scope** — In: LLM finding metadata, mapper allowlists, classified operation findings, retired advisory folding, retirement telemetry. Out: recurrence classification/schema work (US-001); prompt rendering and fix-lane filtering (US-003); Changing how `passed` is computed at `adversarial-review.ts:512`. A record carrying `passed: true` beside a demoted `error` keeps that verdict and explains it.; Enabling `recurrenceDemotion` for semantic-review. The schema field is wired, the default stays `false`, and flipping it is a separate decision needing its own baseline.\n\n**Interface** — `AdversarialLLMFinding` and the semantic `LLMFinding` each gain `meta?: Record<string, unknown>`. `toAdversarialReviewFindings` and `llmFindingToFinding` each gain one allowlist line forwarding `f.meta?.recurrence` into `metaExtras`, alongside the existing `evidence` line. The review operations persist `classified` as `findings` and fold `retired` into `advisoryFindings`.",
+      "acceptanceCriteria": [
+        "When toAdversarialReviewFindings converts an LLM finding carrying meta.recurrence, the Finding meta.recurrence preserves disposition, rounds, and wasBlocking values.",
+        "When toAdversarialReviewFindings converts an LLM finding with no meta, the Finding meta has no recurrence key.",
+        "When toAdversarialReviewFindings converts an LLM finding carrying meta.recurrence and verifiedBy, the Finding carries both meta.recurrence and meta.verifiedBy.",
+        "When llmFindingToFinding converts a semantic LLM finding carrying meta.recurrence, the Finding meta.recurrence preserves disposition, rounds, and wasBlocking values.",
+        "When adversarialReviewOp.verify() accepts findings, its findings output contains one stamped meta.recurrence.disposition entry per accepted finding.",
+        "When adversarialReviewOp.verify() classifies entries as retired, advisoryFindings contains those entries in addition to the advisory, demoted, and AC-dropped entries it already carries.",
+        "adversarialReviewOp.verify() returns normalizedFindings containing only blocking-classified entries, so a retired finding is never routable to the rectification cycle.",
+        "Given a warning finding and matching priorAdversarialIterations sufficient to reach maxAdvisoryRounds, adversarialReviewOp.verify() returns that finding inside advisoryFindings stamped meta.recurrence.disposition retired.",
+        "When classifyRecurrence returns a non-empty retired array, adversarialReviewOp.verify() emits one info-level review log record per retired finding with event review.adversarial.recurrence_retired and the finding's file and category.",
+        "When classifyRecurrence returns demoted findings, adversarialReviewOp.verify() still emits one log record per demoted finding with event review.adversarial.recurrence_demoted.",
+        "When semanticReviewOp.verify() has recurrenceDemotion.enabled true, its findings output contains one stamped meta.recurrence.disposition entry per accepted finding.",
+        "When semanticReviewOp.verify() uses recurrenceDemotion.enabled false by default, its advisoryFindings entries carry no meta.recurrence.",
+        "Given an adversarial verify output whose findings carry meta.recurrence, when the review-audit entry is built, result.findings exposes those values so a reader of a passed true record can distinguish a demoted error from a miscomputed verdict without replaying demotion state.",
+        "When an error-severity finding is classified demoted and blocking is empty, adversarialReviewOp.verify() returns passed true, so the verdict rule at adversarial-review.ts:512 is unchanged by this feature."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "audit",
+        "metadata"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a bounded propagation change across five existing seams with established mapper and verify-test patterns, and no new abstraction or concurrency."
+      },
+      "contextFiles": [
+        "src/review/adversarial-helpers.ts",
+        "src/review/semantic-helpers.ts",
+        "src/operations/adversarial-review.ts",
+        "src/operations/semantic-review.ts",
+        "src/execution/story-orchestrator/review-decision.ts"
+      ],
+      "outOfScope": [
+        "The computation of `passed`; enabling `recurrenceDemotion` for semantic-review, whose default stays `false`."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Render retired findings as closed and exclude their fix seeds",
+      "description": "**Goal** — Move retired findings out of mandatory prior-review verdicts and prevent them from starting non-blocking fixes.\n\n**Motivation** — The only way to stop a reviewer re-raising a true finding is to keep telling it about the finding.\n\n**Approach** — So retirement is a **rendering** change: the finding stays in the store and stays in the prompt, but moves out of the verdict list — which requires a per-item classification and mandates identical re-flagging — into an acknowledgement block that states it is closed and must not be re-flagged. The reviewer keeps the memory; the prompt stops asking for the re-emission.\n\n`buildPriorIterationsBlock` partitions each iteration's findings by `meta.recurrence.disposition`. Entries stamped `retired` render in a separate acknowledgement section stating they are closed and must not be re-flagged; every other entry renders as today. The verdict template counts only the non-retired entries.\n\n`actionableAdvisoryFindings` additionally drops entries stamped `meta.recurrence.disposition === \"retired\"`. This is a seeding-site filter, matching that function's own documented convention. Without it a retired finding buys an agent session — the system would pay to fix what it just declared closed.\n\n**Scope** — In: prompt rendering partition/count and advisory seed filtering. Out: recurrence stamping and mapper/operation propagation (US-001 and US-002); Changing the `still-blocking` instruction at `prior-iterations-builder.ts:115`. Retirement works by moving a finding out of the verdict list, not by softening the instruction that governs the list.; Dropping retired findings from the iteration store or from `advisoryFindings`. They remain stored and remain reported; only their prompt rendering and their fix-lane eligibility change.; Excluding `acDropped` findings from the non-blocking-fix seed. That filter at `non-blocking-fix.ts:54-60` is an existing hold on nax#1801 and is left exactly as it stands.\n\n**Interface** — `buildPriorIterationsBlock<F extends Finding>(iterations: Iteration<F>[]): string` renders retired findings in an acknowledgement block and excludes them from the verdict-required total. `actionableAdvisoryFindings(findings: readonly Finding[]): readonly Finding[]` omits findings whose `meta.recurrence.disposition === \"retired\"`.",
+      "acceptanceCriteria": [
+        "Given an iteration containing a finding stamped meta.recurrence.disposition retired, buildPriorIterationsBlock omits that finding from its verdict-required list.",
+        "Given that iteration, buildPriorIterationsBlock returns an acknowledgement section naming the retired finding's file and category.",
+        "Given retired findings in the acknowledgement section, the section states they are closed and must not be re-flagged, so the still-blocking instruction does not apply to them.",
+        "Given an iteration whose findings carry no meta.recurrence, buildPriorIterationsBlock returns a block identical to the one it returns today, so rounds recorded before this feature render unchanged.",
+        "buildPriorIterationsBlock's verdict template counts only findings not stamped retired.",
+        "Given an iteration whose findings are all stamped retired, buildPriorIterationsBlock returns a block containing no verdict-required list.",
+        "Given three consecutive review rounds where a warning finding is emitted in round 1 and reaches maxAdvisoryRounds in round 2, the prior-iterations block built for round 3 lists that finding only in the acknowledgement section.",
+        "Given a finding stamped meta.recurrence.disposition retired, actionableAdvisoryFindings returns a list omitting it.",
+        "Given a finding stamped meta.recurrence.disposition advisory, actionableAdvisoryFindings returns a list containing it.",
+        "actionableAdvisoryFindings continues to omit findings whose actionRequired is false and findings whose acDropped is true.",
+        "When execution planning receives advisory findings whose only entries are retired, shouldRunNonBlockingFix receives an advisory count excluding retired findings and dispatches no fix pass."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "execution",
+        "recurrence"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The work is limited to existing prompt and advisory-seeding functions plus their wiring, with clear observable output and dispatch behavior."
+      },
+      "contextFiles": [
+        "src/prompts/builders/prior-iterations-builder.ts",
+        "src/execution/non-blocking-fix.ts",
+        "src/execution/story-orchestrator/execution-plan.ts",
+        "test/unit/prompts/builders/prior-iterations-builder.test.ts",
+        "test/unit/execution/non-blocking-fix.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/execution/non-blocking-fix-retirement.test.ts"
+      ],
+      "outOfScope": [
+        "The run-end advisory report surface, which continues to read `advisoryFindings` and therefore still lists retired findings."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/prompts/builders/prior-iterations-builder.test.ts",
+          "reason": "assertions over the rendered block's finding count and its verdict template. Under AC 1 and AC 5 a retired entry leaves the verdict list and the template count drops accordingly, so any count-based expectation over a fixture containing a stamped entry fails against a correct implementation. US-003 owns updating them to the new invariant: the verdict list and its template count only entries not stamped `disposition: \"retired\"`, and retired entries appear once in the acknowledgement section."
+        }
+      ]
+    }
+  ],
+  "analysis": "Existing recurrence classification is the primary change seam: it currently returns only blocking/advisory/demoted, computes recurrence only after a sub-threshold early return, and mutates neither input nor metadata (`src/review/recurrence-demotion.ts:137-216`). Preserve its fingerprint identity, mixed AC/prose lookup, per-prior-iteration counting, and blocking-only test-gap carve-out (`src/review/recurrence-demotion.ts:61-131, 172-216`). The new stamp must be immutable and merge unrelated metadata. Disabled recurrence must preserve the legacy severity partition and return classified as the unchanged input array; absent maxAdvisoryRounds must resolve to 2 inside classification.\n\nSchema defaults exist separately for semantic and adversarial review (`src/config/schemas-review.ts:77-82, 135-140`) and the parallel optional inline config shapes are in `src/review/types.ts:132, 258`. Existing exact-object schema/default tests must be updated for the added resolved field (`test/unit/config/schemas-review.test.ts:5-15`; `test/unit/config/semantic-review.test.ts:36-113,258`). The LLM mapper boundaries reconstruct `meta` from closed allowlists (`src/review/adversarial-helpers.ts:136-166`; `src/review/semantic-helpers.ts:188-209`), so both LLM types need optional meta and both mappers must forward recurrence explicitly. `tagCoverageGap` already merges metadata after conversion and must retain that behavior (`src/review/recurrence-demotion.ts:133-135`).\n\nBoth operations classify accepted raw findings but currently expose raw accepted findings and only convert blocking/advisory/demoted buckets (`src/operations/adversarial-review.ts:479-539`; `src/operations/semantic-review.ts:425-470`). They must expose classified raw findings to audit, keep normalizedFindings blocking-only, fold retired into advisoryFindings, and log adversarial retirement. `review-decision` already forwards record.findings directly into result.findings (`src/execution/story-orchestrator/review-decision.ts:89-93`), so it needs no code change.\n\nRetirement must be a prompt rendering partition, not store removal. The prior-iteration builder currently renders and counts every findingsAfter entry (`src/prompts/builders/prior-iterations-builder.ts:47-127`); partition retired entries per iteration, render their file/category in a closed/do-not-re-flag acknowledgement section, and count only visible verdict entries. Historic entries without recurrence metadata must retain current rendering. The centralized NBF seed filter (`src/execution/non-blocking-fix.ts:54-60`) feeds the dispatch count in execution planning (`src/execution/story-orchestrator/execution-plan.ts:396-408`), so filtering retired there prevents an agent pass while keeping advisory reporting intact.\n\nCompatibility risks are public result-shape expansion, accidental raw finding mutation, metadata loss at conversion, schema exact-object regressions, and disabled-mode stamps. Implement in dependency order: classification/config; mapper and operation propagation; rendering and NBF filtering. No persisted-data migration is required: older iteration findings without recurrence metadata remain verdict-required and new findings remain stored and reported.",
+  "outOfScope": [
+    "The nax#1910 step-3 analyzer over `review-audit/*.json` — measured 2026-09-10 at 11.1% `unmatched` on 27 sub-threshold findings from a single feature, too small a sample to justify building it.",
+    "Retiring a finding on `meta.evidence.status === \"unmatched\"`. All three `unmatched` findings in the measured corpus were substantive defects, so evidence status measures quote hygiene rather than finding validity and must not gate retirement.",
+    "Seeding the non-blocking-fix lane from semantic-review's advisory bucket, tracked as nax#1957 and gated on the nax#1801 ruling.",
+    "Changing how `passed` is computed at `adversarial-review.ts:512`. A record carrying `passed: true` beside a demoted `error` keeps that verdict and explains it.",
+    "Enabling `recurrenceDemotion` for semantic-review. The schema field is wired, the default stays `false`, and flipping it is a separate decision needing its own baseline.",
+    "The \"whack-a-mole within a file\" failure where each round yields genuinely new findings, tracked as nax#1157.",
+    "Excluding `acDropped` findings from the non-blocking-fix seed. That filter at `non-blocking-fix.ts:54-60` is an existing hold on nax#1801 and is left exactly as it stands.",
+    "Changing the `still-blocking` instruction at `prior-iterations-builder.ts:115`. Retirement works by moving a finding out of the verdict list, not by softening the instruction that governs the list.",
+    "Similarity-clustering or otherwise changing `fingerprintFor`. Retirement inherits whatever recurrence identity that function already provides.",
+    "Dropping retired findings from the iteration store or from `advisoryFindings`. They remain stored and remain reported; only their prompt rendering and their fix-lane eligibility change."
+  ],
+  "routingProfile": "native"
+}
