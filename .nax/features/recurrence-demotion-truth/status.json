@@ -1,37 +1,41 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-09-10T10-08-53-985Z",
+    "id": "run-2026-09-10T10-43-08-065Z",
     "feature": "recurrence-demotion-truth",
-    "startedAt": "2026-09-10T10:08:53.985Z",
-    "status": "crashed",
+    "startedAt": "2026-09-10T10:43:08.065Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 12108,
-    "crashedAt": "2026-09-10T10:31:43.483Z",
-    "crashSignal": "SIGINT"
+    "pid": 37358
   },
   "progress": {
     "total": 4,
-    "passed": 0,
-    "failed": 1,
+    "passed": 4,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 0
   },
   "cost": {
-    "spent": 0,
+    "spent": 10.697392712,
     "limit": 60
   },
-  "current": {
-    "storyId": "US-001",
-    "title": "Classify and stamp terminal advisory recurrence",
-    "complexity": "medium",
-    "tddStrategy": "tdd-simple",
-    "model": "balanced",
-    "attempt": 2,
-    "phase": "routing"
+  "current": null,
+  "iterations": 5,
+  "updatedAt": "2026-09-10T13:18:17.809Z",
+  "durationMs": 9309744,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-09-10T13:17:20.519Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-09-10T13:18:16.545Z"
+    }
   },
-  "iterations": 0,
-  "updatedAt": "2026-09-10T10:31:43.483Z",
-  "durationMs": 1369498
+  "gates": {
+    "acceptance": "passed",
+    "regression": "passed"
+  }
 }
