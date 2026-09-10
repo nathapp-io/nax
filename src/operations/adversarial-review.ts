@@ -496,6 +496,21 @@ export const adversarialReviewOp: RunOperationWithHooks<
         category: f.category,
       });
     }
+    // US-003 AC9 — one info record per RETIRED finding, in addition to the
+    // demoted log above. Retired findings are sub-threshold advisories whose
+    // appearances have reached `maxAdvisoryRounds`; they are still REPORTED via
+    // `advisoryFindings` (per US-001 OOS #10) but no longer enter the fix lane.
+    // The telemetry pair mirrors `recurrence_demoted` so Phase-0 numerators
+    // can be summed across both terminal dispositions (e.g. "X findings went
+    // terminal this run, broken down by kind").
+    for (const f of retired) {
+      getSafeLogger()?.info("review", "Adversarial finding retired (recurrence advisory-cap reached)", {
+        storyId: input.story.id,
+        event: "review.adversarial.recurrence_retired",
+        file: f.file,
+        category: f.category,
+      });
+    }
 
     // Honour blockingThreshold: the verdict fails only when a blocking finding survives.
     // The model's raw `passed:false` must NOT fail the review when every surviving
@@ -520,12 +535,27 @@ export const adversarialReviewOp: RunOperationWithHooks<
     // shape (fail-closed), and folding would surface findings the story never acted on.
     const acDroppedFindings = passed ? dropped.map((entry) => entry.finding) : [];
 
+    // US-003 AC5 — `findings` is what `review-decision.ts` persists as
+    // `ReviewAuditEntry.result.findings`. It must carry `meta.recurrence` for
+    // every accepted finding so the audit record distinguishes a demoted error
+    // from an ordinary one without replaying classification state. `classified`
+    // mirrors `accepted` in input order (by `classifyRecurrence`'s contract),
+    // and every entry is `stampRecurrence`-stamped at the boundary (including
+    // carve-outs and demotions, which carry only the fields appropriate for
+    // their transition). When `recurrenceDemotion.enabled` is false,
+    // `classified` is the empty array (per `classifyRecurrence`'s early return)
+    // and `findings` falls back to the un-stamped `accepted` so the audit shape
+    // is unchanged. The cast mirrors the one already used for retired
+    // advisory: TS can't follow `meta.recurrence` through the generic bound
+    // even though the runtime key is guaranteed present.
+    const stampedAccepted: AdversarialLLMFinding[] = recurrenceCfg.enabled ? classified : accepted;
+
     return {
       ...parsed,
       passed,
       blockingThreshold: threshold,
       modelPassed,
-      findings: accepted,
+      findings: stampedAccepted,
       // #1368 — `testFileMatch` also decides the fix lane: a finding located in a
       // test file goes to the test-writer whatever its category says, because the
       // implementer may not edit test files and would answer UNRESOLVED.

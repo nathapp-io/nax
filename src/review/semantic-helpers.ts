@@ -197,6 +197,12 @@ export function llmFindingToFinding(f: LLMFinding, opts: SemanticFindingOptions 
   if (f.verifiedBy) metaExtras.verifiedBy = f.verifiedBy;
   if (f.acQuote) metaExtras.acQuote = f.acQuote;
   if (f.acIndex != null) metaExtras.acIndex = f.acIndex;
+  // US-003 AC4 — `meta.recurrence` is stamped by `classifyRecurrence` on every
+  // accepted semantic finding (when `recurrenceDemotion.enabled` is true).
+  // Forward it verbatim so the disposition reaches the audit record and the
+  // prompt builder. Absent stays absent so a finding without recurrence does
+  // not advertise an empty `recurrence: {}` key.
+  if (f.meta?.recurrence !== undefined) metaExtras.recurrence = f.meta.recurrence;
   return {
     source: "semantic-review",
     severity: normalizeSeverity(f.severity),

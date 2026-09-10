@@ -347,7 +347,7 @@ describe("adversarialReviewOp.verify() — recurrence stamps reach findings + ad
         adversarialConfig: makeAdversarialReviewConfig({
           recurrenceDemotion: { enabled: true, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
         }),
-        priorAdversarialIterations: [priorAdvRound(1, "warn recurring", "warning")],
+        priorAdversarialIterations: [priorAdvRound(1, "warn recurring", "warning", "src/a.ts", "input")],
         mode: "embedded",
       };
       const parsed = makeAdvOutput({
@@ -396,7 +396,10 @@ describe("adversarialReviewOp.verify() — recurrence telemetry (AC9/AC10)", () 
           adversarialConfig: makeAdversarialReviewConfig({
             recurrenceDemotion: { enabled: true, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
           }),
-          priorAdversarialIterations: [priorAdvRound(1, "alpha", "warning"), priorAdvRound(2, "beta", "warning")],
+          priorAdversarialIterations: [
+            priorAdvRound(1, "alpha", "warning", "src/a.ts", "input"),
+            priorAdvRound(2, "beta", "warning", "src/b.ts", "input"),
+          ],
           mode: "embedded",
         };
         const parsed = makeAdvOutput({
@@ -660,7 +663,7 @@ describe("ReviewAuditEntry — result.findings exposes meta.recurrence (AC13)", 
   test("AC13: persisted ReviewAuditEntry.result.findings carries meta.recurrence from the LLM finding", async () => {
     return withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
-      writeFileSync(join(workdir, "src", "auth.ts"), "// content\n");
+      writeFileSync(join(workdir, "src", "auth.ts"), "// content with login\n");
 
       const input: AdversarialReviewInput = {
         workdir,

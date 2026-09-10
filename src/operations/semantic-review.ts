@@ -465,11 +465,21 @@ export const semanticReviewOp: RunOperationWithHooks<
     // ungrounded (accepted empty): there we still respect the model's `passed` flag.
     const passed = blocking.length === 0 && (parsed.passed || accepted.length > 0);
 
+    // US-003 AC11 — `findings` is what `review-decision.ts` persists as
+    // `ReviewAuditEntry.result.findings`. When `recurrenceDemotion.enabled`
+    // is true (opt-in for semantic; default is `false` per US-003 OOS), every
+    // accepted finding surfaces in `findings` with `meta.recurrence` set by
+    // `classifyRecurrence`. When disabled, `classified` is the empty array and
+    // the field shape is unchanged from before. Cast mirrors the one used in
+    // adversarial: TS cannot follow `meta.recurrence` through the generic
+    // bound even though the runtime key is guaranteed when the config is on.
+    const stampedAccepted: LLMFinding[] = recurrenceCfg.enabled ? classified : accepted;
+
     return {
       ...parsed,
       passed,
       blockingThreshold: threshold,
-      findings: accepted,
+      findings: stampedAccepted,
       normalizedFindings: toReviewFindings(blocking, { isTestFile }),
       advisoryFindings,
       acDropped: dropped,

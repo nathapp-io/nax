@@ -156,6 +156,12 @@ export function toAdversarialReviewFindings(
     if (f.scopeQuote) metaExtras.scopeQuote = f.scopeQuote;
     if (f.scopeIndex != null) metaExtras.scopeIndex = f.scopeIndex;
     if (f.evidence) metaExtras.evidence = f.evidence;
+    // US-003 — `meta.recurrence` is stamped by `classifyRecurrence` on every
+    // accepted finding. Forward it verbatim so the disposition reaches the
+    // audit record (`ReviewAuditEntry.result.findings`) and the prompt builder
+    // (US-003 AC13 / AC1-AC3). Absent stays absent — a finding with no
+    // recurrence meta must not advertise an empty `recurrence: {}` key.
+    if (f.meta?.recurrence !== undefined) metaExtras.recurrence = f.meta.recurrence;
     return {
       source: "adversarial-review",
       severity: normalizeSeverity(f.severity),
