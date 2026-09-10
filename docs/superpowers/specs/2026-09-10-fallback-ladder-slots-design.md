@@ -255,13 +255,31 @@ specifically.
 - **L3 — slot arithmetic.** Ladder index from a real `agent.fallback.map`; cap enforced at
   the index, not the event count; per-role isolation; tier-change reset with cooldowns
   preserved.
-- **L4 — composite, and the executable form of the goal.** Extend
-  `test/unit/agents/manager-swap-loop.test.ts` to run three operations of one story
-  through a **real** `SessionManager`, `AgentManager`, `CooldownStore` and ladder,
-  stubbing only adapter dispatch: op 1 fails on native A and lands on native B; op 2
-  dispatches native B *with native B's model on the handle*; op 2 fails and lands on
-  native C; op 3 dispatches native C. Then the same shape for `native -> claude` and
-  `claude -> native`, asserting the prior handle was closed rather than orphaned.
+- **L4 — composite, and the executable form of the goal.** Split across two files,
+  because the first alone does not prove the goal (found in final review — see below).
+  `test/unit/agents/ladder-across-ops.test.ts` drives a **real** `SessionManager` only:
+  three `sm.openSession` calls with hand-supplied `modelDef` values prove
+  `decideReuse`'s handle-carries-new-model / close-vs-reuse behaviour for
+  native -> native (op 2 inherits op 1's landed model), native -> claude, and
+  claude -> native (prior handle closed, not orphaned). It does not call
+  `AgentManager.runWithFallback`, so it proves SessionManager is correct GIVEN a
+  model sequence, not that anything CHOSE that sequence.
+  `test/unit/agents/ladder-across-ops-composite.test.ts` closes that gap: it drives
+  the same native-A-fails-lands-on-B-fails-lands-on-C shape through **`callOp`**
+  (kind:"run") across two real operations of one story, with a **real**
+  `AgentManager` (`nextCandidate`, depth-aware candidate selection, `CooldownStore`),
+  the configured `agent.fallback.map` ladder resolution
+  (`resolveFallbackDispatchTarget` / `resolveFallbackModelId`), a **real**
+  `SessionManager` (`decideReuse`), and the real slot read/write path
+  (`resolveDispatchTarget` / `recordDispatchOutcome` / `ladderSlotFor` /
+  `recordLadderSlot`) — op 2 inherits op 1's landed rung by reading the slot
+  `callOp` wrote, not by the test supplying it. Only the adapter's `openSession` /
+  `sendTurn` primitives are stubbed, scripted rate-limit / rate-limit / success so
+  the real `nextCandidate` chooses native B then native C (asserted to be neither
+  `claude` nor native A). **Residual gap:** the composite test covers only the
+  native ladder (A -> B -> C); it does not re-drive the `native <-> claude`
+  close/reopen transitions through the full `callOp` stack — those remain proven
+  only at the `SessionManager`-only level in the first file.
 - **L5 — live fallback-probe run.** The only end-to-end proof for the transports: a real
   run with a deliberately dead primary, reading the `model` field on the
   `Agent call started` line after each `Agent swap triggered`. Requires explicit approval

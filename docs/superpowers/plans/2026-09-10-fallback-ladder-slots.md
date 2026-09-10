@@ -1458,7 +1458,29 @@ git commit -m "feat(agents): bound fallback by ladder depth per slot"
 
 ### Task 8: The composite acceptance test
 
-The executable form of the goal, and the level at which #1965 would have been caught: a real `SessionManager`, a real `AgentManager`, real cooldowns and a real ladder, with only adapter dispatch stubbed.
+**Final-review correction (2026-09-10):** the test this task originally produced
+(`ladder-across-ops.test.ts`, below) instantiates only a real `SessionManager` with a
+stubbed adapter and calls `sm.openSession(...)` directly three times, passing
+hand-picked `modelDef` values that SIMULATE what a ladder swap would have decided. It
+never calls `AgentManager.runWithFallback`, never exercises `nextCandidate` or depth
+resolution, and never goes through `callOp`'s `resolveDispatchTarget` /
+`recordDispatchOutcome` / `ladderSlotFor` / `recordLadderSlot`. It proves
+`SessionManager`'s reuse decision is correct GIVEN a model sequence — it does not prove
+anything CHOSE that sequence, so the claim below ("a real `SessionManager`, a real
+`AgentManager`, real cooldowns and a real ladder") was false as originally written. The
+gap is closed by a second file, `test/unit/agents/ladder-across-ops-composite.test.ts`
+(added in the final fix wave, not reproduced here — see its own header comment), which
+drives the same native-A-fails-lands-on-B-fails-lands-on-C shape through `callOp`
+(kind:"run") across two real operations of one story: a real `AgentManager`
+(`nextCandidate`, depth-aware selection, `CooldownStore`), the real
+`agent.fallback.map` ladder resolution, a real `SessionManager` (`decideReuse`), and
+the real slot read/write path, with only the adapter's `openSession`/`sendTurn`
+stubbed. It does not re-drive the `native <-> claude` transitions through that full
+stack — those stay proven only at the `SessionManager`-only level below. Both files are
+required to substantiate the L4 verification claim; keep the description below (of
+`ladder-across-ops.test.ts` alone) scoped to what it actually tests.
+
+At the `SessionManager`-only level: a real `SessionManager`, with only adapter dispatch stubbed, proving `decideReuse`'s reuse/close-then-reopen behaviour across a hand-supplied model sequence.
 
 **Files:**
 - Create: `test/unit/agents/ladder-across-ops.test.ts`
