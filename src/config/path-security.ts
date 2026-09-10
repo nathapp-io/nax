@@ -5,10 +5,12 @@
  */
 
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { basename, isAbsolute, normalize, resolve } from "node:path";
+import { basename, isAbsolute, normalize, relative, resolve } from "node:path";
 
 /** Maximum directory depth to prevent infinite loops */
 export const MAX_DIRECTORY_DEPTH = 10;
+
+export const _pathSecurityDeps = { isAbsolute, normalize, relative };
 
 /**
  * Validate and resolve a directory path safely
@@ -64,20 +66,22 @@ export function validateDirectory(dirPath: string, baseDir?: string): string {
  * @returns true if targetPath is within basePath
  */
 export function isWithinDirectory(targetPath: string, basePath: string): boolean {
-  const normalizedTarget = normalize(targetPath);
-  const normalizedBase = normalize(basePath);
+  const normalizedTarget = _pathSecurityDeps.normalize(targetPath);
+  const normalizedBase = _pathSecurityDeps.normalize(basePath);
 
   // Ensure both are absolute
-  if (!isAbsolute(normalizedTarget) || !isAbsolute(normalizedBase)) {
+  if (!_pathSecurityDeps.isAbsolute(normalizedTarget) || !_pathSecurityDeps.isAbsolute(normalizedBase)) {
     return false;
   }
 
-  // Add trailing slash to base to prevent partial matches
-  const baseWithSlash = normalizedBase.endsWith("/") ? normalizedBase : `${normalizedBase}/`;
-  const targetWithSlash = normalizedTarget.endsWith("/") ? normalizedTarget : `${normalizedTarget}/`;
-
-  // Check if target starts with base
-  return targetWithSlash.startsWith(baseWithSlash) || normalizedTarget === normalizedBase;
+  const targetRelativeToBase = _pathSecurityDeps.relative(normalizedBase, normalizedTarget);
+  return (
+    targetRelativeToBase === "" ||
+    (!targetRelativeToBase.startsWith("../") &&
+      !targetRelativeToBase.startsWith("..\\") &&
+      targetRelativeToBase !== ".." &&
+      !_pathSecurityDeps.isAbsolute(targetRelativeToBase))
+  );
 }
 
 /**

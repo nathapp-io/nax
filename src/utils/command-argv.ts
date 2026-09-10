@@ -5,6 +5,7 @@ export function parseCommandToArgv(command: string): string[] {
   const home = (safeEnv.HOME as string | undefined) ?? "";
   const args: string[] = [];
   let current = "";
+  let tokenStarted = false;
   let index = 0;
   const trimmed = command.trim();
 
@@ -12,15 +13,17 @@ export function parseCommandToArgv(command: string): string[] {
     const char = trimmed[index];
 
     if (char === " " || char === "\t") {
-      if (current.length > 0) {
+      if (tokenStarted) {
         args.push(current);
         current = "";
+        tokenStarted = false;
       }
       index += 1;
       continue;
     }
 
     if (char === "'") {
+      tokenStarted = true;
       index += 1;
       while (index < trimmed.length && trimmed[index] !== "'") {
         current += trimmed[index];
@@ -31,6 +34,7 @@ export function parseCommandToArgv(command: string): string[] {
     }
 
     if (char === '"') {
+      tokenStarted = true;
       index += 1;
       while (index < trimmed.length && trimmed[index] !== '"') {
         if (
@@ -50,10 +54,11 @@ export function parseCommandToArgv(command: string): string[] {
     }
 
     current += char;
+    tokenStarted = true;
     index += 1;
   }
 
-  if (current.length > 0) {
+  if (tokenStarted) {
     args.push(current);
   }
 
