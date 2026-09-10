@@ -241,4 +241,24 @@ describe("callOp sticks a story to the agent it swapped to (#1964)", () => {
     expect(dispatchedRun).toEqual(["native"]);
     expect(dispatchedComplete).toEqual(["claude"]);
   });
+
+  test("a complete-kind op with no sessionOverride does NOT inherit another role's swap (#1965 D4)", async () => {
+    const dispatchedRun: string[] = [];
+    const dispatchedComplete: string[] = [];
+    const runtime = makeMockRuntime({
+      agentManager: managerSwappingRunAndComplete("native", "claude", dispatchedRun, dispatchedComplete),
+    });
+    createdRuntimes.push(runtime);
+    // makeOp() declares role "implementer" and swaps native -> claude, recording a slot
+    // keyed to that role. makeCompleteOp() carries no session role at all, and this ctx
+    // sets no sessionOverride either, so its role resolves to undefined — a different key
+    // from "implementer". It must dispatch its own configured agent, not the swapped one.
+    const ctx = makeCtx({ runtime, storyId: "US-001", agentName: "native" });
+
+    await callOp(ctx, makeOp("run-op"), "work");
+    await callOp(ctx, makeCompleteOp("complete-op"), "work");
+
+    expect(dispatchedRun).toEqual(["native"]);
+    expect(dispatchedComplete).toEqual(["native"]);
+  });
 });
