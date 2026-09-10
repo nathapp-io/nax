@@ -17,7 +17,7 @@
 - Never name a tool the session was not advertised. Every redirect row is gated on the caller's `available` set. This is the defect #1937 exists to fix; reintroducing it fails the task.
 - Never name a command the project did not declare. Gate on `declaredCommands`, never on a hardcoded script name or package runner name.
 - No project-specific strings. `bun run check:*`, `biome`, `pytest` and friends must not appear in `src/tools/`. Detection heuristics may list runner *binaries*; message *content* comes only from `declaredCommands` / `allowedVerbs`.
-- Files stay under the repo's 600-line gate (`bun run check:file-sizes`). `denial-redirect.ts` is 66 lines today and has room.
+- Files stay under `check:file-sizes` — 600 lines for `src/`, 800 for `test/`. `denial-redirect.ts` is 66 lines and `denial-redirect.test.ts` 107; both have ample room.
 - No `as unknown as` in `test/` — the gate `check:test-as-unknown-as` has baseline 0.
 - Commit messages follow conventional commits and reference `(#1971)`.
 - Run `bun run check:all` before every commit; the pre-commit hook runs it plus typecheck and will reject otherwise.
@@ -40,42 +40,51 @@ The subtlety: `scope.allowedVerbs` is what the **tool** permits, but line 332 na
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `test/unit/tools/policy.test.ts`. Match the file's existing setup style for `compileToolPolicy` — read the top of the file first and reuse its helper if one exists rather than inventing a new fixture.
+Append to `test/unit/tools/policy.test.ts`. `ToolScope` and `compileToolPolicy` are already imported at the top of that file; `root` is already set up by its `beforeAll`.
 
 ```ts
 describe("verb denial names what is permitted (#1971)", () => {
-  const scope = {
-    pathFields: [] as string[],
+  const SCOPE: ToolScope = {
+    pathFields: [],
     verbField: "command",
     allowedVerbs: ["lint", "test", "testScoped", "coverage"],
   };
 
   test("an unknown verb is told the verbs the stage can use", () => {
-    const policy = compileToolPolicy({ root: "/tmp", grants: { RunCommand: ["*"] } });
-    const verdict = policy.check("RunCommand", scope, { command: "test:coverage" });
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const verdict = policy.check("RunCommand", SCOPE, { command: "test:coverage" });
     expect(verdict.allowed).toBe(false);
-    expect(verdict.reason).toContain("test:coverage");
-    expect(verdict.reason).toContain("permitted: lint, test, testScoped, coverage");
+    expect(verdict.allowed === false && verdict.reason).toContain("test:coverage");
+    expect(verdict.allowed === false && verdict.reason).toContain(
+      "permitted: lint, test, testScoped, coverage",
+    );
   });
 
   test("a narrower grant names only what the grant allows, not every allowedVerb", () => {
-    const policy = compileToolPolicy({ root: "/tmp", grants: { RunCommand: ["lint", "test"] } });
-    const verdict = policy.check("RunCommand", scope, { command: "coverage" });
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["lint", "test"] }], root);
+    const verdict = policy.check("RunCommand", SCOPE, { command: "coverage" });
     expect(verdict.allowed).toBe(false);
     // `coverage` is an allowedVerb but NOT granted to this stage: naming it
-    // would send the model back into the same denial.
-    expect(verdict.reason).not.toContain("coverage,");
-    expect(verdict.reason).toContain("permitted: lint, test");
+    // would send the model straight back into the same denial.
+    expect(verdict.allowed === false && verdict.reason).toContain("permitted: lint, test");
+    expect(verdict.allowed === false && verdict.reason).not.toContain("coverage,");
   });
 
   test("a grant with no usable verb says so rather than naming an empty list", () => {
-    const policy = compileToolPolicy({ root: "/tmp", grants: { RunCommand: ["build"] } });
-    const verdict = policy.check("RunCommand", scope, { command: "lint" });
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["build"] }], root);
+    const verdict = policy.check("RunCommand", SCOPE, { command: "lint" });
     expect(verdict.allowed).toBe(false);
-    expect(verdict.reason).toContain("no subcommands are permitted for this stage");
+    expect(verdict.allowed === false && verdict.reason).toContain(
+      "no subcommands are permitted for this stage",
+    );
   });
 });
 ```
+
+Three API facts this test depends on, verified against the tree at plan time — do not "correct" them:
+- `compileToolPolicy(grants, root)` takes a **positional array** of `{ tool, patterns }`, not an options object.
+- `PolicyVerdict` is a discriminated union; `reason` exists only on the `allowed: false` arm. The file's established idiom is `expect(verdict.allowed === false && verdict.reason).toContain(...)` — a bare `verdict.reason` will not typecheck.
+- `root` is the module-level temp dir the file's `beforeAll` already creates. Reuse it; do not make another.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -126,7 +135,7 @@ Replace the `verbField` block at `src/tools/policy.ts:324-335`:
 bun test test/unit/tools/policy.test.ts
 ```
 
-Expected: PASS, including every pre-existing test in the file. If an existing assertion did an exact-equality match on one of these two reason strings, update it to the new text — the message is deliberately changing.
+Expected: PASS, including every pre-existing test in the file. Verified at plan time by applying this change and running `bun test test/unit/tools/` — 388 pass, 0 fail. No existing test asserts either denial string exactly, so no pre-existing assertion needs updating.
 
 - [ ] **Step 5: Run the broader tool suite**
 
@@ -134,7 +143,7 @@ Expected: PASS, including every pre-existing test in the file. If an existing as
 bun test test/unit/tools/
 ```
 
-Expected: PASS. `run-command.test.ts` and `git.test.ts` are the likely places holding an exact-match assertion.
+Expected: PASS (388 tests at plan time).
 
 - [ ] **Step 6: Commit**
 
@@ -152,7 +161,9 @@ git commit -m "fix(tools): verb denials name the subcommands the stage can use (
 
 Two shapes arrive in the verb slot: a mini command line the model stuffed there (`"ls -la"`, `"wc -l a.ts b.ts"`) and a bare word (`"grep"`, `"diff"`). The first is handled by tokenizing and reusing the existing `intendedTool()`; the second needs a small bare-verb table.
 
-**Self-redirect guard:** `Git {subcommand:"diff"}` denied by a narrow grant must not be told "you already have `Git`". `redirectForVerb` takes the denied tool's name and returns `undefined` when the row points back at it.
+**Self-redirect guard:** `Git {subcommand:"diff"}` denied by a narrow grant must not be told "you already have `Git`". `redirectForVerb` takes the denied tool's name and returns `undefined` when a **bare-verb** row points back at it.
+
+The guard applies to the bare-verb path only. On the multi-token path it would be both fragile (it can only sniff the message text) and wrong: `RunCommand {command:"bun test a.test.ts"}` *should* be pointed at `RunCommand {"command":"testScoped"}`, and `RunCommand {command:"bun run check:all"}` at RunCommand's declared commands. Those are different affordances of the same tool, not a self-contradiction. Verified at plan time against every shape in Task 6.
 
 **Files:**
 - Modify: `src/tools/denial-redirect.ts` (add `redirectForVerb`)
@@ -241,8 +252,7 @@ const VERB_TOOLS: ReadonlyMap<string, { tool: string; how: string }> = new Map([
   ["grep", { tool: "Grep", how: "Grep searches file contents" }],
   ["git", { tool: "Git", how: `Git runs read-only git (${[...GIT_READ_VERBS].join(", ")})` }],
   ...[...GIT_READ_VERBS].map(
-    (v) =>
-      [v, { tool: "Git", how: `Git runs read-only git (${[...GIT_READ_VERBS].join(", ")})` }] as const,
+    (v) => [v, { tool: "Git", how: `Git runs read-only git (${[...GIT_READ_VERBS].join(", ")})` }] as const,
   ),
 ]);
 
@@ -253,7 +263,8 @@ const VERB_TOOLS: ReadonlyMap<string, { tool: string; how: string }> = new Map([
  * `verbField`, where the policy sees no argv at all, so every such denial was a
  * bare refusal (nax#1971). A verb slot carries either a mini command line the
  * model stuffed there ("ls -la") -- tokenized here and handed to the same argv
- * table -- or a bare word ("grep"), handled by VERB_TOOLS.
+ * table, so the two branches can never disagree about what `ls -la` means --
+ * or a bare word ("grep"), handled by VERB_TOOLS.
  */
 export function redirectForVerb(
   deniedTool: string,
@@ -261,16 +272,16 @@ export function redirectForVerb(
   available: ReadonlySet<string>,
   declaredCommands: ReadonlySet<string>,
 ): string | undefined {
-  const tokens = verb.trim().split(/\s+/).filter((t) => t.length > 0);
+  const tokens = verb
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
   if (tokens.length === 0) return undefined;
 
-  // A multi-token verb IS a command line; reuse the argv table verbatim so the
-  // two branches can never disagree about what `ls -la` means.
-  if (tokens.length > 1) {
-    const viaArgv = redirectForArgv(tokens, available, declaredCommands);
-    // Suppress a self-redirect the same way the bare-verb path does below.
-    return viaArgv?.includes(`\`${deniedTool}\``) === true ? undefined : viaArgv;
-  }
+  // A multi-token verb IS a command line. No self-guard here: pointing
+  // RunCommand's raw-command-line slot at RunCommand's DECLARED-command slot is
+  // the whole point, not a contradiction.
+  if (tokens.length > 1) return redirectForArgv(tokens, available, declaredCommands);
 
   const hit = VERB_TOOLS.get(tokens[0] as string);
   if (hit === undefined) return undefined;
@@ -280,6 +291,8 @@ export function redirectForVerb(
   return `this session already has \`${hit.tool}\` -- ${hit.how}`;
 }
 ```
+
+Typechecks clean as written (`bun x tsc --noEmit`, verified at plan time). The `as const` on the mapped tuples is load-bearing — without it TypeScript widens the entry to `(string | {...})[]` and the `Map` constructor rejects it.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -313,23 +326,36 @@ Note `name` (the tool's registered name), not `policyIdentity` — the latter is
 
 - [ ] **Step 6: Write the wiring test**
 
-Append to `test/unit/tools/denial-redirect.test.ts`, following the runtime-level tests already at the bottom of that file (read them first and mirror their fixture setup):
+Append to the `describe("runtime appends the redirect to a denial")` block already at the bottom of `test/unit/tools/denial-redirect.test.ts`, mirroring its fixtures exactly:
 
 ```ts
-test("a denied RunCommand verb names the tool the session already has (#1971)", async () => {
-  const root = mkdtempSync(join(tmpdir(), "nax-verb-redirect-"));
-  const runtime = createCodingToolRuntime({
-    policy: compileToolPolicy({ root, grants: { RunCommand: ["*"], Glob: ["*"] } }),
-    extraTools: [createRunCommandTool(new Map([["lint", "echo lint"]]), { allowExec: false })],
-    declaredCommands: new Set(["lint"]),
+  test("a denied RunCommand verb names the tool the session already has (#1971)", async () => {
+    const policy = compileToolPolicy(
+      [
+        { tool: "Glob", patterns: ["*"] },
+        { tool: "RunCommand", patterns: ["lint"] },
+      ],
+      root,
+    );
+    const runtime = createCodingToolRuntime({
+      policy,
+      extraTools: [createRunCommandTool(new Map([["lint", "echo lint"]]))],
+      declaredCommands: new Set(["lint"]),
+    });
+    runtime.advertised(["Glob", "RunCommand"]);
+
+    const outcome = await runtime.callTool("RunCommand", { command: "ls -la" });
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind !== "denied") throw new Error("expected a denial");
+    expect(outcome.reason).toContain("Glob");
   });
-  const result = await runtime.call("RunCommand", { command: "ls -la" });
-  expect(result.kind).toBe("denied");
-  expect(result.kind === "denied" && result.reason).toContain("Glob");
-});
 ```
 
-Check `createRunCommandTool`'s real signature in `src/tools/run-command.ts` before writing this — mirror how `run-command.test.ts` constructs it rather than guessing the options bag.
+Four API facts, verified against the tree at plan time:
+- The method is `runtime.callTool(name, input)`, **not** `runtime.call(...)`.
+- **`runtime.advertised([...])` must be called first.** It is what populates the internal `advertisedNames` set (`src/tools/runtime.ts:168-175`); without it that set is empty and *no* redirect can ever fire, so the test would pass vacuously against a broken implementation.
+- `createRunCommandTool(declared, opts)` takes a `ReadonlyMap<string, string>` and an options bag whose exec key is `{ exec: { repoRoot, packageWorkdir, allowScripts, patterns } }`. Omit `exec` entirely for a verb-only tool — there is no `allowExec` option.
+- `CodingToolOutcome` is a discriminated union; narrow with `if (outcome.kind !== "denied") throw ...` before reading `outcome.reason`, as the neighbouring tests do.
 
 - [ ] **Step 7: Run the full tool suite**
 
@@ -360,7 +386,12 @@ Exec is not granted for argv "bun run check:all"
 
 The model wanted to run a project gate. Name the commands the project declared instead.
 
-**Scoping decision:** fire this only when `argv[0]` is a recognised task runner. Firing on *every* unmatched argv would append "RunCommand can run lint, test, build" to unrelated denials like `rm -r directory` — noise, and it would silently change two existing tests that assert `undefined` for unsupported delete forms. The runner list is a *detection* heuristic that degrades to today's behaviour on a miss; the message content still comes only from `declaredCommands`.
+**Scoping decision:** fire this only when `argv[0]` is a recognised task runner **and** `argv[1]` is not an install verb. The runner list is a *detection* heuristic that degrades to today's behaviour on a miss; message content still comes only from `declaredCommands`.
+
+Both halves are load-bearing, and the second was found by applying this change at plan time and running the suite:
+
+- Without the runner gate, the fallback fires on unrelated denials like `rm -r directory` — noise, and it would flip the existing unsupported-delete-form assertions from `undefined` to a sentence.
+- Without the install-verb gate, `bun add left-pad` gets "RunCommand has declared commands: test, testScoped, lint", which **fails the existing test** `says nothing about an install form, which is already granted` (`denial-redirect.test.ts:51`). That test encodes the right intent: someone reaching for an install wants the granted install forms `policy.ts` already printed, not a list of project gates.
 
 **Files:**
 - Modify: `src/tools/denial-redirect.ts` (`redirectForArgv`)
@@ -404,6 +435,12 @@ describe("declared-commands fallback (#1971)", () => {
     expect(redirectForArgv(["rm", "-r", "directory"], ALL, CMDS)).toBeUndefined();
     expect(redirectForArgv(["wc", "-l", "a.ts"], ALL, CMDS)).toBeUndefined();
   });
+
+  test("does not fire on an install form, which wants the granted forms instead", () => {
+    expect(redirectForArgv(["bun", "add", "left-pad"], ALL, CMDS)).toBeUndefined();
+    expect(redirectForArgv(["pnpm", "install"], ALL, CMDS)).toBeUndefined();
+    expect(redirectForArgv(["go", "mod", "download"], ALL, CMDS)).toBeUndefined();
+  });
 });
 ```
 
@@ -430,6 +467,13 @@ const TASK_RUNNERS = new Set([
   "make", "just", "task",
   "go", "cargo", "uv", "poetry", "pipenv", "tox", "gradle", "mvn",
 ]);
+
+/**
+ * Install subcommands. These runners double as package managers, and an install
+ * attempt wants the granted install FORMS policy.ts already printed -- not a
+ * list of project gates that cannot install anything.
+ */
+const INSTALL_VERBS = new Set(["add", "install", "i", "ci", "get", "sync", "fetch", "mod", "download"]);
 ```
 
 Then in `redirectForArgv`, replace `if (hit === undefined) return undefined;` with:
@@ -443,6 +487,8 @@ Then in `redirectForArgv`, replace `if (hit === undefined) return undefined;` wi
     const av = argv[0] === "timeout" ? argv.slice(2) : argv;
     const head = av[0];
     if (head === undefined || !TASK_RUNNERS.has(head)) return undefined;
+    const sub = av[1];
+    if (sub !== undefined && INSTALL_VERBS.has(sub)) return undefined;
     if (!available.has("RunCommand") || declaredCommands.size === 0) return undefined;
     return `this session already has RunCommand with declared commands: ${[...declaredCommands].join(", ")}`;
   }
@@ -454,9 +500,9 @@ Then in `redirectForArgv`, replace `if (hit === undefined) return undefined;` wi
 bun test test/unit/tools/denial-redirect.test.ts
 ```
 
-Expected: PASS, including the pre-existing `does not redirect an unsupported delete form` cases — `rm` and `git` are not in `TASK_RUNNERS`.
+Expected: PASS — all 388 tests in `test/unit/tools/`, verified at plan time with this exact implementation. The pre-existing `does not redirect an unsupported delete form` cases stay green because `rm` and `git` are not in `TASK_RUNNERS`; `says nothing about an install form` stays green because of `INSTALL_VERBS`.
 
-Note: `go`, `cargo` and `uv` appear both in `TASK_RUNNERS` and in the Exec install allowlist (`go get`, `cargo add`, `uv sync`). That is not a conflict — an argv the allowlist *grants* never reaches the denial path at all.
+Note: `go`, `cargo` and `uv` appear both in `TASK_RUNNERS` and in the Exec install allowlist (`go get`, `cargo add`, `uv sync`). That is not a conflict — an argv the allowlist *grants* never reaches the denial path at all, and `INSTALL_VERBS` covers the denied variants.
 
 - [ ] **Step 5: Run the full tool suite**
 
@@ -485,13 +531,19 @@ QualityConfigSchema.safeParse({ commands: { lint: "x", coverage: "bun run test:c
 → success: true, parsed commands: {"lint":"x"}
 ```
 
-`coverage` is an agent affordance nax never invokes itself — which is exactly what `declaredCommands` means.
+`coverage` is an agent affordance nax never invokes itself — which is exactly what `declaredCommands` means, and it matches what `CLAUDE.md` already tells agents ("run `test:coverage` by hand after changes that add or move tests").
+
+Two things verified at plan time so you do **not** need to touch them:
+- `declaredCommands` is built with `Object.entries(commands)` (`src/agents/coding-tool-support.ts:196-198`), so a new key reaches `RunCommand.allowedVerbs` automatically once the schema stops dropping it.
+- `merge.ts:176-181` spreads `quality.commands` wholesale, so per-package overrides carry `coverage` too. The explicit key list just below it (`merge.ts:127-155`) is the `quality.commands → review.commands` bridge; coverage is not a review command, so do **not** add a bridge line for it.
+
+Note `test/unit/config/dead-quality-flags.test.ts` despite its name is about three removed *flags* (`requireTypecheck`, `requireLint`, `requireTests`), not about unknown command keys. It needs no change.
 
 **Files:**
 - Modify: `src/config/schemas-execution.ts:270-291` (the `commands` object)
 - Modify: `src/config/runtime-types.ts:177-196` (the `QualityConfig["commands"]` interface)
 - Modify: `src/cli/config-descriptions.ts` (near line 113)
-- Test: `test/unit/config/` — find the file already covering `QualityConfigSchema` with `ls test/unit/config/` and add there; create `quality-commands-coverage.test.ts` only if none exists.
+- Test: `test/unit/config/schemas.test.ts` (already covers `QualityConfigSchema`).
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -514,7 +566,14 @@ test("coverage survives the parse so RunCommand can declare it (#1971)", () => {
 bun test test/unit/config/ -t "coverage survives the parse"
 ```
 
-Expected: FAIL — `parsed.commands.coverage` is `undefined` (stripped), and TypeScript flags the property as unknown.
+Expected: FAIL — `parsed.commands.coverage` is `undefined`. Confirmed at plan time:
+
+```
+QualityConfigSchema.safeParse({ commands: { lint: "x", coverage: "bun run test:coverage" } })
+→ success: true, parsed commands: {"lint":"x"}
+```
+
+zod's default object strips unknown keys rather than erroring; that is intended behaviour, not a bug to fix. The only change needed is declaring the key.
 
 - [ ] **Step 3: Implement**
 
@@ -630,26 +689,41 @@ describe("the #1971 denial shapes each name an affordance", () => {
   const WITH_GREP = new Set(["Glob", "Git", "Delete", "RunCommand", "Grep"]);
 
   test.each([
-    { tool: "RunCommand", verb: "ls -la", expect: "Glob" },
-    { tool: "RunCommand", verb: "diff", expect: "Git" },
-    { tool: "RunCommand", verb: "git", expect: "Git" },
-    { tool: "Git", verb: "grep", expect: "Grep" },
-  ])("$tool {$verb} names $expect", ({ tool, verb, expect: want }) => {
+    { tool: "RunCommand", verb: "ls -la", want: "Glob" },
+    { tool: "RunCommand", verb: "diff", want: "Git" },
+    { tool: "RunCommand", verb: "git", want: "Git" },
+    { tool: "Git", verb: "grep", want: "Grep" },
+  ])("$tool {$verb} names $want", ({ tool, verb, want }) => {
     expect(redirectForVerb(tool, verb, WITH_GREP, CMDS)).toContain(want);
   });
 
-  test.each([["bun", "run", "check:all"], ["bun", "run", "check:test-mocks"]])(
-    "a lint gate names the declared commands: %s",
-    (...argv: string[]) => {
-      expect(redirectForArgv(argv, WITH_GREP, CMDS)).toContain("RunCommand");
-    },
-  );
+  test.each([
+    [["bun", "run", "check:all"]],
+    [["bun", "run", "check:test-mocks"]],
+    [["npm", "run", "lint:ci"]],
+    [["make", "check"]],
+  ])("a project gate names the declared commands: %s", (argv: string[]) => {
+    expect(redirectForArgv(argv, WITH_GREP, CMDS)).toContain("RunCommand with declared commands");
+  });
 
-  test("wc stays unredirected -- nothing serves a line count", () => {
+  test("a specific row still beats the generic fallback", () => {
+    expect(redirectForVerb("RunCommand", "bun test a.test.ts", WITH_GREP, CMDS)).toContain("testScoped");
+  });
+
+  test("shapes nothing serves stay unredirected", () => {
+    // No tool provides a line count, and `test:coverage` is a verb the project
+    // never declared -- Task 1's `permitted:` list is what serves these.
     expect(redirectForVerb("RunCommand", "wc -l a.ts", WITH_GREP, CMDS)).toBeUndefined();
+    expect(redirectForVerb("RunCommand", "test:coverage", WITH_GREP, CMDS)).toBeUndefined();
+  });
+
+  test("never contradicts its own denial", () => {
+    expect(redirectForVerb("Git", "diff", WITH_GREP, CMDS)).toBeUndefined();
   });
 });
 ```
+
+Every row above was executed against the real implementation at plan time and produced the asserted result. `CMDS` is the file's existing `new Set(["test", "testScoped", "lint"])`.
 
 - [ ] **Step 2: Run it**
 
@@ -690,10 +764,19 @@ Body must cover: the two structural causes (redirect gated on argv; bare verb re
 
 **Spec coverage** — #1971's three suggested fixes map to Tasks 1 (name permitted verbs), 2 (verb-branch redirect), 3 (generic declared-commands fallback). The two additions agreed in chat map to Tasks 4 (`coverage` schema) and 5 (nax config). Task 6 verifies against the evidence in the issue body. No requirement is unassigned.
 
-**Placeholder scan** — every code step carries real code; no TBD, no "similar to Task N". Three steps deliberately say *read the existing file first* (Task 1 Step 1 fixture, Task 2 Step 6 `createRunCommandTool` signature, Task 4 test location) rather than guess at a signature the plan author did not verify — those are instructions to check a fact, not deferred decisions.
+**Placeholder scan** — every code step carries real code; no TBD, no "similar to Task N". Every file path, function signature and test location named in the plan was resolved against the tree, so no step asks the implementer to go find one.
 
 **Type consistency** — `redirectForVerb(deniedTool, verb, available, declaredCommands)` has the same argument order everywhere it appears (Tasks 2, 6, and the runtime wiring). `redirectForArgv` keeps its existing three-argument signature throughout. `TASK_RUNNERS` and `VERB_TOOLS` are each defined once, in Task 3 and Task 2 respectively. `GIT_READ_VERBS` is reused from the existing module, not redefined.
 
 **Ordering** — Task 4 must precede Task 5 (Step 1 of Task 5 enforces this). Task 3 modifies a function Task 2 calls, so running them out of order would leave Task 2's multi-token path untested against the fallback; Task 3 Step 4 catches that.
 
-**One known risk** — Task 1 changes two denial strings that pre-existing tests may assert exactly. Task 1 Steps 4-5 tell the implementer to expect that and update rather than work around it.
+## Plan-time validation
+
+Every code block in Tasks 1-3 was applied to the worktree, typechecked (`bun x tsc --noEmit`, clean) and run against `bun test test/unit/tools/` (388 pass, 0 fail), then reverted. The tree the implementer receives is clean at `da8abca31`. Four errors were found and corrected this way; they are called out inline above so nobody reintroduces them:
+
+1. `compileToolPolicy` takes `(grants[], root)` positionally, not an options object.
+2. `PolicyVerdict.reason` needs `allowed === false &&` narrowing to typecheck.
+3. The runtime API is `callTool`, and `advertised([...])` must be called first or every redirect test passes vacuously.
+4. The declared-commands fallback broke `says nothing about an install form, which is already granted` until `INSTALL_VERBS` was added — the collision I had predicted (`rm -r directory`) was not the one that actually fired.
+
+**Risks now closed** — Task 1's changed denial strings were suspected of breaking exact-match assertions elsewhere; running the suite proved no such assertion exists. The multi-token self-redirect guard was dropped after testing showed it was both unnecessary and actively wrong for `bun test <file>`.
