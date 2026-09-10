@@ -12,12 +12,27 @@ import { resolveModel, resolveModelForAgent } from "@/config";
 import type { ModelDef, ModelsConfig } from "@/config/schema-types";
 import type { HopKind } from "../agents/manager-types";
 
-/** The tier a hop dispatches at: the one it named, else the caller's effective tier. */
+/**
+ * The tier a hop should resolve its model at.
+ *
+ * Only a swap, or a start-on-fallback that named one, can carry a tier.
+ * Everything else is the caller's effective tier, which is what every hop did
+ * before tier-aware targets existed.
+ */
 export function hopTier(hopKind: HopKind, effectiveTier: string): string {
   return "tier" in hopKind ? (hopKind.tier ?? effectiveTier) : effectiveTier;
 }
 
-/** A hop's LITERAL model pin, when it carries one. Mutually exclusive with `tier`. */
+/**
+ * The literal model id a hop was pinned to, if any.
+ *
+ * Set only by a fallback target spelled `{ agent, model }` whose model names no
+ * tier (ConfiguredModel semantics — a tier-naming one is converted to a tier
+ * before it reaches here). The tier map cannot serve such a pin: there is no
+ * tier key to look up. Without this the pin was accepted, selected, and then
+ * dispatched at the caller's own effective tier — the operator asks for one
+ * provider and silently gets another.
+ */
 export function hopModelId(hopKind: HopKind): string | undefined {
   return "model" in hopKind ? hopKind.model : undefined;
 }
@@ -42,6 +57,13 @@ export interface HopEndpointArgs {
  * A caller pin wins on a `primary` hop (it is what the caller asked for) and on a
  * `stale-retry` (same session, same model — the retry must not change endpoints).
  * A `swap` or `timeout-retry` has chosen its own target, so the pin is dropped.
+ *
+ * Rule: a caller pin wins ONLY for `primary`/`stale-retry`. Any pin that ends up
+ * selecting the model — the caller's, or a hop-level literal `model` — reports no
+ * `modelTier`, because no tier selected it (#1433). This deliberately diverges from
+ * the pre-extraction code, which reported `modelTier` for a hop-level literal pin
+ * on `swap`/`timeout-retry` even though the tier map played no part in resolving
+ * `modelDef` there — see the regression tests below.
  */
 function pinWins(kind: HopKind["kind"]): boolean {
   return kind === "primary" || kind === "stale-retry";
