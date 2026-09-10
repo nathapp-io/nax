@@ -55,7 +55,7 @@
  */
 
 import { lstat, unlink } from "node:fs/promises";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { gitWithTimeout } from "@/utils/git";
 import { matchesDenyPaths } from "./deny-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
@@ -88,7 +88,18 @@ export const deleteTool: CodingTool = {
     // checked before anything else this function decides -- including
     // existence -- because it is a blanket refusal on the path itself, not a
     // judgment about the path's current state on disk.
-    if (matchesDenyPaths(shown, ctx.denyPaths)) {
+    //
+    // Matched against the CANONICAL entry, never the raw `input.path`. The
+    // policy resolves before it approves, so a denylist consulted on the
+    // caller's own spelling is a different parser than the one that granted
+    // the call -- and every alternate spelling of the same file ("./x",
+    // "x//y", "a/../x", an absolute path) walks straight past it. Deriving
+    // the relative form from `target` collapses all of them to one string.
+    // Deliberately NOT realpath: a symlink's entry is what Delete removes,
+    // and removing a link cannot destroy what it points at, so resolving
+    // through it would refuse deletions the denylist never meant to cover.
+    const denyCandidate = relative(ctx.root, target).split(sep).join("/");
+    if (matchesDenyPaths(denyCandidate, ctx.denyPaths)) {
       return {
         content: `"${shown}" matches this repository's denyPaths configuration, so Delete refuses it regardless of tracked status.`,
         isError: true,
@@ -114,16 +125,27 @@ export const deleteTool: CodingTool = {
     if (tracked.exitCode !== 0) {
       // Untracked. Whether it stays refused now turns on the SECOND git
       // question -- gitignored or not -- rather than stopping here the way
-      // the tracked-only rule used to. A `check-ignore` failure (exit 1) and
-      // a git-level failure (exit >1, e.g. no repository) both fall through
-      // to "not ignored" on purpose: this tool cannot tell the two apart
-      // from the exit code alone, and "allow" is the correct default for
-      // both -- there is no gitignore rule either way, so nothing declared
-      // this path unrecoverable-on-purpose.
+      // the tracked-only rule used to.
+      //
+      // `check-ignore` has three outcomes and they must NOT be collapsed into
+      // two: 0 means ignored, 1 means definitively not ignored, and anything
+      // else (128) means git could not answer -- no repository, or a broken
+      // one. Only the definitive 1 is an allow. Folding 128 in with 1 would
+      // make a repository-less directory the most permissive environment this
+      // tool has, which inverts the guard exactly where it is least
+      // observable. The pre-nax#1972 code refused "untracked" and "git
+      // failed" through one branch on purpose, and that caution survives the
+      // three-class rewrite even though its original rationale does not.
       const ignored = await gitWithTimeout(["check-ignore", "-q", "--", target], ctx.root, GIT_TIMEOUT_MS);
       if (ignored.exitCode === 0) {
         return {
           content: `"${shown}" is gitignored, so it exists only on this machine and is not recoverable once deleted. Delete refuses it for that reason.`,
+          isError: true,
+        };
+      }
+      if (ignored.exitCode !== 1) {
+        return {
+          content: `"${shown}" is not tracked, and git could not determine whether it is ignored, so Delete cannot establish that removing it is safe. Check that this is a git repository.`,
           isError: true,
         };
       }

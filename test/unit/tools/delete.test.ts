@@ -99,6 +99,26 @@ describe("deleteTool", () => {
     expect(existsSync(target)).toBe(true);
   });
 
+  // nax#1972: `check-ignore` exits 1 for "not ignored" and 128 when git could
+  // not answer at all. Treating those the same makes a broken or absent
+  // repository the most permissive environment Delete has, which inverts the
+  // guard. The pre-#1972 code was deliberately fail-closed here -- "untracked"
+  // and "git failed" shared one refusal on purpose -- and that survives the
+  // three-class rewrite: only a definitive "not ignored" is an allow.
+  test("refuses an untracked file when git cannot answer, rather than failing open", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "nax-delete-nogit-"));
+    const target = join(outside, "scratch.ts");
+    writeFileSync(target, "export const x = 1;\n");
+
+    const res = await deleteTool.run(
+      { path: "scratch.ts" },
+      { root: outside, resolvedPaths: [target], maxBytes: 10_000, maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES },
+    );
+
+    expect(res.isError).toBe(true);
+    expect(existsSync(target)).toBe(true);
+  });
+
   test("refuses a directory", async () => {
     const target = join(root, "src");
     const res = await deleteTool.run({ path: "src" }, ctx([target]));
@@ -135,6 +155,22 @@ describe("deleteTool", () => {
     expect(res.content).toContain("denyPaths");
     expect(existsSync(target)).toBe(true);
   });
+
+  // nax#1972: denyPaths matched the raw `input.path` string while the policy
+  // resolves and canonicalizes. Any alternate spelling of the same entry --
+  // "./x", "x//y", a traversal, or an absolute path -- therefore reached the
+  // deletion while the denylist believed it had refused it. A denylist that
+  // can be spelled around is decorative.
+  test.each([["./src/tracked.ts"], ["src//tracked.ts"], ["src/../src/tracked.ts"]])(
+    "denyPaths refuses %s, the same entry spelled differently",
+    async (spelling) => {
+      const target = join(root, "src", "tracked.ts");
+      const res = await deleteTool.run({ path: spelling }, { ...ctx([target]), denyPaths: ["src/tracked.ts"] });
+
+      expect(res.isError).toBe(true);
+      expect(existsSync(target)).toBe(true);
+    },
+  );
 
   test("denyPaths supports a glob", async () => {
     const target = join(root, "src", "also-tracked.ts");
