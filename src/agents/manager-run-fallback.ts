@@ -186,15 +186,22 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       // different-tier fallback target survives (see swap-decision.ts). Deliberately
       // NOT defaulted to currentRunOptions.modelTier when unset (the healthy primary's
       // first hop): that would narrow markUnavailable's cooldown key from bare-agent to
-      // agent+tier, which breaks resolveStartAgent's dead-primary skip — its
-      // `isUnavailable(primary)` check (hop-budget.ts) is intentionally tier-less and
-      // depends on the bare-agent key an agent-wide OR model-scoped failure
-      // (fail-auth, fail-quota, fail-rate-limit, fail-service-down, ...) writes when the
-      // failing hop named no tier. Model-identity exclusion therefore engages once a
-      // tier is NAMED by a hop (a swap target, or a dead-primary start that named one)
-      // — not retroactively for the very first, tier-less hop. `currentHopKind.model`
-      // still threads through: a literal-pin swap target DOES carry a tier-less model,
-      // and that pin's own identity is what nax#1966 needed — see fallback-model-identity.ts.
+      // agent+tier, and the bare-agent key is what still matters for an agent-wide
+      // fault. `resolveStartAgent`'s start probe (hop-budget.ts) is now
+      // endpoint-scoped, not tier-less — it queries `isUnavailable(primary, tier,
+      // model)` for the endpoint the NEXT operation would actually dispatch to. The
+      // very first, tier-less primary hop still writes a bare-agent key here because
+      // there is no tier to name yet; that bare key is exactly what `CooldownStore`
+      // needs for a genuinely agent-wide failure (fail-auth, missing binary, ...) to
+      // blanket every endpoint of the agent — `_live()` treats a bare key as
+      // blanket-agent only when the failure's own `cooldownScope` is `"agent"`, so a
+      // model-scoped failure recorded here (thanks to `dispatchedModel` below, when a
+      // hop reports its endpoint) still lands narrow rather than blanket. Model-identity
+      // exclusion therefore engages once a tier is NAMED by a hop (a swap target, or a
+      // dead-primary start that named one) — not retroactively for the very first,
+      // tier-less hop. `currentHopKind.model` still threads through: a literal-pin swap
+      // target DOES carry a tier-less model, and that pin's own identity is what
+      // nax#1966 needed — see fallback-model-identity.ts.
       const currentTier = currentHopKind.tier;
       input.markUnavailable(currentAgent, failure, currentTier, dispatchedModel);
       const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, dispatchedModel);
@@ -292,13 +299,20 @@ async function executeHop(
       ? (raw as { result: AgentResult; prompt?: string; endpoint?: HopEndpointLike })
       : { result: raw as unknown as AgentResult };
   // The `runHop` seam (SessionRunHopFn) reports no `endpoint` at all (nax#1965) — only
-  // `executeHop` does. Without a default here, a hop dispatched through this seam marks
-  // its cooldown with no identity to key on, collapsing onto the bare agent key and
-  // making the endpoint-aware dead-primary check (hop-budget.ts) unable to find it.
-  // `options.modelDef` is what this hop was actually dispatched with, so it is the same
-  // fallback identity `resolveHopEndpoint` reports for a pin-wins hop.
+  // `executeHop` does. Default it from `options.modelDef` ONLY for a `primary` hop:
+  // on a primary hop `options` IS, by construction, what this call was dispatched
+  // with (a pin wins per resolveHopEndpoint), so the default is accurate. After a
+  // swap, `options.modelDef` is stale — `currentRunOptions` is never rebuilt against
+  // the new agent's own resolution in this loop (only a timeout-retry reassigns it)
+  // — so defaulting there would report the OLD primary's identity as what the NEW
+  // agent dispatched, cooling a live endpoint while leaving the actually-dead one
+  // selectable. Reporting no identity (the pre-existing behavior) is safer: it just
+  // degrades `dispatchedModel` to `currentHopKind.model ?? undefined`, same as
+  // before this fix. Production is unaffected either way — `callOp` always supplies
+  // `request.executeHop`, which resolves a real endpoint per hop via
+  // `resolveHopEndpoint`, so this default only matters for the bare `runHop` seam.
   const endpoint: HopEndpointLike | undefined =
-    hop.endpoint ?? (options.modelDef ? { modelDef: options.modelDef } : undefined);
+    hop.endpoint ?? (kind.kind === "primary" && options.modelDef ? { modelDef: options.modelDef } : undefined);
   return { ...hop, bundle, endpoint };
 }
 

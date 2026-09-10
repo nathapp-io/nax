@@ -35,19 +35,15 @@ export interface StartEndpoint {
 }
 
 /**
- * Whether the primary is unavailable for the endpoint an operation would actually
- * dispatch to — not the bare agent name: on the native transport one agent fronts
- * several providers, so "native is unavailable" must not be true just because some
- * OTHER tier of it is cooling.
- */
-function isPrimaryUnavailable(source: StartAgentSource, primary: string, endpoint: StartEndpoint | undefined): boolean {
-  return source.isUnavailable(primary, endpoint?.tier, endpoint?.model);
-}
-
-/**
  * The fallback target an operation should start on: the configured primary, unless it
  * is already marked unavailable and fallback is enabled, in which case the first live
  * candidate — with its named tier, when it has one.
+ *
+ * The availability probe is scoped to the endpoint this operation would actually
+ * dispatch to — not the bare agent name: on the native transport one agent fronts
+ * several providers, so "native is unavailable" must not be true just because some
+ * OTHER tier of it is cooling. See `CooldownStore._live` (cooldown-store.ts) for how
+ * a bare (no-endpoint) probe still finds a genuinely agent-wide fault.
  *
  * Returns the primary unchanged (as a tier-less target) when fallback is off (the
  * toggle must win), when the primary is healthy, or when no candidate is left — the
@@ -62,7 +58,7 @@ export function resolveStartAgent(
   logger: HopBudgetLogger | null | undefined,
   endpoint?: StartEndpoint,
 ): FallbackTarget {
-  if (!fallbackEnabled || !isPrimaryUnavailable(source, primary, endpoint)) return { agent: primary };
+  if (!fallbackEnabled || !source.isUnavailable(primary, endpoint?.tier, endpoint?.model)) return { agent: primary };
   const candidate = source.nextCandidate(primary, 0);
   if (!candidate) return { agent: primary };
   logger?.info("agent-manager", "Primary agent already unavailable — starting on fallback", {

@@ -322,4 +322,71 @@ describe("AgentManager — dead-primary skip is scoped to the dispatched endpoin
     expect(outcome.fallbacks).toHaveLength(0);
     expect(outcome.finalAgent).toBe("codex");
   });
+
+  // nax#1965 fix-round-2: `executeHop`'s default-from-`options.modelDef` fix only
+  // applies to a PRIMARY hop. `currentRunOptions` is never rebuilt across a swap in
+  // `runWithFallback` (only a timeout-retry reassigns it), so after a swap the SAME
+  // stale `options.modelDef` (the ORIGINAL primary's) would still be in scope for the
+  // swapped-to agent's hop. Defaulting there would record the swapped-to agent's
+  // failure under the primary's model identity — cooling an endpoint that is alive
+  // (the primary's own) while leaving the actually-dead one (the swapped-to agent's
+  // real endpoint) unrecorded. This pins that a swap-kind hop's failure is NOT
+  // recorded under the stale primary identity.
+  test("a swapped hop through the runHop seam is not recorded under the stale primary model identity", async () => {
+    const rateLimitFailure: AdapterFailure = {
+      category: "availability",
+      outcome: "fail-rate-limit",
+      retriable: true,
+      message: "rate limited",
+    };
+    // claude (primary) and codex (first swap target) both rate-limit; gemini
+    // (second swap target) succeeds, so the chain terminates on success — no
+    // hop-cap exhaustion, so no real `defaultRetryStrategy` backoff sleep.
+    const m = new AgentManager(configWithFallback({ maxHopsPerStory: 2 }), undefined, {
+      runHop: async (name: string) => {
+        if (name === "gemini") {
+          return {
+            prompt: `prompt-${name}`,
+            result: {
+              success: true,
+              exitCode: 0,
+              output: "ok-gemini",
+              rateLimited: false,
+              durationMs: 1,
+              estimatedCostUsd: 0,
+            },
+          };
+        }
+        return {
+          prompt: `prompt-${name}`,
+          result: {
+            success: false,
+            exitCode: 1,
+            output: "rate limited",
+            rateLimited: true,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            adapterFailure: rateLimitFailure,
+          },
+        };
+      },
+    });
+
+    await m.runWithFallback({
+      runOptions: makeRunOptions({
+        storyId: "us-013",
+        modelTier: "balanced",
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      }),
+    });
+
+    // The primary hop's own failure IS recorded against its real dispatch identity
+    // (defaulted from options.modelDef, since this is a "primary" hop).
+    expect(m.isUnavailable("claude", "balanced", "claude-sonnet-4-5")).toBe(true);
+
+    // The swapped-to agent's hop failed too, through a "swap"-kind HopKind — it must
+    // NOT inherit the stale primary's modelDef default. If it had, codex would show
+    // unavailable under claude's own model id, which is the wrong identity for it.
+    expect(m.isUnavailable("codex", "balanced", "claude-sonnet-4-5")).toBe(false);
+  });
 });
