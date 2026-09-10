@@ -90,7 +90,13 @@ export {
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   RoutingConfigSchema,
 } from "./schemas-infra";
-export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
+export {
+  ConfiguredModelSchema,
+  ModelTierSchema,
+  ProviderCatalogOverrideSchema,
+  ThinkingLevelSchema,
+  TierConfigSchema,
+} from "./schemas-model";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
 export type { ConfigSelector } from "./selector";
 export { pickSelector, reshapeSelector } from "./selector";

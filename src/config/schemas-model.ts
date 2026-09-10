@@ -29,6 +29,51 @@ const TokenPricingSchema = z.object({
   tiers: z.array(TokenPricingTierSchema).optional(),
 });
 
+/**
+ * nax#1982: mirror of nax-ai's `ThinkingLevel` union. See the hand-written
+ * `ThinkingLevel` in schema-types.ts for why this is hand-mirrored.
+ */
+export const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+/**
+ * Catalog-override rates use nax-ai's `Pricing` vocabulary (per 1M tokens).
+ * All four are required: an omitted rate would otherwise have to be guessed,
+ * and a guessed cache rate silently mis-bills. `.strict()` so a typo is a
+ * load error, not a stripped key.
+ */
+export const CatalogPricingSchema = z
+  .object({
+    input: z.number().min(0),
+    output: z.number().min(0),
+    cacheRead: z.number().min(0),
+    cacheWrite: z.number().min(0),
+  })
+  .strict();
+
+export const CatalogModelOverrideSchema = z
+  .object({
+    id: z.string().min(1, "id must be non-empty"),
+    protocol: z.string().min(1, "protocol must be non-empty"),
+    contextWindow: z.number().int().positive(),
+    supportsTools: z.boolean(),
+    thinkingLevels: z.array(ThinkingLevelSchema),
+    pricing: CatalogPricingSchema,
+  })
+  .strict();
+
+/**
+ * Provider-scoped and config-global: keyed on (provider, model id), applied
+ * below the config surface in the nax-ai catalog, so every pin route (tier
+ * entry, literal {agent, model}, fallback rung) sees it. Deliberately no
+ * baseUrl/headers/tiers — see the plan's Global Constraints.
+ */
+export const ProviderCatalogOverrideSchema = z
+  .object({
+    provider: z.string().min(1, "provider must be non-empty"),
+    models: z.array(CatalogModelOverrideSchema).min(1, "models must not be empty"),
+  })
+  .strict();
+
 const ModelDefSchema = z.object({
   provider: z.string().min(1, "Provider must be non-empty"),
   model: z.string().min(1, "Model must be non-empty"),

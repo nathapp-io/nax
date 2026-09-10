@@ -5,6 +5,8 @@
  * to keep each file within the 600-line project limit.
  */
 
+import type { ProviderCatalogOverride } from "./schema-types";
+
 /** Generate command configuration */
 export interface GenerateConfig {
   /**
@@ -96,6 +98,12 @@ export interface AgentNativeTransportRetryConfig {
 export interface AgentNativeConfig {
   /** Bounded retry for a transport/overloaded fault thrown by the turn loop's complete() call. */
   transportRetry?: AgentNativeTransportRetryConfig;
+  /**
+   * nax#1982: explicit catalog entries for native model ids the bundled
+   * pi-ai snapshot does not know. Applied at client-build time, below every
+   * config pin route. One list per process — the client is memoised.
+   */
+  catalogOverrides?: ProviderCatalogOverride[];
 }
 
 /** Bounded same-agent retry after a wall-clock timeout (US-002) */

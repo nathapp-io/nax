@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { ConfiguredModelSchema, ModelTierSchema } from "./schemas-model";
+import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
 
 export const PlanConfigSchema = z.object({
   model: ConfiguredModelSchema,
@@ -293,9 +293,16 @@ const AgentNativeTransportRetryConfigSchema = z.object({
   baseDelayMs: z.number().int().positive().default(2000),
 });
 
-const AgentNativeConfigSchema = z.object({
-  transportRetry: AgentNativeTransportRetryConfigSchema.default({ maxAttempts: 3, baseDelayMs: 2000 }),
-});
+const AgentNativeConfigSchema = z
+  .object({
+    transportRetry: AgentNativeTransportRetryConfigSchema.default({ maxAttempts: 3, baseDelayMs: 2000 }),
+    /** nax#1982: explicit catalog entries for ids the bundled pi-ai snapshot does not know. */
+    catalogOverrides: z.array(ProviderCatalogOverrideSchema).default([]),
+  })
+  // Strict: the issue's retracted singular `catalogOverride` is the typo a
+  // user is most likely to carry over, and a silently stripped key would
+  // reproduce the original "Unknown model" failure.
+  .strict();
 
 // Bounded same-agent retry after a wall-clock timeout (US-002). `budgetMultiplier`
 // scales the prior hop's `timeoutSeconds` for the retry's fresh session.
@@ -332,7 +339,10 @@ export const AgentConfigSchema = z.object({
     trackedSpawnDeadlineMs: 10_000,
     trackedSpawnStartupDeadlineMs: 30_000,
   }),
-  native: AgentNativeConfigSchema.default({ transportRetry: { maxAttempts: 3, baseDelayMs: 2000 } }),
+  native: AgentNativeConfigSchema.default({
+    transportRetry: { maxAttempts: 3, baseDelayMs: 2000 },
+    catalogOverrides: [],
+  }),
   idleWatchdog: AgentIdleWatchdogConfigSchema.default(DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG),
   timeoutRetry: AgentTimeoutRetryConfigSchema.default(DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG),
 });

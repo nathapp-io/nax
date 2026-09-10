@@ -77,6 +77,53 @@ export interface ModelDef {
   env?: Record<string, string>;
 }
 
+/**
+ * Reasoning levels the catalog may declare, mirrored from nax-ai's
+ * `ThinkingLevel` union (nax#1982). nax-ai cannot be imported here
+ * (`scripts/check-nax-ai-imports.ts`), so the union is hand-mirrored;
+ * `test/unit/agents/native/models.test.ts` pins it against
+ * `THINKING_LEVELS` in `src/agents/native/models.ts`, which is itself a
+ * compile-time-exhaustive `Record<ThinkingLevel, true>` over the nax-ai
+ * union.
+ */
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/**
+ * Rates for a catalog override, in the CATALOG's vocabulary (`input`,
+ * `output`, `cacheRead`, `cacheWrite`, per 1M tokens) — not `TokenPricing`'s
+ * `*Per1M` names. This block describes the simulated catalog entry, so it
+ * speaks the catalog's language; `ModelDef.pricing` remains the cost-math
+ * override in nax's own vocabulary.
+ */
+export interface CatalogPricing {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/**
+ * One complete catalog entry for a model the bundled pi-ai snapshot does not
+ * know. Complete, not a patch: nax-ai's `normaliseCatalog` replaces any
+ * same-id entry wholesale and lazily creates the provider bucket, so nothing
+ * here may be left to the bundled value.
+ */
+export interface CatalogModelOverride {
+  id: string;
+  /** nax-ai protocol id, e.g. "openai-completions" or "anthropic-messages". */
+  protocol: string;
+  contextWindow: number;
+  supportsTools: boolean;
+  thinkingLevels: ThinkingLevel[];
+  pricing: CatalogPricing;
+}
+
+/** Provider-scoped catalog overrides — maps 1:1 onto nax-ai's `ProviderOverride[]`. */
+export interface ProviderCatalogOverride {
+  provider: string;
+  models: CatalogModelOverride[];
+}
+
 export type ModelEntry = ModelDef | string;
 export type ModelMap = Record<ModelTier, ModelEntry>;
 /**

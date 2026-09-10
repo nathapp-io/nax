@@ -116,8 +116,14 @@ export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
       // "agent", "execution", "profile" and deliberately NOT "models" —
       // ADR-019 puts model resolution at the callOp seam, not the manager.
       // Widening the selector to reach models.native would breach that
-      // boundary for a capability field. See the note below Step 4.
-      adapter = name === NATIVE_AGENT ? new NativeAgentAdapter() : new AcpAgentAdapter(name);
+      // boundary for a capability field. See ADR-019 §5 (callOp seam boundary).
+      adapter =
+        name === NATIVE_AGENT
+          ? // `agent` is already picked by agentManagerConfigSelector, so this
+            // needs no ADR-019 selector change: it is declaration data for the
+            // native client, not model resolution at the callOp seam.
+            new NativeAgentAdapter(undefined, config.agent?.native?.catalogOverrides ?? [])
+          : new AcpAgentAdapter(name);
       adapterCache.set(name, adapter);
       logger?.debug("agents", `Created ${adapter.constructor.name} for ${name}`, { name });
     }

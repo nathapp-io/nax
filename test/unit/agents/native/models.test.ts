@@ -11,10 +11,13 @@ import {
   buildRateCard,
   parseNativeModel,
   resolveContextWindow,
+  THINKING_LEVELS,
   toNaxTokenUsage,
+  toProviderOverrides,
   toThinkingLevel,
 } from "@/agents/native/models";
-import type { TokenPricing } from "@/config/schema-types";
+import { ThinkingLevelSchema } from "@/config";
+import type { ProviderCatalogOverride, TokenPricing } from "@/config/schema-types";
 import { NaxError } from "@/errors";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 
@@ -303,5 +306,51 @@ describe("resolveContextWindow", () => {
 
   test("an override exactly equal to the real window is accepted, not rejected", () => {
     expect(resolveContextWindow(128_000, 128_000)).toBe(128_000);
+  });
+});
+
+describe("toProviderOverrides", () => {
+  const override: ProviderCatalogOverride = {
+    provider: "opencode-go",
+    models: [
+      {
+        id: "deepseek-flash",
+        protocol: "openai-completions",
+        contextWindow: 1_000_000,
+        supportsTools: true,
+        thinkingLevels: ["off", "low", "medium", "high"],
+        pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
+      },
+    ],
+  };
+
+  test("stamps the outer provider on every model and carries every declaration field", () => {
+    expect(toProviderOverrides([override])).toEqual([
+      {
+        provider: "opencode-go",
+        models: [
+          {
+            id: "deepseek-flash",
+            provider: "opencode-go",
+            protocol: "openai-completions",
+            contextWindow: 1_000_000,
+            supportsTools: true,
+            thinkingLevels: ["off", "low", "medium", "high"],
+            pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("returns an empty array when there is nothing to override", () => {
+    expect(toProviderOverrides([])).toEqual([]);
+  });
+
+  test("the config thinking levels mirror the nax-ai union exactly", () => {
+    // THINKING_LEVELS is a Record<ThinkingLevel, true> over nax-ai's union, so
+    // it fails to compile if nax-ai adds a level. This pins the config enum to
+    // the same set so a level can never be accept-here/reject-there.
+    expect(Object.keys(THINKING_LEVELS)).toEqual(ThinkingLevelSchema.options);
   });
 });

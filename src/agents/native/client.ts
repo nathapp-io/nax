@@ -11,7 +11,10 @@
 
 import { type Client, createClient, defaultProtocols, defaultProviders } from "@nathapp/nax-ai";
 
+import type { ProviderCatalogOverride } from "@/config/schema-types";
+import { NaxError } from "@/errors";
 import { naxCredentialStore } from "./credentials";
+import { toProviderOverrides } from "./models";
 
 /**
  * How nax names itself to a provider that reports on the calling application.
@@ -38,7 +41,7 @@ const NAX_CLIENT_APP = { name: "nax", url: "https://github.com/nathapp-io/nax" }
  * module-level cache across files), which would otherwise make this
  * synchronous, no-network construction path uncoverable by any test.
  */
-export async function buildNativeClient(): Promise<Client> {
+export async function buildNativeClient(catalogOverrides: readonly ProviderCatalogOverride[] = []): Promise<Client> {
   return createClient({
     providers: await defaultProviders(),
     protocols: _clientDeps.defaultProtocols({
@@ -53,6 +56,12 @@ export async function buildNativeClient(): Promise<Client> {
       // the process, so nax-ai takes it here rather than on every request.
       clientApp: NAX_CLIENT_APP,
     }),
+    // nax-ai applies these last (`normaliseCatalog`), replacing any bundled
+    // entry with the same id and lazily creating the provider bucket when the
+    // id is unknown to pi-ai — that is what makes a model newer than the
+    // snapshot resolvable (#1982). Omitted entirely when empty so the
+    // no-override path stays byte-identical to before.
+    ...(catalogOverrides.length > 0 ? { providerOverrides: toProviderOverrides(catalogOverrides) } : {}),
   });
 }
 
@@ -68,13 +77,29 @@ export const _clientDeps = {
 };
 
 let cached: Promise<Client> | undefined;
+/** Serialised override set the cached build was created for. */
+let cachedOverridesKey: string | undefined;
 
-export async function getNativeClient(): Promise<Client> {
+export async function getNativeClient(catalogOverrides: readonly ProviderCatalogOverride[] = []): Promise<Client> {
+  const overridesKey = JSON.stringify(catalogOverrides);
+  if (cached !== undefined && overridesKey !== cachedOverridesKey) {
+    // The client is a constant of the process (catalog load is ~50ms / ~650KB),
+    // so overrides must be collected into ONE set before the first build. A
+    // silent second build would swap the client under in-flight sessions.
+    throw new NaxError(
+      "The native client was already built for a different catalog-override set. " +
+        "Collect every override into one agent.native.catalogOverrides list instead of varying them per call.",
+      "NATIVE_CLIENT_OVERRIDES_MISMATCH",
+      { builtFor: cachedOverridesKey, requested: overridesKey },
+    );
+  }
   if (cached === undefined) {
+    cachedOverridesKey = overridesKey;
     // Cache the promise, not the value, so concurrent callers share one build.
     // Drop it on rejection: a failed catalog load should not be permanent.
-    cached = _clientDeps.build().catch((err: unknown) => {
+    cached = _clientDeps.build(catalogOverrides).catch((err: unknown) => {
       cached = undefined;
+      cachedOverridesKey = undefined;
       throw err;
     });
   }
@@ -84,4 +109,5 @@ export async function getNativeClient(): Promise<Client> {
 /** Clears the memo. Tests only. */
 export function _resetNativeClient(): void {
   cached = undefined;
+  cachedOverridesKey = undefined;
 }
