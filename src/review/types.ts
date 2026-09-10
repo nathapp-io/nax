@@ -129,7 +129,7 @@ export interface SemanticReviewConfig {
    */
   demandInspectionTrail?: boolean;
   /** Opt-in for semantic (default disabled) — see schemas-review.ts. */
-  recurrenceDemotion?: { enabled: boolean; maxBlockingRounds: number };
+  recurrenceDemotion?: { enabled: boolean; maxBlockingRounds: number; maxAdvisoryRounds: number };
 }
 
 /** Review check result */
@@ -255,7 +255,7 @@ export interface AdversarialReviewConfig {
    * after recurring beyond `maxBlockingRounds` rounds; entry guard suppresses
    * flip-flops. Default `{ enabled: true, maxBlockingRounds: 2 }`.
    */
-  recurrenceDemotion?: { enabled: boolean; maxBlockingRounds: number };
+  recurrenceDemotion?: { enabled: boolean; maxBlockingRounds: number; maxAdvisoryRounds: number };
   /**
    * When true (default), a ref-mode empty-findings `passed:true` verdict with no
    * declared `inspectedFiles` triggers one same-session re-prompt demanding the

@@ -250,7 +250,10 @@ describe("semanticReviewOp — persisted audit shape (#1861)", () => {
       const input: SemanticReviewInput = {
         ...BASE_INPUT,
         workdir,
-        semanticConfig: { ...BASE_INPUT.semanticConfig, recurrenceDemotion: { enabled: true, maxBlockingRounds: 2 } },
+        semanticConfig: {
+          ...BASE_INPUT.semanticConfig,
+          recurrenceDemotion: { enabled: true, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
+        },
         priorSemanticIterations: [priorRound(1, RECURRING), priorRound(2, `${RECURRING} again`)],
       };
       const parsed = makeOutput({

@@ -378,7 +378,7 @@ describe("single-session adversarial-review routing", () => {
             timeoutMs: 600_000,
             substantiation: { requote: true, maxRequotes: 5 },
             demandInspectionTrail: true,
-            recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+            recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
           },
           mode: "embedded",
         },

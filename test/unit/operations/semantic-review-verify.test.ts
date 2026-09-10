@@ -552,7 +552,10 @@ describe("semanticReviewOp.verify() — recurrence demotion", () => {
     const input: SemanticReviewInput = {
       ...BASE_INPUT,
       mode: "embedded", // skip evidence substantiation (ref-mode only)
-      semanticConfig: { ...BASE_INPUT.semanticConfig, recurrenceDemotion: { enabled, maxBlockingRounds: 2 } },
+      semanticConfig: {
+        ...BASE_INPUT.semanticConfig,
+        recurrenceDemotion: { enabled, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
+      },
       priorSemanticIterations: [priorSemanticRound(1, RECURRING), priorSemanticRound(2, `${RECURRING} again`)],
     };
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
