@@ -17,6 +17,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **watchdog:** Count ACP `tool_call` / `tool_call_update` stream activity by default, and add `agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds` (default 1800s) so long-running tool-only sessions stay alive without masking runaway tool loops.
+- **Fixed** — a same-agent fallback hop dispatched the previous model, because
+  `SessionManager` reused a live session whenever the agent name matched and
+  discarded the requested endpoint. Same-agent ladder rungs and sticky endpoints
+  inherited by warm rectification ops were both inert (#1965).
+
+### Changed
+
+- **Changed** — `agent.fallback.maxHopsPerStory` now bounds ladder DEPTH per
+  (story, tier, agent, role) rather than counting swap events per story, so a
+  story keeps descending its ladder across its operations instead of stranding
+  later ops on a dead endpoint.
+
+### Added
+
+- **Added** — `agent.fallback.map` agents are validated against `agent.protocol`
+  at config load instead of failing mid-story at dispatch.
+
+### Known residual
+
+- **Known residual** — `resolveFallbackModelId` resolves a literal model pin in
+  preference to a co-present tier, so a cooldown recorded at mark time and a
+  candidate lookup at read time can key on different identities for the same
+  endpoint. The ladder-depth filter added here prevents that from re-offering a
+  rung forever, but the identity divergence itself is unfixed and belongs with
+  the `#1966` work.
+
+### Migration
+
+- **Migration** — a config that names an agent in `agent.fallback.map` which the
+  declared `agent.protocol` does not permit is now rejected at config load
+  rather than failing mid-story with `AGENT_NOT_FOUND`. A ladder mixing
+  `native` with acpx agents requires `agent.protocol: "hybrid"`; previously
+  such a config parsed and failed later, at dispatch.
 
 ## [0.51.2] — 2026-03-22
 
