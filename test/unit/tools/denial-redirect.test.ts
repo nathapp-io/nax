@@ -205,3 +205,40 @@ describe("declared-commands fallback (#1971)", () => {
     expect(redirectForArgv(["go", "mod", "download"], ALL, CMDS)).toBeUndefined();
   });
 });
+
+describe("the #1971 denial shapes each name an affordance", () => {
+  const WITH_GREP = new Set(["Glob", "Git", "Delete", "RunCommand", "Grep"]);
+
+  test.each([
+    { tool: "RunCommand", verb: "ls -la", want: "Glob" },
+    { tool: "RunCommand", verb: "diff", want: "Git" },
+    { tool: "RunCommand", verb: "git", want: "Git" },
+    { tool: "Git", verb: "grep", want: "Grep" },
+  ])("$tool {$verb} names $want", ({ tool, verb, want }) => {
+    expect(redirectForVerb(tool, verb, WITH_GREP, CMDS)).toContain(want);
+  });
+
+  test.each([
+    [["bun", "run", "check:all"]],
+    [["bun", "run", "check:test-mocks"]],
+    [["npm", "run", "lint:ci"]],
+    [["make", "check"]],
+  ])("a project gate names the declared commands: %s", (argv: string[]) => {
+    expect(redirectForArgv(argv, WITH_GREP, CMDS)).toContain("RunCommand with declared commands");
+  });
+
+  test("a specific row still beats the generic fallback", () => {
+    expect(redirectForVerb("RunCommand", "bun test a.test.ts", WITH_GREP, CMDS)).toContain("testScoped");
+  });
+
+  test("shapes nothing serves stay unredirected", () => {
+    // No tool provides a line count, and `test:coverage` is a verb the project
+    // never declared -- Task 1's `permitted:` list is what serves these.
+    expect(redirectForVerb("RunCommand", "wc -l a.ts", WITH_GREP, CMDS)).toBeUndefined();
+    expect(redirectForVerb("RunCommand", "test:coverage", WITH_GREP, CMDS)).toBeUndefined();
+  });
+
+  test("never contradicts its own denial", () => {
+    expect(redirectForVerb("Git", "diff", WITH_GREP, CMDS)).toBeUndefined();
+  });
+});
