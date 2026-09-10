@@ -102,7 +102,10 @@ export function validateAdversarialShape(parsed: unknown): AdversarialLLMRespons
     // `findings: ["prose"]` are both shapes an LLM produces, and every downstream
     // reader (e.g. filterByAcQuote) dereferences `.severity` unguarded — a malformed
     // entry that survives this cast becomes a crash mid-review (BUG-49).
-    findings: (obj.findings as unknown[]).filter(isAdversarialFindingShaped).map(withNormalizedSeverity),
+    findings: (obj.findings as unknown[])
+      .filter(isAdversarialFindingShaped)
+      .map(withStrippedModelRecurrence)
+      .map(withNormalizedSeverity),
     ...(acks.length > 0 && { acks }),
   };
 }
@@ -119,6 +122,26 @@ function isAdversarialFindingShaped(f: unknown): f is AdversarialLLMFinding {
  */
 function withNormalizedSeverity(f: AdversarialLLMFinding): AdversarialLLMFinding {
   return { ...f, severity: normalizeSeverity(f.severity) };
+}
+
+/**
+ * US-003 — `meta.recurrence` is FRAMEWORK-OWNED. A reviewer LLM that authors
+ * its own `meta.recurrence` would otherwise have its forgery persisted verbatim
+ * through `toAdversarialReviewFindings` (the allowlist forwards `meta.recurrence`
+ * verbatim) and reach the audit layer as if nax had stamped it. Strip it at
+ * the parse boundary. The in-repo precedent is `evidence`, which is
+ * framework-owned and overwritten wholesale by `substantiateAdversarialFindings`
+ * after the parse boundary (`evidence` is "never authored by the model"). The
+ * only legitimate source of `meta.recurrence` after this point is
+ * `classifyRecurrence`, which writes through `stampRecurrence` and only when
+ * `recurrenceDemotion.enabled` is true. Other `meta` keys are left alone —
+ * the reviewer owns them today, and a blanket strip is out of scope.
+ */
+function withStrippedModelRecurrence(f: AdversarialLLMFinding): AdversarialLLMFinding {
+  if (f.meta?.recurrence === undefined) return f;
+  const { recurrence: _drop, ...rest } = f.meta;
+  void _drop;
+  return Object.keys(rest).length > 0 ? { ...f, meta: rest } : { ...f, meta: undefined };
 }
 
 /**
