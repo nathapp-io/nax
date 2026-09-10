@@ -9,6 +9,7 @@ on:
       - 'bin/**'
       - 'flows/**'
       - 'scripts/**'
+      - 'stubs/**'
       - 'bun.lock'
       - 'package.json'
       - 'tsconfig*.json'
@@ -21,6 +22,7 @@ on:
       - 'bin/**'
       - 'flows/**'
       - 'scripts/**'
+      - 'stubs/**'
       - 'bun.lock'
       - 'package.json'
       - 'tsconfig*.json'
@@ -61,6 +63,14 @@ jobs:
       # `check:gate-reachability`, inside `check:all`, fails if one is orphaned.
       - name: Check all
         run: bun run check:all
+
+      # The release workflow is the only other place `bun run build` runs, and it
+      # runs after a tag is already pushed. A bundler resolution failure therefore
+      # used to be undiscoverable until the release job died with the tag live
+      # (nax#1976 -> v0.82.0-canary.8). `check:bundle-externals` guards the two
+      # flags we know about; this step guards the class. It takes ~1s.
+      - name: Build
+        run: bun run build
 
       - name: Test (unit)
         run: bun test test/unit/ --timeout=60000 --bail

@@ -1,0 +1,9 @@
+{
+  "name": "react-devtools-core",
+  "version": "0.0.0-nax-stub",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "exports": { ".": "./index.js" }
+}
