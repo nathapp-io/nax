@@ -91,6 +91,11 @@ export class StoryHopBudget {
     return next;
   }
 
+  /** Record an absolute ladder position — the depth-index counterpart to `spend`. */
+  record(storyId: string | undefined, depth: number): void {
+    if (storyId) this._byStory.set(storyId, depth);
+  }
+
   /** Drop every story's budget (run teardown / `AgentManager.reset()`). */
   clear(): void {
     this._byStory.clear();

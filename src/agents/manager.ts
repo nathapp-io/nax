@@ -21,6 +21,7 @@ import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
 import { resolveFallbackDispatchTarget, resolveFallbackModelId, sameFallbackHop } from "./fallback-model-identity";
 import { StoryHopBudget } from "./hop-budget";
+import { resolveLadderDepth, resolveNextCandidate } from "./ladder-slot";
 import {
   buildCompleteCallPreamble,
   buildCompleteEvent,
@@ -169,12 +170,12 @@ export class AgentManager implements IAgentManager {
     resolveFallbackModelId(this._models, agent, tier, this.getDefault(), model);
   private readonly _isExcluded = (c: string, t?: string, m?: string): boolean =>
     this._prunedFallback.has(c) || this._cooldowns.isCooling(c, t, this._modelId(c, t, m));
-  private readonly _sameHop = (a: string, b: string | undefined, at?: string, am?: string, bt?: string, bm?: string) =>
-    sameFallbackHop(this._models, this.getDefault(), a, b, at, am, bt, bm);
-
-  /** Folds a `{ agent, model }` target naming a tier into `{ agent, tier }`. */
   private readonly _resolveTarget = (t: FallbackTarget): FallbackTarget =>
     resolveFallbackDispatchTarget(this._models, this.getDefault(), t);
+  private readonly _depthOf = (t: FallbackTarget): number =>
+    resolveLadderDepth(this._models, this.getDefault(), this._config.agent?.fallback?.map, this._resolveTarget, t);
+  private readonly _sameHop = (a: string, b: string | undefined, at?: string, am?: string, bt?: string, bm?: string) =>
+    sameFallbackHop(this._models, this.getDefault(), a, b, at, am, bt, bm);
 
   resolveFallbackChain(agent: string, _failure: AdapterFailure): import("./swap-decision").FallbackTarget[] {
     return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded, this._resolveTarget);
@@ -184,10 +185,10 @@ export class AgentManager implements IAgentManager {
     return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
-  nextCandidate(cur: string, _hops: number, exclude?: string, tier?: string, model?: string): FallbackTarget | null {
-    const excluded = (c: string, t?: string, m?: string): boolean =>
-      this._sameHop(c, exclude, t, m, tier, model) || this._isExcluded(c, t, m);
-    return availableCandidates(this._config.agent?.fallback?.map, cur, excluded, this._resolveTarget)[0] ?? null;
+  nextCandidate(cur: string, hops: number, exclude?: string, tier?: string, model?: string): FallbackTarget | null {
+    const map = this._config.agent?.fallback?.map;
+    const query = { cur, hops, exclude, tier, model };
+    return resolveNextCandidate(map, this._resolveTarget, this._depthOf, this._sameHop, this._isExcluded, query);
   }
 
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
@@ -205,6 +206,7 @@ export class AgentManager implements IAgentManager {
       nextCandidate: (cur, hops, exclude, tier, model) => this.nextCandidate(cur, hops, exclude, tier, model),
       resolveExhaustion: (options) => this._resolveExhaustion(options),
       emitSwapAttempt: (fallback) => this._emitter.emit("onSwapAttempt", fallback),
+      depthOf: this._depthOf,
     });
   }
 

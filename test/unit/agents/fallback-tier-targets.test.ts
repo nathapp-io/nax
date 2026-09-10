@@ -712,7 +712,12 @@ describe("literal-pin fallback targets (nax#1966)", () => {
     // Then rung 1 failed too.
     m.markUnavailable("native", RL, "powerful");
 
-    expect(m.nextCandidate("native", 2, "native", "powerful")).toEqual({
+    // `hops` is the caller's current ladder depth (nax#1965) — after the one real
+    // swap so far (primary -> rung 1), that is 1, not the story's hop cap. A
+    // stale/arbitrary value here would silently mask `nextLadderCandidate`'s
+    // depth filter (ladder-slot.ts), which requires a candidate strictly deeper
+    // than `hops` to be offered.
+    expect(m.nextCandidate("native", 1, "native", "powerful")).toEqual({
       agent: "native",
       model: "openrouter/z-ai/glm-5.3-flash[high]",
     });

@@ -65,6 +65,8 @@ export interface AgentRunOutcome {
    * the name is unchanged and the model is the whole point (nax#1964).
    */
   finalTarget?: FallbackTarget;
+  /** Ladder index of `finalTarget`, for the caller's slot record. */
+  finalDepth?: number;
 }
 
 export interface AgentCompleteOutcome {
@@ -130,6 +132,13 @@ export interface AgentRunRequest {
    * still applies.
    */
   noFallback?: boolean;
+  /**
+   * Ladder index this operation starts from — the slot's depth (nax#1965). 0 when
+   * the operation starts on its configured primary. Replaces reading a per-story
+   * swap-event counter: `maxHopsPerStory` bounds how far down the ladder a story
+   * travels, not how many swaps each of its operations may make.
+   */
+  readonly startDepth?: number;
 }
 
 /** Options for AgentManager.runAsSession — caller-managed session (Phase C). */

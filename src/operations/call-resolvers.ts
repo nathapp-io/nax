@@ -207,7 +207,7 @@ interface FallbackDispatchOutcome {
   readonly fallbacks: readonly AgentFallbackRecord[];
   readonly finalTarget?: FallbackTarget;
   readonly didSwap?: boolean;
-  /** Ladder index `finalTarget` landed on. Populated once Task 7 wires the real dispatch outcome. */
+  /** Ladder index `finalTarget` landed on — the position `runWithFallback` settled at. */
   readonly finalDepth?: number;
 }
 

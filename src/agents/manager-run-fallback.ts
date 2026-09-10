@@ -40,6 +40,7 @@ export interface RunFallbackInput {
   ) => FallbackTarget | null;
   readonly resolveExhaustion: (options: ExhaustionInput) => Promise<"retry" | "exhausted" | "cancelled">;
   readonly emitSwapAttempt: (fallback: AgentFallbackRecord) => void;
+  readonly depthOf: (target: FallbackTarget) => number;
 }
 
 export async function runWithFallback(input: RunFallbackInput): Promise<AgentRunOutcome> {
@@ -58,7 +59,8 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
     ...("tier" in start && start.tier !== undefined ? { tier: start.tier } : {}),
     ...("model" in start && start.model !== undefined ? { model: start.model } : {}),
   };
-  let hopsSoFar = budget.spent(storyId);
+  // Ladder index, not a swap counter: an op that starts on rung k IS at depth k.
+  let hopsSoFar = request.startDepth ?? budget.spent(storyId);
   let rateLimitRetry = 0;
   let staleRetryAttempts = 0;
   let timeoutRetryAttempts = 0;
@@ -93,6 +95,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalPrompt,
           finalAgent: currentAgent,
           finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
         };
       }
 
@@ -129,6 +132,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalPrompt,
           finalAgent: currentAgent,
           finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
         };
       }
 
@@ -151,6 +155,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
             finalPrompt,
             finalAgent: currentAgent,
             finalTarget: currentTarget,
+            finalDepth: hopsSoFar,
           };
         }
         const outcome = await input.resolveExhaustion({
@@ -177,6 +182,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalPrompt,
           finalAgent: currentAgent,
           finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
         };
       }
 
@@ -230,9 +236,13 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalPrompt,
           finalAgent: currentAgent,
           finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
         };
       }
-      hopsSoFar = budget.spend(storyId, hopsSoFar);
+      // The new position IS the rung's index — not "one more than before". A hop
+      // may skip cooling rungs, so incrementing would under-count the descent.
+      hopsSoFar = input.depthOf(next);
+      budget.record(storyId, hopsSoFar);
       rateLimitRetry = 0;
       currentBundle = updatedBundle;
       currentHopKind = {
