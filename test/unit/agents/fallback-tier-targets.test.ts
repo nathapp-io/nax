@@ -754,3 +754,41 @@ describe("literal-pin fallback targets (nax#1966)", () => {
     expect(m.nextCandidate("native", 1, "native", "glm")).toEqual({ agent: "claude" });
   });
 });
+
+describe("mark-time / read-time key divergence (tier-first precedence)", () => {
+  // manager-run-fallback.ts calls markUnavailable(agent, failure, currentTier,
+  // dispatchedModel) — a DECLARED tier plus a DERIVED dispatched model. A later
+  // {agent, tier} read carries no model and resolves via the tier map alone, so
+  // mark and read must key on the same map. An object model entry's dispatched
+  // id has no provider prefix, so resolving it as a PIN (provider inferred from
+  // string prefix) diverges from resolving the TIER (object entry's real
+  // provider) — precedence must be tier-first so both agree.
+  const RATE_LIMIT_FAILURE: AdapterFailure = {
+    category: "availability",
+    outcome: "fail-rate-limit",
+    retriable: true,
+    message: "rate limited",
+  };
+  // Pin-first would key the mark on "unknown/MiniMax-M2.7" (prefix-inferred);
+  // a bare {agent, tier} read keys on "minimax/MiniMax-M2.7" (the real provider).
+  const MODELS = { native: { fast: { provider: "minimax", model: "MiniMax-M2.7" } } };
+
+  test("a hop that declares a tier and dispatches that tier's model marks the SAME identity a {agent, tier} read resolves", () => {
+    const config = NaxConfigSchema.parse({
+      agent: {
+        protocol: "hybrid",
+        default: "native",
+        fallback: { enabled: true, map: { native: [{ agent: "native", tier: "fast" }] } },
+      },
+    });
+    const manager = new AgentManager(config, undefined, { models: MODELS });
+
+    // currentTier is DECLARED ("fast"); dispatchedModel is the DERIVED raw model
+    // id the endpoint reported (hop.endpoint?.modelDef.model) — not a literal pin.
+    manager.markUnavailable("native", RATE_LIMIT_FAILURE, "fast", "MiniMax-M2.7");
+
+    // A later {agent, tier} read (no model) must see this rung as unavailable.
+    expect(manager.isUnavailable("native", "fast")).toBe(true);
+    expect(manager.nextCandidate("native", 0, "native", "fast")).toBeNull();
+  });
+});

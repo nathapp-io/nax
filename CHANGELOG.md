@@ -34,14 +34,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Added** — `agent.fallback.map` agents are validated against `agent.protocol`
   at config load instead of failing mid-story at dispatch.
 
-### Known residual
+### Fixed
 
-- **Known residual** — `resolveFallbackModelId` resolves a literal model pin in
-  preference to a co-present tier, so a cooldown recorded at mark time and a
-  candidate lookup at read time can key on different identities for the same
-  endpoint. The ladder-depth filter added here prevents that from re-offering a
-  rung forever, but the identity divergence itself is unfixed and belongs with
-  the `#1966` work.
+- **Fixed** — `resolveFallbackModelId` resolved a literal model pin in
+  preference to a co-present tier, so a cooldown recorded at mark time
+  (`markUnavailable(agent, failure, tier, dispatchedModel)`, where `tier` is
+  declared and `dispatchedModel` is the hop's derived endpoint) and a
+  candidate lookup at read time (a bare `{agent, tier}` rung, no model) could
+  key on different identities for the same endpoint — a rung that just died
+  could read back as healthy. Precedence is now tier-first: when a tier is
+  present and `models` is available, the tier map is authoritative, and the
+  pin is used only when there is no tier, or the tier fails to resolve.
+- **Fixed** — `AgentManager.configureRuntime` silently dropped `models`. An
+  `AgentManager` injected via `opts.agentManager` in `runtime/index.ts` (which
+  spreads `models: config.models` into `configureRuntime`) never had its
+  `_models` backfilled, so `resolveFallbackModelId` returned `undefined` for
+  every tier and a rung like `{agent: "native", model: "powerful"}` never
+  folded to its named tier — it dispatched the literal string `"powerful"` as
+  a model id, with no error and no log. `configureRuntime` now accepts
+  `models` and assigns it with the same guard style as its siblings.
 
 ### Migration
 

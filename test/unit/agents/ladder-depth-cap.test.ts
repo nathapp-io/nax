@@ -110,6 +110,13 @@ describe("ladder depth cap", () => {
     const first: string[] = [];
     await mgr.runWithFallback({ runOptions: runOptions("US-A"), startDepth: 0, executeHop: failingHop(first) });
 
+    // Story boundary: a real pipeline calls this (unified-executor.ts) between stories.
+    // Without it, story A's rate-limit on native@powerful is a genuine cooldown on that
+    // real model (fallback-model-identity.ts resolves the SAME tier to the SAME identity
+    // both times) and correctly still excludes it for story B — that is the cooldown
+    // store working as designed, not the depth/budget counter under test here.
+    mgr.resetTransientUnavailable();
+
     const second: string[] = [];
     await mgr.runWithFallback({ runOptions: runOptions("US-B"), startDepth: 0, executeHop: failingHop(second) });
 
