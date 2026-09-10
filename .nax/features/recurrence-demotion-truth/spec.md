@@ -283,6 +283,12 @@ Depends on: US-003.
 Render retired findings in an acknowledgement block that forbids re-flagging rather than in
 the verdict list that mandates it, and stop seeding them into the non-blocking-fix lane.
 
+Both filters key on the stamp US-001 writes, restated here because it is the only shape this
+story needs from that module: each `Finding` may carry
+`meta.recurrence = { disposition, rounds, wasBlocking }`, where `disposition` is one of
+`"blocking"`, `"advisory"`, `"demoted"` or `"retired"`. An entry with no `meta.recurrence`
+predates this feature and is treated exactly as today.
+
 #### Context Files
 - `src/prompts/builders/prior-iterations-builder.ts` — `buildPriorIterationsBlock` at `:47`, `renderIteration` at `:86`, `renderFinding` at `:95`, `renderVerdictTemplate` at `:105`, and the `still-blocking` instruction at `:115`
 - `src/execution/non-blocking-fix.ts` — `actionableAdvisoryFindings` at `:54-60`
@@ -293,7 +299,7 @@ the verdict list that mandates it, and stop seeding them into the non-blocking-f
 
 #### Modifies
 
-**US-003**
+**US-004**
 - `test/unit/prompts/builders/prior-iterations-builder.test.ts` — assertions over the rendered block's finding count and its verdict template. Under AC 1 and AC 5 a retired entry leaves the verdict list and the template count drops accordingly, so any count-based expectation over a fixture containing a stamped entry fails against a correct implementation. US-003 owns updating them to the new invariant: the verdict list and its template count only entries not stamped `disposition: "retired"`, and retired entries appear once in the acknowledgement section.
 
 ## Acceptance Criteria
