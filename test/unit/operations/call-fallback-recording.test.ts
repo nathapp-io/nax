@@ -13,6 +13,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { assertDefined, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { storyFixKey } from "@/findings";
 import type { RunOperation } from "@/operations";
 import { callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -78,6 +79,54 @@ function runtimeWith(fallbacks: AgentFallbackRecord[]): NaxRuntime {
   return runtime;
 }
 
+/** A manager whose runWithFallback reports a swap AND the target it swapped to. */
+function managerSwappingTo(newAgent: string) {
+  const fallbacks = [hop({ newAgent })];
+  return makeMockAgentManager({
+    runWithFallbackFn: async (req) => {
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop(newAgent, undefined, { kind: "primary" }, req.runOptions);
+      return {
+        result: { ...hopResult.result, agentFallbacks: fallbacks },
+        fallbacks,
+        finalTarget: { agent: newAgent },
+        didSwap: true,
+      };
+    },
+    runAsSessionFn: async () => ({
+      output: "done",
+      estimatedCostUsd: 0,
+      internalRoundTrips: 0,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  });
+}
+
+/** A manager that retried a stale session without selecting a fallback target. */
+function managerReportingStaleRetry() {
+  const fallbacks = [hop({ priorAgent: "claude", newAgent: "claude", outcome: "fail-stale" })];
+  return makeMockAgentManager({
+    runWithFallbackFn: async (req) => {
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+      return {
+        result: { ...hopResult.result, agentFallbacks: fallbacks },
+        fallbacks,
+        finalTarget: { agent: "claude" },
+        didSwap: false,
+      };
+    },
+    runAsSessionFn: async () => ({
+      output: "done",
+      estimatedCostUsd: 0,
+      internalRoundTrips: 0,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  });
+}
+
 function ctxFor(runtime: NaxRuntime, storyId?: string) {
   return {
     runtime,
@@ -131,5 +180,34 @@ describe("callOp records agent-swap hops on the run-scoped store (#1707)", () =>
     await callOp(ctxFor(runtime), makeOp("no-story"), "input");
 
     expect(runtime.agentFallbacks.size).toBe(0);
+  });
+});
+
+describe("callOp records the target a story swapped to (nax#1964)", () => {
+  test("records finalTarget on runtime.storyAgentTargets, keyed by the escalation rung", async () => {
+    const runtime = makeMockRuntime({ agentManager: managerSwappingTo("codex") });
+    createdRuntimes.push(runtime);
+
+    await callOp(ctxFor(runtime, "US-001"), makeOp("record-target"), "input");
+
+    expect(runtime.storyAgentTargets.get(storyFixKey("US-001", "balanced", "claude"))).toEqual({ agent: "codex" });
+  });
+
+  test("records nothing when the op ran with no swaps", async () => {
+    const runtime = runtimeWith([]);
+
+    await callOp(ctxFor(runtime, "US-001"), makeOp("no-swap"), "input");
+
+    expect(runtime.storyAgentTargets.size).toBe(0);
+  });
+
+  test("does not make a stale retry sticky", async () => {
+    const runtime = makeMockRuntime({ agentManager: managerReportingStaleRetry() });
+    createdRuntimes.push(runtime);
+
+    await callOp(ctxFor(runtime, "US-001"), makeOp("stale-retry"), "input");
+
+    expect(runtime.agentFallbacks.get("US-001")).toHaveLength(1);
+    expect(runtime.storyAgentTargets.size).toBe(0);
   });
 });

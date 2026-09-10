@@ -85,6 +85,7 @@ import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
 import { AgentManager } from "../agents/manager";
 import type { AgentFallbackRecord } from "../agents/manager-types";
+import type { FallbackTarget } from "../agents/swap-decision";
 import type { ConfigLoader, NaxConfig } from "../config";
 import { createConfigLoader, getProjectKey } from "../config";
 import { PidRegistry } from "../execution/pid-registry";
@@ -176,6 +177,17 @@ export interface NaxRuntime {
    * (plan, CLI) are not recorded.
    */
   readonly agentFallbacks: Map<string, AgentFallbackRecord[]>;
+  /**
+   * The dispatch target each story swapped to, keyed by `storyFixKey(storyId, tier, agent)`.
+   *
+   * A swap used to die with the operation that made it: every op re-derived its agent
+   * from `ctx.agentName`, so a story that failed over re-probed the dead primary on its
+   * next op — and once the per-story hop budget was spent it could no longer swap away
+   * (nax#1964). Written by callOp only when a swap actually occurred; read by callOp
+   * before it resolves a dispatch target. Keyed on the full escalation rung for the same
+   * reason `storyFixHistory` is (#1530): a new rung deserves a fresh choice.
+   */
+  readonly storyAgentTargets: Map<string, FallbackTarget>;
   /**
    * The most recent adapter failure per story, written by callOp.
    *
@@ -357,6 +369,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const rectificationOscillations = new Map<string, number>();
   const reviewFindingRecurrences: ReviewRecurrenceStore = new Map();
   const agentFallbacks = new Map<string, AgentFallbackRecord[]>();
+  const storyAgentTargets = new Map<string, FallbackTarget>();
   const lastAdapterFailure = new Map<string, import("../context/engine").AdapterFailure>();
   const runtimeCrashRetries = new Map<string, number>();
   const storyFixHistory = createStoryFixHistory();
@@ -391,6 +404,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     rectificationOscillations,
     reviewFindingRecurrences,
     agentFallbacks,
+    storyAgentTargets,
     lastAdapterFailure,
     runtimeCrashRetries,
     storyFixHistory,

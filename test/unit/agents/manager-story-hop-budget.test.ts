@@ -181,4 +181,43 @@ describe("AgentManager — dead-primary skip", () => {
     expect(outcome.result.success).toBe(false);
     expect(outcome.finalAgent).toBe("claude");
   });
+
+  // nax#1966 fix-round-1: a bad instruction had the primary hop's swap-branch
+  // markUnavailable default its tier to `runOptions.modelTier` instead of staying
+  // tier-less. `fail-rate-limit` is `cooldownScope: "model"` (retry/failure-policy.ts),
+  // so that write landed on `claude::balanced` instead of the bare `claude` key —
+  // exactly the key `resolveStartAgent`'s tier-less `isUnavailable(primary)` probe
+  // reads (hop-budget.ts) to skip a known-dead primary on a story's later ops. Unlike
+  // the tests above, this drives the skip through a REAL failed `runWithFallback` hop
+  // (not a direct `markUnavailable` call) with a model-scoped outcome, so it is the
+  // only test in this suite that would have caught that regression.
+  test("a real fail-rate-limit hop still triggers the dead-primary skip on the next op", async () => {
+    const rateLimitFailure: AdapterFailure = {
+      category: "availability",
+      outcome: "fail-rate-limit",
+      retriable: true,
+      message: "rate limited",
+    };
+    const calls: string[] = [];
+    const hop = makeRunHop(["codex"], rateLimitFailure);
+    const m = new AgentManager(configWithFallback({ maxHopsPerStory: 2 }), undefined, {
+      runHop: async (name) => {
+        calls.push(name);
+        return hop(name);
+      },
+    });
+
+    const first = await m.runWithFallback({ runOptions: makeRunOptions({ storyId: "us-009" }) });
+    expect(first.result.success).toBe(true);
+    expect(first.fallbacks).toHaveLength(1);
+
+    calls.length = 0;
+    const second = await m.runWithFallback({ runOptions: makeRunOptions({ storyId: "us-009" }) });
+
+    // The primary ("claude") must not be re-probed: the second op starts directly on
+    // the fallback and spends no hop.
+    expect(calls).toEqual(["codex"]);
+    expect(second.fallbacks).toHaveLength(0);
+    expect(second.finalAgent).toBe("codex");
+  });
 });

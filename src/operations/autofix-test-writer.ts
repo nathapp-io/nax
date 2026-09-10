@@ -3,6 +3,7 @@ import type { AutofixConfig } from "@/config/selectors";
 import type { UserStory } from "@/prd";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { ReviewCheckResult } from "@/review/types";
+import { storyRoutingModel } from "./story-routing-model";
 import type { RunOperation } from "./types";
 
 export interface AutofixTestWriterInput {
@@ -40,6 +41,9 @@ export const testWriterRectifyOp: RunOperation<AutofixTestWriterInput, AutofixTe
     "RequestCapability",
   ],
   config: autofixConfigSelector,
+  // Inherit the story's rung so an escalation or a profile pin reaches the fix
+  // cycle too — without this the op fell through to callOp's literal "balanced".
+  model: (input) => storyRoutingModel(input.story),
   build(input, _ctx) {
     const prompt = RectifierPromptBuilder.testWriterRectification(input.failedChecks, input.story, {
       mode: input.mode,

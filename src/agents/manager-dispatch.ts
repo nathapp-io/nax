@@ -19,11 +19,19 @@ import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEven
 import { formatSessionName } from "../runtime/session-name";
 import type { SessionRole } from "../runtime/session-role";
 import { errorMessage } from "../utils/errors";
-import type { AgentFallbackRecord, RunAsSessionOpts } from "./manager-types";
+import type { AgentCompleteOutcome, AgentFallbackRecord, LoggerLike, RunAsSessionOpts } from "./manager-types";
 import { parseModelSpec } from "./model-spec";
 import { NATIVE_AGENT } from "./native/models";
 import { SessionTurnError } from "./session-types";
-import type { CompleteOptions, ResolvedCompleteOptions, SessionHandle, TurnResult } from "./types";
+import type { FallbackTarget } from "./swap-decision";
+import type {
+  AgentAdapter,
+  CompleteOptions,
+  CompleteResult,
+  ResolvedCompleteOptions,
+  SessionHandle,
+  TurnResult,
+} from "./types";
 
 /**
  * Model attribution fields for a dispatch event (#1433, #1464, US-001).
@@ -415,5 +423,65 @@ export function buildFallbackRecord(input: {
     category: input.failure.category,
     timestamp: new Date().toISOString(),
     costUsd: input.costUsd,
+  };
+}
+
+/**
+ * Validate credentials for `primary` and every fallback candidate, throwing if the
+ * primary itself is unusable and otherwise returning the names to prune.
+ *
+ * Extracted from `AgentManager.validateCredentials` to make room in `manager.ts`
+ * for nax#1964's `currentTarget` tracking — that file is at its 600-line hard
+ * ceiling (see `.claude/rules/project-conventions.md` "File Size").
+ */
+export async function validateAgentCredentials(input: {
+  primary: string;
+  candidates: Iterable<string>;
+  getAgent: (name: string) => AgentAdapter | undefined;
+  logger: LoggerLike;
+}): Promise<{ pruned: string[] }> {
+  const pruned: string[] = [];
+  for (const name of input.candidates) {
+    const adapter = input.getAgent(name);
+    if (!adapter || typeof adapter.hasCredentials !== "function") continue;
+    const ok = await adapter.hasCredentials();
+    if (ok) continue;
+    if (name === input.primary) {
+      throw new NaxError(`Primary agent "${name}" has no usable credentials`, "AGENT_CREDENTIALS_MISSING", {
+        stage: "run-setup",
+        agent: name,
+      });
+    }
+    input.logger.warn("agent-manager", "Fallback candidate pruned — missing credentials", {
+      primary: input.primary,
+      pruned: name,
+    });
+    pruned.push(name);
+  }
+  return { pruned };
+}
+
+/**
+ * Build an `AgentCompleteOutcome`, omitting `finalTier`/`finalTarget` when unset.
+ *
+ * Extracted so `completeWithFallback`'s five return sites in `manager.ts` stay
+ * one-liners: that file sits at its 600-line hard ceiling and cannot absorb the
+ * inline `...(currentTarget ? { finalTarget: currentTarget } : {})` spread nax#1964
+ * needs at every exit (`src/agents/manager.ts` is unable to grow — see
+ * `.claude/rules/project-conventions.md` "File Size").
+ */
+export function buildCompleteOutcome(
+  result: CompleteResult,
+  fallbacks: AgentFallbackRecord[],
+  didSwap: boolean,
+  currentTier: string | undefined,
+  currentTarget: FallbackTarget | undefined,
+): AgentCompleteOutcome {
+  return {
+    result,
+    fallbacks,
+    didSwap,
+    ...(currentTier !== undefined ? { finalTier: currentTier } : {}),
+    ...(currentTarget ? { finalTarget: currentTarget } : {}),
   };
 }

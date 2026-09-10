@@ -29,12 +29,13 @@ export interface RunFallbackInput {
   readonly logger: LoggerLike | null | undefined;
   readonly getDefault: () => string;
   readonly isUnavailable: (agent: string, tier?: string) => boolean;
-  readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string) => void;
+  readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string, model?: string) => void;
   readonly nextCandidate: (
     current: string,
     hops: number,
     exclude?: string,
     excludeTier?: string,
+    excludeModel?: string,
   ) => FallbackTarget | null;
   readonly resolveExhaustion: (options: ExhaustionInput) => Promise<"retry" | "exhausted" | "cancelled">;
   readonly emitSwapAttempt: (fallback: AgentFallbackRecord) => void;
@@ -47,6 +48,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   const storyId = request.runOptions.storyId;
   const start = resolveStartAgent(input, primaryAgent, config.agent?.fallback?.enabled, storyId, logger);
   let currentAgent = start.agent;
+  let currentTarget: FallbackTarget = { ...start };
   let currentHopKind: HopKind = {
     kind: "primary",
     ...("tier" in start && start.tier !== undefined ? { tier: start.tier } : {}),
@@ -64,6 +66,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   const agentChain: string[] = [primaryAgent];
   let finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
   let totalCostUsd = 0;
+  let didSwap = false;
 
   try {
     while (true) {
@@ -74,7 +77,15 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       totalCostUsd += result.estimatedCostUsd ?? 0;
       if (result.success) {
         finalStatus = "ok";
-        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+        return {
+          result,
+          fallbacks,
+          didSwap,
+          finalBundle: updatedBundle,
+          finalPrompt,
+          finalAgent: currentAgent,
+          finalTarget: currentTarget,
+        };
       }
 
       const retry = trySameAgentRetry(
@@ -102,7 +113,15 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       }
       if (request.noFallback) {
         finalStatus = "error";
-        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+        return {
+          result,
+          fallbacks,
+          didSwap,
+          finalBundle: updatedBundle,
+          finalPrompt,
+          finalAgent: currentAgent,
+          finalTarget: currentTarget,
+        };
       }
 
       const swap = decideSwap(result.adapterFailure, hopsSoFar, config.agent?.fallback);
@@ -116,7 +135,15 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
         if (result.adapterFailure?.outcome === "fail-stale") {
           logger?.warn("agent-manager", "fail-stale: no swap candidate, returning terminal failure", { storyId });
           finalStatus = "error";
-          return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+          return {
+            result,
+            fallbacks,
+            didSwap,
+            finalBundle: updatedBundle,
+            finalPrompt,
+            finalAgent: currentAgent,
+            finalTarget: currentTarget,
+          };
         }
         const outcome = await input.resolveExhaustion({
           failure: result.adapterFailure,
@@ -134,7 +161,15 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           continue;
         }
         finalStatus = outcome === "cancelled" ? "cancelled" : hopsSoFar > 0 ? "exhausted" : "error";
-        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+        return {
+          result,
+          fallbacks,
+          didSwap,
+          finalBundle: updatedBundle,
+          finalPrompt,
+          finalAgent: currentAgent,
+          finalTarget: currentTarget,
+        };
       }
 
       const failure = result.adapterFailure ?? unknownFailure();
@@ -145,13 +180,16 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       // first hop): that would narrow markUnavailable's cooldown key from bare-agent to
       // agent+tier, which breaks resolveStartAgent's dead-primary skip — its
       // `isUnavailable(primary)` check (hop-budget.ts) is intentionally tier-less and
-      // depends on the bare-agent key an agent-wide failure (fail-auth, fail-quota)
-      // writes. Model-identity exclusion therefore engages once a tier is NAMED by a
-      // hop (a swap target, or a dead-primary start that named one) — not retroactively
-      // for the very first, tier-less hop.
+      // depends on the bare-agent key an agent-wide OR model-scoped failure
+      // (fail-auth, fail-quota, fail-rate-limit, fail-service-down, ...) writes when the
+      // failing hop named no tier. Model-identity exclusion therefore engages once a
+      // tier is NAMED by a hop (a swap target, or a dead-primary start that named one)
+      // — not retroactively for the very first, tier-less hop. `currentHopKind.model`
+      // still threads through: a literal-pin swap target DOES carry a tier-less model,
+      // and that pin's own identity is what nax#1966 needed — see fallback-model-identity.ts.
       const currentTier = currentHopKind.tier;
-      input.markUnavailable(currentAgent, failure, currentTier);
-      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier);
+      input.markUnavailable(currentAgent, failure, currentTier, currentHopKind.model);
+      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, currentHopKind.model);
       if (!next) {
         const outcome = await input.resolveExhaustion({
           failure,
@@ -169,7 +207,15 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           continue;
         }
         finalStatus = outcome === "cancelled" ? "cancelled" : "exhausted";
-        return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
+        return {
+          result,
+          fallbacks,
+          didSwap,
+          finalBundle: updatedBundle,
+          finalPrompt,
+          finalAgent: currentAgent,
+          finalTarget: currentTarget,
+        };
       }
       hopsSoFar = budget.spend(storyId, hopsSoFar);
       rateLimitRetry = 0;
@@ -190,6 +236,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       });
       fallbacks.push(fallback);
       input.emitSwapAttempt(fallback);
+      didSwap = true;
       logger?.info("agent-manager", "Agent swap triggered", {
         storyId,
         fromAgent: currentAgent,
@@ -198,6 +245,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       });
       agentChain.push(next.agent);
       currentAgent = next.agent;
+      currentTarget = next;
     }
   } finally {
     input.dispatchEvents.emitOperationCompleted({

@@ -3,6 +3,7 @@ import type { AutofixConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder, repoScopedRectification } from "../prompts";
+import { storyRoutingModel } from "./story-routing-model";
 import { parseTestEditDeclarations, type TestEditDeclaration } from "./test-edit-declaration";
 import type { RunOperation } from "./types";
 
@@ -38,6 +39,9 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
   // full-suite-rectify.ts) rather than trusting a self-reported commit.
   tools: ["Read", "Glob", "Grep", "Write", "Edit", "Delete", "Git", "RunCommand", "Exec", "RequestCapability"],
   config: autofixConfigSelector,
+  // Inherit the story's rung so an escalation or a profile pin reaches the fix
+  // cycle too — without this the op fell through to callOp's literal "balanced".
+  model: (input) => storyRoutingModel(input.story),
   // The repo-scoped dispatch runs under its own session role and gets a single
   // attempt, so nothing resumes its session — keeping it warm would strand one.
   // The story-scoped dispatch keeps the op's declared `warm` lifetime.

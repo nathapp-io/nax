@@ -94,4 +94,14 @@ describe("CooldownStore", () => {
     store.clear();
     expect(store.isCooling("claude")).toBe(false);
   });
+
+  test("a model-scoped cooldown recorded with no tier does not blanket the agent", () => {
+    const store = new CooldownStore(fakeClock().now);
+    // Pre-fix, runWithFallback recorded the primary hop with no tier at all, so the bare
+    // agent key doubled as "the whole agent is down" for every tier-less lookup (nax#1966).
+    store.mark("native", failure("fail-rate-limit"), undefined, "minimax/MiniMax-M3");
+
+    expect(store.isCooling("native", undefined, "minimax/MiniMax-M3")).toBe(true);
+    expect(store.isCooling("native", undefined, "openrouter/z-ai/glm-5.3-flash[high]")).toBe(false);
+  });
 });

@@ -6,6 +6,7 @@ import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { IsolationCheck } from "../tdd/types";
 import { parseSessionJsonOutput } from "./_session-output";
 import { shouldKeepSessionOpen } from "./execution-gates";
+import { storyRoutingModel } from "./story-routing-model";
 import type { RunOperation } from "./types";
 
 void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
@@ -58,13 +59,7 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
   // Routing-driven: a literal profile pin selects its own agent's exact model;
   // otherwise escalation mutates modelTier in the PRD before re-dispatch.
   // Ad-hoc callers without routing return undefined, so callOp uses its default tier.
-  model: (input) => {
-    const routing = input.story.routing;
-    if (routing?.profileModelPin !== undefined && routing.agent !== undefined) {
-      return { agent: routing.agent, model: routing.profileModelPin };
-    }
-    return routing?.modelTier;
-  },
+  model: (input) => storyRoutingModel(input.story),
   keepOpen: (_input, ctx) => shouldKeepSessionOpen(ctx.config, "implementer"),
   build(input, _ctx) {
     if (input.promptMarkdown?.trim()) {

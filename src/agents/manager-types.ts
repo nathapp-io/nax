@@ -51,19 +51,31 @@ export interface AgentFallbackRecord {
 export interface AgentRunOutcome {
   result: AgentResult;
   fallbacks: AgentFallbackRecord[];
+  /** True only when this operation selected a fallback target, not merely retried. */
+  didSwap?: boolean;
   /** The context bundle used by the final (successful or last failed) hop. */
   finalBundle?: ContextBundle;
   /** The prompt used by the final (successful or last failed) hop. */
   finalPrompt?: string;
   /** The agent that actually executed the final hop (may differ from the initial agent after a swap). */
   finalAgent?: string;
+  /**
+   * The resolved target the final hop ran on — agent AND the tier or literal model
+   * it was dispatched at. `finalAgent` alone cannot express a same-agent swap, where
+   * the name is unchanged and the model is the whole point (nax#1964).
+   */
+  finalTarget?: FallbackTarget;
 }
 
 export interface AgentCompleteOutcome {
   result: CompleteResult;
   fallbacks: AgentFallbackRecord[];
+  /** True only when this operation selected a fallback target, not merely retried. */
+  didSwap?: boolean;
   /** Tier of the hop that actually ran, when a fallback target named one. */
   finalTier?: string;
+  /** The resolved target the final hop ran on — see `AgentRunOutcome.finalTarget` (nax#1964). */
+  finalTarget?: FallbackTarget;
 }
 
 export type AgentManagerEventName = "onAgentSelected" | "onSwapAttempt" | "onAgentUnavailable" | "onSwapExhausted";
@@ -189,11 +201,19 @@ export interface IAgentManager {
    * Returns the next fallback target (agent, and its optional tier) for a given
    * current agent and hop count, excluding pruned (no credentials),
    * already-unavailable agents, and — when passed — the identity named by
-   * `exclude`/`excludeTier`. That identity match is agent+tier, not agent alone,
-   * so a same-agent, different-tier target survives exclusion of the tier that
-   * actually failed. Returns null when no candidate is available.
+   * `exclude`/`excludeTier`/`excludeModel`. That identity match is the candidate's
+   * resolved endpoint, not agent alone, so a same-agent, different-tier target
+   * survives exclusion of the tier that actually failed, and a literal pin naming
+   * the same model as that tier collides with it exactly as the tier spelling
+   * would (nax#1966). Returns null when no candidate is available.
    */
-  nextCandidate(current: string, hopsSoFar: number, exclude?: string, excludeTier?: string): FallbackTarget | null;
+  nextCandidate(
+    current: string,
+    hopsSoFar: number,
+    exclude?: string,
+    excludeTier?: string,
+    excludeModel?: string,
+  ): FallbackTarget | null;
 
   /**
    * Run the prompt with automatic agent-swap fallback on availability failures.

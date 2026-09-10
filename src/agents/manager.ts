@@ -19,16 +19,18 @@ import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
-import { resolveFallbackDispatchTarget, resolveFallbackModelId } from "./fallback-model-identity";
+import { resolveFallbackDispatchTarget, resolveFallbackModelId, sameFallbackHop } from "./fallback-model-identity";
 import { StoryHopBudget } from "./hop-budget";
 import {
   buildCompleteCallPreamble,
   buildCompleteEvent,
+  buildCompleteOutcome,
   buildDispatchErrorEvent,
   buildFallbackRecord,
   buildSessionTurnEvent,
   resolveFinalDispatch,
   resolveHopCompleteOptions,
+  validateAgentCredentials,
 } from "./manager-dispatch";
 import { type ManagerExhaustionOptions, resolveManagerExhaustion } from "./manager-exhaustion";
 import { runWithFallback } from "./manager-run-fallback";
@@ -134,12 +136,12 @@ export class AgentManager implements IAgentManager {
     return "claude";
   }
 
-  isUnavailable(agent: string, tier?: string): boolean {
-    return this._cooldowns.isCooling(agent, tier, resolveFallbackModelId(this._models, agent, tier, this.getDefault()));
+  isUnavailable(agent: string, tier?: string, model?: string): boolean {
+    return this._cooldowns.isCooling(agent, tier, this._modelId(agent, tier, model));
   }
 
-  markUnavailable(agent: string, reason: AdapterFailure, tier?: string): void {
-    this._cooldowns.mark(agent, reason, tier, resolveFallbackModelId(this._models, agent, tier, this.getDefault()));
+  markUnavailable(agent: string, reason: AdapterFailure, tier?: string, model?: string): void {
+    this._cooldowns.mark(agent, reason, tier, this._modelId(agent, tier, model));
     this._emitter.emit("onAgentUnavailable", { agent, tier, failure: reason });
   }
 
@@ -154,26 +156,21 @@ export class AgentManager implements IAgentManager {
   }
   async validateCredentials(): Promise<void> {
     const primary = this.getDefault();
-    for (const name of credentialCandidates(this._config.agent?.fallback?.map, primary)) {
-      const adapter = this._resolveRegistry().getAgent(name);
-      if (!adapter || typeof adapter.hasCredentials !== "function") continue;
-      const ok = await adapter.hasCredentials();
-      if (ok) continue;
-      if (name === primary) {
-        throw new NaxError(`Primary agent "${name}" has no usable credentials`, "AGENT_CREDENTIALS_MISSING", {
-          stage: "run-setup",
-          agent: name,
-        });
-      }
-      this._logger.warn("agent-manager", "Fallback candidate pruned — missing credentials", {
-        primary,
-        pruned: name,
-      });
-      this._prunedFallback.add(name);
-    }
+    const { pruned } = await validateAgentCredentials({
+      primary,
+      candidates: credentialCandidates(this._config.agent?.fallback?.map, primary),
+      getAgent: (name) => this._resolveRegistry().getAgent(name),
+      logger: this._logger,
+    });
+    for (const name of pruned) this._prunedFallback.add(name);
   }
 
-  private readonly _isExcluded = (c: string, t?: string) => this._prunedFallback.has(c) || this.isUnavailable(c, t);
+  private readonly _modelId = (agent: string, tier?: string, model?: string): string | undefined =>
+    resolveFallbackModelId(this._models, agent, tier, this.getDefault(), model);
+  private readonly _isExcluded = (c: string, t?: string, m?: string): boolean =>
+    this._prunedFallback.has(c) || this._cooldowns.isCooling(c, t, this._modelId(c, t, m));
+  private readonly _sameHop = (a: string, b: string | undefined, at?: string, am?: string, bt?: string, bm?: string) =>
+    sameFallbackHop(this._models, this.getDefault(), a, b, at, am, bt, bm);
 
   /** Folds a `{ agent, model }` target naming a tier into `{ agent, tier }`. */
   private readonly _resolveTarget = (t: FallbackTarget): FallbackTarget =>
@@ -187,10 +184,10 @@ export class AgentManager implements IAgentManager {
     return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
-  nextCandidate(current: string, _hopsSoFar: number, exclude?: string, excludeTier?: string): FallbackTarget | null {
-    const excluded = (c: string, t?: string): boolean => (c === exclude && t === excludeTier) || this._isExcluded(c, t);
-    const map = this._config.agent?.fallback?.map;
-    return availableCandidates(map, current, excluded, this._resolveTarget)[0] ?? null;
+  nextCandidate(cur: string, _hops: number, exclude?: string, tier?: string, model?: string): FallbackTarget | null {
+    const excluded = (c: string, t?: string, m?: string): boolean =>
+      this._sameHop(c, exclude, t, m, tier, model) || this._isExcluded(c, t, m);
+    return availableCandidates(this._config.agent?.fallback?.map, cur, excluded, this._resolveTarget)[0] ?? null;
   }
 
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
@@ -204,8 +201,8 @@ export class AgentManager implements IAgentManager {
       logger: this._loggerOverride ?? getSafeLogger(),
       getDefault: () => this.getDefault(),
       isUnavailable: (agent, tier) => this.isUnavailable(agent, tier),
-      markUnavailable: (agent, failure, tier) => this.markUnavailable(agent, failure, tier),
-      nextCandidate: (current, hops, exclude, excludeTier) => this.nextCandidate(current, hops, exclude, excludeTier),
+      markUnavailable: (agent, failure, tier, model) => this.markUnavailable(agent, failure, tier, model),
+      nextCandidate: (cur, hops, exclude, tier, model) => this.nextCandidate(cur, hops, exclude, tier, model),
       resolveExhaustion: (options) => this._resolveExhaustion(options),
       emitSwapAttempt: (fallback) => this._emitter.emit("onSwapAttempt", fallback),
     });
@@ -222,6 +219,8 @@ export class AgentManager implements IAgentManager {
     let currentAgent = primaryAgent;
     let currentTier: string | undefined;
     let currentModel: string | undefined;
+    let currentTarget: FallbackTarget = { agent: primaryAgent };
+    let didSwap = false;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     let rateLimitRetry = 0;
@@ -282,7 +281,7 @@ export class AgentManager implements IAgentManager {
 
         if (!result.adapterFailure) {
           _finalStatus = "ok";
-          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
         }
 
         const isFailStale = result.adapterFailure.outcome === "fail-stale";
@@ -328,18 +327,18 @@ export class AgentManager implements IAgentManager {
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
-            return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+            return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
           }
           if (outcome === "retry") {
             rateLimitRetry += 1;
             continue;
           }
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
-          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
         }
 
-        this.markUnavailable(currentAgent, result.adapterFailure, currentTier);
-        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier);
+        this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined);
+        const next = this.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, undefined);
         if (!next) {
           const outcome = await this._resolveExhaustion({
             failure: result.adapterFailure,
@@ -354,14 +353,14 @@ export class AgentManager implements IAgentManager {
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
-            return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+            return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
           }
           if (outcome === "retry") {
             rateLimitRetry += 1;
             continue;
           }
           _finalStatus = "exhausted";
-          return { result, fallbacks, ...(currentTier !== undefined ? { finalTier: currentTier } : {}) };
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
         }
 
         hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);
@@ -375,6 +374,7 @@ export class AgentManager implements IAgentManager {
           costUsd: result.estimatedCostUsd,
         });
         fallbacks.push(hop);
+        didSwap = true;
         this._emitter.emit("onSwapAttempt", hop);
 
         logger?.info("agent-manager", "complete() swap triggered", {
@@ -386,6 +386,7 @@ export class AgentManager implements IAgentManager {
 
         _agentChain.push(next.agent);
         [currentAgent, currentTier, currentModel] = [next.agent, next.tier, next.model];
+        currentTarget = next;
       }
     } finally {
       this._dispatchEvents.emitOperationCompleted({

@@ -15,9 +15,18 @@ import type { AgentRunOutcome } from "../agents";
 import type { AgentFallbackRecord } from "../agents/manager-types";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import { resolveRetryPreset } from "../agents/retry";
-import type { ConfigSelector, ConfiguredModel, NaxConfig } from "../config";
-import { pickSelector } from "../config";
+import type { FallbackTarget } from "../agents/swap-decision";
+import type {
+  ConfigSelector,
+  ConfiguredModel,
+  ModelDef,
+  ModelsConfig,
+  NaxConfig,
+  ResolvedConfiguredModel,
+} from "../config";
+import { pickSelector, resolveModel, resolveModelForAgent } from "../config";
 import { NaxError } from "../errors";
+import { storyFixKey } from "../findings";
 import type { UserStory } from "../prd";
 import type { BuildContext, CallContext, Operation } from "./types";
 
@@ -164,4 +173,80 @@ export function recordAdapterFailure(
     return;
   }
   ctx.runtime.lastAdapterFailure.delete(ctx.storyId);
+}
+
+/**
+ * Record the target a story swapped to, so its later ops start there.
+ *
+ * Only a real swap is recorded: pinning a story to its primary would add nothing and
+ * would freeze a choice nothing had to make.
+ */
+export function recordStoryAgentTarget(
+  ctx: CallContext,
+  target: FallbackTarget | undefined,
+  swapped: boolean,
+  tier: string | undefined,
+): void {
+  if (!swapped || !target || !ctx.storyId) return;
+  ctx.runtime.storyAgentTargets.set(storyFixKey(ctx.storyId, tier, ctx.agentName), target);
+}
+
+interface FallbackDispatchOutcome {
+  readonly fallbacks: readonly AgentFallbackRecord[];
+  readonly finalTarget?: FallbackTarget;
+  readonly didSwap?: boolean;
+}
+
+/**
+ * Record both sinks a dispatch outcome feeds: the story's swap-hop ledger, and — only
+ * when a swap actually happened — the sticky target this story's later ops should reuse.
+ * Shared by callOp's run-kind and complete-kind branches so neither drifts from the other.
+ */
+export function recordDispatchOutcome(
+  ctx: CallContext,
+  outcome: FallbackDispatchOutcome,
+  tier: string | undefined,
+): void {
+  recordAgentFallbacks(ctx, outcome.fallbacks);
+  recordStoryAgentTarget(ctx, outcome.finalTarget, outcome.didSwap === true, tier);
+}
+
+/** The target this story already swapped to at this rung, if any. */
+export function stickyAgentTarget(ctx: CallContext, tier: string | undefined): FallbackTarget | undefined {
+  if (!ctx.storyId) return undefined;
+  return ctx.runtime.storyAgentTargets.get(storyFixKey(ctx.storyId, tier, ctx.agentName));
+}
+
+/** The agent and model callOp actually dispatches to, once any sticky swap is applied. */
+export interface DispatchTarget {
+  readonly agent: string;
+  readonly modelDef: ModelDef;
+}
+
+/**
+ * Decide the agent and model `callOp` actually dispatches to for this invocation.
+ *
+ * A sticky target this story already swapped to (via `stickyAgentTarget`) outranks the
+ * op's own resolution (nax#1964) — re-deriving the agent from `ctx.agentName` every op
+ * is what sent a story back to a dead primary once it had swapped away. Falls back to
+ * `resolved` unchanged when no swap has happened yet at this rung.
+ *
+ * Called once, before `callOp` branches on `op.kind` — so a `kind:"run"` op and a
+ * `kind:"complete"` op of the same story resolve through the exact same sticky lookup
+ * rather than two independent copies that could drift.
+ */
+export function resolveDispatchTarget(
+  ctx: CallContext,
+  resolved: ResolvedConfiguredModel,
+  effectiveModels: ModelsConfig,
+  effectiveTier: string,
+  defaultAgent: string,
+): DispatchTarget {
+  const sticky = stickyAgentTarget(ctx, resolved.modelTier);
+  if (!sticky) return { agent: resolved.agent, modelDef: resolved.modelDef };
+  const modelDef =
+    sticky.model !== undefined
+      ? resolveModel(sticky.model)
+      : resolveModelForAgent(effectiveModels, sticky.agent, sticky.tier ?? effectiveTier, defaultAgent);
+  return { agent: sticky.agent, modelDef };
 }
