@@ -1,5 +1,6 @@
 /** Fallback dispatch loop for AgentManager's session-based run path. */
 
+import type { ModelDef } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
 import type { AdapterFailure } from "@/context/engine";
 import type { IDispatchEventBus } from "@/runtime/dispatch-events";
@@ -28,7 +29,7 @@ export interface RunFallbackInput {
   readonly dispatchEvents: IDispatchEventBus;
   readonly logger: LoggerLike | null | undefined;
   readonly getDefault: () => string;
-  readonly isUnavailable: (agent: string, tier?: string) => boolean;
+  readonly isUnavailable: (agent: string, tier?: string, model?: string) => boolean;
   readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string, model?: string) => void;
   readonly nextCandidate: (
     current: string,
@@ -39,6 +40,11 @@ export interface RunFallbackInput {
   ) => FallbackTarget | null;
   readonly resolveExhaustion: (options: ExhaustionInput) => Promise<"retry" | "exhausted" | "cancelled">;
   readonly emitSwapAttempt: (fallback: AgentFallbackRecord) => void;
+  /** Ladder index of `target` on `agent`'s ladder — `agent` must be the ladder ROOT
+   * being walked (`primaryAgent` below), not `getDefault()`: a sticky slot's
+   * primaryAgentOverride routinely differs from the configured default (nax#1965
+   * fix-round-1 CRITICAL 1). */
+  readonly depthOf: (agent: string, target: FallbackTarget) => number;
 }
 
 export async function runWithFallback(input: RunFallbackInput): Promise<AgentRunOutcome> {
@@ -46,7 +52,10 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   const fallbacks: AgentFallbackRecord[] = [];
   const primaryAgent = input.primaryAgentOverride ?? input.getDefault();
   const storyId = request.runOptions.storyId;
-  const start = resolveStartAgent(input, primaryAgent, config.agent?.fallback?.enabled, storyId, logger);
+  const start = resolveStartAgent(input, primaryAgent, config.agent?.fallback?.enabled, storyId, logger, {
+    tier: request.runOptions.modelTier,
+    model: request.runOptions.modelDef?.model,
+  });
   let currentAgent = start.agent;
   let currentTarget: FallbackTarget = { ...start };
   let currentHopKind: HopKind = {
@@ -54,7 +63,8 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
     ...("tier" in start && start.tier !== undefined ? { tier: start.tier } : {}),
     ...("model" in start && start.model !== undefined ? { model: start.model } : {}),
   };
-  let hopsSoFar = budget.spent(storyId);
+  // Ladder index, not a swap counter: an op that starts on rung k IS at depth k.
+  let hopsSoFar = request.startDepth ?? budget.spent(storyId);
   let rateLimitRetry = 0;
   let staleRetryAttempts = 0;
   let timeoutRetryAttempts = 0;
@@ -72,6 +82,10 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
     while (true) {
       const hop = await executeHop(input, currentAgent, currentBundle, currentHopKind, currentRunOptions);
       const { result } = hop;
+      // The endpoint this hop dispatched — the identity a failure must be recorded
+      // against. `currentHopKind.model` is a DECLARED literal pin and stays
+      // authoritative when present; otherwise the dispatched model id is the truth.
+      const dispatchedModel = currentHopKind.model ?? hop.endpoint?.modelDef.model;
       const updatedBundle = hop.bundle ?? currentBundle;
       finalPrompt = hop.prompt ?? finalPrompt;
       totalCostUsd += result.estimatedCostUsd ?? 0;
@@ -85,6 +99,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalPrompt,
           finalAgent: currentAgent,
           finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
         };
       }
 
@@ -121,6 +136,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalPrompt,
           finalAgent: currentAgent,
           finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
         };
       }
 
@@ -143,6 +159,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
             finalPrompt,
             finalAgent: currentAgent,
             finalTarget: currentTarget,
+            finalDepth: hopsSoFar,
           };
         }
         const outcome = await input.resolveExhaustion({
@@ -169,6 +186,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalPrompt,
           finalAgent: currentAgent,
           finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
         };
       }
 
@@ -178,18 +196,25 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       // different-tier fallback target survives (see swap-decision.ts). Deliberately
       // NOT defaulted to currentRunOptions.modelTier when unset (the healthy primary's
       // first hop): that would narrow markUnavailable's cooldown key from bare-agent to
-      // agent+tier, which breaks resolveStartAgent's dead-primary skip — its
-      // `isUnavailable(primary)` check (hop-budget.ts) is intentionally tier-less and
-      // depends on the bare-agent key an agent-wide OR model-scoped failure
-      // (fail-auth, fail-quota, fail-rate-limit, fail-service-down, ...) writes when the
-      // failing hop named no tier. Model-identity exclusion therefore engages once a
-      // tier is NAMED by a hop (a swap target, or a dead-primary start that named one)
-      // — not retroactively for the very first, tier-less hop. `currentHopKind.model`
-      // still threads through: a literal-pin swap target DOES carry a tier-less model,
-      // and that pin's own identity is what nax#1966 needed — see fallback-model-identity.ts.
+      // agent+tier, and the bare-agent key is what still matters for an agent-wide
+      // fault. `resolveStartAgent`'s start probe (hop-budget.ts) is now
+      // endpoint-scoped, not tier-less — it queries `isUnavailable(primary, tier,
+      // model)` for the endpoint the NEXT operation would actually dispatch to. The
+      // very first, tier-less primary hop still writes a bare-agent key here because
+      // there is no tier to name yet; that bare key is exactly what `CooldownStore`
+      // needs for a genuinely agent-wide failure (fail-auth, missing binary, ...) to
+      // blanket every endpoint of the agent — `_live()` treats a bare key as
+      // blanket-agent only when the failure's own `cooldownScope` is `"agent"`, so a
+      // model-scoped failure recorded here (thanks to `dispatchedModel` below, when a
+      // hop reports its endpoint) still lands narrow rather than blanket. Model-identity
+      // exclusion therefore engages once a tier is NAMED by a hop (a swap target, or a
+      // dead-primary start that named one) — not retroactively for the very first,
+      // tier-less hop. `currentHopKind.model` still threads through: a literal-pin swap
+      // target DOES carry a tier-less model, and that pin's own identity is what
+      // nax#1966 needed — see fallback-model-identity.ts.
       const currentTier = currentHopKind.tier;
-      input.markUnavailable(currentAgent, failure, currentTier, currentHopKind.model);
-      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, currentHopKind.model);
+      input.markUnavailable(currentAgent, failure, currentTier, dispatchedModel);
+      const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, dispatchedModel);
       if (!next) {
         const outcome = await input.resolveExhaustion({
           failure,
@@ -215,9 +240,14 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalPrompt,
           finalAgent: currentAgent,
           finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
         };
       }
-      hopsSoFar = budget.spend(storyId, hopsSoFar);
+      // The new position IS the rung's index — not "one more than before". A hop
+      // may skip cooling rungs, so incrementing would under-count the descent.
+      // `primaryAgent` is the ladder root nextCandidate walked — NOT getDefault().
+      hopsSoFar = input.depthOf(primaryAgent, next);
+      budget.record(storyId, hopsSoFar);
       rateLimitRetry = 0;
       currentBundle = updatedBundle;
       currentHopKind = {
@@ -266,6 +296,9 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   }
 }
 
+/** Mirrors the `endpoint` shape `AgentRunRequest.executeHop` reports (manager-types.ts). */
+type HopEndpointLike = { readonly modelDef: ModelDef; readonly modelTier?: string };
+
 async function executeHop(
   input: RunFallbackInput,
   agent: string,
@@ -278,9 +311,24 @@ async function executeHop(
   const raw = await input.runHop(agent, options);
   const hop =
     "result" in raw && raw.result != null
-      ? (raw as { result: AgentResult; prompt?: string })
+      ? (raw as { result: AgentResult; prompt?: string; endpoint?: HopEndpointLike })
       : { result: raw as unknown as AgentResult };
-  return { ...hop, bundle };
+  // The `runHop` seam (SessionRunHopFn) reports no `endpoint` at all (nax#1965) — only
+  // `executeHop` does. Default it from `options.modelDef` ONLY for a `primary` hop:
+  // on a primary hop `options` IS, by construction, what this call was dispatched
+  // with (a pin wins per resolveHopEndpoint), so the default is accurate. After a
+  // swap, `options.modelDef` is stale — `currentRunOptions` is never rebuilt against
+  // the new agent's own resolution in this loop (only a timeout-retry reassigns it)
+  // — so defaulting there would report the OLD primary's identity as what the NEW
+  // agent dispatched, cooling a live endpoint while leaving the actually-dead one
+  // selectable. Reporting no identity (the pre-existing behavior) is safer: it just
+  // degrades `dispatchedModel` to `currentHopKind.model ?? undefined`, same as
+  // before this fix. Production is unaffected either way — `callOp` always supplies
+  // `request.executeHop`, which resolves a real endpoint per hop via
+  // `resolveHopEndpoint`, so this default only matters for the bare `runHop` seam.
+  const endpoint: HopEndpointLike | undefined =
+    hop.endpoint ?? (kind.kind === "primary" && options.modelDef ? { modelDef: options.modelDef } : undefined);
+  return { ...hop, bundle, endpoint };
 }
 
 function unboundResult(agent: string): AgentResult {

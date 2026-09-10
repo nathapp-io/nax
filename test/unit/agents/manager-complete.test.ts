@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
 import type { CompleteOptions } from "@/agents/types";
+import { NaxConfigSchema } from "@/config/schemas";
 import { PidRegistry } from "@/execution/pid-registry";
 
 const availFailure = {
@@ -107,6 +108,37 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
 
     expect(capturedOptions?.onPidSpawned).toBeUndefined();
     expect(capturedOptions?.onPidExited).toBeUndefined();
+  });
+
+  test("backfills models so an injected AgentManager resolves a { agent, model } tier-naming rung", () => {
+    // runtime/index.ts builds `agentManagerOpts` including `models: config.models` and,
+    // when an AgentManager is injected via opts.agentManager, spreads that whole object
+    // into configureRuntime(...). Before models is accepted there, it was silently
+    // dropped: an injected manager's `_models` stayed undefined forever, so a fallback
+    // rung shaped like `{ agent: "native", model: "powerful" }` never folded to
+    // `{ agent: "native", tier: "powerful" }` — it dispatched the literal string
+    // "powerful" as a model id, with no error and no log.
+    const config = NaxConfigSchema.parse({
+      agent: {
+        protocol: "hybrid",
+        default: "native",
+        fallback: { enabled: true, map: { native: [{ agent: "native", model: "powerful" }] } },
+      },
+    });
+    // Constructed with no `models` — mirrors the injected-`opts.agentManager` path,
+    // which never passes `models` to the constructor.
+    const manager = new AgentManager(config);
+
+    // With no models available yet, "powerful" cannot be recognised as a tier name,
+    // so it stays a literal pin.
+    expect(manager.nextCandidate("native", 0, "native")).toEqual({ agent: "native", model: "powerful" });
+
+    manager.configureRuntime({ models: { native: { powerful: "opencode-go/deepseek-v4-flash" } } });
+
+    // Once backfilled, "powerful" is recognised as a real tier key and folds to
+    // `{ agent, tier }` — proving `_models` actually reached fallback identity
+    // resolution, not just that `configureRuntime` accepted the option inertly.
+    expect(manager.nextCandidate("native", 0, "native")).toEqual({ agent: "native", tier: "powerful" });
   });
 });
 
@@ -278,5 +310,59 @@ describe("AgentManager.completeAs — SEC-3 per-package config threading", () =>
     });
 
     expect(capturedOptions?.resolvedPermissions?.mode).toBe("approve-reads");
+  });
+});
+
+// nax#1965 fix-round-1 CRITICAL 2: completeWithFallback's swap loop still fed
+// StoryHopBudget's swap-EVENT tally into nextCandidate's `hops` parameter, which
+// runWithFallback (Task 7) made a ladder-DEPTH parameter. A cooling middle rung
+// makes one swap event skip more than one ladder position, so the event tally
+// lags true depth — reopening the "wrong baseline fed into the depth filter"
+// defect class this feature exists to close, on the complete() path instead of
+// run().
+describe("AgentManager.completeWithFallback — depth vs event count (nax#1965 fix-round-1 CRITICAL 2)", () => {
+  test("passes ladder DEPTH, not the swap-event tally, into nextCandidate when a middle rung is cooling", async () => {
+    const config = makeNaxConfig({
+      agent: {
+        fallback: {
+          enabled: true,
+          map: { claude: ["codex", "gemini", "grok"] },
+          maxHopsPerStory: 3,
+          onQualityFailure: false,
+          rebuildContext: false,
+        },
+      },
+    });
+    const registry = makeRegistry({
+      claude: { output: "", failure: availFailure },
+      gemini: { output: "", failure: availFailure },
+      grok: { output: "from grok" },
+    });
+    const m = new AgentManager(config, registry);
+    // codex is already cooling before the walk starts, so the FIRST swap skips
+    // straight from claude to gemini: one swap EVENT, but a ladder DEPTH of 2.
+    m.markUnavailable("codex", availFailure);
+
+    const seenHops: number[] = [];
+    const originalNextCandidate = m.nextCandidate.bind(m);
+    m.nextCandidate = (cur, hops, exclude, tier, model) => {
+      seenHops.push(hops);
+      return originalNextCandidate(cur, hops, exclude, tier, model);
+    };
+
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
+
+    // First call: still on the primary — depth 0, no swap has happened yet.
+    // Second call: right after the first swap landed on gemini (real ladder
+    // depth 2, skipping the cooling codex). An event tally would report 1
+    // here (only one swap event occurred); depth must report 2, or every
+    // downstream depth-based decision (ladder-slot.ts's `nextLadderCandidate`)
+    // is evaluated against the wrong baseline. Before the fix this was [0, 1].
+    expect(seenHops).toEqual([0, 2]);
+    expect(outcome.result.output).toBe("from grok");
   });
 });

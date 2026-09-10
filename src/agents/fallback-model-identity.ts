@@ -20,6 +20,20 @@
  * narrow DI seam — not a widening of the selector — and it mirrors the existing
  * `modelDefFor` seam `ResolvedCompleteOptions` already uses for the same reason
  * (see `resolveHopCompleteOptions` in manager-dispatch.ts).
+ *
+ * Precedence: when a `tier` is present and `models` is available, the TIER MAP is
+ * authoritative; `modelPin` is only consulted when there is no tier. A declared
+ * tier and a declared literal pin are mutually exclusive on `HopKind` — a hop
+ * target names either `{ agent, tier }` or `{ agent, model: "<pin>" }`, never both.
+ * So "both present" at this call site only ever means a DECLARED tier plus a
+ * DERIVED dispatched model (`manager-run-fallback.ts` calls
+ * `markUnavailable(currentAgent, failure, currentTier, dispatchedModel)` after a
+ * hop that dispatched through a tier). A later `{agent, tier}`-shaped candidate
+ * lookup carries no model and resolves identity through the tier map — so mark
+ * time and read time must key on the SAME map, or a rung that just died can read
+ * back as healthy (the two strings can diverge when a tier's model changes
+ * between marking and lookup, or when the dispatched string isn't a bare
+ * "provider/model"). Keying on the pin string in that case broke that symmetry.
  */
 
 import { MODEL_SHORTHAND_TIERS, resolveModel, resolveModelForAgent, resolveTierMembership } from "@/config";
@@ -37,6 +51,16 @@ import type { FallbackTarget } from "./swap-decision";
  * identity when this returns undefined, which is exactly the pre-existing
  * keying — so an unresolvable case degrades to the prior fix, never to the
  * pre-fix bare-agent-only behaviour.
+ *
+ * Precedence is tier-first: when `tier` and `models` are both present, the tier
+ * map is authoritative (mark time and read time must agree on the same map — see
+ * the module doc). `modelPin` is used only when there is no tier, OR when the
+ * tier fails to resolve (the `MODEL_NOT_FOUND` case) and a pin is available to
+ * fall back to — a throwing tier lookup must not swallow a usable pin. A literal
+ * pin still resolves without the tier map for a tier-less target (`hopModelId` ->
+ * `resolveModel` in build-hop-callback.ts is the same call dispatch makes), so
+ * selection identity and dispatch identity name the same endpoint for a
+ * tier-less rung (nax#1966).
  */
 export function resolveFallbackModelId(
   models: ModelsConfig | undefined,
@@ -45,22 +69,20 @@ export function resolveFallbackModelId(
   defaultAgent: string,
   modelPin?: string,
 ): string | undefined {
-  // A literal pin resolves without the tier map — this is the same call dispatch
-  // makes (`hopModelId` -> `resolveModel` in build-hop-callback.ts), so selection
-  // identity and dispatch identity finally name the same endpoint. Without it a
-  // pin was judged identity-less and collapsed onto the bare agent key, colliding
-  // with the tier-less primary hop (nax#1966).
+  if (tier && models) {
+    try {
+      const def = resolveModelForAgent(models, agent, tier, defaultAgent);
+      return `${def.provider}/${def.model}`;
+    } catch {
+      // Fall through to the pin below — a tier that fails to resolve must not
+      // swallow a usable pin.
+    }
+  }
   if (modelPin !== undefined) {
     const def = resolveModel(modelPin);
     return `${def.provider}/${def.model}`;
   }
-  if (!tier || !models) return undefined;
-  try {
-    const def = resolveModelForAgent(models, agent, tier, defaultAgent);
-    return `${def.provider}/${def.model}`;
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
 /**

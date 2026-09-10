@@ -65,6 +65,8 @@ export interface AgentRunOutcome {
    * the name is unchanged and the model is the whole point (nax#1964).
    */
   finalTarget?: FallbackTarget;
+  /** Ladder index of `finalTarget`, for the caller's slot record. */
+  finalDepth?: number;
 }
 
 export interface AgentCompleteOutcome {
@@ -111,7 +113,17 @@ export interface AgentRunRequest {
     bundle: ContextBundle | undefined,
     hopKind: HopKind,
     resolvedRunOptions: AgentRunOptions,
-  ) => Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }>;
+  ) => Promise<{
+    result: AgentResult;
+    bundle: ContextBundle | undefined;
+    prompt?: string;
+    /**
+     * The endpoint this hop actually dispatched. Cooldown marking and candidate
+     * exclusion key on THIS, not on the tier/model the HopKind declared — a
+     * config-default primary declares neither (nax#1965).
+     */
+    endpoint?: { readonly modelDef: import("../config/schema-types").ModelDef; readonly modelTier?: string };
+  }>;
   /**
    * When true, runWithFallback dispatches at most one hop on the primary agent
    * and never iterates the fallback chain. Used by ops that must preserve the
@@ -120,6 +132,13 @@ export interface AgentRunRequest {
    * still applies.
    */
   noFallback?: boolean;
+  /**
+   * Ladder index this operation starts from — the slot's depth (nax#1965). 0 when
+   * the operation starts on its configured primary. Replaces reading a per-story
+   * swap-event counter: `maxHopsPerStory` bounds how far down the ladder a story
+   * travels, not how many swaps each of its operations may make.
+   */
+  readonly startDepth?: number;
 }
 
 /** Options for AgentManager.runAsSession — caller-managed session (Phase C). */

@@ -17,6 +17,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **watchdog:** Count ACP `tool_call` / `tool_call_update` stream activity by default, and add `agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds` (default 1800s) so long-running tool-only sessions stay alive without masking runaway tool loops.
+- **Fixed** — a same-agent fallback hop dispatched the previous model, because
+  `SessionManager` reused a live session whenever the agent name matched and
+  discarded the requested endpoint. Same-agent ladder rungs and sticky endpoints
+  inherited by warm rectification ops were both inert (#1965).
+
+### Changed
+
+- **Changed** — `agent.fallback.maxHopsPerStory` now bounds ladder DEPTH per
+  (story, tier, agent, role) rather than counting swap events per story, so a
+  story keeps descending its ladder across its operations instead of stranding
+  later ops on a dead endpoint.
+
+### Added
+
+- **Added** — `agent.fallback.map` agents are validated against `agent.protocol`
+  at config load instead of failing mid-story at dispatch.
+
+### Fixed
+
+- **Fixed** — `resolveFallbackModelId` resolved a literal model pin in
+  preference to a co-present tier, so a cooldown recorded at mark time
+  (`markUnavailable(agent, failure, tier, dispatchedModel)`, where `tier` is
+  declared and `dispatchedModel` is the hop's derived endpoint) and a
+  candidate lookup at read time (a bare `{agent, tier}` rung, no model) could
+  key on different identities for the same endpoint — a rung that just died
+  could read back as healthy. Precedence is now tier-first: when a tier is
+  present and `models` is available, the tier map is authoritative, and the
+  pin is used only when there is no tier, or the tier fails to resolve.
+- **Fixed** — `AgentManager.configureRuntime` silently dropped `models`. An
+  `AgentManager` injected via `opts.agentManager` in `runtime/index.ts` (which
+  spreads `models: config.models` into `configureRuntime`) never had its
+  `_models` backfilled, so `resolveFallbackModelId` returned `undefined` for
+  every tier and a rung like `{agent: "native", model: "powerful"}` never
+  folded to its named tier — it dispatched the literal string `"powerful"` as
+  a model id, with no error and no log. `configureRuntime` now accepts
+  `models` and assigns it with the same guard style as its siblings.
+
+### Migration
+
+- **Migration** — a config that names an agent in `agent.fallback.map` which the
+  declared `agent.protocol` does not permit is now rejected at config load
+  rather than failing mid-story with `AGENT_NOT_FOUND`. A ladder mixing
+  `native` with acpx agents requires `agent.protocol: "hybrid"`; previously
+  such a config parsed and failed later, at dispatch.
 
 ## [0.51.2] — 2026-03-22
 

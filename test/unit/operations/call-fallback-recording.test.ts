@@ -11,9 +11,9 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { assertDefined, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { ladderSlotKey } from "@/agents/ladder-slot";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { storyFixKey } from "@/findings";
 import type { RunOperation } from "@/operations";
 import { callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -184,13 +184,17 @@ describe("callOp records agent-swap hops on the run-scoped store (#1707)", () =>
 });
 
 describe("callOp records the target a story swapped to (nax#1964)", () => {
-  test("records finalTarget on runtime.storyAgentTargets, keyed by the escalation rung", async () => {
+  // makeOp() declares `session.role: "implementer"` — the slot key must match it.
+  test("records finalTarget on runtime.ladderSlots, keyed by the escalation rung and role", async () => {
     const runtime = makeMockRuntime({ agentManager: managerSwappingTo("codex") });
     createdRuntimes.push(runtime);
 
     await callOp(ctxFor(runtime, "US-001"), makeOp("record-target"), "input");
 
-    expect(runtime.storyAgentTargets.get(storyFixKey("US-001", "balanced", "claude"))).toEqual({ agent: "codex" });
+    expect(runtime.ladderSlots.get(ladderSlotKey("US-001", "balanced", "claude", "implementer"))).toEqual({
+      target: { agent: "codex" },
+      depth: 0,
+    });
   });
 
   test("records nothing when the op ran with no swaps", async () => {
@@ -198,7 +202,7 @@ describe("callOp records the target a story swapped to (nax#1964)", () => {
 
     await callOp(ctxFor(runtime, "US-001"), makeOp("no-swap"), "input");
 
-    expect(runtime.storyAgentTargets.size).toBe(0);
+    expect(runtime.ladderSlots.size).toBe(0);
   });
 
   test("does not make a stale retry sticky", async () => {
@@ -208,6 +212,6 @@ describe("callOp records the target a story swapped to (nax#1964)", () => {
     await callOp(ctxFor(runtime, "US-001"), makeOp("stale-retry"), "input");
 
     expect(runtime.agentFallbacks.get("US-001")).toHaveLength(1);
-    expect(runtime.storyAgentTargets.size).toBe(0);
+    expect(runtime.ladderSlots.size).toBe(0);
   });
 });

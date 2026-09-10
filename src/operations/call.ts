@@ -11,6 +11,7 @@ import { packageWorkdir } from "../runtime/packages";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildHopCallback } from "./build-hop-callback";
+import { normalizeHopOutput } from "./call-hop-output";
 import {
   MAX_COMPLETE_RETRY_ATTEMPTS,
   newCorrelationId,
@@ -25,7 +26,6 @@ import {
   synthesizeStory,
 } from "./call-resolvers";
 import { makeVerifyCtx, runPostParse } from "./post-parse";
-import { classifyEmptyOutputFailure, classifyProviderRefusalFailure } from "./turn-failure-classification";
 import type { CallContext, CompleteOperation, DeterministicOperation, Operation, RunOperation } from "./types";
 import { resolveDeclaredTools } from "./types";
 
@@ -89,18 +89,18 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const resolved = resolveConfiguredModel(effectiveModels, ctx.agentName, opModel, defaultAgent);
   // Pin default: a pinned (tierless) resolution swaps via "balanced" unless the fallback map names a tier (spec §7).
   const effectiveTier = resolved.modelTier ?? "balanced";
+  // Sticky slots are keyed per role, so both branches need it before resolving dispatch.
+  const sessionRole =
+    ctx.sessionOverride?.role ?? (op.kind === "run" ? (op as RunOperation<I, O, C>).session.role : undefined);
   // A swap this story already made outranks the op's own resolution — see resolveDispatchTarget (nax#1964).
-  const { agent: dispatchAgent, modelDef: dispatchModelDef } = resolveDispatchTarget(
-    ctx,
-    resolved,
-    effectiveModels,
-    effectiveTier,
-    defaultAgent,
-  );
+  const {
+    agent: dispatchAgent,
+    modelDef: dispatchModelDef,
+    startDepth,
+  } = resolveDispatchTarget(ctx, resolved, effectiveModels, effectiveTier, defaultAgent, sessionRole);
 
   if (op.kind === "complete") {
     const completeOp = op as CompleteOperation<I, O, C>;
-    const sessionRole = ctx.sessionOverride?.role;
     // Explicitly compute sessionName so callers (e.g. mocks) see it without relying
     // on ACP adapter's internal derivation. Only set when both sessionRole and a
     // non-empty packageDir are available (mirrors the adapter-lifecycle logic).
@@ -143,7 +143,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         );
         // nax#1712: mirror the run branch at the bottom of this file — a swap taken
         // inside completeWithFallback is only attributable to a story here.
-        recordDispatchOutcome(ctx, completeOutcome, resolved.modelTier);
+        recordDispatchOutcome(ctx, completeOutcome, resolved.modelTier, sessionRole);
         const raw = completeOutcome.result;
         const parsedComplete = op.parse(raw.output, input, buildCtx);
         return await runPostParse(op, parsedComplete, input, buildCtx);
@@ -206,7 +206,6 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const runOp = op as RunOperation<I, O, C>;
 
   const story = ctx.story ?? synthesizeStory(ctx.storyId);
-  const sessionRole = ctx.sessionOverride?.role ?? runOp.session.role;
 
   // Resolve run-kind retry strategy once before the first send.
   // op.retry and op.hopBody compose: when both are set, the user body receives
@@ -291,48 +290,20 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   let maxRetriesExceeded = false;
   let lastRetryTurn: TurnResult | undefined;
 
-  const sendWithFileOutput = async (
+  // Synthesizes an AdapterFailure for empty output / provider refusal so the
+  // manager-tier retry/swap logic handles transient agent stalls uniformly
+  // (spec §B1) — see call-hop-output.ts for the full rationale.
+  const sendWithFileOutput = (
     promptText: string,
     bodyCtx: { send: (p: string) => Promise<TurnResult> },
-  ): Promise<TurnResult> => {
-    const turn = await bodyCtx.send(promptText);
-    let effective = turn;
-    if (fileOutputPath) {
-      const fileContent = await _callOpDeps.readFileOutput(fileOutputPath);
-      if (fileContent !== null) {
-        effective = { ...turn, output: fileContent };
-      }
-    }
-    // Synthesize an AdapterFailure for empty output so the manager-tier
-    // retry/swap logic handles transient agent stalls uniformly (spec §B1).
-    // The outer `if (!rawOutput)` guard in callOp uses a falsy check, so
-    // whitespace-only output ("  ") reaches op.parse at exhaustion rather
-    // than throwing CALL_OP_NO_OUTPUT — op.parse is expected to handle or
-    // reject it. Classification is delegated to turn-failure-classification
-    // (US-001), which preserves the legacy empty/whitespace handling and
-    // adds the wall-clock timeout branch (fail-timeout quality outcome).
-    if (!effective.output?.trim()) {
-      const failure = classifyEmptyOutputFailure(effective);
-      if (failure) return { ...effective, adapterFailure: failure };
-    } else if (!effective.adapterFailure) {
-      // A provider refusal (e.g. "model is at capacity") comes back as ordinary,
-      // non-empty turn output — not a thrown transport error — so it reaches
-      // op.parse's own fail-open logic unless classified here first. Attaching
-      // an AdapterFailure routes it through the same manager-tier backoff/swap
-      // logic as any other infra failure instead of being parsed as a verdict.
-      const refusal = classifyProviderRefusalFailure(effective.output);
-      if (refusal) {
-        getSafeLogger()?.warn("callop", "Provider refusal classified as infra failure", {
-          storyId: ctx.storyId,
-          opName: op.name,
-          agentName: dispatchAgent,
-          outcome: refusal.outcome,
-        });
-        return { ...effective, adapterFailure: refusal };
-      }
-    }
-    return effective;
-  };
+  ): Promise<TurnResult> =>
+    normalizeHopOutput(bodyCtx.send, promptText, {
+      storyId: ctx.storyId,
+      opName: op.name,
+      dispatchAgent,
+      fileOutputPath,
+      readFileOutput: _callOpDeps.readFileOutput,
+    });
 
   // sendWithParseRetry: runs the retry loop inside one session turn.
   // The strategy's shouldRetry decides whether to retry on each turn's output
@@ -454,6 +425,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       executeHop,
       noFallback: runOp.noFallback,
       bundle: ctx.contextBundle,
+      startDepth,
     },
     dispatchAgent,
   );
@@ -466,7 +438,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // store instead, so hops from every op in the story reach StoryMetrics.fallback on the
   // sequential success path. Parallel and failed stories build metrics elsewhere and do
   // not read this yet — see #1709.
-  recordDispatchOutcome(ctx, outcome, resolved.modelTier);
+  recordDispatchOutcome(ctx, outcome, resolved.modelTier, sessionRole);
   recordAdapterFailure(ctx, outcome.result.adapterFailure);
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),

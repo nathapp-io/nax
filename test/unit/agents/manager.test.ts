@@ -169,9 +169,22 @@ describe("AgentManager.shouldSwap (Phase 4)", () => {
 });
 
 describe("AgentManager.nextCandidate (Phase 4)", () => {
-  test("returns first available candidate regardless of hopsSoFar (hop 0 and hop 1)", () => {
+  test("returns the first candidate deeper than hopsSoFar", () => {
     expect(makeManager().nextCandidate("claude", 0)).toEqual({ agent: "codex" });
-    expect(makeManager().nextCandidate("claude", 1)).toEqual({ agent: "codex" });
+  });
+
+  // nax#1965: `hops` used to be ignored entirely — any candidate not excluded by
+  // cooldown state was offered regardless of how far the story had already
+  // descended. That let `runWithFallback`'s ladder-depth counter land back on a
+  // rung it was already AT (a same-tier dispatch's `dispatchedModel` does not
+  // reliably re-key the cooldown that would otherwise exclude it — see
+  // ladder-slot.ts `nextLadderCandidate`), which never advances `hopsSoFar` and
+  // never reaches `decideSwap`'s cap: an infinite swap loop. `hops` now names
+  // the caller's current ladder depth, and only a STRICTLY deeper candidate is
+  // offered — codex is this one-rung ladder's only candidate, at depth 1, so an
+  // op already reporting depth 1 has no candidate left.
+  test("returns null once hopsSoFar is already at the ladder's deepest rung", () => {
+    expect(makeManager().nextCandidate("claude", 1)).toBeNull();
   });
 
   test("returns null for unknown agent", () => {

@@ -83,7 +83,7 @@ describe("AgentManager.validateCredentials (#518)", () => {
 describe("native agent credential pruning (Phase A plan 3)", () => {
   test("an uncredentialed native fallback candidate is pruned", async () => {
     const config = NaxConfigSchema.parse({
-      agent: { default: "claude", fallback: { enabled: true, map: { claude: ["native"] } } },
+      agent: { protocol: "hybrid", default: "claude", fallback: { enabled: true, map: { claude: ["native"] } } },
     });
     const registry = {
       getAgent: (n: string) => (n === "claude" ? stubAdapter("claude", true) : stubAdapter("native", false)),
