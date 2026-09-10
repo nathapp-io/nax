@@ -27,7 +27,11 @@ const DEFAULT_AGENT = "claude";
  * validation, so the value in hand is still partially-checked input.
  */
 interface ProtocolGateInput {
-  readonly agent?: { readonly protocol?: string; readonly default?: string };
+  readonly agent?: {
+    readonly protocol?: string;
+    readonly default?: string;
+    readonly fallback?: { readonly map?: Record<string, readonly unknown[] | undefined> };
+  };
   readonly models?: Record<string, Record<string, unknown> | undefined>;
 }
 
@@ -68,6 +72,7 @@ export function validateProtocolGate(data: ProtocolGateInput, ctx: z.RefinementC
   }
 
   validateNativeModelIds(data, ctx);
+  validateFallbackLadderAgents(data, ctx);
 }
 
 /**
@@ -99,6 +104,45 @@ function validateNativeModelIds(data: ProtocolGateInput, ctx: z.RefinementCtx): 
         sibling.length > 0
           ? `models.${NATIVE}.${tier}.model "${modelId}" must be written "provider/model". The sibling "provider" field is not used on the native path — put it in the model id: "${sibling}/${modelId}".`
           : `models.${NATIVE}.${tier} "${modelId}" must be written "provider/model" (e.g. "openai/gpt-5.4-mini"). There is no default provider.`,
+    });
+  }
+}
+
+/** The agent a fallback map value names, across all three config spellings. */
+function rungAgent(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null) {
+    const agent = (value as { agent?: unknown }).agent;
+    if (typeof agent === "string") return agent;
+  }
+  return undefined;
+}
+
+/**
+ * Every agent named in `agent.fallback.map` — as a key or a rung — must be
+ * reachable under the declared protocol. Without this the mismatch surfaces only
+ * at dispatch, mid-story, as AGENT_NOT_FOUND, after the hop has been spent.
+ */
+function validateFallbackLadderAgents(data: ProtocolGateInput, ctx: z.RefinementCtx): void {
+  const protocol = data.agent?.protocol ?? DEFAULT_PROTOCOL;
+  if (protocol === "hybrid") return;
+  const map = data.agent?.fallback?.map ?? {};
+
+  const reject = (agent: string, path: (string | number)[]): void => {
+    const permitted = protocol === NATIVE ? `only "${NATIVE}"` : `no native agent`;
+    ctx.addIssue({
+      code: "custom",
+      path,
+      message: `agent.protocol "${protocol}" permits ${permitted} in agent.fallback.map; "${agent}" is not reachable. Use "hybrid" to run both transports.`,
+    });
+  };
+
+  for (const [from, rungs] of Object.entries(map)) {
+    const offending = (agent: string) => (protocol === NATIVE ? agent !== NATIVE : agent === NATIVE);
+    if (offending(from)) reject(from, ["agent", "fallback", "map", from]);
+    (rungs ?? []).forEach((rung, index) => {
+      const agent = rungAgent(rung);
+      if (agent !== undefined && offending(agent)) reject(agent, ["agent", "fallback", "map", from, index]);
     });
   }
 }

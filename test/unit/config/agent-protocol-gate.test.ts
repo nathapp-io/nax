@@ -138,3 +138,55 @@ describe("models.native model ids must be provider-qualified", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("agent.protocol gate — fallback ladder rungs", () => {
+  test("rejects a native rung under protocol acp", () => {
+    const result = NaxConfigSchema.safeParse(
+      config({
+        agent: { protocol: "acp", default: "claude", fallback: { enabled: true, map: { claude: ["native"] } } },
+        models: { claude: { fast: "haiku" } },
+      }),
+    );
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("fallback");
+  });
+
+  test("rejects an acpx rung under protocol native", () => {
+    const result = NaxConfigSchema.safeParse(
+      config({
+        agent: {
+          protocol: "native",
+          default: "native",
+          fallback: { enabled: true, map: { native: [{ agent: "claude" }] } },
+        },
+        models: { native: { fast: "openai/gpt-5.4-mini" } },
+      }),
+    );
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("fallback");
+  });
+
+  test("accepts a mixed ladder under protocol hybrid", () => {
+    const result = NaxConfigSchema.safeParse(
+      config({
+        agent: {
+          protocol: "hybrid",
+          default: "native",
+          fallback: { enabled: true, map: { native: [{ agent: "native", model: "powerful" }, "claude"] } },
+        },
+        models: { native: { fast: "openai/gpt-5.4-mini", powerful: "openai/gpt-5.4" }, claude: { fast: "haiku" } },
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  test("a ladder key is checked as well as its rungs", () => {
+    const result = NaxConfigSchema.safeParse(
+      config({
+        agent: { protocol: "acp", default: "claude", fallback: { enabled: true, map: { native: ["claude"] } } },
+        models: { claude: { fast: "haiku" } },
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+});
