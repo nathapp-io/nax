@@ -562,7 +562,22 @@ export const adversarialReviewOp: RunOperationWithHooks<
       normalizedFindings: toAdversarialReviewFindings(blocking, { isTestFile: testFileMatch }),
       advisoryFindings: [
         ...toAdversarialReviewFindings(advisory, { isTestFile: testFileMatch }),
-        ...tagCoverageGap(toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch })),
+        // Demoted findings are reported with their disposition visible to the
+        // audit record — a demoted error must be distinguishable from an ordinary
+        // advisory without replaying classification state. Stamp `meta.recurrence`
+        // BEFORE coverageGap (tagCoverageGap preserves existing `meta`, so the
+        // stamp survives the merge). The pair-by-index lookup mirrors the retired
+        // branch below and relies on `classified` mirroring `accepted` in input
+        // order. Adding the stamp here also dovetails with the adversarial-review
+        // AC14 invariant: a passed record with a demoted error carries the
+        // disposition on `advisoryFindings[].meta.recurrence`, not on the
+        // `findings` lane that the audit layer reads.
+        ...tagCoverageGap(
+          stampRecurrenceMeta(
+            toAdversarialReviewFindings(demoted, { isTestFile: testFileMatch }),
+            demoted.map((f) => (classified[accepted.indexOf(f)] ?? {}) as { meta?: { recurrence?: unknown } }),
+          ),
+        ),
         // Retired advisories remain REPORTED (per US-001 OOS #10); they are no
         // longer rendered into the fix lane. Stamp applied AFTER mapping because
         // toAdversarialReviewFindings rebuilds meta from scratch (parallels the

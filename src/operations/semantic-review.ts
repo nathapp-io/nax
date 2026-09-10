@@ -449,7 +449,20 @@ export const semanticReviewOp: RunOperationWithHooks<
     // llmFindingToFinding rebuilds `meta` from scratch.
     const advisoryFindings = [
       ...toReviewFindings(advisory, { isTestFile }),
-      ...tagCoverageGap(toReviewFindings(demoted, { isTestFile })),
+      // Demoted findings carry `meta.recurrence.disposition="demoted"` AND
+      // `meta.coverageGap=true` — the stamp first, then the coverage-gap tag
+      // on top. tagCoverageGap preserves existing `meta`, so the
+      // disposition stamp survives. The by-index lookup mirrors the retired
+      // branch below and relies on `classified` mirroring `accepted` in
+      // input order. Without this stamp, a demoted error renders identically
+      // to an ordinary advisory — a passed record with a demoted error would
+      // not be distinguishable from one without demotion.
+      ...tagCoverageGap(
+        stampRecurrenceMeta(
+          toReviewFindings(demoted, { isTestFile }),
+          demoted.map((f) => (classified[accepted.indexOf(f)] ?? {}) as { meta?: { recurrence?: unknown } }),
+        ),
+      ),
       // See adversarial-review.ts:544 — classified is typed as `LLMFinding[]` but
       // carries `meta.recurrence` at runtime; cast to narrow.
       ...stampRecurrenceMeta(

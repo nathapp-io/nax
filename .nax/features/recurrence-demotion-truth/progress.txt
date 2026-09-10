@@ -1,3 +1,4 @@
 [2026-09-10T10:30:58.582Z] US-001 — FAILED — Classify and stamp terminal advisory recurrence — Stage "execution" threw error: [adversarial-review] parse failed: invalid JSON shape
 [2026-09-10T11:09:43.734Z] US-001 — PASSED — Classify and stamp terminal advisory recurrence — Cost: $1.0072
 [2026-09-10T11:20:05.457Z] US-002 — PASSED — Configure advisory recurrence cap — Cost: $0.5699
+[2026-09-10T12:17:23.807Z] US-003 — PASSED — Persist recurrence stamps through review operations — Cost: $6.7873
