@@ -379,3 +379,36 @@ describe("compileToolPolicy — .git/ is excluded at the resolveWithin seam", ()
     expect(policy.check("Write", PATH_SCOPE, { path: ".gitignore" }).allowed).toBe(true);
   });
 });
+
+describe("verb denial names what is permitted (#1971)", () => {
+  const SCOPE: ToolScope = {
+    pathFields: [],
+    verbField: "command",
+    allowedVerbs: ["lint", "test", "testScoped", "coverage"],
+  };
+
+  test("an unknown verb is told the verbs the stage can use", () => {
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const verdict = policy.check("RunCommand", SCOPE, { command: "test:coverage" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("test:coverage");
+    expect(verdict.allowed === false && verdict.reason).toContain("permitted: lint, test, testScoped, coverage");
+  });
+
+  test("a narrower grant names only what the grant allows, not every allowedVerb", () => {
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["lint", "test"] }], root);
+    const verdict = policy.check("RunCommand", SCOPE, { command: "coverage" });
+    expect(verdict.allowed).toBe(false);
+    // `coverage` is an allowedVerb but NOT granted to this stage: naming it
+    // would send the model straight back into the same denial.
+    expect(verdict.allowed === false && verdict.reason).toContain("permitted: lint, test");
+    expect(verdict.allowed === false && verdict.reason).not.toContain("coverage,");
+  });
+
+  test("a grant with no usable verb says so rather than naming an empty list", () => {
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["build"] }], root);
+    const verdict = policy.check("RunCommand", SCOPE, { command: "lint" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("no subcommands are permitted for this stage");
+  });
+});
