@@ -191,6 +191,8 @@ export interface QualityConfig {
     formatFix?: string;
     formatFixScoped?: string;
     build?: string;
+    /** Coverage gate (e.g. "bun run test:coverage"); agent affordance, never invoked by nax. */
+    coverage?: string;
     /** One-time package init (e.g. "uv sync"/"bun install"); see schema for full docs. */
     setup?: string;
   };

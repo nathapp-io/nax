@@ -11,7 +11,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { deleteTool } from "./delete";
-import { redirectForArgv } from "./denial-redirect";
+import { redirectForArgv, redirectForVerb } from "./denial-redirect";
 import { editTool } from "./edit";
 import { gitTool } from "./git";
 import { gitCommitTool } from "./git-commit";
@@ -207,9 +207,16 @@ export function createCodingToolRuntime(opts: {
           });
         }
         const rawArgv = argvField === undefined ? undefined : input[argvField];
+        const verbField = tool.scope.verbField;
+        const rawVerb = verbField === undefined ? undefined : input[verbField];
+        const declared = opts.declaredCommands ?? new Set<string>();
+        // An argv call and a verb call deny through different policy branches;
+        // before #1971 only the first could reach a redirect at all.
         const extra = Array.isArray(rawArgv)
-          ? redirectForArgv(rawArgv as readonly string[], advertisedNames, opts.declaredCommands ?? new Set())
-          : undefined;
+          ? redirectForArgv(rawArgv as readonly string[], advertisedNames, declared)
+          : typeof rawVerb === "string"
+            ? redirectForVerb(name, rawVerb, advertisedNames, declared)
+            : undefined;
         const reason = extra === undefined ? verdict.reason : `${verdict.reason} -- ${extra}`;
         log(policyIdentity, "denied", reason.length, input, verdict.breach, reason);
         return { kind: "denied", reason, breach: verdict.breach };

@@ -326,11 +326,27 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       if (scope.verbField !== undefined) {
         const verb = input[scope.verbField];
         if (typeof verb !== "string") return deny(`"${scope.verbField}" must be a string`);
+
+        // Name what the stage can actually use, not merely what the tool
+        // allows (nax#1971). `allowedVerbs` alone would advertise a verb a
+        // narrower grant refuses one line below -- sending the model straight
+        // back into a denial, which is the defect #1937 exists to fix.
+        const usableVerbs =
+          scope.allowedVerbs === undefined
+            ? []
+            : grant.unconditional
+              ? [...scope.allowedVerbs]
+              : scope.allowedVerbs.filter((v) => grant.raw.includes(v));
+        const permitted =
+          usableVerbs.length === 0
+            ? "no subcommands are permitted for this stage"
+            : `permitted: ${usableVerbs.join(", ")}`;
+
         if (scope.allowedVerbs !== undefined && !scope.allowedVerbs.includes(verb)) {
-          return deny(`"${verb}" is not a permitted ${tool} subcommand`);
+          return deny(`"${verb}" is not a permitted ${tool} subcommand -- ${permitted}`);
         }
         if (!grant.unconditional && !grant.raw.includes(verb)) {
-          return deny(`${tool} is not granted the "${verb}" subcommand for this stage`);
+          return deny(`${tool} is not granted the "${verb}" subcommand for this stage -- ${permitted}`);
         }
       }
 

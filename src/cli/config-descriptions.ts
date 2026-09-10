@@ -111,6 +111,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.commands": "Custom quality commands",
   "quality.commands.typecheck": "Custom typecheck command",
   "quality.commands.lint": "Custom lint command",
+  "quality.commands.coverage": "Custom coverage command",
   "quality.commands.lintScoped": "Scoped lint command template for story-owned files (supports {{files}})",
   "quality.commands.lintFixScoped": "Scoped lint fix command template for story-owned files (supports {{files}})",
   "quality.commands.formatFixScoped": "Scoped format fix command template for story-owned files (supports {{files}})",

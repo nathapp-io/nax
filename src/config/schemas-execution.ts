@@ -280,6 +280,13 @@ export const QualityConfigSchema = z.object({
       formatFixScoped: z.string().optional(),
       build: z.string().optional(),
       /**
+       * Coverage gate (e.g. `bun run test:coverage`, `pytest --cov`). nax never
+       * invokes this itself -- it exists so a coding agent can check whether it
+       * met the project's coverage bar instead of guessing a script name and
+       * being denied (nax#1971).
+       */
+      coverage: z.string().optional(),
+      /**
        * One-time package initialization (e.g. `uv sync`, `bun install`,
        * `go mod download`). Runs once per newly-created package directory
        * (story.workdir that did not exist at run start), after the implementer

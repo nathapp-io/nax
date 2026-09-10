@@ -124,7 +124,8 @@
     "commands": {
       "test": "bun run test",
       "typecheck": "bun run typecheck",
-      "lint": "bun run lint",
+      "lint": "bun run check:all",
+      "coverage": "bun run test:coverage",
       "build": "bun run build",
       "testScoped": "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
       "lintFix": "bun run lint:fix",
