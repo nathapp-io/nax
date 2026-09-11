@@ -1,0 +1,219 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `AgentManager.runWithFallback` has one successful hop that returned a turn, then its `AgentRunOutcome.dispatchesCompleted` equals `1`.",
+    "refined": "Given AgentManager.runWithFallback executes with exactly one hop returning a turn (successful or failed), the returned AgentRunOutcome object has a required field dispatchesCompleted of type number with value exactly 1.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When every `AgentManager.runWithFallback` hop ends in an adapter failure with no turn returned, then its `AgentRunOutcome.dispatchesCompleted` equals `0`.",
+    "refined": "Given AgentManager.runWithFallback executes where every hop (across all retry and fallback attempts) ends in an adapter failure with no turn returned, the returned AgentRunOutcome has dispatchesCompleted set to exactly 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 0`, then it throws an error with code `CALL_OP_NO_DISPATCH`.",
+    "refined": "Given callOp receives a run-kind operation whose AgentRunOutcome has dispatchesCompleted === 0, callOp throws a NaxError whose error.code property equals 'CALL_OP_NO_DISPATCH'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `callOp` throws `CALL_OP_NO_DISPATCH`, then the error context carries `stage`, `storyId`, and `agentName` equal to the agent the operation dispatched to.",
+    "refined": "Given callOp throws a NaxError with code 'CALL_OP_NO_DISPATCH', the thrown error context object contains properties stage (non-empty string), storyId (equal to the operation's story ID), and agentName (equal to the agentName the operation dispatched to).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 0`, then it does not invoke the operation's `parse` function.",
+    "refined": "Given callOp receives a run-kind operation whose AgentRunOutcome has dispatchesCompleted === 0 and a spy-stubbed parse function, invoking callOp throws 'CALL_OP_NO_DISPATCH' and the parse spy has call count 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 0` and a retry strategy declaring `exhaustedFallback`, then it invokes neither that `exhaustedFallback` nor the operation's `recover` function.",
+    "refined": "Given callOp receives a run-kind operation whose AgentRunOutcome has dispatchesCompleted === 0, with spy-stubbed retryStrategy.exhaustedFallback and operation recover functions, invoking callOp throws 'CALL_OP_NO_DISPATCH' and both the exhaustedFallback spy and recover spy have call count 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 1` and an empty output string, then it throws an error with code `CALL_OP_NO_OUTPUT`.",
+    "refined": "Given callOp receives a run-kind operation whose AgentRunOutcome has dispatchesCompleted === 1 and output is an empty string, callOp throws a NaxError whose error.code equals 'CALL_OP_NO_OUTPUT' (not 'CALL_OP_NO_DISPATCH').",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `callOp` receives a complete-kind operation outcome with `dispatchesCompleted: 0`, then it throws an error with code `CALL_OP_NO_DISPATCH`.",
+    "refined": "Given callOp receives a complete-kind operation whose AgentRunOutcome has dispatchesCompleted === 0, callOp throws a NaxError whose error.code property equals 'CALL_OP_NO_DISPATCH'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 0` and an `adapterFailure`, then it records that failure in the runtime per-story adapter-failure store and records the outcome fallback records for the story before throwing.",
+    "refined": "Given callOp receives a run-kind operation whose AgentRunOutcome has dispatchesCompleted === 0 and a non-null adapterFailure, when callOp throws 'CALL_OP_NO_DISPATCH' the per-story adapter-failure store for that storyId contains the adapterFailure entry and the per-story outcome fallback record store contains the outcome record, both recorded before the throw (verifiable by asserting store contents after the throw and by ordering the record spy calls before the throw).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given a review dispatch stub that throws an error with code `CALL_OP_NO_DISPATCH`, when the semantic review phase runs, then its check result has `noDispatch: true` and `success: false`.",
+    "refined": "When the semantic review dispatch layer throws an error whose `code` property equals `CALL_OP_NO_DISPATCH`, the returned CheckResult object satisfies `result.noDispatch === true` and `result.success === false`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given a semantic review check result from a `CALL_OP_NO_DISPATCH` dispatch, then `failOpen` is not `true`.",
+    "refined": "For any semantic review CheckResult produced from a `CALL_OP_NO_DISPATCH` dispatch error, the assertion `result.failOpen !== true` holds (failOpen is undefined or false).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given a review dispatch stub that throws an error with code `CALL_OP_NO_DISPATCH`, when the adversarial review phase runs, then it returns a check result with `noDispatch: true` rather than propagating a parse error.",
+    "refined": "When the adversarial review dispatch throws an error with `code === 'CALL_OP_NO_DISPATCH'`, the adversarial review phase catches it and returns a CheckResult where `result.noDispatch === true` and `result.success === false`, and the thrown error is not re-propagated as a parse error (no exception escapes the phase and no parse-error code appears on the result).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When a semantic review dispatch completes and returns an unparseable non-empty string, then its check result has `failOpen: true` and `noDispatch` is not `true`.",
+    "refined": "When the semantic review dispatch resolves successfully with a non-empty string that fails parsing, the returned CheckResult satisfies `result.failOpen === true` and `result.noDispatch !== true` (noDispatch is undefined or false).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When a check result has `noDispatch: true`, then it does not increment the `RunResult.reviewsFailedOpen` tally.",
+    "refined": "Given a run whose review check results include a result with `noDispatch === true` and `success === false`, after the run completes `RunResult.reviewsFailedOpen` equals the count of check results with `failOpen === true` only; a noDispatch result contributes 0 to that tally.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a zero-dispatch review stub, when the story review decision is evaluated, then the story does not pass story-level review.",
+    "refined": "When the review dispatch stub throws `CALL_OP_NO_DISPATCH` for all review phases, the evaluated story-level review decision is `passed: false` (and the decision reports failure rather than a degraded pass), i.e., the story is not marked as passing story-level review.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a strategy dispatch stub that throws an error with code `CALL_OP_NO_DISPATCH`, when `runFixCycle` runs, then its `validate` function is not invoked for that iteration.",
+    "refined": "Test in src/findings/cycle.ts (runFixCycle tests): stub the strategy dispatch to throw an error with code CALL_OP_NO_DISPATCH and pass a `validate` spy into runFixCycle. Assert that the `validate` spy has been called 0 times (validate.notCalled) after runFixCycle returns.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given a strategy dispatch stub that throws an error with code `CALL_OP_NO_DISPATCH`, when `runFixCycle` returns, then its `exitReason` names the zero-dispatch condition and differs from `agent-gave-up` and `validate-short-circuit`.",
+    "refined": "Test in src/findings/cycle.ts (runFixCycle tests): stub the strategy dispatch to throw an error with code CALL_OP_NO_DISPATCH. Assert runFixCycle resolves with `exitReason` equal to the new zero-dispatch FixCycleExitReason member (e.g., `no-dispatch`), and assert that this value !== 'agent-gave-up' and !== 'validate-short-circuit' (expect(exitReason).toBe(<new member>); expect(['agent-gave-up','validate-short-circuit']).not.toContain(exitReason)).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given `abortOnNoProgress: true`, `consecutiveNoProgressToBail: 3`, and three consecutive strategy dispatches that throw `CALL_OP_NO_DISPATCH`, when the rectification phase runs, then it does not reach the no-progress bail.",
+    "refined": "Test in src/execution/story-orchestrator/rectification.ts: configure rectification with abortOnNoProgress: true and consecutiveNoProgressToBail: 3, and stub the strategy dispatch to throw CALL_OP_NO_DISPATCH errors on 3 consecutive iterations. Assert the rectification phase completes without the no-progress bail: the abortOnNoProgress path is never triggered and rectification finishes each iteration via the zero-dispatch exit rather than bailing after the 3rd no-progress iteration (no bail/abort result, iteration count of 3 with 3 zero-dispatch exits and no no-progress bail exit).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When a strategy dispatch completes, applies no edits, and does not signal `UNRESOLVED`, then `runFixCycle` invokes `validate` for that iteration, preserving the existing no-edit path. (A completed dispatch that does signal `UNRESOLVED` keeps taking the existing `agent-gave-up` exit, which already skips validation.)",
+    "refined": "Regression tests in src/findings/cycle.ts (runFixCycle tests): (a) stub the strategy dispatch to complete normally with zero edits and no UNRESOLVED signal; assert the `validate` spy is called exactly once for that iteration and exitReason is the existing completed/no-edit exit. (b) Stub the strategy dispatch to complete normally with an UNRESOLVED signal; assert runFixCycle resolves with exitReason === 'agent-gave-up' and the `validate` spy is not called.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When the zero-dispatch exit is returned, then its result records the iteration's accumulated cost so the failed dispatch spend is reported.",
+    "refined": "Test in src/findings/cycle.ts (runFixCycle tests): stub the strategy dispatch to accumulate a known cost (e.g., cost = 0.42 USD) before throwing CALL_OP_NO_DISPATCH. Assert the returned result (FixCycleExitResult) has a cost/totalCost field equal to the accumulated dispatch cost (expect(result.totalCost).toBe(0.42)), i.e., the spend recorded by dispatchStrategy before rethrow is included in the zero-dispatch exit result.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given `models.native.powerful` names a provider-qualified id absent from the resolved catalog, when the model-resolution check runs, then it returns a failing check with `tier: blocker`.",
+    "refined": "Given a config where `models.native.powerful` is set to a provider-qualified id (e.g. `anthropic/nonexistent-model-xyz`) that is absent from the resolved catalog, invoking the model-resolution check returns a Check object with `passed: false` and `tier: \"blocker\"` (exact string \"blocker\", not \"blocking\").",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When the model-resolution check returns an unresolved-native blocker, then its `message` contains the configuration key path, provider, and model id that failed to resolve.",
+    "refined": "When the model-resolution check returns a blocker for an unresolvable native id configured at `models.native.powerful` (provider `anthropic`, id `nonexistent-model-xyz`), the returned Check's `message` is a string containing all three substrings: `models.native.powerful`, `anthropic`, and `nonexistent-model-xyz`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given `review.adversarial` is a literal `{agent, model}` pin with an unresolvable id on an ACP agent, when the model-resolution check runs, then it returns a failing `warning` check and no `blocker` check for that id.",
+    "refined": "Given a config where `review.adversarial` is `{agent: \"acp-agent\", model: \"unresolvable-id-123\"}` targeting an ACP agent, invoking the model-resolution check returns an array of checks containing exactly one failing check for that id with `tier: \"warning\"`, and zero checks with `tier: \"blocker\"` referencing that id.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given an id absent from the bundled catalog but declared under `agent.native.catalogOverrides`, when the model-resolution check runs, then it returns no failing check for that id.",
+    "refined": "Given an id `override-model-1` absent from the bundled catalog but present in `agent.native.catalogOverrides`, invoking the model-resolution check against a config referencing that id returns zero failing checks (no Check with `passed: false`) whose message references `override-model-1`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given an unresolvable id at each supported location, when the model-resolution check walks literal pins under `review.semantic`, `review.adversarial`, `plan`, `acceptance`, `tdd.sessionTiers`, and `routing.llm.model`, every rung of `autoMode.escalation.tierOrder`, and every rung of `agent.fallback.map`, then it emits one failing check naming each site.",
+    "refined": "Given a config with an unresolvable id at each of: `review.semantic`, `review.adversarial`, `plan`, `acceptance`, each entry of `tdd.sessionTiers`, `routing.llm.model`, each tier in `autoMode.escalation.tierOrder`, and each value in `agent.fallback.map`, the model-resolution check returns failing checks such that each configured site's key path appears as a substring in at least one failing check's message, and each site is named by exactly one failing check (no duplicates for the same site).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When the catalog resolver rejects, then the model-resolution check returns a failing `warning` check and no `blocker` check.",
+    "refined": "Given a stubbed native catalog resolver whose promise rejects, invoking the model-resolution check returns an array of checks containing exactly one failing check with `tier: \"warning\"` (message referencing the catalog load failure), and zero checks with `tier: \"blocker\"`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given a `models` entry declaring `pricing` and `contextWindow` and a literal `{agent, model}` pin naming the same resolvable model id, when the model-resolution check runs, then it returns a `warning` whose message names the pin configuration key, the model id, and `agent.native.catalogOverrides`.",
+    "refined": "Given a `models` entry with both `pricing` and `contextWindow` fields and a literal pin at `review.adversarial = {agent, model: \"that-model-id\"}` selecting that same model, invoking the model-resolution check returns a Check with `tier: \"warning\"` whose `message` contains all three substrings: `review.adversarial`, `that-model-id`, and `agent.native.catalogOverrides`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given the same `models` entry is selected by its tier name rather than a literal pin, when the model-resolution check runs, then it returns no dropped-overrides warning.",
+    "refined": "Given the same `models` entry (with `pricing` and `contextWindow`) referenced only via tier selection (e.g. `models.native.powerful` tier name) and not by any literal `{agent, model}` pin, invoking the model-resolution check returns zero checks whose message contains `agent.native.catalogOverrides` (no dropped-overrides warning).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given a config that sets `models`, `plan`, `acceptance`, `autoMode`, `tdd`, and `routing`, when the precheck config slice is constructed, then each of those keys is defined on the slice.",
+    "refined": "Given a config object with non-undefined values for `models`, `plan`, `acceptance`, `autoMode`, `tdd`, and `routing`, calling the precheck config selector (whose derived type is co-located in `src/config/selectors.ts`) returns an object for which `Object.prototype.hasOwnProperty` (or `!== undefined`) is true for each of the six keys `models`, `plan`, `acceptance`, `autoMode`, `tdd`, and `routing`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given a native catalog resolver stub that reports every id unresolvable, when `runPrecheck` runs with a config naming a native model id, then it invokes the stubbed resolver and the returned `blockers` includes the model-resolution check.",
+    "refined": "Given a stubbed `getNativeClient` resolver injected via `catalogOverrides` that resolves for every id (simulating an unresolvable-id outcome), calling `runPrecheck(config)` with a config naming a native model id satisfies: (a) the stub's call count is >= 1 after the run (mock invocation assertion), and (b) the returned result's `blockers` array contains at least one Check with `passed: false` and `tier: \"blocker\"` whose message references the configured model id.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given a config whose every configured model id resolves, when `runPrecheck` runs, then its `blockers` contains no model-resolution check.",
+    "refined": "Given a config where every configured model id (across models map, literal pins, tier orders, and fallback map) resolves against the catalog, calling `runPrecheck(config)` returns a result whose `blockers` array contains zero Checks whose name/message corresponds to the model-resolution check (filtered by the check's registered name).",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
