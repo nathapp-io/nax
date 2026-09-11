@@ -54,6 +54,17 @@ export interface ModelsTierEntry {
   readonly hasContextWindow: boolean;
 }
 
+/** Look up the (provider, model) pair for a given (agent, tier) name pair
+ *  in the walked tier entries. Used by sites that store a tier reference
+ *  (autoMode.escalation.tierOrder rungs, agent.fallback.map `{agent, tier}`
+ *  rungs) so the pin can carry the underlying id instead of the bare label —
+ *  a label like "balanced" passed to the resolver would resolve as
+ *  `unknown/balanced`, producing a false blocker even when the tier
+ *  entry itself is configured. */
+function findTierEntryForAgent(entries: ModelsTierEntry[], agent: string, tier: string): ModelsTierEntry | undefined {
+  return entries.find((e) => e.agent === agent && e.tier === tier);
+}
+
 /** Default provider when an entry string lacks a "/". Same shape as schema-types#resolveModel. */
 function providerFromEntry(entry: string): string {
   if (entry.startsWith("claude")) return "anthropic";
@@ -69,19 +80,52 @@ function splitEntry(entry: string): { provider: string; model: string } {
   return { provider: entry.slice(0, slash), model: entry.slice(slash + 1) };
 }
 
-/** Build a literal pin from a `ConfiguredModel` (string tier OR `{agent, model}` pin). */
+/** Build a literal pin from a `ConfiguredModel` (string tier OR `{agent, model}` pin).
+ *
+ *  Tier labels are resolved through the `tierEntries` table: when a site
+ *  carries `plan.model = "balanced"` and `models.<agent>.balanced` is
+ *  configured, the pin stores the underlying (provider, model) id, not the
+ *  bare label. Without this resolution the resolver would receive
+ *  `provider="unknown", model="balanced"` and produce a false blocker on
+ *  a perfectly valid configuration (semantic review finding) — and on a
+ *  native default agent the bare label would route through the catalog
+ *  missing every entry on `models.<agent>.<tier>`.
+ *
+ *  When the tier is unknown, the pin still carries the tier label so the
+ *  key path surfaces in the report via the check's `model:` token. */
 function pinFromConfiguredModel(
   keyPath: string,
   selection: ConfiguredModel | undefined,
   defaultAgent: string,
   tierOverrides: ReadonlyMap<string, { hasPricing: boolean; hasContextWindow: boolean }>,
+  tierEntries: ModelsTierEntry[],
 ): LiteralPin | undefined {
   if (selection === undefined) return undefined;
   if (typeof selection === "string") {
-    // Tier label — the id is `models[<agent>][tier]`. We surface the tier name as `model`
-    // so the resolver can look up the underlying id when its seam is wired; until then the
-    // check still fires at this site so the key path is in the report.
     const overrides = tierOverrides.get(selection);
+    const resolved = findTierEntryForAgent(tierEntries, defaultAgent, selection);
+    if (resolved !== undefined) {
+      // Pin carries the underlying id so the resolver looks up the correct
+      // catalog entry. The keyPath still names the config site, so the
+      // dropped-overrides warning (if any) names the pin.
+      return {
+        keyPath,
+        agent: defaultAgent,
+        model: `${resolved.provider}/${resolved.model}`,
+        ...(resolved.hasPricing || resolved.hasContextWindow
+          ? {
+              tierEntryOverrides: {
+                hasPricing: resolved.hasPricing,
+                hasContextWindow: resolved.hasContextWindow,
+              },
+            }
+          : overrides !== undefined
+            ? { tierEntryOverrides: overrides }
+            : {}),
+      };
+    }
+    // Tier not in the models map — fall back to the tier label so the key
+    // path still surfaces; the resolver will reject it as unknown.
     return {
       keyPath,
       agent: defaultAgent,
@@ -222,7 +266,13 @@ export function collectConfiguredModelPins(config: unknown): {
 
   // review.{semantic,adversarial}.model and plan.model and acceptance.model and tdd.sessionTiers.*
   if (cfg.review?.semantic !== undefined) {
-    const pin = pinFromConfiguredModel("review.semantic.model", cfg.review.semantic.model, defaultAgent, tierOverrides);
+    const pin = pinFromConfiguredModel(
+      "review.semantic.model",
+      cfg.review.semantic.model,
+      defaultAgent,
+      tierOverrides,
+      tierEntries,
+    );
     if (pin !== undefined) pins.push(pin);
   }
   if (cfg.review?.adversarial !== undefined) {
@@ -231,26 +281,45 @@ export function collectConfiguredModelPins(config: unknown): {
       cfg.review.adversarial.model,
       defaultAgent,
       tierOverrides,
+      tierEntries,
     );
     if (pin !== undefined) pins.push(pin);
   }
   if (cfg.plan !== undefined) {
-    const pin = pinFromConfiguredModel("plan.model", cfg.plan.model, defaultAgent, tierOverrides);
+    const pin = pinFromConfiguredModel("plan.model", cfg.plan.model, defaultAgent, tierOverrides, tierEntries);
     if (pin !== undefined) pins.push(pin);
   }
   if (cfg.acceptance !== undefined) {
-    const pin = pinFromConfiguredModel("acceptance.model", cfg.acceptance.model, defaultAgent, tierOverrides);
+    const pin = pinFromConfiguredModel(
+      "acceptance.model",
+      cfg.acceptance.model,
+      defaultAgent,
+      tierOverrides,
+      tierEntries,
+    );
     if (pin !== undefined) pins.push(pin);
   }
   if (cfg.tdd?.sessionTiers !== undefined) {
     const sessionTiers = cfg.tdd.sessionTiers;
     for (const role of ["testWriter", "verifier"] as const) {
-      const pin = pinFromConfiguredModel(`tdd.sessionTiers.${role}`, sessionTiers[role], defaultAgent, tierOverrides);
+      const pin = pinFromConfiguredModel(
+        `tdd.sessionTiers.${role}`,
+        sessionTiers[role],
+        defaultAgent,
+        tierOverrides,
+        tierEntries,
+      );
       if (pin !== undefined) pins.push(pin);
     }
   }
   if (cfg.routing?.llm !== undefined) {
-    const pin = pinFromConfiguredModel("routing.llm.model", cfg.routing.llm.model, defaultAgent, tierOverrides);
+    const pin = pinFromConfiguredModel(
+      "routing.llm.model",
+      cfg.routing.llm.model,
+      defaultAgent,
+      tierOverrides,
+      tierEntries,
+    );
     if (pin !== undefined) pins.push(pin);
   }
 
@@ -259,13 +328,33 @@ export function collectConfiguredModelPins(config: unknown): {
   tierOrder.forEach((rung, idx) => {
     const tier = rung.tier;
     const agent = rung.agent ?? defaultAgent;
-    const overrides = tierOverrides.get(`${agent}/${tier}`);
-    pins.push({
-      keyPath: `autoMode.escalation.tierOrder[${idx}].tier`,
-      agent,
-      model: tier,
-      ...(overrides !== undefined ? { tierEntryOverrides: overrides } : {}),
-    });
+    const resolved = findTierEntryForAgent(tierEntries, agent, tier);
+    if (resolved !== undefined) {
+      // Pin stores the underlying id (provider-qualified) so the resolver
+      // looks up the correct catalog entry — not the tier label, which would
+      // produce a false "unknown/powerful" blocker (semantic review finding).
+      pins.push({
+        keyPath: `autoMode.escalation.tierOrder[${idx}].tier`,
+        agent,
+        model: `${resolved.provider}/${resolved.model}`,
+        ...(resolved.hasPricing || resolved.hasContextWindow
+          ? {
+              tierEntryOverrides: {
+                hasPricing: resolved.hasPricing,
+                hasContextWindow: resolved.hasContextWindow,
+              },
+            }
+          : {}),
+      });
+    } else {
+      // Tier not in the models map. Emit the tier label so the key path
+      // still appears in the report; the resolver will reject it.
+      pins.push({
+        keyPath: `autoMode.escalation.tierOrder[${idx}].tier`,
+        agent,
+        model: tier,
+      });
+    }
   });
 
   // every rung of agent.fallback.map[<primary>][i]
@@ -287,9 +376,28 @@ export function collectConfiguredModelPins(config: unknown): {
           model: rung.model,
           ...(overrides !== undefined ? { tierEntryOverrides: overrides } : {}),
         });
+      } else if ("tier" in rung) {
+        // { agent, tier } rung. AC5 requires "every rung of agent.fallback.map"
+        // to emit a failing check naming the site, regardless of whether
+        // the rung is a literal pin or a tier reference. We resolve the
+        // tier through the models map so the underlying id is what the
+        // resolver sees; when the tier is unknown we fall through to the
+        // tier label so the key path still surfaces in the report.
+        const resolved = findTierEntryForAgent(tierEntries, rung.agent, rung.tier);
+        pins.push({
+          keyPath: `agent.fallback.map.${primary}[${idx}]`,
+          agent: rung.agent,
+          model: resolved !== undefined ? `${resolved.provider}/${resolved.model}` : rung.tier,
+          ...(resolved !== undefined && (resolved.hasPricing || resolved.hasContextWindow)
+            ? {
+                tierEntryOverrides: {
+                  hasPricing: resolved.hasPricing,
+                  hasContextWindow: resolved.hasContextWindow,
+                },
+              }
+            : {}),
+        });
       }
-      // { agent, tier } rungs are tier names on a different agent — handled by tierEntry walk
-      // (every tier entry is already covered above).
     });
   }
 

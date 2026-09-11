@@ -253,15 +253,20 @@ export async function checkModelResolution(config: unknown): Promise<Check[]> {
 }
 
 function findTierEntryForPin(entries: ModelsTierEntry[], pin: LiteralPin): ModelsTierEntry | undefined {
-  // A literal `{agent, model}` pin matches a tier entry whose (agent, model id) pair
-  // resolves to the same id the pin names — even if the tier label differs. AC7's
-  // setup is exactly this: `models.native.balanced = { provider: "anthropic", model:
-  // "claude-sonnet-5", pricing, contextWindow }` and a literal pin `{ agent: "native",
-  // model: "claude-sonnet-5" }`. The pin names the id, not the tier label, so the
-  // match keys on the resolved (provider, model) pair.
+  // A literal `{agent, model}` pin matches a tier entry whose (provider, model
+  // id) pair resolves to the same id the pin names — even if the tier label
+  // differs. AC7's setup is exactly this: `models.native.balanced = { provider:
+  // "anthropic", model: "claude-sonnet-5", pricing, contextWindow }` and a
+  // literal pin `{ agent: "native", model: "claude-sonnet-5" }`. The pin may
+  // name the id bare (`"claude-sonnet-5"`) or provider-qualified
+  // (`"anthropic/claude-sonnet-5"`) — both must hit the same tier entry. We
+  // split the pin's model id and compare both pieces so a provider-qualified
+  // pin matches a tier entry whose `splitEntry` already produced the bare id.
+  const split = splitEntry(pin.model);
   return entries.find((e) => {
     if (e.agent !== pin.agent) return false;
-    return e.model === pin.model;
+    if (e.provider !== split.provider) return false;
+    return e.model === split.model;
   });
 }
 

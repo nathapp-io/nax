@@ -70,13 +70,22 @@ export function overrideResolvability(
  * The override table is checked first: a user-declared override is always
  * resolvable (AC4) regardless of what the bundled catalog says.
  *
- * Error shape: a rejected promise from `client.model()` (id the bundled
- * catalog doesn't know) becomes "unresolved" — the check emits a blocker at
- * that site. The client construction itself can throw (catalog load failure);
- * that becomes "unresolved" too — the check emits a blocker — because by the
- * time we reach this function, the override table is already empty (the
- * check short-circuited on it) so the only failure mode is "the bundled
- * catalog does not know this id".
+ * Status mapping:
+ *   - "resolved":   id resolves (override hit OR `client.model()` returned)
+ *   - "error":      `getNativeClient(overrides)` rejected (catalog load
+ *                   failed — network, schema, …). AC6 requires the check
+ *                   to surface this as a warning, not a blocker, because
+ *                   a transient catalog miss should not stop a run.
+ *   - "unresolved": client built successfully but `client.model()` rejected
+ *                   for this (provider, model) pair — id absent from the
+ *                   catalog. The check emits a blocker at that site
+ *                   (AC1/AC2), because the bundled snapshot not knowing
+ *                   an id is the failure mode `nax#1983` exists to catch.
+ *
+ * The two catch arms are split so the resolver honours the AC6 contract;
+ * a single `try { … } catch { "unresolved" }` would collapse the catalog
+ * load failure into a per-id blocker and leave the "error" handlers in
+ * `checkModelResolution` permanently dead code.
  */
 export async function resolveNativeId(
   provider: string,
@@ -93,15 +102,41 @@ export async function resolveNativeId(
       hasContextWindow: override.hasContextWindow,
     };
   }
+
+  // The native client's `Client` type comes from nax-ai; we declare the
+  // variable as `unknown` to keep the file free of nax-ai type imports
+  // (scripts/check-nax-ai-imports.ts forbids it). The single property we
+  // touch (`model(provider, model)`) is what we actually need.
+  let client: unknown;
   try {
-    const client = await getNativeClient(overrides);
-    const resolved = await client.model(provider, model);
+    // Catalog load failure — the bundled snapshot itself is unavailable
+    // (network, schema mismatch, …). Distinct from "id not in catalog":
+    // the resolver never got far enough to look anything up.
+    client = await getNativeClient(overrides);
+  } catch {
+    return { status: "error" };
+  }
+
+  try {
+    const resolved = await (
+      client as {
+        model: (
+          provider: string,
+          model: string,
+        ) => Promise<{
+          pricing?: unknown;
+          contextWindow?: number;
+        }>;
+      }
+    ).model(provider, model);
     return {
       status: "resolved",
       hasPricing: resolved.pricing !== undefined,
       hasContextWindow: resolved.contextWindow !== undefined,
     };
   } catch {
+    // Client built successfully but this (provider, model) is not in the
+    // catalog. Per AC1/AC2 the check emits a blocker at this site.
     return { status: "unresolved" };
   }
 }
