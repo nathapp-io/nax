@@ -17,6 +17,7 @@ import { statSync } from "node:fs";
 import type { QualityCommandSpec } from "../quality/command-spec";
 import { runQualityCommand } from "../quality/runner";
 import { shellQuoteArg } from "../verification/shell-quote";
+import { pathListElements } from "./path-list";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 import { runExecBranch } from "./run-command-exec";
 
@@ -112,7 +113,16 @@ function declaredPlaceholdersSuffix(declared: ReadonlySet<string>): string {
   return `declared: ${[...declared].join(", ")}`;
 }
 
-export function substituteCommand(template: string, values: Record<string, string>): string | { error: string } {
+/**
+ * An ARRAY value is quoted per element and joined; a string value is quoted
+ * whole. The distinction carries the element boundaries through substitution,
+ * which a pre-joined string cannot: the join would be re-split and a path
+ * under `/tmp/my dir/` would become two arguments (nax#1998).
+ */
+export function substituteCommand(
+  template: string,
+  values: Record<string, string | readonly string[]>,
+): string | { error: string } {
   const declared = new Set([...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string));
   for (const key of Object.keys(values)) {
     if (!declared.has(key)) {
@@ -126,7 +136,10 @@ export function substituteCommand(template: string, values: Record<string, strin
   }
   const contextError = placeholderContextError(template);
   if (contextError !== undefined) return { error: contextError };
-  return template.replaceAll(PLACEHOLDER, (_m, key: string) => shellQuoteArg(values[key] as string));
+  return template.replaceAll(PLACEHOLDER, (_m, key: string) => {
+    const value = values[key] as string | readonly string[];
+    return Array.isArray(value) ? value.map(shellQuoteArg).join(" ") : shellQuoteArg(value as string);
+  });
 }
 
 /**
@@ -152,7 +165,7 @@ export function substituteCommand(template: string, values: Record<string, strin
  */
 export function substituteCommandSpec(
   spec: QualityCommandSpec,
-  values: Record<string, string>,
+  values: Record<string, string | readonly string[]>,
 ): QualityCommandSpec | { error: string } {
   if (typeof spec === "string") return substituteCommand(spec, values);
   const allDeclared = new Set<string>();
@@ -169,7 +182,7 @@ export function substituteCommandSpec(
   const out: string[] = [];
   for (const entry of spec) {
     const declaredKeys = new Set([...entry.matchAll(PLACEHOLDER)].map((m) => m[1] as string));
-    const entryValues: Record<string, string> = {};
+    const entryValues: Record<string, string | readonly string[]> = {};
     for (const [key, value] of Object.entries(values)) {
       if (declaredKeys.has(key)) entryValues[key] = value;
     }
@@ -229,7 +242,11 @@ export function createRunCommandTool(
       type: "object",
       properties: {
         command: { type: "string", enum: keys, description: "Which declared command to run" },
-        values: { type: "object", description: 'Values for the command\'s placeholders, e.g. { files: "a.test.ts" }' },
+        values: {
+          type: "object",
+          description:
+            'Values for the command\'s placeholders, e.g. { files: "a.test.ts" }. A path placeholder takes several paths separated by spaces, e.g. { files: "a.test.ts b.test.ts" } -- one call, not one per file.',
+        },
         ...(hasExec
           ? {
               argv: {
@@ -259,7 +276,8 @@ export function createRunCommandTool(
     // (see src/tools/runtime.ts and src/tools/policy.ts) rather than under
     // RunCommand's own grant.
     scope: {
-      pathFields: ["values.files"],
+      pathFields: [],
+      listPathFields: ["values.files"],
       verbField: "command",
       allowedVerbs: keys,
       ...(hasExec ? { argvField: "argv" } : {}),
@@ -278,37 +296,51 @@ export function createRunCommandTool(
       if (template === undefined) return { content: `unknown command "${key}"`, isError: true };
 
       const raw = (input.values ?? {}) as Record<string, unknown>;
-      const values: Record<string, string> = {};
+      const values: Record<string, string | readonly string[]> = {};
       for (const [k, v] of Object.entries(raw)) values[k] = String(v);
 
-      // `scope.pathFields: ["values.files"]` means the policy resolved this
-      // value into ctx.resolvedPaths -- absolute, and approved against the
-      // grant. Substituting that instead of the raw string is what read.ts,
-      // write.ts, edit.ts and grep.ts already do, and it fixes a real defect:
-      // `bun test .nax/features/x/foo.test.ts` treats a bare dot-prefixed
-      // relative path as a test FILTER, not a path, and reports a confident
-      // false "no tests matched" (#1936). The absolute form runs.
+      // `scope.listPathFields: ["values.files"]` means the policy split this
+      // value on whitespace and resolved EACH element into ctx.resolvedPaths --
+      // absolute, and approved against the grant. Substituting those instead of
+      // the raw string is what read.ts, write.ts, edit.ts and grep.ts already
+      // do, and it fixes a real defect: `bun test .nax/features/x/foo.test.ts`
+      // treats a bare dot-prefixed relative path as a test FILTER, not a path,
+      // and reports a confident false "no tests matched" (#1936). The absolute
+      // form runs.
       //
-      // But `pathFields` is a POLICY declaration, not a claim about what the
+      // But a path field is a POLICY declaration, not a claim about what the
       // agent actually passed. `{{files}}` is equally a test-NAME filter
-      // (`bun test run-command`), and is plural by construction elsewhere --
-      // scoped-selection.ts builds it as several paths joined by a space.
-      // resolveWithin accepts every one of those: "" resolves to the repo
-      // ROOT, and a name filter or a space-joined list each resolve to a
-      // single nonexistent path. So `resolvedPaths.length` cannot tell them
-      // apart; only an existing FILE is unambiguously the case this fix is
-      // for.
+      // (`bun test run-command`), and resolveWithin accepts one happily,
+      // turning it into a nonexistent absolute path. So the resolved form is
+      // taken only for an element that is an existing FILE; everything else
+      // keeps the raw token it arrived as. "" splits to nothing, so it cannot
+      // absolutise to the root and run the entire suite.
       //
-      // Everything else keeps the raw value it had before #1936: a name
-      // filter still filters, a multi-file value stays as broken as it
-      // already was rather than becoming a confusing absolute one, and ""
-      // does not absolutise to the root and run the entire suite. One stat
-      // against a process spawn is free.
-      if (values.files !== undefined && ctx.resolvedPaths.length === 1) {
-        const [resolvedFiles] = ctx.resolvedPaths;
-        if (resolvedFiles !== undefined && statSync(resolvedFiles, { throwIfNoEntry: false })?.isFile() === true) {
-          values.files = resolvedFiles;
-        }
+      // The result is an ARRAY, so each element survives substitution as its
+      // own argument -- which is what makes a multi-file scoped run possible
+      // at all, and what makes this path agree with scoped-selection.ts
+      // (nax#1998). One stat per element against a process spawn is free.
+      const rawFiles = raw.files;
+      if (typeof rawFiles === "string") {
+        const elements = pathListElements(rawFiles, ctx.root);
+        // The pairing is positional, and sound because `values.files` is this
+        // tool's only path field, so the policy appended exactly these
+        // elements in exactly this order (pinned by a test on `scope`).
+        //
+        // A length mismatch means the two layers disagreed -- a different root
+        // spelling, or a file created between the two stats. Falling back to
+        // the raw value is the fail-safe direction in BOTH directions: the
+        // shell then gets one argument, and one argument is always a subset of
+        // what the policy approved, however it split.
+        values.files =
+          ctx.resolvedPaths.length === elements.length
+            ? elements.map((element, i) => {
+                const resolved = ctx.resolvedPaths[i];
+                const isFile =
+                  resolved !== undefined && statSync(resolved, { throwIfNoEntry: false })?.isFile() === true;
+                return isFile ? resolved : element;
+              })
+            : rawFiles;
       }
 
       const command = substituteCommandSpec(template, values);

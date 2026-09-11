@@ -17,6 +17,7 @@ import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
 import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
+import { pathListElements } from "./path-list";
 import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 
 /**
@@ -372,6 +373,23 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
         }
         resolvedPaths.push(resolved);
+      }
+
+      for (const field of scope.listPathFields ?? []) {
+        const value = pathFieldValue(input, field);
+        if (value === undefined) continue;
+        if (typeof value !== "string") return deny(`"${field}" must be a string path`);
+
+        for (const element of pathListElements(value, resolvedRoot)) {
+          const resolved = resolveWithin(resolvedRoot, element, execTouchedPaths);
+          if (resolved === null) {
+            return deny(`path "${element}" ${outOfRootReason(tool, resolvedRoot, element)}`, true);
+          }
+          if (!grant.unconditional && !matchesAny(globs, relativeTo(resolved))) {
+            return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
+          }
+          resolvedPaths.push(resolved);
+        }
       }
 
       for (const field of scope.arrayPathFields ?? []) {
