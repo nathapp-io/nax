@@ -25,4 +25,18 @@ describe("substituteCommandSpec", () => {
       "tsc -p tsconfig.test.json",
     ]);
   });
+
+  test("errors when a value isn't declared by any entry in the list, instead of silently dropping it", () => {
+    const out = substituteCommandSpec(["biome check", "bun test"], { files: "a.test.ts" });
+    expect(out).toEqual({
+      error: 'value "files" is not a placeholder in this command (this command declares no placeholders)',
+    });
+  });
+
+  test("errors when an entry declares a placeholder that has no value at all", () => {
+    const out = substituteCommandSpec(["biome check", "bun test {{files}}"], {});
+    expect(out).toEqual({
+      error: "placeholder {{files}} has no value (declared: files)",
+    });
+  });
 });

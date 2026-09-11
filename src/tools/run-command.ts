@@ -141,12 +141,31 @@ export function substituteCommand(template: string, values: Record<string, strin
  * design (it's what stops a value silently going nowhere). Passing the full
  * shared `values` object to every entry would make every entry without
  * {{files}} fail that check.
+ *
+ * But per-entry filtering alone would let a value that no entry in the whole
+ * spec declares vanish silently (every entry's filtered set would just be
+ * empty, and every entry would substitute cleanly) -- so before filtering
+ * per entry, every key in `values` is checked against the UNION of
+ * placeholders declared across the whole spec, and rejected with the same
+ * "unrecognized value" contract `substituteCommand` gives the single-string
+ * case if it isn't declared anywhere.
  */
 export function substituteCommandSpec(
   spec: QualityCommandSpec,
   values: Record<string, string>,
 ): QualityCommandSpec | { error: string } {
   if (typeof spec === "string") return substituteCommand(spec, values);
+  const allDeclared = new Set<string>();
+  for (const entry of spec) {
+    for (const match of entry.matchAll(PLACEHOLDER)) allDeclared.add(match[1] as string);
+  }
+  for (const key of Object.keys(values)) {
+    if (!allDeclared.has(key)) {
+      return {
+        error: `value "${key}" is not a placeholder in this command (${declaredPlaceholdersSuffix(allDeclared)})`,
+      };
+    }
+  }
   const out: string[] = [];
   for (const entry of spec) {
     const declaredKeys = new Set([...entry.matchAll(PLACEHOLDER)].map((m) => m[1] as string));
