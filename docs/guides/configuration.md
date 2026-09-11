@@ -173,7 +173,7 @@ Every entry under `quality.commands` (`test`, `typecheck`, `lint`, `lintScoped`,
 - Every entry runs, **even after an earlier entry fails.** The whole point of the list form is that one command's failure does not hide the next command's failure — the two `&&`-chain problems (stops early, only shows the first error) are exactly what this fixes.
 - Entries run **sequentially**, not in parallel — they typically share a working directory and, for typecheck/build tools, an incremental build cache, so concurrent runs would race.
 - The results are folded into a **single** `QualityCommandResult` via `aggregateResults()`: `success` is true only if every entry succeeded, `exitCode` is the first failing entry's exit code (or `0`), and `output` concatenates every entry's own output under an `=== <entry command> (exit <code>) ===` header — so a single `typecheck` (or `lint`) invocation reports every failing entry, not just the first.
-- **Each entry gets the full configured timeout** (`timeouts.gateMs`, or the command-specific timeout) — the budget is not divided across entries. A three-entry list can therefore take up to 3x as long in the worst case as a one-entry list; size the list and the timeout accordingly.
+- **Each entry gets the full timeout configured for that call site** — `runQualityCommand`'s own `timeoutMs` option, which defaults to 120 seconds when the caller doesn't override it — not divided across entries. A three-entry list can therefore take up to 3x as long in the worst case as a one-entry list; size the list and the timeout accordingly.
 
 **Worked examples, one per ecosystem:**
 
