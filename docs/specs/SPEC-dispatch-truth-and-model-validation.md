@@ -176,6 +176,7 @@ Modifies:
 6. `[unit]` Calling `callOp` with a run-kind operation whose retry strategy declares an `exhaustedFallback` and whose outcome reports `dispatchesCompleted` of `0` does not invoke that `exhaustedFallback`, and does not invoke the operation's `recover` function.
 7. `[unit]` Calling `callOp` with a run-kind operation whose outcome reports `dispatchesCompleted` of `1` and an empty output string still throws an error whose `code` equals `"CALL_OP_NO_OUTPUT"`.
 8. `[unit]` Calling `callOp` with a complete-kind operation whose outcome reports `dispatchesCompleted` of `0` throws an error whose `code` equals `"CALL_OP_NO_DISPATCH"`.
+9. `[unit]` Calling `callOp` with a run-kind operation whose outcome reports `dispatchesCompleted` of `0` and carries an `adapterFailure` still records that failure against the story on the runtime's per-story adapter-failure store, and still records the outcome's fallback records for the story, before the error is thrown.
 
 ### US-002 — neither review gate produces a verdict from a dispatch that never happened
 
@@ -191,7 +192,7 @@ Modifies:
 1. `[integration]` Stub the strategy dispatch to raise an error whose `code` equals `"CALL_OP_NO_DISPATCH"`; run the fix cycle; the cycle's `validate` function is not invoked for that iteration.
 2. `[integration]` Under the same stub, the fix cycle returns a result whose `exitReason` names the zero-dispatch condition and is distinct from the existing `FixCycleExitReason` members `"agent-gave-up"` and `"validate-short-circuit"`.
 3. `[integration]` Run the rectification phase with `abortOnNoProgress` enabled and `consecutiveNoProgressToBail` of `3`, with the strategy dispatch stubbed to raise an error whose `code` equals `"CALL_OP_NO_DISPATCH"`; three consecutive zero-dispatch iterations do not reach the no-progress bail.
-4. `[integration]` A strategy dispatch that completes and applies no edits still runs `validate` for that iteration, so the existing no-edit path is unchanged.
+4. `[integration]` A strategy dispatch that completes, applies no edits and does not signal UNRESOLVED still runs `validate` for that iteration, so the existing no-edit path is unchanged. (A completed dispatch that *does* signal UNRESOLVED keeps taking the existing `"agent-gave-up"` exit, which already skips validation.)
 5. `[unit]` The zero-dispatch exit records the iteration's accumulated cost on the returned result, so the failed dispatch's spend is still reported.
 
 ### US-004 — precheck resolves every configured model id and reports dropped overrides
@@ -200,7 +201,7 @@ Modifies:
 2. `[unit]` The blocker's `message` contains the configuration key path, the provider and the model id that failed to resolve.
 3. `[unit]` Given a config whose `review.adversarial` is a literal `{agent, model}` pin naming an unresolvable id on an acp agent, the check returns a check with `tier` equal to `"warning"` and `passed` equal to `false`, and returns no check with `tier` equal to `"blocker"` for that id.
 4. `[unit]` Given a config whose id is absent from the bundled catalog but declared under `agent.native.catalogOverrides`, the check returns no failing check for that id.
-5. `[unit]` The check walks literal `{agent, model}` pins under `review.semantic`, `review.adversarial`, `plan` and `acceptance`, and every rung of `autoMode.escalation.tierOrder` and `agent.fallback.map`: a config with an unresolvable id at each of those sites yields one failing check naming each site.
+5. `[unit]` The check walks literal `{agent, model}` pins under `review.semantic`, `review.adversarial`, `plan`, `acceptance`, `tdd.sessionTiers` and `routing.llm.model`, and every rung of `autoMode.escalation.tierOrder` and `agent.fallback.map`: a config with an unresolvable id at each of those sites yields one failing check naming each site.
 6. `[unit]` When the catalog resolver rejects, the check returns a check with `tier` equal to `"warning"` and does not return a check with `tier` equal to `"blocker"`.
 7. `[unit]` Given a config declaring `pricing` and `contextWindow` on a `models` entry, and a literal `{agent, model}` pin naming that same resolvable model id, the check returns a check with `tier` equal to `"warning"` whose `message` names the pin's configuration key, the model id, and `agent.native.catalogOverrides`.
 8. `[unit]` Given the same `models` entry selected by its tier name rather than by a literal pin, the check returns no warning about dropped overrides.
