@@ -90,11 +90,21 @@ describe("CLIInteractionPlugin.promptUser — setTimeout cleanup", () => {
 describe("CLIInteractionPlugin.init/destroy", () => {
   test("init() parses the config schema and skips readline setup on non-TTY stdin", async () => {
     const plugin = new CLIInteractionPlugin();
-    // Under `bun test`, stdin is never a TTY — init() must return without
-    // throwing and without creating a readline interface.
-    await plugin.init({ someExtraKey: "allowed by passthrough" });
-    const internals = cliInternals(plugin);
-    expect(internals.rl).toBeNull();
+    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", { configurable: true, value: false });
+
+    try {
+      await plugin.init({ someExtraKey: "allowed by passthrough" });
+      const internals = cliInternals(plugin);
+      expect(internals.rl).toBeNull();
+    } finally {
+      await plugin.destroy();
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdin, "isTTY");
+      }
+    }
   });
 
   test("destroy() is a no-op when no readline was created", async () => {

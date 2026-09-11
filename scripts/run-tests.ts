@@ -28,7 +28,14 @@
  * Usage: `bun run scripts/run-tests.ts [--bail]`
  */
 
+import { createTestOutputController } from "./run-tests-output";
+
 const BAIL = process.argv.includes("--bail");
+const OUTPUT_CONTROLLER = createTestOutputController({
+  agentMode: process.env.AGENT === "1",
+  stdout: process.stdout,
+  stderr: process.stderr,
+});
 type Phase = {
   name: string;
   dir: string;
@@ -106,7 +113,7 @@ async function runPhase(phase: Phase): Promise<number> {
   // `detached: true` makes bun test the leader of its own process group so
   // `process.kill(-pid, SIGTERM)` reaches every descendant (acpx, subshells).
   const child = Bun.spawn(["bun", ...args], {
-    stdio: ["inherit", "inherit", "inherit"],
+    stdio: OUTPUT_CONTROLLER.stdio,
     // biome-ignore lint/suspicious/noExplicitAny: Bun typings lag behind
     ...({ detached: true } as any),
   });
@@ -137,7 +144,9 @@ async function runPhase(phase: Phase): Promise<number> {
   }, phase.phaseTimeoutMs);
   timer.unref();
 
+  const capturedOutput = OUTPUT_CONTROLLER.collect(child.stdout, child.stderr);
   const exitCode = await child.exited;
+  const captured = await capturedOutput;
   clearTimeout(timer);
   process.off("SIGINT", onSigint);
   process.off("SIGTERM", onSigterm);
@@ -147,6 +156,7 @@ async function runPhase(phase: Phase): Promise<number> {
   // `null` or non-zero exit signals abnormal termination; always sweep the
   // group as a safety net to prevent orphan accumulation across phases.
   const abnormal = timedOut || exitCode === null || exitCode !== 0;
+  OUTPUT_CONTROLLER.finish(captured, abnormal);
   if (timeoutReapPromise !== undefined) {
     await timeoutReapPromise;
   } else if (abnormal && groupHasSurvivors(pgid)) {
