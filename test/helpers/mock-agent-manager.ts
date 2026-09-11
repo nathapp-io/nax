@@ -110,7 +110,7 @@ export interface MockAgentManagerOptions {
   completeWithFallbackFn?: (
     prompt: string,
     opts?: CompleteOptions,
-  ) => Promise<{ result: CompleteResult; fallbacks: unknown[] }>;
+  ) => Promise<{ result: CompleteResult; fallbacks: unknown[]; dispatchesCompleted: number }>;
   runAsFn?: (
     agentName: string,
     opts: AgentRunOptions,
@@ -133,7 +133,7 @@ export interface MockAgentManagerOptions {
     agentName: string,
     prompt: string,
     opts?: CompleteOptions,
-  ) => Promise<{ result: CompleteResult; fallbacks: AgentFallbackRecord[] }>;
+  ) => Promise<{ result: CompleteResult; fallbacks: AgentFallbackRecord[]; dispatchesCompleted: number }>;
   /**
    * runAsSession override, in the real method's shape: (agentName, handle, prompt, opts).
    * When provided, the mock's runWithFallback also routes hops through it (with the
@@ -247,7 +247,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
         );
       });
     }
-    return mock(() => Promise.resolve({ result: DEFAULT_RESULT, fallbacks: [] }));
+    return mock(() => Promise.resolve({ result: DEFAULT_RESULT, fallbacks: [], dispatchesCompleted: 1 }));
   };
 
   const runAsOverride = opts.runAsFn;
@@ -268,7 +268,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
     runWithFallback: buildRunWithFallback(),
     completeWithFallback: completeWithFallbackOverride
       ? mock((prompt: string, completeOpts?: CompleteOptions) => completeWithFallbackOverride(prompt, completeOpts))
-      : mock(() => Promise.resolve({ result: DEFAULT_COMPLETE_RESULT, fallbacks: [] })),
+      : mock(() => Promise.resolve({ result: DEFAULT_COMPLETE_RESULT, fallbacks: [], dispatchesCompleted: 1 })),
     run: runFn,
     complete: completeFn,
     getAgent: opts.getAgentFn ?? ((name: string) => (unavailable.has(name) ? undefined : defaultAdapter)),
@@ -299,6 +299,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
       : mock(async (name: string, prompt: string, completeOpts: CompleteOptions) => ({
           result: await mgr.completeAs(name, prompt, completeOpts),
           fallbacks: [],
+          dispatchesCompleted: 1,
         })),
     completeAs: completeAsOverride
       ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) =>

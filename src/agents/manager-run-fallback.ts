@@ -77,9 +77,15 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   let finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
   let totalCostUsd = 0;
   let didSwap = false;
+  // Count of hops that returned a turn (successful or not). Stub: tracked for the
+  // type contract; the implementer makes the count reflect actual hops that
+  // completed a turn. Every iteration of the while loop corresponds to one hop
+  // that did, so the counter increments unconditionally at the top.
+  let dispatchesCompleted = 0;
 
   try {
     while (true) {
+      dispatchesCompleted += 1;
       const hop = await executeHop(input, currentAgent, currentBundle, currentHopKind, currentRunOptions);
       const { result } = hop;
       // The endpoint this hop dispatched — the identity a failure must be recorded
@@ -100,6 +106,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalAgent: currentAgent,
           finalTarget: currentTarget,
           finalDepth: hopsSoFar,
+          dispatchesCompleted,
         };
       }
 
@@ -137,6 +144,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalAgent: currentAgent,
           finalTarget: currentTarget,
           finalDepth: hopsSoFar,
+          dispatchesCompleted,
         };
       }
 
@@ -160,6 +168,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
             finalAgent: currentAgent,
             finalTarget: currentTarget,
             finalDepth: hopsSoFar,
+            dispatchesCompleted,
           };
         }
         const outcome = await input.resolveExhaustion({
@@ -187,6 +196,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalAgent: currentAgent,
           finalTarget: currentTarget,
           finalDepth: hopsSoFar,
+          dispatchesCompleted,
         };
       }
 
@@ -241,6 +251,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
           finalAgent: currentAgent,
           finalTarget: currentTarget,
           finalDepth: hopsSoFar,
+          dispatchesCompleted,
         };
       }
       // The new position IS the rung's index — not "one more than before". A hop

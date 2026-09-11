@@ -67,6 +67,14 @@ export interface AgentRunOutcome {
   finalTarget?: FallbackTarget;
   /** Ladder index of `finalTarget`, for the caller's slot record. */
   finalDepth?: number;
+  /**
+   * Count of hops that returned a turn — successful or not — across every retry and
+   * fallback attempt of this operation. A value of `0` means no hop reached a model
+   * and `callOp` will throw `CALL_OP_NO_DISPATCH` for this outcome. Required so the
+   * typecheck enumerates every construction site; an optional field would let a
+   * missed site silently report `undefined`.
+   */
+  dispatchesCompleted: number;
 }
 
 export interface AgentCompleteOutcome {
@@ -78,6 +86,13 @@ export interface AgentCompleteOutcome {
   finalTier?: string;
   /** The resolved target the final hop ran on — see `AgentRunOutcome.finalTarget` (nax#1964). */
   finalTarget?: FallbackTarget;
+  /**
+   * Count of hops that returned a turn — successful or not — across every retry and
+   * fallback attempt of this operation. A value of `0` means no hop reached a model
+   * and `callOp` will throw `CALL_OP_NO_DISPATCH` for this outcome. Required so the
+   * typecheck enumerates every construction site.
+   */
+  dispatchesCompleted: number;
 }
 
 export type AgentManagerEventName = "onAgentSelected" | "onSwapAttempt" | "onAgentUnavailable" | "onSwapExhausted";

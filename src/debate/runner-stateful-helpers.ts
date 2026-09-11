@@ -111,6 +111,7 @@ export function createDebaterCallContext(ctx: StatefulCoordinatorCtx, agentName:
         finalAgent,
         finalBundle: hop.bundle,
         finalPrompt: hop.prompt,
+        dispatchesCompleted: 1,
       };
     },
   };
@@ -145,6 +146,7 @@ export function createOneShotDebaterCallContext(ctx: StatefulCoordinatorCtx, age
         finalAgent,
         finalBundle: hop.bundle,
         finalPrompt: hop.prompt,
+        dispatchesCompleted: 1,
       };
     },
   };

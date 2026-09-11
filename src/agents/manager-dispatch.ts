@@ -476,6 +476,7 @@ export function buildCompleteOutcome(
   didSwap: boolean,
   currentTier: string | undefined,
   currentTarget: FallbackTarget | undefined,
+  dispatchesCompleted = 0,
 ): AgentCompleteOutcome {
   return {
     result,
@@ -483,5 +484,6 @@ export function buildCompleteOutcome(
     didSwap,
     ...(currentTier !== undefined ? { finalTier: currentTier } : {}),
     ...(currentTarget ? { finalTarget: currentTarget } : {}),
+    dispatchesCompleted,
   };
 }

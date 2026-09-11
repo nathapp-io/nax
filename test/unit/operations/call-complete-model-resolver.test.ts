@@ -37,6 +37,7 @@ function runtimeCapturing(seen: CompleteOptions[]): NaxRuntime {
       return {
         result: { output: "out", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
         fallbacks: [],
+        dispatchesCompleted: 1,
       };
     },
   });
@@ -109,6 +110,7 @@ describe("callOp injects a per-agent model resolver (nax#1739)", () => {
           return {
             result: { output: "out", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
             fallbacks: [],
+            dispatchesCompleted: 1,
           };
         },
       }),
