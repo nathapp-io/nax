@@ -106,6 +106,32 @@ describe("provider overrides at the protocol seam", () => {
     expect(stub.models[0]?.contextWindow).toBe(987654);
   });
 
+  it("sends the override's own maxTokens when it declares one", async () => {
+    const stub = stubStream();
+    const deps = createPiDeps(
+      { providerOverrides: [{ provider: "openai", models: [{ ...PHANTOM_MODEL, maxTokens: 2048 }] }] },
+      stub.streamSimple,
+    );
+
+    await drive(deps, PHANTOM, "openai");
+
+    expect(stub.models[0]?.maxTokens).toBe(2048);
+  });
+
+  it("templates an override from the provider's largest-context sibling, not the first in catalog order", async () => {
+    const stub = stubStream();
+    const deps = createPiDeps({ providerOverrides: OVERRIDES }, stub.streamSimple);
+
+    await drive(deps, PHANTOM, "openai");
+
+    const wire = stub.models[0];
+    // The first openai-responses sibling in catalog order is gpt-4: 8192
+    // context, 8192 output, text-only input. The largest is a 1,050,000-context
+    // sibling with a 128,000 output ceiling that accepts images.
+    expect(wire?.maxTokens).toBe(128_000);
+    expect(wire?.input).toEqual(["text", "image"]);
+  });
+
   it("keeps every bundled model of the overridden provider resolvable", async () => {
     const deps = createPiDeps({ providerOverrides: OVERRIDES }, stubStream().streamSimple);
     const bundled = await deps.resolveModel(BUNDLED, "openai");

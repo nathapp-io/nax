@@ -86,6 +86,7 @@ export async function defaultProviders(ids?: readonly string[]): Promise<RawProv
           : {}),
       },
       contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens,
       // pi-ai's catalog does not carry a per-model tool flag; every model it
       // serves through these four protocols accepts tool definitions, and a
       // model that ignores them fails at request time, not at catalog time.

@@ -32,6 +32,7 @@ const OVERRIDES: readonly ProviderOverride[] = [
         protocol: "openai-completions",
         pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 128_000,
+        maxTokens: 8_192,
         supportsTools: true,
         thinkingLevels: ["off"],
       },
@@ -58,6 +59,7 @@ describe("providerOverrides reach a live provider", () => {
 
     const model = await client.model(PROVIDER, MODEL);
     expect(model.contextWindow).toBe(128_000);
+    expect(model.maxTokens).toBe(8_192);
 
     const result = await client.complete(model, {
       messages: [{ role: "user", content: "Reply with the single word: ok" }],

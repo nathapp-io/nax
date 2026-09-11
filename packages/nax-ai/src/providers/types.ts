@@ -60,6 +60,14 @@ export interface ResolvedModel {
   readonly protocol: string;
   readonly pricing: Pricing;
   readonly contextWindow: number;
+  /**
+   * The output ceiling this model declares, when one is known. Absent for a
+   * hand-built catalog that does not state it; every model from
+   * `defaultProviders()` carries pi-ai's value. A consumer can size requests
+   * against it, and an override that declares one is no longer clamped to a
+   * templated sibling's smaller value at the wire.
+   */
+  readonly maxTokens?: number;
   readonly supportsTools: boolean;
   /** Empty means the model has no thinking support. */
   readonly thinkingLevels: readonly ThinkingLevel[];

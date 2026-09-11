@@ -24,6 +24,15 @@ describe("piProviders", () => {
     expect(deepseek?.baseUrl).toMatch(/^https:\/\//);
   });
 
+  it("carries every bundled model's output ceiling", async () => {
+    const [deepseek] = await piProviders(["deepseek"]);
+    const models = deepseek?.models ?? [];
+    expect(models.length).toBeGreaterThan(0);
+    for (const model of models) {
+      expect(model.maxTokens).toBeGreaterThan(0);
+    }
+  });
+
   it("preserves tiered pricing for the models that have it", async () => {
     const [openai] = await piProviders(["openai"]);
     const tiered = openai?.models.filter((m) => m.pricing.tiers !== undefined) ?? [];

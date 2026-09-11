@@ -437,14 +437,45 @@ function toPiCost(pricing: Pricing): Model<Api>["cost"] {
 }
 
 /**
+ * The bundled sibling an override model is templated from.
+ *
+ * The rule is deliberate rather than positional. Taking the first model on the
+ * api meant the choice was an artefact of the snapshot's array order: a pi-ai
+ * bump that reordered or inserted models silently changed which `input`,
+ * `compat` and `thinkingLevelMap` an existing override inherited. Largest
+ * `contextWindow` is the closest data-driven proxy for "the model this
+ * override is a sibling of"; larger `maxTokens` breaks a context tie, and id is
+ * the final key so the pick is a total order that cannot move when the catalog
+ * is merely reordered. The id key is a stability measure, not a quality
+ * ranking.
+ */
+export function pickTemplate(models: readonly Model<Api>[], protocol: string): Model<Api> | undefined {
+  let best: Model<Api> | undefined;
+  for (const candidate of models) {
+    if (candidate.api !== protocol) continue;
+    if (best === undefined || isBetterTemplate(candidate, best)) best = candidate;
+  }
+  return best;
+}
+
+function isBetterTemplate(candidate: Model<Api>, best: Model<Api>): boolean {
+  if (candidate.contextWindow !== best.contextWindow) return candidate.contextWindow > best.contextWindow;
+  if (candidate.maxTokens !== best.maxTokens) return candidate.maxTokens > best.maxTokens;
+  return candidate.id < best.id;
+}
+
+/**
  * A pi `Model` for an override entry, templated off a sibling.
  *
  * `ResolvedModel` is deliberately narrower than pi's `Model`: it carries no
- * `name`, `maxTokens`, `baseUrl`, `input` or `compat`, and those are not
- * optional on the wire side. Inventing values for them would be guessing at
- * provider behaviour, so instead every field the override does not speak about
- * is inherited from a bundled model of the same provider on the same api — the
- * closest thing to "what this provider's models look like" that exists.
+ * `name`, `baseUrl`, `input` or `compat`, and those are not optional on the
+ * wire side. Inventing values for them would be guessing at provider behaviour,
+ * so instead every field the override does not speak about is inherited from a
+ * bundled model of the same provider on the same api — the closest thing to
+ * "what this provider's models look like" that exists. `maxTokens` is not in
+ * that list: `ResolvedModel` carries it, so an override that declares one has
+ * it sent (`model.maxTokens ?? template.maxTokens`) rather than clamped to the
+ * template's.
  *
  * `thinkingLevelMap` is inherited for the same reason, with a caveat worth
  * knowing: `thinkingLevels` is authoritative client-side — `clampThinkingLevel`
@@ -454,7 +485,7 @@ function toPiCost(pricing: Pricing): Model<Api>["cost"] {
  * therefore reach the wire, and be translated by the template's rules.
  */
 function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
-  const template = base.getModels().find((candidate) => candidate.api === model.protocol);
+  const template = pickTemplate(base.getModels(), model.protocol);
   if (template === undefined) {
     throw new Error(
       `Provider "${base.id}" has no model on api "${model.protocol}" to template override model "${model.id}" from.`,
@@ -470,6 +501,12 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     api: model.protocol as Api,
     provider: model.provider,
     contextWindow: model.contextWindow,
+    // The override's own ceiling wins; the template's is only a fallback for
+    // an override that states none. pi clamps to `model.maxTokens` in
+    // buildBaseOptions whenever a request omits its own cap, and anthropic's
+    // thinking adjustment clamps to it even when a caller supplies one, so
+    // inheriting a smaller sibling's value is a silent truncation.
+    maxTokens: model.maxTokens ?? template.maxTokens,
     cost: toPiCost(model.pricing),
     // pi's `reasoning` is the boolean form of our level list. "off" alone is
     // no thinking support, which is exactly what `false` means here.

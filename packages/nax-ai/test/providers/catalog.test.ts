@@ -231,4 +231,32 @@ describe("normaliseCatalog", () => {
 
     expect(catalog.provider("deepseek")?.auth).toEqual({ kind: "api-key" });
   });
+
+  it("carries maxTokens from a raw model into the resolved catalog", () => {
+    const catalog = normaliseCatalog([
+      {
+        id: "acme",
+        baseUrl: "https://api.acme.test",
+        auth: { kind: "api-key" },
+        defaultProtocol: "openai-completions",
+        models: [
+          {
+            id: "acme-one",
+            pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1000,
+            maxTokens: 500,
+            supportsTools: true,
+            thinkingLevels: [],
+          },
+        ],
+      },
+    ]);
+
+    expect(catalog.model("acme", "acme-one")?.maxTokens).toBe(500);
+  });
+
+  it("leaves maxTokens absent when the raw model declares none", () => {
+    const model = normaliseCatalog(RAW).model("deepseek", "deepseek-chat");
+    expect(model).not.toHaveProperty("maxTokens");
+  });
 });

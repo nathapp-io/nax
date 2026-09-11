@@ -1,6 +1,6 @@
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { createPiProtocol, toPiContext, toPiOptions, toPiTool } from "../../src/protocols/pi-client.ts";
+import { createPiProtocol, pickTemplate, toPiContext, toPiOptions, toPiTool } from "../../src/protocols/pi-client.ts";
 import type { ProtocolEvent, ProtocolRequest } from "../../src/protocols/types.ts";
 import { runProtocolConformance } from "../support/conformance.ts";
 
@@ -174,6 +174,32 @@ describe("toPiTool", () => {
       description: "search the web",
       parameters: { type: "object" },
     });
+  });
+});
+
+function sibling(id: string, contextWindow: number, maxTokens: number, api: Api = "openai-completions"): Model<Api> {
+  return { ...MODEL, id, name: id, api, contextWindow, maxTokens };
+}
+
+describe("pickTemplate", () => {
+  it("returns undefined when no sibling is on the requested protocol", () => {
+    const only = sibling("a", 1000, 100, "anthropic-messages");
+    expect(pickTemplate([only], "openai-completions")).toBeUndefined();
+  });
+
+  it("picks the largest contextWindow even when a smaller sibling comes first", () => {
+    const candidates = [sibling("small", 8192, 8192), sibling("large", 128000, 32000)];
+    expect(pickTemplate(candidates, "openai-completions")?.id).toBe("large");
+  });
+
+  it("breaks a contextWindow tie by the larger output ceiling", () => {
+    const candidates = [sibling("low", 1000, 100), sibling("high", 1000, 2000)];
+    expect(pickTemplate(candidates, "openai-completions")?.id).toBe("high");
+  });
+
+  it("breaks a full tie by id so array order cannot decide it", () => {
+    const candidates = [sibling("b", 1000, 100), sibling("a", 1000, 100)];
+    expect(pickTemplate(candidates, "openai-completions")?.id).toBe("a");
   });
 });
 

@@ -21,6 +21,11 @@ export interface RawModel {
   readonly protocol?: string;
   readonly pricing: Pricing;
   readonly contextWindow: number;
+  /**
+   * Output ceiling. Optional: a hand-built catalog need not state it, and
+   * nax-ai never invents a value it was not given.
+   */
+  readonly maxTokens?: number;
   readonly supportsTools: boolean;
   readonly thinkingLevels: readonly ThinkingLevel[];
 }
@@ -83,6 +88,7 @@ export function normaliseCatalog(raw: readonly RawProvider[], overrides: readonl
         protocol: rawModel.protocol ?? rawProvider.defaultProtocol,
         pricing: rawModel.pricing,
         contextWindow: rawModel.contextWindow,
+        ...(rawModel.maxTokens !== undefined ? { maxTokens: rawModel.maxTokens } : {}),
         supportsTools: rawModel.supportsTools,
         thinkingLevels: rawModel.thinkingLevels,
       });
