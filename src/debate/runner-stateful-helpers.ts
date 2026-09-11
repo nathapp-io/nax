@@ -105,13 +105,16 @@ export function createDebaterCallContext(ctx: StatefulCoordinatorCtx, agentName:
 
       const finalAgent = primaryAgentOverride ?? agentName;
       const hop = await request.executeHop(finalAgent, request.bundle, { kind: "primary" }, request.runOptions);
+      // US-001: honour the `dispatched` flag from `executeHop` so a catch-path
+      // failure (no model reached) is reported as zero-dispatch and `callOp`
+      // raises `CALL_OP_NO_DISPATCH` instead of falling through to parse.
       return {
         result: hop.result,
         fallbacks: [],
         finalAgent,
         finalBundle: hop.bundle,
         finalPrompt: hop.prompt,
-        dispatchesCompleted: 1,
+        dispatchesCompleted: hop.dispatched === false ? 0 : 1,
       };
     },
   };
@@ -140,13 +143,15 @@ export function createOneShotDebaterCallContext(ctx: StatefulCoordinatorCtx, age
 
       const finalAgent = primaryAgentOverride ?? agentName;
       const hop = await request.executeHop(finalAgent, request.bundle, { kind: "primary" }, request.runOptions);
+      // US-001: see comment in createDebaterCallContext — the `dispatched`
+      // flag is authoritative on whether a hop actually reached a model.
       return {
         result: hop.result,
         fallbacks: [],
         finalAgent,
         finalBundle: hop.bundle,
         finalPrompt: hop.prompt,
-        dispatchesCompleted: 1,
+        dispatchesCompleted: hop.dispatched === false ? 0 : 1,
       };
     },
   };
