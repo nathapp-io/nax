@@ -28,7 +28,6 @@ beforeEach(() => {
 
 afterEach(() => {
   _modelResolutionDeps.resolveNative = originalDeps.resolveNative;
-  _modelResolutionDeps.resolveAcp = originalDeps.resolveAcp;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,7 +45,6 @@ describe("checkModelResolution (US-1984 AC1/AC2) — native unresolved id", () =
   // (with a sentinel native entry the resolver reports as unresolved).
   test("AC1: returns a failing check with tier 'blocker' when models.native.powerful names an absent id", async () => {
     _modelResolutionDeps.resolveNative = async () => ({ status: "unresolved" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "unresolved" });
 
     const checks = await checkModelResolution({
       models: { native: { powerful: "anthropic/never-shipped-model" } },
@@ -60,7 +58,6 @@ describe("checkModelResolution (US-1984 AC1/AC2) — native unresolved id", () =
 
   test("AC2: the blocker message names the configuration key, provider, and model id", async () => {
     _modelResolutionDeps.resolveNative = async () => ({ status: "unresolved" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "unresolved" });
 
     const checks = await checkModelResolution({
       models: { native: { powerful: "anthropic/never-shipped-model" } },
@@ -75,27 +72,23 @@ describe("checkModelResolution (US-1984 AC1/AC2) — native unresolved id", () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC3: ACP literal pin → warning, not blocker
+// ACP ids are validated by acpx at dispatch time, not against a stale local mirror.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("checkModelResolution (US-1984 AC3) — ACP unresolved id is a warning", () => {
+describe("checkModelResolution — ACP ids are unverified", () => {
   // Test-exception: contract drift. The AC3 contract names the
   // `review.adversarial` literal pin. The original stub passed `{}` (which
   // falls back to DEFAULT_CONFIG's tier label "balanced", not a literal
   // pin). Resolved by passing a literal `{agent, model}` pin so the test
   // exercises the ACP literal-pin branch.
-  test("AC3: an unresolvable ACP id at review.adversarial yields a warning and no blocker", async () => {
+  test("does not emit a per-model failure for an ACP id", async () => {
     _modelResolutionDeps.resolveNative = async () => ({ status: "resolved" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "unresolved" });
 
     const checks = await checkModelResolution({
       review: { adversarial: { model: { agent: "claude", model: "never-shipped-acp" } } },
     });
 
-    const blockers = checks.filter((c) => !c.passed && c.tier === "blocker");
-    expect(blockers).toHaveLength(0);
-    const warnings = checks.filter((c) => !c.passed && c.tier === "warning");
-    expect(warnings.length).toBeGreaterThan(0);
+    expect(checks.filter((check) => !check.passed)).toHaveLength(0);
   });
 });
 
@@ -111,8 +104,11 @@ describe("checkModelResolution (US-1984 AC4) — catalogOverrides resolve absent
   // not the entry that references it, so the override was never exercised.
   // Resolved by passing both the native entry and the override list.
   test("AC4: an id absent from the bundled catalog but declared under catalogOverrides has no failing check", async () => {
-    _modelResolutionDeps.resolveNative = async () => ({ status: "unresolved" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "resolved" });
+    let resolverCalls = 0;
+    _modelResolutionDeps.resolveNative = async () => {
+      resolverCalls += 1;
+      return { status: "resolved" };
+    };
 
     const checks = await checkModelResolution({
       models: { native: { powerful: "opencode-go/new-model" } },
@@ -121,6 +117,7 @@ describe("checkModelResolution (US-1984 AC4) — catalogOverrides resolve absent
 
     const failing = checks.filter((c) => !c.passed);
     expect(failing).toHaveLength(0);
+    expect(resolverCalls).toBe(1);
   });
 });
 
@@ -188,14 +185,13 @@ describe("checkModelResolution (US-1984 AC5) — one failing check per pin site"
         },
       },
     ],
-  ])("AC5: emits one failing check naming the %s site", async (keyPath, overrideConfig) => {
+  ])("does not emit a failure for the ACP %s site", async (keyPath, overrideConfig) => {
     _modelResolutionDeps.resolveNative = async () => ({ status: "unresolved" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "unresolved" });
 
     const checks = await checkModelResolution(overrideConfig);
 
     const named = checks.filter((c) => !c.passed && c.message.includes(keyPath));
-    expect(named.length).toBeGreaterThan(0);
+    expect(named).toHaveLength(0);
   });
 });
 
@@ -204,15 +200,12 @@ describe("checkModelResolution (US-1984 AC5) — one failing check per pin site"
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("checkModelResolution (US-1984 AC6) — catalog resolver rejection is a warning", () => {
-  // Test-exception: contract drift. The original stub passed `{}` and
-  // expected warnings; that happens to work because DEFAULT_CONFIG's sites
-  // all hit ACP (claude) and a configures all-ACP-walk test. Kept as-is —
-  // no change needed.
   test("AC6: when the native resolver rejects, the check returns a warning and no blocker", async () => {
     _modelResolutionDeps.resolveNative = async () => ({ status: "error" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "error" });
 
-    const checks = await checkModelResolution({});
+    const checks = await checkModelResolution({
+      models: { native: { powerful: "anthropic/claude-sonnet-5" } },
+    });
 
     const blockers = checks.filter((c) => !c.passed && c.tier === "blocker");
     expect(blockers).toHaveLength(0);
@@ -228,7 +221,6 @@ describe("checkModelResolution (US-1984 AC6) — catalog resolver rejection is a
 describe("checkModelResolution (US-1984 AC7) — literal pin drops overrides", () => {
   test("AC7: literal pin naming a tier-configured model emits a warning naming the pin, model id, and catalogOverrides", async () => {
     _modelResolutionDeps.resolveNative = async () => ({ status: "resolved" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "resolved" });
 
     const checks = await checkModelResolution({
       models: {
@@ -261,7 +253,6 @@ describe("checkModelResolution (US-1984 AC7) — literal pin drops overrides", (
 describe("checkModelResolution (US-1984 AC8) — tier selection drops no warnings", () => {
   test("AC8: a tier name that names the same id produces no dropped-overrides warning", async () => {
     _modelResolutionDeps.resolveNative = async () => ({ status: "resolved" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "resolved" });
 
     const checks = await checkModelResolution({
       agent: { default: "native" },

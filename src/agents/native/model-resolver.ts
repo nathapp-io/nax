@@ -37,41 +37,14 @@ export interface ResolveResult {
 }
 
 /**
- * Translate a `catalogOverrides` list into the precheck-side "id is resolvable"
- * table. The precheck check uses this so a user-declared override that the
- * bundled pi-ai snapshot does not know about counts as resolved (AC4).
- *
- * Mirrors `toProviderOverrides` in `models.ts` at the level of detail precheck
- * needs — just the id, the provider, and whether pricing/contextWindow were
- * declared. A real provider-overrides wiring would emit the same table; the
- * implementer can swap implementations without changing the call site.
- */
-export function overrideResolvability(
-  overrides: readonly ProviderCatalogOverride[],
-): ReadonlyMap<string, { hasPricing: boolean; hasContextWindow: boolean }> {
-  const out = new Map<string, { hasPricing: boolean; hasContextWindow: boolean }>();
-  for (const override of overrides) {
-    for (const model of override.models) {
-      out.set(`${override.provider}/${model.id}`, {
-        hasPricing: model.pricing !== undefined,
-        hasContextWindow: model.contextWindow !== undefined,
-      });
-    }
-  }
-  return out;
-}
-
 /**
  * Production resolver. Builds the cached client once per override set, then
  * calls `client.model(provider, model)` for every native id the precheck
  * walker hands it. The bundled catalog loads once per process via
  * `getNativeClient` (cached) so repeated calls amortise to a single load.
  *
- * The override table is checked first: a user-declared override is always
- * resolvable (AC4) regardless of what the bundled catalog says.
- *
  * Status mapping:
- *   - "resolved":   id resolves (override hit OR `client.model()` returned)
+ *   - "resolved":   id resolves from the override-aware `client.model()` call
  *   - "error":      `getNativeClient(overrides)` rejected (catalog load
  *                   failed — network, schema, …). AC6 requires the check
  *                   to surface this as a warning, not a blocker, because
@@ -92,17 +65,6 @@ export async function resolveNativeId(
   model: string,
   overrides: readonly ProviderCatalogOverride[],
 ): Promise<ResolveResult> {
-  const resolvability = overrideResolvability(overrides);
-  const key = `${provider}/${model}`;
-  const override = resolvability.get(key);
-  if (override !== undefined) {
-    return {
-      status: "resolved",
-      hasPricing: override.hasPricing,
-      hasContextWindow: override.hasContextWindow,
-    };
-  }
-
   // The native client's `Client` type comes from nax-ai; we declare the
   // variable as `unknown` to keep the file free of nax-ai type imports
   // (scripts/check-nax-ai-imports.ts forbids it). The single property we

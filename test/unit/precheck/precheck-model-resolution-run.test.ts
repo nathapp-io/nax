@@ -62,12 +62,10 @@ function makeConfigWithNativeModel(): ReturnType<typeof makeNaxConfig> {
 
 let origSpawn: typeof _checkCliDeps.spawn;
 let origResolveNative: typeof _modelResolutionDeps.resolveNative;
-let origResolveAcp: typeof _modelResolutionDeps.resolveAcp;
 
 beforeEach(() => {
   origSpawn = _checkCliDeps.spawn;
   origResolveNative = _modelResolutionDeps.resolveNative;
-  origResolveAcp = _modelResolutionDeps.resolveAcp;
 
   _checkCliDeps.spawn = makeSpawn(() => ({ exitCode: 0 })).spawn;
 });
@@ -75,7 +73,6 @@ beforeEach(() => {
 afterEach(() => {
   _checkCliDeps.spawn = origSpawn;
   _modelResolutionDeps.resolveNative = origResolveNative;
-  _modelResolutionDeps.resolveAcp = origResolveAcp;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,14 +82,9 @@ afterEach(() => {
 describe("runPrecheck model-resolution integration (US-1984 AC10)", () => {
   test("AC10: invokes the stubbed resolver and the returned blockers include the model-resolution check", async () => {
     let nativeCalls = 0;
-    let acpCalls = 0;
     _modelResolutionDeps.resolveNative = async () => {
       nativeCalls += 1;
       return { status: "unresolved" };
-    };
-    _modelResolutionDeps.resolveAcp = async () => {
-      acpCalls += 1;
-      return { status: "resolved" };
     };
 
     const config = makeConfigWithNativeModel();
@@ -103,7 +95,7 @@ describe("runPrecheck model-resolution integration (US-1984 AC10)", () => {
     });
 
     // The resolver was actually invoked.
-    expect(nativeCalls + acpCalls).toBeGreaterThan(0);
+    expect(nativeCalls).toBeGreaterThan(0);
 
     // The model-resolution check is among the blockers.
     const modelResolutionBlocker = result.blockers.find((c) => c.name === "model-resolution");
@@ -119,7 +111,6 @@ describe("runPrecheck model-resolution integration (US-1984 AC10)", () => {
 describe("runPrecheck model-resolution integration (US-1984 AC11)", () => {
   test("AC11: when every configured model id resolves, blockers contains no model-resolution check", async () => {
     _modelResolutionDeps.resolveNative = async () => ({ status: "resolved" });
-    _modelResolutionDeps.resolveAcp = async () => ({ status: "resolved" });
 
     const config = makeConfigWithNativeModel();
     const { result } = await runPrecheck(config, makePRD(), {

@@ -1,14 +1,11 @@
 /**
  * Tests for `src/agents/native/model-resolver.ts` (US-1984).
  *
- * The module exports four symbols:
+ * The module exports three symbols:
  *   - `ResolveStatus`           — type only, no test
  *   - `ResolveResult`           — type only, no test
- *   - `overrideResolvability`   — pure function: translate catalogOverrides
- *                                 into a (provider/id) -> {hasPricing, hasContextWindow}
- *                                 map. Drives AC4 (catalogOverrides short-circuit).
- *   - `resolveNativeId`         — production resolver: short-circuit on override
- *                                 hit, otherwise ask the cached client. Returns
+ *   - `resolveNativeId`         — production resolver asks the override-aware
+ *                                 cached client. Returns
  *                                 one of three states that the precheck check
  *                                 reads (`resolved` / `unresolved` / `error`).
  *
@@ -21,7 +18,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
-import { overrideResolvability, resolveNativeId } from "@/agents/native/model-resolver";
+import { resolveNativeId } from "@/agents/native/model-resolver";
 import type { CatalogModelOverride, ProviderCatalogOverride } from "@/config/schema-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,58 +45,6 @@ const REAL_BUILD = _clientDeps.build;
 afterEach(() => {
   _clientDeps.build = REAL_BUILD;
   _resetNativeClient();
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// overrideResolvability
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("overrideResolvability", () => {
-  test("returns an empty map for an empty overrides list", () => {
-    const map = overrideResolvability([]);
-
-    expect(map.size).toBe(0);
-  });
-
-  test("returns one entry per (provider, model id) pair, keyed on 'provider/id'", () => {
-    const map = overrideResolvability([
-      override("anthropic", [catalogModel("claude-sonnet-5")]),
-      override("openai", [catalogModel("gpt-5.4"), catalogModel("gpt-5.4-mini")]),
-    ]);
-
-    expect(map.size).toBe(3);
-    expect(map.get("anthropic/claude-sonnet-5")).toBeDefined();
-    expect(map.get("openai/gpt-5.4")).toBeDefined();
-    expect(map.get("openai/gpt-5.4-mini")).toBeDefined();
-  });
-
-  test("flips hasPricing to true when the override declares pricing (the catalog schema requires it)", () => {
-    const map = overrideResolvability([override("anthropic", [catalogModel("claude-sonnet-5")])]);
-
-    const entry = map.get("anthropic/claude-sonnet-5");
-    expect(entry).toBeDefined();
-    expect(entry?.hasPricing).toBe(true);
-  });
-
-  test("flips hasContextWindow to true when the override declares contextWindow (the catalog schema requires it)", () => {
-    const map = overrideResolvability([override("anthropic", [catalogModel("claude-sonnet-5")])]);
-
-    const entry = map.get("anthropic/claude-sonnet-5");
-    expect(entry).toBeDefined();
-    expect(entry?.hasContextWindow).toBe(true);
-  });
-
-  test("places providers with multiple models under distinct keys (no cross-provider collision)", () => {
-    // Same id under two different providers must not collide.
-    const map = overrideResolvability([
-      override("anthropic", [catalogModel("shared-id")]),
-      override("openai", [catalogModel("shared-id")]),
-    ]);
-
-    expect(map.size).toBe(2);
-    expect(map.get("anthropic/shared-id")).toBeDefined();
-    expect(map.get("openai/shared-id")).toBeDefined();
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,10 +81,17 @@ describe("resolveNativeId", () => {
     };
   }
 
-  test("returns 'resolved' with the override's flags when an override entry matches (and never builds the client)", async () => {
-    const buildMock = mock(async () => {
-      throw new Error("client should not be built when override hits");
-    });
+  test("resolves an override through the override-aware client", async () => {
+    const resolvedModel: ResolvedModel = {
+      id: "claude-sonnet-5",
+      provider: "anthropic",
+      protocol: "anthropic-messages",
+      pricing: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+      contextWindow: 1_000_000,
+      supportsTools: true,
+      thinkingLevels: [],
+    };
+    const buildMock = mock(async () => fakeClientWithModel(resolvedModel));
     _clientDeps.build = buildMock;
 
     const result = await resolveNativeId("anthropic", "claude-sonnet-5", [
@@ -149,7 +101,7 @@ describe("resolveNativeId", () => {
     expect(result.status).toBe("resolved");
     expect(result.hasPricing).toBe(true);
     expect(result.hasContextWindow).toBe(true);
-    expect(buildMock).not.toHaveBeenCalled();
+    expect(buildMock).toHaveBeenCalledTimes(1);
   });
 
   test("returns 'resolved' with hasPricing=true when the catalog-resolved model declares pricing", async () => {

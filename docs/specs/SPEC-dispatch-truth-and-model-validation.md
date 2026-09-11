@@ -110,7 +110,7 @@ Symbols this feature **changes**. The baseline exists only to locate the code; t
 | Zero dispatches on a review op | The check result carries `noDispatch: true` and `success: false`. Fail-closed: the story does not pass on a review that never ran. Not counted toward `RunResult.reviewsFailedOpen`, which counts degraded passes. |
 | Zero dispatches on a rectification pass | The fix cycle skips validation for that iteration and exits with a distinct terminal reason. The iteration does not count toward `consecutiveNoProgressToBail`. |
 | Model id does not resolve, native agent | Precheck `blocker`. The message names the config key, the provider and the id. |
-| Model id does not resolve, acp agent | Precheck `warning`, never a blocker. acpx validates the model against the live agent's advertised set and blocks internally, so a static catalog check here would duplicate a live downstream gate and reject ids that are legitimately newer than the bundled snapshot. |
+| ACP model id | Unverified locally: emit no per-model precheck failure. acpx validates against the live agent's advertised set at dispatch, avoiding false warnings from a stale local mirror. |
 | Catalog cannot be loaded at precheck | `warning`, not a blocker. A catalog that fails to load is an infrastructure fault, not a config error, and must not block a run whose ids may be fine. |
 | Literal pin drops a configured `pricing` / `contextWindow` | Precheck `warning`. The run proceeds; the message names the config key and the id and points at `agent.native.catalogOverrides`. |
 
@@ -144,8 +144,8 @@ Dependencies: US-001.
 Context Files: `src/findings/cycle.ts`, `src/findings/cycle-dispatch.ts`, `src/findings/cycle-types.ts`, `src/execution/story-orchestrator/rectification.ts`, `src/execution/story-orchestrator-logging.ts`
 Creates: none
 
-**US-004 — precheck resolves every configured model id and reports dropped overrides**
-One walk over the configured-model-id surface, emitting a blocker for an unresolvable native id, a warning for an unresolvable acp id, and a warning for a literal pin whose configured `pricing` / `contextWindow` the literal route discards.
+**US-004 — precheck resolves native model ids and reports dropped overrides**
+One walk over the configured-model-id surface, emitting a blocker for an unresolvable native id, leaving ACP ids unverified for acpx's live validation, and warning for a literal pin whose configured `pricing` / `contextWindow` the literal route discards.
 Dependencies: none.
 Context Files: `src/precheck/index.ts`, `src/precheck/types.ts`, `src/config/selectors.ts`, `src/config/schema-types.ts`, `src/agents/native/client.ts`
 Creates: `src/precheck/checks-models.ts`, `src/agents/native/model-resolution.ts`
@@ -203,9 +203,9 @@ Creates: `src/precheck/checks-models.ts`, `src/agents/native/model-resolution.ts
 
 1. `[unit]` Given a config whose `models.native.powerful` names a provider-qualified id absent from the resolved catalog, the model-resolution check returns a check with `tier` equal to `"blocker"` and `passed` equal to `false`.
 2. `[unit]` The blocker's `message` contains the configuration key path, the provider and the model id that failed to resolve.
-3. `[unit]` Given a config whose `review.adversarial` is a literal `{agent, model}` pin naming an unresolvable id on an acp agent, the check returns a check with `tier` equal to `"warning"` and `passed` equal to `false`, and returns no check with `tier` equal to `"blocker"` for that id.
-4. `[unit]` Given a config whose id is absent from the bundled catalog but declared under `agent.native.catalogOverrides`, the check returns no failing check for that id.
-5. `[unit]` The check walks literal `{agent, model}` pins under `review.semantic`, `review.adversarial`, `plan`, `acceptance`, `tdd.sessionTiers` and `routing.llm.model`, and every rung of `autoMode.escalation.tierOrder` and `agent.fallback.map`: a config with an unresolvable id at each of those sites yields one failing check naming each site.
+3. `[unit]` Given a config whose `review.adversarial` is a literal `{agent, model}` pin on an ACP agent, the check emits no per-model local failure for that id.
+4. `[unit]` Given a valid id declared under `agent.native.catalogOverrides`, the check resolves it through the override-aware native client and returns no failing check for that id.
+5. `[unit]` The check walks native literal `{agent, model}` pins under `review.semantic`, `review.adversarial`, `plan`, `acceptance`, `tdd.sessionTiers` and `routing.llm.model`, and every rung of `autoMode.escalation.tierOrder` and `agent.fallback.map`: a config with an unresolvable native id at each of those sites yields one failing check naming each site. ACP sites remain unverified locally.
 6. `[unit]` When the catalog resolver rejects, the check returns a check with `tier` equal to `"warning"` and does not return a check with `tier` equal to `"blocker"`.
 7. `[unit]` Given a config declaring `pricing` and `contextWindow` on a `models` entry, and a literal `{agent, model}` pin naming that same resolvable model id, the check returns a check with `tier` equal to `"warning"` whose `message` names the pin's configuration key, the model id, and `agent.native.catalogOverrides`.
 8. `[unit]` Given the same `models` entry selected by its tier name rather than by a literal pin, the check returns no warning about dropped overrides.

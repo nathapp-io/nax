@@ -36,7 +36,6 @@ export type {
 export { credentialFilePath, naxCredentialStore, type StoredEntry } from "./credentials";
 export { NativeSessionUnsupportedError } from "./errors";
 export {
-  overrideResolvability,
   type ResolveResult,
   type ResolveStatus,
   resolveNativeId,

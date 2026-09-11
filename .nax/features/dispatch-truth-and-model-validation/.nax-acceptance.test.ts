@@ -865,7 +865,7 @@ describe("US-004: model-resolution precheck", () => {
     expect(blocker?.message).toContain("nonexistent-model-xyz");
   });
 
-  test("AC-23: an unresolvable id pinned on an acp agent is a warning, never a blocker", async () => {
+  test("AC-23: an ACP id is unverified locally and produces no per-model failure", async () => {
     stubCatalog({ unresolvable: new Set(["unresolvable-id-123"]) });
     const config = makeNaxConfig({
       review: {
@@ -877,14 +877,11 @@ describe("US-004: model-resolution precheck", () => {
 
     const checks = await runModelCheck(config);
 
-    const failingForId = checks.filter((c) => !c.passed && c.message.includes("unresolvable-id-123"));
-    expect(failingForId.length).toBe(1);
-    expect(failingForId[0].tier).toBe("warning");
-    expect(checks.filter((c) => c.tier === "blocker" && c.message.includes("unresolvable-id-123")).length).toBe(0);
+    expect(checks.filter((c) => !c.passed && c.message.includes("unresolvable-id-123"))).toHaveLength(0);
   });
 
-  test("AC-24: an id declared under agent.native.catalogOverrides produces no failing check", async () => {
-    stubCatalog({ unresolvable: new Set(["override-model-1"]) });
+  test("AC-24: a valid catalog override resolves through the override-aware client", async () => {
+    stubCatalog({});
     const config = makeNaxConfig({
       models: { native: { powerful: "anthropic/override-model-1" } },
       agent: {
@@ -911,9 +908,10 @@ describe("US-004: model-resolution precheck", () => {
     const checks = await runModelCheck(config);
 
     expect(checks.filter((c) => !c.passed && c.message.includes("override-model-1")).length).toBe(0);
+    expect(buildCalls).toBeGreaterThan(0);
   });
 
-  test("AC-25: every configured site holding an unresolvable id is named by exactly one failing check", async () => {
+  test("AC-25: ACP model sites remain unverified without local failures", async () => {
     const missing = (n: string) => `anthropic/missing-${n}`;
     stubCatalog({
       unresolvable: new Set([
@@ -946,11 +944,9 @@ describe("US-004: model-resolution precheck", () => {
 
     const checks = await runModelCheck(config);
     const failing = checks.filter((c) => !c.passed);
-    expect(failing.length).toBeGreaterThanOrEqual(9);
+    expect(failing).toHaveLength(0);
 
-    // Each configured site's key path appears in at least one failing check's
-    // message, and each site is named by EXACTLY ONE failing check (no
-    // duplicates for the same site).
+    // None of the ACP-only sites should create a local resolution finding.
     const sites: Array<[string, string]> = [
       ["review.semantic", "anthropic/missing-sem"],
       ["review.adversarial", "anthropic/missing-adv"],
@@ -964,7 +960,7 @@ describe("US-004: model-resolution precheck", () => {
     ];
     for (const [keyPath, id] of sites) {
       const naming = failing.filter((c) => c.message.includes(keyPath) && c.message.includes(id));
-      expect(naming.length, `site ${keyPath} (id ${id})`).toBe(1);
+      expect(naming, `site ${keyPath} (id ${id})`).toHaveLength(0);
     }
   });
 
@@ -977,14 +973,7 @@ describe("US-004: model-resolution precheck", () => {
     const checks = await runModelCheck(config);
 
     const failing = checks.filter((c) => !c.passed);
-    // The rejecting native catalog leaves every configured native site reporting
-    // "unresolved" (the default ACP seam stays at "unresolved" regardless of the
-    // catalog state), so each ACP site emits a blocker and the native sites
-    // emit their own unresolved blockers — far more than one warning. The
-    // single bundled-catalog-rejection summary warning IS present, but only as
-    // one entry among many. The check still surfaced the catalog problem (the
-    // summary warning names it explicitly).
-    expect(failing.length).toBeGreaterThan(1);
+    expect(failing).toHaveLength(1);
     expect(failing.some((c) => c.tier === "warning" && c.message.toLowerCase().includes("catalog"))).toBe(true);
   });
 
