@@ -44,7 +44,13 @@ export {
 } from "./auth/oauth-policy.ts";
 export { ambientAuthAvailable, registerBundledOAuthFlows } from "./auth/pi-auth.ts";
 export type { AuthResolver, ResolvedAuth } from "./auth/resolver.ts";
-export { type Client, type ClientOptions, type ClientRequest, createClient } from "./client.ts";
+export {
+  type Client,
+  type ClientOptions,
+  type ClientRequest,
+  createClient,
+  type ProtocolFactory,
+} from "./client.ts";
 export {
   createFileCredentialStore,
   type FileCredentialStoreOptions,

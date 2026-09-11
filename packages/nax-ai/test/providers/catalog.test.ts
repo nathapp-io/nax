@@ -106,6 +106,38 @@ describe("normaliseCatalog", () => {
     expect(catalog.model("deepseek", "deepseek-new")).toBeDefined();
   });
 
+  it("rejects an override model whose own provider field names a different provider", () => {
+    // The model would be stored in deepseek's bucket while still claiming to
+    // belong to "anthropic", and client.streamFrom sends model.provider as the
+    // request's provider — so the subsequent lookup would miss, and at the wire
+    // auth would be resolved against the wrong provider entirely.
+    let message = "";
+    try {
+      normaliseCatalog(RAW, [
+        {
+          provider: "deepseek",
+          models: [
+            {
+              id: "odd-model",
+              provider: "anthropic",
+              protocol: "openai-completions",
+              pricing: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 1000,
+              supportsTools: true,
+              thinkingLevels: [],
+            },
+          ],
+        },
+      ]);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain("deepseek");
+    expect(message).toContain("odd-model");
+    expect(message).toContain("anthropic");
+  });
+
   it("replaces an existing model when the override supplies the same id", () => {
     // "deepseek-chat" already exists in the raw catalog; the override entry
     // with the same id must win, not be appended alongside it.

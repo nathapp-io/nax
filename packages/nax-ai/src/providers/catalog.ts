@@ -12,6 +12,7 @@
 
 import { assertOAuthFlowPermitted } from "../auth/oauth-policy.ts";
 import type { ThinkingLevel } from "../protocols/types.ts";
+import { assertOverrideModelProvider } from "./override-model.ts";
 import type { Pricing, ProviderAuth, ProviderOverride, ResolvedModel, ResolvedProvider } from "./types.ts";
 
 export interface RawModel {
@@ -91,6 +92,7 @@ export function normaliseCatalog(raw: readonly RawProvider[], overrides: readonl
   // Override-supplied models are applied last so they can replace an entry.
   for (const override of overrides) {
     for (const model of override.models ?? []) {
+      assertOverrideModelProvider(override.provider, model);
       setModel(override.provider, model);
     }
   }

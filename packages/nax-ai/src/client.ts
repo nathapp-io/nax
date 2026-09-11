@@ -7,6 +7,7 @@
  */
 
 import { collectStream } from "./protocols/collect.ts";
+import { assertProtocolOverridesDeclared } from "./protocols/override-declaration.ts";
 import { type BackendSelection, createRegistry, type ProtocolEntries } from "./protocols/registry.ts";
 import { assertValidHeaders, assertValidSessionId } from "./protocols/request-headers.ts";
 import { retryTransportFaults } from "./protocols/retry.ts";
@@ -16,9 +17,30 @@ import { normaliseCatalog, type RawProvider } from "./providers/catalog.ts";
 import type { Pricing, ProviderOverride, ResolvedModel } from "./providers/types.ts";
 import type { CompleteResult } from "./types.ts";
 
+/**
+ * Builds protocol entries from the options the client already holds.
+ *
+ * Its one argument exists so `providerOverrides` can be declared once instead
+ * of twice. Both catalogs need them (see ProtocolOptions.providerOverrides),
+ * and a consumer who writes the array out separately for each side can get one
+ * of the two wrong — which is issue #36 with no diagnostic. Taking the array
+ * back from the client removes the second place it could be wrong.
+ *
+ * The object form, rather than a bare array parameter, is so a later
+ * client-held option can be added to it without a breaking signature change.
+ */
+export type ProtocolFactory = (options: { readonly providerOverrides: readonly ProviderOverride[] }) => ProtocolEntries;
+
 export interface ClientOptions {
   readonly providers: readonly RawProvider[];
-  readonly protocols: ProtocolEntries;
+  /**
+   * The protocol entries, or a factory the client calls with its own options.
+   *
+   * The union is additive: a caller passing plain entries — including
+   * hand-built ones — is unaffected. See {@link ProtocolFactory} for why the
+   * factory form is the one to prefer when overrides are in play.
+   */
+  readonly protocols: ProtocolEntries | ProtocolFactory;
   readonly backends?: BackendSelection;
   readonly providerOverrides?: readonly ProviderOverride[];
   /** Transport-fault retries before the first event. Default 2; 0 disables. */
@@ -45,8 +67,28 @@ function realSleep(ms: number): Promise<void> {
 }
 
 export function createClient(options: ClientOptions): Client {
-  const catalog = normaliseCatalog(options.providers, options.providerOverrides ?? []);
-  const registry = createRegistry(options.protocols, options.backends ?? {});
+  const providerOverrides = options.providerOverrides ?? [];
+  const catalog = normaliseCatalog(options.providers, providerOverrides);
+  // The factory is handed the client's own overrides, so entries built through
+  // it cannot disagree with the client about what was overridden. Entries
+  // passed directly are taken as given and merely checked below.
+  const protocols =
+    typeof options.protocols === "function" ? options.protocols({ providerOverrides }) : options.protocols;
+  // Before the registry, and at construction rather than in validate(): an
+  // override the protocol side never heard about resolves and prices happily
+  // and only fails once a request reaches the wire (issue #36). The base
+  // catalog is consulted so that amending a model the providers already carry
+  // — correcting stale pricing, say — is not held to a declaration the wire
+  // does not need.
+  const baseModelIds = new Map<string, ReadonlySet<string>>(
+    options.providers.map((provider) => [provider.id, new Set(provider.models.map((model) => model.id))]),
+  );
+  assertProtocolOverridesDeclared(
+    providerOverrides,
+    protocols,
+    (provider, modelId) => baseModelIds.get(provider)?.has(modelId) ?? false,
+  );
+  const registry = createRegistry(protocols, options.backends ?? {});
 
   // A negative value is a config bug, not a policy choice — clamping it to 0
   // would silently disable retry instead of telling the caller their option

@@ -10,8 +10,10 @@
  * on first resolve of a protocol and not before.
  */
 
+import type { ProviderOverride } from "../providers/types.ts";
 import type { CredentialStore } from "../types.ts";
 import type { ClientApp } from "./client-app.ts";
+import { recordDeclaredOverrides } from "./override-declaration.ts";
 import type { ProtocolEntries } from "./registry.ts";
 import type { Transport } from "./types.ts";
 
@@ -72,13 +74,34 @@ export interface ProtocolOptions {
    * pi-ai's own `User-Agent`.
    */
   readonly clientApp?: ClientApp;
+  /**
+   * Declaration-data overrides for the backend catalog, in the same shape and
+   * with the same semantics as `ClientOptions.providerOverrides`.
+   *
+   * Both are needed, and they are not the same catalog. `ClientOptions`
+   * patches the one `client.model()`, `listModels()` and `pricing()` read;
+   * this one patches the catalog the protocol resolves against at request
+   * time. Supplying only the first is issue #36: the model resolves and prices
+   * correctly and then throws "Unknown model" on the first real request.
+   *
+   * Pass the same array to both. The array's identity is the cache key for the
+   * backend catalog built from it (see createPiDeps in pi-client.ts), so
+   * reusing one array is also what keeps the four protocol entries sharing a
+   * single instance.
+   *
+   * Better still, declare it once by passing a factory as `ClientOptions.protocols`:
+   * `protocols: (o) => defaultProtocols({ ...o, credentials })`. Whichever form
+   * is used, createClient rejects at construction a client whose overrides the
+   * protocol entries do not cover — see protocols/override-declaration.ts.
+   */
+  readonly providerOverrides?: readonly ProviderOverride[];
 }
 
 /** @deprecated Use {@link ProtocolOptions}. Kept as a non-breaking alias. */
 export type PiProtocolOptions = ProtocolOptions;
 
 export function defaultProtocols(options: ProtocolOptions = {}): ProtocolEntries {
-  return Object.fromEntries(
+  const entries: ProtocolEntries = Object.fromEntries(
     DEFAULT_PROTOCOL_NAMES.map((name) => [
       name,
       {
@@ -89,6 +112,14 @@ export function defaultProtocols(options: ProtocolOptions = {}): ProtocolEntries
       },
     ]),
   );
+
+  // Recorded even when absent or empty, which is the case that matters:
+  // "these entries declared no overrides" is the signal createClient uses to
+  // catch a consumer who patched only the client-side catalog (issue #36).
+  // Omitting the call here would make that state indistinguishable from
+  // hand-built entries, which the check deliberately leaves alone.
+  recordDeclaredOverrides(entries, options.providerOverrides ?? []);
+  return entries;
 }
 
 /** @deprecated Use {@link defaultProtocols}. Kept as a non-breaking alias. */

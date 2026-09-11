@@ -18,6 +18,7 @@ import type {
   Model,
   MutableModels,
   Message as PiMessage,
+  Provider as PiProvider,
   Tool as PiTool,
   Usage as PiUsage,
   SimpleStreamOptions,
@@ -25,6 +26,8 @@ import type {
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { AuthResolver } from "../auth/resolver.ts";
+import { assertOverrideModelProvider } from "../providers/override-model.ts";
+import type { Pricing, ProviderOverride, ResolvedModel } from "../providers/types.ts";
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
@@ -389,6 +392,192 @@ let shared: MutableModels | undefined;
  */
 const credentialed = new WeakMap<CredentialStore, MutableModels>();
 
+/** Stands in for "no credential store" as the outer key of `overridden`. */
+const AMBIENT_CREDENTIALS: object = {};
+
+/**
+ * Catalogs carrying provider overrides, keyed by credential store (or the
+ * ambient sentinel) and then by the IDENTITY of the overrides array.
+ *
+ * Neither `shared` nor `credentialed` may ever be patched: both are process
+ * globals, so one client's override would make a phantom model visible to
+ * every other client in the process — a subtler bug than the one being fixed.
+ * An override therefore always gets its own `builtinModels()` instance.
+ *
+ * Array identity is the key, rather than the array's contents, for two
+ * reasons. `defaultProtocols` hands one options object to all four lazy
+ * protocol factories, so keying on identity still yields exactly one Models
+ * instance for the four — which is what pi-protocols.ts's header comment
+ * promises. And a content key means stringifying externally-supplied data on
+ * every construction, which is both slower and wrong the moment an override
+ * carries a value JSON does not round-trip. Two separately-constructed but
+ * equal arrays getting two catalogs costs memory only; cross-client bleed
+ * costs correctness.
+ */
+const overridden = new WeakMap<object, WeakMap<readonly ProviderOverride[], MutableModels>>();
+
+function toPiCost(pricing: Pricing): Model<Api>["cost"] {
+  return {
+    input: pricing.input,
+    output: pricing.output,
+    cacheRead: pricing.cacheRead,
+    cacheWrite: pricing.cacheWrite,
+    ...(pricing.tiers !== undefined
+      ? {
+          tiers: pricing.tiers.map((tier) => ({
+            inputTokensAbove: tier.inputTokensAbove,
+            input: tier.input,
+            output: tier.output,
+            cacheRead: tier.cacheRead,
+            cacheWrite: tier.cacheWrite,
+          })),
+        }
+      : {}),
+  };
+}
+
+/**
+ * A pi `Model` for an override entry, templated off a sibling.
+ *
+ * `ResolvedModel` is deliberately narrower than pi's `Model`: it carries no
+ * `name`, `maxTokens`, `baseUrl`, `input` or `compat`, and those are not
+ * optional on the wire side. Inventing values for them would be guessing at
+ * provider behaviour, so instead every field the override does not speak about
+ * is inherited from a bundled model of the same provider on the same api — the
+ * closest thing to "what this provider's models look like" that exists.
+ *
+ * `thinkingLevelMap` is inherited for the same reason, with a caveat worth
+ * knowing: `thinkingLevels` is authoritative client-side — `clampThinkingLevel`
+ * runs in the client, before the protocol is reached — while the map only
+ * translates an already-chosen level into the provider's own value. An
+ * override that supports a level the template's map marks unsupported will
+ * therefore reach the wire, and be translated by the template's rules.
+ */
+function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
+  const template = base.getModels().find((candidate) => candidate.api === model.protocol);
+  if (template === undefined) {
+    throw new Error(
+      `Provider "${base.id}" has no model on api "${model.protocol}" to template override model "${model.id}" from.`,
+    );
+  }
+
+  return {
+    ...template,
+    id: model.id,
+    // ResolvedModel has no display name and pi's is required. The id is the
+    // only honest value: a template's name would name a different model.
+    name: model.id,
+    api: model.protocol as Api,
+    provider: model.provider,
+    contextWindow: model.contextWindow,
+    cost: toPiCost(model.pricing),
+    // pi's `reasoning` is the boolean form of our level list. "off" alone is
+    // no thinking support, which is exactly what `false` means here.
+    reasoning: model.thinkingLevels.some((level) => level !== "off"),
+  };
+}
+
+/**
+ * Applies overrides to a catalog by wrapping each affected provider.
+ *
+ * A pi `Provider` is behaviour-bearing — `getModels()`, `stream()`,
+ * `streamSimple()`, `auth` — not a data record with a `.models` array, and
+ * `setProvider` upserts by id. So the provider is read, wrapped and written
+ * back: rebuilding one from the override alone would leave it with no `stream`
+ * implementation at all.
+ *
+ * Mutates only the dedicated instance its caller just constructed.
+ */
+function applyOverrides(models: MutableModels, overrides: readonly ProviderOverride[]): void {
+  for (const override of overrides) {
+    const base = models.getProvider(override.provider);
+    if (base === undefined) {
+      throw new Error(
+        `Cannot apply a provider override for "${override.provider}": the backend catalog does not know that ` +
+          `provider, so there is no stream implementation to inherit. Overrides amend a provider; they cannot ` +
+          `introduce one.`,
+      );
+    }
+
+    // Keyed by id, last-wins, because normaliseCatalog stores override models
+    // into a Map and so keeps the last of a repeated id. Mapping to an array
+    // here instead would keep the first at the wire (resolveModel takes the
+    // first match) while the client kept the last — the two catalogs would
+    // disagree about which model an id names, which is the whole class of bug
+    // this seam exists to close.
+    const byId = new Map<string, Model<Api>>();
+    for (const model of override.models ?? []) {
+      // Rejected before synthesis, so the two catalogs refuse the same config
+      // with the same message rather than one of them building a model whose
+      // provider field would then pick the wrong credentials at the wire.
+      assertOverrideModelProvider(override.provider, model);
+      byId.set(model.id, synthesiseModel(base, model));
+    }
+    const synthesised = [...byId.values()];
+    const overriddenIds = new Set(byId.keys());
+    // The override wins on an id collision and every other bundled model
+    // survives — the same semantics normaliseCatalog applies on the client
+    // side, so the two catalogs cannot disagree about which model an id names.
+    const merged = [...base.getModels().filter((model) => !overriddenIds.has(model.id)), ...synthesised].map(
+      (model) => ({
+        ...model,
+        // baseUrl and headers are provider-level and replace rather than
+        // merge, mirroring catalog.ts. They are applied to every model of the
+        // provider, bundled ones included, because pi dispatches against
+        // Model.baseUrl / Model.headers, not against the provider's.
+        ...(override.baseUrl !== undefined ? { baseUrl: override.baseUrl } : {}),
+        ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
+      }),
+    );
+
+    models.setProvider({
+      ...base,
+      ...(override.baseUrl !== undefined ? { baseUrl: override.baseUrl } : {}),
+      ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
+      getModels: () => merged,
+    });
+  }
+}
+
+/**
+ * The pi catalog for these options: the process-wide instance when there is
+ * nothing to override, and a dedicated one when there is.
+ */
+function catalogFor(options: PiProtocolOptions): MutableModels {
+  const store = options.credentials;
+  const overrides = options.providerOverrides;
+  const build = (): MutableModels =>
+    store === undefined ? builtinModels() : builtinModels({ credentials: toPiCredentialStore(store) });
+
+  // An empty array is "no overrides": the shared instances stay in play, so
+  // this path is byte-for-byte what it was before overrides existed.
+  if (overrides === undefined || overrides.length === 0) {
+    if (store === undefined) {
+      shared ??= builtinModels();
+      return shared;
+    }
+    const existing = credentialed.get(store);
+    if (existing !== undefined) return existing;
+    const created = build();
+    credentialed.set(store, created);
+    return created;
+  }
+
+  const key = store ?? AMBIENT_CREDENTIALS;
+  let byOverrides = overridden.get(key);
+  if (byOverrides === undefined) {
+    byOverrides = new WeakMap<readonly ProviderOverride[], MutableModels>();
+    overridden.set(key, byOverrides);
+  }
+  const cached = byOverrides.get(overrides);
+  if (cached !== undefined) return cached;
+
+  const created = build();
+  applyOverrides(created, overrides);
+  byOverrides.set(overrides, created);
+  return created;
+}
+
 /**
  * See PiProtocolOptions.transport for why this is not pi-ai's own "auto".
  */
@@ -418,14 +607,7 @@ export function createPiDeps(
    */
   authResolver?: AuthResolver,
 ): PiDeps {
-  const store = options.credentials;
-  let models: MutableModels;
-  if (store === undefined) {
-    models = shared ??= builtinModels();
-  } else {
-    models = credentialed.get(store) ?? builtinModels({ credentials: toPiCredentialStore(store) });
-    credentialed.set(store, models);
-  }
+  const models = catalogFor(options);
 
   const resolver = authResolver ?? createPiAuthResolver(models);
 
