@@ -7,30 +7,9 @@
   "userStories": [
     {
       "id": "US-001",
-      "title": "Raise zero dispatch as a distinct callOp terminal outcome",
-      "description": "**Goal** — Count completed manager hops and make `callOp` throw `CALL_OP_NO_DISPATCH` before existing no-result exits when no hop reached a model. **Motivation** — nax cannot currently distinguish *the model answered and we could not use its answer* from *no model was ever reached.* **Approach** — The distinction is decided **once**, at the only layer that can observe it, and read everywhere else. `AgentManager.runWithFallback` is the sole layer that knows how many hops actually returned a turn. `AgentRunOutcome` (`src/agents/manager-types.ts:51`) has no field expressing this, so it gains one. `callOp` reads that field and raises a dedicated error code **before** either of its existing no-result exits, so both close at once. Each consumer then branches on the code explicitly. **The predicate is no hop completed a turn, not the output is empty.** These differ, and the difference is load-bearing. An agent that returns an empty string *did* dispatch: `sendWithFileOutput` synthesises a `fail-stale` `AdapterFailure` for that case, and `test/unit/operations/call-empty-output.test.ts` pins the resulting `CALL_OP_NO_OUTPUT` across eight assertions. Only a dispatch that never produced a turn — rate-limit exhaustion, an unresolvable model, a declined fallback swap — is zero-dispatch. **No new retry behaviour.** This spec adds no op-tier retry and re-dispatches nothing; it only reports an outcome the manager already reached. `makeParseRetryStrategy` is left untouched — the fix sits above it in `callOp`. **Scope** — In: required outcome count, all manager return literals, pre-parse error guard, outcome/failure recording, and fixture updates. Out: US-002 review consumption, US-003 rectification consumption, US-004 precheck, adding op-tier retry for `fail-rate-limit`, `fail-stale` or `fail-service-down`, and modifying `makeParseRetryStrategy` or its `shouldRetry` early exit at `parse-retry.ts:58`. **Interface** — `AgentRunOutcome` gains required non-negative `dispatchesCompleted: number`, the count of hops that returned a turn, successful or not, across every retry and fallback attempt. `runWithFallback` is its only writer; `0` means no hop reached a model. Immediately after `recordDispatchOutcome` / `recordAdapterFailure`, when `outcome.dispatchesCompleted === 0`, `callOp` throws `NaxError` code `CALL_OP_NO_DISPATCH` with `stage`, `storyId`, and `agentName`, before `op.parse`, exhaustedFallback, and `op.recover`.",
-      "acceptanceCriteria": [
-        "When `AgentManager.runWithFallback` has one successful hop that returned a turn, then its `AgentRunOutcome.dispatchesCompleted` equals `1`.",
-        "When every `AgentManager.runWithFallback` hop ends in an adapter failure with no turn returned, then its `AgentRunOutcome.dispatchesCompleted` equals `0`.",
-        "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 0`, then it throws an error with code `CALL_OP_NO_DISPATCH`.",
-        "When `callOp` throws `CALL_OP_NO_DISPATCH`, then the error context carries `stage`, `storyId`, and `agentName` equal to the agent the operation dispatched to.",
-        "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 0`, then it does not invoke the operation's `parse` function.",
-        "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 0` and a retry strategy declaring `exhaustedFallback`, then it invokes neither that `exhaustedFallback` nor the operation's `recover` function.",
-        "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 1` and an empty output string, then it throws an error with code `CALL_OP_NO_OUTPUT`.",
-        "When `callOp` receives a complete-kind operation outcome with `dispatchesCompleted: 0`, then it throws an error with code `CALL_OP_NO_DISPATCH`.",
-        "When `callOp` receives a run-kind operation outcome with `dispatchesCompleted: 0` and an `adapterFailure`, then it records that failure in the runtime per-story adapter-failure store and records the outcome fallback records for the story before throwing."
-      ],
-      "tags": [
-        "feature",
-        "agents",
-        "operations",
-        "error-handling"
-      ],
-      "dependencies": [],
-      "status": "pending",
+      "title": "callOp raises zero-dispatch as its own terminal outcome",
+      "status": "in_progress",
       "passes": false,
-      "attempts": 0,
-      "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
@@ -56,32 +35,13 @@
     },
     {
       "id": "US-002",
-      "title": "Fail closed when a review has no dispatch",
-      "description": "**Goal** — Convert `CALL_OP_NO_DISPATCH` into an explicit failed review state for semantic and adversarial gates without changing genuine parse fail-open behavior. **Motivation** — semantic review passes the story and adversarial review throws a parse error when no model was reached. **Approach** — Each consumer then branches on the code explicitly. The exhausted fallback can receive an empty string even when no output ever existed, and `reviewExhaustedFallback` then makes its output-based verdict. This spec does not change the verdict for genuine unparseable model output — it stops the verdict being reached from an empty string. **Scope** — In: consume the dedicated code in both review paths; report failed `noDispatch` state; preserve review decision failure; and exclude it from degraded-pass metrics. Out: producing dispatch truth (US-001), rectification behavior (US-003), precheck (US-004), and changing the `looksLikeFail` fail-open verdict for genuine unparseable model output. **Interface** — `CheckResult` gains `noDispatch?: boolean`, meaning no dispatch reached a model, so the check produced no verdict. `noDispatch: true` always accompanies `success: false` and never `failOpen: true`; these are mutually exclusive because one is a degraded pass and the other is the absence of a review.",
-      "acceptanceCriteria": [
-        "Given a review dispatch stub that throws an error with code `CALL_OP_NO_DISPATCH`, when the semantic review phase runs, then its check result has `noDispatch: true` and `success: false`.",
-        "Given a semantic review check result from a `CALL_OP_NO_DISPATCH` dispatch, then `failOpen` is not `true`.",
-        "Given a review dispatch stub that throws an error with code `CALL_OP_NO_DISPATCH`, when the adversarial review phase runs, then it returns a check result with `noDispatch: true` rather than propagating a parse error.",
-        "When a semantic review dispatch completes and returns an unparseable non-empty string, then its check result has `failOpen: true` and `noDispatch` is not `true`.",
-        "When a check result has `noDispatch: true`, then it does not increment the `RunResult.reviewsFailedOpen` tally.",
-        "Given a zero-dispatch review stub, when the story review decision is evaluated, then the story does not pass story-level review."
-      ],
-      "tags": [
-        "feature",
-        "review",
-        "error-handling"
-      ],
-      "dependencies": [
-        "US-001"
-      ],
-      "status": "pending",
+      "title": "Neither review gate produces a verdict from a dispatch that never happened",
+      "status": "in_progress",
       "passes": false,
-      "attempts": 0,
-      "escalations": [],
       "routing": {
-        "complexity": "medium",
-        "testStrategy": "tdd-simple",
-        "reasoning": "This is a clear, standard error-to-result mapping across two existing review operations and their established decision/metric seams."
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Two review gates collapse the no-dispatch state into fail-open / parse-error shapes; surfacing `noDispatch` requires reading `CALL_OP_NO_DISPATCH` at the review phase and wiring a new `CheckResult.noDispatch` field, with three consumers."
       },
       "contextFiles": [
         "src/review/types.ts",
@@ -99,32 +59,13 @@
     },
     {
       "id": "US-003",
-      "title": "Skip rectification validation after zero dispatch",
-      "description": "**Goal** — Stop a zero-dispatch rectification attempt before validation and exclude it from the no-progress bail budget while retaining its cost. **Motivation** — a rectification pass with zero successful dispatches reports completed and re-validates code nobody edited. **Approach** — The fix cycle routes zero-dispatch into its existing skip-validate exit rather than reporting completion and re-validating untouched code, and the rectification phase stops charging the iteration to the no-progress budget. The two live in different components: the skip-validate exit is `src/findings/cycle.ts`, while `abortOnNoProgress` / `consecutiveNoProgressToBail` are consumed at `src/execution/story-orchestrator/rectification.ts:358-359` — `cycle.ts` does not read them. `dispatchStrategy(...)` records spend, then rethrows the dispatch error unchanged. **Scope** — In: a distinct terminal `FixCycleExitReason`; `CALL_OP_NO_DISPATCH` handling around strategy dispatch; validation skip and cost retention; no-progress accounting; and rectification logging. Out: producer behavior (US-001), review behavior (US-002), precheck (US-004), and changes to the existing completed no-edit path or existing UNRESOLVED `agent-gave-up` exit. **Interface** — The zero-dispatch exit names a condition distinct from existing `FixCycleExitReason` members `agent-gave-up` and `validate-short-circuit`; it records accumulated failed dispatch cost. `dispatchStrategy` still rethrows dispatch errors unchanged after spend recording.",
-      "acceptanceCriteria": [
-        "Given a strategy dispatch stub that throws an error with code `CALL_OP_NO_DISPATCH`, when `runFixCycle` runs, then its `validate` function is not invoked for that iteration.",
-        "Given a strategy dispatch stub that throws an error with code `CALL_OP_NO_DISPATCH`, when `runFixCycle` returns, then its `exitReason` names the zero-dispatch condition and differs from `agent-gave-up` and `validate-short-circuit`.",
-        "Given `abortOnNoProgress: true`, `consecutiveNoProgressToBail: 3`, and three consecutive strategy dispatches that throw `CALL_OP_NO_DISPATCH`, when the rectification phase runs, then it does not reach the no-progress bail.",
-        "When a strategy dispatch completes, applies no edits, and does not signal `UNRESOLVED`, then `runFixCycle` invokes `validate` for that iteration, preserving the existing no-edit path. (A completed dispatch that does signal `UNRESOLVED` keeps taking the existing `agent-gave-up` exit, which already skips validation.)",
-        "When the zero-dispatch exit is returned, then its result records the iteration's accumulated cost so the failed dispatch spend is reported."
-      ],
-      "tags": [
-        "feature",
-        "rectification",
-        "findings",
-        "cost-accounting"
-      ],
-      "dependencies": [
-        "US-001"
-      ],
-      "status": "pending",
+      "title": "A rectification pass with zero dispatches skips validation",
+      "status": "in_progress",
       "passes": false,
-      "attempts": 0,
-      "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The change modifies multi-strategy cycle termination, validator suppression, cost propagation, and separate orchestrator budget accounting."
+        "reasoning": "Zero-dispatch needs to bypass the existing skip-validate exit while stopping the no-progress counter from charging the iteration — touches the fix-cycle state machine and the rectification phase accounting."
       },
       "contextFiles": [
         "src/findings/cycle.ts",
@@ -136,38 +77,13 @@
     },
     {
       "id": "US-004",
-      "title": "Precheck configured model ids and literal override loss",
-      "description": "**Goal** — Add one local catalog-backed walk over configured model references that blocks invalid native ids, warns for ACP/catalog infrastructure issues, and warns when literal pins drop tier-configured pricing or context-window overrides. **Motivation** — an unknown catalog model id surfaces as an adversarial-review parse error. **Approach** — One walk over the configured-model-id surface, emitting a blocker for an unresolvable native id, a warning for an unresolvable acp id, and a warning for a literal pin whose configured `pricing` / `contextWindow` the literal route discards. `getNativeClient(catalogOverrides): Promise<Client>` is cached per override set. `toProviderOverrides(overrides)` carries native override data into its catalog. `Check { name, tier, passed, message }` uses `CheckTier = blocker | warning`; blocker is spelled `blocker`, not `blocking`. `normalizeChecks(result: Check | Check[]): Check[]` allows a function to emit a blocker and warning together, while tier-1 blockers remain fail-fast. **Scope** — In: local native resolver, precheck configured-id walk, check registration, selector widening, native/ACP severity behavior, catalog-load warning, and literal override-loss warning. Out: Changing model-resolution precedence. `resolveConfiguredModel`'s literal-pin branch keeps returning `resolveModel(selection.model)`; literal pins are not resolved against the `models` map. Building a new provider-scoped catalog layer. Threading `providerOverrides` into the cost-side catalog at `src/agents/catalog/index.ts`. Validating model ids for agents other than native and acp, and probing model availability over the network. **Interface** — `precheckConfigSelector` is widened with `models`, `plan`, `acceptance`, `autoMode`, `tdd`, and `routing`, and its derived type alias remains co-located in `src/config/selectors.ts`. The resolver is under `src/agents/native/` because precheck must not import nax-ai directly.",
-      "acceptanceCriteria": [
-        "Given `models.native.powerful` names a provider-qualified id absent from the resolved catalog, when the model-resolution check runs, then it returns a failing check with `tier: blocker`.",
-        "When the model-resolution check returns an unresolved-native blocker, then its `message` contains the configuration key path, provider, and model id that failed to resolve.",
-        "Given `review.adversarial` is a literal `{agent, model}` pin with an unresolvable id on an ACP agent, when the model-resolution check runs, then it returns a failing `warning` check and no `blocker` check for that id.",
-        "Given an id absent from the bundled catalog but declared under `agent.native.catalogOverrides`, when the model-resolution check runs, then it returns no failing check for that id.",
-        "Given an unresolvable id at each supported location, when the model-resolution check walks literal pins under `review.semantic`, `review.adversarial`, `plan`, `acceptance`, `tdd.sessionTiers`, and `routing.llm.model`, every rung of `autoMode.escalation.tierOrder`, and every rung of `agent.fallback.map`, then it emits one failing check naming each site.",
-        "When the catalog resolver rejects, then the model-resolution check returns a failing `warning` check and no `blocker` check.",
-        "Given a `models` entry declaring `pricing` and `contextWindow` and a literal `{agent, model}` pin naming the same resolvable model id, when the model-resolution check runs, then it returns a `warning` whose message names the pin configuration key, the model id, and `agent.native.catalogOverrides`.",
-        "Given the same `models` entry is selected by its tier name rather than a literal pin, when the model-resolution check runs, then it returns no dropped-overrides warning.",
-        "Given a config that sets `models`, `plan`, `acceptance`, `autoMode`, `tdd`, and `routing`, when the precheck config slice is constructed, then each of those keys is defined on the slice.",
-        "Given a native catalog resolver stub that reports every id unresolvable, when `runPrecheck` runs with a config naming a native model id, then it invokes the stubbed resolver and the returned `blockers` includes the model-resolution check.",
-        "Given a config whose every configured model id resolves, when `runPrecheck` runs, then its `blockers` contains no model-resolution check."
-      ],
-      "tags": [
-        "feature",
-        "precheck",
-        "config",
-        "models",
-        "native",
-        "acp"
-      ],
-      "dependencies": [],
-      "status": "pending",
+      "title": "Precheck resolves every configured model id and reports dropped overrides",
+      "status": "in_progress",
       "passes": false,
-      "attempts": 0,
-      "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The new native-only resolver and cross-surface traversal integrate catalog loading, config resolution, precheck fail-fast ordering, and distinct native versus ACP severity policy."
+        "reasoning": "A new catalog resolver and precheck check need to thread through every config site that names a model id; one walk covers tier names, literal pins, fallback rungs, and escalation order."
       },
       "contextFiles": [
         "src/precheck/index.ts",
@@ -175,10 +91,6 @@
         "src/config/selectors.ts",
         "src/config/schema-types.ts",
         "src/agents/native/client.ts"
-      ],
-      "expectedFiles": [
-        "src/precheck/checks-models.ts",
-        "src/agents/native/model-resolution.ts"
       ],
       "outOfScope": [
         "network probing of model availability (local catalog lookup only); validating ids for agents other than native and acp."
@@ -191,15 +103,7 @@
       ]
     }
   ],
-  "analysis": "Audit result: all 31 stated acceptance criteria are retained: US-001 has 9, US-002 has 6, US-003 has 5, and US-004 has 11. The regression clauses are retained, notably the completed-empty-output `CALL_OP_NO_OUTPUT` behavior, genuine non-empty unparseable semantic fail-open behavior, the completed no-edit validation path, the existing UNRESOLVED `agent-gave-up` path, and tier-name selection not warning about dropped overrides. The feature-level out-of-scope list contains all seven spec bullets verbatim; the US-004 inline out-of-scope remains story-local. This is a cross-cutting TypeScript enhancement. `AgentRunOutcome` lacks dispatch truth at `src/agents/manager-types.ts:51-73`, and `runWithFallback` owns every attempt and constructs the outcome return values at `src/agents/manager-run-fallback.ts:78-281`. Add required `dispatchesCompleted` and populate every return literal; this intentionally forces all outcome object literals, including `test/unit/agents/manager-types-phase5.test.ts`, to be updated. Count a hop only when it returned a turn/result. `callOp` records fallbacks and adapter failure before current no-result paths (`src/operations/call.ts:429-499`) and can otherwise expose a raw parse error (`:507-562`). Insert `CALL_OP_NO_DISPATCH` immediately after recording and before abort/no-result parsing, exhaustedFallback, and recover, retaining the required error context and all recording. Empty or whitespace turns that were returned are completed dispatches; existing `sendWithFileOutput` behavior and `test/unit/operations/call-empty-output.test.ts` must retain `CALL_OP_NO_OUTPUT` with `dispatchesCompleted: 1`. Reviews currently configure `reviewExhaustedFallback` in both operations (`src/operations/semantic-review.ts:335-352`, `src/operations/adversarial-review.ts:123-137`); do not let an absent dispatch reach that parse fallback. Add optional `noDispatch` to `ReviewCheckResult` (`src/review/types.ts:136-168`) and ensure review decisions cannot pass it. `applyReviewsFailedOpen` counts only `failOpen === true` (`src/execution/post-run-review-summary.ts:12-18`), which already gives the required non-counting behavior if the new result remains fail-closed. The key regression risk is accidentally changing genuine completed-but-unparseable output behavior. `runFixCycle` calls `dispatchStrategy` in its strategy loop (`src/findings/cycle.ts:269-285`); `dispatchStrategy` logs ledger spend then rethrows unchanged (`src/findings/cycle-dispatch.ts:56-78`). Add a distinct zero-dispatch `FixCycleExitReason`, catch only that code around dispatch, skip validation, and preserve failed-dispatch cost. The existing all-UNRESOLVED skip-validation branch (`src/findings/cycle.ts:285-392`) is the control-flow precedent, not behavior to replace. No-progress policy is consumed by rectification (`src/execution/story-orchestrator/rectification.ts:347-361`), so zero-dispatch must be excluded there without changing normal completed no-edit validation. Precheck already normalizes `Check | Check[]` and runs tier-1 fail-fast (`src/precheck/index.ts:106-151,271-299`). Register the model check after `checkAgentCLI`, preserving array emission for a blocker and warning. Widen `precheckConfigSelector` and retain `PrecheckConfig` colocated in `src/config/selectors.ts`. Literal pins deliberately call bare `resolveModel` rather than the model map (`src/config/schema-types.ts:208-277`), so only detect dropped pricing/contextWindow; never change precedence. Create the resolver under `src/agents/native/`, the permitted nax-ai import boundary, and use `getNativeClient` plus catalog overrides (`src/agents/native/client.ts:46-124`, `src/agents/native/models.ts:130-149`) so override-only ids resolve. Native unresolved ids are blockers; ACP unresolved ids and catalog-load failures are warnings. The traversal must cover all named config surfaces, include key/provider/id in diagnostic messages, and perform no network probe. Context files were reconciled to the spec lists, respecting five-file limits. Dependencies are minimal and reference only US-001 where the downstream consumer must receive its new error code. Routing is medium only for the standard review result handling; manager/cycle/catalog traversal changes remain complex due to control-flow or native integration risk.",
-  "outOfScope": [
-    "Changing model-resolution precedence. `resolveConfiguredModel`'s literal-pin branch keeps returning `resolveModel(selection.model)`; literal pins are not resolved against the `models` map. This is nax#1984's Option 1, rejected because it introduces a third precedence rule and silently re-prices configurations that work today.",
-    "Building a new provider-scoped catalog layer. This is nax#1984's Option 2; it shipped as `agent.native.catalogOverrides` in nax#1982 and is not rebuilt here.",
-    "Threading `providerOverrides` into the cost-side catalog at `src/agents/catalog/index.ts`. `catalogOverrides` is scoped to the native agent by its position under `agent.native`, which is the intended design, and ACP prices through `resolveRateCard(modelDef.model)` from a bare model id that never carried `modelDef.pricing` on any route.",
-    "Changing the `looksLikeFail` fail-open verdict for genuine unparseable model output. `_review-fallback.ts` documents that 7 of 13 July-2026 give-ups fell through to fail-open; revisiting that verdict needs its own evidence and its own spec. This spec only prevents the verdict being reached from an empty string.",
-    "Adding op-tier retry for `fail-rate-limit`, `fail-stale` or `fail-service-down`. `.nax/rules/retry-strategy.md` reserves these for `defaultRetryStrategy` at the manager tier.",
-    "Modifying `makeParseRetryStrategy` or its `shouldRetry` early exit at `parse-retry.ts:58`. The fix sits above it in `callOp`.",
-    "Validating model ids for agents other than native and acp, and probing model availability over the network. The precheck check is a local catalog lookup only."
-  ],
-  "routingProfile": "native"
+  "acceptanceCriteria": {},
+  "createdBy": "prd-spec",
+  "schemaVersion": "1.0"
 }
