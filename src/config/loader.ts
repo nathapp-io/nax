@@ -21,6 +21,7 @@ import {
   rejectLegacyRectificationKeys,
   stripRemovedNoOpKeys,
   validatePermissionsBlock,
+  warnQualityCommandChains,
 } from "./config-guards";
 import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
 import { mergePackageConfig } from "./merge";
@@ -243,6 +244,12 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   // Post-merge placement yields one warning per resolved config regardless of
   // which layer supplied the key.
   const stripped = stripRemovedNoOpKeys(rawConfig, defaultConfigWarn);
+
+  // nax#1990 — warn (never throw) when a declared quality command chains with
+  // `&&`, naming the list form as the remedy. Same post-merge placement as the
+  // strip above: one warning per resolved config regardless of which layer
+  // supplied the command.
+  warnQualityCommandChains(stripped, defaultConfigWarn);
 
   const result = NaxConfigSchema.safeParse(stripped);
   if (!result.success) {
@@ -547,6 +554,10 @@ export async function loadConfigForWorkdir(
   // safeParse, mirroring the root chain. Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.
   rawMerged = stripRemovedNoOpKeys(rawMerged, warnDedupe.warn);
+  // nax#1990 — same warn-not-throw check as the root chain, mirroring the
+  // strip above: a per-package overlay or package profile can declare its own
+  // chained `quality.commands` entry.
+  warnQualityCommandChains(rawMerged, warnDedupe.warn);
   // #574's single-shim patch here (`_applyRemovedWorktreeInheritShim` on the merged
   // result) is gone: #1620 replaced it with the full chain run on each overlay layer
   // above, which covers that case and every other shim.
