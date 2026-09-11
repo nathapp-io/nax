@@ -112,7 +112,8 @@ ceiling of the bundled sibling model it synthesises the entry from, which can be
 smaller than the new model's real one, so a higher-output model should state it.
 The override must amend a provider the bundled catalog already carries and use a
 protocol that provider already has a model on; an entry that tries to introduce a
-new provider fails the client build with a clear error instead of failing mid-run.
+new provider fails with a clear error when the first request lazily constructs the
+protocol, before any provider request is sent.
 
 Select it with an ordinary `{ agent, model }` pin — native reads provider and model
 from the model **string**, so the declared id is the whole address:

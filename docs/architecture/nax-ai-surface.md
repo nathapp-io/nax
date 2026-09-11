@@ -1,6 +1,6 @@
 # The nax-ai surface the native adapter consumes
 
-Reference for `@nathapp/nax-ai` (pinned at **0.1.10**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
+Reference for `@nathapp/nax-ai` (pinned at **0.1.11**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
 
 `src/agents/native/client.ts` and its siblings are the ONLY files in `src/` permitted to import nax-ai (`scripts/check-nax-ai-imports.ts` enforces it).
 
@@ -37,14 +37,14 @@ anthropic/claude-sonnet-5  window=1000000   {input:2, output:10, cacheRead:0.2, 
 
 ### Tiers are real and nax currently ignores them
 
-Exactly **22 of 1290** catalogued models price in tiers. `git grep "inputTokensAbove" -- src` finds nothing, so long-context native runs under-report today. nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."*
+Exactly **24 of 1354** catalogued models price in tiers. `git grep "inputTokensAbove" -- src` finds nothing, so long-context native runs under-report today. nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."*
 
 Every tiered model, with its threshold:
 
 | threshold | models |
 |---|---|
-| 200000 | `github-copilot/`: `gemini-3.1-pro-preview`, `gpt-5.6-luna`, `grok-4.5`, `grok-4.6` |
-| 272000 | `openai/` and `openai-codex/`: `gpt-5.4`, `gpt-5.5`, `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra` (plus `openai/gpt-5.4-pro`, `openai/gpt-5.5-pro`); `github-copilot/`: `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`; `cloudflare-ai-gateway/`: `gpt-5.6-luna`, `gpt-5.6-terra` |
+| 200000 | `github-copilot/`: `gpt-5.6-luna`, `grok-4.5`, `grok-4.6` |
+| 272000 | `openai/` and `openai-codex/`: `gpt-5.4`, `gpt-5.5`, `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-6-astra` (plus `openai/gpt-5.4-pro`, `openai/gpt-5.5-pro`); `github-copilot/`: `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-6-astra`; `cloudflare-ai-gateway/`: `gpt-5.6-luna`, `gpt-5.6-terra` |
 
 Above the threshold the whole request reprices — `gpt-5.6-terra` doubles input ($2 to $4) and cache-write ($2.50 to $5). Note the same model id tiers at a different threshold depending on provider (`gpt-5.6-luna` is 200k on github-copilot, 272k on openai).
 
@@ -84,7 +84,8 @@ a client whose protocol entries never heard about a declared override is
 rejected at construction, and the protocol layer additionally requires that the
 override's provider exists in the bundled catalog and has a sibling model on the
 same protocol to template from — overrides amend a provider, they cannot
-introduce one.
+introduce one. Those protocol constraints are checked when the first request
+lazily constructs the protocol, before any provider request is sent.
 
 An override entry may declare an optional `maxTokens` output ceiling. nax-ai
 synthesises the wire model from a bundled sibling and inherits the sibling's
@@ -118,7 +119,7 @@ Overriding the window is safe: it never reaches the provider. It feeds only nax'
 
 ## Providers
 
-`defaultProviders()` loads the bundled catalog: **39 providers, 1290 models**. The build is memoised in `client.ts` because that load is not cheap; a *failed* build is deliberately not cached.
+`defaultProviders()` loads the bundled catalog: **39 providers, 1354 models**. The build is memoised in `client.ts` because that load is not cheap; a *failed* build is deliberately not cached.
 
 ```
 amazon-bedrock ant-ling anthropic azure-openai-responses baseten cerebras
