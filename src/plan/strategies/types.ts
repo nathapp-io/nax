@@ -12,6 +12,8 @@ export interface PlanCommandOptions {
   readonly feature: string;
   readonly auto?: boolean;
   readonly branch?: string;
+  /** `--no-spec-lint` — plan a spec that fails the extraction-integrity gate. */
+  readonly skipSpecLint?: boolean;
 }
 
 export interface PlanDeps {

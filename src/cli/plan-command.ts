@@ -58,6 +58,8 @@ export interface PlanCommandOptions {
   auto?: boolean;
   /** Override default branch name (-b) */
   branch?: string;
+  /** `--no-spec-lint` — plan a spec that fails the extraction-integrity gate. */
+  skipSpecLint?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

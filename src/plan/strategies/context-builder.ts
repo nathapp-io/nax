@@ -13,6 +13,7 @@ import { buildInteractionBridge } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import { validateFeatureName } from "@/utils/feature-name";
+import { assertSpecLintClean } from "../spec-lint-gate";
 import type { PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";
 
 export async function buildPlanModeContext(
@@ -37,6 +38,24 @@ export async function buildPlanModeContext(
     deps.scanSourceRoots(workdir),
     deps.readPackageJson(workdir),
   ]);
+
+  // Before any paid work: a spec section the parsers cannot see is absent from
+  // the PRD and silent everywhere downstream, so the only place the check is
+  // worth anything is ahead of the plan spend (#1989).
+  const specLintWarnings = assertSpecLintClean(specContent, {
+    specPath: options.from,
+    featureName: options.feature,
+    workdir,
+    maxAcCount: fullConfig?.precheck?.storySizeGate?.maxAcCount,
+    skip: options.skipSpecLint,
+  });
+  if (specLintWarnings.length > 0) {
+    getSafeLogger()?.warn("plan", "Spec lint findings — planning anyway", {
+      storyId: options.feature,
+      specPath: options.from,
+      findings: specLintWarnings.map((finding) => ({ level: finding.level, code: finding.code })),
+    });
+  }
 
   const normalizedRoots = sourceRoots.map((root) => ({
     ...root,

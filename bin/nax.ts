@@ -208,6 +208,7 @@ program
   .option("--parallel <n>", "Max parallel sessions (0=auto, omit=sequential)")
   .option("--plan", "Run plan phase first before execution", false)
   .option("--from <spec-path>", "Path to spec file (required when --plan is used)")
+  .option("--no-spec-lint", "Plan even when the spec declares sections that extract to nothing")
   .option("--one-shot", "Skip interactive planning Q&A, use single LLM call (ACP only)", false)
   .option("--force", "Force overwrite existing prd.json when using --plan", false)
   .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
@@ -428,6 +429,8 @@ program
           feature: options.feature,
           auto: options.oneShot ?? false, // interactive by default; --one-shot skips Q&A
           branch: undefined,
+          // Commander maps `--no-spec-lint` to `specLint: false`; unset means on.
+          skipSpecLint: options.specLint === false,
         });
         const generatedPrdPath = planResult.outputPath;
         warnIfPlanDegraded(planResult);
@@ -979,6 +982,7 @@ program
   .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--decompose <storyId>", "Decompose an existing story into sub-stories")
+  .option("--no-spec-lint", "Plan even when the spec declares sections that extract to nothing")
   .option(
     "--profile <name>",
     "Profile(s) to overlay (comma-separated or repeated; later overrides earlier)",
@@ -1047,6 +1051,8 @@ program
           feature: options.feature,
           auto: options.auto || options.oneShot, // --auto and --one-shot are aliases
           branch: options.branch,
+          // Commander maps `--no-spec-lint` to `specLint: false`; unset means on.
+          skipSpecLint: options.specLint === false,
         });
 
         warnIfPlanDegraded(planResult);
