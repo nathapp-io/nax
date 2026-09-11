@@ -9,6 +9,7 @@
 
 import { resolveModel } from "@/config";
 import type { ModelDef, NaxConfig } from "@/config/schema";
+import { NaxError } from "@/errors";
 
 /**
  * Resolve the balanced model definition from config, with optional adapter default fallback.
@@ -42,7 +43,9 @@ export function resolveBalancedModelDef(
     return adapterDefault;
   }
 
-  throw new Error(
+  throw new NaxError(
     `No balanced model configured in config.models[${defaultAgent}].balanced and no adapter default provided`,
+    "BALANCED_MODEL_NOT_CONFIGURED",
+    { stage: "agents", defaultAgent },
   );
 }

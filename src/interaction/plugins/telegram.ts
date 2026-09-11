@@ -5,6 +5,7 @@
  * Poll for callback query or reply message responses.
  */
 
+import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
@@ -85,9 +86,9 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     this.chatId = normalized?.chatId || null;
 
     if (!this.botToken || !this.chatId) {
-      throw new Error(
-        "Telegram plugin requires botToken and chatId (env: NAX_TELEGRAM_TOKEN or TELEGRAM_BOT_TOKEN, NAX_TELEGRAM_CHAT_ID)",
-      );
+      const msg =
+        "Telegram plugin requires botToken and chatId (env: NAX_TELEGRAM_TOKEN or TELEGRAM_BOT_TOKEN, NAX_TELEGRAM_CHAT_ID)";
+      throw new NaxError(msg, "TELEGRAM_NOT_CONFIGURED", { stage: "interaction" });
     }
 
     // Loud at startup beats silent at prompt time: with an unmatchable chatId the
@@ -142,7 +143,8 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
   async send(request: InteractionRequest): Promise<void> {
     if (!this.botToken || !this.chatId) {
-      throw new Error("Telegram plugin not initialized");
+      const msg = "Telegram plugin not initialized";
+      throw new NaxError(msg, "TELEGRAM_PLUGIN_NOT_INITIALIZED", { stage: "interaction" });
     }
 
     // Drain any backlog immediately before posting this prompt so an update that
@@ -206,12 +208,14 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
         if (!response.ok) {
           const errorBody = await response.text().catch(() => "");
-          throw new Error(`Telegram API error (${response.status}): ${errorBody || response.statusText}`);
+          const msg = `Telegram API error (${response.status}): ${errorBody || response.statusText}`;
+          throw new NaxError(msg, "TELEGRAM_API_ERROR", { stage: "interaction" });
         }
 
         const data = (await response.json()) as { ok: boolean; result: TelegramMessage };
         if (!data.ok) {
-          throw new Error(`Telegram API returned ok=false: ${JSON.stringify(data)}`);
+          const msg = `Telegram API returned ok=false: ${JSON.stringify(data)}`;
+          throw new NaxError(msg, "TELEGRAM_API_ERROR", { stage: "interaction" });
         }
 
         sentIds.push(data.result.message_id);
@@ -223,13 +227,14 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to send Telegram message: ${msg}`);
+      throw new NaxError(`Failed to send Telegram message: ${msg}`, "TELEGRAM_SEND_FAILED", { stage: "interaction" });
     }
   }
 
   async receive(requestId: string, timeout = 60000): Promise<InteractionResponse> {
     if (!this.botToken || !this.chatId) {
-      throw new Error("Telegram plugin not initialized");
+      const msg = "Telegram plugin not initialized";
+      throw new NaxError(msg, "TELEGRAM_PLUGIN_NOT_INITIALIZED", { stage: "interaction" });
     }
 
     return new Promise<InteractionResponse>((resolve) => {
@@ -373,12 +378,14 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
-        throw new Error(`Telegram getUpdates error (${response.status}): ${errorBody || response.statusText}`);
+        const msg = `Telegram getUpdates error (${response.status}): ${errorBody || response.statusText}`;
+        throw new NaxError(msg, "TELEGRAM_API_ERROR", { stage: "interaction" });
       }
 
       const data = (await response.json()) as { ok: boolean; result: TelegramUpdate[] };
       if (!data.ok || !data.result) {
-        throw new Error("Telegram API returned ok=false or missing result");
+        const msg = "Telegram API returned ok=false or missing result";
+        throw new NaxError(msg, "TELEGRAM_API_ERROR", { stage: "interaction" });
       }
 
       const raw = data.result;
@@ -512,6 +519,21 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     return null;
   }
 
+  private async telegramFetch(url: string, body: Record<string, unknown>): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
+    try {
+      return await _telegramPluginDeps.fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /**
    * Answer callback query to remove loading state
    */
@@ -519,20 +541,9 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     if (!this.botToken) return;
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
-      try {
-        await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            callback_query_id: callbackQueryId,
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
+      await this.telegramFetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
+        callback_query_id: callbackQueryId,
+      });
     } catch {
       // Non-critical - fire-and-forget, no logging needed
     }
@@ -545,22 +556,11 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     if (!this.botToken || !this.chatId) return;
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
-      try {
-        await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: this.chatId,
-            message_id: messageId,
-            reply_markup: { inline_keyboard: [] },
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
+      await this.telegramFetch(`https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`, {
+        chat_id: this.chatId,
+        message_id: messageId,
+        reply_markup: { inline_keyboard: [] },
+      });
     } catch {
       // Non-critical cleanup: response already captured.
     }
@@ -587,23 +587,12 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     // Edit only the last message to avoid redundant notifications
     const lastId = pending.ids[pending.ids.length - 1];
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), CALLBACK_API_TIMEOUT_MS);
-      try {
-        await _telegramPluginDeps.fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: this.chatId,
-            message_id: lastId,
-            text: "⏱ EXPIRED — Interaction timed out",
-            reply_markup: { inline_keyboard: [] }, // Remove buttons so expired interactions can't be re-tapped
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
+      await this.telegramFetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
+        chat_id: this.chatId,
+        message_id: lastId,
+        text: "⏱ EXPIRED — Interaction timed out",
+        reply_markup: { inline_keyboard: [] }, // Remove buttons so expired interactions can't be re-tapped
+      });
     } catch {
       // Non-critical - fire-and-forget, no logging needed
     } finally {

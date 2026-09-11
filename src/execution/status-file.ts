@@ -9,6 +9,7 @@
 
 import { rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
+import { NaxError } from "../errors";
 import type { PRD } from "../prd";
 
 // ============================================================================
@@ -380,7 +381,10 @@ export async function writeStatusFile(filePath: string, status: NaxStatusFile): 
 
   // Check for path traversal patterns in the original path
   if (filePath.includes("../") || filePath.includes("..\\")) {
-    throw new Error("Invalid status file path: path traversal detected");
+    throw new NaxError("Invalid status file path: path traversal detected", "STATUS_FILE_PATH_TRAVERSAL", {
+      stage: "execution",
+      path: filePath,
+    });
   }
 
   const tmpPath = `${resolvedPath}.tmp`;

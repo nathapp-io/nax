@@ -13,6 +13,7 @@
  * Measurement errors are fail-safe: also restored.
  */
 import type { NonBlockingFixConfig, TestPatternConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import { isRecurrenceRetired } from "../findings/retirement-stamp";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
@@ -217,7 +218,12 @@ export function createMeasureSourceDiff(args: CreateMeasureSourceDiffArgs): NonB
 
     if (exitCode !== 0) {
       const detail = stderr.trim() || `exit ${exitCode}`;
-      throw new Error(`[non-blocking-fix] git diff --numstat failed: ${detail}`);
+      throw new NaxError(`[non-blocking-fix] git diff --numstat failed: ${detail}`, "GIT_DIFF_NUMSTAT_FAILED", {
+        stage: "execution",
+        workdir,
+        fromRef,
+        detail,
+      });
     }
 
     let fileCount = 0;

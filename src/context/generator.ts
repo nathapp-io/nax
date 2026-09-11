@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { NaxConfig } from "../config";
 import { validateFilePath } from "../config/path-security";
+import { NaxError } from "../errors";
 import { byCodePoint } from "../utils/sort";
 import { aiderGenerator } from "./generators/aider";
 import { claudeGenerator } from "./generators/claude";
@@ -72,7 +73,10 @@ export interface GenerateOptions {
  */
 async function loadContextContent(options: GenerateOptions, config: NaxConfig): Promise<ContextContent> {
   if (!_generatorDeps.existsSync(options.contextPath)) {
-    throw new Error(`Context file not found: ${options.contextPath}`);
+    throw new NaxError(`Context file not found: ${options.contextPath}`, "CONTEXT_FILE_NOT_FOUND", {
+      stage: "context",
+      contextPath: options.contextPath,
+    });
   }
 
   const markdown = await _generatorDeps.readTextFile(options.contextPath);

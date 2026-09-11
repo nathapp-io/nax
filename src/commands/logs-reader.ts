@@ -5,6 +5,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { NaxError } from "../errors";
 import type { LogEntry } from "../logger/types";
 import type { MetaJson } from "../pipeline/subscribers/registry";
 import { getRunsDir } from "../utils/paths";
@@ -26,7 +27,7 @@ export async function resolveRunFileFromRegistry(runId: string): Promise<string 
   try {
     entries = await readdir(runsDir);
   } catch {
-    throw new Error(`Run not found in registry: ${runId}`);
+    throw new NaxError(`Run not found in registry: ${runId}`, "RUN_NOT_FOUND", { stage: "logs", runId });
   }
 
   // Exact match wins immediately and unambiguously. Otherwise collect every prefix
@@ -56,13 +57,16 @@ export async function resolveRunFileFromRegistry(runId: string): Promise<string 
   if (!matched) {
     if (prefixMatches.length > 1) {
       const candidates = prefixMatches.map((m) => m.runId).join(", ");
-      throw new Error(`Ambiguous run ID "${runId}" matches multiple runs: ${candidates}`);
+      throw new NaxError(`Ambiguous run ID "${runId}" matches multiple runs: ${candidates}`, "RUN_ID_AMBIGUOUS", {
+        stage: "logs",
+        runId,
+      });
     }
     matched = prefixMatches[0] ?? null;
   }
 
   if (!matched) {
-    throw new Error(`Run not found in registry: ${runId}`);
+    throw new NaxError(`Run not found in registry: ${runId}`, "RUN_NOT_FOUND", { stage: "logs", runId });
   }
 
   if (!existsSync(matched.eventsDir)) {

@@ -415,7 +415,8 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
     const keyToken = extractKeyToken(drop.description);
 
     if (!keyToken) {
-      throw new Error(`[curator-commit] conflict: cannot extract key token for drop in ${drop.canonicalFile} — abort`);
+      const msg = `[curator-commit] conflict: cannot extract key token for drop in ${drop.canonicalFile} — abort`;
+      throw new NaxError(msg, "CURATOR_KEY_TOKEN_MISSING", { stage: "curator" });
     }
 
     const lines = fileState.existing.split("\n");
@@ -425,12 +426,14 @@ export async function curatorCommit(options: CuratorCommitOptions): Promise<void
       .map(({ idx }) => idx);
 
     if (matchedIndices.length === 0) {
-      throw new Error(`[curator-commit] conflict: key token "${keyToken}" not found in ${drop.canonicalFile} — abort`);
+      const msg = `[curator-commit] conflict: key token "${keyToken}" not found in ${drop.canonicalFile} — abort`;
+      throw new NaxError(msg, "CURATOR_KEY_TOKEN_NOT_FOUND", { stage: "curator" });
     }
 
     for (const lineIdx of matchedIndices) {
       if (fileState.usedLines.has(lineIdx)) {
-        throw new Error(`[curator-commit] conflict: overlapping drop ranges in ${drop.canonicalFile} — abort`);
+        const msg = `[curator-commit] conflict: overlapping drop ranges in ${drop.canonicalFile} — abort`;
+        throw new NaxError(msg, "CURATOR_OVERLAPPING_DROPS", { stage: "curator" });
       }
       fileState.usedLines.add(lineIdx);
     }

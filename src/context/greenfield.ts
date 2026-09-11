@@ -9,6 +9,7 @@
 
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { NaxError } from "../errors";
 import type { UserStory } from "../prd/types";
 import {
   buildResolved,
@@ -99,7 +100,15 @@ async function* walkFiles(root: string): AsyncIterable<string> {
       }
     } catch (err) {
       if (isRoot) {
-        throw new Error(`[greenfield] cannot read workdir '${root}': ${(err as Error).message}`);
+        throw new NaxError(
+          `[greenfield] cannot read workdir '${root}': ${(err as Error).message}`,
+          "GREENFIELD_WORKDIR_READ_FAILED",
+          {
+            stage: "context",
+            root,
+            cause: err,
+          },
+        );
       }
       // Subdirectory we don't have permission to read — skip it; the parent
       // walk continues. Permission errors inside `IGNORE_DIRS` are expected.

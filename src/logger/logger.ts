@@ -413,7 +413,11 @@ export function addSink(sink: LogSink): () => void {
  */
 export function initLogger(options: LoggerOptions = { level: "silent" }): Logger {
   if (instance) {
-    throw new Error("Logger already initialized. Call getLogger() to access existing instance.");
+    throw new NaxError(
+      "Logger already initialized. Call getLogger() to access existing instance.",
+      "LOGGER_ALREADY_INITIALIZED",
+      { stage: "logger" },
+    );
   }
   instance = new Logger(options);
   // MED-05 — catch-all for every process.exit() call site in the CLI: a

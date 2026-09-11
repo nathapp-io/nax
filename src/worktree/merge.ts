@@ -1,3 +1,4 @@
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
@@ -278,7 +279,10 @@ export class MergeEngine {
       }
 
       if (visiting.has(storyId)) {
-        throw new Error(`Circular dependency detected involving ${storyId}`);
+        throw new NaxError(`Circular dependency detected involving ${storyId}`, "WORKTREE_DEPENDENCY_CYCLE", {
+          stage: "worktree",
+          storyId,
+        });
       }
 
       visiting.add(storyId);
@@ -316,7 +320,11 @@ export class MergeEngine {
         projectRoot,
       );
       if (exitCode !== 0) {
-        throw new Error("Failed to get current branch");
+        throw new NaxError("Failed to get current branch", "WORKTREE_CURRENT_BRANCH_FAILED", {
+          stage: "worktree",
+          storyId,
+          projectRoot,
+        });
       }
 
       const currentBranch = currentBranchRaw.trim();
@@ -332,13 +340,21 @@ export class MergeEngine {
         // Abort rebase on failure
         await gitWithTimeout(["rebase", "--abort"], worktreePath);
 
-        throw new Error(`Rebase failed: ${stderr || "unknown error"}`);
+        throw new NaxError(`Rebase failed: ${stderr || "unknown error"}`, "WORKTREE_REBASE_FAILED", {
+          stage: "worktree",
+          storyId,
+          stderr,
+        });
       }
     } catch (error) {
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error(`Failed to rebase worktree ${storyId}: ${String(error)}`);
+      throw new NaxError(`Failed to rebase worktree ${storyId}: ${String(error)}`, "WORKTREE_REBASE_FAILED", {
+        stage: "worktree",
+        storyId,
+        cause: error,
+      });
     }
   }
 

@@ -182,7 +182,10 @@ export async function ensureAcpSession(
   permissionMode: string,
 ): Promise<{ session: AcpSession; resumed: boolean }> {
   if (!agentName) {
-    throw new Error("[acp-adapter] agentName is required for ensureAcpSession");
+    throw new NaxError("[acp-adapter] agentName is required for ensureAcpSession", "ACP_AGENT_NAME_REQUIRED", {
+      stage: "open-session",
+      sessionName,
+    });
   }
 
   // Fail fast with an actionable error if the session cwd is missing. acpx would

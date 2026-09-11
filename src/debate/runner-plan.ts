@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { DebateConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import type { DebatePlanInput } from "../operations/debate-plan";
 import { planDebaterOp } from "../operations/debate-plan";
 import type { CallContext } from "../operations/types";
@@ -38,8 +39,7 @@ interface PlanCtx extends DispatchContext {
 const DEFAULT_MAX_CONCURRENT_DEBATERS = 2;
 
 export { _planDeps } from "./runner-plan-deps";
-// Re-export so existing callers (plan.ts, tests) can continue to import from this module.
-export { _runPlanDeps } from "./runner-plan-helpers";
+export { _runPlanDeps } from "./runner-plan-helpers"; // Re-export so existing callers (plan.ts, tests) can continue importing from here
 
 export async function runPlan(
   ctx: PlanCtx,
@@ -353,7 +353,7 @@ export async function runPlan(
           outputPath: outputPaths[index],
           includeHybridRebuttals: false,
         } satisfies DebatePlanInput);
-        if (!result.success) throw new Error(result.rebut);
+        if (!result.success) throw new NaxError(result.rebut, "DEBATE_PLAN_FAILED", { stage: "debate" });
         return { debater, agentName, output: result.rebut, cost: 0, resolvedIndex: index };
       }),
       concurrencyLimit,

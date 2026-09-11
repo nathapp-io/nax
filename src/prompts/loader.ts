@@ -6,6 +6,7 @@
 
 import { join } from "node:path";
 import type { PromptLoaderConfig } from "@/config/selectors";
+import { NaxError } from "@/errors";
 import type { PromptRole } from "./core/types";
 
 /**
@@ -50,10 +51,12 @@ export async function loadOverride(
   try {
     return await _promptLoaderDeps.readText(absolutePath);
   } catch (err) {
-    throw new Error(
+    throw new NaxError(
       `Cannot read prompt override for role "${role}" at "${absolutePath}": ${
         err instanceof Error ? err.message : String(err)
       }`,
+      "PROMPT_OVERRIDE_READ_FAILED",
+      { stage: "prompt", role, absolutePath },
     );
   }
 }

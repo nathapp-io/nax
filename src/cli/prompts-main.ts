@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline";
 import { runPipeline } from "../pipeline";
@@ -64,7 +65,10 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
   // Find nax directory
   const naxDir = join(workdir, ".nax");
   if (!existsSync(naxDir)) {
-    throw new Error(`.nax directory not found. Run 'nax init' first in ${workdir}`);
+    throw new NaxError(`.nax directory not found. Run 'nax init' first in ${workdir}`, "NAX_DIR_NOT_FOUND", {
+      stage: "cli",
+      workdir,
+    });
   }
 
   // Load PRD
@@ -72,7 +76,10 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
   const prdPath = join(featureDir, "prd.json");
 
   if (!existsSync(prdPath)) {
-    throw new Error(`Feature "${feature}" not found or missing prd.json`);
+    throw new NaxError(`Feature "${feature}" not found or missing prd.json`, "FEATURE_PRD_NOT_FOUND", {
+      stage: "cli",
+      feature,
+    });
   }
 
   const prd = await loadPRD(prdPath);
@@ -90,8 +97,10 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
     const stories = storyId ? prd.userStories.filter((s) => s.id === storyId) : prd.userStories;
 
     if (stories.length === 0) {
-      throw new Error(
+      throw new NaxError(
         storyId ? `Story "${storyId}" not found in feature "${feature}"` : `No stories found in feature "${feature}"`,
+        "STORY_NOT_FOUND",
+        { stage: "cli", feature, storyId },
       );
     }
 

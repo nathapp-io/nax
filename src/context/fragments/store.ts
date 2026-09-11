@@ -20,6 +20,7 @@
 import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { featureDir } from "@/config";
+import { NaxError } from "@/errors";
 import { estimateTokens } from "@/optimizer";
 import { atomicWriteText } from "@/utils/json-file";
 import { byCodePoint } from "@/utils/sort";
@@ -82,15 +83,24 @@ function fragmentsDir(projectDir: string, featureId: string): string {
 const NUL = "\0";
 function validatePathSegment(value: string, name: string): void {
   if (value.length === 0) {
-    throw new Error(`[fragments] ${name} must be non-empty`);
+    throw new NaxError(`[fragments] ${name} must be non-empty`, "FRAGMENT_PATH_EMPTY", {
+      stage: "context",
+      name,
+    });
   }
   if (value === "." || value === "..") {
-    throw new Error(`[fragments] ${name} must not be '.' or '..'`);
+    throw new NaxError(`[fragments] ${name} must not be '.' or '..'`, "FRAGMENT_PATH_DOT_SEGMENT", {
+      stage: "context",
+      name,
+    });
   }
   for (let i = 0; i < value.length; i++) {
     const c = value.charCodeAt(i);
     if (c === 47 /* '/' */ || c === 92 /* '\\' */ || c === NUL.charCodeAt(0)) {
-      throw new Error(`[fragments] ${name} must not contain path separators or NUL`);
+      throw new NaxError(`[fragments] ${name} must not contain path separators or NUL`, "FRAGMENT_PATH_SEPARATOR", {
+        stage: "context",
+        name,
+      });
     }
   }
 }

@@ -6,6 +6,7 @@
 
 import * as readline from "node:readline";
 import { z } from "zod";
+import { NaxError } from "@/errors";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /** Zod schema for validating CLI plugin config */
@@ -86,11 +87,14 @@ export class CLIInteractionPlugin implements InteractionPlugin {
   async receive(requestId: string, timeout = 60000): Promise<InteractionResponse> {
     const request = this.pendingRequests.get(requestId);
     if (!request) {
-      throw new Error(`No pending request with ID: ${requestId}`);
+      throw new NaxError(`No pending request with ID: ${requestId}`, "CLI_REQUEST_NOT_FOUND", {
+        stage: "interaction",
+        requestId,
+      });
     }
 
     if (!this.rl) {
-      throw new Error("CLI plugin not initialized");
+      throw new NaxError("CLI plugin not initialized", "CLI_PLUGIN_NOT_INITIALIZED", { stage: "interaction" });
     }
 
     const response = await this.promptUser(request, timeout);
@@ -107,7 +111,7 @@ export class CLIInteractionPlugin implements InteractionPlugin {
    */
   private async promptUser(request: InteractionRequest, timeout: number): Promise<InteractionResponse> {
     if (!this.rl) {
-      throw new Error("CLI plugin not initialized");
+      throw new NaxError("CLI plugin not initialized", "CLI_PLUGIN_NOT_INITIALIZED", { stage: "interaction" });
     }
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -162,7 +166,7 @@ export class CLIInteractionPlugin implements InteractionPlugin {
    */
   private async getUserInput(request: InteractionRequest): Promise<InteractionResponse> {
     if (!this.rl) {
-      throw new Error("CLI plugin not initialized");
+      throw new NaxError("CLI plugin not initialized", "CLI_PLUGIN_NOT_INITIALIZED", { stage: "interaction" });
     }
 
     switch (request.type) {
@@ -335,7 +339,7 @@ export class CLIInteractionPlugin implements InteractionPlugin {
    */
   private async question(prompt: string): Promise<string> {
     if (!this.rl) {
-      throw new Error("CLI plugin not initialized");
+      throw new NaxError("CLI plugin not initialized", "CLI_PLUGIN_NOT_INITIALIZED", { stage: "interaction" });
     }
 
     return new Promise((resolve) => {

@@ -242,7 +242,11 @@ function renderRunCommandTest(spec: RunCommandTestSpec): string {
  *  a damaged spec must cost the native rendering, never the instructions. */
 function renderGitCommit(spec: CommitSpec): string {
   if (typeof spec?.message !== "string" || spec.message.length === 0) {
-    throw new Error(`[protocol-region] commit renderer requires a non-empty message, got ${JSON.stringify(spec)}`);
+    throw new NaxError(
+      `[protocol-region] commit renderer requires a non-empty message, got ${JSON.stringify(spec)}`,
+      "COMMIT_SPEC_INVALID",
+      { stage: "protocol-region" },
+    );
   }
   return `GitCommit {"message": ${JSON.stringify(spec.message)}}`;
 }

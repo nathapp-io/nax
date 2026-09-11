@@ -7,6 +7,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { validateFilePath } from "../config/path-security";
+import { NaxError } from "../errors";
 import { aiderGenerator } from "./generators/aider";
 import { claudeGenerator } from "./generators/claude";
 import { cursorGenerator } from "./generators/cursor";
@@ -49,7 +50,10 @@ export interface GenerateOptions {
  */
 async function loadConstitutionContent(constitutionPath: string): Promise<ConstitutionContent> {
   if (!existsSync(constitutionPath)) {
-    throw new Error(`Constitution file not found: ${constitutionPath}`);
+    throw new NaxError(`Constitution file not found: ${constitutionPath}`, "CONSTITUTION_FILE_NOT_FOUND", {
+      stage: "constitution",
+      constitutionPath,
+    });
   }
 
   const file = Bun.file(constitutionPath);
@@ -70,7 +74,7 @@ function generateForAgent(
 ): { content: string; outputFile: string } {
   const generator = GENERATORS[agent];
   if (!generator) {
-    throw new Error(`Unknown agent type: ${agent}`);
+    throw new NaxError(`Unknown agent type: ${agent}`, "CONSTITUTION_UNKNOWN_AGENT", { stage: "constitution", agent });
   }
 
   const content = generator.generate(constitution);

@@ -169,7 +169,7 @@ export async function rollbackToRef(workdir: string, ref: string, untrackedBefor
   }
   if (exitCode !== 0) {
     logger.error("tdd", "Failed to rollback git changes", { ref, stderr });
-    throw new Error(`Git rollback failed: ${stderr}`);
+    throw new NaxError(`Git rollback failed: ${stderr}`, "GIT_ROLLBACK_FAILED", { stage: "tdd", ref, stderr });
   }
 
   if (untrackedBefore === null) {

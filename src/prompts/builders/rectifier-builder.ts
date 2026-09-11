@@ -13,6 +13,7 @@
  */
 
 import type { RectificationConfig } from "@/config";
+import { NaxError } from "@/errors";
 import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import type { ReviewCheckName, ReviewCheckResult } from "@/review";
@@ -125,7 +126,9 @@ function priorityForCheck(checkName: ReviewCheckName): RectificationPriority {
 }
 
 function assertNever(value: never): never {
-  throw new Error(`Unhandled review check category: ${String(value)}`);
+  throw new NaxError(`Unhandled review check category: ${String(value)}`, "UNHANDLED_REVIEW_CHECK", {
+    stage: "prompt",
+  });
 }
 
 function renderCheckBlock(check: ReviewCheckResult, opts?: RectifierRenderOpts): string {

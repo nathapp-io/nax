@@ -5,6 +5,7 @@
  */
 
 import path from "node:path";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
 import type { UserStory } from "../prd";
@@ -107,7 +108,11 @@ export async function buildContext(storyContext: StoryContext, budget: ContextBu
   const elements: ContextElement[] = [];
 
   const currentStory = prd.userStories.find((s) => s.id === currentStoryId);
-  if (!currentStory) throw new Error(`Story ${currentStoryId} not found in PRD`);
+  if (!currentStory)
+    throw new NaxError(`Story ${currentStoryId} not found in PRD`, "STORY_NOT_FOUND", {
+      stage: "context",
+      storyId: currentStoryId,
+    });
 
   // Add progress summary (highest priority)
   elements.push(createProgressContext(generateProgressSummary(prd), 100));
