@@ -27,24 +27,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { NaxError } from "../errors";
 import type { SpecLintFinding } from "../prd";
-import { lintSpecContent } from "../prd";
-
-/**
- * Lint codes that fail `nax plan` rather than warn.
- *
- * Every member means the same thing: the spec declares something the extractor
- * could not turn into a PRD entry, and the drop is silent. The `ac-*` codes are
- * deliberately absent — an untagged AC is visible in the PRD and fixable after
- * the fact, so it does not justify refusing to plan.
- */
-export const BLOCKING_SPEC_LINT_CODES: ReadonlySet<string> = new Set([
-  "modifies-declared-but-empty",
-  "modifies-unattributed",
-  "modifies-unknown-story",
-  "modifies-path-missing",
-  "modifies-multi-path-bullet",
-  "out-of-scope-not-extractable",
-]);
+import { BLOCKING_SPEC_LINT_CODES, lintSpecContent } from "../prd";
 
 export interface SpecLintGateOptions {
   /** Spec path, for the error message — the author needs to know which file. */

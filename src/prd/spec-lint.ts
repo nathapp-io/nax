@@ -44,6 +44,32 @@ const SHELL_IN_AC = /\bgrep\s+-|\bwc\s+-[lc]\b|\bawk\s|\bsed\s|\$\(/;
 const FILE_CONTENT_PHRASING =
   /contains the substring|contains exactly|matches the regex|does not contain|no file under/i;
 
+/**
+ * Lint codes that fail `nax plan` rather than warn.
+ *
+ * Every member means the same thing: the spec declares something the extractor
+ * could not turn into a PRD entry, and the drop is silent — nothing downstream
+ * reports it, and the story deadlocks mid-run against a red suite it has no
+ * permission to touch. That is the class worth refusing to plan for.
+ *
+ * The `ac-*` codes are deliberately absent. An untagged AC is visible in the
+ * PRD and fixable after the fact, and 26 of this repo's 195 specs carry one on
+ * already-shipped work, so blocking on them would make the gate undeployable.
+ *
+ * Lives here rather than with the gate that enforces it (`src/plan/
+ * spec-lint-gate.ts`) because it is a property of the findings, and because
+ * `src/cli/spec-lint-command.ts` needs it too — importing it from `src/plan`
+ * put `src/cli` and `src/plan` in a runtime import cycle.
+ */
+export const BLOCKING_SPEC_LINT_CODES: ReadonlySet<string> = new Set([
+  "modifies-declared-but-empty",
+  "modifies-unattributed",
+  "modifies-unknown-story",
+  "modifies-path-missing",
+  "modifies-multi-path-bullet",
+  "out-of-scope-not-extractable",
+]);
+
 export interface SpecLintFinding {
   readonly level: "error" | "warn";
   readonly code: string;

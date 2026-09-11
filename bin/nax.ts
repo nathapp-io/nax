@@ -67,6 +67,7 @@ import {
   runRoutingCalibrateCli,
   runsListCommand,
   runsShowCommand,
+  specLintCommand,
 } from "../src/cli";
 import { configCommand } from "../src/cli/config";
 import {
@@ -1743,6 +1744,49 @@ contextFragments
         ...(storyId !== undefined ? { storyId } : {}),
       });
       if (exitCode !== 0) process.exit(exitCode);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── spec ─────────────────────────────────────────────
+const spec = program.command("spec").description("Work with feature specs");
+
+spec
+  .command("lint [paths...]")
+  .description("Check a spec's machine-extracted sections before `nax plan` spends on it")
+  .option("-f, --feature <name>", "Lint this feature's spec.md instead of an explicit path")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--strict", "Fail on every error, not only the ones that block `nax plan`", false)
+  .action(async (paths: string[], options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    // Linting a spec must not require `nax init`: an author checking a draft
+    // before wiring up a project still deserves the answer. Without a project
+    // the AC cap falls back to the linter's own default.
+    const naxDir = findProjectDir(workdir);
+    const projectRoot = naxDir ? join(naxDir, "..") : workdir;
+    let maxAcCount: number | undefined;
+    if (naxDir) {
+      const config = await loadConfig(projectRoot);
+      maxAcCount = config?.precheck?.storySizeGate?.maxAcCount;
+    }
+    try {
+      const result = await specLintCommand({
+        dir: projectRoot,
+        paths,
+        feature: options.feature,
+        strict: options.strict === true,
+        ...(maxAcCount !== undefined ? { maxAcCount } : {}),
+      });
+      if (result.exitCode !== 0) process.exit(result.exitCode);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
