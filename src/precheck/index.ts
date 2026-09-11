@@ -15,6 +15,7 @@ import type { PRD } from "../prd/types";
 
 export {
   _checkDiskSpaceDeps,
+  _modelResolutionDeps,
   checkAgentCLI,
   checkBuildCommandInReviewChecks,
   checkCanonicalRulesLint,
@@ -28,6 +29,7 @@ export {
   checkHomeEnvValid,
   checkLanguageTools,
   checkLintCommand,
+  checkModelResolution,
   checkMultiAgentHealth,
   checkOptionalCommands,
   checkPendingStories,
@@ -53,6 +55,7 @@ import {
   checkHomeEnvValid,
   checkLanguageTools,
   checkLintCommand,
+  checkModelResolution,
   checkMultiAgentHealth,
   checkOptionalCommands,
   checkPendingStories,
@@ -135,10 +138,16 @@ function getEarlyEnvironmentBlockers(workdir: string): CheckFn[] {
 /**
  * Late environment checks — agent CLI, deps, commands, git user.
  * Run after PRD validation in runPrecheck; all included in runEnvironmentPrecheck.
+ *
+ * `checkModelResolution` sits after `checkAgentCLI` (AC10 / story invariant:
+ * model-resolution blocker is present in the tier-1 set and runs after
+ * checkAgentCLI). The check is fail-fast against native ids, so it must
+ * appear before any later blocker that would otherwise mask it.
  */
 function getLateEnvironmentBlockers(config: PrecheckConfig, workdir: string): CheckFn[] {
   return [
     () => checkAgentCLI(config),
+    () => checkModelResolution(config),
     () => checkDependenciesInstalled(workdir),
     () => checkTestCommand(config),
     () => checkLintCommand(config),

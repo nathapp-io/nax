@@ -89,6 +89,17 @@ export const precheckConfigSelector = pickSelector(
   // resolveDefaultAgent(config), which reads config.agent.default —
   // execution has no `agent` field (that was always reading undefined).
   "agent",
+  // US-1984 (model-resolution precheck): walks `models`, `plan.model`,
+  // `acceptance.model`, `autoMode.escalation.tierOrder[*]`,
+  // `tdd.sessionTiers.*`, and `routing.llm.model` literal pins
+  // (the latter two already covered partially by other consumers but
+  // listed here so the selector stays the SSOT for what precheck reads).
+  "models",
+  "plan",
+  "acceptance",
+  "autoMode",
+  "tdd",
+  "routing",
 );
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
 export const autofixConfigSelector = pickSelector("autofix", "quality", "execution");
