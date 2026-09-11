@@ -27,6 +27,7 @@ import {
   buildDispatchErrorEvent,
   buildFallbackRecord,
   buildSessionTurnEvent,
+  dispatchCompleteHop,
   resolveFinalDispatch,
   resolveHopCompleteOptions,
   validateAgentCredentials,
@@ -222,8 +223,13 @@ export class AgentManager implements IAgentManager {
     const _agentChain: string[] = [primaryAgent];
     let _finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
     let _totalCostUsd = 0;
-    // US-001: count of hops that reached `adapter.complete()`. Sole writer of
-    // the count every `buildCompleteOutcome` returns — mirrors runWithFallback.
+    // US-001: count of hops that returned a turn. Mirrors runWithFallback's
+    // semantics: a successful `adapter.complete()` return counts (even empty,
+    // because `sendWithFileOutput` synthesises a fail-stale failure for that
+    // case and empty IS a turn the adapter returned); a throw does NOT count
+    // (no turn was returned — analog of buildHopCallback's catch path setting
+    // `dispatched: false`). The AGENT_NOT_FOUND throw above this loop also
+    // doesn't count: no adapter was reached.
     let dispatchesCompleted = 0;
 
     try {
@@ -240,8 +246,9 @@ export class AgentManager implements IAgentManager {
           });
         }
 
-        let result: CompleteResult;
-        try {
+        // US-001: count only when the adapter returned a turn — a thrown call
+        // reached no model. See `dispatchCompleteHop` for the classification.
+        const captured = await dispatchCompleteHop(() => {
           const optionsWithLifecycle: ResolvedCompleteOptions = this._pidRegistry
             ? {
                 ...hopOptions,
@@ -249,19 +256,10 @@ export class AgentManager implements IAgentManager {
                 onPidExited: (pid: number) => this._pidRegistry?.unregister(pid),
               }
             : hopOptions;
-          result = await adapter.complete(prompt, optionsWithLifecycle);
-        } catch (err) {
-          result = {
-            output: "",
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-            adapterFailure: classifyCompleteException(err),
-          };
-        }
-        // US-001: every dispatch attempt counts — successful, throw, or empty.
-        // No "unbound" path here (the adapter is resolved directly), unlike
-        // runWithFallback where executeHop can fall back to unboundResult.
-        dispatchesCompleted += 1;
+          return adapter.complete(prompt, optionsWithLifecycle);
+        }, classifyCompleteException);
+        let result = captured.result;
+        if (captured.dispatched) dispatchesCompleted += 1;
 
         _totalCostUsd += result.estimatedCostUsd;
 

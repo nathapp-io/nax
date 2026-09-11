@@ -78,26 +78,25 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   let totalCostUsd = 0;
   let didSwap = false;
   // Count of hops that returned a turn — successful or not — across every retry
-  // and fallback attempt. Increments ONLY when the hop reached a model: an
-  // `endpoint` on the hop result means `executeHop` resolved a real dispatch
-  // (buildHopCallback via `resolveHopEndpoint`, or the `_runHop` seam with a
-  // default endpoint from `options.modelDef`). The `unboundResult` fallback
-  // (no `request.executeHop` and no `input.runHop`) returns NO endpoint and so
-  // does not count — wiring failure is not a dispatch. `callOp` raises
-  // `CALL_OP_NO_DISPATCH` when this is `0`, so this is the only writer of the
-  // zero-dispatch signal.
+  // and fallback attempt. `executeHop` stamps the `dispatched` flag on every
+  // return: `true` on the success path of `buildHopCallback` /
+  // `createSessionRunHop` (a turn was returned, even empty), `false` on every
+  // catch path (rate-limit, auth, unresolvable model, declined fallback swap,
+  // coding-tool setup failure, NativeSessionUnsupportedError) and on the
+  // `unboundResult` fallback (no `request.executeHop` and no `input.runHop`
+  // — wiring failure). The catch-path false values are the analog of the
+  // required `AgentRunOutcome.dispatchesCompleted` field's "0 means no hop
+  // reached a model" semantic. `callOp` raises `CALL_OP_NO_DISPATCH` when this
+  // is `0`, so this counter is the only writer of the zero-dispatch signal.
   let dispatchesCompleted = 0;
 
   try {
     while (true) {
       const hop = await executeHop(input, currentAgent, currentBundle, currentHopKind, currentRunOptions);
-      // Count only when the hop actually reached an adapter — see comment above.
-      // The `dispatched` flag is the explicit signal `executeHop` stamps; relying
-      // on `endpoint` here would miss a hop whose callback produced a real
-      // result but no endpoint (e.g. test stubs replacing `buildHopCallback`),
-      // and would also falsely fire for the `_runHop` seam whose default endpoint
-      // doesn't represent a turn. The flag is set false ONLY on the `unboundResult`
-      // fallback path.
+      // Increment only when the hop actually reached an adapter. The
+      // `dispatched` flag is authoritative — set by buildHopCallback's
+      // success / catch returns and by the runHop seam's success / catch
+      // returns, with `true` as the default for stubs that don't set it.
       if (hop.dispatched === true) {
         dispatchesCompleted += 1;
       }
