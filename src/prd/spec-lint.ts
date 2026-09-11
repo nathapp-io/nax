@@ -203,8 +203,11 @@ function readModifiesDeclaration(lines: readonly string[], fenced: ReadonlySet<n
       sectionBody.push(lines[i]);
     }
     // A section whose body OPENS with "None" is an explicit empty declaration,
-    // not a dropped list — the prose that follows justifies it.
-    const firstBodyLine = sectionBody.find((l) => l.trim().length > 0)?.trim() ?? "";
+    // not a dropped list — the prose that follows justifies it. A leading
+    // blockquote is commentary about the section, not its content, so it is
+    // skipped: authors routinely open a section with one, and treating it as
+    // the declaration line reports an honest empty as a silent drop.
+    const firstBodyLine = sectionBody.find((l) => l.trim().length > 0 && !l.trim().startsWith(">"))?.trim() ?? "";
     if (DECLARES_NONE.test(firstBodyLine)) declaresNone = true;
   }
 

@@ -287,6 +287,19 @@ None. No existing test pins a closed-world shape this feature changes.`;
     expect(codes).not.toContain("modifies-declared-but-empty");
   });
 
+  test("sees a None declaration that follows an explanatory blockquote", async () => {
+    const none = `### Modifies
+
+> Write the section even when the answer is nothing — an absent section and an
+> empty one read identically.
+
+None. No existing test pins a closed-world shape this feature changes.`;
+    const codes = lintText(specWith(none))
+      .filter((f) => f.level === "error")
+      .map((f) => f.code);
+    expect(codes).not.toContain("modifies-declared-but-empty");
+  });
+
   test("accepts a bare `Modifies: none` label line as an explicit empty declaration", async () => {
     const codes = lintText(specWith("Modifies: none"))
       .filter((f) => f.level === "error")
