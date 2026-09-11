@@ -135,7 +135,14 @@ export type FixCycleExitReason =
   | "validator-error"
   | "bail-when"
   | "agent-gave-up"
-  | "validate-short-circuit";
+  | "validate-short-circuit"
+  /**
+   * US-003 — a strategy dispatch raised `CALL_OP_NO_DISPATCH`: no hop of the
+   * operation ever reached a model, so the iteration attempted nothing and
+   * there is nothing for `validate` to judge. Distinct from `agent-gave-up`
+   * (the agent answered UNRESOLVED) and from `validate-short-circuit`.
+   */
+  | "no-dispatch";
 
 export interface FixCycleResult<F extends Finding = Finding> {
   iterations: Iteration<F>[];
