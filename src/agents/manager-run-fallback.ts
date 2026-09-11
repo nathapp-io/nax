@@ -77,16 +77,30 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
   let finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
   let totalCostUsd = 0;
   let didSwap = false;
-  // Count of hops that returned a turn (successful or not). Stub: tracked for the
-  // type contract; the implementer makes the count reflect actual hops that
-  // completed a turn. Every iteration of the while loop corresponds to one hop
-  // that did, so the counter increments unconditionally at the top.
+  // Count of hops that returned a turn — successful or not — across every retry
+  // and fallback attempt. Increments ONLY when the hop reached a model: an
+  // `endpoint` on the hop result means `executeHop` resolved a real dispatch
+  // (buildHopCallback via `resolveHopEndpoint`, or the `_runHop` seam with a
+  // default endpoint from `options.modelDef`). The `unboundResult` fallback
+  // (no `request.executeHop` and no `input.runHop`) returns NO endpoint and so
+  // does not count — wiring failure is not a dispatch. `callOp` raises
+  // `CALL_OP_NO_DISPATCH` when this is `0`, so this is the only writer of the
+  // zero-dispatch signal.
   let dispatchesCompleted = 0;
 
   try {
     while (true) {
-      dispatchesCompleted += 1;
       const hop = await executeHop(input, currentAgent, currentBundle, currentHopKind, currentRunOptions);
+      // Count only when the hop actually reached an adapter — see comment above.
+      // The `dispatched` flag is the explicit signal `executeHop` stamps; relying
+      // on `endpoint` here would miss a hop whose callback produced a real
+      // result but no endpoint (e.g. test stubs replacing `buildHopCallback`),
+      // and would also falsely fire for the `_runHop` seam whose default endpoint
+      // doesn't represent a turn. The flag is set false ONLY on the `unboundResult`
+      // fallback path.
+      if (hop.dispatched === true) {
+        dispatchesCompleted += 1;
+      }
       const { result } = hop;
       // The endpoint this hop dispatched — the identity a failure must be recorded
       // against. `currentHopKind.model` is a DECLARED literal pin and stays
@@ -310,20 +324,35 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
 /** Mirrors the `endpoint` shape `AgentRunRequest.executeHop` reports (manager-types.ts). */
 type HopEndpointLike = { readonly modelDef: ModelDef; readonly modelTier?: string };
 
+/** Internal shape returned by `executeHop`. Public callback results are spread into it. */
+interface HopResult {
+  result: AgentResult;
+  bundle?: AgentRunRequest["bundle"];
+  prompt?: string;
+  endpoint?: HopEndpointLike;
+  /** True only when the hop reached a real adapter — false on the `unboundResult` fallback. */
+  dispatched?: boolean;
+}
+
 async function executeHop(
   input: RunFallbackInput,
   agent: string,
   bundle: AgentRunRequest["bundle"],
   kind: HopKind,
   options: AgentRunOptions,
-) {
-  if (input.request.executeHop) return input.request.executeHop(agent, bundle, kind, options);
-  if (!input.runHop) return { result: unboundResult(agent), bundle };
+): Promise<HopResult> {
+  if (input.request.executeHop) {
+    const userResult = await input.request.executeHop(agent, bundle, kind, options);
+    // The user's hop callback IS a dispatch by definition — it replaced the
+    // internal dispatch path, so the hop necessarily reached wherever the
+    // callback points. Default to true so a callback that returns the public
+    // shape (no `dispatched` flag, see manager-types.ts) still counts.
+    return { ...userResult, dispatched: true };
+  }
+  if (!input.runHop) return { result: unboundResult(agent), bundle, dispatched: false };
   const raw = await input.runHop(agent, options);
-  const hop =
-    "result" in raw && raw.result != null
-      ? (raw as { result: AgentResult; prompt?: string; endpoint?: HopEndpointLike })
-      : { result: raw as unknown as AgentResult };
+  const hop: HopResult =
+    "result" in raw && raw.result != null ? (raw as HopResult) : { result: raw as unknown as AgentResult };
   // The `runHop` seam (SessionRunHopFn) reports no `endpoint` at all (nax#1965) — only
   // `executeHop` does. Default it from `options.modelDef` ONLY for a `primary` hop:
   // on a primary hop `options` IS, by construction, what this call was dispatched
@@ -339,7 +368,7 @@ async function executeHop(
   // `resolveHopEndpoint`, so this default only matters for the bare `runHop` seam.
   const endpoint: HopEndpointLike | undefined =
     hop.endpoint ?? (kind.kind === "primary" && options.modelDef ? { modelDef: options.modelDef } : undefined);
-  return { ...hop, bundle, endpoint };
+  return { ...hop, bundle, endpoint, dispatched: true };
 }
 
 function unboundResult(agent: string): AgentResult {

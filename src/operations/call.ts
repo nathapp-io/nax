@@ -144,6 +144,16 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         // nax#1712: mirror the run branch at the bottom of this file — a swap taken
         // inside completeWithFallback is only attributable to a story here.
         recordDispatchOutcome(ctx, completeOutcome, resolved.modelTier, sessionRole);
+        // US-001: zero-dispatch guard for complete-kind. Same placement rule
+        // as the run branch — before parse, after recording, so the per-story
+        // store still carries the failure that caused the zero-dispatch.
+        if (completeOutcome.dispatchesCompleted === 0) {
+          throw new NaxError(`callOp[${op.name}]: no dispatch completed`, "CALL_OP_NO_DISPATCH", {
+            stage: op.stage,
+            storyId: ctx.storyId,
+            agentName: dispatchAgent,
+          });
+        }
         const raw = completeOutcome.result;
         const parsedComplete = op.parse(raw.output, input, buildCtx);
         return await runPostParse(op, parsedComplete, input, buildCtx);
@@ -440,6 +450,17 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // not read this yet — see #1709.
   recordDispatchOutcome(ctx, outcome, resolved.modelTier, sessionRole);
   recordAdapterFailure(ctx, outcome.result.adapterFailure);
+
+  // US-001: zero-dispatch guard. Fires AFTER recording (AC9) and BEFORE parse,
+  // recover, exhaustedFallback, and the empty-output check, so each of those
+  // escape hatches stays reserved for the completed-dispatch case.
+  if (outcome.dispatchesCompleted === 0) {
+    throw new NaxError(`callOp[${op.name}]: no dispatch completed`, "CALL_OP_NO_DISPATCH", {
+      stage: op.stage,
+      storyId: ctx.storyId,
+      agentName: dispatchAgent,
+    });
+  }
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),
   // buildHopCallback's catch swallowed it. Surface it here before parse runs.

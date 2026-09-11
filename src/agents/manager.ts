@@ -222,6 +222,9 @@ export class AgentManager implements IAgentManager {
     const _agentChain: string[] = [primaryAgent];
     let _finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
     let _totalCostUsd = 0;
+    // US-001: count of hops that reached `adapter.complete()`. Sole writer of
+    // the count every `buildCompleteOutcome` returns — mirrors runWithFallback.
+    let dispatchesCompleted = 0;
 
     try {
       while (true) {
@@ -255,6 +258,10 @@ export class AgentManager implements IAgentManager {
             adapterFailure: classifyCompleteException(err),
           };
         }
+        // US-001: every dispatch attempt counts — successful, throw, or empty.
+        // No "unbound" path here (the adapter is resolved directly), unlike
+        // runWithFallback where executeHop can fall back to unboundResult.
+        dispatchesCompleted += 1;
 
         _totalCostUsd += result.estimatedCostUsd;
 
@@ -273,7 +280,7 @@ export class AgentManager implements IAgentManager {
 
         if (!result.adapterFailure) {
           _finalStatus = "ok";
-          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget, dispatchesCompleted);
         }
 
         const isFailStale = result.adapterFailure.outcome === "fail-stale";
@@ -319,14 +326,14 @@ export class AgentManager implements IAgentManager {
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
-            return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
+            return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget, dispatchesCompleted);
           }
           if (outcome === "retry") {
             rateLimitRetry += 1;
             continue;
           }
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
-          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget, dispatchesCompleted);
         }
 
         this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined);
@@ -345,14 +352,14 @@ export class AgentManager implements IAgentManager {
           });
           if (outcome === "cancelled") {
             _finalStatus = "cancelled";
-            return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
+            return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget, dispatchesCompleted);
           }
           if (outcome === "retry") {
             rateLimitRetry += 1;
             continue;
           }
           _finalStatus = "exhausted";
-          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget);
+          return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget, dispatchesCompleted);
         }
 
         hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);

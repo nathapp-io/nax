@@ -39,6 +39,7 @@ import type { AdapterFailure } from "@/context/engine";
 import type { CompleteOperation, RunOperation } from "@/operations";
 import { callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
+import type { SessionRunHopFn } from "@/runtime/session-run-hop";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -211,21 +212,25 @@ function managerReportingZeroDispatches(
 
 describe("AC1: AgentManager.runWithFallback — successful hop → dispatchesCompleted = 1", () => {
   test("a single successful hop that returns a turn yields dispatchesCompleted=1", async () => {
-    const registry = makeAgentRegistry({
-      getAgent: () =>
-        makeAgentAdapter({
-          openSession: async () => ({ id: "s1", agentName: "claude" }),
-          sendTurn: async () => ({
-            output: "ok",
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-            internalRoundTrips: 1,
-          }),
-          closeSession: async () => {},
-        }),
+    // Wire `runHop` so the hop actually reaches the seam — the count is only
+    // incremented when `executeHop` returns an `endpoint`, and the
+    // `unboundResult` fallback (no executeHop, no runHop) does NOT set one
+    // (see comment in manager-run-fallback.ts). Without this wiring the test
+    // would be indistinguishable from AC2's "no adapter" case and could not
+    // exercise the spec's "successful hop" claim.
+    const runHop: SessionRunHopFn = async () => ({
+      prompt: "p",
+      result: {
+        success: true,
+        exitCode: 0,
+        output: "ok",
+        rateLimited: false,
+        durationMs: 1,
+        estimatedCostUsd: 0.001,
+      },
     });
 
-    const manager = new AgentManager(makeAgentManagerConfig(), registry);
+    const manager = new AgentManager(makeAgentManagerConfig(), undefined, { runHop });
     const outcome: AgentRunOutcome = await manager.runWithFallback({
       runOptions: makeBaseRunOptions("US-001-ac1"),
       signal: undefined,
@@ -235,20 +240,19 @@ describe("AC1: AgentManager.runWithFallback — successful hop → dispatchesCom
   });
 
   test("boundary: dispatchesCompleted is a non-negative integer", async () => {
-    const registry = makeAgentRegistry({
-      getAgent: () =>
-        makeAgentAdapter({
-          openSession: async () => ({ id: "s1", agentName: "claude" }),
-          sendTurn: async () => ({
-            output: "ok",
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-            internalRoundTrips: 1,
-          }),
-          closeSession: async () => {},
-        }),
+    const runHop: SessionRunHopFn = async () => ({
+      prompt: "p",
+      result: {
+        success: true,
+        exitCode: 0,
+        output: "ok",
+        rateLimited: false,
+        durationMs: 1,
+        estimatedCostUsd: 0.001,
+      },
     });
-    const manager = new AgentManager(makeAgentManagerConfig(), registry);
+
+    const manager = new AgentManager(makeAgentManagerConfig(), undefined, { runHop });
     const outcome = await manager.runWithFallback({
       runOptions: makeBaseRunOptions("US-001-ac1-boundary"),
       signal: undefined,
