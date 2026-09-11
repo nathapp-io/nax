@@ -1,1 +1,3 @@
 [2026-09-11T09:21:01.154Z] US-001 — PASSED — Raise zero dispatch as a distinct callOp terminal outcome — Cost: $7.6560
+[2026-09-11T09:40:16.891Z] US-002 — PASSED — Fail closed when a review has no dispatch — Cost: $0.3816
+[2026-09-11T10:12:49.811Z] US-003 — PASSED — Skip rectification validation after zero dispatch — Cost: $0.9440

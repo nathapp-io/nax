@@ -3,7 +3,7 @@
   "feature": "dispatch-truth-and-model-validation",
   "branchName": "feat/dispatch-truth-and-model-validation",
   "createdAt": "2026-10-01T00:00:00.000Z",
-  "updatedAt": "2026-09-11T09:21:04.492Z",
+  "updatedAt": "2026-09-11T10:12:53.039Z",
   "userStories": [
     {
       "id": "US-001",
@@ -81,8 +81,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -131,14 +131,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The change modifies multi-strategy cycle termination, validator suppression, cost propagation, and separate orchestrator budget accounting."
+        "reasoning": "The change modifies multi-strategy cycle termination, validator suppression, cost propagation, and separate orchestrator budget accounting.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/findings/cycle.ts",
@@ -149,7 +152,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "019c712c556e3cb0f8903ea4132faf7b76ef840b"
     },
     {
       "id": "US-004",
@@ -184,7 +188,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The new native-only resolver and cross-surface traversal integrate catalog loading, config resolution, precheck fail-fast ordering, and distinct native versus ACP severity policy."
+        "reasoning": "The new native-only resolver and cross-surface traversal integrate catalog loading, config resolution, precheck fail-fast ordering, and distinct native versus ACP severity policy.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/precheck/index.ts",
@@ -206,6 +213,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "bf8c039d52279414c593ea3f66d2f070c20d020a",
       "outOfScope": [
         "network probing of model availability (local catalog lookup only); validating ids for agents other than native and acp."
       ]
