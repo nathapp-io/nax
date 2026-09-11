@@ -63,6 +63,8 @@ export function createSessionRunHop(
       codingSupport = await resolveCodingToolSupport(options);
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
+      // US-001: coding-tool setup failed before any adapter was reached — no model
+      // was dispatched. Mirrors build-hop-callback.ts.
       return {
         prompt: applyDiffAccessForAgentProtocol(agentName, promptWithToolPreamble(agentName, options), []),
         result: {
@@ -73,6 +75,7 @@ export function createSessionRunHop(
           durationMs: Date.now() - startMs,
           estimatedCostUsd: 0,
         },
+        dispatched: false,
       };
     }
     const advertisedTools = codingSupport ? codingSupport.tools.map((t) => t.name) : [];

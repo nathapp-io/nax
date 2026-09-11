@@ -321,6 +321,8 @@ export function buildHopCallback(
       codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
+      // US-001: coding-tool setup failed before any adapter was reached — no model
+      // was dispatched. Same signal as the catch path below.
       return {
         result: {
           success: false,
@@ -335,6 +337,7 @@ export function buildHopCallback(
         },
         bundle: workingBundle,
         prompt,
+        dispatched: false,
       };
     }
     const advertisedTools = codingSupport ? codingSupport.tools.map((t) => t.name) : [];
