@@ -52,6 +52,125 @@ describe("redirectForArgv", () => {
     expect(redirectForArgv(["bun", "add", "left-pad"], ALL, CMDS)).toBeUndefined();
   });
 });
+// nax#1999: `intendedTool` (argv) and `VERB_TOOLS` (bare verb) covered
+// DISJOINT command sets, and `redirectForVerb` routes a multi-token verb slot
+// into the argv table -- so which table answered depended on whether the model
+// typed a flag. Coverage came out inverted: `ls -la` redirected, `ls` did not;
+// `grep` redirected, `grep -n x y` did not. 20 of 34 post-#1971 denials carried
+// no redirect at all.
+describe("one table answers both entry points", () => {
+  const AVAILABLE = new Set(["Glob", "Git", "GitCommit", "Delete", "Grep", "Read", "RunCommand"]);
+
+  // The invariant the split could not express: for every head token either
+  // table knows, the bare verb and the same verb with an argument must name
+  // the same tool. This is what would have caught the drift.
+  // `rm` and `git` are excluded on purpose: their intent is decided by the
+  // SECOND token (`rm a.ts` is Delete but `rm -r dir` is nothing; `git log` is
+  // Git but `git add` is GitCommit), so they are shape-dependent by design and
+  // are pinned separately below.
+  test.each(["ls", "find", "cat", "wc", "grep", "diff", "log", "show", "status", "blame", "add", "commit"])(
+    "verb slot and argv slot agree on %s",
+    (head) => {
+      const bare = redirectForVerb("RunCommand", head, AVAILABLE, CMDS);
+      const withArg = redirectForVerb("RunCommand", `${head} a.ts`, AVAILABLE, CMDS);
+      // Agreement alone passes vacuously if a row is deleted and both sides go
+      // undefined. This test carries the whole point of #1999, so it pins
+      // coverage too.
+      expect(toolNamed(bare)).toBeDefined();
+      expect(toolNamed(bare)).toEqual(toolNamed(withArg));
+    },
+  );
+
+  function toolNamed(redirect: string | undefined): string | undefined {
+    if (redirect === undefined) return undefined;
+    const backticked = redirect.match(/`([A-Za-z:]+)`/);
+    if (backticked !== null) return backticked[1];
+    return redirect.includes("testScoped") ? "RunCommand:testScoped" : redirect;
+  }
+
+  test("a bare ls names Glob, as `ls -la` already did", () => {
+    expect(redirectForVerb("RunCommand", "ls", AVAILABLE, CMDS)).toContain("Glob");
+  });
+
+  test("grep with arguments names Grep, as a bare `grep` already did", () => {
+    expect(redirectForVerb("RunCommand", 'grep -n "foo" src/a.ts', AVAILABLE, CMDS)).toContain("Grep");
+    expect(redirectForArgv(["grep", "-n", "foo", "src/a.ts"], AVAILABLE, CMDS)).toContain("Grep");
+  });
+
+  test("cat names Read", () => {
+    expect(redirectForVerb("RunCommand", "cat src/a.ts", AVAILABLE, CMDS)).toContain("Read");
+    expect(redirectForArgv(["cat", "src/a.ts"], AVAILABLE, CMDS)).toContain("Read");
+  });
+
+  test("wc names Read, the nearest tool that can answer it", () => {
+    expect(redirectForVerb("RunCommand", "wc -l src/a.ts", AVAILABLE, CMDS)).toContain("Read");
+  });
+
+  test("a git write verb names GitCommit, not the package-manager install forms", () => {
+    expect(redirectForArgv(["git", "add", "src/a.ts"], AVAILABLE, CMDS)).toContain("GitCommit");
+    expect(redirectForArgv(["git", "commit", "-m", "wip"], AVAILABLE, CMDS)).toContain("GitCommit");
+  });
+
+  test("a git write verb says nothing when GitCommit was never advertised", () => {
+    expect(redirectForArgv(["git", "add", "src/a.ts"], new Set(["Glob"]), CMDS)).toBeUndefined();
+  });
+
+  // `git.ts` sets `allowedVerbs: GIT_READ_VERBS`, so EVERY Git verb-slot denial
+  // carries a write verb, arriving bare -- `commit`, not `git commit`. A
+  // GitCommit row reachable only via the `git ` prefix would never fire in the
+  // one slot Git denials actually come through, which is the same "depends on
+  // how the model typed it" inversion #1999 exists to kill.
+  test("a bare write verb in Git's own slot names GitCommit", () => {
+    expect(redirectForVerb("Git", "commit", AVAILABLE, CMDS)).toContain("GitCommit");
+    expect(redirectForVerb("Git", "add", AVAILABLE, CMDS)).toContain("GitCommit");
+  });
+
+  test("GitCommit's description names the arguments it requires", () => {
+    // buildCommitArgvs rejects a call without `message` AND a non-empty
+    // `paths`; "commits the working tree" would send the model into that error.
+    const redirect = redirectForVerb("Git", "commit", AVAILABLE, CMDS) ?? "";
+    expect(redirect).toContain("message");
+    expect(redirect).toContain("paths");
+    expect(redirect).not.toContain("working tree");
+  });
+
+  test("the wc redirect admits Read cannot actually count lines", () => {
+    // Read with no offset/limit returns a byte-bounded PREFIX, so counting the
+    // lines it returns under-reports exactly the large files the question is
+    // asked about. Naming Read beats a bare refusal only if the limit is said.
+    const redirect = redirectForVerb("RunCommand", "wc -l src/big.ts", AVAILABLE, CMDS) ?? "";
+    expect(redirect).toContain("truncated");
+  });
+
+  test("rm stays shape-dependent: one file is Delete, a recursive directory is nothing", () => {
+    expect(redirectForArgv(["rm", "a.ts"], AVAILABLE, CMDS)).toContain("Delete");
+    expect(redirectForArgv(["rm", "-r", "dir"], AVAILABLE, CMDS)).toBeUndefined();
+  });
+
+  test("git stays shape-dependent: a read verb is Git, a write verb is GitCommit", () => {
+    expect(redirectForArgv(["git", "log"], AVAILABLE, CMDS)).toContain("`Git`");
+    expect(redirectForArgv(["git", "add", "a.ts"], AVAILABLE, CMDS)).toContain("GitCommit");
+    expect(redirectForArgv(["git", "rm", "a.ts"], AVAILABLE, CMDS)).toContain("Delete");
+  });
+
+  test("still says nothing for a shape no tool serves", () => {
+    // Naming a tool that does not serve the intent is the defect this module
+    // exists to fix, so bash/mv/git restore stay unanswered on purpose.
+    expect(redirectForVerb("RunCommand", "bash", AVAILABLE, CMDS)).toBeUndefined();
+    expect(redirectForArgv(["mv", "a.ts", "b.ts"], AVAILABLE, CMDS)).toBeUndefined();
+    expect(redirectForVerb("Git", "restore", AVAILABLE, CMDS)).toBeUndefined();
+  });
+
+  test("still never names a tool the session does not hold", () => {
+    expect(redirectForVerb("RunCommand", "cat src/a.ts", new Set(["Glob"]), CMDS)).toBeUndefined();
+    expect(redirectForArgv(["grep", "-n", "x", "a.ts"], new Set(["Glob"]), CMDS)).toBeUndefined();
+  });
+
+  test("still does not tell Git it already has Git", () => {
+    expect(redirectForVerb("Git", "diff", AVAILABLE, CMDS)).toBeUndefined();
+  });
+});
+
 describe("runtime appends the redirect to a denial", () => {
   const root = mkdtempSync(join(tmpdir(), "nax-redirect-"));
 
@@ -156,9 +275,15 @@ describe("redirectForVerb (#1971)", () => {
     expect(redirectForVerb("Git", "diff", ALL, CMDS)).toBeUndefined();
   });
 
-  test("a multi-token git command line delegates directly to the argv table", () => {
-    expect(redirectForVerb("Git", "git diff", ALL, CMDS)).toContain("Git");
-    expect(redirectForVerb("Git", "git status", ALL, CMDS)).toContain("Git");
+  // Used to assert that `Git` denying "git diff" answers "this session already
+  // has `Git`" -- the contradiction the same-tool guard exists to prevent. It
+  // survived only because the multi-token path bypassed that guard on its way
+  // to the argv table, while a bare "diff" in the same slot was correctly
+  // silent. That inconsistency IS nax#1999; the guard now applies uniformly.
+  test("a git command line in Git's own slot stays silent rather than naming Git", () => {
+    expect(redirectForVerb("Git", "git diff", ALL, CMDS)).toBeUndefined();
+    expect(redirectForVerb("Git", "git status", ALL, CMDS)).toBeUndefined();
+    expect(redirectForVerb("Git", "diff", ALL, CMDS)).toBeUndefined();
   });
 
   test("a RunCommand multi-token git verb still redirects to Git", () => {
