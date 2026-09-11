@@ -30,4 +30,16 @@ describe("collectCommandChainWarnings", () => {
   test("is silent for undefined", () => {
     expect(collectCommandChainWarnings(undefined)).toEqual([]);
   });
+
+  // nax#1990 fix round 1 — a mixed-type array is plausible raw pre-Zod input
+  // (schema is z.union([z.string(), z.array(z.string()).min(1)]), so array
+  // elements aren't guaranteed to be strings before validation). Must not
+  // crash calling .trim() on the non-string element; falls through to Zod's
+  // own validation error downstream instead. Built via JSON.parse (returns
+  // an untyped value) so this deliberately-invalid fixture needs no type cast.
+  test("does not throw and is silent for a mixed-type array", () => {
+    const commands = JSON.parse('{"test": ["ok", 42]}');
+    expect(() => collectCommandChainWarnings(commands)).not.toThrow();
+    expect(collectCommandChainWarnings(commands)).toEqual([]);
+  });
 });

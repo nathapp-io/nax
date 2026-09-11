@@ -7,7 +7,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { _clearRootConfigCache, loadConfigForWorkdir } from "@/config/loader";
-import { getLogger } from "@/logger";
+import { addSink, getLogger, initLogger, resetLogger } from "@/logger";
 
 describe("loadConfigForWorkdir", () => {
   let tempDir: string;
@@ -246,5 +246,91 @@ describe("loadConfigForWorkdir", () => {
     await expect(loadConfigForWorkdir(rootConfigPath, "packages/api")).rejects.toThrow(
       /quality\.autofix\.maxTotalAttempts/,
     );
+  });
+
+  // nax#1990 fix round 1 — a root-level chained command must warn exactly
+  // once across an entire run, not once per `loadConfigForWorkdir` call.
+  // `loadConfigForWorkdir` is called once per package/story
+  // (iteration-runner.ts, parallel-batch.ts, runner-completion.ts,
+  // acceptance-setup.ts), and the root config load it wraps is cached per
+  // `cacheKey` — but the per-package overlay validation used to re-run the
+  // check against the ROOT-inherited value on every call, producing one
+  // warning per story instead of one per run.
+  describe("nax#1990 — quality.commands chain warning dedup across loadConfigForWorkdir calls", () => {
+    async function captureWarnings(load: () => Promise<unknown>): Promise<string[]> {
+      const captured: string[] = [];
+      resetLogger();
+      initLogger({ level: "warn" });
+      const removeSink = addSink((entry) => captured.push(entry.message));
+      try {
+        await load();
+      } finally {
+        removeSink();
+        resetLogger();
+      }
+      return captured;
+    }
+
+    test("a root-level-only chained command warns exactly once across multiple package resolutions", async () => {
+      writeFileSync(
+        join(tempDir, ".nax", "config.json"),
+        JSON.stringify({ quality: { commands: { typecheck: "tsc --noEmit && tsc -p tsconfig.test.json" } } }),
+      );
+      mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+      writeFileSync(
+        join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+        JSON.stringify({ routing: { strategy: "keyword" } }),
+      );
+      mkdirSync(join(tempDir, ".nax", "mono", "packages", "web"), { recursive: true });
+      writeFileSync(
+        join(tempDir, ".nax", "mono", "packages", "web", "config.json"),
+        JSON.stringify({ routing: { strategy: "keyword" } }),
+      );
+
+      const rootConfigPath = join(tempDir, ".nax", "config.json");
+      const captured = await captureWarnings(async () => {
+        // Simulates a run resolving the same root-level chain across
+        // several stories in several packages, as the real call sites do.
+        await loadConfigForWorkdir(rootConfigPath, "packages/api");
+        await loadConfigForWorkdir(rootConfigPath, "packages/api");
+        await loadConfigForWorkdir(rootConfigPath, "packages/web");
+      });
+
+      const chainWarnings = captured.filter((msg) => msg.includes("quality.commands.typecheck"));
+      expect(chainWarnings).toHaveLength(1);
+    });
+
+    test("a package-only chained command override is still caught", async () => {
+      writeFileSync(
+        join(tempDir, ".nax", "config.json"),
+        JSON.stringify({ quality: { commands: { typecheck: "tsc --noEmit" } } }),
+      );
+      mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+      writeFileSync(
+        join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+        JSON.stringify({ quality: { commands: { lint: "biome check && biome format" } } }),
+      );
+
+      const rootConfigPath = join(tempDir, ".nax", "config.json");
+      const captured = await captureWarnings(() => loadConfigForWorkdir(rootConfigPath, "packages/api"));
+
+      const chainWarnings = captured.filter((msg) => msg.includes("quality.commands.lint"));
+      expect(chainWarnings).toHaveLength(1);
+    });
+
+    test("a package profile's own chained command is still caught", async () => {
+      writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
+      mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+      writeFileSync(join(tempDir, ".nax", "mono", "packages", "api", "config.json"), JSON.stringify({ profile: "ci" }));
+      const profilesDir = join(tempDir, "packages", "api", ".nax", "profiles");
+      mkdirSync(profilesDir, { recursive: true });
+      writeFileSync(join(profilesDir, "ci.json"), JSON.stringify({ quality: { commands: { test: "a && b" } } }));
+
+      const rootConfigPath = join(tempDir, ".nax", "config.json");
+      const captured = await captureWarnings(() => loadConfigForWorkdir(rootConfigPath, "packages/api"));
+
+      const chainWarnings = captured.filter((msg) => msg.includes("quality.commands.test"));
+      expect(chainWarnings).toHaveLength(1);
+    });
   });
 });
