@@ -14,6 +14,7 @@
  * command-resolver.ts already applies to {{package}}.
  */
 import { statSync } from "node:fs";
+import type { QualityCommandSpec } from "../quality/command-spec";
 import { runQualityCommand } from "../quality/runner";
 import { shellQuoteArg } from "../verification/shell-quote";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
@@ -128,18 +129,53 @@ export function substituteCommand(template: string, values: Record<string, strin
   return template.replaceAll(PLACEHOLDER, (_m, key: string) => shellQuoteArg(values[key] as string));
 }
 
+/**
+ * Apply placeholder substitution across a spec. A list substitutes into every
+ * entry and fails as a whole if any entry fails, so a partially-substituted
+ * list can never reach the shell.
+ *
+ * Each entry only receives the subset of `values` it actually declares
+ * placeholders for -- list entries commonly have different placeholder needs
+ * (e.g. `["tsc --noEmit", "bun test {{files}}"]`), and `substituteCommand`
+ * rejects a value that isn't a placeholder in the template it's checking, by
+ * design (it's what stops a value silently going nowhere). Passing the full
+ * shared `values` object to every entry would make every entry without
+ * {{files}} fail that check.
+ */
+export function substituteCommandSpec(
+  spec: QualityCommandSpec,
+  values: Record<string, string>,
+): QualityCommandSpec | { error: string } {
+  if (typeof spec === "string") return substituteCommand(spec, values);
+  const out: string[] = [];
+  for (const entry of spec) {
+    const declaredKeys = new Set([...entry.matchAll(PLACEHOLDER)].map((m) => m[1] as string));
+    const entryValues: Record<string, string> = {};
+    for (const [key, value] of Object.entries(values)) {
+      if (declaredKeys.has(key)) entryValues[key] = value;
+    }
+    const substituted = substituteCommand(entry, entryValues);
+    if (typeof substituted !== "string") return substituted;
+    out.push(substituted);
+  }
+  return out;
+}
+
 // #1924, second half: the description-only fix, which is what prevents the
 // repeated-call loop rather than merely explaining it after the first
 // failure. Renders each declared command with the placeholders its OWN
 // template actually contains, so the model can pick values before it
 // guesses -- e.g. "test (no placeholders), testScoped ({{files}})".
-function describeDeclaredCommand(name: string, template: string): string {
-  const placeholders = [...new Set([...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string))];
+function describeDeclaredCommand(name: string, spec: QualityCommandSpec): string {
+  const templates = typeof spec === "string" ? [spec] : spec;
+  const placeholders = [
+    ...new Set(templates.flatMap((template) => [...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string))),
+  ];
   if (placeholders.length === 0) return `${name} (no placeholders)`;
   return `${name} (${placeholders.map((p) => `{{${p}}}`).join(", ")})`;
 }
 
-function describeDeclaredCommands(declared: ReadonlyMap<string, string>): string {
+function describeDeclaredCommands(declared: ReadonlyMap<string, QualityCommandSpec>): string {
   return [...declared.entries()].map(([name, template]) => describeDeclaredCommand(name, template)).join(", ");
 }
 
@@ -155,7 +191,7 @@ function describeExecAllowlist(patterns: readonly string[]): string {
 }
 
 export function createRunCommandTool(
-  declared: ReadonlyMap<string, string>,
+  declared: ReadonlyMap<string, QualityCommandSpec>,
   opts: RunCommandToolOptions = {},
 ): CodingTool {
   const keys = [...declared.keys()];
@@ -256,8 +292,8 @@ export function createRunCommandTool(
         }
       }
 
-      const command = substituteCommand(template, values);
-      if (typeof command !== "string") return { content: command.error, isError: true };
+      const command = substituteCommandSpec(template, values);
+      if (typeof command !== "string" && !Array.isArray(command)) return { content: command.error, isError: true };
 
       const result = await runQualityCommand({
         commandName: key,
