@@ -17,6 +17,7 @@ export { BLOCKING_CATEGORIES, categoryToFixTarget, resolveFixTarget } from "./ca
 export * from "./diff-utils";
 // Promoted from finding-filters: not re-exported by adversarial.ts (verify if that changes)
 export { hasInspectionTrail, substantiateAdversarialFindings } from "./finding-filters";
+export * from "./no-dispatch";
 export * from "./prepare-inputs";
 export * from "./recurrence-demotion";
 // `./runner` is NOT re-exported here (deliberately). Import `runReview` from

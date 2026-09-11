@@ -52,6 +52,11 @@ export function attachReviewAuditSubscriber(
       parsed: event.parsed,
       looksLikeFail: event.looksLikeFail,
       failOpen: event.failOpen,
+      // US-002 (dispatch-truth-and-model-validation) — carried onto the decision
+      // verbatim, so the audit record distinguishes "no model was reached" from
+      // "the model answered and we could not use its answer". Absent for a
+      // decision that parsed.
+      noDispatch: event.noDispatch,
       passed: event.passed,
       blockingThreshold: event.blockingThreshold,
       result: event.result,

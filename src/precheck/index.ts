@@ -15,6 +15,7 @@ import type { PRD } from "../prd/types";
 
 export {
   _checkDiskSpaceDeps,
+  _modelResolutionDeps,
   checkAgentCLI,
   checkBuildCommandInReviewChecks,
   checkCanonicalRulesLint,
@@ -28,6 +29,7 @@ export {
   checkHomeEnvValid,
   checkLanguageTools,
   checkLintCommand,
+  checkModelResolution,
   checkMultiAgentHealth,
   checkOptionalCommands,
   checkPendingStories,
@@ -53,6 +55,7 @@ import {
   checkHomeEnvValid,
   checkLanguageTools,
   checkLintCommand,
+  checkModelResolution,
   checkMultiAgentHealth,
   checkOptionalCommands,
   checkPendingStories,
@@ -135,10 +138,16 @@ function getEarlyEnvironmentBlockers(workdir: string): CheckFn[] {
 /**
  * Late environment checks — agent CLI, deps, commands, git user.
  * Run after PRD validation in runPrecheck; all included in runEnvironmentPrecheck.
+ *
+ * `checkModelResolution` sits after `checkAgentCLI` (AC10 / story invariant:
+ * model-resolution blocker is present in the tier-1 set and runs after
+ * checkAgentCLI). The check is fail-fast against native ids, so it must
+ * appear before any later blocker that would otherwise mask it.
  */
 function getLateEnvironmentBlockers(config: PrecheckConfig, workdir: string): CheckFn[] {
   return [
     () => checkAgentCLI(config),
+    () => checkModelResolution(config),
     () => checkDependenciesInstalled(workdir),
     () => checkTestCommand(config),
     () => checkLintCommand(config),
@@ -227,10 +236,15 @@ export async function runEnvironmentPrecheck(
       if (!silent && format === "human") printCheckResult(check);
       if (check.passed) {
         passed.push(check);
-      } else {
+      } else if (check.tier === "blocker") {
+        // Blockers are fail-fast (same as runPrecheck).
         blockers.push(check);
         blocked = true;
         break;
+      } else {
+        // Mixed-result checks (e.g. model-resolution) can emit warnings alongside
+        // blockers; route those to `warnings` so the env-precheck walk continues.
+        warnings.push(check);
       }
     }
     if (blocked) break;
@@ -293,10 +307,18 @@ export async function runPrecheck(
       if (!silent && format === "human") printCheckResult(check);
       if (check.passed) {
         passed.push(check);
-      } else {
+      } else if (check.tier === "blocker") {
+        // Blockers are fail-fast — emit and stop the tier-1 walk so downstream
+        // checks don't mask the actual cause.
         blockers.push(check);
         tier1Blocked = true;
         break;
+      } else {
+        // Mixed-result checks (e.g. model-resolution) can emit a warning from
+        // the same call site that produced a blocker; the orchestrator fans
+        // those into `warnings` so a transient catalog miss doesn't stop the
+        // run. The blocker, if any, was already pushed above.
+        warnings.push(check);
       }
     }
     if (tier1Blocked) break;

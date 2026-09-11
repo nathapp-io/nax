@@ -116,6 +116,7 @@ function managerSwappingComplete(deadAgent: string, liveAgent: string, dispatche
         fallbacks,
         finalTarget: { agent: swapped ? liveAgent : agentName },
         didSwap: swapped,
+        dispatchesCompleted: 1,
       };
     },
   });
@@ -149,6 +150,7 @@ function managerSwappingRunAndComplete(
       return {
         result: { output: "done", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
         fallbacks: [],
+        dispatchesCompleted: 1,
       };
     },
     runAsSessionFn: async () => ({

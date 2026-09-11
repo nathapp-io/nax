@@ -82,6 +82,13 @@ afterEach(async () => {
 
 // ---------------------------------------------------------------------------
 // AC1: empty agent output → synthesis fires → callOp throws CALL_OP_NO_OUTPUT
+//
+// US-001 invariant: every fixture here returns an outcome whose
+// `dispatchesCompleted` equals 1 — the empty / whitespace / refusal text was
+// actually returned by an adapter, so a dispatch DID happen. The new
+// CALL_OP_NO_DISPATCH code covers the no-dispatch case in call-no-dispatch.test.ts;
+// these tests stay on the CALL_OP_NO_OUTPUT path because their fixtures have
+// `dispatchesCompleted >= 1`.
 // ---------------------------------------------------------------------------
 
 describe("sendWithFileOutput — AC1: empty output synthesises fail-stale AdapterFailure", () => {
@@ -92,7 +99,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
       runWithFallbackFn: async (req) => {
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: "",
@@ -136,7 +143,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         // Capture what sendWithFileOutput synthesised on the TurnResult
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: "   ",
@@ -174,7 +181,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedOutput = hopResult.result.output;
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: "",
@@ -224,7 +231,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
       runWithFallbackFn: async (req) => {
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         // Agent acknowledged but wrote nothing to stdout — the file has the real output.
@@ -254,7 +261,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
       runWithFallbackFn: async (req) => {
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: "",
@@ -286,7 +293,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
       runWithFallbackFn: async (req) => {
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: "substantial agent output",
@@ -314,7 +321,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: "Selected model is at capacity. Please try a different model.",
@@ -349,7 +356,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: 'Agent "claude" failed: some session-level failure',
@@ -391,7 +398,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       // The agent's own stdout acknowledgement is benign — only the overlay file matters.
       runAsSessionFn: async () => ({
@@ -428,7 +435,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
         assertDefined(req.executeHop, "req.executeHop");
         const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: "",

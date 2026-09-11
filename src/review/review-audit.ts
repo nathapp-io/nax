@@ -73,6 +73,13 @@ export interface ReviewAuditEntry {
   looksLikeFail?: boolean;
   /** Whether the final review result failed open. */
   failOpen?: boolean;
+  /**
+   * US-002 (dispatch-truth-and-model-validation) — no dispatch reached a model,
+   * so the review produced no verdict. Distinct from `failOpen`: that one is a
+   * degraded PASS, this one is the absence of a review (the phase fails closed).
+   * Never both.
+   */
+  noDispatch?: boolean;
   /** Final review pass/fail after review-domain threshold handling. */
   passed?: boolean;
   /** Blocking threshold used to classify findings. */
@@ -211,6 +218,12 @@ export function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): stri
       parsed: entry.parsed,
       ...(entry.parsed ? {} : { looksLikeFail: entry.looksLikeFail ?? false }),
       failOpen: entry.failOpen ?? false,
+      // US-002 (dispatch-truth-and-model-validation) — written as the boolean
+      // itself (including explicit `false`, which a producer may stamp) when the
+      // entry carries it; `null` when it does not. Mirrors `modelPassed`: a JSON
+      // consumer needs to tell "declared false" from "not declared" from the
+      // schema, so the key is never omitted.
+      noDispatch: entry.noDispatch ?? null,
       passed: entry.passed ?? entry.result?.passed ?? null,
       naxVersion: entry.naxVersion ?? NAX_VERSION,
       naxCommit: entry.naxCommit ?? NAX_COMMIT,

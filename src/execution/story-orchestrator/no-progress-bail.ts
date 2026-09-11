@@ -28,6 +28,24 @@ function everyFixDeclined(iteration: Iteration<Finding>): boolean {
   return iteration.fixesApplied.length > 0 && iteration.fixesApplied.every((fa) => fa.unresolved !== undefined);
 }
 
+/**
+ * True when the iteration's dispatch raised `CALL_OP_NO_DISPATCH` (US-003) — no
+ * hop of the operation reached a model, so the iteration edited nothing and was
+ * never validated.
+ *
+ * Excluded from the window for the same reason as an all-declined iteration: a
+ * model that was never reached is evidence of nothing, so it must neither
+ * advance the streak nor reset it. Charging it instead bails a story whose
+ * dispatches are all failing for availability reasons — the one case where the
+ * bail's question ("is progress still possible?") cannot be answered by the
+ * iterations on record. The iteration itself is kept, not dropped: it carries
+ * the failed dispatch's spend, and the completed no-edit path (same
+ * `outcome: "unchanged"`, no marker) still counts as a real attempt.
+ */
+function dispatchedNoModel(iteration: Iteration<Finding>): boolean {
+  return iteration.noDispatch === true;
+}
+
 function madeNoProgress(iteration: Iteration<Finding>): boolean {
   if (iteration.findingsBefore.length === 0) return false;
   const after = new Set(iteration.findingsAfter.map(findingRecurrenceKey));
@@ -56,8 +74,9 @@ export function withNoProgressBail(
         }
         // Excluded, not counted as progress: a no-op iteration neither advances
         // the streak nor resets it — the window closes over the iterations that
-        // actually dispatched something.
-        const attempted = iterations.filter((it) => !everyFixDeclined(it));
+        // actually dispatched something. Zero-dispatch iterations (US-003) are
+        // excluded on the same grounds, and for the same consequence.
+        const attempted = iterations.filter((it) => !everyFixDeclined(it) && !dispatchedNoModel(it));
         if (attempted.length >= threshold) {
           const trailing = attempted.slice(-threshold);
           if (trailing.every(madeNoProgress)) {

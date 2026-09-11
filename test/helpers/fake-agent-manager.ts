@@ -158,11 +158,12 @@ export function fakeAgentManager(
           },
         };
       }
-      return { result, fallbacks: [] };
+      return { result, fallbacks: [], dispatchesCompleted: 1 };
     },
     completeWithFallback: async (prompt, opts) => ({
       result: await adapter.complete(prompt, opts),
       fallbacks: [],
+      dispatchesCompleted: 1,
     }),
     run: async (req) => {
       const outcome = await mgr.runWithFallback(req);
@@ -184,6 +185,7 @@ export function fakeAgentManager(
     completeAsWithFallback: async (agentName, prompt, opts) => ({
       result: await mgr.completeAs(agentName, prompt, opts),
       fallbacks: [],
+      dispatchesCompleted: 1,
     }),
     runAsSession: async (_agentName, handle, prompt, _opts) => {
       return adapter.sendTurn(handle, prompt, { interactionHandler: NO_OP_INTERACTION_HANDLER });

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-09-11T07-15-07-302Z",
+    "feature": "dispatch-truth-and-model-validation",
+    "startedAt": "2026-09-11T07:15:07.302Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 3062
+  },
+  "progress": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 17.455266596264,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 5,
+  "updatedAt": "2026-09-11T11:51:23.846Z",
+  "durationMs": 16576544,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-09-11T11:50:27.852Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-09-11T11:51:22.604Z"
+    }
+  },
+  "gates": {
+    "acceptance": "passed",
+    "regression": "passed"
+  }
+}

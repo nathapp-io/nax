@@ -49,6 +49,7 @@ function runtimeWith(fallbacks: AgentFallbackRecord[]): NaxRuntime {
         estimatedCostUsd: 0,
       },
       fallbacks,
+      dispatchesCompleted: 1,
     }),
   });
   const runtime = makeMockRuntime({ agentManager });

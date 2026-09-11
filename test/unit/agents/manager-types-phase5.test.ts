@@ -35,8 +35,10 @@ describe("AgentRunRequest — executeHop callback", () => {
       fallbacks: [],
       finalBundle: undefined,
       finalPrompt: undefined,
+      dispatchesCompleted: 1,
     };
     expect(outcome.finalBundle).toBeUndefined();
     expect(outcome.finalPrompt).toBeUndefined();
+    expect(outcome.dispatchesCompleted).toBe(1);
   });
 });

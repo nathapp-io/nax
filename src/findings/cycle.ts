@@ -12,7 +12,7 @@ import type { Logger } from "@/logger";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, newCorrelationId } from "@/operations";
 import { errorMessage } from "@/utils/errors";
-import { dispatchStrategy } from "./cycle-dispatch";
+import { dispatchGroup } from "./cycle-dispatch";
 import { recordIteration } from "./cycle-iteration-log";
 import { createDeclineLedger } from "./cycle-retirement";
 import {
@@ -268,23 +268,22 @@ export async function runFixCycle<F extends Finding>(
 
     // ── Execute strategies ────────────────────────────────────────────────────
     const group = selectExecutionGroup(uncappedActive);
-    const startedAt = now();
     const findingsBefore = [...cycle.findings];
-    const fixesApplied: FixApplied[] = [];
-
-    for (const strategy of group) {
-      // Correlation id, session override and both halves of the dispatch's
-      // spend live together in cycle-dispatch.ts, beside the ledger read they
-      // depend on. A throw propagates from here unchanged (#1948).
-      fixesApplied.push(
-        await dispatchStrategy(strategy, ctx, findingsBefore, cycle.iterations, {
-          callOp: doCallOp,
-          dispatchCallId: newCorrelationId(),
-          logger,
-          logCtx,
-        }),
-      );
-    }
+    // Correlation ids, the session override and both halves of the dispatch's
+    // spend live beside the dispatch they belong to (cycle-dispatch.ts). A throw
+    // propagates unchanged (#1948) — except US-003's CALL_OP_NO_DISPATCH, which
+    // becomes the zero-dispatch exit: nothing reached a model, so there is
+    // nothing for validate to judge.
+    const dispatch = await dispatchGroup({
+      strategies: group,
+      cycle,
+      ctx,
+      findingsBefore,
+      spentBeforeUsd: totalCostUsd,
+      deps: { callOp: doCallOp, newCallId: newCorrelationId, logger, logCtx, now },
+    });
+    if (dispatch.kind === "no-dispatch") return finish(dispatch.result);
+    const { fixesApplied, startedAt } = dispatch;
 
     // ── Handle agent-gave-up ──────────────────────────────────────────────────
     // Must run before the cap-exhausted skip-validate check: if the agent signals

@@ -114,6 +114,19 @@ export interface Iteration<F extends Finding = Finding> {
    * as `costUsd`, so its presence always means a dispatch actually failed.
    */
   errorCostUsd?: number;
+  /**
+   * US-003 — the iteration's dispatch raised `CALL_OP_NO_DISPATCH`: no hop of
+   * the operation ever reached a model, so nothing was edited and `validate`
+   * was skipped (`findingsAfter` equals `findingsBefore`, and the failed
+   * dispatch's spend rides on `fixesApplied` like any other attempt).
+   *
+   * Consumers care about exactly one thing: `withNoProgressBail` excludes these
+   * iterations from the no-progress window. An iteration that reached no model
+   * is evidence of nothing — it neither advances the streak nor resets it —
+   * where a completed no-edit iteration (same `outcome`, no marker) is real
+   * evidence about whether progress is possible.
+   */
+  noDispatch?: true;
   outcome: IterationOutcome;
   startedAt: string; // ISO-8601
   finishedAt: string; // ISO-8601
@@ -135,7 +148,14 @@ export type FixCycleExitReason =
   | "validator-error"
   | "bail-when"
   | "agent-gave-up"
-  | "validate-short-circuit";
+  | "validate-short-circuit"
+  /**
+   * US-003 — a strategy dispatch raised `CALL_OP_NO_DISPATCH`: no hop of the
+   * operation ever reached a model, so the iteration attempted nothing and
+   * there is nothing for `validate` to judge. Distinct from `agent-gave-up`
+   * (the agent answered UNRESOLVED) and from `validate-short-circuit`.
+   */
+  | "no-dispatch";
 
 export interface FixCycleResult<F extends Finding = Finding> {
   iterations: Iteration<F>[];

@@ -1,12 +1,16 @@
 /**
- * Dispatch-event builders for `AgentManager`.
+ * Dispatch helpers for `AgentManager`: event and outcome builders, plus the
+ * per-hop wrappers `manager.ts` can no longer hold inline.
  *
  * Extracted from `manager.ts` so the event shape — in particular the cost
  * attribution fields added by #1433 — lives in one reviewable place rather than
- * duplicated across the `runAsSession` and `completeAs` call sites.
+ * duplicated across the `runAsSession` and `completeAs` call sites. That file is
+ * at its 600-line hard ceiling (see `.claude/rules/project-conventions.md`
+ * "File Size"), so new per-hop logic lands here rather than inline.
  *
- * These builders are pure: they take what the caller already has and return an
- * event. All I/O (emitting, timing) stays with the manager.
+ * The builders are pure: they take what the caller already has and return a
+ * value. I/O stays with the manager and is injected — `validateAgentCredentials`
+ * receives the adapter lookup, `dispatchCompleteHop` receives the call.
  */
 
 import { resolveModel, trackedSpawnDeadlines } from "@/config";
@@ -476,6 +480,12 @@ export function buildCompleteOutcome(
   didSwap: boolean,
   currentTier: string | undefined,
   currentTarget: FallbackTarget | undefined,
+  // US-001: required parameter — no default. A default of 0 would defeat the
+  // compile-time enumeration the required `dispatchesCompleted` field on
+  // `AgentCompleteOutcome` is supposed to guarantee: a future new call site
+  // that forgets to pass the count would compile cleanly and silently ship
+  // `dispatchesCompleted: 0`, causing a spurious CALL_OP_NO_DISPATCH.
+  dispatchesCompleted: number,
 ): AgentCompleteOutcome {
   return {
     result,
@@ -483,5 +493,43 @@ export function buildCompleteOutcome(
     didSwap,
     ...(currentTier !== undefined ? { finalTier: currentTier } : {}),
     ...(currentTarget ? { finalTarget: currentTarget } : {}),
+    dispatchesCompleted,
   };
+}
+
+/**
+ * Run one `adapter.complete()` hop and report whether a turn was returned.
+ *
+ * A throw is converted into the failure-shaped `CompleteResult`
+ * `completeWithFallback` classifies, and reports `dispatched: false` — no model
+ * was reached (NativeSessionUnsupportedError, ACP spawn failure, rate-limit,
+ * auth, unresolvable model, declined fallback swap), so the hop must not advance
+ * the outcome's `dispatchesCompleted` (US-001). Mirrors the `dispatched` flag
+ * `buildHopCallback` / `createSessionRunHop` stamp on run-kind hops.
+ *
+ * `classifyFailure` is injected rather than imported: this module sits on the
+ * `src/agents` barrel's import cycle (check:import-cycles), and the classifier's
+ * own `./acp` barrel edge would close a second loop back through `manager.ts`.
+ *
+ * Extracted from `completeWithFallback`'s call site: `manager.ts` is at its
+ * 600-line hard ceiling and cannot hold the counting inline (see
+ * `.claude/rules/project-conventions.md` "File Size").
+ */
+export async function dispatchCompleteHop(
+  call: () => Promise<CompleteResult>,
+  classifyFailure: (err: unknown) => AdapterFailure,
+): Promise<{ result: CompleteResult; dispatched: boolean }> {
+  try {
+    return { result: await call(), dispatched: true };
+  } catch (err) {
+    return {
+      result: {
+        output: "",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+        adapterFailure: classifyFailure(err),
+      },
+      dispatched: false,
+    };
+  }
 }

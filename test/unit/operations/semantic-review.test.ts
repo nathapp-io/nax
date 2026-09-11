@@ -223,16 +223,21 @@ describe("semanticReviewOp.hopBody", () => {
   });
 });
 
-describe("semanticReviewOp — AC4: empty-output exhaustion returns FAIL_OPEN", () => {
-  test("returns FAIL_OPEN when agent returns empty output after retries", async () => {
+describe("semanticReviewOp — US-002 AC4: a completed dispatch still fails open", () => {
+  test("returns FAIL_OPEN when a completed dispatch returns empty output after retries", async () => {
     // semanticReviewOp now has exhaustedFallback; empty-output exhaustion should
     // produce the same FAIL_OPEN that parse failure already produces.
+    //
+    // `dispatchesCompleted: 1` states the case being simulated (US-002): the hop
+    // DID reach a model and returned a turn — the turn was empty. Only a dispatch
+    // that never completed is a `noDispatch` failure, so an unusable turn still
+    // takes the fail-open verdict.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
         const { executeHop } = req;
         assertDefined(executeHop, "req.executeHop");
         const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
-        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
       },
       runAsSessionFn: async () => ({
         output: "",
@@ -253,6 +258,39 @@ describe("semanticReviewOp — AC4: empty-output exhaustion returns FAIL_OPEN", 
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBe(true);
     expect(result.normalizedFindings).toEqual([]);
+    expect((result as { noDispatch?: boolean }).noDispatch).not.toBe(true);
+  });
+
+  test("returns FAIL_OPEN for a completed dispatch whose non-empty output is unparseable", async () => {
+    // The genuine give-up path US-002 must not disturb: a model WAS reached and
+    // answered, we just could not use the answer. `noDispatch` is reserved for
+    // the case where no turn ever came back.
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [], dispatchesCompleted: 1 };
+      },
+      runAsSessionFn: async () => ({
+        output: "I will not comply with this request.",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      semanticReviewOp,
+      SAMPLE_INPUT,
+    );
+
+    expect(result.passed).toBe(true);
+    expect(result.failOpen).toBe(true);
+    expect((result as { noDispatch?: boolean }).noDispatch).not.toBe(true);
   });
 
   test("parse-failure path still returns FAIL_OPEN — no regression", () => {

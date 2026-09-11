@@ -187,6 +187,40 @@ describe("attachReviewAuditSubscriber", () => {
     expect(decision.modelPassed).toBe(false); // model-claimed failure — preserved
   });
 
+  // US-002 (dispatch-truth-and-model-validation) — the zero-dispatch state must
+  // survive the event→decision seam, otherwise the audit record cannot tell
+  // "no model was reached" from a generic unparsed give-up.
+  test("forwards a zero-dispatch review decision onto the audit decision", () => {
+    const decisions: ReviewAuditDecision[] = [];
+    const bus = new DispatchEventBus();
+    attachReviewAuditSubscriber(
+      bus,
+      {
+        recordDispatch() {},
+        recordDecision: (e) => decisions.push(e),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
+      "run-1",
+    );
+
+    const event: ReviewDecisionEvent = {
+      kind: "review-decision",
+      reviewer: "semantic",
+      storyId: "US-002",
+      timestamp: 9000,
+      parsed: false,
+      passed: false,
+      noDispatch: true,
+      result: null,
+    };
+    bus.emitReviewDecision(event);
+
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].noDispatch).toBe(true);
+    expect(decisions[0].failOpen).toBeUndefined();
+  });
+
   test("unsubscribing stops review-decision forwarding", () => {
     const decisions: ReviewAuditDecision[] = [];
     const bus = new DispatchEventBus();

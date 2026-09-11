@@ -518,3 +518,52 @@ describe("recordIteration — costUsd omission (US-002 AC11)", () => {
     expect(Object.hasOwn(data, "costUsd")).toBe(false);
   });
 });
+
+// ─── US-003: the zero-dispatch marker rides on the iteration record ──────────
+
+describe("recordIteration — noDispatch marker (US-003)", () => {
+  test("US-003: stores noDispatch and emits it on the log record when the input carries it", () => {
+    const logger = makeLogger();
+    const iteration = recordIteration(
+      cycle,
+      {
+        findingsBefore: [],
+        findingsAfter: [],
+        // The failed dispatch still rides on fixesApplied, with the spend the
+        // ledger recorded against its callId.
+        fixesApplied: [{ strategyName: "lint-fix", op: "op-x", targetFiles: [], summary: "", costUsd: 0.9 }],
+        outcome: "unchanged",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        finishedAt: "2026-01-01T00:00:01.000Z",
+        noDispatch: true,
+      },
+      { cycleName: "my-cycle", storyId: "story-1" },
+      logger,
+    );
+    expect(iteration.noDispatch).toBe(true);
+    expect(recordCall(logger)?.data?.noDispatch).toBe(true);
+  });
+
+  test("US-003: omits noDispatch entirely for an ordinary iteration", () => {
+    const logger = makeLogger();
+    const iteration = recordIteration(
+      cycle,
+      {
+        findingsBefore: [],
+        findingsAfter: [],
+        fixesApplied: [],
+        outcome: "resolved",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        finishedAt: "2026-01-01T00:00:01.000Z",
+      },
+      { cycleName: "my-cycle", storyId: "story-1" },
+      logger,
+    );
+    expect(iteration.noDispatch).toBeUndefined();
+    const call = recordCall(logger);
+    assertDefined(call, "log entry");
+    const data = call.data;
+    assertDefined(data, "entry data");
+    expect(Object.hasOwn(data, "noDispatch")).toBe(false);
+  });
+});

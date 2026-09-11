@@ -35,6 +35,21 @@ export function toReviewDecisionPayload(opName: string, output: unknown): Review
   // from the raw record must surface it, just like #1889's threshold carries
   // through the give-up branch.
   const modelPassed = toModelPassed(record.modelPassed);
+  // US-002 (dispatch-truth-and-model-validation) — a review whose dispatch never
+  // reached a model has no verdict to report. Checked before the
+  // fail-open/looksLikeFail branches below because `noDispatch` is the absence of
+  // a review, not a degraded pass: `passed` must never be reachable as `true`
+  // from here, whatever else the output carries.
+  if (record.noDispatch === true) {
+    return {
+      reviewer,
+      parsed: false,
+      passed: false,
+      noDispatch: true,
+      result: null,
+      ...(blockingThreshold !== undefined ? { blockingThreshold } : {}),
+    };
+  }
   if (record.failOpen === true) {
     return {
       reviewer,
@@ -125,6 +140,12 @@ export function emitReviewDecision(ctx: CallContext, opName: string, output: unk
     parsed: payload.parsed,
     looksLikeFail: payload.parsed ? undefined : payload.looksLikeFail,
     failOpen: payload.parsed ? false : payload.failOpen,
+    // US-002 (dispatch-truth-and-model-validation) — a zero-dispatch review is
+    // reported as such, not as a give-up: gated behind `parsed` like the other
+    // give-up fields, and emitted in the audit record so an operator can tell
+    // "no model was reached" from "the model answered and we could not use its
+    // answer".
+    noDispatch: payload.parsed ? undefined : payload.noDispatch,
     passed: payload.passed,
     // advisoryFindings and acDropped were computed by both review ops and then
     // dropped here, so every review-audit record wrote them as null. See F3 of
@@ -175,7 +196,11 @@ export function logUnifiedReviewPhaseResult(storyId: string | undefined, opName:
   if (!payload) return;
 
   if (!payload.parsed) {
-    if (payload.failOpen) {
+    if (payload.noDispatch) {
+      // Distinct from a fail-open give-up: no model was reached, so there is no
+      // reviewer output to blame and the gate fails closed.
+      logger?.warn("review", `${payload.reviewer} review had no dispatch — failed closed`, { storyId });
+    } else if (payload.failOpen) {
       logger?.warn("review", `${payload.reviewer} review fail-open`, { storyId });
     } else if (payload.looksLikeFail) {
       logger?.warn("review", `${payload.reviewer} review returned truncated failure`, { storyId });

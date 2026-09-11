@@ -67,6 +67,14 @@ export interface AgentRunOutcome {
   finalTarget?: FallbackTarget;
   /** Ladder index of `finalTarget`, for the caller's slot record. */
   finalDepth?: number;
+  /**
+   * Count of hops that returned a turn — successful or not — across every retry and
+   * fallback attempt of this operation. A value of `0` means no hop reached a model
+   * and `callOp` will throw `CALL_OP_NO_DISPATCH` for this outcome. Required so the
+   * typecheck enumerates every construction site; an optional field would let a
+   * missed site silently report `undefined`.
+   */
+  dispatchesCompleted: number;
 }
 
 export interface AgentCompleteOutcome {
@@ -78,6 +86,13 @@ export interface AgentCompleteOutcome {
   finalTier?: string;
   /** The resolved target the final hop ran on — see `AgentRunOutcome.finalTarget` (nax#1964). */
   finalTarget?: FallbackTarget;
+  /**
+   * Count of hops that returned a turn — successful or not — across every retry and
+   * fallback attempt of this operation. A value of `0` means no hop reached a model
+   * and `callOp` will throw `CALL_OP_NO_DISPATCH` for this outcome. Required so the
+   * typecheck enumerates every construction site.
+   */
+  dispatchesCompleted: number;
 }
 
 export type AgentManagerEventName = "onAgentSelected" | "onSwapAttempt" | "onAgentUnavailable" | "onSwapExhausted";
@@ -123,6 +138,16 @@ export interface AgentRunRequest {
      * config-default primary declares neither (nax#1965).
      */
     endpoint?: { readonly modelDef: import("../config/schema-types").ModelDef; readonly modelTier?: string };
+    /**
+     * US-001: explicit signal that the hop reached a real adapter. `true` on the
+     * success path that returned a turn (possibly empty — empty IS a turn the
+     * adapter returned). `false` on the catch path that synthesises a failure
+     * from a thrown `agentManager.runAsSession` — no model was reached, so
+     * `runWithFallback` does NOT count this hop as a dispatch. Callbacks that
+     * omit the field default to `true` so the "callback IS a dispatch"
+     * assumption is preserved for stub callbacks.
+     */
+    dispatched?: boolean;
   }>;
   /**
    * When true, runWithFallback dispatches at most one hop on the primary agent

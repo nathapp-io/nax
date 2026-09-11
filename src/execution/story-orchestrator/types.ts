@@ -141,6 +141,13 @@ export type ReviewDecisionPayload =
       passed?: boolean;
       failOpen?: boolean;
       looksLikeFail?: boolean;
+      /**
+       * US-002 — no dispatch reached a model, so this review produced no verdict
+       * (`callOp` raised `CALL_OP_NO_DISPATCH`). Always accompanies
+       * `passed: false` and never `failOpen: true`: the absence of a review, not
+       * a degraded pass.
+       */
+      noDispatch?: boolean;
       result: null;
       /**
        * Clipped preview of the output that could not be parsed. Without it a
