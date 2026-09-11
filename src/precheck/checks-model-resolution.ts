@@ -22,7 +22,12 @@
 
 import { resolveNativeId } from "@/agents/native";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
-import { collectConfiguredModelPins, type LiteralPin, type ModelsTierEntry } from "./checks-model-resolution-walk";
+import {
+  collectConfiguredModelPins,
+  type LiteralPin,
+  type ModelsTierEntry,
+  splitEntry,
+} from "./checks-model-resolution-walk";
 import type { Check } from "./types";
 
 // Re-export so existing callers importing LiteralPin from checks keep working
@@ -57,21 +62,6 @@ export const _modelResolutionDeps: ModelResolutionDeps = {
 /** True when the resolver table for `agent` routes through the native path. */
 function isNativeAgent(agent: string): boolean {
   return agent === "native";
-}
-
-/** Default provider when an entry string lacks a "/". Same shape as schema-types#resolveModel. */
-function providerFromEntry(entry: string): string {
-  if (entry.startsWith("claude")) return "anthropic";
-  if (entry.startsWith("gpt") || entry.startsWith("o1") || entry.startsWith("o3")) return "openai";
-  if (entry.startsWith("gemini")) return "google";
-  return "unknown";
-}
-
-/** Split an entry like "provider/model" into provider+model. Bare strings get a heuristic provider. */
-function splitEntry(entry: string): { provider: string; model: string } {
-  const slash = entry.indexOf("/");
-  if (slash === -1) return { provider: providerFromEntry(entry), model: entry };
-  return { provider: entry.slice(0, slash), model: entry.slice(slash + 1) };
 }
 
 export { collectConfiguredModelPins };
@@ -129,10 +119,8 @@ export async function checkModelResolution(config: unknown): Promise<Check[]> {
           passed: false,
           message: `[model-resolution] Native model id does not resolve in the catalog: ${entry.keyPath} provider=${entry.provider} model=${entry.model}. Add the id to agent.native.catalogOverrides or pick a tier that ships in the bundled catalog.`,
         });
-        continue;
       }
       // resolved — nothing to report at the entry itself
-      continue;
     }
   }
 
@@ -155,7 +143,6 @@ export async function checkModelResolution(config: unknown): Promise<Check[]> {
           passed: false,
           message: `[model-resolution] Native model id does not resolve in the catalog: ${pin.keyPath} provider=${provider} model=${model}. Add the id to agent.native.catalogOverrides or pick a tier that ships in the bundled catalog.`,
         });
-        continue;
       }
       // resolved — check AC7: did the literal pin drop tier-configured pricing/contextWindow?
       const tierEntry = findTierEntryForPin(tierEntries, pin);
@@ -173,7 +160,6 @@ export async function checkModelResolution(config: unknown): Promise<Check[]> {
           message: `[model-resolution] Literal pin ${pin.keyPath} names "${pin.model}", routing through the literal path drops tier-configured ${dropped} from models.${tierEntry.agent}.${tierEntry.tier}. Move the override under agent.native.catalogOverrides, or pin by tier name to keep it.`,
         });
       }
-      continue;
     }
   }
 

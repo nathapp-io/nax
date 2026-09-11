@@ -37,7 +37,6 @@ export interface ResolveResult {
 }
 
 /**
-/**
  * Production resolver. Builds the cached client once per override set, then
  * calls `client.model(provider, model)` for every native id the precheck
  * walker hands it. The bundled catalog loads once per process via
