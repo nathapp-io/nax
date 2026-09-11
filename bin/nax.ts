@@ -67,6 +67,7 @@ import {
   runRoutingCalibrateCli,
   runsListCommand,
   runsShowCommand,
+  specLintCommand,
 } from "../src/cli";
 import { configCommand } from "../src/cli/config";
 import {
@@ -208,6 +209,7 @@ program
   .option("--parallel <n>", "Max parallel sessions (0=auto, omit=sequential)")
   .option("--plan", "Run plan phase first before execution", false)
   .option("--from <spec-path>", "Path to spec file (required when --plan is used)")
+  .option("--no-spec-lint", "Plan even when the spec declares sections that extract to nothing")
   .option("--one-shot", "Skip interactive planning Q&A, use single LLM call (ACP only)", false)
   .option("--force", "Force overwrite existing prd.json when using --plan", false)
   .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
@@ -428,6 +430,8 @@ program
           feature: options.feature,
           auto: options.oneShot ?? false, // interactive by default; --one-shot skips Q&A
           branch: undefined,
+          // Commander maps `--no-spec-lint` to `specLint: false`; unset means on.
+          skipSpecLint: options.specLint === false,
         });
         const generatedPrdPath = planResult.outputPath;
         warnIfPlanDegraded(planResult);
@@ -979,6 +983,7 @@ program
   .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--decompose <storyId>", "Decompose an existing story into sub-stories")
+  .option("--no-spec-lint", "Plan even when the spec declares sections that extract to nothing")
   .option(
     "--profile <name>",
     "Profile(s) to overlay (comma-separated or repeated; later overrides earlier)",
@@ -1047,6 +1052,8 @@ program
           feature: options.feature,
           auto: options.auto || options.oneShot, // --auto and --one-shot are aliases
           branch: options.branch,
+          // Commander maps `--no-spec-lint` to `specLint: false`; unset means on.
+          skipSpecLint: options.specLint === false,
         });
 
         warnIfPlanDegraded(planResult);
@@ -1737,6 +1744,49 @@ contextFragments
         ...(storyId !== undefined ? { storyId } : {}),
       });
       if (exitCode !== 0) process.exit(exitCode);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── spec ─────────────────────────────────────────────
+const spec = program.command("spec").description("Work with feature specs");
+
+spec
+  .command("lint [paths...]")
+  .description("Check a spec's machine-extracted sections before `nax plan` spends on it")
+  .option("-f, --feature <name>", "Lint this feature's spec.md instead of an explicit path")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--strict", "Fail on every error, not only the ones that block `nax plan`", false)
+  .action(async (paths: string[], options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    // Linting a spec must not require `nax init`: an author checking a draft
+    // before wiring up a project still deserves the answer. Without a project
+    // the AC cap falls back to the linter's own default.
+    const naxDir = findProjectDir(workdir);
+    const projectRoot = naxDir ? join(naxDir, "..") : workdir;
+    let maxAcCount: number | undefined;
+    if (naxDir) {
+      const config = await loadConfig(projectRoot);
+      maxAcCount = config?.precheck?.storySizeGate?.maxAcCount;
+    }
+    try {
+      const result = await specLintCommand({
+        dir: projectRoot,
+        paths,
+        feature: options.feature,
+        strict: options.strict === true,
+        ...(maxAcCount !== undefined ? { maxAcCount } : {}),
+      });
+      if (result.exitCode !== 0) process.exit(result.exitCode);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);

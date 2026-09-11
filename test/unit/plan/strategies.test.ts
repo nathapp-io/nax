@@ -170,6 +170,45 @@ describe("buildPlanModeContext", () => {
     }
   });
 
+  test("refuses to plan a spec whose Modifies entries all extract to nothing", async () => {
+    const dropping = `# SPEC: Fixture
+
+## Stories
+
+### US-001 — Do the thing
+
+Modifies:
+- **US-001** \`src/a.ts\` — reason
+`;
+    const deps = makeDeps({ readFile: mock(async () => dropping) });
+
+    await expect(
+      buildPlanModeContext(SAMPLE_WORKDIR, makeNaxConfig(), { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE }, deps),
+    ).rejects.toThrow(/PLAN_SPEC_LINT_FAILED|extract to nothing/);
+  });
+
+  test("plans the same spec anyway when the caller passed --no-spec-lint", async () => {
+    const dropping = `# SPEC: Fixture
+
+## Stories
+
+### US-001 — Do the thing
+
+Modifies:
+- **US-001** \`src/a.ts\` — reason
+`;
+    const deps = makeDeps({ readFile: mock(async () => dropping) });
+
+    const ctx = await buildPlanModeContext(
+      SAMPLE_WORKDIR,
+      makeNaxConfig(),
+      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE, skipSpecLint: true },
+      deps,
+    );
+
+    expect(ctx.specContent).toBe(dropping);
+  });
+
   test("returns a null interaction chain when initInteractionChain resolves null", async () => {
     const fullConfig = makeNaxConfig();
     const deps = makeDeps({

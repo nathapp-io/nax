@@ -112,6 +112,14 @@ export {
 export { type SetupOptions, setupCommand } from "./setup";
 export { _writeSetupDeps, type WriteSetupConfigResult, writeSetupConfig } from "./setup-write";
 export {
+  _specLintCommandDeps,
+  type SpecLintCommandDeps,
+  type SpecLintCommandOptions,
+  type SpecLintCommandResult,
+  type SpecLintFileReport,
+  specLintCommand,
+} from "./spec-lint-command";
+export {
   type CostReportEmitDeps,
   displayCostMetrics,
   displayFeatureStatus,
