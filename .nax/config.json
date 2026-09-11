@@ -124,7 +124,7 @@
     "commands": {
       "test": "bun run test",
       "typecheck": ["bun x tsc --noEmit", "bun x tsc --noEmit -p tsconfig.test.json"],
-      "lint": ["bun x biome check --error-on-warnings src/ bin/ test/ scripts/", "bun run check:all"],
+      "lint": ["AGENT=1 bun run lint:biome", "AGENT=1 bun run check:all-without-biome"],
       "coverage": "bun run test:coverage",
       "build": "bun run build",
       "testScoped": "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",

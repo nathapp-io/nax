@@ -41,7 +41,7 @@ export interface CiEntryPoints {
   scriptFiles: string[];
 }
 
-const BUN_RUN_RE = /bun\s+run\s+([A-Za-z0-9:_-]+)/g;
+const BUN_RUN_RE = /bun\s+run\s+(?:--\S+\s+)*([A-Za-z0-9:_-]+)/g;
 const SCRIPT_FILE_RE = /scripts\/(check-[A-Za-z0-9._-]+\.(?:ts|sh))/g;
 const MATRIX_CHECK_RE = /check:\s*\[([^\]]+)\]/g;
 
