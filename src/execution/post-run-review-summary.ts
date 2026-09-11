@@ -11,9 +11,13 @@ import type { PipelineContext } from "../pipeline/types";
 
 /** Sets `ctx.reviewsFailedOpen` (only when nonzero) from the story's review phase outputs. */
 export function applyReviewsFailedOpen(ctx: PipelineContext, phaseOutputs: Record<string, unknown>): void {
-  const count = [phaseOutputs[semanticReviewOp.name], phaseOutputs[adversarialReviewOp.name]].filter(
-    (output) => (output as { failOpen?: boolean } | undefined)?.failOpen === true,
-  ).length;
+  const count = [phaseOutputs[semanticReviewOp.name], phaseOutputs[adversarialReviewOp.name]].filter((output) => {
+    const result = output as { failOpen?: boolean; noDispatch?: boolean } | undefined;
+    // ENH-20 counts degraded PASSES. A `noDispatch` result is the absence of a
+    // review, not a pass — it is reported through the failed check result and
+    // must never inflate this tally (US-002).
+    return result?.failOpen === true && result.noDispatch !== true;
+  }).length;
   if (count) ctx.reviewsFailedOpen = count;
 }
 

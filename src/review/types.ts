@@ -158,6 +158,19 @@ export interface ReviewCheckResult {
    * Consumers in a retry context (autofixAttempt > 0) must treat this as a non-genuine pass. */
   failOpen?: boolean;
   /**
+   * True when no dispatch reached a model, so this check produced no verdict.
+   *
+   * Written by the review phases when `callOp` raises `CALL_OP_NO_DISPATCH` —
+   * every hop of the operation ended without a completed turn (rate-limit
+   * exhaustion, an unresolvable model, a declined fallback swap).
+   *
+   * Always accompanies `success: false` and is mutually exclusive with
+   * `failOpen: true`: a fail-open check is a degraded PASS, while `noDispatch`
+   * is the absence of a review. Degraded-pass metrics (`RunResult.reviewsFailedOpen`)
+   * count only the former.
+   */
+  noDispatch?: boolean;
+  /**
    * Optional scoped-lint metadata for autofix/review consumers.
    * Provides explicit package grouping and structured out-of-scope status.
    */

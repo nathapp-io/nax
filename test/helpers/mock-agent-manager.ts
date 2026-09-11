@@ -106,6 +106,13 @@ export interface MockAgentManagerOptions {
       agentFallbacks: unknown[];
     };
     fallbacks: unknown[];
+    /**
+     * Hops that returned a turn, successful or not — `AgentRunOutcome.dispatchesCompleted`
+     * (US-001). The override's outcome is returned verbatim, so a fixture that omits
+     * it reports `undefined` and `callOp`'s zero-dispatch guard cannot fire. Set it
+     * explicitly so a fixture states which side of the guard it simulates.
+     */
+    dispatchesCompleted?: number;
   }>;
   completeWithFallbackFn?: (
     prompt: string,

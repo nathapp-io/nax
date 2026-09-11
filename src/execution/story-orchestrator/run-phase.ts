@@ -14,6 +14,7 @@ import {
   prepareAdversarialReviewInput,
   prepareSemanticReviewInput,
   recordReviewIteration,
+  toNoDispatchCheckResult,
 } from "@/review";
 import { totalSpendUsd } from "@/runtime";
 import { errorMessage } from "@/utils/errors";
@@ -330,6 +331,21 @@ export async function runPhase(
 
     return output;
   } catch (err) {
+    // US-002 — a review whose dispatch never reached a model produced no
+    // verdict, so it must fail closed rather than propagate the dispatch error
+    // (adversarial) or degrade to a fail-open pass (semantic). Only the two
+    // review phases convert; every other phase's error propagates unchanged.
+    const noDispatch = toNoDispatchCheckResult(opName, err, Date.now() - phaseStartedAt);
+    if (noDispatch) {
+      // Recorded as the phase output so the review's consumers — the decision
+      // payload/audit, the orchestrator verdict, the post-run metrics — all read
+      // the absent review instead of an unexpected phase error.
+      phaseOutputs[opName] = noDispatch;
+      emitReviewDecision(ctx, opName, noDispatch);
+      logUnifiedReviewPhaseResult(ctx.storyId, opName, noDispatch);
+      outcome = "failed";
+      return noDispatch;
+    }
     outcome = "error";
     throw err;
   } finally {

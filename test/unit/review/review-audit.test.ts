@@ -618,6 +618,23 @@ describe("toPersistedEntry", () => {
     expect(json.modelPassed).toBeNull();
   });
 
+  // US-002 (dispatch-truth-and-model-validation) — a zero-dispatch review is
+  // persisted as its own state, not as a fail-open give-up: noDispatch:true with
+  // failOpen:false in the same record.
+  test("persists a zero-dispatch decision as noDispatch:true / failOpen:false", () => {
+    const json = JSON.parse(
+      toPersistedEntry({ ...base, parsed: false, passed: false, noDispatch: true, result: null }, 1_700_000_000_000),
+    );
+    expect(json.noDispatch).toBe(true);
+    expect(json.failOpen).toBe(false);
+    expect(json.passed).toBe(false);
+  });
+
+  test("writes noDispatch:null when the entry does not declare it (matches modelPassed's convention)", () => {
+    const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
+    expect(json.noDispatch).toBeNull();
+  });
+
   // US-002 — adversarial-review finding: end-to-end persistence of the
   // headline scenario. modelPassed:false must survive alongside a passed:true
   // verdict (the framework's flipped verdict after nax#1378 sub-threshold

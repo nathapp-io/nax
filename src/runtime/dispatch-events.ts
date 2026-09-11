@@ -191,6 +191,14 @@ export interface ReviewDecisionEvent {
   readonly parsed: boolean;
   readonly looksLikeFail?: boolean;
   readonly failOpen?: boolean;
+  /**
+   * US-002 — no dispatch reached a model, so this review produced no verdict
+   * (`callOp` raised `CALL_OP_NO_DISPATCH`). Distinct from `failOpen`, which is
+   * a degraded PASS: this is the absence of a review, and the phase fails closed
+   * on it. Persisted onto the review-audit record so the two outcomes stay
+   * distinguishable after the run.
+   */
+  readonly noDispatch?: boolean;
   readonly passed?: boolean;
   readonly blockingThreshold?: "error" | "warning" | "info";
   readonly result: { passed: boolean; findings: unknown[] } | null;
