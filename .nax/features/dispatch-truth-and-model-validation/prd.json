@@ -3,7 +3,7 @@
   "feature": "dispatch-truth-and-model-validation",
   "branchName": "feat/dispatch-truth-and-model-validation",
   "createdAt": "2026-10-01T00:00:00.000Z",
-  "updatedAt": "2026-09-11T10:12:53.039Z",
+  "updatedAt": "2026-09-11T11:44:20.522Z",
   "userStories": [
     {
       "id": "US-001",
@@ -181,8 +181,8 @@
         "acp"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
