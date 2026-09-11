@@ -6,6 +6,7 @@
 
 import { join } from "node:path";
 import { buildAllowedEnv } from "../agents/shared/env";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { parseCommandToArgv } from "../utils/command-argv";
 import { loadJsonFile } from "../utils/json-file";
@@ -147,7 +148,9 @@ export function validateHookCommand(command: string): void {
 
   for (const pattern of dangerousPatterns) {
     if (pattern.test(command)) {
-      throw new Error(`Hook command contains dangerous pattern: ${pattern.source}`);
+      throw new NaxError(`Hook command contains dangerous pattern: ${pattern.source}`, "HOOK_DANGEROUS_PATTERN", {
+        stage: "hooks",
+      });
     }
   }
 }

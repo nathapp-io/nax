@@ -1,10 +1,10 @@
 {
-  "updatedAt": "2026-09-09T10:23:01.820Z",
+  "updatedAt": "2026-09-11T14:41:15.921Z",
   "byFile": {
     "src/execution/unified-executor.ts": 734,
-    "src/interaction/plugins/telegram.ts": 613,
+    "src/interaction/plugins/telegram.ts": 602,
     "src/prd/schema.ts": 629,
-    "src/prompts/builders/rectifier-builder.ts": 981,
+    "src/prompts/builders/rectifier-builder.ts": 902,
     "src/session/manager.ts": 679,
     "test/unit/agents/acp/spawn-client.test.ts": 810,
     "test/unit/cli/plan.test.ts": 1201,

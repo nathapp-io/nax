@@ -9,6 +9,7 @@ import { basename, join, resolve } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
 import { loadConfig } from "../config";
+import { NaxError } from "../errors";
 import type { NaxStatusFile } from "../execution/status-file";
 import { countStories, loadPRD } from "../prd";
 import { projectOutputDir } from "../runtime";
@@ -485,7 +486,10 @@ export async function displayFeatureStatus(options: FeatureStatusOptions = {}): 
     } else {
       const resolved = resolveProject({ feature: options.feature });
       if (!resolved.featureDir) {
-        throw new Error("Feature directory not resolved (this should not happen)");
+        throw new NaxError("Feature directory not resolved (this should not happen)", "FEATURE_DIR_NOT_RESOLVED", {
+          stage: "cli",
+          feature: options.feature,
+        });
       }
       featureDir = resolved.featureDir;
     }

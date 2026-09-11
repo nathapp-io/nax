@@ -9,6 +9,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { NaxError } from "../errors";
 import type { LogLevel } from "../logger/types";
 import { resolveProject, resolveSingleFeature } from "./common";
 import { displayLogs, displayRunsList, followLogs } from "./logs-formatter";
@@ -78,7 +79,10 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
 
   // Validate runs directory exists
   if (!existsSync(runsDir)) {
-    throw new Error(`No runs directory found for feature: ${featureName}`);
+    throw new NaxError(`No runs directory found for feature: ${featureName}`, "LOGS_RUNS_DIR_NOT_FOUND", {
+      stage: "logs",
+      featureName,
+    });
   }
 
   // Handle --list mode (show runs table)
@@ -91,7 +95,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
   const runFile = await selectRunFile(runsDir);
 
   if (!runFile) {
-    throw new Error("No runs found for this feature");
+    throw new NaxError("No runs found for this feature", "LOGS_NO_RUNS_FOUND", { stage: "logs" });
   }
 
   // Handle follow mode

@@ -10,6 +10,7 @@
  */
 
 import type { AcpClient, AcpClientOptions, AcpSession } from "@/agents";
+import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent } from "@/runtime";
 import { parseModelSpec } from "../model-spec";
@@ -85,10 +86,17 @@ export class SpawnAcpClient implements AcpClient {
     // Agent name is the last non-flag token — must be present and not a flag
     const lastToken = parts[parts.length - 1];
     if (!lastToken || lastToken.startsWith("-")) {
-      throw new Error(`[acp-adapter] Could not parse agentName from cmdStr: "${cmdStr}"`);
+      throw new NaxError(
+        `[acp-adapter] Could not parse agentName from cmdStr: "${cmdStr}"`,
+        "ACP_AGENT_NAME_PARSE_FAILED",
+        {
+          stage: "session",
+          cmdStr,
+        },
+      );
     }
     if (!cwd) {
-      throw new Error("[acp-adapter] SpawnAcpClient requires cwd");
+      throw new NaxError("[acp-adapter] SpawnAcpClient requires cwd", "ACP_CWD_REQUIRED", { stage: "session" });
     }
     this.cwd = cwd;
     this.timeoutSeconds = timeoutSeconds ?? DEFAULT_ACP_TIMEOUT_SECONDS;
@@ -160,7 +168,11 @@ export class SpawnAcpClient implements AcpClient {
 
     if (exitCode !== 0) {
       // Use stdout first — acpx puts the JSON-RPC error there when --format json is set.
-      throw new Error(`[acp-adapter] Failed to create session: ${stdout || stderr || `exit code ${exitCode}`}`);
+      throw new NaxError(
+        `[acp-adapter] Failed to create session: ${stdout || stderr || `exit code ${exitCode}`}`,
+        "ACP_SESSION_CREATE_FAILED",
+        { stage: "session", agentName: opts.agentName, exitCode },
+      );
     }
 
     const { sessionId, recordId } = parseSessionIds(stdout);

@@ -8,6 +8,7 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type { PRD } from "../prd";
 import {
@@ -233,7 +234,7 @@ export class StatusWriter {
     try {
       const base = this.getSnapshot(totalCost, iterations);
       if (!base) {
-        throw new Error("Failed to get snapshot");
+        throw new NaxError("Failed to get snapshot", "STATUS_SNAPSHOT_FAILED", { stage: "execution" });
       }
       const state: RunStateSnapshot = { ...base, ...overrides };
       await writeStatusFile(this.statusFile, buildStatusSnapshot(state));
@@ -278,7 +279,7 @@ export class StatusWriter {
     const write = async () => {
       try {
         const base = this.getSnapshot(totalCost, iterations);
-        if (!base) throw new Error("Failed to get snapshot");
+        if (!base) throw new NaxError("Failed to get snapshot", "STATUS_SNAPSHOT_FAILED", { stage: "execution" });
         const state: RunStateSnapshot = { ...base, ...overrides };
         await writeStatusFile(featureStatusPath, buildStatusSnapshot(state));
         safeLogger?.debug("status-file", "Feature status written", { path: featureStatusPath });

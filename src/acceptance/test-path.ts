@@ -1,5 +1,6 @@
 import path from "node:path";
 import { featureDir } from "@/config";
+import { NaxError } from "@/errors";
 import { isInAcceptanceScope } from "@/prd";
 import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
@@ -206,13 +207,21 @@ export function resolveSuggestedTestFile(language?: string, testPathConfig?: str
 function sanitizeTestFileName(value: string, fieldName: string): string {
   const filename = value.trim();
   if (filename.length === 0) {
-    throw new Error(`${fieldName} must be non-empty`);
+    throw new NaxError(`${fieldName} must be non-empty`, "TEST_FILENAME_EMPTY", { stage: "acceptance", fieldName });
   }
   if (filename.includes("/") || filename.includes("\\")) {
-    throw new Error(`${fieldName} must be a filename, not a path: ${filename}`);
+    throw new NaxError(`${fieldName} must be a filename, not a path: ${filename}`, "TEST_FILENAME_NOT_A_PATH", {
+      stage: "acceptance",
+      fieldName,
+      filename,
+    });
   }
   if (filename.includes("..")) {
-    throw new Error(`${fieldName} cannot contain '..': ${filename}`);
+    throw new NaxError(`${fieldName} cannot contain '..': ${filename}`, "TEST_FILENAME_PATH_TRAVERSAL", {
+      stage: "acceptance",
+      fieldName,
+      filename,
+    });
   }
   return filename;
 }

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { resolveEnvVars } from "../config/dotenv";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { loadProfile, loadProfileEnv, resolveProfileName, validateProfileName } from "../config/profile";
+import { NaxError } from "../errors";
 
 export interface ProfileShowOptions {
   unmask: boolean;
@@ -210,7 +211,11 @@ export async function profileCreateCommand(profileName: string, startDir: string
 
   const profileFile = Bun.file(profilePath);
   if (await profileFile.exists()) {
-    throw new Error(`Profile "${profileName}" already exists at ${profilePath}`);
+    throw new NaxError(`Profile "${profileName}" already exists at ${profilePath}`, "PROFILE_ALREADY_EXISTS", {
+      stage: "cli",
+      profileName,
+      profilePath,
+    });
   }
 
   mkdirSync(profilesDir, { recursive: true });

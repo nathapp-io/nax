@@ -40,7 +40,7 @@ export function validateAgentForTier(agent: AgentAdapter, tier: ModelTier): bool
  * ```ts
  * const agent = new ClaudeCodeAdapter();
  * if (!validateAgentFeature(agent, "tdd")) {
- *   throw new Error("Agent does not support TDD workflow");
+ *   throw new NaxError("Agent does not support TDD workflow", "AGENT_FEATURE_UNSUPPORTED");
  * }
  * ```
  */

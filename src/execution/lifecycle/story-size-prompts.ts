@@ -6,6 +6,7 @@
  * Integrates with interaction chain.
  */
 
+import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction/chain";
 import type { InteractionResponse } from "@/interaction/types";
 import { getSafeLogger } from "@/logger";
@@ -103,12 +104,23 @@ export async function promptForFlaggedStories(
       case "abort": {
         summary.aborted = true;
         logger?.warn("precheck", `User aborted run due to ${flagged.storyId} size warnings`);
-        throw new Error(`Run aborted by user: story ${flagged.storyId} exceeds size thresholds`);
+        throw new NaxError(
+          `Run aborted by user: story ${flagged.storyId} exceeds size thresholds`,
+          "STORY_SIZE_GATE_ABORTED",
+          {
+            stage: "precheck",
+            storyId: flagged.storyId,
+          },
+        );
       }
       default: {
         logger?.warn("precheck", `Unknown action ${response.action} for ${flagged.storyId}, aborting`);
         summary.aborted = true;
-        throw new Error(`Run aborted: unknown action ${response.action}`);
+        throw new NaxError(`Run aborted: unknown action ${response.action}`, "STORY_SIZE_GATE_UNKNOWN_ACTION", {
+          stage: "precheck",
+          storyId: flagged.storyId,
+          action: response.action,
+        });
       }
     }
   }

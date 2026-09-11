@@ -5,6 +5,7 @@
  * controlling the flow (continue/skip/fail/escalate/pause/retry).
  */
 
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import type { PipelineEventEmitter } from "./events";
@@ -234,7 +235,9 @@ export async function runPipeline(
 
       default: {
         const _exhaustive: never = result;
-        throw new Error(`Unknown stage action: ${JSON.stringify(_exhaustive)}`);
+        throw new NaxError(`Unknown stage action: ${JSON.stringify(_exhaustive)}`, "UNKNOWN_STAGE_ACTION", {
+          stage: "pipeline",
+        });
       }
     }
   }

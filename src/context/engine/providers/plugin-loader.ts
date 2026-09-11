@@ -20,6 +20,7 @@
 
 import { isAbsolute, join, resolve } from "node:path";
 import type { ContextPluginProviderConfig } from "@/config/runtime-types";
+import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { IContextProvider } from "../types";
 
@@ -123,16 +124,20 @@ export function resolveModuleSpecifier(specifier: string, workdir: string): stri
   // project-relative paths. An absolute specifier would bypass the workdir
   // sandboxing guard and allow arbitrary file imports.
   if (isAbsolute(specifier)) {
-    throw new Error(
+    throw new NaxError(
       `Plugin module path must be a bare package name or a project-relative path (./... or ../...): got absolute "${specifier}"`,
+      "PLUGIN_MODULE_ABSOLUTE_PATH",
+      { stage: "context", workdir, specifier },
     );
   }
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
     const resolvedWorkdir = resolve(workdir);
     const resolved = resolve(join(workdir, specifier));
     if (resolved !== resolvedWorkdir && !resolved.startsWith(`${resolvedWorkdir}/`)) {
-      throw new Error(
+      throw new NaxError(
         `Plugin module path escapes project workdir: "${specifier}" resolves to "${resolved}" (workdir: "${resolvedWorkdir}")`,
+        "PLUGIN_MODULE_PATH_ESCAPE",
+        { stage: "context", workdir: resolvedWorkdir, specifier, resolved },
       );
     }
     return resolved;

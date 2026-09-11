@@ -142,15 +142,14 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       rateLimitWindowMs: cfg.rateLimitWindowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
     };
     if (!this.config.url) {
-      throw new Error("Webhook plugin requires 'url' config");
+      throw new NaxError("Webhook plugin requires 'url' config", "WEBHOOK_URL_MISSING", { stage: "interaction" });
     }
     // Require a shared secret unless caller explicitly opts out.
     // Without a secret, any reachable caller can submit crafted actions.
     if (this.config.requireSecret && !this.config.secret) {
-      throw new Error(
-        "Webhook plugin requires 'secret' for callback authentication. " +
-          "Set requireSecret: false to allow unsigned callbacks (not recommended).",
-      );
+      const msg =
+        "Webhook plugin requires 'secret' for callback authentication. Set requireSecret: false to allow unsigned callbacks (not recommended).";
+      throw new NaxError(msg, "WEBHOOK_SECRET_MISSING", { stage: "interaction" });
     }
     // SEC-8: requireSecret: false fully disables auth on the loopback callback
     // endpoint — any co-tenant local process can submit approve/abort actions.
@@ -237,7 +236,9 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
 
   async send(request: InteractionRequest): Promise<void> {
     if (!this.config.url) {
-      throw new Error("Webhook plugin not initialized");
+      throw new NaxError("Webhook plugin not initialized", "WEBHOOK_PLUGIN_NOT_INITIALIZED", {
+        stage: "interaction",
+      });
     }
 
     await this.startServer();
@@ -277,13 +278,14 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
-        throw new Error(`Webhook POST failed (${response.status}): ${errorBody || response.statusText}`);
+        const msg = `Webhook POST failed (${response.status}): ${errorBody || response.statusText}`;
+        throw new NaxError(msg, "WEBHOOK_POST_FAILED", { stage: "interaction" });
       }
     } catch (err) {
       // Unregister on send failure so the ID slot is released
       this.registeredRequestIds.delete(request.id);
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to send webhook request: ${msg}`);
+      throw new NaxError(`Failed to send webhook request: ${msg}`, "WEBHOOK_SEND_FAILED", { stage: "interaction" });
     } finally {
       clearTimeout(timer);
     }

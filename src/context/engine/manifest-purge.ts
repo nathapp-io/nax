@@ -15,6 +15,7 @@
 
 import { dirname, resolve } from "node:path";
 import { PROJECT_FEATURES_DIR } from "@/config";
+import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 
 /** Maximum number of manifest entries the sweep will examine per invocation. */
@@ -69,7 +70,8 @@ export const _manifestPurgeDeps: ManifestPurgeDeps = {
   },
   statMtime: async (path: string): Promise<number> => {
     const file = Bun.file(path);
-    if (!(await file.exists())) throw new Error(`stat: file not found: ${path}`);
+    if (!(await file.exists()))
+      throw new NaxError(`stat: file not found: ${path}`, "STAT_FILE_NOT_FOUND", { stage: "context", path });
     const stat = await file.stat();
     return stat.mtimeMs;
   },

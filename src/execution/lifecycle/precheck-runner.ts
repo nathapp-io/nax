@@ -10,6 +10,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
 import type { NaxConfig } from "@/config";
+import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction/chain";
 import { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd/types";
@@ -90,7 +91,15 @@ export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void>
     process.stderr.write(`${chalk.yellow("\nRun 'nax precheck' for detailed information")}\n`);
     process.stderr.write(`${chalk.dim("Use --skip-precheck to bypass (not recommended)\n")}\n`);
 
-    throw new Error(`Precheck failed: ${precheckResult.output.blockers.map((b) => b.name).join(", ")}`);
+    throw new NaxError(
+      `Precheck failed: ${precheckResult.output.blockers.map((b) => b.name).join(", ")}`,
+      "PRECHECK_FAILED",
+      {
+        stage: "precheck",
+        blockers: precheckResult.output.blockers.map((b) => b.name),
+        workdir: ctx.workdir,
+      },
+    );
   }
 
   // Handle warnings (Tier 2 failures) - log but continue

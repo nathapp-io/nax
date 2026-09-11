@@ -5,6 +5,7 @@
  */
 
 import type { NaxConfig } from "../config";
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type { RoutingResult } from "../pipeline/types";
 import { getNextStory } from "../prd";
@@ -204,7 +205,10 @@ export function groupStoriesByDependencies(stories: UserStory[]): UserStory[][] 
       logger?.error("parallel", "Cannot resolve story dependencies", {
         remainingStories: stories.filter((s) => !processed.has(s.id)).map((s) => s.id),
       });
-      throw new Error("Circular dependency or missing dependency detected");
+      throw new NaxError("Circular dependency or missing dependency detected", "STORY_DEPENDENCY_CYCLE", {
+        stage: "execution",
+        remainingStories: stories.filter((s) => !processed.has(s.id)).map((s) => s.id),
+      });
     }
     for (const story of batch) processed.add(story.id);
     batches.push(batch);
