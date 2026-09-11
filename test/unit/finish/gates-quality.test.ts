@@ -152,7 +152,7 @@ describe("runQualityGates", () => {
       const failed = opts.commandName === "build" || opts.commandName === "test";
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: !failed,
         exitCode: failed ? 1 : 0,
         output: failed ? "boom" : "ok",
@@ -178,7 +178,7 @@ describe("runQualityGates", () => {
   test("all gates green: passed true, ran lists every gate, failing empty", async () => {
     _qualityGateDeps.run = async (opts) => ({
       commandName: opts.commandName,
-      command: opts.command,
+      command: opts.command as string,
       success: true,
       exitCode: 0,
       output: "ok",
@@ -198,7 +198,7 @@ describe("runQualityGates", () => {
       calls.push({ workdir: opts.workdir, timeoutMs: opts.timeoutMs });
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: true,
         exitCode: 0,
         output: "",

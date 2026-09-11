@@ -41,10 +41,10 @@ describe("typecheckCheckOp via packageView", () => {
     let seen = "";
     const deps: TypecheckCheckDeps = {
       runQualityCommand: async (o) => {
-        seen = o.command;
+        seen = o.command as string;
         return {
           commandName: "typecheck",
-          command: o.command,
+          command: o.command as string,
           success: true,
           exitCode: 0,
           output: "",
