@@ -9,6 +9,7 @@ import type { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
+import { renderCommandSpec } from "../quality";
 import { buildFrontmatter } from "./prompts-shared";
 
 /**
@@ -38,7 +39,7 @@ export async function handleThreeSessionTddPrompts(
       .story(story)
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
-      .testCommand(ctx.config.quality?.commands?.test)
+      .testCommand(renderCommandSpec(ctx.config.quality?.commands?.test))
       .scopedTestCommand(scopedTestCommand)
       .build(),
     PromptBuilder.for("implementer", { variant: "standard" })
@@ -46,7 +47,7 @@ export async function handleThreeSessionTddPrompts(
       .story(story)
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
-      .testCommand(ctx.config.quality?.commands?.test)
+      .testCommand(renderCommandSpec(ctx.config.quality?.commands?.test))
       .scopedTestCommand(scopedTestCommand)
       .build(),
     PromptBuilder.for("verifier")
@@ -54,7 +55,7 @@ export async function handleThreeSessionTddPrompts(
       .story(story)
       .context(ctx.contextMarkdown)
       .constitution(ctx.constitution?.content)
-      .testCommand(ctx.config.quality?.commands?.test)
+      .testCommand(renderCommandSpec(ctx.config.quality?.commands?.test))
       .scopedTestCommand(scopedTestCommand)
       .build(),
   ]);

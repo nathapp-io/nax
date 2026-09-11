@@ -25,3 +25,13 @@ export function normalizeCommandSpec(spec: QualityCommandSpec | undefined): stri
 export function containsShellChain(spec: QualityCommandSpec | undefined): boolean {
   return normalizeCommandSpec(spec).some((entry) => entry.includes("&&"));
 }
+
+/**
+ * Render a spec as the single string that prompt and context surfaces show a
+ * reader. `" && "` is what a human recognises and would type, even though a
+ * list does not actually short-circuit when it runs.
+ */
+export function renderCommandSpec(spec: QualityCommandSpec | undefined): string | undefined {
+  const steps = normalizeCommandSpec(spec);
+  return steps.length === 0 ? undefined : steps.join(" && ");
+}

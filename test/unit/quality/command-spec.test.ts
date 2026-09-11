@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { containsShellChain, normalizeCommandSpec } from "@/quality/command-spec";
+import { containsShellChain, normalizeCommandSpec, renderCommandSpec } from "@/quality/command-spec";
 
 describe("normalizeCommandSpec", () => {
   test("wraps a string into a single-entry list", () => {
@@ -49,5 +49,20 @@ describe("containsShellChain", () => {
 
   test("is false for undefined", () => {
     expect(containsShellChain(undefined)).toBe(false);
+  });
+});
+
+describe("renderCommandSpec", () => {
+  test("returns a string spec unchanged", () => {
+    expect(renderCommandSpec("bun run lint")).toBe("bun run lint");
+  });
+  test("joins a list with ' && '", () => {
+    expect(renderCommandSpec(["a", "b"])).toBe("a && b");
+  });
+  test("returns undefined for undefined", () => {
+    expect(renderCommandSpec(undefined)).toBeUndefined();
+  });
+  test("returns undefined for an all-blank spec", () => {
+    expect(renderCommandSpec(["  ", ""])).toBeUndefined();
   });
 });

@@ -25,7 +25,7 @@ import { assembleForStage, executionContextStage } from "@/context/engine";
 import { getLogger } from "@/logger";
 import { PromptBuilder } from "@/prompts";
 import type { AcceptanceEntry } from "@/prompts/sections/acceptance";
-import { resolveSelfVerificationPromptInput } from "@/quality";
+import { renderCommandSpec, resolveSelfVerificationPromptInput } from "@/quality";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -101,7 +101,7 @@ export const promptStage: PipelineStage = {
         .v2FeatureContext(execBundle?.pushMarkdown)
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
-        .testCommand(ctx.config.quality?.commands?.test)
+        .testCommand(renderCommandSpec(ctx.config.quality?.commands?.test))
         .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification);
@@ -117,7 +117,7 @@ export const promptStage: PipelineStage = {
         .v2FeatureContext(execBundle?.pushMarkdown)
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
-        .testCommand(ctx.config.quality?.commands?.test)
+        .testCommand(renderCommandSpec(ctx.config.quality?.commands?.test))
         .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification)
