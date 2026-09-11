@@ -2,9 +2,11 @@
  * Native model resolver — owns the local catalog lookup for native ids.
  *
  * Precheck must not import nax-ai directly (scripts/check-nax-ai-imports.ts),
- * so the resolver sits next to the rest of the native path and exports one
- * injectable seam. Production callers receive the bundled pi-ai catalog; tests
- * replace the seam to drive specific resolution outcomes.
+ * so the resolver sits next to the rest of the native path. Production callers
+ * go through `resolveNativeId` (which uses the cached nax-ai client); tests
+ * bypass the function entirely and stub `_modelResolutionDeps` in
+ * `src/precheck/checks-model-resolution.ts` to drive specific outcomes without
+ * loading the bundled catalog.
  *
  * Three states the resolver reports:
  *   - "resolved":     id resolves in the catalog (optionally with override data)
@@ -34,30 +36,6 @@ export interface ResolveResult {
   hasContextWindow?: boolean;
 }
 
-/** Look up one (provider, model) id against the catalog + overrides. */
-export type ResolveFn = (provider: string, model: string) => Promise<ResolveResult>;
-
-export interface ModelResolverDeps {
-  resolve: ResolveFn;
-}
-
-/**
- * Default seam. Replaced in tests. Production wires `resolve` to the local
- * catalog (nax-ai's normalised bundled snapshot) — but that wiring is the
- * implementer's job; this stub just returns "unresolved" so the precheck
- * failure mode is observable without a real catalog import.
- */
-export const _nativeModelResolverDeps: ModelResolverDeps = {
-  resolve: async (_provider: string, _model: string): Promise<ResolveResult> => {
-    // Touch the seam so a future wiring into getNativeClient can replace this
-    // body without touching the call site. Importing getNativeClient here would
-    // load the bundled catalog (~50ms) at module-eval time; that's the
-    // implementer's call, not the stub's.
-    void getNativeClient;
-    return { status: "unresolved" };
-  },
-};
-
 /**
  * Translate a `catalogOverrides` list into the precheck-side "id is resolvable"
  * table. The precheck check uses this so a user-declared override that the
@@ -81,4 +59,49 @@ export function overrideResolvability(
     }
   }
   return out;
+}
+
+/**
+ * Production resolver. Builds the cached client once per override set, then
+ * calls `client.model(provider, model)` for every native id the precheck
+ * walker hands it. The bundled catalog loads once per process via
+ * `getNativeClient` (cached) so repeated calls amortise to a single load.
+ *
+ * The override table is checked first: a user-declared override is always
+ * resolvable (AC4) regardless of what the bundled catalog says.
+ *
+ * Error shape: a rejected promise from `client.model()` (id the bundled
+ * catalog doesn't know) becomes "unresolved" — the check emits a blocker at
+ * that site. The client construction itself can throw (catalog load failure);
+ * that becomes "unresolved" too — the check emits a blocker — because by the
+ * time we reach this function, the override table is already empty (the
+ * check short-circuited on it) so the only failure mode is "the bundled
+ * catalog does not know this id".
+ */
+export async function resolveNativeId(
+  provider: string,
+  model: string,
+  overrides: readonly ProviderCatalogOverride[],
+): Promise<ResolveResult> {
+  const resolvability = overrideResolvability(overrides);
+  const key = `${provider}/${model}`;
+  const override = resolvability.get(key);
+  if (override !== undefined) {
+    return {
+      status: "resolved",
+      hasPricing: override.hasPricing,
+      hasContextWindow: override.hasContextWindow,
+    };
+  }
+  try {
+    const client = await getNativeClient(overrides);
+    const resolved = await client.model(provider, model);
+    return {
+      status: "resolved",
+      hasPricing: resolved.pricing !== undefined,
+      hasContextWindow: resolved.contextWindow !== undefined,
+    };
+  } catch {
+    return { status: "unresolved" };
+  }
 }

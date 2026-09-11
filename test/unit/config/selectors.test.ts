@@ -60,15 +60,30 @@ describe("ConfigSelector — Phase 1 selectors", () => {
         // MED-03: checkAgentCLI resolves the agent via resolveDefaultAgent(config),
         // which reads config.agent.default — precheck's slice must include it.
         agent: expect.any(Object),
+        // US-1984 (model-resolution precheck): the check walks `models`,
+        // `plan.model`, `acceptance.model`, `autoMode.escalation.tierOrder[*]`,
+        // `tdd.sessionTiers.*`, and `routing.llm.model`.
+        models: expect.any(Object),
+        plan: expect.any(Object),
+        acceptance: expect.any(Object),
+        autoMode: expect.any(Object),
+        tdd: expect.any(Object),
+        routing: expect.any(Object),
       });
       expect(Object.keys(slice).sort()).toEqual([
+        "acceptance",
         "agent",
+        "autoMode",
         "execution",
+        "models",
+        "plan",
         "precheck",
         "project",
         "prompts",
         "quality",
         "review",
+        "routing",
+        "tdd",
       ]);
     });
 

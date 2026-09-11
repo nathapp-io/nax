@@ -35,6 +35,12 @@ export type {
 } from "./auth-types";
 export { credentialFilePath, naxCredentialStore, type StoredEntry } from "./credentials";
 export { NativeSessionUnsupportedError } from "./errors";
+export {
+  overrideResolvability,
+  type ResolveResult,
+  type ResolveStatus,
+  resolveNativeId,
+} from "./model-resolver";
 export { NATIVE_AGENT } from "./models";
 export {
   MAX_RETAINED_TRANSCRIPTS,

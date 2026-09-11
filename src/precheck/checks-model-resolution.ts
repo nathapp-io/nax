@@ -1,5 +1,5 @@
 /**
- * Model-resolution precheck check.
+ * Model-resolution precheck check (US-1984).
  *
  * One local catalog-backed walk over configured model references that:
  *   - blocks (Tier 1) an unresolved native id,
@@ -13,22 +13,21 @@
  * pricing/contextWindow on a tier and then literal-pins the same id gets the
  * warning, not a silent override-loss.
  *
- * The resolver is supplied via `_modelResolutionDeps.resolveNative` and
- * `resolveAcp`. Production wires them to the local nax-ai catalog; tests swap
- * them in to drive specific outcomes without loading the bundled catalog.
+ * Production wiring: `_modelResolutionDeps.resolveNative` is `resolveNativeId`
+ * from `src/agents/native/model-resolver.ts`, which uses the cached nax-ai
+ * client (`getNativeClient(catalogOverrides)`). The precheck sees the exact
+ * same catalog and overrides the dispatch will use. Tests swap the seam to
+ * drive specific outcomes without loading the bundled catalog.
  */
 
+import { resolveNativeId } from "@/agents/native";
+import type { ProviderCatalogOverride } from "@/config/schema-types";
+import { collectConfiguredModelPins, type LiteralPin, type ModelsTierEntry } from "./checks-model-resolution-walk";
 import type { Check } from "./types";
 
-/** A literal `{agent, model}` pin found at a config site. */
-interface LiteralPin {
-  /** Configuration key path (e.g. "review.adversarial.model"). */
-  readonly keyPath: string;
-  readonly agent: string;
-  readonly model: string;
-  /** True when `models[agent][model]` exists and declared pricing/contextWindow. */
-  readonly tierEntryOverrides?: { hasPricing: boolean; hasContextWindow: boolean };
-}
+// Re-export so existing callers importing LiteralPin from checks keep working
+// (the interface itself lives next to the walker that produces it).
+export type { LiteralPin };
 
 export interface ModelResolutionDeps {
   /**
@@ -39,6 +38,7 @@ export interface ModelResolutionDeps {
   resolveNative: (
     provider: string,
     model: string,
+    overrides: readonly ProviderCatalogOverride[],
   ) => Promise<{ status: "resolved" | "unresolved" | "error"; hasPricing?: boolean; hasContextWindow?: boolean }>;
   /**
    * Look up an ACP id. ACP does not have a local catalog mirror, so "resolved"
@@ -49,26 +49,39 @@ export interface ModelResolutionDeps {
   resolveAcp: (agent: string, model: string) => Promise<{ status: "resolved" | "unresolved" | "error" }>;
 }
 
-/** Injectable seam — production wires this to src/agents/native/. */
+/**
+ * Injectable seam — production wires `resolveNative` to `resolveNativeId` from
+ * `src/agents/native/model-resolver.ts` so the cached nax-ai client (and
+ * `agent.native.catalogOverrides`) is threaded through the same client the
+ * dispatch uses. Tests swap both fields to drive specific resolution outcomes
+ * without loading the bundled catalog.
+ */
 export const _modelResolutionDeps: ModelResolutionDeps = {
-  resolveNative: async () => ({ status: "unresolved" }),
+  resolveNative: (provider, model, overrides) => resolveNativeId(provider, model, overrides),
   resolveAcp: async () => ({ status: "unresolved" }),
 };
 
-/**
- * Build the list of (keyPath, agent, model) triples the check walks.
- *
- * The implementer will compose this from the actual config slice
- * (models.native.*, review.semantic.model, review.adversarial.model,
- * plan.model, acceptance.model, tdd.sessionTiers.*, routing.llm.model,
- * every rung of autoMode.escalation.tierOrder, every rung of
- * agent.fallback.map). The stub returns an empty list so the check is
- * a no-op pass until real collection is wired in — exactly what the
- * implementer needs to flip from "passes" to "produces checks".
- */
-export function collectConfiguredModelPins(_config: unknown): LiteralPin[] {
-  return [];
+/** True when the resolver table for `agent` routes through the native path. */
+function isNativeAgent(agent: string): boolean {
+  return agent === "native";
 }
+
+/** Default provider when an entry string lacks a "/". Same shape as schema-types#resolveModel. */
+function providerFromEntry(entry: string): string {
+  if (entry.startsWith("claude")) return "anthropic";
+  if (entry.startsWith("gpt") || entry.startsWith("o1") || entry.startsWith("o3")) return "openai";
+  if (entry.startsWith("gemini")) return "google";
+  return "unknown";
+}
+
+/** Split an entry like "provider/model" into provider+model. Bare strings get a heuristic provider. */
+function splitEntry(entry: string): { provider: string; model: string } {
+  const slash = entry.indexOf("/");
+  if (slash === -1) return { provider: providerFromEntry(entry), model: entry };
+  return { provider: entry.slice(0, slash), model: entry.slice(slash + 1) };
+}
+
+export { collectConfiguredModelPins };
 
 /**
  * Tier-1/2 model-resolution check.
@@ -77,15 +90,184 @@ export function collectConfiguredModelPins(_config: unknown): LiteralPin[] {
  * emitting one Check per failure site. A resolver that rejects the catalog
  * emits a single warning (AC6) — never a blocker — so a transient catalog
  * miss does not stop a run.
+ *
+ * Dispatch rule: dispatch is by the agent named at the site (`agent ===
+ * "native"` → native resolver, anything else → acp resolver). The native
+ * resolver is the local catalog (production wires it to nax-ai's bundled
+ * snapshot via `getNativeClient` in `src/agents/native/client.ts`); the acp
+ * resolver is an availability claim — acpx is asked at dispatch time, so an
+ * unresolved acp id surfaces only as a warning. A native id that the local
+ * catalog doesn't know AND the user hasn't declared under
+ * `agent.native.catalogOverrides` is a blocker, because that's exactly the
+ * failure mode that caused `nax#1983` (an adversarial-review parse error
+ * 22 minutes into a run for an id the resolver had no answer for).
+ *
+ * The check can emit mixed results (a blocker for an unresolved native id
+ * alongside a warning for an unresolvable acp id at a different site).
+ * `normalizeChecks` in `src/precheck/index.ts` fans the array into the
+ * orchestrator, which splits by tier: blockers fail-fast, warnings queue.
  */
 export async function checkModelResolution(config: unknown): Promise<Check[]> {
-  const pins = collectConfiguredModelPins(config);
-  if (pins.length === 0) {
+  const { pins, tierEntries, catalogOverrides } = collectConfiguredModelPins(config);
+
+  // Idempotent override table — a user-declared override makes any (provider, model) it
+  // lists resolvable without round-tripping through the catalog (AC4).
+  const overrideKeys = new Set<string>();
+  for (const override of catalogOverrides) {
+    for (const m of override.models) {
+      overrideKeys.add(`${override.provider}/${m.id}`);
+    }
+  }
+
+  let acpRejectWarning: string | undefined;
+  // Track which (provider, model) pairs the native resolver has rejected at the
+  // catalog level — collapses the per-site duplicates into one warning (AC6).
+  const nativeRejectedKeys = new Set<string>();
+  let anyNativeError = false;
+
+  const checks: Check[] = [];
+
+  // getNativeClient is cached per override set (see src/agents/native/client.ts); the
+  // override list we just built is what the precheck-side resolver hands to it so the
+  // user-declared ids reach the runtime. AC10 verifies the dispatch wiring.
+
+  // ── Tier entry walk — `models.<agent>.<tier>` ──
+  for (const entry of tierEntries) {
+    const isNative = isNativeAgent(entry.agent);
+    if (isNative) {
+      const fullKey = `${entry.provider}/${entry.model}`;
+      if (overrideKeys.has(fullKey)) continue;
+      const result = await _modelResolutionDeps.resolveNative(entry.provider, entry.model, catalogOverrides);
+      if (result.status === "error") {
+        anyNativeError = true;
+        nativeRejectedKeys.add(fullKey);
+        continue;
+      }
+      if (result.status === "unresolved") {
+        checks.push({
+          name: "model-resolution",
+          tier: "blocker",
+          passed: false,
+          message: `[model-resolution] Native model id does not resolve in the catalog: ${entry.keyPath} provider=${entry.provider} model=${entry.model}. Add the id to agent.native.catalogOverrides or pick a tier that ships in the bundled catalog.`,
+        });
+        continue;
+      }
+      // resolved — nothing to report at the entry itself
+      continue;
+    }
+    // ACP entry — acpx is asked at dispatch time, so unresolved is a warning.
+    const result = await _modelResolutionDeps.resolveAcp(entry.agent, entry.model);
+    if (result.status === "error") {
+      acpRejectWarning = `ACP catalog resolver rejected the lookup — every configured ACP id is treated as unverified until the resolver is back.`;
+      continue;
+    }
+    if (result.status === "unresolved") {
+      checks.push({
+        name: "model-resolution",
+        tier: "warning",
+        passed: false,
+        message: `[model-resolution] ACP model id cannot be verified locally: ${entry.keyPath} agent=${entry.agent} model=${entry.model}. Dispatch will fail at runtime; consider a tier that ships in the bundled catalog.`,
+      });
+    }
+  }
+
+  // ── Literal pin walk ──
+  for (const pin of pins) {
+    const isNative = isNativeAgent(pin.agent);
+    if (isNative) {
+      const { provider, model } = splitEntry(pin.model);
+      const fullKey = `${provider}/${model}`;
+      if (overrideKeys.has(fullKey)) continue;
+      const result = await _modelResolutionDeps.resolveNative(provider, model, catalogOverrides);
+      if (result.status === "error") {
+        anyNativeError = true;
+        nativeRejectedKeys.add(fullKey);
+        continue;
+      }
+      if (result.status === "unresolved") {
+        checks.push({
+          name: "model-resolution",
+          tier: "blocker",
+          passed: false,
+          message: `[model-resolution] Native model id does not resolve in the catalog: ${pin.keyPath} provider=${provider} model=${model}. Add the id to agent.native.catalogOverrides or pick a tier that ships in the bundled catalog.`,
+        });
+        continue;
+      }
+      // resolved — check AC7: did the literal pin drop tier-configured pricing/contextWindow?
+      const tierEntry = findTierEntryForPin(tierEntries, pin);
+      if (tierEntry && (tierEntry.hasPricing || tierEntry.hasContextWindow)) {
+        const dropped = describeDroppedOverrides(tierEntry);
+        checks.push({
+          name: "model-resolution",
+          tier: "warning",
+          passed: false,
+          message: `[model-resolution] Literal pin ${pin.keyPath} names "${pin.model}", routing through the literal path drops tier-configured ${dropped} from models.${tierEntry.agent}.${tierEntry.tier}. Move the override under agent.native.catalogOverrides, or pin by tier name to keep it.`,
+        });
+      }
+      continue;
+    }
+    // ACP pin — unresolved is a warning, not a blocker.
+    const result = await _modelResolutionDeps.resolveAcp(pin.agent, pin.model);
+    if (result.status === "error") {
+      acpRejectWarning = `ACP catalog resolver rejected the lookup — every configured ACP id is treated as unverified until the resolver is back.`;
+      continue;
+    }
+    if (result.status === "unresolved") {
+      checks.push({
+        name: "model-resolution",
+        tier: "warning",
+        passed: false,
+        message: `[model-resolution] ACP model id cannot be verified locally: ${pin.keyPath} agent=${pin.agent} model=${pin.model}. Dispatch will fail at runtime; consider a tier that ships in the bundled catalog.`,
+      });
+    }
+  }
+
+  // Catalog-rejection warnings — single message each, gathered from every site that hit it.
+  if (anyNativeError) {
+    const sample = Array.from(nativeRejectedKeys).slice(0, 3).join(", ");
+    checks.push({
+      name: "model-resolution",
+      tier: "warning",
+      passed: false,
+      message: `Native catalog resolver rejected the bundled snapshot — every configured native id is treated as unverified until the catalog is back. Configure missing ids under agent.native.catalogOverrides. Sample unresolved ids: ${sample}.`,
+    });
+  }
+  if (acpRejectWarning !== undefined) {
+    checks.push({
+      name: "model-resolution",
+      tier: "warning",
+      passed: false,
+      message: acpRejectWarning,
+    });
+  }
+
+  if (checks.length === 0) {
     return [{ name: "model-resolution", tier: "blocker", passed: true, message: "All configured model ids resolve" }];
   }
-  // Real implementation walks `pins` against `_modelResolutionDeps.resolveNative`
-  // / `resolveAcp`, emits a `blocker` for an unresolved native id and a
-  // `warning` for an unresolved ACP id or a literal pin that drops overrides.
-  // The stub leaves the wiring to the implementer.
-  return [{ name: "model-resolution", tier: "blocker", passed: true, message: "All configured model ids resolve" }];
+
+  // The orchestrator splits by tier — `blocker` rows break the run, `warning`
+  // rows fan out to the warnings list. Mixed results from a single check are
+  // supported here on purpose: a transient catalog miss should not stop a run
+  // when the actual blocker (an unresolved native id) is also present.
+  return checks;
+}
+
+function findTierEntryForPin(entries: ModelsTierEntry[], pin: LiteralPin): ModelsTierEntry | undefined {
+  // A literal `{agent, model}` pin matches a tier entry whose (agent, model id) pair
+  // resolves to the same id the pin names — even if the tier label differs. AC7's
+  // setup is exactly this: `models.native.balanced = { provider: "anthropic", model:
+  // "claude-sonnet-5", pricing, contextWindow }` and a literal pin `{ agent: "native",
+  // model: "claude-sonnet-5" }`. The pin names the id, not the tier label, so the
+  // match keys on the resolved (provider, model) pair.
+  return entries.find((e) => {
+    if (e.agent !== pin.agent) return false;
+    return e.model === pin.model;
+  });
+}
+
+function describeDroppedOverrides(entry: ModelsTierEntry): string {
+  const parts: string[] = [];
+  if (entry.hasPricing) parts.push("pricing");
+  if (entry.hasContextWindow) parts.push("contextWindow");
+  return parts.join("/");
 }
