@@ -11,6 +11,14 @@ import { recordAgentHandoff } from "../session";
 export interface SessionRunHopResult {
   result: AgentResult;
   prompt: string;
+  /**
+   * US-001: explicit signal that the hop reached a real adapter. `true` on the
+   * success path that returned a turn (possibly empty). `false` on the catch
+   * path that synthesises a failure from a thrown `sendPrompt` — no model was
+   * reached, so `runWithFallback` does NOT count this hop as a dispatch.
+   * Callbacks that omit the field default to `true`.
+   */
+  dispatched?: boolean;
 }
 
 export type SessionRunHopFn = (agentName: string, options: AgentRunOptions) => Promise<SessionRunHopResult>;
@@ -158,6 +166,10 @@ export function createSessionRunHop(
           protocolIds: handle.protocolIds,
           internalRoundTrips: turnResult.internalRoundTrips,
         },
+        // US-001: a turn was returned (even empty). Distinct from the catch
+        // path below, which synthesises a failure result from a thrown
+        // `sendPrompt` and must NOT count as a dispatch.
+        dispatched: true,
       };
     } catch (err) {
       // nax#1840: native's sendTurn throws SessionTurnError (not
@@ -189,6 +201,12 @@ export function createSessionRunHop(
             message: errMessage.slice(0, 500),
           },
         },
+        // US-001: catch path synthesises a failure from a thrown `sendPrompt`
+        // (rate-limit, auth, unresolvable model, etc.) — no model was reached.
+        // Distinct from the success path above, which always returned a turn
+        // (possibly empty). `runWithFallback` reads this via the `dispatched`
+        // flag `executeHop` adds on top of the user's return.
+        dispatched: false,
       };
     } finally {
       // Best-effort ledger write (mirrors review-audit doctrine): a flush

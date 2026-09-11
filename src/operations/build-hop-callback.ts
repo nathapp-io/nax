@@ -185,6 +185,8 @@ export function buildHopCallback(
     bundle: ContextBundle | undefined;
     prompt?: string;
     endpoint?: HopEndpoint;
+    /** US-001: see AgentRunRequest["executeHop"]. */
+    dispatched?: boolean;
   }> => {
     const logger = getLogger();
     let workingBundle = hopBundle;
@@ -514,7 +516,15 @@ export function buildHopCallback(
       // sendWithFileOutput → hopBody) synthesises a fail-timeout adapterFailure for
       // timedOut turns but the hop returns normally — the catch block never executes.
       if (turnResult.timedOut) timedOut = true;
-      return { result: turnResultToAgentResult(turnResult), bundle: workingBundle, prompt, endpoint };
+      // US-001: a turn was returned (even empty). Distinct from the catch path
+      // below, which synthesises a failure from a thrown runAsSession.
+      return {
+        result: turnResultToAgentResult(turnResult),
+        bundle: workingBundle,
+        prompt,
+        endpoint,
+        dispatched: true,
+      };
     } catch (err) {
       // Preserve typed adapter failure on SessionFailureError so runWithFallback's
       // swap policy sees the real outcome (rate-limit, auth, quota) instead of
@@ -554,6 +564,9 @@ export function buildHopCallback(
         },
         bundle: workingBundle,
         prompt,
+        // US-001: catch path synthesises a failure from a thrown runAsSession —
+        // no model was reached. `runWithFallback` reads this to count dispatches.
+        dispatched: false,
       };
     } finally {
       // Best-effort ledger write (mirrors review-audit doctrine): a flush

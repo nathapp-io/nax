@@ -138,6 +138,16 @@ export interface AgentRunRequest {
      * config-default primary declares neither (nax#1965).
      */
     endpoint?: { readonly modelDef: import("../config/schema-types").ModelDef; readonly modelTier?: string };
+    /**
+     * US-001: explicit signal that the hop reached a real adapter. `true` on the
+     * success path that returned a turn (possibly empty — empty IS a turn the
+     * adapter returned). `false` on the catch path that synthesises a failure
+     * from a thrown `agentManager.runAsSession` — no model was reached, so
+     * `runWithFallback` does NOT count this hop as a dispatch. Callbacks that
+     * omit the field default to `true` so the "callback IS a dispatch"
+     * assumption is preserved for stub callbacks.
+     */
+    dispatched?: boolean;
   }>;
   /**
    * When true, runWithFallback dispatches at most one hop on the primary agent

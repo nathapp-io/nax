@@ -343,11 +343,16 @@ async function executeHop(
 ): Promise<HopResult> {
   if (input.request.executeHop) {
     const userResult = await input.request.executeHop(agent, bundle, kind, options);
-    // The user's hop callback IS a dispatch by definition — it replaced the
-    // internal dispatch path, so the hop necessarily reached wherever the
-    // callback points. Default to true so a callback that returns the public
-    // shape (no `dispatched` flag, see manager-types.ts) still counts.
-    return { ...userResult, dispatched: true };
+    // US-001: the user callback is authoritative on whether a dispatch
+    // happened. `buildHopCallback` and `session-run-hop.ts` set `dispatched`
+    // explicitly — true on the success path that returned a turn (even empty),
+    // false on the catch path that synthesised a failure from a thrown
+    // `runAsSession` / `sendPrompt` (no model reached). Stubs and test
+    // callbacks that omit the field default to `true` so the original
+    // "callback IS a dispatch" assumption is preserved. The `unboundResult`
+    // branch below is the ONLY path where we set `dispatched: false` ourselves
+    // — no callback ran, no dispatch happened.
+    return { ...userResult, dispatched: userResult.dispatched ?? true };
   }
   if (!input.runHop) return { result: unboundResult(agent), bundle, dispatched: false };
   const raw = await input.runHop(agent, options);
@@ -368,7 +373,12 @@ async function executeHop(
   // `resolveHopEndpoint`, so this default only matters for the bare `runHop` seam.
   const endpoint: HopEndpointLike | undefined =
     hop.endpoint ?? (kind.kind === "primary" && options.modelDef ? { modelDef: options.modelDef } : undefined);
-  return { ...hop, bundle, endpoint, dispatched: true };
+  // US-001: same default as the `request.executeHop` branch — the user's
+  // `runHop` (typically `createSessionRunHop` in production) is authoritative.
+  // Its catch path sets `dispatched: false` when `sendPrompt` throws without
+  // reaching a model; its success path sets `dispatched: true`. Stubs that
+  // omit the field default to `true`.
+  return { ...hop, bundle, endpoint, dispatched: hop.dispatched ?? true };
 }
 
 function unboundResult(agent: string): AgentResult {
