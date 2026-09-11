@@ -68,6 +68,19 @@ function declinedIteration(findings: Finding[], iterationNum: number): Iteration
   };
 }
 
+/**
+ * A US-003 zero-dispatch iteration: the dispatch raised `CALL_OP_NO_DISPATCH`,
+ * so no hop reached a model, nothing was edited, and validate was skipped. The
+ * failed dispatch's spend still rides on `fixesApplied`.
+ */
+function noDispatchIteration(findings: Finding[], iterationNum: number): Iteration<Finding> {
+  return {
+    ...iteration(findings, findings, iterationNum),
+    fixesApplied: [{ strategyName: "full-suite-rectify", op: "noop", targetFiles: [], summary: "", costUsd: 0.4 }],
+    noDispatch: true,
+  };
+}
+
 describe("withNoProgressBail — US-002", () => {
   test("US-002 AC1: returns a reason for three identical trailing iterations", () => {
     const same = finding("same");
@@ -349,5 +362,41 @@ describe("withNoProgressBail — declined iterations (#1654)", () => {
     };
     const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
     expect(bail([...stalledIterations([same], 2), partial])).not.toBeNull();
+  });
+});
+
+// ─── Zero-dispatch iterations are not evidence of no progress (US-003) ────────
+//
+// US-003 routes a `CALL_OP_NO_DISPATCH` dispatch into the cycle's zero-dispatch
+// exit, which records the iteration (with the failed dispatch's spend) and
+// marks it. The dispatch reached no model, so the iteration says nothing about
+// whether progress is possible — charging it to this window bails a story whose
+// dispatches are all failing for availability reasons, which is exactly when
+// another pass is most likely to succeed.
+
+describe("withNoProgressBail — zero-dispatch iterations (US-003)", () => {
+  test("US-003 AC3: does not count a zero-dispatch iteration toward the no-progress streak", () => {
+    const same = finding("same");
+    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
+    const iterations = [...stalledIterations([same], 2), noDispatchIteration([same], 3)];
+    expect(bail(iterations)).toBeNull();
+  });
+
+  test("US-003 AC3: still bails once real attempts fill the window again", () => {
+    // The exemption must not disable the bail — a zero-dispatch iteration is
+    // skipped, not credited as progress.
+    const same = finding("same");
+    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
+    const iterations = [...stalledIterations([same], 2), noDispatchIteration([same], 3), iteration([same], [same], 4)];
+    expect(bail(iterations)).not.toBeNull();
+  });
+
+  test("US-003 AC3 boundary: the exclusion is the marker, not the unchanged outcome", () => {
+    // Same shape as a zero-dispatch iteration — findings unchanged, no summaries
+    // — but the dispatch completed, so it IS evidence about progress and must
+    // keep counting. This is the existing no-edit path US-003 must not change.
+    const same = finding("same");
+    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
+    expect(bail(stalledIterations([same], 3))).not.toBeNull();
   });
 });

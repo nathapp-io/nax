@@ -150,6 +150,24 @@ describe("runFixCycle — zero dispatch skips validation (US-003 AC1/AC2)", () =
     expect(thrown.code).toBe("ADAPTER_FAILURE");
     expect(result).toBeUndefined();
   });
+
+  test("AC1 boundary: an error reusing the code but not the NaxError class still propagates", async () => {
+    // `callOp` raises a `NaxError`; a lookalike that merely reuses the code
+    // string is not the zero-dispatch signal, and swallowing it would hide a
+    // real failure behind a skip-validate exit.
+    const recorder = recordValidateCalls();
+    const cycle = makeCycle([lintA], [makeStrategy({ name: "implementer" })], recorder.validate);
+    const impostor = Object.assign(new Error("lookalike"), { code: "CALL_OP_NO_DISPATCH" });
+    const callOp = makeCallOpMock(() => {
+      throw impostor;
+    });
+
+    const { result, thrown } = await runCycleCapturing(cycle, callOp);
+
+    expect(thrown).toBe(impostor);
+    expect(result).toBeUndefined();
+    expect(recorder.calls).toHaveLength(0);
+  });
 });
 
 describe("runFixCycle — zero dispatch retains the failed dispatch's spend (US-003 AC5)", () => {
@@ -268,5 +286,29 @@ describe("runFixCycle — the completed no-edit path is unchanged (US-003 AC4)",
     expect(result.unresolvedDetail).toBe("conflicting requirements");
     // The existing give-up exit already skips validation; US-003 does not change it.
     expect(recorder.calls).toHaveLength(0);
+  });
+});
+
+describe("runFixCycle — the zero-dispatch conversion is scoped (US-003)", () => {
+  test("a co-run sibling that already applied fixes keeps the loud failure", async () => {
+    // The conversion applies only while nothing in the group has applied a fix.
+    // Here the first strategy edits the tree, so the failing second dispatch must
+    // not skip revalidation of that work: the error propagates to the caller
+    // exactly as it did before US-003.
+    const first = makeStrategy({ name: "first", coRun: "co-run-sequential" });
+    const second = makeStrategy({ name: "second", coRun: "co-run-sequential" });
+    const cycle = makeCycle([lintA], [first, second], async () => []);
+    let dispatch = 0;
+    const callOp = makeCallOpMock(() => {
+      dispatch += 1;
+      if (dispatch === 1) return { applied: true };
+      throw zeroDispatchError();
+    });
+
+    const { result, thrown } = await runCycleCapturing(cycle, callOp);
+
+    assertNaxError(thrown, "cycle rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_DISPATCH");
+    expect(result).toBeUndefined();
   });
 });

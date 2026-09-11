@@ -114,6 +114,19 @@ export interface Iteration<F extends Finding = Finding> {
    * as `costUsd`, so its presence always means a dispatch actually failed.
    */
   errorCostUsd?: number;
+  /**
+   * US-003 — the iteration's dispatch raised `CALL_OP_NO_DISPATCH`: no hop of
+   * the operation ever reached a model, so nothing was edited and `validate`
+   * was skipped (`findingsAfter` equals `findingsBefore`, and the failed
+   * dispatch's spend rides on `fixesApplied` like any other attempt).
+   *
+   * Consumers care about exactly one thing: `withNoProgressBail` excludes these
+   * iterations from the no-progress window. An iteration that reached no model
+   * is evidence of nothing — it neither advances the streak nor resets it —
+   * where a completed no-edit iteration (same `outcome`, no marker) is real
+   * evidence about whether progress is possible.
+   */
+  noDispatch?: true;
   outcome: IterationOutcome;
   startedAt: string; // ISO-8601
   finishedAt: string; // ISO-8601

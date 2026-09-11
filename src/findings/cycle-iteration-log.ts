@@ -26,6 +26,12 @@ export interface RecordIterationInput<F extends Finding> {
   outcome: IterationOutcome;
   startedAt: string;
   finishedAt: string;
+  /**
+   * US-003 — the iteration's dispatch raised `CALL_OP_NO_DISPATCH`; carried onto
+   * the stored iteration (and the log record) so `withNoProgressBail` can skip
+   * it. See `Iteration.noDispatch`.
+   */
+  noDispatch?: true;
 }
 
 export interface RecordIterationContext {
@@ -77,6 +83,9 @@ export function recordIteration<F extends Finding>(
     // #1948: omitted at zero on the same reasoning as `costUsd`, so its
     // presence in a record always means a dispatch actually failed.
     ...(errorCostUsd > 0 ? { errorCostUsd } : {}),
+    // US-003: omitted rather than false, so `undefined` is the only "this
+    // iteration did dispatch" value a reader has to consider.
+    ...(input.noDispatch ? { noDispatch: true as const } : {}),
   };
   cycle.iterations.push(iteration);
 
@@ -98,6 +107,9 @@ export function recordIteration<F extends Finding>(
     // #1948: omitted at zero on the same reasoning as `costUsd`, so its
     // presence in a record always means a dispatch actually failed.
     ...(errorCostUsd > 0 ? { errorCostUsd } : {}),
+    // US-003: the log carries the marker too, so a reader can tell a
+    // zero-dispatch iteration from an ordinary completed no-edit one.
+    ...(input.noDispatch ? { noDispatch: true as const } : {}),
   });
 
   return iteration;
