@@ -25,7 +25,7 @@ import type { PromptLoaderConfig } from "@/config/selectors";
 import type { NaxConfig } from "@/config/types";
 import { filterContextByRole, truncateToContextBudget } from "@/context";
 import type { UserStory } from "@/prd";
-import { renderCommandSpec } from "@/quality/command-spec";
+import { commandSpecIncludes, renderCommandSpec } from "@/quality/command-spec";
 import type { SelfVerificationPromptInput } from "@/quality/self-verification";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";
@@ -333,7 +333,7 @@ export class TddPromptBuilder {
         // placeholder at all hands the agent a tool call the runtime
         // rejects (`value "files" is not a placeholder in this command`).
         // The SSOT lives at src/execution/lifecycle/acceptance-helpers.ts:89.
-        config.quality?.commands?.testScoped?.includes("{{files}}") === true ? "testScoped" : undefined,
+        commandSpecIncludes(config.quality?.commands?.testScoped, "{{files}}") ? "testScoped" : undefined,
       )
       .hermeticConfig(config.quality?.testing)
       .build();

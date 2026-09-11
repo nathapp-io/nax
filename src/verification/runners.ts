@@ -7,6 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { normalizeCommandSpec } from "../quality/command-spec";
 import { analyzeTestExitCode } from "../test-runners";
 import { sleep } from "../utils/bun-deps";
 import { buildTestCommand, executeWithTimeout, normalizeEnvironment } from "./executor";
@@ -36,7 +37,9 @@ export async function verifyAssets(
 }
 
 /** Core verification: asset check → execute → parse output. */
-async function runVerificationCore(options: VerificationGateOptions): Promise<VerificationResult> {
+async function runSingleVerificationCore(
+  options: Omit<VerificationGateOptions, "command"> & { command: string },
+): Promise<VerificationResult> {
   const assetCheck = await verifyAssets(options.workdir, options.expectedFiles);
   if (!assetCheck.success) {
     return {
@@ -120,6 +123,45 @@ async function runVerificationCore(options: VerificationGateOptions): Promise<Ve
   };
 }
 
+function aggregateVerificationResults(results: VerificationResult[]): VerificationResult {
+  const firstFailure = results.find((result) => !result.success);
+  return {
+    status: firstFailure?.status ?? "SUCCESS",
+    success: results.every((result) => result.success),
+    countsTowardEscalation: results.some((result) => result.countsTowardEscalation),
+    output: results
+      .map((result) => `\n=== ${result.command ?? ""} (exit ${result.exitCode ?? -1}) ===\n${result.output ?? ""}`)
+      .join(""),
+    ...(firstFailure?.error !== undefined ? { error: firstFailure.error } : {}),
+    passCount: results.reduce((total, result) => total + (result.passCount ?? 0), 0),
+    failCount: results.reduce((total, result) => total + (result.failCount ?? 0), 0),
+    ...(firstFailure?.exitCode !== undefined ? { exitCode: firstFailure.exitCode } : { exitCode: 0 }),
+    command: results.map((result) => result.command ?? "").join(" && "),
+  };
+}
+
+async function runVerificationCore(options: VerificationGateOptions): Promise<VerificationResult> {
+  if (typeof options.command === "string") {
+    return runSingleVerificationCore({ ...options, command: options.command });
+  }
+  const commands = normalizeCommandSpec(options.command);
+  if (commands.length === 0) {
+    return {
+      status: "TEST_FAILURE",
+      success: false,
+      countsTowardEscalation: true,
+      error: "No test command configured",
+      exitCode: -1,
+      command: "",
+    };
+  }
+  const results: VerificationResult[] = [];
+  for (const command of commands) {
+    results.push(await runSingleVerificationCore({ ...options, command }));
+  }
+  return aggregateVerificationResults(results);
+}
+
 /** Run entire test suite (regression gate). */
 export async function fullSuite(options: VerificationGateOptions): Promise<VerificationResult> {
   return runVerificationCore(options);
@@ -130,7 +172,10 @@ export async function scoped(options: VerificationGateOptions): Promise<Verifica
   let scopedCommand = options.command;
   if (options.scopedTestPaths && options.scopedTestPaths.length > 0) {
     const quotedPaths = options.scopedTestPaths.map(shellQuoteArg).join(" ");
-    scopedCommand = `${options.command} ${quotedPaths}`;
+    scopedCommand =
+      typeof options.command === "string"
+        ? `${options.command} ${quotedPaths}`
+        : options.command.map((command) => `${command} ${quotedPaths}`);
   }
   return runVerificationCore({ ...options, command: scopedCommand });
 }

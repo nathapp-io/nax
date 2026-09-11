@@ -275,12 +275,16 @@ async function runSingleCommand(
  * rest.
  */
 export async function runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult> {
+  const { command } = opts;
+  if (typeof command === "string") {
+    return await runSingleCommand({ ...opts, command });
+  }
   const steps = normalizeCommandSpec(opts.command);
 
   if (steps.length === 0) {
     return {
       commandName: opts.commandName,
-      command: typeof opts.command === "string" ? opts.command : "",
+      command: "",
       success: false,
       exitCode: -1,
       output: `[nax] ${opts.commandName} skipped: empty command`,

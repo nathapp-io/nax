@@ -2,6 +2,7 @@ import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
+import { type QualityCommandSpec, replaceInCommandSpec } from "../quality/command-spec";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
 import { runQualityCommand } from "../quality/runner";
 import { shellQuoteArg } from "../verification/shell-quote";
@@ -27,12 +28,12 @@ export const _mechanicalLintFixDeps: MechanicalLintFixDeps = {
 };
 
 function buildCommand(
-  broad: string | undefined,
-  scoped: string | undefined,
+  broad: QualityCommandSpec | undefined,
+  scoped: QualityCommandSpec | undefined,
   scopeFiles?: readonly string[],
-): string | null {
+): QualityCommandSpec | null {
   if (scoped && scopeFiles && scopeFiles.length > 0) {
-    return scoped.replaceAll("{{files}}", scopeFiles.map(shellQuoteArg).join(" "));
+    return replaceInCommandSpec(scoped, "{{files}}", scopeFiles.map(shellQuoteArg).join(" "));
   }
   if (broad) {
     return broad;

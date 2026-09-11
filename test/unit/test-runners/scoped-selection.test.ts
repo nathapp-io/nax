@@ -161,6 +161,15 @@ describe("selectScopedTests", () => {
     expect(result.effectiveCommand).toBe("pytest 'test/a.test.ts'");
   });
 
+  test("applies {{files}} substitution to every scoped list entry", async () => {
+    Object.assign(_scopedSelectionDeps, makeFakeDeps({ mapSourceToTests: async () => ["test/a.test.ts"] }));
+    const result = await selectScopedTests({
+      ...baseInput,
+      testScopedTemplate: ["pytest {{files}}", "pytest --coverage {{files}}"],
+    });
+    expect(result.effectiveCommand).toEqual(["pytest 'test/a.test.ts'", "pytest --coverage 'test/a.test.ts'"]);
+  });
+
   test("smart runner disabled → base command, no smart-runner call", async () => {
     Object.assign(
       _scopedSelectionDeps,

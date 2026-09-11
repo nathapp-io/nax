@@ -288,6 +288,20 @@ describe("US-004 — TddPromptBuilder scopes test-command key into isolation", (
     expect(prompt).toContain("`bun test <path/to/test-file>`");
   });
 
+  test("test-writer with a list scoped template → wraps the affordance", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: {
+        commands: {
+          test: ["bun test", "bun test --coverage"],
+          testScoped: ["bun test {{files}}", "bun test --coverage {{files}}"],
+        },
+      },
+    });
+    const prompt = await TddPromptBuilder.buildForRole("test-writer", "/tmp", config, story, {});
+    expect(prompt).toContain("<!--nax:run-test:");
+  });
+
   test("implementer + scoped template → isolation section also wraps the test-filter rule", async () => {
     const story = makeStory();
     const config = makeNaxConfig({

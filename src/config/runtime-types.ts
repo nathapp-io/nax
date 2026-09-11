@@ -7,6 +7,7 @@
 
 import type { ConstitutionConfig } from "@/constitution/types";
 import type { ReviewConfig } from "@/review/types";
+import type { QualityCommandSpec } from "../quality/command-spec";
 import type { AgentConfig, GenerateConfig } from "./runtime-types-agent";
 import type { AutoRouteConfig } from "./runtime-types-auto-route";
 import type { ContextConfig } from "./runtime-types-context";
@@ -178,25 +179,25 @@ export interface QualityConfig {
   scopeTestThreshold?: number;
   /** Custom quality commands */
   commands: {
-    typecheck?: string;
-    lint?: string;
+    typecheck?: QualityCommandSpec;
+    lint?: QualityCommandSpec;
     /** Scoped lint command template with {{files}} placeholder (e.g., "biome check {{files}}") */
-    lintScoped?: string;
-    test?: string;
+    lintScoped?: QualityCommandSpec;
+    test?: QualityCommandSpec;
     /** Scoped test command template with {{files}} placeholder (e.g., "bun test --timeout=60000 {{files}}") */
-    testScoped?: string;
+    testScoped?: QualityCommandSpec;
     /** Auto-fix lint errors (e.g., "biome check --fix") */
-    lintFix?: string;
+    lintFix?: QualityCommandSpec;
     /** Scoped auto-fix lint command template with {{files}} placeholder */
-    lintFixScoped?: string;
+    lintFixScoped?: QualityCommandSpec;
     /** Auto-fix formatting (e.g., "biome format --write") */
-    formatFix?: string;
-    formatFixScoped?: string;
-    build?: string;
+    formatFix?: QualityCommandSpec;
+    formatFixScoped?: QualityCommandSpec;
+    build?: QualityCommandSpec;
     /** Coverage gate (e.g. "bun run test:coverage"); agent affordance, never invoked by nax. */
-    coverage?: string;
+    coverage?: QualityCommandSpec;
     /** One-time package init (e.g. "uv sync"/"bun install"); see schema for full docs. */
-    setup?: string;
+    setup?: QualityCommandSpec;
   };
   /** Lint output parsing preferences for scope-aware rectification splitting. */
   lintOutput?: {

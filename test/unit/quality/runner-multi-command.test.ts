@@ -77,6 +77,14 @@ describe("runQualityCommand with a list", () => {
     expect(result.command).toBe("only-one");
   });
 
+  test("preserves a plain string command byte-for-byte", async () => {
+    const stub = stubSpawn(() => 0);
+    const command = "  only-one  ";
+    const result = await runQualityCommand({ commandName: "lint", command, workdir: "/tmp" });
+    expect(commandsRun(stub)).toEqual([command]);
+    expect(result.command).toBe(command);
+  });
+
   test("an empty list is treated as an undeclared command", async () => {
     const stub = stubSpawn(() => 0);
     const result = await runQualityCommand({ commandName: "build", command: [], workdir: "/tmp" });

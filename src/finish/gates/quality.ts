@@ -19,6 +19,7 @@
 import { join } from "node:path";
 import { loadConfig, loadPackageOverride, type NaxConfig, PROJECT_NAX_DIR } from "@/config";
 import { runQualityCommand } from "@/quality";
+import type { QualityCommandSpec } from "@/quality/command-spec";
 import type { QualityGateResult } from "../types";
 
 export const _qualityGateDeps = {
@@ -41,7 +42,7 @@ export const DEFAULT_GATE_TIMEOUT_MS = 900_000;
 export interface GateCommand {
   /** `<gate>` at the root, `<gate>@<packageDir>` for a package overlay. */
   name: string;
-  command: string;
+  command: QualityCommandSpec;
   /** Absolute directory the command is spawned from. */
   cwd: string;
 }
@@ -76,9 +77,9 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
   const seen = new Set<string>();
   const out: GateCommand[] = [];
 
-  const add = (name: string, command: string | undefined, cwd: string): void => {
+  const add = (name: string, command: QualityCommandSpec | undefined, cwd: string): void => {
     if (!command) return;
-    const key = `${cwd}::${command}`;
+    const key = `${cwd}::${JSON.stringify(command)}`;
     if (seen.has(key)) return;
     seen.add(key);
     out.push({ name, command, cwd });

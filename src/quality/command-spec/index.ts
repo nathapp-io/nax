@@ -26,6 +26,21 @@ export function containsShellChain(spec: QualityCommandSpec | undefined): boolea
   return normalizeCommandSpec(spec).some((entry) => entry.includes("&&"));
 }
 
+/** True when any command entry includes the supplied literal fragment. */
+export function commandSpecIncludes(spec: QualityCommandSpec | undefined, fragment: string): boolean {
+  return normalizeCommandSpec(spec).some((entry) => entry.includes(fragment));
+}
+
+/** Apply a literal replacement to every command entry without changing its shape. */
+export function replaceInCommandSpec(
+  spec: QualityCommandSpec,
+  searchValue: string,
+  replacement: string,
+): QualityCommandSpec {
+  const replace = (command: string) => command.replaceAll(searchValue, replacement);
+  return typeof spec === "string" ? replace(spec) : spec.map(replace);
+}
+
 /**
  * Render a spec as the single string that prompt and context surfaces show a
  * reader. `" && "` is what a human recognises and would type, even though a

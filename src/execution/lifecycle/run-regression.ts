@@ -16,6 +16,7 @@ import { makeFullSuiteRectifyStrategy } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
 import { countStories } from "@/prd";
+import { renderCommandSpec } from "@/quality";
 import type { NaxRuntime } from "@/runtime";
 import type { TestSummary } from "@/test-runners";
 import { parseTestOutput } from "@/test-runners";
@@ -351,7 +352,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     rawOutput: fullSuiteResult.output,
     config,
     workdir,
-    testCommand,
+    testCommand: renderCommandSpec(testCommand) ?? "",
     quarantineMemo,
     triageFn: _regressionDeps.triageFlakyFindings,
     resolveBaselineDiffFn: _regressionDeps.resolveFlakeBaselineDiff,

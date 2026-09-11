@@ -9,7 +9,7 @@ import type { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
-import { renderCommandSpec } from "../quality";
+import { commandSpecIncludes, renderCommandSpec } from "../quality";
 import { buildFrontmatter } from "./prompts-shared";
 
 /**
@@ -30,8 +30,9 @@ export async function handleThreeSessionTddPrompts(
   // `testScoped` key (a template that takes anything other than
   // `{{files}}` would render a tool call the `RunCommand` runtime
   // rejects). The SSOT lives at src/execution/lifecycle/acceptance-helpers.ts:89.
-  const scopedTestCommand =
-    ctx.config.quality?.commands?.testScoped?.includes("{{files}}") === true ? "testScoped" : undefined;
+  const scopedTestCommand = commandSpecIncludes(ctx.config.quality?.commands?.testScoped, "{{files}}")
+    ? "testScoped"
+    : undefined;
   // Build prompts for each session using PromptBuilder
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = await Promise.all([
     PromptBuilder.for("test-writer", { isolation: "strict" })

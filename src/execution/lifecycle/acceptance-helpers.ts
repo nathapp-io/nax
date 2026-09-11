@@ -12,6 +12,7 @@ import type { NaxConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
+import { commandSpecIncludes, normalizeCommandSpec, type QualityCommandSpec, renderCommandSpec } from "@/quality";
 import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "@/utils/path-filters";
 import type { AcceptanceLoopResult, AcceptanceTestPathEntry } from "./acceptance-loop";
 
@@ -50,8 +51,12 @@ export function resolveAcceptanceFixTarget(
   // scoped candidate and render an empty path into the prompt.
   const acceptanceTestPath = failedPackage?.testPath || selectedPathEntry?.testPath || "";
 
-  const substituted = (candidate: string | undefined): string | undefined =>
-    candidate && acceptanceTestPath ? substituteAcceptanceTestPath(candidate, acceptanceTestPath) : candidate;
+  const substituted = (candidate: QualityCommandSpec | undefined): QualityCommandSpec | undefined => {
+    if (candidate === undefined || !acceptanceTestPath) return candidate;
+    return typeof candidate === "string"
+      ? substituteAcceptanceTestPath(candidate, acceptanceTestPath)
+      : candidate.map((entry) => substituteAcceptanceTestPath(entry, acceptanceTestPath));
+  };
   // A scoped template can carry `{{package}}` as well, which only
   // resolveQualityTestCommands can fill — it reads package.json asynchronously
   // (src/quality/command-resolver.ts) and this resolver is synchronous. A
@@ -60,8 +65,8 @@ export function resolveAcceptanceFixTarget(
   // For a turbo/nx orchestrator that is also the right answer: its scoped form
   // is deliberately never file-expanded, so falling through to the suite
   // command beats handing over syntax the runner would reject.
-  const runnable = (candidate: string | undefined): string | undefined =>
-    candidate !== undefined && !candidate.includes("{{") ? candidate : undefined;
+  const runnable = (candidate: QualityCommandSpec | undefined): QualityCommandSpec | undefined =>
+    candidate !== undefined && !commandSpecIncludes(candidate, "{{") ? candidate : undefined;
 
   const scopedTemplate = acceptanceTestPath ? config.quality?.commands?.testScoped : undefined;
   const scopedCommand = runnable(substituted(scopedTemplate));
@@ -76,7 +81,7 @@ export function resolveAcceptanceFixTarget(
     // carry a placeholder, and the invariant above admits no exceptions. It is
     // NOT passed through `runnable()` — a residual placeholder there leaves
     // nothing else to fall back to, so a template beats returning undefined.
-    testCommand: overrideCommand ?? scopedCommand ?? substituted(config.quality?.commands?.test),
+    testCommand: renderCommandSpec(overrideCommand ?? scopedCommand ?? substituted(config.quality?.commands?.test)),
     // Named for the prompt ONLY when the scoped template is the candidate that
     // actually won and `{{files}}` is its sole placeholder. RunCommand resolves
     // a declared key by exact placeholder match, so naming `testScoped` when a
@@ -85,7 +90,10 @@ export function resolveAcceptanceFixTarget(
     // answer `placeholder {{package}} has no value` or `value "files" is not a
     // placeholder in this command`.
     scopedCommandName:
-      overrideCommand === undefined && scopedCommand !== undefined && scopedTemplate?.includes("{{files}}") === true
+      overrideCommand === undefined &&
+      scopedCommand !== undefined &&
+      commandSpecIncludes(scopedTemplate, "{{files}}") &&
+      normalizeCommandSpec(scopedTemplate).every((entry) => !entry.includes("{{package}}"))
         ? "testScoped"
         : undefined,
   };

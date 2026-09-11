@@ -11,6 +11,7 @@ import type {
   SemanticReviewConfigSchema,
 } from "../config/schemas-review";
 import type { Finding } from "../findings";
+import type { QualityCommandSpec } from "../quality/command-spec";
 
 /** Review check name */
 export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic" | "adversarial" | "git-clean";
@@ -279,20 +280,20 @@ export interface ReviewConfig {
   checks: ReviewCheckName[];
   /** Custom commands per check */
   commands: {
-    typecheck?: string;
-    lint?: string;
+    typecheck?: QualityCommandSpec;
+    lint?: QualityCommandSpec;
     /** Scoped lint command template with {{files}} placeholder */
-    lintScoped?: string;
-    test?: string;
-    build?: string;
+    lintScoped?: QualityCommandSpec;
+    test?: QualityCommandSpec;
+    build?: QualityCommandSpec;
     /** Auto-fix lint errors — used by autofix stage when lint fails */
-    lintFix?: string;
+    lintFix?: QualityCommandSpec;
     /** Scoped auto-fix lint command template with {{files}} placeholder */
-    lintFixScoped?: string;
+    lintFixScoped?: QualityCommandSpec;
     /** Auto-fix formatting — used by autofix stage when lint fails */
-    formatFix?: string;
+    formatFix?: QualityCommandSpec;
     /** Scoped auto-format command template with {{files}} placeholder */
-    formatFixScoped?: string;
+    formatFixScoped?: QualityCommandSpec;
   };
   /** Review audit configuration — saves parsed reviewer JSON to .nax/review-audit/ */
   audit?: { enabled: boolean };

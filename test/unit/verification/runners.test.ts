@@ -91,6 +91,21 @@ describe("fullSuite", () => {
     expect(result.command).toBe("bun test");
   });
 
+  test("runs every list entry after a failure and aggregates their output", async () => {
+    const spawnStub = makeSpawn(({ cmd }) => ({
+      stdout: `output ${cmd[2]}`,
+      exitCode: cmd[2] === "step-a" ? 1 : 0,
+    }));
+    _executorDeps.spawn = spawnStub.spawn;
+
+    const result = await fullSuite(baseOptions({ command: ["step-a", "step-b"] }));
+
+    expect(spawnStub.calls.map((call) => call.cmd[2])).toEqual(["step-a", "step-b"]);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("output step-a");
+    expect(result.output).toContain("output step-b");
+  });
+
   test("returns TEST_FAILURE with parsed pass/fail counts on a real test failure", async () => {
     _executorDeps.spawn = makeSpawn(() => ({ stdout: "Tests: 2 failed, 3 passed", exitCode: 1 })).spawn;
 

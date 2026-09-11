@@ -3,6 +3,12 @@ import type { QualityConfig } from "../config/schema";
 import { getSafeLogger } from "../logger";
 import { getContextFiles, type UserStory } from "../prd";
 import { type QualityCommandResult, runQualityCommand } from "../quality";
+import {
+  normalizeCommandSpec,
+  type QualityCommandSpec,
+  renderCommandSpec,
+  replaceInCommandSpec,
+} from "../quality/command-spec";
 import { findPackageDir } from "../test-runners/resolver";
 import { gitWithTimeout } from "../utils/git";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
@@ -18,7 +24,7 @@ export interface AutofixLintScope {
 }
 
 interface ScopedLintArgs {
-  resolvedLintCommand: string;
+  resolvedLintCommand: QualityCommandSpec;
   configCommands: ReviewConfig["commands"];
   qualityCommands?: QualityConfig["commands"];
   lintOutputFormat?: LintOutputFormat;
@@ -46,17 +52,24 @@ function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.\//, "");
 }
 
-function isSupportedDerivedScopedCommand(command: string): boolean {
-  const trimmed = command.trim();
+function isSupportedDerivedScopedCommand(command: QualityCommandSpec): boolean {
+  const commands = normalizeCommandSpec(command);
   const supported = ["eslint", "biome", "ruff", "flake8"];
-  if (supported.some((tool) => trimmed === tool || trimmed.startsWith(`${tool} `))) return true;
-  if (trimmed.startsWith("bunx ")) return supported.some((tool) => trimmed.startsWith(`bunx ${tool}`));
-  return false;
+  return (
+    commands.length > 0 &&
+    commands.every((entry) => {
+      const trimmed = entry.trim();
+      return (
+        supported.some((tool) => trimmed === tool || trimmed.startsWith(`${tool} `)) ||
+        (trimmed.startsWith("bunx ") && supported.some((tool) => trimmed.startsWith(`bunx ${tool}`)))
+      );
+    })
+  );
 }
 
-function appendFilesToCommand(command: string, files: readonly string[]): string {
+function appendFilesToCommand(command: QualityCommandSpec, files: readonly string[]): QualityCommandSpec {
   const fileArgs = files.map(shellQuoteArg).join(" ");
-  return `${command} ${fileArgs}`;
+  return typeof command === "string" ? `${command} ${fileArgs}` : command.map((entry) => `${entry} ${fileArgs}`);
 }
 
 async function listChangedFiles(workdir: string, baseRef: string): Promise<string[] | null> {
@@ -170,7 +183,7 @@ async function resolveLintScope(args: ScopedLintArgs): Promise<ScopeResult> {
 function resolveScopedTemplate(
   reviewCommands: ReviewConfig["commands"],
   qualityCommands: QualityConfig["commands"] | undefined,
-): string | undefined {
+): QualityCommandSpec | undefined {
   return reviewCommands.lintScoped ?? qualityCommands?.lintScoped;
 }
 
@@ -178,7 +191,7 @@ async function runLintCommand(
   workdir: string,
   storyId: string | undefined,
   env: Record<string, string | undefined> | undefined,
-  command: string,
+  command: QualityCommandSpec,
   stripEnvVars?: string[],
 ): Promise<QualityCommandResult> {
   return runQualityCommand({
@@ -255,7 +268,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     logger?.info("review", "lint_scope_empty", { storyId: args.storyId });
     return {
       check: "lint",
-      command: scopedTemplate ?? fullLintCommand,
+      command: renderCommandSpec(scopedTemplate ?? fullLintCommand) ?? "",
       success: true,
       exitCode: 0,
       output: "lint skipped: no in-scope files",
@@ -275,7 +288,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
   }
 
   if (scopedTemplate) {
-    const scopedCommand = scopedTemplate.replaceAll("{{files}}", scope.files.map(shellQuoteArg).join(" "));
+    const scopedCommand = replaceInCommandSpec(scopedTemplate, "{{files}}", scope.files.map(shellQuoteArg).join(" "));
     const scopedResult = await _scopedLintDeps.runLintCommand(
       args.workdir,
       args.storyId,

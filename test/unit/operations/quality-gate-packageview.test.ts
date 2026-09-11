@@ -87,7 +87,7 @@ describe("typecheckCheckOp via packageView", () => {
 
 describe("verifyScopedOp via packageView", () => {
   test("reads quality.commands.test from packageView (not phantom ctx.config)", async () => {
-    let sawTestCommand: string | undefined;
+    let sawTestCommand: NaxConfig["quality"]["commands"]["test"];
     const deps: VerifyScopedDeps = {
       ..._verifyScopedDeps,
       selectScopedTests: async (o) => {
