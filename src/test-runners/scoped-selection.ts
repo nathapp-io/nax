@@ -14,6 +14,7 @@
 import { getLogger } from "@/logger";
 import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "@/test-runners";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
+import { normalizeCommandSpec, type QualityCommandSpec, replaceInCommandSpec } from "../quality/command-spec";
 import { _smartRunnerDeps, MAX_GREP_TEST_FILES } from "../verification/smart-runner";
 import type { ResolvedTestPatterns } from "./resolver";
 
@@ -39,14 +40,16 @@ export function coerceSmartRunner(val: unknown) {
 
 export function buildScopedCommand(
   testFiles: string[],
-  baseCommand: string,
-  testScopedTemplate: string | undefined,
-): string {
+  baseCommand: QualityCommandSpec,
+  testScopedTemplate: QualityCommandSpec | undefined,
+): QualityCommandSpec {
   if (testScopedTemplate) {
     const quotedFiles = testFiles.map((file) => `'${file.replaceAll("'", "'\\''")}'`);
-    return testScopedTemplate.replace("{{files}}", quotedFiles.join(" "));
+    return replaceInCommandSpec(testScopedTemplate, "{{files}}", quotedFiles.join(" "));
   }
-  return _scopedSelectionDeps.buildSmartTestCommand(testFiles, baseCommand);
+  return typeof baseCommand === "string"
+    ? _scopedSelectionDeps.buildSmartTestCommand(testFiles, baseCommand)
+    : baseCommand.map((command) => _scopedSelectionDeps.buildSmartTestCommand(testFiles, command));
 }
 
 /**
@@ -54,19 +57,20 @@ export function buildScopedCommand(
  * (e.g. `--filter=...[HEAD~1]`, `nx affected`). Smart-runner must not append
  * file paths to such commands — it would produce invalid syntax.
  */
-export function isMonorepoOrchestratorCommand(command: string): boolean {
-  return /\bturbo\b/.test(command) || /\bnx\b/.test(command);
+export function isMonorepoOrchestratorCommand(command: QualityCommandSpec): boolean {
+  const commands = normalizeCommandSpec(command);
+  return commands.length > 0 && commands.every((entry) => /\bturbo\b/.test(entry) || /\bnx\b/.test(entry));
 }
 
 export interface SelectScopedTestsInput {
   workdir: string;
   storyId: string;
   storyGitRef?: string;
-  testCommand: string;
-  testScopedTemplate?: string;
+  testCommand: QualityCommandSpec;
+  testScopedTemplate?: QualityCommandSpec;
   smartRunnerConfig: unknown;
   scopeTestThreshold?: number;
-  fallbackFullSuiteCommand?: string;
+  fallbackFullSuiteCommand?: QualityCommandSpec;
   naxIgnoreIndex?: NaxIgnoreIndex;
   /**
    * Absolute repo root — anchor for changed-test detection and path-convention
@@ -84,7 +88,7 @@ export interface SelectScopedTestsInput {
 }
 
 export interface SelectScopedTestsResult {
-  effectiveCommand: string;
+  effectiveCommand: QualityCommandSpec;
   isFullSuite: boolean;
   scopeTestFallback?: boolean;
   thresholdFallback: boolean;

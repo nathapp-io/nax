@@ -21,6 +21,7 @@
 
 import path from "node:path";
 import { getSafeLogger } from "../logger";
+import { normalizeCommandSpec, type QualityCommandSpec } from "../quality/command-spec";
 import { spawn } from "../utils/bun-deps";
 import { parseCommandToArgv } from "../utils/command-argv";
 
@@ -74,41 +75,41 @@ export async function maybeRunNewPackageSetup(opts: {
   runtime: object | undefined;
   storyId: string;
   packageDir: string;
-  setupCommand: string | undefined;
+  setupCommand: QualityCommandSpec | undefined;
 }): Promise<void> {
   const { runtime, storyId, packageDir, setupCommand } = opts;
   if (!runtime || !setupCommand) return;
   if (!claimSetup(runtime, packageDir)) return;
 
-  const argv = parseCommandToArgv(setupCommand);
-  if (argv.length === 0) return;
-
   const logger = getSafeLogger();
-  logger?.info("setup", "Running setup for newly-created package", { storyId, packageDir, command: setupCommand });
-
-  try {
-    const proc = _newPackageSetupDeps.spawn(argv, { cwd: packageDir, stdout: "pipe", stderr: "pipe" });
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    if (exitCode !== 0) {
-      const output = [stdout, stderr].filter(Boolean).join("\n").slice(-MAX_SETUP_OUTPUT_CHARS);
-      logger?.warn("setup", "Package setup command failed — continuing; verification will surface the impact", {
+  for (const command of normalizeCommandSpec(setupCommand)) {
+    const argv = parseCommandToArgv(command);
+    if (argv.length === 0) continue;
+    logger?.info("setup", "Running setup for newly-created package", { storyId, packageDir, command });
+    try {
+      const proc = _newPackageSetupDeps.spawn(argv, { cwd: packageDir, stdout: "pipe", stderr: "pipe" });
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      if (exitCode !== 0) {
+        const output = [stdout, stderr].filter(Boolean).join("\n").slice(-MAX_SETUP_OUTPUT_CHARS);
+        logger?.warn("setup", "Package setup command failed — continuing; verification will surface the impact", {
+          storyId,
+          packageDir,
+          exitCode,
+          output,
+        });
+        continue;
+      }
+      logger?.debug("setup", "Package setup complete", { storyId, packageDir });
+    } catch (err) {
+      logger?.warn("setup", "Package setup command threw — continuing", {
         storyId,
         packageDir,
-        exitCode,
-        output,
+        error: err instanceof Error ? err.message : String(err),
       });
-      return;
     }
-    logger?.debug("setup", "Package setup complete", { storyId, packageDir });
-  } catch (err) {
-    logger?.warn("setup", "Package setup command threw — continuing", {
-      storyId,
-      packageDir,
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
 }

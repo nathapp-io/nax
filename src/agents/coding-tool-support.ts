@@ -25,6 +25,7 @@ import {
 } from "@/tools";
 import { toolAuditDir } from "../config/paths";
 import { resolvePermissions } from "../config/permissions";
+import type { QualityCommandSpec } from "../quality";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 
@@ -44,7 +45,7 @@ export function buildCodingToolSupport(args: {
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
   storyId?: string;
-  declaredCommands?: ReadonlyMap<string, string>;
+  declaredCommands?: ReadonlyMap<string, QualityCommandSpec>;
   stripEnvVars?: readonly string[];
   auditDir?: string;
   sessionName?: string;
@@ -81,7 +82,7 @@ export function buildCodingToolSupport(args: {
   const allowExec = args.declared.includes(EXEC_TOOL_NAME) && execGrant !== undefined;
   const advertised = args.declared.filter((name) => name !== EXEC_TOOL_NAME);
 
-  const declaredCommands = args.declaredCommands ?? new Map<string, string>();
+  const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
   const sink =
     args.auditDir !== undefined
       ? createToolAuditSink({ dir: args.auditDir, sessionName: args.sessionName ?? "unattached" })
@@ -182,7 +183,7 @@ export async function resolveCodingToolSupport(
   // widened locally here; the shared agentManagerConfigSelector stays untouched.
   const widenedConfig = options.config as
     | {
-        quality?: { commands?: Partial<Record<string, string>>; stripEnvVars?: unknown };
+        quality?: { commands?: Partial<Record<string, QualityCommandSpec>>; stripEnvVars?: unknown };
         // AgentManagerConfig (agentManagerConfigSelector) only picks
         // agent/execution/profile, so `install` is not in its type even
         // though both hops source this from the full NaxConfig at runtime
@@ -202,7 +203,9 @@ export async function resolveCodingToolSupport(
   // widening needed, unlike `install` above.
   const denyPaths = options.config?.execution?.denyPaths;
   const declaredCommands = new Map(
-    Object.entries(commands).filter((e): e is [string, string] => typeof e[1] === "string"),
+    Object.entries(commands).filter(
+      (e): e is [string, QualityCommandSpec] => typeof e[1] === "string" || Array.isArray(e[1]),
+    ),
   );
   const root = options.codingToolRoot;
   const auditDir =

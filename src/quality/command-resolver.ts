@@ -10,26 +10,27 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { isMonorepoOrchestratorCommand } from "../test-runners";
 import { shellQuoteArg } from "../verification/shell-quote";
+import { commandSpecIncludes, type QualityCommandSpec, replaceInCommandSpec } from "./command-spec";
 
 export interface ResolvedTestCommands {
   /**
    * Configured base command (review.commands.test ?? quality.commands.test).
    * undefined = no test command configured; callers should skip testing.
    */
-  rawTestCommand: string | undefined;
+  rawTestCommand: QualityCommandSpec | undefined;
   /**
    * Effective command after orchestrator promotion.
    * - Non-orchestrators: same as rawTestCommand.
    * - Orchestrators with storyWorkdir set: the resolved testScoped template (e.g. "bunx turbo test --filter=@pkg").
    * - Orchestrators without storyWorkdir: same as rawTestCommand (full suite).
    */
-  testCommand: string | undefined;
+  testCommand: QualityCommandSpec | undefined;
   /**
    * Resolved testScoped template ({{package}} substituted for monorepo stories).
    * undefined for monorepo orchestrators (cleared after promotion — they scope natively).
    * undefined when no testScoped command is configured.
    */
-  testScopedTemplate: string | undefined;
+  testScopedTemplate: QualityCommandSpec | undefined;
   /** True when rawTestCommand is a monorepo orchestrator (turbo/nx). */
   isMonorepoOrchestrator: boolean;
   /** Max failing files before falling back to the full suite (quality.scopeTestThreshold). */
@@ -71,10 +72,10 @@ export async function resolveQualityTestCommands(
   // Resolve {{package}} in testScoped template for monorepo stories.
   // Returns null if package.json is absent (non-JS project) — callers skip template.
   let resolvedScopedTemplate = rawScopedTemplate;
-  if (rawScopedTemplate?.includes("{{package}}") && storyWorkdir) {
+  if (rawScopedTemplate !== undefined && commandSpecIncludes(rawScopedTemplate, "{{package}}") && storyWorkdir) {
     const pkgName = await _commandResolverDeps.readPackageName(workdir);
     resolvedScopedTemplate =
-      pkgName !== null ? rawScopedTemplate.replaceAll("{{package}}", shellQuoteArg(pkgName)) : undefined;
+      pkgName !== null ? replaceInCommandSpec(rawScopedTemplate, "{{package}}", shellQuoteArg(pkgName)) : undefined;
   }
 
   // Monorepo orchestrator promotion: turbo/nx handle scoping natively via their own filter syntax.

@@ -25,6 +25,7 @@ import type { PromptLoaderConfig } from "@/config/selectors";
 import type { NaxConfig } from "@/config/types";
 import { filterContextByRole, truncateToContextBudget } from "@/context";
 import type { UserStory } from "@/prd";
+import { commandSpecIncludes, renderCommandSpec } from "@/quality/command-spec";
 import type { SelfVerificationPromptInput } from "@/quality/self-verification";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";
@@ -323,7 +324,7 @@ export class TddPromptBuilder {
       .v2FeatureContext(opts.contextBundle?.pushMarkdown)
       .featureContext(opts.contextBundle ? undefined : opts.featureContextMarkdown)
       .constitution(opts.constitution)
-      .testCommand(config.quality?.commands?.test)
+      .testCommand(renderCommandSpec(config.quality?.commands?.test))
       .scopedTestCommand(
         // US-004 — gate the `run-test` region on the SSOT for naming the
         // `testScoped` key. `RunCommand` resolves a declared key by exact
@@ -332,7 +333,7 @@ export class TddPromptBuilder {
         // placeholder at all hands the agent a tool call the runtime
         // rejects (`value "files" is not a placeholder in this command`).
         // The SSOT lives at src/execution/lifecycle/acceptance-helpers.ts:89.
-        config.quality?.commands?.testScoped?.includes("{{files}}") === true ? "testScoped" : undefined,
+        commandSpecIncludes(config.quality?.commands?.testScoped, "{{files}}") ? "testScoped" : undefined,
       )
       .hermeticConfig(config.quality?.testing)
       .build();

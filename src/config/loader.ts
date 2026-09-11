@@ -21,6 +21,7 @@ import {
   rejectLegacyRectificationKeys,
   stripRemovedNoOpKeys,
   validatePermissionsBlock,
+  warnQualityCommandChains,
 } from "./config-guards";
 import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
 import { mergePackageConfig } from "./merge";
@@ -243,6 +244,12 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   // Post-merge placement yields one warning per resolved config regardless of
   // which layer supplied the key.
   const stripped = stripRemovedNoOpKeys(rawConfig, defaultConfigWarn);
+
+  // nax#1990 — warn (never throw) when a declared quality command chains with
+  // `&&`, naming the list form as the remedy. Same post-merge placement as the
+  // strip above: one warning per resolved config regardless of which layer
+  // supplied the command.
+  warnQualityCommandChains(stripped, defaultConfigWarn);
 
   const result = NaxConfigSchema.safeParse(stripped);
   if (!result.success) {
@@ -470,6 +477,17 @@ export async function loadConfigForWorkdir(
     logger,
     warnDedupe,
   ) as Partial<NaxConfig>;
+  // nax#1990 — scoped to THIS layer's own `quality.commands`, not the merged
+  // result below. `loadConfig` (root chain) already warns once per resolved
+  // root config and is cached per `cacheKey`, so a root-only chained command
+  // must not be re-warned here on every `loadConfigForWorkdir` call for every
+  // package/story in a run (iteration-runner.ts, parallel-batch.ts,
+  // runner-completion.ts, acceptance-setup.ts each call this once per story).
+  // Running the check on the raw per-layer object rather than the merged
+  // config means only a command actually declared (or overridden) at THIS
+  // package layer can warn here — an inherited root value cannot, since it is
+  // absent from `shimmedPackageFields`.
+  warnQualityCommandChains(shimmedPackageFields as Record<string, unknown>, warnDedupe.warn);
   let merged = mergePackageConfig(rootConfig, shimmedPackageFields);
 
   // Strip the four inert no-op keys from the per-package overlay result.
@@ -525,6 +543,11 @@ export async function loadConfigForWorkdir(
       // #1620: same chain as the root profile layer (BUG-51) — a per-package
       // profile can carry the same legacy shapes as any other layer.
       const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, logger, warnDedupe);
+      // nax#1990 — same per-layer scoping as the package overlay above: a
+      // package profile can introduce its own chained command, and this must
+      // run on the profile's own data, not the accumulating `rawMerged`,
+      // for the same not-inherited-from-root reason.
+      warnQualityCommandChains(shimmedProfileData, warnDedupe.warn);
       rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, shimmedProfileData);
     }
     rawMerged.profile = packageChain.join("+");
@@ -547,6 +570,11 @@ export async function loadConfigForWorkdir(
   // safeParse, mirroring the root chain. Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.
   rawMerged = stripRemovedNoOpKeys(rawMerged, warnDedupe.warn);
+  // nax#1990's warnQualityCommandChains check runs per-layer, above (on
+  // shimmedPackageFields and each shimmedProfileData) — not here on the
+  // merged result, which would re-warn every root-inherited chained command
+  // on every package/story resolution in a run. See the comments at those
+  // call sites.
   // #574's single-shim patch here (`_applyRemovedWorktreeInheritShim` on the merged
   // result) is gone: #1620 replaced it with the full chain run on each overlay layer
   // above, which covers that case and every other shim.

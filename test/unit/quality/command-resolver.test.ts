@@ -63,6 +63,29 @@ describe("resolveQualityTestCommands — priority", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveQualityTestCommands — {{package}} substitution", () => {
+  test("substitutes {{package}} in every list entry", async () => {
+    const origRead = _commandResolverDeps.readPackageName;
+    _commandResolverDeps.readPackageName = mock(() => Promise.resolve("@acme/api"));
+    try {
+      const config = makeConfig({
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: {
+            test: ["bun test", "bun test --coverage"],
+            testScoped: ["bun test --filter={{package}}", "bun test --coverage --filter={{package}}"],
+          },
+        },
+      });
+      const result = await resolveQualityTestCommands(config, "/workdir", "packages/api");
+      expect(result.testScopedTemplate).toEqual([
+        "bun test --filter='@acme/api'",
+        "bun test --coverage --filter='@acme/api'",
+      ]);
+    } finally {
+      _commandResolverDeps.readPackageName = origRead;
+    }
+  });
+
   test("resolves {{package}} when storyWorkdir is set and package.json exists", async () => {
     const origRead = _commandResolverDeps.readPackageName;
     _commandResolverDeps.readPackageName = mock(() => Promise.resolve("@acme/api"));

@@ -5,6 +5,9 @@
  */
 
 /** Verification scope: what tests to run */
+import type { QualityCommandSpec } from "../quality/command-spec";
+
+/** Verification scope: what tests to run */
 export type VerificationScope = "scoped" | "full" | "regression";
 
 /** Verification status outcomes */
@@ -73,7 +76,7 @@ export interface VerificationGateOptions {
   /** Working directory */
   workdir: string;
   /** Test command to execute */
-  command: string;
+  command: QualityCommandSpec;
   /** Timeout in seconds */
   timeoutSeconds: number;
   /** Expected files (for asset verification) */
@@ -95,5 +98,5 @@ export interface VerificationGateOptions {
   /** Scoped test paths (for scoped verification) */
   scopedTestPaths?: string[];
   /** Scoped test command template with {{files}} placeholder — overrides buildSmartTestCommand heuristic */
-  testScopedTemplate?: string;
+  testScopedTemplate?: QualityCommandSpec;
 }

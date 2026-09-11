@@ -11,6 +11,7 @@ import type { Iteration } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { UserStory } from "@/prd";
 import { runQualityCommand } from "@/quality";
+import type { QualityCommandSpec } from "@/quality/command-spec";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
 import { resolveLanguageCommand } from "../language-commands";
@@ -102,7 +103,7 @@ export async function resolveCommand(
   workdir: string,
   qualityCommands?: QualityConfig["commands"],
   profile?: { language?: string },
-): Promise<string | null> {
+): Promise<QualityCommandSpec | null> {
   // Semantic and adversarial checks are LLM-based — run by the story orchestrator via
   // callOp (operations/{semantic,adversarial}-review.ts), never by runReview (#1859).
   if (check === "semantic" || check === "adversarial") {
@@ -162,7 +163,7 @@ export async function resolveCommand(
  */
 async function runCheck(
   check: ReviewCheckName,
-  command: string,
+  command: QualityCommandSpec,
   workdir: string,
   storyId?: string,
   env?: Record<string, string | undefined>,

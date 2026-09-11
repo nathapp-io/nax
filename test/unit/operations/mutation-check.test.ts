@@ -148,7 +148,7 @@ describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () =>
           isMonorepoOrchestrator: false,
         }),
         regression: async (opts) => {
-          capturedRegressionCommand = opts.command;
+          capturedRegressionCommand = typeof opts.command === "string" ? opts.command : opts.command.join(" && ");
           // BUG-13: SUCCESS needs test-evidence counts or classifyMutant now
           // treats it as inconclusive ("errored"), not "survived" (#1207).
           return {
@@ -733,7 +733,7 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
           };
         },
         regression: async (opts) => {
-          capturedRegressionCommand = opts.command;
+          capturedRegressionCommand = typeof opts.command === "string" ? opts.command : opts.command.join(" && ");
           return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
         },
       });

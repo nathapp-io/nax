@@ -25,7 +25,7 @@ import { assembleForStage, executionContextStage } from "@/context/engine";
 import { getLogger } from "@/logger";
 import { PromptBuilder } from "@/prompts";
 import type { AcceptanceEntry } from "@/prompts/sections/acceptance";
-import { resolveSelfVerificationPromptInput } from "@/quality";
+import { commandSpecIncludes, renderCommandSpec, resolveSelfVerificationPromptInput } from "@/quality";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -91,8 +91,9 @@ export const promptStage: PipelineStage = {
     // a template that takes `{{file}}` / `{{package}}` / no placeholder
     // would render a tool call the runtime rejects). The SSOT lives at
     // src/execution/lifecycle/acceptance-helpers.ts:89.
-    const scopedTestCommand =
-      ctx.config.quality?.commands?.testScoped?.includes("{{files}}") === true ? "testScoped" : undefined;
+    const scopedTestCommand = commandSpecIncludes(ctx.config.quality?.commands?.testScoped, "{{files}}")
+      ? "testScoped"
+      : undefined;
     if (isBatch) {
       const builder = PromptBuilder.for("batch")
         .withLoader(ctx.workdir, ctx.config)
@@ -101,7 +102,7 @@ export const promptStage: PipelineStage = {
         .v2FeatureContext(execBundle?.pushMarkdown)
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
-        .testCommand(ctx.config.quality?.commands?.test)
+        .testCommand(renderCommandSpec(ctx.config.quality?.commands?.test))
         .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification);
@@ -117,7 +118,7 @@ export const promptStage: PipelineStage = {
         .v2FeatureContext(execBundle?.pushMarkdown)
         .featureContext(execBundle ? undefined : (ctx.featureContextMarkdown ?? ""))
         .constitution(ctx.constitution?.content)
-        .testCommand(ctx.config.quality?.commands?.test)
+        .testCommand(renderCommandSpec(ctx.config.quality?.commands?.test))
         .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification)

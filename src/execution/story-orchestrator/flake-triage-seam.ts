@@ -10,6 +10,7 @@
 import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
+import { renderCommandSpec } from "@/quality";
 import { detectFramework } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import {
@@ -140,7 +141,7 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
       findings: gateFindings,
       diff,
       flakeDetection,
-      baseCommand,
+      baseCommand: renderCommandSpec(baseCommand) ?? "",
       cwd: ctx.packageDir,
       framework,
       quarantineMemo: quarantineMemo ?? ctx.runtime.quarantineMemo,

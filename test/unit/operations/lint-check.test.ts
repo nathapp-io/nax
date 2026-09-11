@@ -148,7 +148,7 @@ describe("lintCheckOp — AC10: per-package config override", () => {
     let seen = "";
     const deps = makeDeps({
       runQualityCommand: async (o) => {
-        seen = o.command;
+        seen = o.command as string;
         return passedResult;
       },
     });

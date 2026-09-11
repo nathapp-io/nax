@@ -165,7 +165,7 @@ function installQualityGateStub(
     const r = runFn();
     return {
       commandName: o.commandName,
-      command: o.command,
+      command: o.command as string,
       success: r.exitCode === 0,
       exitCode: r.exitCode,
       output: r.output ?? "gate output",

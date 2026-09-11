@@ -138,7 +138,7 @@ function installQualityGateStub(trail: string[], commands: NaxConfig["quality"][
     trail.push(`quality-run:${o.commandName}`);
     return {
       commandName: o.commandName,
-      command: o.command,
+      command: o.command as string,
       success: true,
       exitCode: 0,
       output: "ok",

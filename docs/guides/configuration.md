@@ -153,6 +153,74 @@ Review commands (`lint`, `typecheck`) are executed directly via `Bun.spawn` — 
 
 This limitation applies to all `quality.commands` entries (`test`, `lint`, `typecheck`, `lintFix`, `formatFix`).
 
+**Configuring the `&&` chain above will not throw** — nax still runs it, since the shim exists for repos mid-migration — but it logs a one-line warning naming the affected key and pointing at the list form below, because a chain silently swallows every failure after the first.
+
+---
+
+### List Form — Multiple Commands per Gate
+
+Every entry under `quality.commands` (`test`, `typecheck`, `lint`, `lintScoped`, `build`, `coverage`, `testScoped`, `lintFix`, `lintFixScoped`, `formatFix`, `formatFixScoped`, `setup`) accepts **either shape**:
+
+| Shape | Example | Behavior |
+|:------|:--------|:---------|
+| String | `"typecheck": "bun x tsc --noEmit"` | Runs once. |
+| List of strings | `"typecheck": ["bun x tsc --noEmit", "bun x tsc --noEmit -p tsconfig.test.json"]` | Runs every entry, in order. |
+
+**Why:** a gate that legitimately needs more than one command — checking a second `tsconfig`, linting several source roots with different tool invocations, running both `mypy` and `ruff` — used to be forced into an `&&` chain (which stops at the first failure, per the section above) or a wrapper script outside nax's own config. The list form is the real fix, not a workaround: it is a first-class part of `quality.commands`, not a `package.json`/`Makefile` indirection.
+
+**Run-all-and-aggregate semantics:**
+
+- Every entry runs, **even after an earlier entry fails.** The whole point of the list form is that one command's failure does not hide the next command's failure — the two `&&`-chain problems (stops early, only shows the first error) are exactly what this fixes.
+- Entries run **sequentially**, not in parallel — they typically share a working directory and, for typecheck/build tools, an incremental build cache, so concurrent runs would race.
+- The results are folded into a **single** `QualityCommandResult` via `aggregateResults()`: `success` is true only if every entry succeeded, `exitCode` is the first failing entry's exit code (or `0`), and `output` concatenates every entry's own output under an `=== <entry command> (exit <code>) ===` header — so a single `typecheck` (or `lint`) invocation reports every failing entry, not just the first.
+- **Each entry gets the full timeout configured for that call site** — `runQualityCommand`'s own `timeoutMs` option, which defaults to 120 seconds when the caller doesn't override it — not divided across entries. A three-entry list can therefore take up to 3x as long in the worst case as a one-entry list; size the list and the timeout accordingly.
+
+**Worked examples, one per ecosystem:**
+
+TypeScript — separate `tsconfig.json` (src) and `tsconfig.test.json` (tests), so one `tsc` invocation can't see both:
+
+```json
+"quality": {
+  "commands": {
+    "typecheck": ["bun x tsc --noEmit", "bun x tsc --noEmit -p tsconfig.test.json"],
+    "lint": ["bun x biome check --error-on-warnings src/ bin/ test/", "bun run check:all"]
+  }
+}
+```
+
+Python — a type checker and a linter are two separate tools, each previously requiring its own agent round trip to discover:
+
+```json
+"quality": {
+  "commands": {
+    "typecheck": ["mypy .", "pyright ."],
+    "lint": ["ruff check .", "black --check ."]
+  }
+}
+```
+
+Go — `go vet` catches a different class of problem than `go build`, and a repo may run a separate linter on top of both:
+
+```json
+"quality": {
+  "commands": {
+    "typecheck": ["go build ./...", "go vet ./..."],
+    "lint": ["golangci-lint run", "gofmt -l ."]
+  }
+}
+```
+
+Rust — `cargo check` is the fast compile-only pass, `clippy` is the separate lint pass, and a workspace with multiple crates may need both run against more than one target:
+
+```json
+"quality": {
+  "commands": {
+    "typecheck": ["cargo check --workspace", "cargo check --workspace --tests"],
+    "lint": ["cargo clippy --workspace -- -D warnings", "cargo fmt --check"]
+  }
+}
+```
+
 ---
 
 ### Scoped Test Command

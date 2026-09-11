@@ -41,10 +41,10 @@ describe("typecheckCheckOp via packageView", () => {
     let seen = "";
     const deps: TypecheckCheckDeps = {
       runQualityCommand: async (o) => {
-        seen = o.command;
+        seen = o.command as string;
         return {
           commandName: "typecheck",
-          command: o.command,
+          command: o.command as string,
           success: true,
           exitCode: 0,
           output: "",
@@ -87,7 +87,7 @@ describe("typecheckCheckOp via packageView", () => {
 
 describe("verifyScopedOp via packageView", () => {
   test("reads quality.commands.test from packageView (not phantom ctx.config)", async () => {
-    let sawTestCommand: string | undefined;
+    let sawTestCommand: NaxConfig["quality"]["commands"]["test"];
     const deps: VerifyScopedDeps = {
       ..._verifyScopedDeps,
       selectScopedTests: async (o) => {

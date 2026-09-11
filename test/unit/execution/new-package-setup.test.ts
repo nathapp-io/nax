@@ -61,6 +61,25 @@ describe("maybeRunNewPackageSetup", () => {
     expect(spawnMock.calls).toHaveLength(1);
   });
 
+  test("runs every setup list entry without shell chaining", async () => {
+    const spawnMock = spawnOk(0);
+    _newPackageSetupDeps.spawn = spawnMock.spawn;
+    const runtime = {};
+    markNewPackageDirs(runtime, ["/repo/packages/portfolio"]);
+
+    await maybeRunNewPackageSetup({
+      runtime,
+      storyId: "US-001",
+      packageDir: "/repo/packages/portfolio",
+      setupCommand: ["uv sync", "python -m compileall ."],
+    });
+
+    expect(spawnMock.calls.map((call) => call.cmd)).toEqual([
+      ["uv", "sync"],
+      ["python", "-m", "compileall", "."],
+    ]);
+  });
+
   test("does nothing for a package that was not created this run", async () => {
     const spawnMock = spawnOk(0);
     _newPackageSetupDeps.spawn = spawnMock.spawn;

@@ -26,6 +26,27 @@ describe("TddPromptBuilder.buildForRole", () => {
     expect(typeof prompt).toBe("string");
     expect(prompt.length).toBeGreaterThan(0);
   });
+
+  test('list-valued commands.test renders " && "-joined, not comma-joined', async () => {
+    const story = makeStory();
+    const base = makeNaxConfig({ quality: { commands: { test: "placeholder" } } });
+    // `NaxConfig["quality"]["commands"]["test"]` is declared as `string` — the
+    // zod schema (QualityCommandSpecSchema) accepts `string | string[]` at
+    // runtime, but the hand-written NaxConfig interface hasn't been widened to
+    // match (a separate, larger gap outside this fix's scope). Object.assign's
+    // `T & U` return type lets us build a real list-valued config without a
+    // type-erasing double cast: the result is a structural intersection that
+    // includes NaxConfig itself, so it's assignable to `NaxConfig` even though
+    // `commands.test` is actually a `string[]` at runtime.
+    const config = Object.assign({}, base, {
+      quality: Object.assign({}, base.quality, {
+        commands: Object.assign({}, base.quality.commands, { test: ["step-a", "step-b"] }),
+      }),
+    });
+    const prompt = await TddPromptBuilder.buildForRole("test-writer", "/tmp", config, story, {});
+    expect(prompt).toContain("step-a && step-b");
+    expect(prompt).not.toContain("step-a,step-b");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -265,6 +286,20 @@ describe("US-004 — TddPromptBuilder scopes test-command key into isolation", (
     expect(prompt).not.toContain("<!--nax:run-test:");
     // Shell example still appears.
     expect(prompt).toContain("`bun test <path/to/test-file>`");
+  });
+
+  test("test-writer with a list scoped template → wraps the affordance", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: {
+        commands: {
+          test: ["bun test", "bun test --coverage"],
+          testScoped: ["bun test {{files}}", "bun test --coverage {{files}}"],
+        },
+      },
+    });
+    const prompt = await TddPromptBuilder.buildForRole("test-writer", "/tmp", config, story, {});
+    expect(prompt).toContain("<!--nax:run-test:");
   });
 
   test("implementer + scoped template → isolation section also wraps the test-filter rule", async () => {

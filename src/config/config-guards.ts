@@ -12,6 +12,10 @@
 
 import { RESERVED_TOOL_NAMES } from "@/tools";
 import { NaxError } from "../errors";
+// Leaf import — see config-warnings.ts's own header comment for why this must
+// not route through the `@/quality` barrel (config -> quality -> config cycle).
+import type { QualityCommandSpec } from "../quality/command-spec";
+import { collectCommandChainWarnings } from "./config-warnings";
 
 /**
  * @internal ADR-012 Phase 6 — reject pre-migration agent keys with a migration pointer.
@@ -167,6 +171,29 @@ export function rejectDeadQualityFlags(conf: Record<string, unknown>): void {
     ),
   ].join("\n");
   throw new NaxError(message, "CONFIG_DEAD_QUALITY_FLAGS", { stage: "config", deadKeys });
+}
+
+/**
+ * Warn (never throw) when a declared `quality.commands` entry chains with
+ * `&&`. A chain still runs exactly as it always did — this is a nudge toward
+ * the list form (nax#1990), not a removal, so it follows the warn-and-continue
+ * shape of `stripRemovedNoOpKeys` rather than the throw-with-migration-hint
+ * shape of the `reject*` guards above: an existing config with a chained
+ * command must keep working.
+ *
+ * @param conf - Raw config object (post-merge, pre-`safeParse`).
+ * @param warn - Sink; called once per offending `quality.commands` key.
+ *   Defaults to `defaultConfigWarn` from `compat-shims.ts` when invoked via
+ *   `loadConfig`, mirroring every other shim in this file.
+ */
+export function warnQualityCommandChains(conf: Record<string, unknown>, warn?: (msg: string) => void): void {
+  const quality = conf.quality as Record<string, unknown> | undefined;
+  if (!quality || typeof quality !== "object") return;
+
+  const commands = quality.commands as Partial<Record<string, QualityCommandSpec>> | undefined;
+  for (const message of collectCommandChainWarnings(commands)) {
+    warn?.(message);
+  }
 }
 
 /**

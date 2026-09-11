@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { QualityCommandSpecSchema } from "./schemas-execution";
 import { ConfiguredModelSchema } from "./schemas-model";
 
 export const SemanticReviewConfigSchema = z.object({
@@ -206,15 +207,15 @@ export const ReviewConfigSchema = z.object({
   gateLLMChecksOnMechanicalPass: z.boolean().default(true),
   checks: z.array(z.enum(["typecheck", "lint", "test", "build", "semantic", "adversarial"])),
   commands: z.object({
-    typecheck: z.string().optional(),
-    lint: z.string().optional(),
-    lintScoped: z.string().optional(),
-    test: z.string().optional(),
-    build: z.string().optional(),
-    lintFix: z.string().optional(),
-    lintFixScoped: z.string().optional(),
-    formatFix: z.string().optional(),
-    formatFixScoped: z.string().optional(),
+    typecheck: QualityCommandSpecSchema.optional(),
+    lint: QualityCommandSpecSchema.optional(),
+    lintScoped: QualityCommandSpecSchema.optional(),
+    test: QualityCommandSpecSchema.optional(),
+    build: QualityCommandSpecSchema.optional(),
+    lintFix: QualityCommandSpecSchema.optional(),
+    lintFixScoped: QualityCommandSpecSchema.optional(),
+    formatFix: QualityCommandSpecSchema.optional(),
+    formatFixScoped: QualityCommandSpecSchema.optional(),
   }),
   audit: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   /**

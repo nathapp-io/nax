@@ -14,6 +14,8 @@ import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { killProcessGroup } from "../utils/process-kill";
 import { withAgentOutputEnv } from "../verification/executor";
+import { aggregateResults } from "./aggregate";
+import { normalizeCommandSpec, type QualityCommandSpec } from "./command-spec";
 
 /** Default timeout for quality commands — matches legacy REVIEW_CHECK_TIMEOUT_MS. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -25,8 +27,12 @@ const STREAM_DRAIN_TIMEOUT_MS = 2_000;
 export interface QualityCommandOptions {
   /** Short name used in logs (e.g. "lint", "typecheck", "lintFix"). */
   commandName: string;
-  /** Full shell command string (e.g. "bun run lint"). */
-  command: string;
+  /**
+   * The command to run. A string is one shell command. A list runs every
+   * entry — even after one fails — and aggregates the results, so a
+   * multi-step gate reports all its failures in one invocation (nax#1990).
+   */
+  command: QualityCommandSpec;
   /** Working directory for the spawned process. */
   workdir: string;
   /** Optional story ID for log correlation. */
@@ -95,7 +101,9 @@ function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; ca
  * stdout and stderr are drained concurrently with proc.exited via Promise.all
  * to avoid deadlocking on output larger than the OS pipe buffer (~64 KB).
  */
-export async function runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult> {
+async function runSingleCommand(
+  opts: Omit<QualityCommandOptions, "command"> & { command: string },
+): Promise<QualityCommandResult> {
   const {
     commandName,
     command,
@@ -256,4 +264,45 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
       timedOut: false,
     };
   }
+}
+
+/**
+ * Run a quality command, dispatching to every entry of a list-valued spec
+ * (nax#1990). A string spec runs once. A list spec runs each entry
+ * sequentially — even after one fails — and folds the per-step results into
+ * one via {@link aggregateResults}, so a multi-step gate reports all its
+ * failures in one invocation instead of the first `&&`-chain link hiding the
+ * rest.
+ */
+export async function runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult> {
+  const { command } = opts;
+  if (typeof command === "string") {
+    return await runSingleCommand({ ...opts, command });
+  }
+  const steps = normalizeCommandSpec(opts.command);
+
+  if (steps.length === 0) {
+    return {
+      commandName: opts.commandName,
+      command: "",
+      success: false,
+      exitCode: -1,
+      output: `[nax] ${opts.commandName} skipped: empty command`,
+      durationMs: 0,
+      timedOut: false,
+    };
+  }
+
+  if (steps.length === 1 && steps[0] !== undefined) {
+    return await runSingleCommand({ ...opts, command: steps[0] });
+  }
+
+  const results: QualityCommandResult[] = [];
+  for (const step of steps) {
+    // Sequential and unconditional: the whole point is that a failing step
+    // does not stop the ones after it (nax#1990). Sequential rather than
+    // parallel because these share a working directory and a build cache.
+    results.push(await runSingleCommand({ ...opts, command: step }));
+  }
+  return aggregateResults(opts.commandName, results);
 }

@@ -26,6 +26,8 @@ import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
+import type { QualityCommandSpec } from "../quality/command-spec";
+import { renderCommandSpec } from "../quality/command-spec";
 import type { TestSummary } from "../test-runners";
 import type { CallContext, DeterministicOperation } from "./types";
 
@@ -105,7 +107,7 @@ interface RunTestsResult {
  */
 export interface FullSuiteGateContext {
   readonly config: NaxConfig;
-  readonly testCmd: string;
+  readonly testCmd: QualityCommandSpec;
   readonly fullSuiteTimeout: number;
   /** cwd for the test subprocess — packageDir when per-package override exists, repoRoot otherwise. */
   readonly cmdWorkdir: string;
@@ -184,7 +186,7 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       parsedSummary,
       timedOut: result.status === "TIMEOUT",
       exitCode: result.exitCode,
-      command: result.command ?? gateCtx.testCmd,
+      command: result.command ?? renderCommandSpec(gateCtx.testCmd),
     };
   },
 };
@@ -307,7 +309,7 @@ export const fullSuiteGateOp: DeterministicOperation<
       // finding so rectification dispatches the implementer with concrete repair
       // context (command + exit code + output tail) instead of no-oping on 0 findings
       // and silently escalating.
-      const cmd = testResult.command ?? gateCtx.testCmd;
+      const cmd = testResult.command ?? renderCommandSpec(gateCtx.testCmd) ?? "";
       const synth = executionFailureToFinding({
         command: cmd,
         exitCode: testResult.exitCode,

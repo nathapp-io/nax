@@ -351,7 +351,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
         isMonorepoOrchestrator: false,
       }),
       regression: async (opts) => {
-        commands.push(opts.command);
+        commands.push(typeof opts.command === "string" ? opts.command : opts.command.join(" && "));
         // First (scoped) run: pytest collected no tests → exit 5, 0/0.
         if (commands.length === 1) {
           return {
@@ -396,7 +396,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
         isMonorepoOrchestrator: false,
       }),
       regression: async (opts) => {
-        commands.push(opts.command);
+        commands.push(typeof opts.command === "string" ? opts.command : opts.command.join(" && "));
         if (commands.length === 1) {
           return {
             status: "SUCCESS" as const,

@@ -31,13 +31,13 @@ describe("runAcceptanceGate", () => {
     _acceptanceGateDeps.run = async (opts) => {
       calls.push({
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         workdir: opts.workdir,
         timeoutMs: opts.timeoutMs,
       });
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: true,
         exitCode: 0,
         output: "ok",
@@ -55,10 +55,10 @@ describe("runAcceptanceGate", () => {
   test("a repo path containing a space produces a quoted, unsplit command", async () => {
     const calls: { command: string }[] = [];
     _acceptanceGateDeps.run = async (opts) => {
-      calls.push({ command: opts.command });
+      calls.push({ command: opts.command as string });
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: true,
         exitCode: 0,
         output: "",
@@ -73,10 +73,10 @@ describe("runAcceptanceGate", () => {
   test("falls back to the language-appropriate default runner when no command is configured", async () => {
     const calls: { command: string }[] = [];
     _acceptanceGateDeps.run = async (opts) => {
-      calls.push({ command: opts.command });
+      calls.push({ command: opts.command as string });
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: true,
         exitCode: 0,
         output: "",
@@ -103,7 +103,7 @@ describe("runAcceptanceGate", () => {
       const failing = opts.workdir.endsWith("apps/api");
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: !failing,
         exitCode: failing ? 1 : 0,
         output: failing ? "boom" : "ok",
@@ -126,7 +126,7 @@ describe("runAcceptanceGate", () => {
       called = true;
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: true,
         exitCode: 0,
         output: "",
@@ -143,7 +143,7 @@ describe("runAcceptanceGate", () => {
   test("reports the root package's missing test under a readable name", async () => {
     _acceptanceGateDeps.run = async (opts) => ({
       commandName: opts.commandName,
-      command: opts.command,
+      command: opts.command as string,
       success: true,
       exitCode: 0,
       output: "",
@@ -160,7 +160,7 @@ describe("runAcceptanceGate", () => {
       called = true;
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: true,
         exitCode: 0,
         output: "",
@@ -178,7 +178,7 @@ describe("runAcceptanceGate", () => {
   test("I1: an empty-groups pass is escalated by routeAcceptance, not by this gate", async () => {
     _acceptanceGateDeps.run = async (opts) => ({
       commandName: opts.commandName,
-      command: opts.command,
+      command: opts.command as string,
       success: true,
       exitCode: 0,
       output: "",
@@ -194,7 +194,7 @@ describe("runAcceptanceGate", () => {
   test("routeAcceptance escalates a pass that still has a non-empty missing list", async () => {
     _acceptanceGateDeps.run = async (opts) => ({
       commandName: opts.commandName,
-      command: opts.command,
+      command: opts.command as string,
       success: true,
       exitCode: 0,
       output: "",
@@ -214,7 +214,7 @@ describe("runAcceptanceGate", () => {
       seen.push(opts.timeoutMs);
       return {
         commandName: opts.commandName,
-        command: opts.command,
+        command: opts.command as string,
         success: true,
         exitCode: 0,
         output: "",

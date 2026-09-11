@@ -133,7 +133,7 @@ describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityComma
     const deps = makeDeps({
       runQualityCommand: async (opts: QualityCommandOptions) => {
         capturedCommandName = opts.commandName;
-        capturedCommand = opts.command;
+        capturedCommand = opts.command as string;
         return passedResult;
       },
     });
@@ -163,7 +163,7 @@ describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityComma
     let capturedCommand: string | undefined;
     const deps = makeDeps({
       runQualityCommand: async (opts: QualityCommandOptions) => {
-        capturedCommand = opts.command;
+        capturedCommand = opts.command as string;
         return passedResult;
       },
     });

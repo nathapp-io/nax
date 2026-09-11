@@ -133,7 +133,7 @@ describe("makeMechanicalFormatFixStrategy — execute invokes runQualityCommand"
     const deps = makeDeps({
       runQualityCommand: async (opts: QualityCommandOptions) => {
         capturedCommandName = opts.commandName;
-        capturedCommand = opts.command;
+        capturedCommand = opts.command as string;
         return passedResult;
       },
     });
@@ -151,7 +151,7 @@ describe("makeMechanicalFormatFixStrategy — execute invokes runQualityCommand"
     let capturedCommand: string | undefined;
     const deps = makeDeps({
       runQualityCommand: async (opts: QualityCommandOptions) => {
-        capturedCommand = opts.command;
+        capturedCommand = opts.command as string;
         return passedResult;
       },
     });

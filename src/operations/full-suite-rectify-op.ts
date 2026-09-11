@@ -3,6 +3,7 @@ import type { AutofixConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder, repoScopedRectification } from "../prompts";
+import { commandSpecIncludes, renderCommandSpec } from "../quality/command-spec";
 import { storyRoutingModel } from "./story-routing-model";
 import { parseTestEditDeclarations, type TestEditDeclaration } from "./test-edit-declaration";
 import type { RunOperation } from "./types";
@@ -71,15 +72,17 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
     // `{{files}}` hands the agent a tool call the runtime always rejects
     // (`value "files" is not a placeholder in this command`). See
     // src/execution/lifecycle/acceptance-helpers.ts:89.
-    const scopedCommandName = testScopedTemplate?.includes("{{files}}") === true ? "testScoped" : undefined;
+    const scopedCommandName = commandSpecIncludes(testScopedTemplate, "{{files}}") ? "testScoped" : undefined;
     const prompt = RectifierPromptBuilder.failingTestRectification(input.findings as Finding[], input.story, {
       // US-004 (AC5/AC6) — `# TEST COMMAND` block always names the declared
       // `test` key (per ADR convention — `quality.commands.test` slot).
-      ...(testCommand ? { testCommand, testCommandScopeCommandName: "test" } : {}),
+      ...(testCommand ? { testCommand: renderCommandSpec(testCommand), testCommandScopeCommandName: "test" } : {}),
       // US-004 (AC4/AC7) — per-failing-file block uses the declared
       // `testScoped` key, but only when the template carries the
       // `{{files}}` placeholder (the SSOT gate at acceptance-helpers.ts:89).
-      ...(testCommand && scopedCommandName ? { testScopedTemplate, fileScopeCommandName: scopedCommandName } : {}),
+      ...(testCommand && scopedCommandName
+        ? { testScopedTemplate: renderCommandSpec(testScopedTemplate), fileScopeCommandName: scopedCommandName }
+        : {}),
     });
     return {
       role: { id: "role", content: "", overridable: false },

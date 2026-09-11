@@ -114,7 +114,7 @@ function installQualityGateStub(commands: NaxConfig["quality"]["commands"] = { t
   _qualityGateDeps.loadPackageOverride = async () => null;
   _qualityGateDeps.run = async (o: QualityCommandOptions): Promise<QualityCommandResult> => ({
     commandName: o.commandName,
-    command: o.command,
+    command: o.command as string,
     success: true,
     exitCode: 0,
     output: "ok",

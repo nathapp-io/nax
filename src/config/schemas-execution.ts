@@ -273,27 +273,36 @@ export const ExecutionConfigSchema = z.object({
 export const DEFAULT_VERIFICATION_TIMEOUT_SECONDS =
   ExecutionConfigSchema.shape.verificationTimeoutSeconds.parse(undefined);
 
+/**
+ * A declared quality command: one shell string, or a list that all runs with
+ * every failure reported. The list form exists because `a && b`
+ * short-circuits, hiding each failure after the first from an agent that pays
+ * a full round trip per invocation (nax#1990). `.min(1)` rejects `[]`, which
+ * is a config mistake rather than "no command declared".
+ */
+export const QualityCommandSpecSchema = z.union([z.string(), z.array(z.string()).min(1)]);
+
 export const QualityConfigSchema = z.object({
   scopeTestThreshold: z.number().int().min(0).default(10),
   commands: z
     .object({
-      typecheck: z.string().optional(),
-      lint: z.string().optional(),
-      lintScoped: z.string().optional(),
-      test: z.string().optional(),
-      testScoped: z.string().optional(),
-      lintFix: z.string().optional(),
-      lintFixScoped: z.string().optional(),
-      formatFix: z.string().optional(),
-      formatFixScoped: z.string().optional(),
-      build: z.string().optional(),
+      typecheck: QualityCommandSpecSchema.optional(),
+      lint: QualityCommandSpecSchema.optional(),
+      lintScoped: QualityCommandSpecSchema.optional(),
+      test: QualityCommandSpecSchema.optional(),
+      testScoped: QualityCommandSpecSchema.optional(),
+      lintFix: QualityCommandSpecSchema.optional(),
+      lintFixScoped: QualityCommandSpecSchema.optional(),
+      formatFix: QualityCommandSpecSchema.optional(),
+      formatFixScoped: QualityCommandSpecSchema.optional(),
+      build: QualityCommandSpecSchema.optional(),
       /**
        * Coverage gate (e.g. `bun run test:coverage`, `pytest --cov`). nax never
        * invokes this itself -- it exists so a coding agent can check whether it
        * met the project's coverage bar instead of guessing a script name and
        * being denied (nax#1971).
        */
-      coverage: z.string().optional(),
+      coverage: QualityCommandSpecSchema.optional(),
       /**
        * One-time package initialization (e.g. `uv sync`, `bun install`,
        * `go mod download`). Runs once per newly-created package directory
@@ -301,7 +310,7 @@ export const QualityConfigSchema = z.object({
        * scaffolds the manifest and before the first verify/test gate. Layerable
        * per-package via `.nax/mono/<pkg>/config.json`.
        */
-      setup: z.string().optional(),
+      setup: QualityCommandSpecSchema.optional(),
     })
     .default({}),
   lintOutput: z

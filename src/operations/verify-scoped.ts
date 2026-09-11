@@ -5,6 +5,7 @@ import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
 import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
+import { type QualityCommandSpec, renderCommandSpec } from "../quality/command-spec";
 import { appendScratchEntry } from "../session/scratch-writer";
 import type { ResolvedTestPatterns, SelectScopedTestsResult, TestSummary } from "../test-runners";
 import { parseTestOutput, selectScopedTests } from "../test-runners";
@@ -243,7 +244,7 @@ export const verifyScopedOp: DeterministicOperation<
       timeoutSeconds: scopedTimeout,
       isFullSuite: selection.isFullSuite,
     });
-    const runTests = async (command: string) => {
+    const runTests = async (command: QualityCommandSpec) => {
       const result = await deps.regression({
         workdir: cmdWorkdir,
         command,
@@ -375,7 +376,7 @@ export const verifyScopedOp: DeterministicOperation<
         executionFailureToFinding({
           // Prefer the post-wrap shell command actually executed (parity with
           // full-suite-gate.ts) — falls back to the pre-wrap effective command.
-          command: result.command ?? effectiveCommand,
+          command: result.command ?? renderCommandSpec(effectiveCommand) ?? "",
           exitCode: result.exitCode,
           output: result.output ?? "",
           packageDir: input.packagePrefix,

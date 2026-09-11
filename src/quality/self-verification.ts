@@ -1,5 +1,6 @@
 import type { NaxConfig } from "../config";
 import { detectLanguage } from "../project";
+import { renderCommandSpec } from "./command-spec";
 
 export type SelfVerificationTool = "lint" | "typecheck";
 export type SelfVerificationStatus = "pass" | "skip" | "pre_existing" | "fail";
@@ -153,7 +154,7 @@ export async function resolveSelfVerificationPromptInput(
   return {
     packageDir,
     language: await detectLanguage(packageDir),
-    lintCommand: config.quality?.commands?.lint,
-    typecheckCommand: config.quality?.commands?.typecheck,
+    lintCommand: renderCommandSpec(config.quality?.commands?.lint),
+    typecheckCommand: renderCommandSpec(config.quality?.commands?.typecheck),
   };
 }
