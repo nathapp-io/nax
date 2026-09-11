@@ -68,6 +68,20 @@ export interface ToolScope {
   /** Array-valued fields whose every element is a path. */
   readonly arrayPathFields?: readonly string[];
   /**
+   * String fields whose value is a whitespace-separated LIST of paths, every
+   * element resolved and grant-checked on its own (`splitPathList`).
+   *
+   * Distinct from `pathFields`, which checks the value as ONE path. That is
+   * sound only while the value also REACHES the shell as one argument: a
+   * multi-element value like `"a.test.ts ../../etc/passwd"` resolves, as a
+   * single path, to a location inside the root, so `pathFields` approves it.
+   * Whole-value quoting is what kept that honest -- and whole-value quoting is
+   * exactly the defect #1998 fixes. So per-element quoting and per-element
+   * checking have to land together: this field is the checking half. Nothing
+   * was exploitable before; splitting without it would have made it so.
+   */
+  readonly listPathFields?: readonly string[];
+  /**
    * Array-valued fields whose elements are refs that MAY carry a path after a
    * `:` (git's `<rev>:<path>` syntax). Only the substring after the first `:`
    * is checked for containment; an element with no `:`, or an empty path

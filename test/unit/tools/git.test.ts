@@ -119,6 +119,30 @@ describe("buildGitArgv — typed flag fields", () => {
     expect(argvOf({ subcommand: "log", diffFilter: "A" })).toContain("--diff-filter=A");
   });
 
+  // nax#1800: `show` was in GIT_READ_VERBS but in none of the flag gates, so
+  // `git show --name-only <ref>` -- plain read-only git, and the natural way to
+  // ask what a commit touched -- was inexpressible. 22 rejections across 4
+  // features in the tool audit, from verifier, implementer and test-writer
+  // sessions alike. All three flags are valid git options on `show`.
+  test("emits --name-only for show", () => {
+    expect(argvOf({ subcommand: "show", nameOnly: true })).toContain("--name-only");
+  });
+
+  test("emits --diff-filter=<value> for show", () => {
+    expect(argvOf({ subcommand: "show", diffFilter: "A" })).toContain("--diff-filter=A");
+  });
+
+  test("emits --oneline for show", () => {
+    expect(argvOf({ subcommand: "show", oneline: true })).toContain("--oneline");
+  });
+
+  test("still refuses a flag on a verb git does not accept it for", () => {
+    // `git status` has no --name-only. Widening for `show` must not widen for
+    // every verb: an invented acceptance would surface as a raw git error.
+    const built = buildGitArgv({ subcommand: "status", nameOnly: true });
+    expect(built).toEqual({ error: '"nameOnly" is not valid for "status" (valid for: diff, log, show)' });
+  });
+
   test("emits --oneline for log", () => {
     expect(argvOf({ subcommand: "log", oneline: true })).toContain("--oneline");
   });
@@ -163,8 +187,9 @@ describe("buildGitArgv — typed flag fields", () => {
   test("rejects a flag field on a subcommand it does not apply to", () => {
     expect("error" in buildGitArgv({ subcommand: "diff", oneline: true })).toBe(true);
     expect("error" in buildGitArgv({ subcommand: "status", nameOnly: true })).toBe(true);
-    // git itself refuses `show --name-only`; refusing it here is the clearer error.
-    expect("error" in buildGitArgv({ subcommand: "show", nameOnly: true })).toBe(true);
+    // `show` used to be asserted here on the premise that "git itself refuses
+    // show --name-only". It does not -- `git show --name-only <ref>` is valid
+    // and is what agents reach for. Moved to the accepting cases above (#1800).
     expect("error" in buildGitArgv({ subcommand: "blame", diffFilter: "A" })).toBe(true);
     expect("error" in buildGitArgv({ subcommand: "status", oneline: true })).toBe(true);
   });

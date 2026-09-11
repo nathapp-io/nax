@@ -65,9 +65,15 @@ export const GIT_DIFF_FILTERS: readonly string[] = ["A", "M", "D", "R"];
 // '--name-status', '--check', and '-s' cannot be used together" (git 2.50.1),
 // because `show` already supplies a conflicting output selector. Verified by
 // running it; a nax-side refusal here is the clearer of the two errors.
-const GIT_NAME_ONLY_VERBS: readonly string[] = ["diff", "log"];
-const GIT_DIFF_FILTER_VERBS: readonly string[] = ["diff", "log"];
-const GIT_ONELINE_VERBS: readonly string[] = ["log"];
+// `show` takes git's ordinary diff and log options, so it belongs in all three.
+// It was omitted from every gate while sitting in GIT_READ_VERBS, which made
+// `git show --name-only <ref>` inexpressible: 22 denials across 4 features in
+// the tool audit, from verifier, implementer and test-writer alike (nax#1800).
+// `status` stays out -- git has no --name-only there, and inventing an
+// acceptance would only move the failure to a raw git error.
+const GIT_NAME_ONLY_VERBS: readonly string[] = ["diff", "log", "show"];
+const GIT_DIFF_FILTER_VERBS: readonly string[] = ["diff", "log", "show"];
+const GIT_ONELINE_VERBS: readonly string[] = ["log", "show"];
 
 /**
  * A boolean flag field: absent or `false` emits nothing, `true` emits the flag.
