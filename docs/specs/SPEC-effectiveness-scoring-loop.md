@@ -193,7 +193,7 @@ Thread the derived weights from the context stage through `ContextRequest` into
 
 ### Modifies
 
-No story requires modifying an existing test's assertions. The provider tests
+None. No story requires modifying an existing test's assertions. The provider tests
 (`git-history.test.ts`, `code-neighbor.test.ts`) assert on `result.pullTools`
 and captured matchers, not on closed-world chunk shape.
 `manifest-builder.test.ts` exercises `buildManifest` with hand-built

@@ -26,6 +26,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { fencedLineIndices } from "../utils/markdown-fence";
 import { extractSpecContextFiles } from "./context-files-extract";
 import { extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "./modifies-extract";
 import { extractSpecOutOfScope } from "./out-of-scope-extract";
@@ -50,7 +51,27 @@ export interface SpecLintFinding {
 }
 
 /** Section heading forms the Modifies extractor recognises. */
-const MODIFIES_HEADING = /^#{1,6}\s*modifi(?:es|ed\s+files)\b/im;
+const MODIFIES_HEADING = /^#{1,6}\s*modifi(?:es|ed\s+files)\b/i;
+/**
+ * A `Modifies:` label line, bare or bulleted, capturing whatever follows the colon.
+ *
+ * The bullet marker is OPTIONAL on purpose (#1989). A story block writes its
+ * sibling lists as bare labels — `Context Files: ...`, `Creates: none` — so
+ * `Modifies:` gets written the same way, and that shape extracts to nothing
+ * while matching neither the heading nor a bulleted mention. Requiring the
+ * marker read a declaration the grammar could not see as "the author declared
+ * nothing", which is the silent drop this whole module exists to catch.
+ */
+const MODIFIES_LABEL = /^\s*(?:[-*]\s*)?\*{0,2}Modifies\*{0,2}\s*:(.*)$/i;
+/**
+ * An explicit "there is nothing to modify" declaration.
+ *
+ * Without this, widening the intent check above would punish the honest empty:
+ * a `### Modifies` section whose body opens `None. No existing test pins a
+ * closed-world shape this feature changes...` declares intent and extracts
+ * zero entries, which is correct rather than broken.
+ */
+const DECLARES_NONE = /^\**\s*(?:none|n\/a)\b/i;
 /** Any backticked token — used only to count author intent, never to extract. */
 const BACKTICK_TOKEN = /`([^`]+)`/g;
 /**
@@ -104,39 +125,83 @@ function declaredStoryIds(lines: readonly string[]): string[] {
   return [...ids];
 }
 
-/** The body lines of the `### Modifies` section, for intent counting. */
-function modifiesSectionBody(lines: readonly string[]): string[] {
-  const start = lines.findIndex((l) => MODIFIES_HEADING.test(l));
-  if (start < 0) return [];
-  const level = (/^(#{1,6})/.exec(lines[start]) ?? [])[1]?.length ?? 3;
-  const body: string[] = [];
-  for (let i = start + 1; i < lines.length; i++) {
-    const h = /^(#{1,6})\s/.exec(lines[i]);
-    if (h && h[1].length <= level) break;
-    body.push(lines[i]);
-  }
-  return body;
+/**
+ * What the author appears to have declared about Modifies, read off the raw
+ * lines.
+ *
+ * Every scan here skips fenced lines, exactly as `extractGroupedPathSection`
+ * does. spec-kit specs document their own markdown by example, so a literal
+ * ```` ```markdown / ### Modifies ```` block appears in specs *about* specs; a
+ * check that counted it as a declaration would report a section the author
+ * never wrote as silently dropped.
+ */
+interface ModifiesDeclaration {
+  /** The author wrote a heading or a `Modifies:` label somewhere real. */
+  readonly hasIntent: boolean;
+  /** The author said, explicitly, that there is nothing to modify. */
+  readonly declaresNone: boolean;
+  /** Body lines of the `### Modifies` section, for the multi-path bullet scan. */
+  readonly sectionBody: readonly string[];
 }
 
-function checkModifies(
-  text: string,
-  lines: readonly string[],
-  storyIds: readonly string[],
-  pathExists: (path: string) => boolean,
-): SpecLintFinding[] {
+function readModifiesDeclaration(lines: readonly string[], fenced: ReadonlySet<number>): ModifiesDeclaration {
+  let hasIntent = false;
+  let declaresNone = false;
+  let headingIndex = -1;
+  let headingLevel = 3;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced.has(i)) continue;
+    const heading = /^(#{1,6})\s/.exec(lines[i]);
+    if (heading && MODIFIES_HEADING.test(lines[i])) {
+      hasIntent = true;
+      if (headingIndex < 0) {
+        headingIndex = i;
+        headingLevel = heading[1].length;
+      }
+      continue;
+    }
+    const label = MODIFIES_LABEL.exec(lines[i]);
+    if (!label) continue;
+    hasIntent = true;
+    // `Modifies: none` says it on the label line itself.
+    if (DECLARES_NONE.test(label[1].trim())) declaresNone = true;
+  }
+
+  const sectionBody: string[] = [];
+  if (headingIndex >= 0) {
+    for (let i = headingIndex + 1; i < lines.length; i++) {
+      if (fenced.has(i)) continue;
+      const h = /^(#{1,6})\s/.exec(lines[i]);
+      if (h && h[1].length <= headingLevel) break;
+      sectionBody.push(lines[i]);
+    }
+    // A section whose body OPENS with "None" is an explicit empty declaration,
+    // not a dropped list — the prose that follows justifies it.
+    const firstBodyLine = sectionBody.find((l) => l.trim().length > 0)?.trim() ?? "";
+    if (DECLARES_NONE.test(firstBodyLine)) declaresNone = true;
+  }
+
+  return { hasIntent, declaresNone, sectionBody };
+}
+
+interface ModifiesCheckInput {
+  readonly text: string;
+  readonly declaration: ModifiesDeclaration;
+  readonly storyIds: readonly string[];
+  readonly pathExists: (path: string) => boolean;
+}
+
+function checkModifies({ text, declaration, storyIds, pathExists }: ModifiesCheckInput): SpecLintFinding[] {
   const out: SpecLintFinding[] = [];
   const extracted = extractSpecModifiedFiles(text);
-  const hasHeading = MODIFIES_HEADING.test(text);
-  // "Modifies:" appearing in a story bullet is intent even without a heading —
-  // that is exactly the shape that silently extracted nothing.
-  const mentionsInStory = lines.some((l) => /^\s*[-*]\s*\*{0,2}Modifies\*{0,2}\s*:/i.test(l));
 
-  if ((hasHeading || mentionsInStory) && extracted.length === 0) {
+  if (declaration.hasIntent && !declaration.declaresNone && extracted.length === 0) {
     out.push({
       level: "error",
       code: "modifies-declared-but-empty",
       message:
-        "the spec declares Modifies but the extractor found 0 entries. Use a top-level `### Modifies` section with each `**US-00N**` lead-in ALONE on its line and one backticked path per bullet beneath it. Every entry is currently being dropped, so no implementer is authorised to touch those files.",
+        "the spec declares Modifies but the extractor found 0 entries. Use a top-level `### Modifies` section with each `**US-00N**` lead-in ALONE on its line and one backticked path per bullet beneath it — a bare `Modifies:` label with the lead-in inline on the bullet extracts to nothing. Every entry is currently being dropped, so no implementer is authorised to touch those files. If there is genuinely nothing to modify, open the section with `None.` and say why.",
     });
   }
 
@@ -173,7 +238,7 @@ function checkModifies(
   }
 
   // A bullet naming two paths authorises only the first — the rest are swallowed.
-  for (const line of modifiesSectionBody(lines)) {
+  for (const line of declaration.sectionBody) {
     if (!/^\s*[-*]\s/.test(line)) continue;
     const paths = [...line.matchAll(BACKTICK_TOKEN)].map((m) => m[1]).filter((t) => PATH_LIKE.test(t));
     if (paths.length > 1) {
@@ -340,9 +405,10 @@ export function lintSpecContent(text: string, options: SpecLintOptions = {}): Sp
   const pathExists = options.fileExists ?? existsSync;
   const lines = text.split("\n");
   const storyIds = declaredStoryIds(lines);
+  const declaration = readModifiesDeclaration(lines, fencedLineIndices(lines));
 
   const findings = [
-    ...checkModifies(text, lines, storyIds, pathExists),
+    ...checkModifies({ text, declaration, storyIds, pathExists }),
     ...checkOutOfScope(text, storyIds),
     ...checkContextFiles(text, lines, pathExists),
     ...checkAcceptanceCriteria(lines, maxAcCount),

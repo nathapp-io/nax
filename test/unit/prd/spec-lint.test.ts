@@ -238,4 +238,59 @@ ${storyHeadings}
     const codes = lintText(spec).map((f) => f.code);
     expect(codes).toContain("story-count-over-target");
   });
+
+  test("flags a bare `Modifies:` label line, the shape that silently extracted nothing", async () => {
+    const bareLabel = `Modifies:
+- **US-001** \`scripts/check-spec-extractable.ts\` — reason`;
+    const codes = lintText(specWith(bareLabel))
+      .filter((f) => f.level === "error")
+      .map((f) => f.code);
+    expect(codes).toContain("modifies-declared-but-empty");
+  });
+
+  test("does not read a `Modifies:` label documented inside a fenced block as a declaration", async () => {
+    const documented = `Authors sometimes write the section like this, which does not extract:
+
+\`\`\`markdown
+Modifies:
+- **US-001** \`scripts/check-spec-extractable.ts\` — reason
+\`\`\``;
+    const codes = lintText(specWith(documented))
+      .filter((f) => f.level === "error")
+      .map((f) => f.code);
+    expect(codes).not.toContain("modifies-declared-but-empty");
+  });
+
+  test("does not read a `### Modifies` heading documented inside a fenced block as a declaration", async () => {
+    const documented = `Write the section like this:
+
+\`\`\`markdown
+### Modifies
+
+**US-001**
+
+- \`scripts/check-spec-extractable.ts\` — reason
+\`\`\``;
+    const codes = lintText(specWith(documented))
+      .filter((f) => f.level === "error")
+      .map((f) => f.code);
+    expect(codes).not.toContain("modifies-declared-but-empty");
+  });
+
+  test("accepts a `### Modifies` section that declares None with a prose justification", async () => {
+    const none = `### Modifies
+
+None. No existing test pins a closed-world shape this feature changes.`;
+    const codes = lintText(specWith(none))
+      .filter((f) => f.level === "error")
+      .map((f) => f.code);
+    expect(codes).not.toContain("modifies-declared-but-empty");
+  });
+
+  test("accepts a bare `Modifies: none` label line as an explicit empty declaration", async () => {
+    const codes = lintText(specWith("Modifies: none"))
+      .filter((f) => f.level === "error")
+      .map((f) => f.code);
+    expect(codes).not.toContain("modifies-declared-but-empty");
+  });
 });
