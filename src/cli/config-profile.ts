@@ -32,6 +32,32 @@ export const _profileCLIDeps = {
 const SENSITIVE_KEY_PATTERN = /key|token|secret|password|credential/i;
 const VAR_PATTERN = /\$[A-Za-z_][A-Za-z0-9_]*/;
 
+// Key names the pattern matches that never carry a secret. "Tokens" here
+// counts LLM context, and "keyword" merely contains "key" — masking these
+// destroyed real declared config, printing every one as "***" in
+// `nax config`. agent.native.catalogOverrides[].maxTokens is how it
+// surfaced: the operator's own declared output ceiling, unreadable in the
+// one command that exists to show it (nax#1982).
+//
+// An explicit NAME list, deliberately not a value-type rule ("a number
+// cannot be a secret"). loadProfile returns raw un-Zod'd JSON
+// (config/profile.ts), so a profile may carry any key at all — and under a
+// type rule a numeric passcode written as `"password": 8675309` would print
+// in cleartext in the DEFAULT, non---unmask view, which exists precisely to
+// be safe to paste into an issue. Narrowing by name cannot widen exposure:
+// it only ever unmasks names listed right here.
+//
+// Kept current by a drift test in config-profile.test.ts, which walks
+// DEFAULT_CONFIG and fails when a new non-string config key matches the
+// pattern without being listed here.
+const SENSITIVE_KEY_EXEMPTIONS = new Set([
+  "maxTokens",
+  "budgetTokens",
+  "contextProviderTokenBudget",
+  "emptyKeyword",
+  "fallbackToKeywords",
+]);
+
 /**
  * Lists all profiles from global and project scopes, grouped by scope label.
  * The active profile is marked with "*".
@@ -105,7 +131,8 @@ export async function profileShowCommand(
 export function maskProfileValues(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    result[key] = SENSITIVE_KEY_PATTERN.test(key) ? "***" : maskProfileValue(value);
+    result[key] =
+      SENSITIVE_KEY_PATTERN.test(key) && !SENSITIVE_KEY_EXEMPTIONS.has(key) ? "***" : maskProfileValue(value);
   }
   return result;
 }

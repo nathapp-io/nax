@@ -55,6 +55,11 @@ export const CatalogModelOverrideSchema = z
     id: z.string().min(1, "id must be non-empty"),
     protocol: z.string().min(1, "protocol must be non-empty"),
     contextWindow: z.number().int().positive(),
+    // nax#1982: nax-ai 0.1.11 synthesises an override from a bundled sibling and
+    // inherits that sibling's output ceiling unless the override declares one.
+    // Stated explicitly rather than left to the sibling, or a newer model with a
+    // larger ceiling is silently truncated at the wire.
+    maxTokens: z.number().int().positive().optional(),
     supportsTools: z.boolean(),
     thinkingLevels: z.array(ThinkingLevelSchema),
     pricing: CatalogPricingSchema,

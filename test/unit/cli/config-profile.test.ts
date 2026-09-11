@@ -12,12 +12,14 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
+  maskProfileValues,
   profileCreateCommand,
   profileCurrentCommand,
   profileListCommand,
   profileShowCommand,
   profileUseCommand,
 } from "@/cli/config-profile";
+import { DEFAULT_CONFIG } from "@/config";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -155,6 +157,106 @@ describe("profileShowCommand", () => {
     expect(output).toContain("***");
     // Non-sensitive field value should remain visible
     expect(output).toContain("30000");
+  });
+
+  test("leaves exempt keys visible while still masking a real secret beside them", async () => {
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
+      // All three match SENSITIVE_KEY_PATTERN and none carries a secret.
+      maxTokens: 384000,
+      fallbackToKeywords: false,
+      emptyKeyword: 2,
+      apiKey: "raw-api-key",
+    });
+
+    const parsed = JSON.parse(await profileShowCommand("fast", tempDir, { unmask: false }));
+
+    expect(parsed.maxTokens).toBe(384000);
+    expect(parsed.fallbackToKeywords).toBe(false);
+    expect(parsed.emptyKeyword).toBe(2);
+    expect(parsed.apiKey).toBe("***");
+  });
+
+  test("unmasks maxTokens nested inside catalogOverrides, the shape that reported it", async () => {
+    // nax#1982's actual shape: a number two arrays deep, so this also covers
+    // the BUG-36 array recursion in maskProfileValue, which the flat case
+    // never reaches.
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
+      agent: {
+        native: {
+          catalogOverrides: [
+            { provider: "opencode-go", models: [{ id: "deepseek-flash", maxTokens: 384000, apiKey: "nested-secret" }] },
+          ],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(await profileShowCommand("fast", tempDir, { unmask: false }));
+    const model = parsed.agent.native.catalogOverrides[0].models[0];
+
+    expect(model.maxTokens).toBe(384000);
+    expect(model.id).toBe("deepseek-flash");
+    expect(model.apiKey).toBe("***");
+  });
+
+  test("masks an object under a sensitive key WHOLESALE, without recursing into it", async () => {
+    // The exemption list must not weaken this: a subtree under a sensitive
+    // key may nest secret strings carrying no $VAR marker for
+    // maskProfileValue to catch, so the whole subtree collapses to one "***".
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
+      credentials: { apiToken: "nested-secret", ttlSeconds: 60 },
+    });
+
+    const parsed = JSON.parse(await profileShowCommand("fast", tempDir, { unmask: false }));
+
+    expect(parsed.credentials).toBe("***");
+  });
+
+  test("a numeric value under a NON-exempt sensitive key still masks", async () => {
+    // Deliberate: profiles are raw un-Zod'd JSON, so any key may appear, and
+    // a numeric passcode must not print in the default view.
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
+      password: 8675309,
+    });
+
+    const parsed = JSON.parse(await profileShowCommand("fast", tempDir, { unmask: false }));
+
+    expect(parsed.password).toBe("***");
+  });
+
+  test("SENSITIVE_KEY_EXEMPTIONS covers every non-string DEFAULT_CONFIG key that matches the pattern", () => {
+    // Drift gate. A new config key like `maxOutputTokens` would silently go
+    // back to printing "***"; this fails instead, naming the key to add.
+    const pattern = /key|token|secret|password|credential/i;
+    const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    const masked = maskProfileValues(defaults);
+
+    const isRecord = (v: unknown): v is Record<string, unknown> =>
+      typeof v === "object" && v !== null && !Array.isArray(v);
+
+    const destroyed: string[] = [];
+    const walk = (original: unknown, shown: unknown, path: string): void => {
+      if (Array.isArray(original)) {
+        const shownItems = Array.isArray(shown) ? shown : [];
+        for (const [i, item] of original.entries()) {
+          walk(item, shownItems[i], `${path}[${i}]`);
+        }
+        return;
+      }
+      if (!isRecord(original)) return;
+      const shownFields = isRecord(shown) ? shown : {};
+      for (const [key, value] of Object.entries(original)) {
+        const here = path === "" ? key : `${path}.${key}`;
+        const after = shownFields[key];
+        if (pattern.test(key) && typeof value !== "string" && after === "***") {
+          destroyed.push(here);
+          continue;
+        }
+        walk(value, after, here);
+      }
+    };
+    walk(defaults, masked, "");
+
+    expect(destroyed).toEqual([]);
   });
 
   test("shows raw values when unmask=true", async () => {

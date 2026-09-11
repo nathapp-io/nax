@@ -347,6 +347,22 @@ describe("toProviderOverrides", () => {
     expect(toProviderOverrides([])).toEqual([]);
   });
 
+  test("carries a declared maxTokens through, so the wire is not clamped to a template sibling (#1982)", () => {
+    // nax-ai 0.1.11 synthesises an override model from a bundled sibling on the
+    // same protocol and falls back to that sibling's maxTokens when the override
+    // declares none. A newer model with a larger output ceiling would otherwise
+    // be silently truncated; declaring maxTokens must reach the wire.
+    const withCeiling: ProviderCatalogOverride = {
+      ...override,
+      models: [{ ...override.models[0], maxTokens: 65_536 }],
+    };
+    expect(toProviderOverrides([withCeiling])[0]?.models?.[0]).toMatchObject({ maxTokens: 65_536 });
+  });
+
+  test("omits maxTokens entirely when the override declares none, leaving the template's value in play", () => {
+    expect(toProviderOverrides([override])[0]?.models?.[0]).not.toHaveProperty("maxTokens");
+  });
+
   test("the config thinking levels mirror the nax-ai union exactly", () => {
     // THINKING_LEVELS is a Record<ThinkingLevel, true> over nax-ai's union, so
     // it fails to compile if nax-ai adds a level. This pins the config enum to

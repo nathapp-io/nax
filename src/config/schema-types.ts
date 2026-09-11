@@ -113,6 +113,12 @@ export interface CatalogModelOverride {
   /** nax-ai protocol id, e.g. "openai-completions" or "anthropic-messages". */
   protocol: string;
   contextWindow: number;
+  /**
+   * Output ceiling. Optional: when absent, nax-ai inherits the ceiling of the
+   * bundled sibling it synthesises the override from, which can be smaller
+   * than the newer model's real one (nax-ai 0.1.11, nax#1982).
+   */
+  maxTokens?: number;
   supportsTools: boolean;
   thinkingLevels: ThinkingLevel[];
   pricing: CatalogPricing;
