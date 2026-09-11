@@ -131,32 +131,36 @@ Foundation for US-002 and US-003. The agent manager counts completed dispatches 
 Dependencies: none.
 Context Files: `src/agents/manager-types.ts`, `src/agents/manager-run-fallback.ts`, `src/operations/call.ts`, `src/operations/call-resolvers.ts`, `test/unit/operations/call-empty-output.test.ts`
 Creates: none
-Modifies:
-- **US-001** `test/unit/operations/call-empty-output.test.ts` — its fixtures build run outcomes without `dispatchesCompleted`, which is now required on `AgentRunOutcome`. Each fixture must set the count that matches what it simulates: an empty-or-whitespace turn that was actually returned by an adapter completed a dispatch, so these fixtures set `dispatchesCompleted: 1` and keep asserting `CALL_OP_NO_OUTPUT`. The invariant that replaces the bare fixture is that `CALL_OP_NO_OUTPUT` covers a completed dispatch with unusable output, and `CALL_OP_NO_DISPATCH` covers no completed dispatch at all.
-- **US-001** `test/unit/agents/manager-types-phase5.test.ts` — it builds an `AgentRunOutcome` object literal with only `result`, `fallbacks`, `finalBundle` and `finalPrompt`, which stops compiling the moment `dispatchesCompleted` becomes required. The invariant that replaces it is that an `AgentRunOutcome` literal carries a `dispatchesCompleted` count alongside `finalBundle` and `finalPrompt`.
 
 **US-002 — neither review gate produces a verdict from a dispatch that never happened**
 Semantic and adversarial review report zero-dispatch as its own state instead of fail-open and a parse error respectively.
 Dependencies: US-001.
 Context Files: `src/review/types.ts`, `src/execution/story-orchestrator/review-decision.ts`, `src/operations/semantic-review.ts`, `src/operations/adversarial-review.ts`, `src/execution/post-run-review-summary.ts`
 Creates: none
-Modifies:
-- **US-002** `test/unit/operations/semantic-review.test.ts` — its empty-dispatch case asserts the fail-open shape that this story replaces for the zero-dispatch path. The invariant that replaces it is that an empty output from a *completed* dispatch still fails open, while no completed dispatch yields `noDispatch: true` with `success: false`.
 
 **US-003 — a rectification pass with zero dispatches skips validation**
 The fix cycle routes zero-dispatch into its existing skip-validate exit rather than reporting completion and re-validating untouched code, and the rectification phase stops charging the iteration to the no-progress budget. The two live in different components: the skip-validate exit is `src/findings/cycle.ts`, while `abortOnNoProgress` / `consecutiveNoProgressToBail` are consumed at `src/execution/story-orchestrator/rectification.ts:358-359` — `cycle.ts` does not read them.
 Dependencies: US-001.
 Context Files: `src/findings/cycle.ts`, `src/findings/cycle-dispatch.ts`, `src/findings/cycle-types.ts`, `src/execution/story-orchestrator/rectification.ts`, `src/execution/story-orchestrator-logging.ts`
 Creates: none
-Modifies: none
 
 **US-004 — precheck resolves every configured model id and reports dropped overrides**
 One walk over the configured-model-id surface, emitting a blocker for an unresolvable native id, a warning for an unresolvable acp id, and a warning for a literal pin whose configured `pricing` / `contextWindow` the literal route discards.
 Dependencies: none.
 Context Files: `src/precheck/index.ts`, `src/precheck/types.ts`, `src/config/selectors.ts`, `src/config/schema-types.ts`, `src/agents/native/client.ts`
 Creates: `src/precheck/checks-models.ts`, `src/agents/native/model-resolution.ts`
-Modifies:
-- **US-004** `test/unit/precheck/precheck-checks-tier1-blockers.test.ts` — it pins the tier-1 blocker set by its exact membership, which this story extends with the model-resolution check. The invariant that replaces the fixed membership is that the model-resolution blocker is present in the tier-1 set and runs after `checkAgentCLI`.
+
+### Modifies
+
+**US-001**
+- `test/unit/operations/call-empty-output.test.ts` — its fixtures build run outcomes without `dispatchesCompleted`, which is now required on `AgentRunOutcome`. Each fixture must set the count that matches what it simulates: an empty-or-whitespace turn that was actually returned by an adapter completed a dispatch, so these fixtures set `dispatchesCompleted: 1` and keep asserting `CALL_OP_NO_OUTPUT`. The invariant that replaces the bare fixture is that `CALL_OP_NO_OUTPUT` covers a completed dispatch with unusable output, and `CALL_OP_NO_DISPATCH` covers no completed dispatch at all.
+- `test/unit/agents/manager-types-phase5.test.ts` — it builds an `AgentRunOutcome` object literal with only `result`, `fallbacks`, `finalBundle` and `finalPrompt`, which stops compiling the moment `dispatchesCompleted` becomes required. The invariant that replaces it is that an `AgentRunOutcome` literal carries a `dispatchesCompleted` count alongside `finalBundle` and `finalPrompt`.
+
+**US-002**
+- `test/unit/operations/semantic-review.test.ts` — its empty-dispatch case asserts the fail-open shape that this story replaces for the zero-dispatch path. The invariant that replaces it is that an empty output from a *completed* dispatch still fails open, while no completed dispatch yields `noDispatch: true` with `success: false`.
+
+**US-004**
+- `test/unit/precheck/precheck-checks-tier1-blockers.test.ts` — it pins the tier-1 blocker set by its exact membership, which this story extends with the model-resolution check. The invariant that replaces the fixed membership is that the model-resolution blocker is present in the tier-1 set and runs after `checkAgentCLI`.
 
 ### Seams
 
