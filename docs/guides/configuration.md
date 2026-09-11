@@ -78,7 +78,7 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.acp.promptRetries` | `0` | ACP only. Becomes acpx's `--prompt-retries`; the retry runs inside the spawned agent process. |
 | `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
 | `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
-| `agent.native.catalogOverrides` | `[]` | Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot. Provider-scoped; each entry is a **complete** record — `id`, `protocol`, `contextWindow`, `supportsTools`, `thinkingLevels`, and `pricing` in nax-ai's `input`/`output`/`cacheRead`/`cacheWrite` per-1M vocabulary. Applied below every pin route (tier entries, literal `{agent, model}` pins, fallback rungs). The client is built once per process, so keep one list. See [nax-ai surface](../architecture/nax-ai-surface.md#context-window). |
+| `agent.native.catalogOverrides` | `[]` | Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot. Provider-scoped; each entry is a **complete** record — `id`, `protocol`, `contextWindow`, optional `maxTokens`, `supportsTools`, `thinkingLevels`, and `pricing` in nax-ai's `input`/`output`/`cacheRead`/`cacheWrite` per-1M vocabulary. Applied below every pin route (tier entries, literal `{agent, model}` pins, fallback rungs). The client is built once per process, so keep one list. See [nax-ai surface](../architecture/nax-ai-surface.md#context-window). |
 
 **Scope — what this controls.** Only the *availability* retry layer (auth / 429 / service down). Transport retries (broken socket, stale session) stay on the same agent inside the adapter. Agent-internal retries (a stalled stream or a 502/503 inside one call) stay on the same agent too, in the spawned agent process on ACP and in the native turn loop on native — see `agent.acp.promptRetries` and `agent.native.transportRetry` above. Payload-shape retries (JSON parse fail) stay on the same agent inside the caller. See [Agents — How fallback works](agents.md#how-fallback-works) for the full split.
 
@@ -95,6 +95,7 @@ it explicitly rather than waiting on a dependency bump:
         "id": "deepseek-flash",
         "protocol": "openai-completions",
         "contextWindow": 1000000,
+        "maxTokens": 384000,
         "supportsTools": true,
         "thinkingLevels": ["off", "low", "medium", "high"],
         "pricing": { "input": 0.15, "output": 0.6, "cacheRead": 0.003, "cacheWrite": 0 }
@@ -106,6 +107,12 @@ it explicitly rather than waiting on a dependency bump:
 
 Every value is operator-declared and complete: a wrong `contextWindow` or rate is
 your declaration, visible in config, rather than an id that cannot be named at all.
+`maxTokens` is optional — the output ceiling. When omitted, nax-ai inherits the
+ceiling of the bundled sibling model it synthesises the entry from, which can be
+smaller than the new model's real one, so a higher-output model should state it.
+The override must amend a provider the bundled catalog already carries and use a
+protocol that provider already has a model on; an entry that tries to introduce a
+new provider fails the client build with a clear error instead of failing mid-run.
 
 Select it with an ordinary `{ agent, model }` pin — native reads provider and model
 from the model **string**, so the declared id is the whole address:

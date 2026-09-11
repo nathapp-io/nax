@@ -50,6 +50,22 @@ describe("agent.native.catalogOverrides", () => {
     expect(() => parseNative({ catalogOverrides: [withUnknown] })).toThrow();
   });
 
+  test("carries an optional maxTokens ceiling through to the typed output (#1982)", () => {
+    // nax#1982 follow-up: nax-ai 0.1.11 exposes ResolvedModel.maxTokens, and an
+    // override that declares none inherits a bundled sibling's smaller ceiling.
+    // Without the key in this strict schema the declaration would be stripped at
+    // load — the same silent-drop trap as pricing.tiers (#1847).
+    const model = { ...VALID_OVERRIDE.models[0], maxTokens: 65_536 };
+    const config = parseNative({ catalogOverrides: [{ provider: "opencode-go", models: [model] }] });
+    const parsed: ProviderCatalogOverride | undefined = config.agent?.native?.catalogOverrides?.[0];
+    expect(parsed?.models[0]?.maxTokens).toBe(65_536);
+  });
+
+  test("rejects a non-positive maxTokens", () => {
+    const model = { ...VALID_OVERRIDE.models[0], maxTokens: 0 };
+    expect(() => parseNative({ catalogOverrides: [{ provider: "opencode-go", models: [model] }] })).toThrow();
+  });
+
   test.each<[string, unknown]>([
     ["a model-level unknown key", { ...VALID_OVERRIDE.models[0], contextWindowSize: 1 }],
     [

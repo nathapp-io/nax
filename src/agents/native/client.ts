@@ -44,18 +44,29 @@ const NAX_CLIENT_APP = { name: "nax", url: "https://github.com/nathapp-io/nax" }
 export async function buildNativeClient(catalogOverrides: readonly ProviderCatalogOverride[] = []): Promise<Client> {
   return createClient({
     providers: await defaultProviders(),
-    protocols: _clientDeps.defaultProtocols({
-      // The credential seam: pi resolves the store first, then ambient sources
-      // (env vars, AWS profiles, ADC), so a stored credential owns its provider
-      // and CI with only an environment variable keeps working. Passing it here
-      // is what makes `nax auth login` reach a run. This is the only inlet:
-      // ClientOptions once carried a `credentials` field that createClient
-      // never read, and nax-ai 0.1.4 removed it for exactly that reason.
-      credentials: naxCredentialStore(),
-      // Construction-time, like `credentials`: the identity is a constant of
-      // the process, so nax-ai takes it here rather than on every request.
-      clientApp: NAX_CLIENT_APP,
-    }),
+    // The factory form, not the entries form: nax-ai has TWO catalogs — the
+    // client's, which `model()` and `pricing()` read, and the protocol layer's,
+    // which request-time resolution reads — and an override has to reach both.
+    // Entries built without it reproduce #1982 exactly: the model resolves and
+    // prices happily, then throws `Unknown model ... in the pi-ai catalog` on
+    // the first real request. createClient hands the factory the array it was
+    // constructed with, so the two sides cannot disagree — and nax-ai 0.1.11
+    // rejects at construction a client whose entries never heard about an
+    // override the client itself declared (nax-ai#36).
+    protocols: ({ providerOverrides }) =>
+      _clientDeps.defaultProtocols({
+        // The credential seam: pi resolves the store first, then ambient sources
+        // (env vars, AWS profiles, ADC), so a stored credential owns its provider
+        // and CI with only an environment variable keeps working. Passing it here
+        // is what makes `nax auth login` reach a run. This is the only inlet:
+        // ClientOptions once carried a `credentials` field that createClient
+        // never read, and nax-ai 0.1.4 removed it for exactly that reason.
+        credentials: naxCredentialStore(),
+        // Construction-time, like `credentials`: the identity is a constant of
+        // the process, so nax-ai takes it here rather than on every request.
+        clientApp: NAX_CLIENT_APP,
+        providerOverrides,
+      }),
     // nax-ai applies these last (`normaliseCatalog`), replacing any bundled
     // entry with the same id and lazily creating the provider bucket when the
     // id is unknown to pi-ai — that is what makes a model newer than the

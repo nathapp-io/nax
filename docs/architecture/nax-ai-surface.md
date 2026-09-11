@@ -66,12 +66,30 @@ const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer
 Windows are large: `claude-sonnet-5` is **1,000,000**, `gpt-5.6-terra` **272,000**. `execution.compaction.compactAtPercent` floors at 50, so on a million-token window compaction cannot fire below 500k tokens — a normal story will never trigger it.
 
 **The override seam is wired, via `agent.native.catalogOverrides`** (nax#1982).
-`ClientOptions.providerOverrides?: readonly ProviderOverride[]` accepts
-declaration-data overrides, and `buildNativeClient` now maps the configured list
-through `toProviderOverrides` (`src/agents/native/models.ts`) into `createClient`.
-nax-ai applies override models last in `normaliseCatalog`, replacing any same-id
-entry and lazily creating the provider bucket, so an id absent from the bundled
-pi-ai snapshot resolves after the override — the whole point of the field.
+`buildNativeClient` maps the configured list through `toProviderOverrides`
+(`src/agents/native/models.ts`) into `createClient`, and nax-ai applies override
+models last in `normaliseCatalog`, replacing any same-id entry and lazily
+creating the provider bucket, so an id absent from the bundled pi-ai snapshot
+resolves after the override.
+
+Reaching the wire takes **two catalogs**, and this is where nax#1982's first fix
+fell short (nax-ai#36): `client.model()` / `pricing()` read the client catalog,
+while request-time resolution reads a second catalog inside the protocol layer.
+An override declared only on the client resolves and prices correctly, then
+throws `Unknown model ... in the pi-ai catalog` on the first real request. nax
+passes `protocols` as a **factory** (`protocols: ({ providerOverrides }) => ...`)
+so `createClient` hands the protocol entries the same array it holds — one
+declaration, no place for the two sides to drift. nax-ai 0.1.11 enforces this:
+a client whose protocol entries never heard about a declared override is
+rejected at construction, and the protocol layer additionally requires that the
+override's provider exists in the bundled catalog and has a sibling model on the
+same protocol to template from — overrides amend a provider, they cannot
+introduce one.
+
+An override entry may declare an optional `maxTokens` output ceiling. nax-ai
+synthesises the wire model from a bundled sibling and inherits the sibling's
+`maxTokens` when the override states none, so a newer model with a larger
+ceiling should declare it explicitly.
 
 ```json
 "agent": {
@@ -82,6 +100,7 @@ pi-ai snapshot resolves after the override — the whole point of the field.
         "id": "deepseek-flash",
         "protocol": "openai-completions",
         "contextWindow": 1000000,
+        "maxTokens": 384000,
         "supportsTools": true,
         "thinkingLevels": ["off", "low", "medium", "high"],
         "pricing": { "input": 0.15, "output": 0.6, "cacheRead": 0.003, "cacheWrite": 0 }

@@ -151,6 +151,48 @@ describe("catalog overrides", () => {
     expect(resolved.pricing.input).toBe(1);
   });
 
+  test("an override survives to dispatch: complete() resolves it instead of throwing Unknown model (#1982)", async () => {
+    const client = await buildNativeClient([
+      {
+        provider: "opencode-go",
+        models: [
+          {
+            id: "nax-1982-dispatch-probe",
+            protocol: "openai-completions",
+            contextWindow: 1_000_000,
+            supportsTools: true,
+            thinkingLevels: ["off", "high"],
+            pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
+          },
+        ],
+      },
+    ]);
+
+    const resolved = await client.model("opencode-go", "nax-1982-dispatch-probe");
+
+    // Cross the protocol seam. client.model() reads the catalog createClient
+    // patches; complete() resolves the model again inside the protocol layer,
+    // which before nax-ai 0.1.11 was built from the pinned pi-ai snapshot alone
+    // and threw `Unknown model "..." for provider "opencode-go" in the pi-ai
+    // catalog.` on the first real request. test/preload.ts scrubs *_API_KEY and
+    // isolates the credential store, so the next failure is deterministic auth
+    // and nothing leaves the process.
+    const err = await client
+      .complete(resolved, {
+        messages: [{ role: "user", content: "hi" }],
+        maxTokens: 1,
+        sessionId: "nax-1982-dispatch-probe",
+      })
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+    expect(err).toBeInstanceOf(Error);
+    expect(String(err)).not.toContain("Unknown model");
+    expect(String(err)).toContain("not configured");
+  });
+
   test("passes the override set to the builder and reuses one build for the same set", async () => {
     const set = [override("deepseek-flash")];
     let seen: readonly ProviderCatalogOverride[] | undefined;
