@@ -195,7 +195,12 @@ export async function checkModelResolution(config: unknown): Promise<Check[]> {
       }
       // resolved — check AC7: did the literal pin drop tier-configured pricing/contextWindow?
       const tierEntry = findTierEntryForPin(tierEntries, pin);
-      if (tierEntry && (tierEntry.hasPricing || tierEntry.hasContextWindow)) {
+      // Tier-name selections (e.g. `plan.model = "balanced"`) route through the
+      // tier reference, which respects the tier entry's overrides — so the
+      // AC7 dropped-overrides warning must NOT fire for those. The walk
+      // marks them with `tierReference: true`; literal `{agent, model}`
+      // pins (which DO drop the tier's overrides) carry no such flag.
+      if (!pin.tierReference && tierEntry && (tierEntry.hasPricing || tierEntry.hasContextWindow)) {
         const dropped = describeDroppedOverrides(tierEntry);
         checks.push({
           name: "model-resolution",

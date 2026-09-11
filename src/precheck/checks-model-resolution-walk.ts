@@ -31,6 +31,15 @@ export interface LiteralPin {
   readonly agent: string;
   readonly model: string;
   /**
+   * `true` when the site selects by tier NAME (`plan.model = "balanced"`)
+   * rather than a literal `{agent, model}` pin. Tier-name selections
+   * route through the tier reference, which respects the tier entry's
+   * overrides — so AC7's "literal pin dropped overrides" warning must
+   * skip them (the adversarial reviewer flagged this as a false positive
+   * on a native default agent).
+   */
+  readonly tierReference?: boolean;
+  /**
    * When the pin sits against a tier entry that declared `pricing` or
    * `contextWindow`, that fact surfaces here. The literal-pin warning
    * (AC7) fires only when the resolver reports the override fields were
@@ -102,26 +111,18 @@ function pinFromConfiguredModel(
 ): LiteralPin | undefined {
   if (selection === undefined) return undefined;
   if (typeof selection === "string") {
-    const overrides = tierOverrides.get(selection);
     const resolved = findTierEntryForAgent(tierEntries, defaultAgent, selection);
     if (resolved !== undefined) {
-      // Pin carries the underlying id so the resolver looks up the correct
-      // catalog entry. The keyPath still names the config site, so the
-      // dropped-overrides warning (if any) names the pin.
+      // Tier-name selection: routes through the tier reference, which
+      // respects the tier entry's overrides — so the AC7 dropped-overrides
+      // warning must skip this site. We carry `tierReference: true` so the
+      // check can recognise the site; the underlying (provider, model) is
+      // stored on the pin so the resolver still looks up the correct id.
       return {
         keyPath,
         agent: defaultAgent,
         model: `${resolved.provider}/${resolved.model}`,
-        ...(resolved.hasPricing || resolved.hasContextWindow
-          ? {
-              tierEntryOverrides: {
-                hasPricing: resolved.hasPricing,
-                hasContextWindow: resolved.hasContextWindow,
-              },
-            }
-          : overrides !== undefined
-            ? { tierEntryOverrides: overrides }
-            : {}),
+        tierReference: true,
       };
     }
     // Tier not in the models map — fall back to the tier label so the key
@@ -130,7 +131,7 @@ function pinFromConfiguredModel(
       keyPath,
       agent: defaultAgent,
       model: selection,
-      ...(overrides !== undefined ? { tierEntryOverrides: overrides } : {}),
+      tierReference: true,
     };
   }
   // Literal `{agent, model}` pin. `model` may be either a tier name (in which case the
@@ -330,21 +331,14 @@ export function collectConfiguredModelPins(config: unknown): {
     const agent = rung.agent ?? defaultAgent;
     const resolved = findTierEntryForAgent(tierEntries, agent, tier);
     if (resolved !== undefined) {
-      // Pin stores the underlying id (provider-qualified) so the resolver
-      // looks up the correct catalog entry — not the tier label, which would
-      // produce a false "unknown/powerful" blocker (semantic review finding).
+      // Tier-name reference: the rung routes through `models.<agent>.<tier>`,
+      // so the tier entry's overrides are honored. Mark the pin as a tier
+      // reference so the check skips the AC7 dropped-overrides warning.
       pins.push({
         keyPath: `autoMode.escalation.tierOrder[${idx}].tier`,
         agent,
         model: `${resolved.provider}/${resolved.model}`,
-        ...(resolved.hasPricing || resolved.hasContextWindow
-          ? {
-              tierEntryOverrides: {
-                hasPricing: resolved.hasPricing,
-                hasContextWindow: resolved.hasContextWindow,
-              },
-            }
-          : {}),
+        tierReference: true,
       });
     } else {
       // Tier not in the models map. Emit the tier label so the key path
@@ -353,6 +347,7 @@ export function collectConfiguredModelPins(config: unknown): {
         keyPath: `autoMode.escalation.tierOrder[${idx}].tier`,
         agent,
         model: tier,
+        tierReference: true,
       });
     }
   });
@@ -388,14 +383,7 @@ export function collectConfiguredModelPins(config: unknown): {
           keyPath: `agent.fallback.map.${primary}[${idx}]`,
           agent: rung.agent,
           model: resolved !== undefined ? `${resolved.provider}/${resolved.model}` : rung.tier,
-          ...(resolved !== undefined && (resolved.hasPricing || resolved.hasContextWindow)
-            ? {
-                tierEntryOverrides: {
-                  hasPricing: resolved.hasPricing,
-                  hasContextWindow: resolved.hasContextWindow,
-                },
-              }
-            : {}),
+          tierReference: true,
         });
       }
     });

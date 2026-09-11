@@ -264,6 +264,7 @@ describe("checkModelResolution (US-1984 AC8) — tier selection drops no warning
     _modelResolutionDeps.resolveAcp = async () => ({ status: "resolved" });
 
     const checks = await checkModelResolution({
+      agent: { default: "native" },
       models: {
         native: {
           balanced: {
