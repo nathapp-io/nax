@@ -424,6 +424,16 @@ export const TddConfigSchema = z.object({
     })
     // Explicit default avoids Zod v4 behavior where .default({}) bypasses inner defaults.
     .default({ testWriter: "fast", verifier: "fast" }),
+  /**
+   * Wall-clock budget for one verifier turn, in seconds.
+   *
+   * Its own knob rather than `execution.sessionTimeoutSeconds` because the
+   * verifier is a scoped, read-only task: it runs the story's own tests and
+   * emits a verdict. Inheriting the session default gave it 7200s and a spin
+   * roughly 2,000 iterations of runway before anything fired (nax#2013). The
+   * review ops have had their own budget all along (`review.*.timeoutMs`).
+   */
+  verifierTimeoutSeconds: z.number().int().min(60).max(7200).default(1800),
   testWriterAllowedPaths: z.array(z.string()).optional(),
   rollbackOnFailure: z.boolean().optional(),
   greenfieldDetection: z.boolean().optional(),

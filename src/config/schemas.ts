@@ -217,6 +217,7 @@ export const NaxConfigSchema = z
         testWriter: "fast",
         verifier: "fast",
       },
+      verifierTimeoutSeconds: 1800,
       testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
       rollbackOnFailure: true,
       greenfieldDetection: true,
