@@ -341,6 +341,73 @@ describe("deriveNbfSeed — AC8: failing phase predicate gates the seed", () => 
     expect(seed.shouldRun).toBe(false);
   });
 
+  // AC8 boundary — the green precondition is universal, not reviewer-scoped.
+  // A regression that gated nbf only on reviewer failures (the named sources)
+  // would still pass under the two tests above. The spec text is "any phase
+  // output fails the phase-passed predicate", so every phase type the
+  // orchestrator runs must trigger the gate. Pin that contract for the four
+  // canonical non-reviewer phase types so a future fix to the seed module
+  // that narrows the gate to `sources`-only is caught here.
+  test("failing full-suite-gate → shouldRun=false (green precondition is universal, not reviewer-scoped)", () => {
+    const s1 = semantic({ message: "sem-1" });
+    const a1 = adversarial({ message: "adv-1" });
+    const seed = deriveNbfSeed({
+      phaseOutputs: {
+        "full-suite-gate": { success: false, passed: false, findings: [] },
+        "semantic-review": passingSemanticOutput([s1]),
+        "adversarial-review": passingAdversarialOutput([a1]),
+      },
+      sources: ["adversarial", "semantic"],
+      storyId: "US-002",
+    });
+    expect(seed.shouldRun).toBe(false);
+  });
+
+  test("failing verifier → shouldRun=false (green precondition covers TDD isolation judge)", () => {
+    const s1 = semantic({ message: "sem-1" });
+    const a1 = adversarial({ message: "adv-1" });
+    const seed = deriveNbfSeed({
+      phaseOutputs: {
+        verifier: { success: false, passed: false },
+        "semantic-review": passingSemanticOutput([s1]),
+        "adversarial-review": passingAdversarialOutput([a1]),
+      },
+      sources: ["adversarial", "semantic"],
+      storyId: "US-002",
+    });
+    expect(seed.shouldRun).toBe(false);
+  });
+
+  test("failing lint-check → shouldRun=false (green precondition covers mechanical checks)", () => {
+    const s1 = semantic({ message: "sem-1" });
+    const a1 = adversarial({ message: "adv-1" });
+    const seed = deriveNbfSeed({
+      phaseOutputs: {
+        "lint-check": { success: false, passed: false },
+        "semantic-review": passingSemanticOutput([s1]),
+        "adversarial-review": passingAdversarialOutput([a1]),
+      },
+      sources: ["adversarial", "semantic"],
+      storyId: "US-002",
+    });
+    expect(seed.shouldRun).toBe(false);
+  });
+
+  test("failing typecheck-check → shouldRun=false (green precondition covers type errors)", () => {
+    const s1 = semantic({ message: "sem-1" });
+    const a1 = adversarial({ message: "adv-1" });
+    const seed = deriveNbfSeed({
+      phaseOutputs: {
+        "typecheck-check": { success: false, passed: false },
+        "semantic-review": passingSemanticOutput([s1]),
+        "adversarial-review": passingAdversarialOutput([a1]),
+      },
+      sources: ["adversarial", "semantic"],
+      storyId: "US-002",
+    });
+    expect(seed.shouldRun).toBe(false);
+  });
+
   test("a phase that produced no output (e.g. skipped) is treated as not-passing under the strict reviewer set", () => {
     // The seed module is used by the orchestrator AFTER `phasePassed` has
     // already gated the main loop; on a missing output it must not silently
