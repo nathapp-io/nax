@@ -3,7 +3,7 @@
   "feature": "advisory-and-budget-truth",
   "branchName": "feat/advisory-and-budget-truth",
   "createdAt": "2026-09-11T00:00:00.000Z",
-  "updatedAt": "2026-09-12T04:58:56.457Z",
+  "updatedAt": "2026-09-12T05:26:06.374Z",
   "userStories": [
     {
       "id": "US-001",
@@ -108,8 +108,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -161,7 +161,10 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "The implementation is a bounded conditional log-message and comment edit in an existing provider, with returned data explicitly unchanged."
+        "reasoning": "The implementation is a bounded conditional log-message and comment edit in an existing provider, with returned data explicitly unchanged.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "src/context/engine/providers/static-rules.ts",
@@ -172,7 +175,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0192919d9c05aade118200306b207fc94c89c8c0"
     }
   ],
   "analysis": "This feature contains two independent TypeScript changes: review/NBF configuration and orchestration, plus static-rules budget-warning truthfulness. The NBF object is currently embedded in `AdversarialReviewConfigSchema` at `src/config/schemas-review.ts:167-211`; `ReviewConfigSchema` owns `semantic` and `adversarial` at `src/config/schemas-review.ts:256-257`. `NonBlockingFixConfig` is inferred from the adversarial nesting in `src/config/selectors.ts:182`, and is used by orchestrator state (`src/execution/story-orchestrator/types.ts:191`), its builder (`src/execution/story-orchestrator/builder.ts:130-138`), and non-blocking-fix helpers (`src/execution/non-blocking-fix.ts:65-90`). Moving the schema must therefore repoint the alias and update all typed object literals; a Zod `.default()` on `sources` intentionally makes the output field required.\n\nRaw config compatibility is applied to every config layer before merge and Zod validation in `applyConfigCompatShims` (`src/config/compat-shims.ts:483-502`). The existing `migrateLegacyReviewModelKey` (`src/config/migrations.ts:100-141`) is the required model: immutable transformation, no-op identity when absent, warning-backed aliasing, and canonical-wins without throwing. The NBF shim must migrate `review.adversarial.nonBlockingFix` to `review.nonBlockingFix` at this per-layer point, otherwise a legacy value can incorrectly override a later canonical layer. Zod strips unknown object fields, so removing the migration would silently lose legacy behavior. Existing fixtures with legacy nesting or typed NBF literals include `test/unit/config/non-blocking-fix-config.test.ts:1-67`, `test/unit/execution/non-blocking-fix-retirement.test.ts`, `test/unit/execution/nbf-readonly-flake-triage.test.ts`, `test/unit/execution/rectification-overrides.test.ts`, `test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts`, and `test/unit/execution/non-blocking-fix-wiring.test.ts`.\n\nAt execution time `buildPlanForStrategy` reads only `config.review?.adversarial?.nonBlockingFix` and only constructs NBF strategies when an adversarial input exists (`src/execution/build-plan-for-strategy.ts:369-372`); canonical configuration and semantic-only plans require this to change. The same strategy builder already uses `promptSeverityFloor: \"info\"` at every advisory-capable NBF strategy construction (`src/execution/build-plan-for-strategy.ts:395-427`), preserving advisory rendering regardless of the shared review threshold. The autofix implementer already claims `semantic-review` (`src/operations/autofix-implementer-strategy.ts:11`).\n\n`ExecutionPlan` currently computes the green precondition, gates on an adversarial state slot, reads just `phaseOutputs[\"adversarial-review\"]`, and filters advisories inline at `src/execution/story-orchestrator/execution-plan.ts:379-410`. It is exactly 600 lines, so this must be extracted to the specified new `src/execution/story-orchestrator/nbf-seed.ts`, not extended inline. The new seam must select only configured review sources, ignore a missing selected phase, use `actionableAdvisoryFindings` unchanged (`src/execution/non-blocking-fix.ts:65-74`), deduplicate overlapping findings, and preserve green/rectification/story-id/`shouldRunNonBlockingFix` gates. All review phases are excluded from NBF revalidation by `nonBlockingExcludePhases` (`src/execution/non-blocking-fix.ts:85-87`), and both phase names map to state slots in `src/execution/story-orchestrator/types.ts:224-225`; no revalidation or implementer-source expansion is needed. `test/unit/execution/non-blocking-fix-wiring.test.ts` already stubs the NBF runner through the phase-completion path and is the integration seam.\n\nFor static rules, the provider computes a budget result then emits approaching and truncation warnings without checking `this.enforceBudget` at `src/context/engine/providers/static-rules.ts:371-390`; only afterward does it choose retained versus all sections, and notice chunks remain enforcement-only (`src/context/engine/providers/static-rules.ts:391-460`). This source file is 597/600 lines, so use a net-neutral or shrinking conditional wording change. Do not alter returned chunks, notices, or `buildSectionBudgetPressure` output. `ProviderBudgetPressure` incorrectly says dropped counts are zero unless enforced at `src/context/engine/manifest-types.ts:31-38`; change the two field comments to describe would-be discards in soft mode and `overageTokens` as the enforcement-independent signal. Existing provider tests are in `test/unit/context/engine/providers/static-rules.test.ts` and related static-rules files; `test/unit/log-format/run-summary.test.ts:88` anchors the old enforced truncation message, which must remain unchanged.\n\nRisks are schema-default type fallout, silent legacy-key stripping, wrong layer precedence, retaining an adversarial-only assembly guard, unstable duplicate identity, and accidentally changing static-rules output while correcting its logs. The migration must run per raw layer before merge; NBF must remain opt-in with the adversarial-only default; and soft mode must still deliver all sections while retaining pressure counts for would-be drops.",
