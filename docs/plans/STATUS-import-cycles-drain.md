@@ -127,7 +127,10 @@ genuinely defers evaluation past module init - so this removes the edge from the
 - **Do not run `check:import-cycles:update` to raise the baseline.** The baseline only ever
   goes down in this drain.
 - **Do not weaken `scripts/check-import-cycles.ts` or `scripts/check-alias-internals.ts`.**
-  The gates are not the problem.
+  The gates are not the problem. (Correcting a demonstrated *false positive* is not weakening
+  - that happened once, in `bf3ad94b5`, with a before/after diff of the whole graph as
+  evidence and the reported count unchanged. Hold any further gate change to that bar, and
+  escalate rather than doing it inline.)
 
 ### 1.5 Known traps in this repo
 
@@ -939,9 +942,13 @@ The verified edge map of the component:
 | 3 | `cli/plan-command.ts:17-18,21` → `../plan/strategies` (value import + value re-export) | real |
 | 4 | `plan/strategies/index.ts:2` → `export { buildPlanModeContext } from "./context-builder"` | real |
 | 5 | `plan/strategies/context-builder.ts:2-8` → `@/cli` | real - **closes the 5-loop** |
-| 6 | `cli/plan-command.ts:26` → `./plan` | **PHANTOM - see below** |
+| 6 | `cli/plan-command.ts:26` → `./plan` | **was a PHANTOM; gone since `bf3ad94b5`** |
 
-**Part A - cut edge 5 (frees 3).** This is the layering defect: a planning strategy importing
+Edge 6 never existed in the code: `cli/plan-command.ts:26` is a *comment* whose prose matched
+the checker's regex. The gate was fixed in `bf3ad94b5` (see section 8.3), so **this task is now
+a single edge** and there is nothing to escalate.
+
+**Part A - cut edge 5 (frees 5, killing the whole component).** This is the layering defect: a planning strategy importing
 the CLI barrel. All five symbols are called as real values inside the `async function
 buildPlanModeContext`, so technique (A) is out; and the relative path would be
 `../../cli/plan-helpers`, which biome bans, so (B) is out. **Technique (C)** it is, and note
@@ -971,46 +978,16 @@ Verified homes of the five symbols:
 import { buildPackageSummary, buildSourceRootsSection } from "@/cli/plan-helpers";
 import { createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, detectProjectName } from "@/cli/plan-runtime";
 ```
-- [ ] **A4:** Verify (expect **25**), `bun test test/unit/cli/ --timeout=60000`, `bun run test:coverage`
+- [ ] **A4:** Verify (expect **23**), `bun test test/unit/cli/ --timeout=60000`, `bun run test:coverage`
       (files moved), re-baseline, commit.
 
-**Part B - the remaining 2 modules are a tooling false positive, not a cycle.**
+**Part B - no longer exists.**
 
-After Part A, `cli/plan.ts` and `cli/plan-command.ts` are still reported cyclic. There is **no
-real import** between them in that direction. `src/cli/plan-command.ts:26` is a *comment*:
-
-```
-// Re-exported for backward compatibility — callers that import from "./plan" still work.
-```
-
-`STATIC_IMPORT_RE` in `check-import-cycles.ts` does not strip comments, and this prose matches
-it: the substring `import from "./plan"` yields prelude `"import "` and specifier `./plan`.
-**Confirmed by running the checker's own regex against the line.** So the tool sees an edge
-that does not exist at runtime, and `cli/plan.ts -> cli/plan-command.ts` (edge 2, real) closes
-the phantom loop.
-
-This is a **defect in the gate, not in the code**, and it is the only load-bearing instance in
-`src/` (a repo-wide scan found one other comment that matches the regex,
-`src/log-format/summary.ts:12`, but its specifier `./runner` does not resolve to a file, so it
-creates no edge).
-
-**Two ways forward - this is a decision for the maintainer, not the implementer:**
-
-1. **Fix the gate** (preferred, but out of this plan's scope): make `buildImportGraph` strip
-   `//` and `/* */` comments before matching. This removes a whole class of false positives.
-   It is a change to a ratchet script, so section 1.4 applies - **escalate, do not do it
-   unasked.**
-2. **Reword the comment** (zero-risk workaround): any phrasing that does not contain the
-   literal `import ... from "..."` shape. Verified not to change the count today, because the
-   real 5-loop dominates until Part A lands; after Part A it is what frees the last 2.
-
-- [ ] **B1:** Escalate the choice. If told to reword, use something like:
-```typescript
-// Re-exported for backward compatibility: old call sites that pulled these symbols via the
-// "./plan" facade keep resolving.
-```
-then verify (expect **23**), re-baseline, commit with a message that says it works around the
-comment-parsing defect so the next reader does not "tidy" it back.
+Earlier revisions of this plan had a Part B for two modules that stayed cyclic after Part A.
+That was a gate defect, not a cycle: `cli/plan-command.ts:26` is a comment whose prose matched
+`STATIC_IMPORT_RE`, inventing an edge that cannot exist at runtime. Fixed in `bf3ad94b5`
+(section 8.3). Part A alone now takes this component to zero - `frees 5`, verified by
+simulation against the fixed gate. Expect **23** after A4, not 25.
 
 ### Task 12: the two `context/engine/handlers/* -> ../pull-tools` edges (frees 3)
 
@@ -1230,3 +1207,40 @@ scan found exactly one other matching comment (`src/log-format/summary.ts:12`), 
 it becomes the last 2 of the drain once Task 11 Part A lands. Task 11 Part B records both the
 proper fix (strip comments in the gate) and the zero-risk workaround (reword the comment), and
 routes the choice to the maintainer rather than the implementer.
+
+### 8.3 - 2026-09-13 - the gate defect from 8.2 is fixed (`bf3ad94b5`)
+
+`scripts/check-import-cycles.ts` built the graph by matching a regex against raw file text.
+Two defects, both fixed, with tests in `test/unit/scripts/check-import-cycles.test.ts`:
+
+1. **Comments were not stripped.** Prose containing the shape `import ... from "..."` parsed as
+   a dependency. `src/cli/plan-command.ts:26` is such a comment and it invented the
+   `plan-command -> plan` edge. `stripComments()` now blanks comments before matching, tracking
+   string literals so a `//` or `/*` inside one stays data - a naive stripper would treat the
+   `/*` in `const s = "/*";` as a comment opener and swallow every import after it.
+2. **The prelude pattern was `[^"']*?`, which crosses newlines.** A match could begin at
+   `export interface Foo {` and run to an unrelated statement's `from "..."`; the prelude then
+   no longer began with `type`, so a **type-only re-export was counted as a value edge**.
+   `src/config/runtime-types.ts` has exactly that shape. A quote in the intervening text had
+   been masking it by accident, which is why fixing (1) exposed it - blanking a comment removes
+   the apostrophe that was holding the false match back. The match is now anchored to the start
+   of a line (`^` with `m`; no `import`/`export ... from` statement in `src/` is indented) and
+   the prelude admits only what an import clause can hold: `[A-Za-z0-9_$*,{}\s]`.
+
+Validated by diffing every edge of the `src/` graph before and after: **24 removed, 0 added.**
+Each removal was classified by hand - 23 are type-only imports that had been mislabelled as
+value edges, 1 is the `plan-command` comment. A repo-wide scan found one other import-shaped
+comment (`src/log-format/summary.ts:12`) whose specifier `./runner` does not resolve, so it
+never created an edge.
+
+**The reported count is unchanged at 132** - all 24 phantom edges sat inside components that
+other real edges already hold together - so no baseline move was needed and every expected
+count in section 3 still holds, with one exception: **Task 11 loses its Part B.** Cutting
+`context-builder -> @/cli` now frees **5** rather than 3 and takes that component to zero, so
+A4's expected reading is **23**, not 25. Re-simulated against the fixed gate; the final residue
+is still 20.
+
+Known limit, recorded rather than hidden: regex literals are not tracked, so an unescaped `//`
+inside one blanks the rest of that line. It cannot invent an edge, only drop one, and it would
+require an import sharing a line with a regex literal - which the before/after diff confirms no
+file in `src/` does.
