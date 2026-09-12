@@ -728,7 +728,17 @@ describe("setupRun — #2014: signal-path shutdown drains the cost ledger", () =
       const options: RunSetupOptions = {
         prdPath,
         workdir: setupWorkdir,
-        config: makeNaxConfig(),
+        // acceptance.enabled defaults to true, which makes initializeRun's
+        // runWillUseAgent() check true even for a zero-story PRD and triggers
+        // a real `which <agent-binary>` PATH lookup (checkAgentInstalled).
+        // That check is unrelated to what this test exercises and is flaky
+        // across machines/CI (nax#2016): it throws AgentNotInstalledError
+        // whenever the configured default agent's binary isn't on PATH,
+        // which routes through the outer setup-failure catch and closes the
+        // runtime a second time (an extra "close" the assertion below
+        // doesn't expect). Disable it so setupRun never depends on the
+        // agent binary actually being installed.
+        config: makeNaxConfig({ acceptance: { enabled: false } }),
         hooks: { hooks: {} },
         feature: "sigint-test-feature",
         dryRun: false,
