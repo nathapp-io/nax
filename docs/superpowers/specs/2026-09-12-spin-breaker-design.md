@@ -201,9 +201,11 @@ input cannot grow the key set without bound.
 **Thresholds.** `nudgeAfterRepeats: 25`, `stopAfterRepeats: 50`, `maxNudges: 3` (R5).
 Nudge points are derived, not a fourth knob:
 `nudgeAfterRepeats + round(i * (stop - nudge) / maxNudges)` for `i` in `0..maxNudges-1`,
-giving **25, 33, 41**, stop at **50**. `config-guards.ts` rejects
-`stopAfterRepeats <= nudgeAfterRepeats` at config load, so a misconfiguration cannot
-produce a silent hard stop with no warning first.
+giving **25, 33, 41**, stop at **50**. The Zod schema's own `.refine()`
+(`AgentSpinBreakerConfigSchema` in `schemas-infra.ts`) rejects
+`stopAfterRepeats <= nudgeAfterRepeats` at config load — not `config-guards.ts`, which
+exists to reject *removed* keys with a migration hint, not to validate a live field's
+range — so a misconfiguration cannot produce a silent hard stop with no warning first.
 
 **The progression prompt** is prepended to the real tool result, never replacing it, and
 never with `isError: true`. A nudge that reads as a tool failure invites a retry, and
@@ -295,23 +297,24 @@ A typed map, not an expression string: the `Tool(glob,glob)` grammar exists for
 user-authored `scoped` config where strings are unavoidable, and a second parser on an
 internal hot path earns nothing.
 
-**Enforcement (R8).** `createCodingToolRuntime` holds the op patterns and applies them
-after `policy.check` returns `allowed`, so it can only deny. Glob-set intersection is
-undecidable in general, so the rule is operational: a path must satisfy **both** the
-profile grant and the op patterns. Under `safe`, `Write` is not granted and the narrowing
-never resurrects it. Under a `scoped` profile whose `Write` glob excludes the verdict
-file, `Write` is not advertised at all and that is logged — telling a verifier it may
-write a file it cannot is worse than withholding the tool.
+**Enforcement (R8).** The op patterns are applied by rewriting the inherited grants
+before `compileToolPolicy` runs, not by a second check after `policy.check` returns
+`allowed` — one matcher, not two, and the invariant (narrowing only) is unchanged: the
+rewrite can only remove from what the profile already grants, never add to it. Under
+`safe`, `Write` is not granted and the narrowing never resurrects it. Under a `scoped`
+profile whose `Write` glob excludes the verdict file, `Write` is not advertised at all
+and that is logged — telling a verifier it may write a file it cannot is worse than
+withholding the tool.
 
 **The hazard this introduces, and its guard.** With the write live, the verdict file can
 finally exist. `cleanupVerdict` runs only in `recover`'s `finally` and once at
 `post-run.ts:323`, so story A's verdict file would survive into story B's verifier, where
-`recover` would read a stale verdict and rule on the wrong story. Two guards:
-
-1. Cleanup on every verifier path, success included, not only `recover`'s `finally`.
-2. `recover` ignores a verdict file whose `lastModified` precedes the turn's dispatch.
-   The op knows when it dispatched, so this needs no schema change and no prompt change,
-   and it keeps one missed `finally` from silently producing a wrong ruling.
+`recover` would read a stale verdict and rule on the wrong story. The guard is staleness
+by construction rather than by comparison: the verdict file is deleted before dispatch,
+not merely timestamp-checked after the fact, so `recover` can only ever read a verdict
+this turn's own dispatch produced — there is no `lastModified` to compare against a
+dispatch time, and no missed `finally` can leave a stale file for the next turn to
+misread.
 
 ## 5. Sequence
 
