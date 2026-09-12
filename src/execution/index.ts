@@ -146,6 +146,13 @@ export {
   withNoProgressBail,
 } from "./story-orchestrator";
 export {
+  type DeriveNbfSeedInput,
+  deriveNbfSeed,
+  type NbfSeed,
+  type NbfSource,
+  type PhaseOutputsLike,
+} from "./story-orchestrator/nbf-seed";
+export {
   buildPhaseOutcomeLogData,
   formatPhaseResultMessage,
   logDeterministicPhaseOutcome,

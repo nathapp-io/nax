@@ -276,8 +276,9 @@ export interface AdversarialReviewConfig {
    * reviewer actually open the code before passing (#3A inspection-trail guard).
    */
   demandInspectionTrail?: boolean;
-  /** ADR-024 — Non-blocking best-effort auto-fix over sub-threshold adversarial findings. */
-  nonBlockingFix?: import("../config/selectors").NonBlockingFixConfig;
+  // nonBlockingFix moved to ReviewConfig.nonBlockingFix (US-001) — the seeded
+  // `sources` list may include both reviewers, so the block belongs at the
+  // review level rather than under `adversarial`.
 }
 
 /** Review configuration */
@@ -333,6 +334,12 @@ export interface ReviewConfig {
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */
   adversarial?: AdversarialReviewConfig;
+  /**
+   * US-001 — non-blocking best-effort auto-fix (ADR-024). Lives at the review
+   * level rather than under `adversarial` because the seeded `sources` list
+   * may include both reviewers; the rest of the knobs govern the one fix pass.
+   */
+  nonBlockingFix?: import("../config/selectors").NonBlockingFixConfig;
   /** Parsed oscillation + cross-attempt review-recurrence circuit-breaker configuration. */
   conflictDetection: { enabled: boolean; maxOscillations: number; maxCrossAttemptRecurrences: number };
 }

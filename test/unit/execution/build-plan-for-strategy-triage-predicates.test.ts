@@ -113,6 +113,14 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
       quality: { commands: {}, autofix: { enabled: true } },
       execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
       review: {
+        nonBlockingFix: {
+          enabled: true,
+          scope: "triage",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          sources: ["adversarial"],
+        },
         adversarial: {
           model: "balanced",
           diffMode: "ref",
@@ -120,13 +128,6 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: {
-            enabled: true,
-            scope: "triage",
-            regressionAttempts: 1,
-            verifierGuard: true,
-            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-          },
         },
       },
     });

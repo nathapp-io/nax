@@ -1,0 +1,3 @@
+[2026-09-12T03:48:40.767Z] US-001 — PASSED — Move non-blocking-fix configuration to review with reviewer sources — Cost: $3.4224
+[2026-09-12T05:26:03.133Z] US-002 — PASSED — Seed non-blocking fixes from selected review advisory buckets — Cost: $2.0965
+[2026-09-12T05:36:06.498Z] US-003 — PASSED — Correct soft-mode static-rules budget warnings — Cost: $1.4526

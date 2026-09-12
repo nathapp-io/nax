@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-09-12T04-58-56-240Z",
+    "feature": "advisory-and-budget-truth",
+    "startedAt": "2026-09-12T04:58:56.240Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 31258
+  },
+  "progress": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 3.6897469750000003,
+    "limit": 60
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-09-12T05:43:12.478Z",
+  "durationMs": 2656238,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-09-12T05:42:14.581Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-09-12T05:43:11.228Z"
+    }
+  },
+  "gates": {
+    "acceptance": "passed",
+    "regression": "passed"
+  }
+}
