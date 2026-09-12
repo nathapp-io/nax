@@ -46,8 +46,50 @@ describe("agent.native.catalogOverrides", () => {
   });
 
   test("rejects an unknown key instead of stripping it", () => {
-    const withUnknown = { ...VALID_OVERRIDE, baseUrl: "https://example.test" };
+    // nax#2019 admitted `baseUrl`, so the strictness contract is now pinned by
+    // the casing typo it is most likely to be misspelled as. `baseURL` must
+    // still fail the load: stripped silently, it would leave requests going to
+    // the provider's original endpoint with no indication why.
+    const withUnknown = { ...VALID_OVERRIDE, baseURL: "https://example.test" };
     expect(() => parseNative({ catalogOverrides: [withUnknown] })).toThrow();
+  });
+
+  describe("baseUrl and headers (nax#2019)", () => {
+    test("carries a provider-level baseUrl through to the typed output", () => {
+      // nax-ai's ProviderOverride has supported baseUrl all along
+      // (providers/types.ts); nax was the only layer withholding it, so a
+      // native provider could not be pointed at a proxy or gateway.
+      const override = { ...VALID_OVERRIDE, baseUrl: "https://proxy.test/v1" };
+      const config = parseNative({ catalogOverrides: [override] });
+      const parsed: ProviderCatalogOverride | undefined = config.agent?.native?.catalogOverrides?.[0];
+      expect(parsed?.baseUrl).toBe("https://proxy.test/v1");
+    });
+
+    test("carries provider-level headers through to the typed output", () => {
+      const override = { ...VALID_OVERRIDE, headers: { "X-Route": "pinned" } };
+      const config = parseNative({ catalogOverrides: [override] });
+      const parsed: ProviderCatalogOverride | undefined = config.agent?.native?.catalogOverrides?.[0];
+      expect(parsed?.headers).toEqual({ "X-Route": "pinned" });
+    });
+
+    test("leaves both absent when undeclared, rather than defaulting them", () => {
+      // nax-ai distinguishes "not set" from "set to something" by
+      // `!== undefined` (protocols/override-declaration.ts), so a defaulted
+      // empty value would read as a declaration and trip its consistency check.
+      const config = parseNative({ catalogOverrides: [VALID_OVERRIDE] });
+      const parsed = config.agent?.native?.catalogOverrides?.[0];
+      expect(parsed).not.toHaveProperty("baseUrl");
+      expect(parsed).not.toHaveProperty("headers");
+    });
+
+    test("rejects an empty baseUrl, which would silently mean the default endpoint", () => {
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl: "" }] })).toThrow();
+    });
+
+    test("rejects a non-string header value instead of coercing it", () => {
+      const override = { ...VALID_OVERRIDE, headers: { "X-Retries": 3 } };
+      expect(() => parseNative({ catalogOverrides: [override] })).toThrow();
+    });
   });
 
   test("carries an optional maxTokens ceiling through to the typed output (#1982)", () => {

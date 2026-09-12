@@ -211,6 +211,43 @@ describe("profileShowCommand", () => {
     expect(parsed.credentials).toBe("***");
   });
 
+  test("masks every header VALUE, since a header name need not look sensitive (nax#2019)", async () => {
+    // nax#2019 admitted `headers` to agent.native.catalogOverrides, and a
+    // headers map exists largely to carry auth. The key-name pattern does NOT
+    // match the commonest credential header — "Authorization" contains none of
+    // key/token/secret/password/credential — so recursing into the map printed
+    // a bearer token in clear in `nax config`, which shares this masker
+    // (config-display.ts, SEC-05).
+    //
+    // Values, not the map wholesale: a headers map is Record<string, string>,
+    // so there is no deeper nesting for a secret to hide in and masking every
+    // value is already complete. Keeping the NAMES readable is what makes a
+    // misrouted request diagnosable — the wholesale rule that applies to an
+    // arbitrary subtree under a sensitive key would throw that away.
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
+      agent: {
+        native: {
+          catalogOverrides: [
+            {
+              provider: "openrouter",
+              baseUrl: "https://proxy.test/v1",
+              headers: { Authorization: "Bearer sk-must-not-print", "X-Title": "nax" },
+              models: [],
+            },
+          ],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(await profileShowCommand("fast", tempDir, { unmask: false }));
+    const override = parsed.agent.native.catalogOverrides[0];
+
+    expect(override.headers).toEqual({ Authorization: "***", "X-Title": "***" });
+    // baseUrl is not a secret and stays readable: masking it would hide the
+    // one field that says where requests are actually going.
+    expect(override.baseUrl).toBe("https://proxy.test/v1");
+  });
+
   test("a numeric value under a NON-exempt sensitive key still masks", async () => {
     // Deliberate: profiles are raw un-Zod'd JSON, so any key may appear, and
     // a numeric passcode must not print in the default view.

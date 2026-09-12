@@ -69,12 +69,29 @@ export const CatalogModelOverrideSchema = z
 /**
  * Provider-scoped and config-global: keyed on (provider, model id), applied
  * below the config surface in the nax-ai catalog, so every pin route (tier
- * entry, literal {agent, model}, fallback rung) sees it. Deliberately no
- * baseUrl/headers/tiers — see the plan's Global Constraints.
+ * entry, literal {agent, model}, fallback rung) sees it.
+ *
+ * `baseUrl` and `headers` are PROVIDER-wide, not per model, even though the
+ * rest of this override is model-scoped — they map onto nax-ai's
+ * `ProviderOverride`, which applies them to the provider record
+ * (`providers/catalog.ts`) and to the protocol entries
+ * (`protocols/pi-client.ts`). nax#2019 admitted them; both stay optional
+ * because nax-ai distinguishes "unset" from "set" by `!== undefined` and
+ * raises a consistency error for a client-side value the protocol side does
+ * not match (`protocols/override-declaration.ts`).
+ *
+ * `tiers` remains deliberately excluded — see the #1982 plan's Global
+ * Constraints. Still `.strict()`, so a casing typo (`baseURL`) is a load
+ * error rather than a silently stripped key that leaves requests going to the
+ * provider's original endpoint.
  */
 export const ProviderCatalogOverrideSchema = z
   .object({
     provider: z.string().min(1, "provider must be non-empty"),
+    // Non-empty: an empty string would resolve to the default endpoint, which
+    // is indistinguishable from not declaring a redirect at all.
+    baseUrl: z.string().min(1, "baseUrl must be non-empty").optional(),
+    headers: z.record(z.string(), z.string()).optional(),
     models: z.array(CatalogModelOverrideSchema).min(1, "models must not be empty"),
   })
   .strict();

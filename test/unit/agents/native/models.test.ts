@@ -363,6 +363,33 @@ describe("toProviderOverrides", () => {
     expect(toProviderOverrides([override])[0]?.models?.[0]).not.toHaveProperty("maxTokens");
   });
 
+  test("carries a provider-level baseUrl into the nax-ai override (nax#2019)", () => {
+    const redirected: ProviderCatalogOverride = { ...override, baseUrl: "https://proxy.test/v1" };
+    expect(toProviderOverrides([redirected])[0]).toMatchObject({ baseUrl: "https://proxy.test/v1" });
+  });
+
+  test("carries provider-level headers into the nax-ai override (nax#2019)", () => {
+    const withHeaders: ProviderCatalogOverride = { ...override, headers: { "X-Route": "pinned" } };
+    expect(toProviderOverrides([withHeaders])[0]).toMatchObject({ headers: { "X-Route": "pinned" } });
+  });
+
+  test("omits baseUrl and headers entirely when undeclared, so nax-ai reads them as unset", () => {
+    // nax-ai gates both on `!== undefined` and raises a consistency error when
+    // a client-side value is not matched on the protocol side
+    // (protocols/override-declaration.ts). An explicit `baseUrl: undefined`
+    // key would therefore be a declaration, not a silence.
+    const mapped = toProviderOverrides([override])[0];
+    expect(mapped).not.toHaveProperty("baseUrl");
+    expect(mapped).not.toHaveProperty("headers");
+  });
+
+  test("keeps baseUrl at the provider level and off the models (nax#2019)", () => {
+    // The asymmetry is deliberate and easy to misread: catalogOverrides is
+    // otherwise model-scoped, but a baseUrl redirect applies provider-wide.
+    const redirected: ProviderCatalogOverride = { ...override, baseUrl: "https://proxy.test/v1" };
+    expect(toProviderOverrides([redirected])[0]?.models?.[0]).not.toHaveProperty("baseUrl");
+  });
+
   test("the config thinking levels mirror the nax-ai union exactly", () => {
     // THINKING_LEVELS is a Record<ThinkingLevel, true> over nax-ai's union, so
     // it fails to compile if nax-ai adds a level. This pins the config enum to

@@ -140,6 +140,11 @@ export function toNaxTokenUsage(usage: NativeUsage): TokenUsage {
 export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[]): ProviderOverride[] {
   return overrides.map((override) => ({
     provider: override.provider,
+    // Omitted when undeclared, never passed as `undefined`: nax-ai reads
+    // `!== undefined` as a declaration and checks it against the protocol
+    // entries (nax#2019).
+    ...(override.baseUrl !== undefined ? { baseUrl: override.baseUrl } : {}),
+    ...(override.headers !== undefined ? { headers: override.headers } : {}),
     models: override.models.map((model) => ({
       id: model.id,
       provider: override.provider,
