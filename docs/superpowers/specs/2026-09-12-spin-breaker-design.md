@@ -201,7 +201,7 @@ input cannot grow the key set without bound.
 **Thresholds.** `nudgeAfterRepeats: 25`, `stopAfterRepeats: 50`, `maxNudges: 3` (R5).
 Nudge points are derived, not a fourth knob:
 `nudgeAfterRepeats + round(i * (stop - nudge) / maxNudges)` for `i` in `0..maxNudges-1`,
-giving **25, 33, 41**, stop at **50**. The Zod schema's own `.refine()`
+giving **25, 33, 42**, stop at **50**. The Zod schema's own `.refine()`
 (`AgentSpinBreakerConfigSchema` in `schemas-infra.ts`) rejects
 `stopAfterRepeats <= nudgeAfterRepeats` at config load — not `config-guards.ts`, which
 exists to reject *removed* keys with a migration hint, not to validate a live field's

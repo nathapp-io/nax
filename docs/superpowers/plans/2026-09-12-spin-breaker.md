@@ -1030,7 +1030,7 @@ function callKey(toolName: string, input: unknown): string {
 
 /**
  * Nudge points are derived from the three knobs rather than configured
- * separately: with 25/50/3 they fall at 25, 33 and 41, leaving the stop at 50.
+ * separately: with 25/50/3 they fall at 25, 33 and 42, leaving the stop at 50.
  */
 function nudgePoints(settings: ResolvedSpinBreakerSettings): readonly number[] {
   const span = settings.stopAfterRepeats - settings.nudgeAfterRepeats;
