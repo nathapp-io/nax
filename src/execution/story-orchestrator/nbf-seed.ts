@@ -79,18 +79,25 @@ interface AdvisoryFindingsCarrier {
 
 /**
  * Minimal `Finding` type guard — same shape `phase-eval.ts`'s `isFinding` uses
- * (one required string discriminator). `actionableAdvisoryFindings` accesses
- * `f.actionRequired` and `f.meta.recurrence.disposition`; a malformed array
- * entry (`null`, a primitive, an object missing `source`) would throw on
- * either read and abort seed derivation. Drop such entries at the boundary so
- * the downstream filter only ever sees well-formed `Finding` values.
+ * (one required string discriminator), plus a non-empty `message` (NBF-1).
+ * `actionableAdvisoryFindings` accesses `f.actionRequired` and
+ * `f.meta.recurrence.disposition`; a malformed array entry (`null`, a
+ * primitive, an object missing `source`) would throw on either read and
+ * abort seed derivation. A `source`-only entry is worse than useless: it
+ * passes the old guard, survives the actionability filter, and then burns a
+ * paid fix session over a finding that names no defect. Drop such entries at
+ * the boundary so the downstream filter only ever sees well-formed,
+ * content-bearing `Finding` values.
  */
 function isFindingShape(value: unknown): value is Finding {
+  const record = value as { source?: unknown; message?: unknown };
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as { source?: unknown }).source === "string" &&
-    (value as { source: string }).source.length > 0
+    typeof record.source === "string" &&
+    record.source.length > 0 &&
+    typeof record.message === "string" &&
+    record.message.length > 0
   );
 }
 

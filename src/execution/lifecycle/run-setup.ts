@@ -312,7 +312,16 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
         // dependencies. Bounded by FATAL_TEARDOWN_DEADLINE_MS, armed before
         // performTeardown — a wedged drain cannot defeat Ctrl+C.
         // Idempotent: the normal-path finally also calls runtime.close().
-        await runtime.close().catch(() => {});
+        // SIG-1: a failed close here would lose the ledger silently — the
+        // swallow stays (the teardown deadline must win over a wedged flush),
+        // but the failure becomes auditable.
+        await runtime.close().catch((err) => {
+          getSafeLogger()?.warn(
+            "run-setup",
+            "Signal-path runtime close failed — cost/prompt/review ledgers may not have been drained",
+            { error: errorMessage(err) },
+          );
+        });
       },
     });
 

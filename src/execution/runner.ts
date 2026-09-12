@@ -13,6 +13,7 @@
  * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
+import { totalSpendUsd } from "@/runtime";
 import type { NaxConfig } from "../config";
 import { PluginProviderCache, ProviderWeightsCache } from "../context/engine";
 import { NaxError } from "../errors";
@@ -28,6 +29,7 @@ import { NAX_VERSION } from "../version";
 import { applyRecordGreenDeps, applyResumeModeDeps } from "./checkpoint";
 import { stopHeartbeat } from "./crash-recovery";
 import { sumReviewsFailedOpen } from "./post-run-review-summary";
+import { liveRunTotalCost } from "./run-cost-reconcile";
 import { runCompletionPhase } from "./runner-completion";
 import { runExecutionPhase } from "./runner-execution";
 import { runSetupPhase } from "./runner-setup";
@@ -219,11 +221,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
       agentStreamEvents,
       // #2006: the crash handlers must read a live total. `totalCost` here is
       // assigned only after the execution phase returns, so a mid-run SIGINT
-      // used to write `run.complete` with `totalCost: 0`. The status writer
-      // retains the reconciled total at every story boundary — read that
-      // once the setup phase has produced it, fall back to the local until
-      // then (setup itself has spent nothing).
-      getTotalCost: () => Math.max(totalCost, setupResult?.statusWriter.lastTotalCost ?? 0),
+      // used to write `run.complete` with `totalCost: 0`. Read the reconciled
+      // boundary total (via the status writer) once the setup phase produced
+      // it; once the signal path has drained the ledger, the aggregator
+      // snapshot IS the full run spend — including the in-flight story a
+      // mid-story signal would otherwise under-report (COST-1).
+      getTotalCost: () =>
+        liveRunTotalCost(
+          totalCost,
+          setupResult?.statusWriter.lastTotalCost ?? 0,
+          setupResult ? totalSpendUsd(setupResult.runtime.costAggregator.snapshot()) : undefined,
+        ),
       getIterations: () => iterations,
       // @design: BUG-017: Pass getters for run.complete event on SIGTERM
       getStoriesCompleted: () => storiesCompleted,
