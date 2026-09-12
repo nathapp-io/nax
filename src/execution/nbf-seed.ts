@@ -75,13 +75,31 @@ const SOURCE_TO_PHASE: Readonly<Record<NbfSource, string>> = Object.freeze({
 
 /** A phase output shape carrying an `advisoryFindings` array. */
 interface AdvisoryFindingsCarrier {
-  advisoryFindings?: readonly Finding[];
+  advisoryFindings?: readonly unknown[];
+}
+
+/**
+ * Minimal `Finding` type guard — same shape `phase-eval.ts`'s `isFinding` uses
+ * (one required string discriminator). `actionableAdvisoryFindings` accesses
+ * `f.actionRequired` and `f.meta.recurrence.disposition`; a malformed array
+ * entry (`null`, a primitive, an object missing `source`) would throw on
+ * either read and abort seed derivation. Drop such entries at the boundary so
+ * the downstream filter only ever sees well-formed `Finding` values.
+ */
+function isFindingShape(value: unknown): value is Finding {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { source?: unknown }).source === "string" &&
+    (value as { source: string }).source.length > 0
+  );
 }
 
 function readAdvisoryBucket(output: unknown): readonly Finding[] {
   if (output === null || output === undefined || typeof output !== "object") return [];
   const r = output as AdvisoryFindingsCarrier;
-  return Array.isArray(r.advisoryFindings) ? r.advisoryFindings : [];
+  if (!Array.isArray(r.advisoryFindings)) return [];
+  return r.advisoryFindings.filter(isFindingShape);
 }
 
 /**
