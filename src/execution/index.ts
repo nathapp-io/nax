@@ -65,6 +65,13 @@ export {
   type StorySnapshot,
   synthesizeBackfillMetric,
 } from "./lifecycle";
+export {
+  type DeriveNbfSeedInput,
+  deriveNbfSeed,
+  type NbfSeed,
+  type NbfSource,
+  type PhaseOutputsLike,
+} from "./nbf-seed";
 export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
 export { runNonBlockingFix } from "./non-blocking-fix";
 export { type BreakerDecision, inspectOscillationBreaker } from "./oscillation-breaker";

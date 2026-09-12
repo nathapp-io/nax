@@ -30,12 +30,8 @@
  *     `storyCurrentlyGreen` check in `execution-plan.ts`.
  *   - Missing phase outputs (the reviewer did not run) are treated as empty
  *     buckets, not as errors.
- *
- * Implementation lives here in session 1 (this file is a STUB). The
- * orchestrator-side wiring call site is updated in session 2.
  */
 import type { NonBlockingFixConfig } from "../config/selectors";
-import { NaxError } from "../errors";
 import type { Finding } from "../findings/types";
 import { actionableAdvisoryFindings } from "./non-blocking-fix";
 
@@ -70,12 +66,96 @@ export interface DeriveNbfSeedInput {
   storyId?: string;
 }
 
-export function deriveNbfSeed(_input: DeriveNbfSeedInput): NbfSeed {
-  // STUB — implemented in session 2. Throws so the AC1..AC15 tests fail with
-  // an assertion-level error (the test reaches the call, the function then
-  // surfaces "not implemented"); a silently-empty seed would let every AC
-  // pass without exercising the real logic.
-  throw new NaxError("[nbf-seed] deriveNbfSeed not implemented", "NOT_IMPLEMENTED", { stage: "nbf-seed" });
+/** Phase name for each named source. */
+const SOURCE_TO_PHASE: Readonly<Record<NbfSource, string>> = Object.freeze({
+  adversarial: "adversarial-review",
+  semantic: "semantic-review",
+});
+
+/** A phase output shape carrying an `advisoryFindings` array. */
+interface AdvisoryFindingsCarrier {
+  advisoryFindings?: readonly Finding[];
+}
+
+function readAdvisoryBucket(output: unknown): readonly Finding[] {
+  if (output === null || output === undefined || typeof output !== "object") return [];
+  const r = output as AdvisoryFindingsCarrier;
+  return Array.isArray(r.advisoryFindings) ? r.advisoryFindings : [];
+}
+
+/**
+ * Defensive shape match for an op's success/passed verdict, mirroring the
+ * defensive behaviour of `phasePassed` for the reviewer phases (which are NOT
+ * in `STRICT_VERDICT_PHASE_NAMES`). A missing output passes the predicate —
+ * the reviewer simply did not run. A present output that carries neither
+ * `success` nor `passed` defaults to passing.
+ */
+function isPhasePassedLike(opName: string, output: unknown, storyId: string | undefined): boolean {
+  if (output === null || output === undefined) return true;
+  if (typeof output !== "object") return true;
+  const r = output as Record<string, unknown>;
+  if ("success" in r) return r.success !== false;
+  if ("passed" in r) return r.passed !== false;
+  // No verdict field — defer to phasePassed's defensive default (reviewers are
+  // non-strict, so a malformed envelope passes rather than failing closed).
+  void opName;
+  void storyId;
+  return true;
+}
+
+/** Build the (file, line, message) dedup key. Missing file/line collapses to message-only. */
+function dedupKey(f: Finding): string {
+  return JSON.stringify([f.file ?? null, f.line ?? null, f.message]);
+}
+
+/**
+ * Union of actionable advisory findings across the declared sources,
+ * deduplicated by (file, line, message) and gated on the green precondition
+ * (no required phase may have failed).
+ *
+ * Returns `{ findings, shouldRun }`. `shouldRun` is false when:
+ *   - `sources` is empty (explicit no-seed),
+ *   - any required phase output fails `phasePassed` (AC8 — red tree, do not act),
+ *   - or no findings survive actionability + dedup.
+ */
+export function deriveNbfSeed(input: DeriveNbfSeedInput): NbfSeed {
+  const { phaseOutputs, sources, storyId } = input;
+
+  if (sources.length === 0) {
+    return { findings: [], shouldRun: false };
+  }
+
+  // First pass: gate on the green precondition for every declared source.
+  // A missing output is "reviewer did not run" (empty bucket, not a failure —
+  // mirrors `phasePassed`'s defensive behaviour for non-strict reviewers).
+  const buckets: Finding[][] = [];
+  for (const source of sources) {
+    const phaseName = SOURCE_TO_PHASE[source];
+    const output = phaseOutputs[phaseName];
+    if (output === undefined) {
+      buckets.push([]);
+      continue;
+    }
+    if (!isPhasePassedLike(phaseName, output, storyId)) {
+      return { findings: [], shouldRun: false };
+    }
+    buckets.push([...actionableAdvisoryFindings(readAdvisoryBucket(output))]);
+  }
+
+  // Second pass: concatenate in declared source order, dedup by (file, line,
+  // message). First occurrence wins so declared order is preserved.
+  const seen = new Set<string>();
+  const findings: Finding[] = [];
+  for (const bucket of buckets) {
+    for (const f of bucket) {
+      const key = dedupKey(f);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      findings.push(f);
+    }
+  }
+
+  return { findings, shouldRun: findings.length > 0 };
 }
 
 /** Re-export `NonBlockingFixConfig` for type-only consumers. */

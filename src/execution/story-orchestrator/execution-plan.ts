@@ -1,17 +1,11 @@
 import { NaxError } from "@/errors";
-import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import type { QuarantineMemo } from "@/verification";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
-import {
-  actionableAdvisoryFindings,
-  createMeasureSourceDiff,
-  nonBlockingExcludePhases,
-  nonBlockingExtraPhases,
-  shouldRunNonBlockingFix,
-} from "../non-blocking-fix";
+import { deriveNbfSeed } from "../nbf-seed";
+import { createMeasureSourceDiff, nonBlockingExcludePhases, nonBlockingExtraPhases } from "../non-blocking-fix";
 import type { GateRegressionDetail } from "./phase-eval";
 import { describeGateRegression, gateFailureKeys, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
@@ -378,8 +372,10 @@ export class ExecutionPlan {
       }
     }
 
-    // ADR-024 — non-blocking best-effort fix over advisory adversarial findings.
-    // Only when the story is currently green (adversarial passed, nothing pending).
+    // ADR-024 — non-blocking best-effort fix over advisory findings from the
+    // `review.nonBlockingFix.sources`-declared reviewer set (US-002 union).
+    // Only when the story is currently green (every phase that produced
+    // output passed) and rectification did not exhaust.
     //
     // This green precondition is load-bearing, not cosmetic: nbf's floor guarantee
     // (§5, restore-to-adversarial-passed) only holds when the entry state IS the
@@ -393,26 +389,26 @@ export class ExecutionPlan {
     const storyCurrentlyGreen =
       !rectResult.rectificationExhausted &&
       Object.entries(phaseOutputs).every(([name, output]) => phasePassed(name, output, this.ctx.storyId));
-    const advCfg = this.state.adversarialReview ? this.state.nonBlockingFix : undefined;
-    const advisoryOut = phaseOutputs["adversarial-review"] as { advisoryFindings?: Finding[] } | undefined;
-    // Seed only the findings that ask for a change: a reviewer's compliance
-    // confirmation must not buy an agent session (#1359). The unfiltered bucket stays
-    // in `phaseOutputs` and in the reviewer's own output, so the end-of-run advisory
-    // report still shows everything.
-    const advisoryFindings = actionableAdvisoryFindings(advisoryOut?.advisoryFindings ?? []);
+    const nbfCfg = this.state.nonBlockingFix;
+    const seed = deriveNbfSeed({
+      phaseOutputs,
+      sources: nbfCfg?.sources ?? [],
+      storyId: this.ctx.storyId,
+    });
     if (
-      advCfg &&
+      nbfCfg &&
       storyCurrentlyGreen &&
       this.state.rectification &&
       this.ctx.storyId &&
-      shouldRunNonBlockingFix(advCfg, advisoryFindings.length)
+      (this.state.adversarialReview || this.state.semanticReview) &&
+      seed.shouldRun
     ) {
       await _storyOrchestratorDeps.runNonBlockingFix(
         {
           workdir: this.ctx.packageDir,
           storyId: this.ctx.storyId,
-          advisoryFindings,
-          cfg: advCfg,
+          advisoryFindings: seed.findings,
+          cfg: nbfCfg,
           phaseOutputs,
           phaseCosts,
           quarantineMemo: this.ctx.runtime.quarantineMemo,
@@ -420,11 +416,11 @@ export class ExecutionPlan {
           blockedWorktrees: this.ctx.runtime.dirtyWorktrees,
           runRectify: (maxAttempts, nbfFlakeTriage) =>
             runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
-              initialFindings: advisoryFindings,
+              initialFindings: seed.findings,
               nbfFlakeTriage,
               strategies: this.state.nonBlockingFixStrategies ?? [],
               excludePhaseKinds: nonBlockingExcludePhases(),
-              extraRevalidationKinds: nonBlockingExtraPhases(advCfg),
+              extraRevalidationKinds: nonBlockingExtraPhases(nbfCfg),
               maxAttempts,
               postValidate: this.state.nonBlockingFixPostValidate,
               isThreeSession: this.isThreeSession,

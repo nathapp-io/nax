@@ -372,7 +372,11 @@ export async function buildPlanForStrategy(
   // one fix pass regardless.
   const nbf = config.review?.nonBlockingFix;
   const nbStrategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
-  if (nbf?.enabled && inputs.adversarialReview) {
+  // US-002 — the strategy set is gated on whether ANY named source reviewer
+  // is in the plan (semantic OR adversarial), so a `sources: ["semantic"]`
+  // plan with only a semantic-review slot still gets the strategy set built.
+  // The seed module is the SSOT that decides whether nbf actually runs.
+  if (nbf?.enabled && (inputs.adversarialReview || inputs.semanticReview)) {
     const nbSink = makeDeclarationSink();
 
     // The non-blocking fix is seeded exclusively with advisory findings BELOW the
