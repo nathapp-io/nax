@@ -190,6 +190,7 @@ Dependencies: none.
 12. `[unit]` A finding whose `source` is `"semantic-review"` and whose `fixTarget` is `"source"` is claimed by the autofix implementer strategy built by the nbf strategy set.
 13. `[integration]` Stub the nbf runner; with a config that enables review with `checks` containing `"semantic"` and not `"adversarial"`, nbf enabled, and `sources` naming `"semantic"`, drive a story through the story-orchestrator phase-completion path with rectification enabled, a story id set, and a passing semantic-review phase carrying one actionable advisory finding; assert the nbf runner was invoked once with that finding.
 14. `[integration]` Repeat the previous scenario with `sources` naming only `"adversarial"`; assert the nbf runner was not invoked, confirming the pass is gated by `sources` rather than by which reviewer slots the config happens to declare.
+15. `[unit]` Given nbf enabled with `sources` empty and a green story whose adversarial-review and semantic-review phases each produced one actionable advisory finding, the seed returns no findings and reports that nbf should not run.
 
 ### US-003
 

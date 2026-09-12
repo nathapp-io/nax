@@ -5,13 +5,13 @@
 **Reviewed against:** nax @ `3fd96053e`
 **Date:** 2026-09-12
 **Phases run:** 9 only (1–8 ran during the drafting handoff)
-**Verdict:** ⚠️ revisions needed — 0 blockers, 1 major, 2 minors
+**Verdict:** ✅ ready — 0 blockers, 0 majors, 1 minor (re-checked after re-plan + surgical patch)
 
 ## Summary
 
 | check | result |
 |:---|:---|
-| 1. Spec AC → PRD AC mapping | ✅ 28/28 mapped, 1:1 and in order |
+| 1. Spec AC → PRD AC mapping | ✅ 31/31 mapped, 1:1 and in order (10/15/6) |
 | 2. Behavioural fidelity + signature reality | ✅ no degradation, no grep-style rewrite, no hallucinated arity |
 | 3. Orphan PRD ACs | ✅ 2 additions, both traceable to a Failure Handling row |
 | 4. File-role delta | ✅ 13/13 `contextFiles`, 1/1 `expectedFiles`, no self-`Creates` misplacement |
@@ -20,9 +20,9 @@
 | 6. Out-of-scope preservation | ✅ 6/6 present, none inverted, no story contradiction |
 | 7. Terminal-cleanup story | n/a — spec declares none |
 | 8. `Modifies` → `modifiedFiles` by path | ✅ 6 paths → 6 entries, `path` + `reason` populated |
-| — | **⚠️ 1 major: unpinned availability-gate widening (below)** |
+| — | ✅ both majors closed — see Resolution log |
 
-## Major — the semantic-only state is specified in prose but pinned by no AC
+## RESOLVED (was major) — the semantic-only state is specified in prose but pinned by no AC
 
 **PRD reference:** US-002 `description`, `**Scope** — In:` … *"read canonical nbf config and construct nbf strategies whenever either review slot is present rather than requiring the adversarial slot"*.
 
@@ -33,6 +33,16 @@
 **Why it matters:** all 14 US-002 ACs presuppose nbf is reachable — they vary `sources`, the buckets, and the green precondition, never the reviewer *slots*. An implementation that unions the buckets correctly and leaves the `adversarialReview` gate in place passes every one of the 14, and semantic-only stays dead. The PRD states the requirement only as `description` prose, which is the unpinned-design-mandate shape: semantic review can quote it verbatim while no test reaches it, so the story goes green on tests and then blocks in rectification.
 
 **Recommended fix:** add one AC to US-002 — *"Given a config that enables only semantic review (`review.checks` containing `semantic` and not `adversarial`), with nbf enabled and `sources` naming `semantic`, when a story completes green with one actionable semantic advisory, then the nbf runner is invoked once with that finding."* Re-plan after the spec edit; do not hand-patch `prd.json`, since `acceptanceCriteria` is planner-authored.
+
+## Resolution log
+
+**Major 1 — semantic-only gate unpinned.** Closed by spec AC-13/AC-14 (US-002), added 2026-09-12 and carried through `nax plan` run 3 verbatim, including AC-14's discriminating clause ("gated by `sources` rather than by which reviewer slots the config happens to declare"). AC-13 alone would admit an "either slot" widening; the pair forces `sources` to be the only gate.
+
+**Major 2 — unpinned Failure Handling row (opened at the run-3 re-check).** The row "`sources` is empty, or no named source produced actionable findings | nbf does not run" had no covering AC. Run 2 had backfilled two ACs for it on the planner's own initiative; run 3, receiving 14 ACs, mapped 1:1 and backfilled nothing — proving planner backfill is not a contract and varies between identical invocations of the same spec. Closed by spec AC-15 (US-002).
+
+**Patch provenance.** AC-15 was applied surgically to both artefacts rather than by a fourth plan run, at the user's instruction. The spec carries it as `[unit]` AC-15; `prd.json` carries the matching Given/When/Then entry as `userStories[US-002].acceptanceCriteria[14]`. Verified: diff against a pre-patch snapshot shows exactly one added array element and no other change; `validatePlanOutput` accepts the result (3 stories, 10/15/6 ACs, 7 outOfScope, 6 modifiedFiles on US-001).
+
+**Caveat on the hand-patch.** `acceptanceCriteria` is a planner-authored field. Any future `nax plan -f advisory-and-budget-truth` regenerates it and will drop AC-15 from `prd.json` unless the planner re-derives it from the spec — which it should, since the spec is the source and now carries AC-15. Spec↔PRD equivalence for this one AC rests on the hand edit being faithful rather than on the planner's own mapping; the wording pair is recorded above so it can be re-checked.
 
 ## Minor — US-002's `**Interface**` block foregrounds unchanged signatures
 
