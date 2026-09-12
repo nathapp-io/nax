@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildGitArgv, GIT_ESCAPE_FLAGS, gitTool } from "@/tools";
-import { DEFAULT_LOG_MAX_COUNT } from "@/tools/git";
+import { buildGitArgv, DEFAULT_LOG_MAX_COUNT, GIT_ESCAPE_FLAGS, gitTool } from "@/tools";
 
 function argvOf(input: Record<string, unknown>): string[] {
   const built = buildGitArgv(input);
@@ -25,11 +24,37 @@ describe("buildGitArgv — log output bounds", () => {
     expect(argvOf({ subcommand: "log", maxCount: 5 })).toContain("--max-count=5");
   });
 
-  // The defect was the ABSENCE of a bound, so the default is the load-bearing
-  // half: a caller that does not know to ask is exactly the caller that got
-  // 79KB back.
-  test("bounds a log that does not ask for a bound", () => {
+  // An unscoped `log` walks the entire history of HEAD -- that is the shape
+  // with no bound at all, and the one the default exists for.
+  test("bounds a log that names no range", () => {
     expect(argvOf({ subcommand: "log" })).toContain(`--max-count=${DEFAULT_LOG_MAX_COUNT}`);
+  });
+
+  /**
+   * A `refs` range is already a scope the caller chose, so a default on top of
+   * it silently discards commits they asked for -- and unlike `truncate()`,
+   * which appends "... [truncated at N bytes]", a commit cap appends nothing.
+   * The model cannot tell 12 commits from 200-capped-to-20.
+   *
+   * This is not hypothetical: the reviewer prompt asks for a story's commit
+   * history as `log <ref>..HEAD --oneline` (protocol-region.ts), and
+   * `--max-count` keeps the NEWEST n -- so a long fix-cycle run would have lost
+   * exactly the initial implementation commits, unmarked. Caught in review.
+   */
+  test("does not bound a log the caller has already scoped with refs", () => {
+    const argv = argvOf({ subcommand: "log", refs: ["abc123..HEAD"] });
+    expect(argv.some((arg) => arg.startsWith("--max-count="))).toBe(false);
+  });
+
+  test("the reviewer prompt's story-history call keeps its full range", () => {
+    // The exact shape built by src/prompts/sections/protocol-region.ts.
+    const argv = argvOf({ subcommand: "log", refs: ["abc123..HEAD"], oneline: true });
+    expect(argv.some((arg) => arg.startsWith("--max-count="))).toBe(false);
+    expect(argv).toContain("--oneline");
+  });
+
+  test("an explicit maxCount still applies when refs are given", () => {
+    expect(argvOf({ subcommand: "log", refs: ["abc123..HEAD"], maxCount: 5 })).toContain("--max-count=5");
   });
 
   test("an explicit maxCount overrides the default", () => {
@@ -55,11 +80,37 @@ describe("buildGitArgv — log output bounds", () => {
   // A non-integer reaches git as `--max-count=1.5` / `--max-count=NaN`, which
   // git rejects with its own error the model then has to interpret. Refusing
   // here is the clearer of the two, and matches how diffFilter is gated.
+  // The exact message is asserted, not merely that SOMETHING was refused: a
+  // bare `"error" in built` cannot tell "refused for the right reason" from
+  // "refused by an unrelated guard", and would keep passing if the maxCount
+  // check were deleted.
   test("rejects a maxCount that is not a positive integer", () => {
-    for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "5", null, true]) {
-      const built = buildGitArgv({ subcommand: "log", maxCount: value });
-      expect("error" in built).toBe(true);
+    for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "5", null, true, {}, []]) {
+      expect(buildGitArgv({ subcommand: "log", maxCount: value })).toEqual({
+        error: '"maxCount" must be a positive integer',
+      });
     }
+  });
+
+  /**
+   * `Number.isInteger(1e21)` is true and template interpolation renders it as
+   * `1e+21`, so both of these reached git as `--max-count=1e+21` /
+   * `--max-count=2147483648` and came back as `fatal: not an integer` -- the
+   * exact "a git usage error the model has to interpret" class this field
+   * exists to prevent. git's ceiling is INT_MAX. Caught in review.
+   */
+  test("rejects a maxCount above git's integer ceiling", () => {
+    for (const value of [2_147_483_648, 1e21, Number.MAX_SAFE_INTEGER]) {
+      expect(buildGitArgv({ subcommand: "log", maxCount: value })).toEqual({
+        error: '"maxCount" must be a positive integer',
+      });
+    }
+    expect(argvOf({ subcommand: "log", maxCount: 2_147_483_647 })).toContain("--max-count=2147483647");
+  });
+
+  test("does not fall back to the default when maxCount is invalid", () => {
+    const built = buildGitArgv({ subcommand: "log", maxCount: 0 });
+    expect("error" in built).toBe(true);
   });
 
   test("declares maxCount in the input schema so a model can reach it", () => {
