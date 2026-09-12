@@ -255,6 +255,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
+  "agent.native.catalogOverrides":
+    "Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot, plus optional provider-wide baseUrl/headers.",
+  "agent.native.catalogOverrides.baseUrl":
+    "Provider-wide endpoint redirect. WARNING: applies to EVERY model of that provider, bundled ones included, and the provider's stored credential is sent to this host. https only (http allowed for localhost/127.0.0.1); credentials in the URL are rejected.",
+  "agent.native.catalogOverrides.headers":
+    "Provider-wide extra request headers. REPLACES the provider's headers rather than merging; omit the key to leave them unchanged. May carry credentials, so values are masked in this output.",
   "agent.maxInteractionTurns":
     "Max turns in multi-turn interaction loop when interactionBridge is active (default: 10)",
   "agent.spinBreaker": "Repetition breaker — ends a turn that repeats tool calls with no progress (nax#2013)",

@@ -8,9 +8,9 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { createClient, type ProtocolOptions } from "@nathapp/nax-ai";
-import { assertNaxError } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir, mockFetch } from "@test/helpers";
 import { _clientDeps, _resetNativeClient, buildNativeClient, getNativeClient } from "@/agents/native/client";
-import { naxCredentialStore } from "@/agents/native/credentials";
+import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 
 const REAL_BUILD = _clientDeps.build;
@@ -149,6 +149,66 @@ describe("catalog overrides", () => {
     expect(resolved.provider).toBe("anthropic");
     expect(resolved.contextWindow).toBe(123_456);
     expect(resolved.pricing.input).toBe(1);
+  });
+
+  test("a baseUrl override reaches the WIRE: the request goes to the proxy host (nax#2019)", async () => {
+    // The seam that matters. Asserting the field was merely *passed* to
+    // defaultProtocols proves nothing — #1982's lesson is that the client
+    // resolved and priced happily and then threw at the first real request.
+    // This reads the URL off the actual fetch, which is what pi dispatches
+    // against: nax-ai applies the override to `Model.baseUrl`, not only to the
+    // provider record (nax-ai protocols/pi-client.ts).
+    const dir = makeTempDir("nax-2019-wire-");
+    const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    const realFetch = globalThis.fetch;
+    const seenUrls: string[] = [];
+
+    try {
+      // A dispatch needs a resolvable credential or it fails as "Provider is
+      // not configured" before any URL is built. Seeded into a temp store, and
+      // never sent anywhere: fetch is mocked below.
+      process.env.NAX_GLOBAL_CONFIG_DIR = dir;
+      _resetCredentialStore();
+      await naxCredentialStore().modify("anthropic", async () => ({ kind: "api-key", key: "nax-2019-test-key" }));
+
+      globalThis.fetch = mockFetch(async (input) => {
+        seenUrls.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        // A 500 stops the exchange here. The assertion is about where the
+        // request went, not whether it succeeded.
+        return new Response(JSON.stringify({ type: "error", error: { message: "stop" } }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      });
+
+      const client = await buildNativeClient([
+        {
+          provider: "anthropic",
+          baseUrl: "https://proxy.test/v1",
+          models: [
+            {
+              id: "nax-2019-wire-probe",
+              protocol: "anthropic-messages",
+              contextWindow: 1000,
+              supportsTools: false,
+              thinkingLevels: ["off"],
+              pricing: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0.2 },
+            },
+          ],
+        },
+      ]);
+      const model = await client.model("anthropic", "nax-2019-wire-probe");
+      await client.complete(model, { messages: [{ role: "user", content: "hi" }] }).catch(() => undefined);
+    } finally {
+      globalThis.fetch = realFetch;
+      if (originalGlobalDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+      else process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+      _resetCredentialStore();
+      cleanupTempDir(dir);
+    }
+
+    expect(seenUrls.length).toBeGreaterThan(0);
+    for (const url of seenUrls) expect(url).toStartWith("https://proxy.test/v1");
   });
 
   test("an override survives to dispatch: complete() resolves it instead of throwing Unknown model (#1982)", async () => {

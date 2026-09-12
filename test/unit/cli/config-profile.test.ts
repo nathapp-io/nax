@@ -211,6 +211,71 @@ describe("profileShowCommand", () => {
     expect(parsed.credentials).toBe("***");
   });
 
+  test("masks every header VALUE, since a header name need not look sensitive (nax#2019)", async () => {
+    // nax#2019 admitted `headers` to agent.native.catalogOverrides, and a
+    // headers map exists largely to carry auth. The key-name pattern does NOT
+    // match the commonest credential header — "Authorization" contains none of
+    // key/token/secret/password/credential — so recursing into the map printed
+    // a bearer token in clear in `nax config`, which shares this masker
+    // (config-display.ts, SEC-05).
+    //
+    // Values, not the map wholesale: a headers map is Record<string, string>,
+    // so there is no deeper nesting for a secret to hide in and masking every
+    // value is already complete. Keeping the NAMES readable is what makes a
+    // misrouted request diagnosable — the wholesale rule that applies to an
+    // arbitrary subtree under a sensitive key would throw that away.
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
+      agent: {
+        native: {
+          catalogOverrides: [
+            {
+              provider: "openrouter",
+              baseUrl: "https://proxy.test/v1",
+              headers: { Authorization: "Bearer sk-must-not-print", "X-Title": "nax" },
+              models: [],
+            },
+          ],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(await profileShowCommand("fast", tempDir, { unmask: false }));
+    const override = parsed.agent.native.catalogOverrides[0];
+
+    expect(override.headers).toEqual({ Authorization: "***", "X-Title": "***" });
+    // baseUrl is not a secret and stays readable: masking it would hide the
+    // one field that says where requests are actually going.
+    expect(override.baseUrl).toBe("https://proxy.test/v1");
+  });
+
+  test.each([
+    ["an array of header objects", [{ Authorization: "Bearer sk-must-not-print" }]],
+    ["a bare string", "Authorization: Bearer sk-must-not-print"],
+  ])("fails CLOSED when headers is not a plain map — %s (nax#2019)", async (_label, headers) => {
+    // profileShowCommand reads RAW un-Zod'd JSON, so the schema's
+    // Record<string, string> guarantee does not hold here. Delegating an
+    // unexpected shape back to the generic masker walked into it and printed
+    // "Authorization" in clear, because that name matches none of
+    // key/token/secret/password/credential.
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), { headers });
+
+    const parsed = JSON.parse(await profileShowCommand("fast", tempDir, { unmask: false }));
+
+    expect(JSON.stringify(parsed)).not.toContain("sk-must-not-print");
+  });
+
+  test("masks a headers map regardless of key casing (nax#2019)", async () => {
+    // Raw profile JSON again: `.strict()` normalises nothing here, so a
+    // profile spelling it "Headers" would otherwise bypass masking entirely.
+    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
+      Headers: { Authorization: "Bearer sk-must-not-print" },
+    });
+
+    const parsed = JSON.parse(await profileShowCommand("fast", tempDir, { unmask: false }));
+
+    expect(parsed.Headers).toEqual({ Authorization: "***" });
+  });
+
   test("a numeric value under a NON-exempt sensitive key still masks", async () => {
     // Deliberate: profiles are raw un-Zod'd JSON, so any key may appear, and
     // a numeric passcode must not print in the default view.

@@ -46,8 +46,101 @@ describe("agent.native.catalogOverrides", () => {
   });
 
   test("rejects an unknown key instead of stripping it", () => {
-    const withUnknown = { ...VALID_OVERRIDE, baseUrl: "https://example.test" };
+    // nax#2019 admitted `baseUrl`, so the strictness contract is now pinned by
+    // the casing typo it is most likely to be misspelled as. `baseURL` must
+    // still fail the load: stripped silently, it would leave requests going to
+    // the provider's original endpoint with no indication why.
+    const withUnknown = { ...VALID_OVERRIDE, baseURL: "https://example.test" };
     expect(() => parseNative({ catalogOverrides: [withUnknown] })).toThrow();
+  });
+
+  describe("baseUrl and headers (nax#2019)", () => {
+    test("carries a provider-level baseUrl through to the typed output", () => {
+      // nax-ai's ProviderOverride has supported baseUrl all along
+      // (providers/types.ts); nax was the only layer withholding it, so a
+      // native provider could not be pointed at a proxy or gateway.
+      const override = { ...VALID_OVERRIDE, baseUrl: "https://proxy.test/v1" };
+      const config = parseNative({ catalogOverrides: [override] });
+      const parsed: ProviderCatalogOverride | undefined = config.agent?.native?.catalogOverrides?.[0];
+      expect(parsed?.baseUrl).toBe("https://proxy.test/v1");
+    });
+
+    test("carries provider-level headers through to the typed output", () => {
+      const override = { ...VALID_OVERRIDE, headers: { "X-Route": "pinned" } };
+      const config = parseNative({ catalogOverrides: [override] });
+      const parsed: ProviderCatalogOverride | undefined = config.agent?.native?.catalogOverrides?.[0];
+      expect(parsed?.headers).toEqual({ "X-Route": "pinned" });
+    });
+
+    test("leaves both absent when undeclared, rather than defaulting them", () => {
+      // nax-ai distinguishes "not set" from "set to something" by
+      // `!== undefined` (protocols/override-declaration.ts), so a defaulted
+      // empty value would read as a declaration and trip its consistency check.
+      const config = parseNative({ catalogOverrides: [VALID_OVERRIDE] });
+      const parsed = config.agent?.native?.catalogOverrides?.[0];
+      expect(parsed).not.toHaveProperty("baseUrl");
+      expect(parsed).not.toHaveProperty("headers");
+    });
+
+    test("rejects an empty baseUrl, which would silently mean the default endpoint", () => {
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl: "" }] })).toThrow();
+    });
+
+    test("rejects an empty headers map, which would WIPE the provider's bundled headers", () => {
+      // Worse than the empty-baseUrl case, which is merely indistinguishable
+      // from silence. nax-ai gates on `!== undefined`, not on emptiness, and
+      // headers REPLACE rather than merge (nax-ai providers/catalog.ts:74
+      // `override?.headers ?? rawProvider.headers`, protocols/pi-client.ts),
+      // so `{}` is a declaration that every bundled header is now absent.
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, headers: {} }] })).toThrow();
+    });
+
+    test("rejects a baseUrl that is not a parseable URL", () => {
+      // `.url()` matches the repo's precedent for endpoints
+      // (schemas-reporters.ts). A scheme-less host loads clean under a bare
+      // string check and then fails deep inside pi-ai's fetch on the first
+      // dispatch, which is the opaque-late-failure this schema exists to avoid.
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl: "proxy.test/v1" }] })).toThrow();
+    });
+
+    test.each([
+      ["a plaintext http scheme", "http://gateway.test/v1"],
+      ["userinfo credentials in the URL", "https://user:tok@gateway.test/v1"],
+      ["a non-http scheme", "file:///etc/passwd"],
+    ])("rejects %s", (_label, baseUrl) => {
+      // baseUrl redirects a provider whose stored credential is attached by
+      // PROVIDER NAME alone — nax-ai's auth resolver takes {provider, model}
+      // and deliberately carries no baseUrl (nax-ai auth/resolver.ts), and the
+      // redirect applies to every model of that provider including bundled
+      // ones (protocols/pi-client.ts). So a bad baseUrl sends a real
+      // credential somewhere unintended. https keeps it off the plaintext
+      // wire; userinfo in a URL is a credential in config by accident.
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl }] })).toThrow();
+    });
+
+    test.each([
+      ["https", "https://gateway.test/v1"],
+      ["http on loopback, for a local proxy", "http://127.0.0.1:8080/v1"],
+      ["http on localhost, for a local proxy", "http://localhost:8080/v1"],
+    ])("accepts %s", (_label, baseUrl) => {
+      // A local shim is the motivating use case (injecting an OpenRouter
+      // provider block), and loopback never leaves the machine.
+      const config = parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl }] });
+      expect(config.agent?.native?.catalogOverrides?.[0]?.baseUrl).toBe(baseUrl);
+    });
+
+    test("rejects baseUrl placed on a MODEL entry, where an operator will misplace it", () => {
+      // The real misplacement risk, given the field sits next to a model list
+      // but applies provider-wide. CatalogModelOverrideSchema is .strict(), so
+      // this must fail rather than be stripped and silently ignored.
+      const model = { ...VALID_OVERRIDE.models[0], baseUrl: "https://proxy.test/v1" };
+      expect(() => parseNative({ catalogOverrides: [{ provider: "opencode-go", models: [model] }] })).toThrow();
+    });
+
+    test("rejects a non-string header value instead of coercing it", () => {
+      const override = { ...VALID_OVERRIDE, headers: { "X-Retries": 3 } };
+      expect(() => parseNative({ catalogOverrides: [override] })).toThrow();
+    });
   });
 
   test("carries an optional maxTokens ceiling through to the typed output (#1982)", () => {

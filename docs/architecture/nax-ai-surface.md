@@ -87,6 +87,21 @@ same protocol to template from — overrides amend a provider, they cannot
 introduce one. Those protocol constraints are checked when the first request
 lazily constructs the protocol, before any provider request is sent.
 
+An override entry may also declare provider-wide `baseUrl` and `headers`
+(nax#2019). nax-ai has supported both on `ProviderOverride` all along; nax
+withheld them until #2019. They land in two places — the provider record
+(`providers/catalog.ts`) and the protocol entries (`protocols/pi-client.ts`,
+which sets them on `Model.baseUrl`/`Model.headers` because pi dispatches
+against the model, not the provider) — and both **replace rather than merge**
+and reach **every model of the provider, bundled ones included**. nax omits an
+undeclared field entirely rather than passing `undefined`, because nax-ai reads
+`!== undefined` as a declaration and `override-declaration.ts` then requires the
+protocol side to match it. Security note: auth is resolved from `{provider,
+model}` with no reference to `baseUrl` (`auth/resolver.ts`), so a redirect sends
+that provider's stored credential to the new host — nax therefore requires
+`https` (http only for loopback), rejects userinfo in the URL, and emits a
+precheck warning naming the provider and host.
+
 An override entry may declare an optional `maxTokens` output ceiling. nax-ai
 synthesises the wire model from a bundled sibling and inherits the sibling's
 `maxTokens` when the override states none, so a newer model with a larger

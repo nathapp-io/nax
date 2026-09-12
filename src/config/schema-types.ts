@@ -127,6 +127,13 @@ export interface CatalogModelOverride {
 /** Provider-scoped catalog overrides — maps 1:1 onto nax-ai's `ProviderOverride[]`. */
 export interface ProviderCatalogOverride {
   provider: string;
+  /**
+   * Provider-wide endpoint redirect (nax#2019). Applies to the whole provider,
+   * not to `models` individually, despite sitting alongside a model list.
+   */
+  baseUrl?: string;
+  /** Provider-wide extra request headers (nax#2019). May carry credentials. */
+  headers?: Record<string, string>;
   models: CatalogModelOverride[];
 }
 

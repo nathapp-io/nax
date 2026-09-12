@@ -163,6 +163,24 @@ export async function checkModelResolution(config: unknown): Promise<Check[]> {
     }
   }
 
+  // nax#2019: a baseUrl redirect sends the provider's STORED CREDENTIAL to a
+  // host the operator may not have chosen. nax-ai resolves auth from
+  // {provider, model} with no reference to the destination (`auth/resolver.ts`)
+  // and applies the redirect to every model of the provider, bundled ones
+  // included (`protocols/pi-client.ts`) — so one throwaway model id in the
+  // override is enough to reroute a real, credentialed model. Config alone
+  // cannot make that visible; this line can. A warning, never a blocker: an
+  // arbitrary gateway is the feature, not a fault.
+  for (const override of catalogOverrides) {
+    if (override.baseUrl === undefined) continue;
+    checks.push({
+      name: "model-resolution",
+      tier: "warning",
+      passed: false,
+      message: `[model-resolution] agent.native.catalogOverrides redirects provider "${override.provider}" to ${override.baseUrl} — every model of that provider, including ones from the bundled catalog, will be requested there and the stored "${override.provider}" credential will be sent with them. Remove the baseUrl if you did not intend this.`,
+    });
+  }
+
   // Catalog-rejection warnings — single message each, gathered from every site that hit it.
   if (anyNativeError) {
     const sample = Array.from(nativeRejectedKeys).slice(0, 3).join(", ");

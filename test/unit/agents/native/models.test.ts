@@ -363,6 +363,37 @@ describe("toProviderOverrides", () => {
     expect(toProviderOverrides([override])[0]?.models?.[0]).not.toHaveProperty("maxTokens");
   });
 
+  test("carries a provider-level baseUrl into the nax-ai override (nax#2019)", () => {
+    const redirected: ProviderCatalogOverride = { ...override, baseUrl: "https://proxy.test/v1" };
+    expect(toProviderOverrides([redirected])[0]).toMatchObject({ baseUrl: "https://proxy.test/v1" });
+  });
+
+  test("carries provider-level headers into the nax-ai override (nax#2019)", () => {
+    const withHeaders: ProviderCatalogOverride = { ...override, headers: { "X-Route": "pinned" } };
+    expect(toProviderOverrides([withHeaders])[0]).toMatchObject({ headers: { "X-Route": "pinned" } });
+  });
+
+  test("copies the header map rather than aliasing live config (nax#2019)", () => {
+    // nax-ai's client catalog does NOT copy it (providers/catalog.ts assigns
+    // the reference straight onto ResolvedProvider.headers), so forwarding the
+    // live object would let a later config mutation reach an already-built
+    // client. Every other field in this mapper is rebuilt.
+    const headers = { "X-Route": "pinned" };
+    const mapped = toProviderOverrides([{ ...override, headers }])[0];
+    expect(mapped?.headers).not.toBe(headers);
+    expect(mapped?.headers).toEqual({ "X-Route": "pinned" });
+  });
+
+  test("omits baseUrl and headers entirely when undeclared, so nax-ai reads them as unset", () => {
+    // nax-ai gates both on `!== undefined` and raises a consistency error when
+    // a client-side value is not matched on the protocol side
+    // (protocols/override-declaration.ts). An explicit `baseUrl: undefined`
+    // key would therefore be a declaration, not a silence.
+    const mapped = toProviderOverrides([override])[0];
+    expect(mapped).not.toHaveProperty("baseUrl");
+    expect(mapped).not.toHaveProperty("headers");
+  });
+
   test("the config thinking levels mirror the nax-ai union exactly", () => {
     // THINKING_LEVELS is a Record<ThinkingLevel, true> over nax-ai's union, so
     // it fails to compile if nax-ai adds a level. This pins the config enum to
