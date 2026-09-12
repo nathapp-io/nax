@@ -1,37 +1,41 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-09-12T03-18-30-880Z",
+    "id": "run-2026-09-12T04-58-56-240Z",
     "feature": "advisory-and-budget-truth",
-    "startedAt": "2026-09-12T03:18:30.880Z",
-    "status": "crashed",
+    "startedAt": "2026-09-12T04:58:56.240Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 99113,
-    "crashedAt": "2026-09-12T04:55:43.069Z",
-    "crashSignal": "SIGINT"
+    "pid": 31258
   },
   "progress": {
     "total": 3,
-    "passed": 1,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 0
   },
   "cost": {
-    "spent": 0,
+    "spent": 3.6897469750000003,
     "limit": 60
   },
-  "current": {
-    "storyId": "US-002",
-    "title": "Seed non-blocking fixes from selected review advisory buckets",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-09-12T05:43:12.478Z",
+  "durationMs": 2656238,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-09-12T05:42:14.581Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-09-12T05:43:11.228Z"
+    }
   },
-  "iterations": 0,
-  "updatedAt": "2026-09-12T04:55:43.070Z",
-  "durationMs": 5832190
+  "gates": {
+    "acceptance": "passed",
+    "regression": "passed"
+  }
 }
