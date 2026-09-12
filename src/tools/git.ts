@@ -76,6 +76,73 @@ const GIT_DIFF_FILTER_VERBS: readonly string[] = ["diff", "log", "show"];
 const GIT_ONELINE_VERBS: readonly string[] = ["log", "show"];
 
 /**
+ * `log` alone takes a commit bound. Every other read verb already names what it
+ * operates on -- `show` and `blame` take a ref, `diff` a range, `status` the
+ * working tree -- so none of them is unbounded in the way `log` is, and
+ * defaulting them would invent a truncation nobody asked for.
+ */
+const GIT_MAX_COUNT_VERBS: readonly string[] = ["log"];
+
+/**
+ * Commit bound applied to a `log` that does not supply its own.
+ *
+ * `log` was the one read verb with no bound on how much it returns: a pathspec
+ * selects WHICH commits to show, then each selected commit prints in full. With
+ * `nameOnly` that compounds, because `--name-only` lists every file in each
+ * matching commit rather than the path that selected it -- nax#2009 measured
+ * 79KB from 7 commits on a single-file pathspec, the largest call in a
+ * 267-call session.
+ *
+ * Applied ONLY to a `log` that names no `refs`. A ref range is a scope the
+ * caller already chose, and capping on top of it discards commits they asked
+ * for with no marker -- `truncate()` appends "... [truncated at N bytes]", but
+ * a commit cap appends nothing, so the model cannot tell 12 commits from
+ * 200-capped-to-20. The reviewer prompt asks for a story's history as
+ * `log <ref>..HEAD --oneline` (`src/prompts/sections/protocol-region.ts`), and
+ * `--max-count` keeps the NEWEST n -- a default there would have silently
+ * dropped the initial implementation commits. An unscoped `log` walks the whole
+ * history of HEAD and is the shape with no bound at all.
+ */
+export const DEFAULT_LOG_MAX_COUNT = 20;
+
+/**
+ * git parses `--max-count` into a C int, so INT_MAX is the real ceiling.
+ *
+ * Above it the field would defeat its own purpose: `Number.isInteger(1e21)` is
+ * true and interpolation renders it `1e+21`, so `maxCount: 1e21` reached git as
+ * `fatal: '1e+21': not an integer` -- a git usage error the model has to
+ * interpret, which is the class this field refuses rather than coerces.
+ */
+const GIT_MAX_COUNT_CEILING = 2_147_483_647;
+
+/**
+ * A positive-integer field, gated to the verbs it applies to.
+ *
+ * Refused rather than coerced, for the reason `flagFromBoolean` gives: a
+ * non-integer would reach git as `--max-count=1.5` and come back as a git usage
+ * error the model then has to interpret. The `typeof` check rejects every
+ * non-number -- the numeric string `"5"`, `true`, `null`, objects -- and
+ * `Number.isInteger` rejects NaN and Infinity.
+ */
+function flagFromPositiveInteger(
+  input: Record<string, unknown>,
+  field: string,
+  subcommand: string,
+  validVerbs: readonly string[],
+  flag: string,
+): string | null | { error: string } {
+  const value = input[field];
+  if (value === undefined) return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > GIT_MAX_COUNT_CEILING) {
+    return { error: `"${field}" must be a positive integer` };
+  }
+  if (!validVerbs.includes(subcommand)) {
+    return { error: `"${field}" is not valid for "${subcommand}" (valid for: ${validVerbs.join(", ")})` };
+  }
+  return `${flag}=${value}`;
+}
+
+/**
  * A boolean flag field: absent or `false` emits nothing, `true` emits the flag.
  *
  * A non-boolean is refused rather than coerced — `nameOnly: "false"` is truthy
@@ -153,6 +220,16 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
   if (oneline !== null && typeof oneline === "object") return oneline;
   if (oneline !== null) argv.push(oneline);
 
+  const maxCount = flagFromPositiveInteger(input, "maxCount", subcommand, GIT_MAX_COUNT_VERBS, "--max-count");
+  if (maxCount !== null && typeof maxCount === "object") return maxCount;
+  if (maxCount !== null) argv.push(maxCount);
+  // Only an UNSCOPED log gets the default -- see DEFAULT_LOG_MAX_COUNT. A refs
+  // range is the caller's own scope, and capping it would drop commits they
+  // asked for with nothing in the output to say so.
+  else if (GIT_MAX_COUNT_VERBS.includes(subcommand) && refs.length === 0) {
+    argv.push(`--max-count=${DEFAULT_LOG_MAX_COUNT}`);
+  }
+
   for (const ref of refs) {
     if (typeof ref !== "string") return { error: "refs must be strings" };
     // A ref that begins with "-" would be parsed as an option, which is how an
@@ -196,20 +273,28 @@ function truncate(body: string, maxBytes: number): string {
 export const gitTool: CodingTool = {
   name: "Git",
   description:
-    "Run a read-only git command (diff, log, show, status, blame) in the repository. Supply refs and pathspecs as arrays, not as a command line. Command-line flags are not accepted in any field; use the nameOnly, diffFilter and oneline fields instead.",
+    "Run a read-only git command (diff, log, show, status, blame) in the repository. Supply refs and pathspecs as arrays, not as a command line. Command-line flags are not accepted in any field; use the nameOnly, diffFilter, oneline and maxCount fields instead.",
   inputSchema: {
     type: "object",
     properties: {
       subcommand: { type: "string", enum: [...GIT_READ_VERBS], description: "Read-only git subcommand" },
       refs: { type: "array", items: { type: "string" }, description: "Refs, e.g. ['HEAD~1','HEAD']" },
       paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the permitted root" },
-      nameOnly: { type: "boolean", description: "List file names only, no content (diff, log)" },
+      nameOnly: {
+        type: "boolean",
+        description:
+          "List file names only, no content (diff, log, show). On log a pathspec selects which commits to show, and every file in each of those commits is then listed — not just the pathspec; narrow with maxCount, or use oneline to see only the commits.",
+      },
       diffFilter: {
         type: "string",
         enum: [...GIT_DIFF_FILTERS],
         description: "Select only files Added (A), Modified (M), Deleted (D) or Renamed (R) (diff)",
       },
       oneline: { type: "boolean", description: "One line per commit (log)" },
+      maxCount: {
+        type: "integer",
+        description: `Maximum commits to return, newest first (log). A log with no refs defaults to ${DEFAULT_LOG_MAX_COUNT}; a log with a ref range is left unbounded. Raise it to walk further back.`,
+      },
     },
     required: ["subcommand"],
   },
