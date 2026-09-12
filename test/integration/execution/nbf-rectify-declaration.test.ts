@@ -85,6 +85,14 @@ function makeNbfConfig() {
     quality: { autofix: { enabled: true } },
     execution: { rectification: { enabled: true, maxAttemptsTotal: 3 } },
     review: {
+      nonBlockingFix: {
+        enabled: true,
+        scope: "both",
+        regressionAttempts: 1,
+        verifierGuard: false,
+        sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        sources: ["adversarial"],
+      },
       adversarial: {
         model: "balanced",
         diffMode: "ref",
@@ -92,13 +100,6 @@ function makeNbfConfig() {
         timeoutMs: 600_000,
         parallel: false,
         maxConcurrentSessions: 2,
-        nonBlockingFix: {
-          enabled: true,
-          scope: "both",
-          regressionAttempts: 1,
-          verifierGuard: false,
-          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-        },
       },
     },
   });

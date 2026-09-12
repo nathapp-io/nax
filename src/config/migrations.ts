@@ -139,3 +139,69 @@ export function migrateLegacyReviewModelKey(
     return { ...rest, model: modelTier };
   }
 }
+
+/**
+ * Alias the deprecated `review.adversarial.nonBlockingFix` to the new
+ * `review.nonBlockingFix` (US-001).
+ *
+ * Behaviour:
+ * - If `review.adversarial.nonBlockingFix` is absent → no-op, returns input.
+ * - If only the legacy key is set → alias it to `review.nonBlockingFix`, drop
+ *   the legacy key, emit one warning naming both keys.
+ * - If BOTH the legacy and the canonical key are set → canonical wins (the
+ *   user has migrated); the legacy key is dropped with one warning naming
+ *   both keys. Never throws — the canonical block is the resolved truth.
+ *
+ * In all cases the legacy `nonBlockingFix` key is removed from the
+ * `review.adversarial` block to avoid the deprecated field leaking into the
+ * Zod-parsed config (AdversarialReviewConfigSchema strips it via `.strip()`,
+ * but we drop here to log + keep one place to maintain).
+ */
+export function migrateLegacyNonBlockingFix(
+  raw: Record<string, unknown>,
+  logger: ConfigWarnLogger | null,
+): Record<string, unknown> {
+  type RawReview = { adversarial?: { nonBlockingFix?: unknown; [k: string]: unknown }; [k: string]: unknown };
+
+  const review = raw.review as RawReview | undefined;
+  if (!review) return raw;
+
+  const adversarial = review.adversarial;
+  if (!adversarial || adversarial.nonBlockingFix === undefined) return raw;
+
+  const legacyValue = adversarial.nonBlockingFix;
+  const canonical = (review as { nonBlockingFix?: unknown }).nonBlockingFix;
+
+  const { nonBlockingFix: _drop, ...restAdversarial } = adversarial;
+  const newReview: RawReview & { nonBlockingFix?: unknown } = {
+    ...review,
+    adversarial: restAdversarial,
+  };
+
+  if (canonical === undefined) {
+    // Legacy-only → alias to the canonical key.
+    newReview.nonBlockingFix = legacyValue;
+    logger?.warn(
+      "config",
+      "review.adversarial.nonBlockingFix is deprecated — migrate to review.nonBlockingFix. " +
+        "Migration shim applied: the value was copied to review.nonBlockingFix and the legacy key was dropped.",
+      {
+        legacyKey: "review.adversarial.nonBlockingFix",
+        canonicalKey: "review.nonBlockingFix",
+      },
+    );
+  } else {
+    // Both present → canonical wins; warn once, drop the legacy key only.
+    logger?.warn(
+      "config",
+      "review.adversarial.nonBlockingFix is deprecated and ignored — review.nonBlockingFix is set and wins. " +
+        "Remove review.adversarial.nonBlockingFix from your config.",
+      {
+        legacyKey: "review.adversarial.nonBlockingFix",
+        canonicalKey: "review.nonBlockingFix",
+      },
+    );
+  }
+
+  return { ...raw, review: newReview };
+}

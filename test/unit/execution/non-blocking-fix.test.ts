@@ -1,6 +1,7 @@
 // test/unit/execution/non-blocking-fix.test.ts
 import { describe, expect, test } from "bun:test";
 import { makeFinding, withInfoSpy } from "@test/helpers";
+import type { NonBlockingFixConfig } from "@/config/selectors";
 import {
   actionableAdvisoryFindings,
   nonBlockingExtraPhases,
@@ -20,6 +21,7 @@ describe("non-blocking-fix gating", () => {
           regressionAttempts: 1,
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          sources: ["adversarial"],
         },
         2,
       ),
@@ -35,6 +37,7 @@ describe("non-blocking-fix gating", () => {
           regressionAttempts: 1,
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          sources: ["adversarial"],
         },
         0,
       ),
@@ -50,6 +53,7 @@ describe("non-blocking-fix gating", () => {
           regressionAttempts: 1,
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          sources: ["adversarial"],
         },
         3,
       ),
@@ -57,12 +61,13 @@ describe("non-blocking-fix gating", () => {
   });
 
   test("scope-aware build is done at plan time — not by name filtering", () => {
-    const enabled = {
+    const enabled: NonBlockingFixConfig = {
       enabled: true,
-      scope: "both" as const,
+      scope: "both",
       regressionAttempts: 1,
       verifierGuard: true,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+      sources: ["adversarial"],
     };
     expect(shouldRunNonBlockingFix(enabled, 1)).toBe(true);
     expect(shouldRunNonBlockingFix(enabled, -1)).toBe(false);
@@ -82,7 +87,8 @@ describe("runNonBlockingFix keep vs restore", () => {
       regressionAttempts: 1,
       verifierGuard: true,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-    } as const,
+      sources: ["adversarial"],
+    } satisfies NonBlockingFixConfig,
     phaseCosts: {} as Record<string, number>,
   };
   const fakeDeps = {
@@ -504,6 +510,7 @@ describe("nonBlockingExtraPhases with triage scope", () => {
       regressionAttempts: 1,
       verifierGuard: true,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+      sources: ["adversarial"],
     });
     expect(phases).toEqual(["verifier"]);
   });
@@ -515,6 +522,7 @@ describe("nonBlockingExtraPhases with triage scope", () => {
       regressionAttempts: 1,
       verifierGuard: false,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+      sources: ["adversarial"],
     });
     expect(phases).toEqual([]);
   });
@@ -538,6 +546,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           regressionAttempts: 1,
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 10, maxLines: 50 },
+          sources: ["adversarial"],
         },
         phaseOutputs: {},
         phaseCosts: {},
@@ -568,6 +577,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           regressionAttempts: 1,
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 5, maxLines: 500 },
+          sources: ["adversarial"],
         },
         phaseOutputs: {},
         phaseCosts: {},
@@ -598,6 +608,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           regressionAttempts: 1,
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 10, maxLines: 200 },
+          sources: ["adversarial"],
         },
         phaseOutputs: {},
         phaseCosts: {},
@@ -628,6 +639,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           regressionAttempts: 1,
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 10, maxLines: 200 },
+          sources: ["adversarial"],
         },
         phaseOutputs: {},
         phaseCosts: {},
@@ -660,6 +672,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           regressionAttempts: 1,
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 10, maxLines: 200 },
+          sources: ["adversarial"],
         },
         phaseOutputs: {},
         phaseCosts: {},
@@ -709,13 +722,14 @@ describe("actionableAdvisoryFindings", () => {
   });
 
   test("an advisory bucket of only AC-quote drops closes the NBF gate (#1950)", () => {
-    const cfg = {
+    const cfg: NonBlockingFixConfig = {
       enabled: true,
       scope: "triage",
       regressionAttempts: 1,
       verifierGuard: true,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-    } as const;
+      sources: ["adversarial"],
+    };
     const actionable = actionableAdvisoryFindings([advisory({ acDropped: true })]);
     expect(shouldRunNonBlockingFix(cfg, actionable.length)).toBe(false);
   });
@@ -728,13 +742,14 @@ describe("actionableAdvisoryFindings", () => {
   test("an all-compliance advisory bucket closes the NBF gate", () => {
     // The observed US-004 case: one advisory finding, and it asked for nothing.
     // NBF must not open a paid pass for it.
-    const cfg = {
+    const cfg: NonBlockingFixConfig = {
       enabled: true,
       scope: "both",
       regressionAttempts: 1,
       verifierGuard: true,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-    } as const;
+      sources: ["adversarial"],
+    };
     const actionable = actionableAdvisoryFindings([advisory({ actionRequired: false })]);
     expect(shouldRunNonBlockingFix(cfg, actionable.length)).toBe(false);
   });

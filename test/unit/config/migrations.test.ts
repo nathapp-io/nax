@@ -3,7 +3,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { migrateLegacyReviewModelKey, migrateLegacyTestPattern } from "@/config/migrations";
+import type { ConfigWarnLogger } from "@/config/migrations";
+import {
+  migrateLegacyNonBlockingFix,
+  migrateLegacyReviewModelKey,
+  migrateLegacyTestPattern,
+} from "@/config/migrations";
 
 // ─── Raw-config probes ───────────────────────────────────────────────────────
 
@@ -183,5 +188,111 @@ describe("migrateLegacyReviewModelKey", () => {
     expect(probe(result, ["review", "semantic", "modelTier"])).toBeUndefined();
     expect(probe(result, ["review", "adversarial", "model"])).toBe("balanced");
     expect(probe(result, ["review", "adversarial", "modelTier"])).toBeUndefined();
+  });
+});
+
+// US-001 — review.adversarial.nonBlockingFix moved to review.nonBlockingFix.
+// Existing configs with the legacy key continue to load: the migration
+// shim aliases it to the canonical location and emits one warning naming
+// both keys, per the project's config conventions (config-patterns.md —
+// benign rename → migration shim that warns, copies, drops the old).
+describe("migrateLegacyNonBlockingFix", () => {
+  test("no-op when neither legacy nor canonical key is present", () => {
+    const raw: Record<string, unknown> = { review: { adversarial: { rules: [] } } };
+    const result = migrateLegacyNonBlockingFix(raw, null);
+    expect(result).toBe(raw);
+  });
+
+  test("migrates legacy review.adversarial.nonBlockingFix to review.nonBlockingFix and emits one warning", () => {
+    const captured: Array<{ stage: string; msg: string; data?: unknown }> = [];
+    const fakeLogger: ConfigWarnLogger = {
+      warn: (stage: string, msg: string, data?: unknown) => captured.push({ stage, msg, data }),
+    };
+    const legacy = { enabled: true, scope: "triage", regressionAttempts: 2, verifierGuard: false };
+    const raw: Record<string, unknown> = {
+      review: { adversarial: { nonBlockingFix: legacy } },
+    };
+    const result = migrateLegacyNonBlockingFix(raw, fakeLogger);
+
+    expect(probe(result, ["review", "nonBlockingFix"])).toEqual(legacy);
+    expect(probe(result, ["review", "adversarial", "nonBlockingFix"])).toBeUndefined();
+    expect(captured.length).toBe(1);
+    expect(captured[0].msg).toContain("review.adversarial.nonBlockingFix");
+    expect(captured[0].msg).toContain("review.nonBlockingFix");
+  });
+
+  test("emits no warning when only the canonical review.nonBlockingFix is set", () => {
+    const captured: Array<{ stage: string; msg: string; data?: unknown }> = [];
+    const fakeLogger: ConfigWarnLogger = {
+      warn: (stage: string, msg: string, data?: unknown) => captured.push({ stage, msg, data }),
+    };
+    const raw: Record<string, unknown> = {
+      review: { nonBlockingFix: { enabled: true } },
+    };
+    const result = migrateLegacyNonBlockingFix(raw, fakeLogger);
+
+    expect(probe(result, ["review", "nonBlockingFix"])).toEqual({ enabled: true });
+    expect(captured.length).toBe(0);
+    expect(result).toBe(raw);
+  });
+
+  test("when both legacy and canonical are present, canonical wins, both names appear in one warning, no throw", () => {
+    const captured: Array<{ stage: string; msg: string; data?: unknown }> = [];
+    const fakeLogger: ConfigWarnLogger = {
+      warn: (stage: string, msg: string, data?: unknown) => captured.push({ stage, msg, data }),
+    };
+    const legacy = { enabled: false, scope: "source" };
+    const canonical = { enabled: true, scope: "triage", sources: ["semantic"] };
+    const raw: Record<string, unknown> = {
+      review: {
+        adversarial: { nonBlockingFix: legacy },
+        nonBlockingFix: canonical,
+      },
+    };
+    const result = migrateLegacyNonBlockingFix(raw, fakeLogger);
+
+    expect(probe(result, ["review", "nonBlockingFix"])).toEqual(canonical);
+    expect(probe(result, ["review", "adversarial", "nonBlockingFix"])).toBeUndefined();
+    expect(captured.length).toBe(1);
+    expect(captured[0].msg).toContain("review.adversarial.nonBlockingFix");
+    expect(captured[0].msg).toContain("review.nonBlockingFix");
+  });
+
+  test("does not mutate the input", () => {
+    const raw: Record<string, unknown> = {
+      review: { adversarial: { nonBlockingFix: { enabled: true } } },
+    };
+    const original = structuredClone(raw);
+    migrateLegacyNonBlockingFix(raw, null);
+    expect(raw).toEqual(original);
+  });
+
+  test("preserves other adversarial fields (rules, model) when migrating", () => {
+    const raw: Record<string, unknown> = {
+      review: {
+        adversarial: {
+          rules: ["rule-1"],
+          model: "balanced",
+          nonBlockingFix: { enabled: true },
+        },
+      },
+    };
+    const result = migrateLegacyNonBlockingFix(raw, null);
+    expect(probe(result, ["review", "adversarial", "rules"])).toEqual(["rule-1"]);
+    expect(probe(result, ["review", "adversarial", "model"])).toBe("balanced");
+    expect(probe(result, ["review", "adversarial", "nonBlockingFix"])).toBeUndefined();
+    expect(probe(result, ["review", "nonBlockingFix"])).toEqual({ enabled: true });
+  });
+
+  test("tolerates a config without any review block", () => {
+    const raw: Record<string, unknown> = { execution: {} };
+    const result = migrateLegacyNonBlockingFix(raw, null);
+    expect(result).toBe(raw);
+  });
+
+  test("tolerates an adversarial block that has no nonBlockingFix", () => {
+    const raw: Record<string, unknown> = { review: { adversarial: { rules: [] } } };
+    const result = migrateLegacyNonBlockingFix(raw, null);
+    expect(result).toBe(raw);
   });
 });

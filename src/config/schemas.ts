@@ -46,7 +46,11 @@ import { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfig
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
 export { AcceptanceConfigSchema, PlanConfigSchema, PromptsConfigSchema } from "./schemas-infra";
-export { AdversarialReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
+export {
+  AdversarialReviewConfigSchema,
+  NonBlockingFixConfigSchema,
+  SemanticReviewConfigSchema,
+} from "./schemas-review";
 
 export const NaxConfigSchema = z
   .object({

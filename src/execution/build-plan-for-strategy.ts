@@ -366,7 +366,11 @@ export async function buildPlanForStrategy(
 
   // ADR-024 — non-blocking best-effort fix: config + scope-aware strategy set.
   // Only built when the adversarial review slot is present and the feature is enabled.
-  const nbf = config.review?.adversarial?.nonBlockingFix;
+  // US-001: lives at review.nonBlockingFix (not review.adversarial.nonBlockingFix),
+  // because the seeded source list now includes both reviewers; the rest of the
+  // knobs (scope, sourceDiffCap, regressionAttempts, verifierGuard) govern the
+  // one fix pass regardless.
+  const nbf = config.review?.nonBlockingFix;
   const nbStrategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
   if (nbf?.enabled && inputs.adversarialReview) {
     const nbSink = makeDeclarationSink();

@@ -2,7 +2,7 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1593
+    "looseCast": 1598
   },
   "updatedAt": "2026-09-10T12:00:00.000Z",
   "byFile": {
@@ -344,6 +344,9 @@
     },
     "test/unit/execution/non-blocking-fix.test.ts": {
       "looseCast": 6
+    },
+    "test/unit/config/non-blocking-fix-config.test.ts": {
+      "looseCast": 5
     },
     "test/unit/execution/unified-executor-dispatch.test.ts": {
       "looseCast": 6

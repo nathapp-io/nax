@@ -122,6 +122,15 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
       quality: { commands: {}, autofix: { enabled: true } },
       execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
       review: {
+        nonBlockingFix: {
+          enabled: true,
+          scope: "triage",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          sources: ["adversarial"],
+          ...extra,
+        },
         adversarial: {
           model: "balanced",
           diffMode: "ref",
@@ -129,14 +138,6 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: {
-            enabled: true,
-            scope: "triage",
-            regressionAttempts: 1,
-            verifierGuard: true,
-            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-            ...extra,
-          },
         },
       },
     });
@@ -147,6 +148,14 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
       quality: { commands: {}, autofix: { enabled: true } },
       execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
       review: {
+        nonBlockingFix: {
+          enabled: true,
+          scope,
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          sources: ["adversarial"],
+        },
         adversarial: {
           model: "balanced",
           diffMode: "ref",
@@ -154,13 +163,6 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: {
-            enabled: true,
-            scope,
-            regressionAttempts: 1,
-            verifierGuard: true,
-            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-          },
         },
       },
     });
