@@ -190,15 +190,17 @@ export const NonBlockingFixConfigSchema = z.object({
    * - "adversarial": adversarial reviewer only (historical behaviour).
    * - "semantic": semantic reviewer only.
    * - both: union of both reviewers' advisory buckets.
+   * - `[]`: "neither" — nbf is configured but explicitly seeds from no
+   *   reviewer. Same runtime effect as `enabled: false` for the seeding
+   *   path; kept distinct so an operator can express "I want the knobs
+   *   defined for future use, but turn off seeding for now" without losing
+   *   their `scope`/`sourceDiffCap` settings.
    *
    * Each entry is preserved in declared order. The fix pass's `scope`,
    * `sourceDiffCap`, `regressionAttempts` and `verifierGuard` knobs apply
    * regardless of source — one fix pass, one set of knobs (US-001 scope).
    */
-  sources: z
-    .array(z.enum(["adversarial", "semantic"]))
-    .min(1)
-    .default(["adversarial"]),
+  sources: z.array(z.enum(["adversarial", "semantic"])).default(["adversarial"]),
   /**
    * "source":  autofix-implementer only.
    * "both":    + autofix-test-writer (test edits allowed).

@@ -69,8 +69,15 @@ describe("NonBlockingFixConfigSchema — defaults and validation (AC1, AC2)", ()
     expect(message).toContain("sources");
   });
 
-  test("rejects an empty sources array", () => {
-    expect(() => NonBlockingFixConfigSchema.parse({ sources: [] })).toThrow();
+  test("accepts an empty sources array — the 'neither' state from the four-state contract", () => {
+    // The US-001 Approach paragraph names four states operators need:
+    // adversarial-only, semantic-only, both, and neither. The "neither" state
+    // is `sources: []` — nbf is configured (so the operator's `scope` and
+    // `sourceDiffCap` settings survive) but it explicitly seeds from no
+    // reviewer. US-002 AC15 ("sources empty... no findings... nbf should not
+    // run") exercises exactly this shape end-to-end.
+    const parsed = NonBlockingFixConfigSchema.parse({ sources: [] });
+    expect(parsed.sources).toEqual([]);
   });
 
   test("scope: 'triage' parses successfully", () => {
