@@ -248,9 +248,9 @@ Append to `test/unit/operations/verify-op.test.ts`. It reuses that file's existi
 ```ts
 describe("verifierOp — timeout budget", () => {
   test("resolves its own timeout from tdd.verifierTimeoutSeconds", () => {
-    const config = tddConfigSelector.select(
-      makeNaxConfig({ tdd: { maxRetries: 2, strategy: "auto", verifierTimeoutSeconds: 600 } }),
-    );
+    // makeNaxConfig deep-merges onto DEFAULT_CONFIG, so the rest of the tdd
+    // block keeps its defaults and this pins the override path alone.
+    const config = tddConfigSelector.select(makeNaxConfig({ tdd: { verifierTimeoutSeconds: 600 } }));
     const ctx = { packageView: makePackageView(), config };
 
     const timeoutMs = verifierOp.timeoutMs?.({ story: makeStory({ id: "US-001" }) }, ctx);
@@ -487,9 +487,17 @@ export function narrowGrants(
 ): readonly ToolGrant[] {
   if (narrowing === undefined || Object.keys(narrowing).length === 0) return grants;
 
+  // Indexed through a Map rather than `narrowing[grant.tool]`: `ToolGrant.tool`
+  // is a plain string (third parties register their own names) while the
+  // op-facing type is keyed on CodingToolName so a typo in an op is a compile
+  // error. Object.entries bridges the two without a cast.
+  const wanted = new Map<string, readonly string[]>(
+    Object.entries(narrowing).filter((entry): entry is [string, readonly string[]] => entry[1] !== undefined),
+  );
+
   const out: ToolGrant[] = [];
   for (const grant of grants) {
-    const requested = narrowing[grant.tool as CodingToolName];
+    const requested = wanted.get(grant.tool);
     if (requested === undefined || requested.length === 0) {
       out.push(grant);
       continue;
@@ -1181,7 +1189,9 @@ Add to `test/unit/operations/call-hop-output.test.ts` (create it if absent, foll
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { normalizeHopOutput } from "@/operations";
+// Leaf import: `normalizeHopOutput` is deliberately NOT on the @/operations
+// barrel (only the two classifiers are), so import it from its own module.
+import { normalizeHopOutput } from "@/operations/call-hop-output";
 import type { TurnResult } from "@/agents/types";
 
 function makeTurn(overrides: Partial<TurnResult> = {}): TurnResult {
@@ -1661,20 +1671,28 @@ Before the loop, beside the other accumulators:
   let spinStopped = false;
 ```
 
-Inside `for (const call of res.toolCalls)`, immediately after `deps.onActivity?.({ kind: "tool", toolName: call.name })`, add the consultation. A `stop` must leave the loop entirely, so use a labelled break on the `while`:
+Add the consultation inside `for (const call of res.toolCalls)`, placed **after** the `ASK_HUMAN_TOOL_NAME` branch and immediately before the `const kind = codingToolNames.has(call.name) ? ... ` line. Placement matters: the ask_human branch ends in `continue`, so observing before it would compute a nudge that is then silently dropped, and human Q&A is budgeted separately by `maxInteractions` anyway — it is not the repetition this breaker is for.
 
 ```ts
-        const verdict = spinBreaker?.observe(call.name, call.input) ?? { action: "allow" as const };
-        if (verdict.action === "stop") {
-          spinStopped = true;
-          // The call is deliberately NOT executed and NOT answered: the turn is
-          // over, and a tool-result for a call nobody will read only grows the
-          // transcript the retry drops anyway.
-          break turnLoop;
-        }
+          const verdict = spinBreaker?.observe(call.name, call.input) ?? { action: "allow" as const };
+          if (verdict.action === "stop") {
+            spinStopped = true;
+            // The call is deliberately NOT executed and NOT answered: the turn
+            // is over, and a tool-result for a call nobody will read only grows
+            // the transcript the retry drops anyway.
+            break;
+          }
 ```
 
-Label the loop `turnLoop: while (true) {` and update its doc comment to name the third exit:
+That `break` leaves the `for` over this round trip's tool calls. The `while` needs its own exit, so add one directly after the `for` loop closes, in the `while` body:
+
+```ts
+      if (spinStopped) break;
+```
+
+Two plain breaks rather than a labelled one: `src/` contains no labelled loop anywhere, and this `while` already has several plain `break` exits, so a label would be the only one in the codebase.
+
+Update the loop's doc comment to name the third exit:
 
 ```ts
     // Deliberately unbounded by COUNT of varied calls. A coding agent working a
