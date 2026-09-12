@@ -10,7 +10,12 @@
  */
 
 import { getLogger } from "../logger";
-import { type ConfigWarnLogger, migrateLegacyReviewModelKey, migrateLegacyTestPattern } from "./migrations";
+import {
+  type ConfigWarnLogger,
+  migrateLegacyNonBlockingFix,
+  migrateLegacyReviewModelKey,
+  migrateLegacyTestPattern,
+} from "./migrations";
 
 /**
  * @internal Shared `warn` sink for every config deprecation shim below.
@@ -490,6 +495,7 @@ export function applyConfigCompatShims(
 
   let out = migrateLegacyTestPattern(conf, log);
   out = migrateLegacyReviewModelKey(out, log);
+  out = migrateLegacyNonBlockingFix(out, log);
   out = applyRemovedStrategyCompat(out, warn);
   out = applyBatchModeCompat(out, warn);
   out = applyRoutingRetryDeprecationWarning(out, warn);

@@ -12,6 +12,7 @@
 // 800-line hard limit (.claude/rules/project-conventions.md).
 import { describe, expect, test } from "bun:test";
 import { makeFinding } from "@test/helpers";
+import type { NonBlockingFixConfig } from "@/config/selectors";
 import { actionableAdvisoryFindings, runNonBlockingFix, shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
 import type { Finding } from "@/findings";
 
@@ -80,7 +81,8 @@ describe("runNonBlockingFix — retired-only seed closes the gate (US-004 AC 11)
       regressionAttempts: 1,
       verifierGuard: true,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-    } as const;
+      sources: ["adversarial"],
+    } satisfies NonBlockingFixConfig;
     const advisory: readonly Finding[] = [
       {
         source: "adversarial-review",
@@ -138,7 +140,8 @@ describe("runNonBlockingFix — retired-only seed closes the gate (US-004 AC 11)
       regressionAttempts: 1,
       verifierGuard: true,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-    } as const;
+      sources: ["adversarial"],
+    } satisfies NonBlockingFixConfig;
     const advisory: readonly Finding[] = [
       makeFinding({ source: "adversarial-review", severity: "warning", category: "input", message: "live" }),
       {

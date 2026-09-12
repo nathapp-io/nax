@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeTestRuntime, withInfoSpy } from "@test/helpers";
 import { pickSelector } from "@/config";
+import type { NonBlockingFixConfig } from "@/config/selectors";
 import {
   _storyOrchestratorDeps,
   createNbfFlakeTriageTransaction,
@@ -268,7 +269,8 @@ describe("runNonBlockingFix quarantine transaction", () => {
       regressionAttempts: 1,
       verifierGuard: true,
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-    } as const,
+      sources: ["adversarial"],
+    } satisfies NonBlockingFixConfig,
     phaseOutputs: { [GATE_NAME]: { success: true } } as Record<string, unknown>,
     phaseCosts: {} as Record<string, number>,
   };

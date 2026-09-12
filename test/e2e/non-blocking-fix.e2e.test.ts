@@ -48,14 +48,13 @@ const PASSING_VERDICT = JSON.stringify({
 // undefined and silently skip the cap check.
 const NBF_CONFIG: DeepPartial<NaxConfig> = {
   review: {
-    adversarial: {
-      nonBlockingFix: {
-        enabled: true,
-        scope: "source",
-        regressionAttempts: 1,
-        verifierGuard: true,
-        sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-      },
+    nonBlockingFix: {
+      enabled: true,
+      scope: "source",
+      regressionAttempts: 1,
+      verifierGuard: true,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+      sources: ["adversarial"],
     },
   },
 };
@@ -65,14 +64,13 @@ const NBF_CONFIG: DeepPartial<NaxConfig> = {
 // verifier-SSOT exemption can mask a red full-suite gate (the downstream US-001 shape).
 const NBF_BOTH_CONFIG: DeepPartial<NaxConfig> = {
   review: {
-    adversarial: {
-      nonBlockingFix: {
-        enabled: true,
-        scope: "both",
-        regressionAttempts: 1,
-        verifierGuard: true,
-        sourceDiffCap: { maxFiles: 10, maxLines: 500 },
-      },
+    nonBlockingFix: {
+      enabled: true,
+      scope: "both",
+      regressionAttempts: 1,
+      verifierGuard: true,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+      sources: ["adversarial"],
     },
   },
 };

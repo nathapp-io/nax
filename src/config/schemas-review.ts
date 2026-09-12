@@ -159,47 +159,77 @@ export const AdversarialReviewConfigSchema = z.object({
       maxRequotes: z.number().int().min(0).default(5),
     })
     .optional(),
+  // nonBlockingFix moved to ReviewConfigSchema.nonBlockingFix (US-001) so semantic
+  // and adversarial findings can both seed the fix pass via the per-reviewer
+  // `sources` list. Legacy `review.adversarial.nonBlockingFix` is migrated to
+  // `review.nonBlockingFix` by `migrateLegacyNonBlockingFix` in the config loader.
+});
+
+/**
+ * ADR-024 — Non-blocking best-effort auto-fix over sub-threshold (warning/info)
+ * review findings, run after the seeded reviewers pass. Never blocks the story;
+ * restores to the seeded reviewers' passed state on exhaustion.
+ *
+ * US-001: lives at `review.nonBlockingFix` rather than under `review.adversarial`,
+ * because both seeded reviewers (semantic, adversarial) build the same
+ * `advisoryFindings` bucket. The per-reviewer `sources` list names which
+ * reviewers' advisories seed the fix pass; the rest of the knobs govern the one
+ * fix pass regardless of source.
+ *
+ * `sources` defaults to `["adversarial"]` (the historical behaviour) — existing
+ * configs behave exactly as today and semantic seeding is opt-in. Declared with
+ * `.default()` so the inferred type carries `sources` as required; every existing
+ * object literal passed where a `NonBlockingFixConfig` is expected must name it
+ * (US-001's `Modifies` list authorises those files).
+ */
+export const NonBlockingFixConfigSchema = z.object({
+  /** Master switch. Opt-in; ramp to true after validating signal quality. */
+  enabled: z.boolean().default(false),
   /**
-   * ADR-024 — Non-blocking best-effort auto-fix over sub-threshold (warning/info)
-   * adversarial findings, run after adversarial review passes. Never blocks the
-   * story; restores to the adversarial-passed state on exhaustion.
+   * Which reviewers' advisory findings seed the fix pass.
+   * - "adversarial": adversarial reviewer only (historical behaviour).
+   * - "semantic": semantic reviewer only.
+   * - both: union of both reviewers' advisory buckets.
+   * - `[]`: "neither" — nbf is configured but explicitly seeds from no
+   *   reviewer. Same runtime effect as `enabled: false` for the seeding
+   *   path; kept distinct so an operator can express "I want the knobs
+   *   defined for future use, but turn off seeding for now" without losing
+   *   their `scope`/`sourceDiffCap` settings.
+   *
+   * Each entry is preserved in declared order. The fix pass's `scope`,
+   * `sourceDiffCap`, `regressionAttempts` and `verifierGuard` knobs apply
+   * regardless of source — one fix pass, one set of knobs (US-001 scope).
    */
-  nonBlockingFix: z
+  sources: z.array(z.enum(["adversarial", "semantic"])).default(["adversarial"]),
+  /**
+   * "source":  autofix-implementer only.
+   * "both":    + autofix-test-writer (test edits allowed).
+   * "triage":  route by finding fixTarget (implementer vs test-writer);
+   *            bounded by `sourceDiffCap` to cap un-reviewed source edits.
+   */
+  scope: z.enum(["source", "both", "triage"]).default("both"),
+  /** Fix attempts to clear a regression the best-effort fix introduced. */
+  regressionAttempts: z.number().int().min(0).default(1),
+  /**
+   * When true (default) and a test edit occurs (scope "both" or "triage"), add
+   * the verifier to deterministic revalidation as the replacement for the
+   * stripped adversarial re-run. No-op when no verifier exists (single-session).
+   */
+  verifierGuard: z.boolean().default(true),
+  /**
+   * Maximum source-only diff size allowed under scope "triage". Safety rail
+   * for the un-reviewed source edits triage newly enables. Absent or empty
+   * means bounded by the schema defaults (maxFiles: 10, maxLines: 500).
+   * `maxFiles` bounds the number of changed source files; `maxLines` bounds
+   * the total added source lines. Test files are excluded via
+   * `resolveTestFilePatterns` before comparison.
+   */
+  sourceDiffCap: z
     .object({
-      /** Master switch. Opt-in; ramp to true after validating signal quality. */
-      enabled: z.boolean().default(false),
-      /**
-       * "source":  autofix-implementer only.
-       * "both":    + autofix-test-writer (test edits allowed).
-       * "triage":  route by finding fixTarget (implementer vs test-writer);
-       *            bounded by `sourceDiffCap` to cap un-reviewed source edits.
-       */
-      scope: z.enum(["source", "both", "triage"]).default("both"),
-      /** Fix attempts to clear a regression the best-effort fix introduced. */
-      regressionAttempts: z.number().int().min(0).default(1),
-      /**
-       * When true (default) and a test edit occurs (scope "both" or "triage"), add
-       * the verifier to deterministic revalidation as the replacement for the
-       * stripped adversarial re-run. No-op when no verifier exists (single-session).
-       */
-      verifierGuard: z.boolean().default(true),
-      /**
-       * Maximum source-only diff size allowed under scope "triage". Safety rail
-       * for the un-reviewed source edits triage newly enables. Absent or empty
-       * means bounded by the schema defaults (maxFiles: 10, maxLines: 500).
-       * `maxFiles` bounds the number of changed source files; `maxLines` bounds
-       * the total added source lines. Test files are excluded via
-       * `resolveTestFilePatterns` before comparison.
-       */
-      sourceDiffCap: z
-        .object({
-          maxFiles: z.number().int().min(0).default(10),
-          maxLines: z.number().int().min(0).default(500),
-        })
-        .optional()
-        .default({ maxFiles: 10, maxLines: 500 }),
+      maxFiles: z.number().int().min(0).default(10),
+      maxLines: z.number().int().min(0).default(500),
     })
-    .optional(),
+    .default({ maxFiles: 10, maxLines: 500 }),
 });
 
 export const ReviewConfigSchema = z.object({
@@ -252,6 +282,15 @@ export const ReviewConfigSchema = z.object({
   parseRetryMaxAttempts: z.number().int().min(1).max(10).default(3),
   semantic: SemanticReviewConfigSchema.optional(),
   adversarial: AdversarialReviewConfigSchema.optional(),
+  /**
+   * Non-blocking best-effort fix config (ADR-024, US-001). Lives at the review
+   * level rather than under `adversarial` because the seeded source list now
+   * includes both reviewers; the rest of the knobs (scope, sourceDiffCap,
+   * regressionAttempts, verifierGuard) govern the one fix pass regardless.
+   * Optional — when absent, no non-blocking fix is attempted (the default).
+   * See `NonBlockingFixConfigSchema` for field-level documentation.
+   */
+  nonBlockingFix: NonBlockingFixConfigSchema.optional(),
   conflictDetection: z
     .object({
       enabled: z.boolean().default(true),

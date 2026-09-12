@@ -1,0 +1,219 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `review.nonBlockingFix` is parsed as an empty object, then its resolved slice has `enabled: false`, `scope: \"both\"`, `regressionAttempts: 1`, `verifierGuard: true`, and `sourceDiffCap: { maxFiles: 10, maxLines: 500 }`.",
+    "refined": "parseConfig({review:{nonBlockingFix:{}}}).review.nonBlockingFix deep-equals {enabled:false, scope:\"both\", regressionAttempts:1, verifierGuard:true, sourceDiffCap:{maxFiles:10, maxLines:500}} (schema-level defaults applied via Zod .default()); no warning emitted",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `review.nonBlockingFix` is parsed as an empty object, then its `sources` is `[\"adversarial\"]`.",
+    "refined": "parseConfig({review:{nonBlockingFix:{}}}).review.nonBlockingFix.sources deep-equals [\"adversarial\"] (default from z.array(z.enum([\"adversarial\",\"semantic\"])).default([\"adversarial\"])), and the inferred NonBlockingFixConfig type's `sources` property is required (not optional)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `review.nonBlockingFix.sources` contains `[\"adversarial\", \"semantic\"]`, then parsing preserves both entries in declared order.",
+    "refined": "parseConfig({review:{nonBlockingFix:{sources:[\"adversarial\",\"semantic\"]}}}).review.nonBlockingFix.sources deep-equals [\"adversarial\",\"semantic\"] with no deduplication, sorting, or reordering",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `review.nonBlockingFix.sources` contains an unrecognised reviewer name, then parsing rejects with a validation error naming `sources`.",
+    "refined": "parseConfig({review:{nonBlockingFix:{sources:[\"nosy\"]}}}) throws a ZodError whose message/issue path includes \"sources\" and mentions the invalid value \"nosy\"; exit is non-zero and no config is returned",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `review.nonBlockingFix` is omitted entirely, then parsing returns `undefined` for that slice and synthesises no nbf defaults elsewhere in the parsed config.",
+    "refined": "parseConfig({review:{}}).review.nonBlockingFix === undefined; parsed config contains no other key whose value includes nbf defaults (e.g., review.adversarial.nonBlockingFix is absent, no synthesized defaults object anywhere in the parsed tree); no warning emitted",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When only legacy `review.adversarial.nonBlockingFix` is supplied, then parsing resolves the same nbf slice as the canonical location and emits one config warning naming both the legacy and canonical keys.",
+    "refined": "parseConfig({review:{adversarial:{nonBlockingFix:{enabled:true, scope:\"cli-only\"}}}}) yields review.nonBlockingFix deep-equal to the result of parsing the identical block at the canonical location (sources defaults to [\"adversarial\"]) with review.adversarial.nonBlockingFix removed from the output; exactly one config warning is emitted whose message contains both \"review.adversarial.nonBlockingFix\" and \"review.nonBlockingFix\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When both `review.adversarial.nonBlockingFix` and `review.nonBlockingFix` are supplied, then parsing resolves the canonical block's values, emits a warning naming both keys, and does not throw.",
+    "refined": "Given review.adversarial.nonBlockingFix={enabled:true} and review.nonBlockingFix={enabled:false}, parseConfig does not throw; resolved review.nonBlockingFix.enabled === false (canonical wins); review.adversarial.nonBlockingFix is absent from output; exactly one warning naming both keys is emitted",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When neither legacy nor canonical nbf location is supplied, then the nbf migration returns the config unchanged and emits no config warning about nbf.",
+    "refined": "Calling the exported migration function on a config object containing neither review.adversarial.nonBlockingFix nor review.nonBlockingFix returns an object deep-equal to the input (no key added or removed) and emits zero warnings mentioning \"nonBlockingFix\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When a legacy `review.adversarial.nonBlockingFix` is supplied in one config layer and canonical `review.nonBlockingFix` in a later layer, then the later layer's canonical value wins after resolution, demonstrating the migration runs before layer merge.",
+    "refined": "Given layer1={review:{adversarial:{nonBlockingFix:{enabled:true}}}} and layer2={review:{nonBlockingFix:{enabled:false}}}, the merged+resolved config has review.nonBlockingFix.enabled === false and review.adversarial.nonBlockingFix absent; one warning naming both keys is emitted",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `AdversarialReviewConfigSchema` parses an adversarial block containing `nonBlockingFix`, then the parsed object has no `nonBlockingFix` property.",
+    "refined": "AdversarialReviewConfigSchema.parse({nonBlockingFix:{enabled:true}, ...validAdversarialFields}) returns an object where Object.prototype.hasOwnProperty.call(result, \"nonBlockingFix\") === false (property stripped from the standalone adversarial schema)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given a story with two actionable semantic-review advisory findings, no adversarial-review advisories, and nbf `sources` naming both reviewers, when the seed is derived, then it returns both semantic findings.",
+    "refined": "nbf-seed.ts seed derivation is called with a single-phase read of phaseOutputs[\"semantic-review\"] (actionable, phase-passed) and no phaseOutputs[\"adversarial-review\"] entry, with NonBlockingFixConfig.sources = [\"semantic-review\", \"adversarial-review\"]. Assert the returned value is a readonly array of length 2 containing exactly the two input Finding objects (by identity or id), each satisfying actionableAdvisoryFindings predicates (actionRequired === false, acDropped === true, not recurrence-retired).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given the same phase outputs but nbf `sources` naming only `adversarial`, when the seed is derived, then it returns an empty list and reports that nbf should not run.",
+    "refined": "Seed derivation is called with the same two actionable semantic-review findings in phaseOutputs and NonBlockingFixConfig.sources = [\"adversarial-review\"] only. Assert the returned findings array has length 0 and the returned run-decision (shouldRunNonBlockingFix with the reported advisoryCount) evaluates to false, i.e. advisoryCount === 0.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given one actionable adversarial-review advisory and two actionable semantic-review advisories with both sources named, when the seed is derived, then it returns three findings.",
+    "refined": "Seed derivation is called with phaseOutputs[\"semantic-review\"] containing 2 actionable advisories and phaseOutputs[\"adversarial-review\"] containing 1 actionable advisory, NonBlockingFixConfig.sources = [\"semantic-review\", \"adversarial-review\"]. Assert the returned array has length 3 and includes all three input Finding objects (verified by id), with no additional findings.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given both reviewer advisory buckets contain a finding with the same file, line, and message and both sources are named, when the seed is derived, then it returns that finding once.",
+    "refined": "Seed derivation is called with phaseOutputs[\"semantic-review\"] and phaseOutputs[\"adversarial-review\"] each containing one Finding with identical file, line, and message fields, NonBlockingFixConfig.sources = [\"semantic-review\", \"adversarial-review\"]. Assert the returned array has length exactly 1 (deduplication by file+line+message key) and its file, line, and message match the input.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a semantic advisory whose `meta.recurrence.disposition` is `retired` and both sources are named, when the seed is derived, then it excludes that finding.",
+    "refined": "Seed derivation is called with one semantic-review advisory finding whose meta.recurrence.disposition === \"retired\" (isRecurrenceRetired returns true), NonBlockingFixConfig.sources = [\"semantic-review\", \"adversarial-review\"]. Assert the returned findings array does not contain that finding's id and has length 0 (assuming no other findings).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a semantic advisory whose `actionRequired` is `false` and both sources are named, when the seed is derived, then it excludes that finding.",
+    "refined": "Seed derivation is called with one semantic-review advisory finding with actionRequired === false, NonBlockingFixConfig.sources = [\"semantic-review\", \"adversarial-review\"]. Assert the returned findings array has length 0 and does not contain the finding's id.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given semantic-review did not run and both sources are named, when the seed is derived, then it returns the adversarial findings without an error.",
+    "refined": "Seed derivation is called with phaseOutputs lacking any \"semantic-review\" entry (undefined or absent) and a passing phaseOutputs[\"adversarial-review\"] containing 1+ actionable advisories, NonBlockingFixConfig.sources = [\"semantic-review\", \"adversarial-review\"]. Assert the call completes without throwing and the returned array contains exactly the adversarial findings (length N matching the adversarial bucket count).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given any phase output fails the phase-passed predicate, when the seed is derived, then it reports that nbf should not run regardless of advisory findings.",
+    "refined": "Seed derivation is called where at least one of the read phase outputs (semantic-review or adversarial-review, when present and named in sources) fails the phase-passed predicate (e.g. output.passed === false or status !== passed), even with actionable advisory findings present. Assert the returned run-decision is false: shouldRunNonBlockingFix(cfg, advisoryCount) === false and the reported advisoryCount is 0 (or nbf does not run).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given rectification enabled, a story id, nbf enabled with both sources, a passing semantic-review output with one actionable advisory, and a passing adversarial-review output with none, when the story is driven through the story-orchestrator phase-completion path, then the stubbed nbf runner is invoked once with the semantic finding.",
+    "refined": "Drive execution-plan.ts phase-completion path in a test harness with rectification enabled, a valid story id, NonBlockingFixConfig { enabled: true, sources: [\"semantic-review\", \"adversarial-review\"] }, a phaseOutputs[\"semantic-review\"] with passed === true and 1 actionable advisory, and a phaseOutputs[\"adversarial-review\"] with passed === true and 0 advisories, with the nbf runner stubbed via a test double. Assert the stubbed runner's mock was called exactly once (toHaveBeenCalledTimes(1)) and its findings argument contains exactly 1 finding whose id equals the semantic advisory's id.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given the prior phase-completion scenario with `sources` changed to only `adversarial`, when the story completes, then the stubbed nbf runner is not invoked.",
+    "refined": "Repeat the phase-completion test with NonBlockingFixConfig.sources = [\"adversarial-review\"] only and all other inputs identical (passing semantic-review with 1 actionable advisory, passing adversarial-review with 0). Assert the stubbed nbf runner mock was never called (toHaveBeenCalledTimes(0)) and the story still completes to the final phase without error.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given `review.blockingThreshold` is `error` and then `warning`, with a warning advisory finding in each case, when the nbf strategy set builds its implementer strategy, then both strategies use severity floor `info` and render the warning finding into rectifier input.",
+    "refined": "Given `review.blockingThreshold` is `error` and then `warning`, with a warning advisory finding in each case, when the nbf strategy set builds its implementer strategy, then both strategies use severity floor `info` and render the warning finding into rectifier input.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given a finding with `source: \"semantic-review\"` and `fixTarget: \"source\"`, when the nbf strategy set builds the autofix implementer strategy, then that strategy claims the finding.",
+    "refined": "Build the nbf strategy set (build-plan-for-strategy.ts) with a single Finding object where source === \"semantic-review\" and fixTarget === \"source\". Assert the autofix implementer strategy's claim/predicate function applied to the finding returns true (the finding is included in that strategy's claimed findings list) and that exactly one strategy claims it.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given review checks contain `semantic` but not `adversarial`, rectification enabled, a story id, nbf enabled with sources naming `semantic`, and a passing semantic-review output with one actionable advisory, when the story is driven through the story-orchestrator phase-completion path, then the stubbed nbf runner is invoked once with that finding.",
+    "refined": "Drive execution-plan.ts phase-completion path with the story config's review checks containing only \"semantic\" (no adversarial slot), rectification enabled, a valid story id, NonBlockingFixConfig { enabled: true, sources: [\"semantic-review\"] }, and a phaseOutputs[\"semantic-review\"] with passed === true and 1 actionable advisory, with the nbf runner stubbed. Assert the stubbed runner mock was called exactly once (toHaveBeenCalledTimes(1)) with a findings argument containing exactly the 1 semantic finding by id.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given the prior semantic-only review scenario with `sources` changed to only `adversarial`, when the story completes, then the stubbed nbf runner is not invoked, confirming the pass is gated by `sources` rather than by which reviewer slots the config happens to declare.",
+    "refined": "Repeat the semantic-only-review phase-completion test with NonBlockingFixConfig.sources = [\"adversarial-review\"] and all other inputs identical. Assert the stubbed nbf runner mock was never called (toHaveBeenCalledTimes(0)) and the story completes without error, demonstrating gating depends solely on sources content and not on the declared review-check slots.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given nbf is enabled with `sources` empty and a green story whose adversarial-review and semantic-review phases each produced one actionable advisory finding, when the seed is derived, then it returns no findings and reports that nbf should not run.",
+    "refined": "Seed derivation is called with phaseOutputs[\"semantic-review\"] and phaseOutputs[\"adversarial-review\"] each containing 1 actionable advisory (both phase-passed), NonBlockingFixConfig { enabled: true, sources: [] }. Assert the returned findings array has length 0 and the reported run-decision is false (shouldRunNonBlockingFix returns false because advisoryCount === 0).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given canonical rules exceed the budget and `enforceBudget` is `false`, when `StaticRulesProvider` emits its truncation warning, then the message states that sections would be truncated, names `enforceBudget`, and does not state that sections were truncated.",
+    "refined": "Given enforceBudget=false and a rule set whose droppedIds.length > 0, when StaticRulesProvider emits the truncation warning at static-rules.ts:382, then the warning message contains the substring 'would be' (indicating would-be truncation), contains the string 'enforceBudget', and does not match /truncated by static rules budget|were truncated/i. Assert via a spy on the logger capturing the warn call; also assert the message's droppedCount payload equals budgetResult.droppedIds.length.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given canonical rules exceed the budget and `enforceBudget` is `true`, when `StaticRulesProvider` emits its truncation warning, then the message is unchanged from today's text.",
+    "refined": "Given enforceBudget=true and a rule set whose droppedIds.length > 0, when StaticRulesProvider emits the truncation warning, then the captured warn message equals exactly 'Rule sections truncated by static rules budget' (current text at static-rules.ts:382) and its payload includes droppedCount equal to budgetResult.droppedIds.length — byte-identical to the pre-change enforced-mode output (assert against a snapshot or literal string comparison).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given canonical rules exceed the budget and `enforceBudget` is `false`, when `StaticRulesProvider` returns its result, then it contains one chunk per canonical rule with no section withheld.",
+    "refined": "Given enforceBudget=false and a rule set exceeding the budget (budgetResult.droppedIds.length > 0), when StaticRulesProvider returns its result, then the returned chunks array length equals the total number of canonical rules (every rule id in the canonical set appears exactly once), i.e. no section is withheld. Assert result.chunks.length === canonicalRuleCount and every canonical rule id is present in the chunk ids.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given canonical rules exceed the budget and `enforceBudget` is `false`, when `StaticRulesProvider` returns its result, then `budgetPressure.overageTokens` is non-zero and `budgetPressure.droppedCount` equals the enforcing configuration's count for the same rule set, confirming the pressure object is unchanged by this story.",
+    "refined": "Given enforceBudget=false and a rule set exceeding the budget, when StaticRulesProvider returns its result, then result.budgetPressure.overageTokens > 0 and result.budgetPressure.droppedCount > 0. When the same rule set is run with enforceBudget=true, the returned budgetPressure objects are deep-equal (assert expect(softResult.budgetPressure).toEqual(enforcedResult.budgetPressure)). The existing assertion at static-rules.test.ts:667 pinning droppedCount === 1 in soft mode remains passing.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given canonical rules fit within the budget and `enforceBudget` is `false`, when `StaticRulesProvider` runs, then it emits no truncation warning.",
+    "refined": "Given enforceBudget=false and a rule set with zero overage (budgetResult.droppedIds.length === 0 and overageTokens <= 0), when StaticRulesProvider runs, then the captured logger.warn spy records no call whose message matches /budget/i — i.e., zero budget-related warnings are emitted.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given the rule total reaches the approaching-budget threshold and `enforceBudget` is `false`, when `StaticRulesProvider` emits its approaching-budget warning, then the message names `enforceBudget` and does not assert that any section was dropped.",
+    "refined": "Given enforceBudget=false and a rule set whose token total reaches the approaching-budget threshold (triggering the warning at static-rules.ts:373), when StaticRulesProvider emits its approaching-budget warning, then the captured warn message contains the string 'enforceBudget' and does not match /dropped|truncated|exceeding/i as an assertion of actual truncation (i.e., the 'exceeding' variant wording no longer asserts rules exceeded the budget as fact); the warning's droppedCount payload remains budgetResult.droppedIds.length.",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]
