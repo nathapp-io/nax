@@ -30,7 +30,7 @@ export interface AdapterFailure {
   /**
    * Machine-readable outcome code.
    * availability: fail-quota | fail-service-down | fail-auth | fail-rate-limit | fail-aborted | fail-stale
-   * quality:      fail-timeout | fail-adapter-error | fail-quality | fail-unknown
+   * quality:      fail-timeout | fail-adapter-error | fail-quality | fail-unknown | fail-spin
    *
    * `fail-aborted` — the run was cancelled via AgentRunOptions.abortSignal
    * (shutdown in progress). Not retriable; fallback chains should not fire.
@@ -38,6 +38,12 @@ export interface AdapterFailure {
    * within the configured idle timeout, or (b) the agent finished cleanly with empty
    * output. The `reason` field distinguishes: "idle-watchdog" vs "empty-output".
    * Retriable up to maxRetryAttempts.
+   * `fail-spin` — the spin breaker ended the turn: the model kept issuing tool
+   * calls whose shape it had already issued, with no new work between them
+   * (nax#2013). Distinct from `fail-timeout` on purpose — both mean "no usable
+   * answer within the budget", but only this one is measurable as a spin, and
+   * #2013 exists because the failure mode was invisible. Retriable: the retry
+   * opens a fresh session, so the repetition is not carried forward.
    */
   outcome:
     | "fail-quota"
@@ -49,7 +55,8 @@ export interface AdapterFailure {
     | "fail-timeout"
     | "fail-adapter-error"
     | "fail-quality"
-    | "fail-unknown";
+    | "fail-unknown"
+    | "fail-spin";
   /** Human-readable description (≤500 chars) for the failure-note chunk */
   message: string;
   /** True when the same agent/tier could succeed on immediate retry */

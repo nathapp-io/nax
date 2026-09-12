@@ -229,6 +229,17 @@ export interface TurnResult {
    * the wiring layer does (see operations/turn-failure-classification.ts).
    */
   turnIncomplete?: boolean;
+  /**
+   * Transport fact: the loop returned because the spin breaker stopped it —
+   * the model kept issuing calls whose shape it had already issued, with no
+   * new work between them (nax#2013).
+   *
+   * Like `timedOut` and `turnIncomplete`, the adapter never classifies WHY; the
+   * wiring layer maps it to the `fail-spin` policy outcome
+   * (operations/call-hop-output.ts). A spin-stopped turn also sets
+   * `turnIncomplete`, since work the model asked for was left unexecuted.
+   */
+  spinStopped?: true;
 }
 
 /**

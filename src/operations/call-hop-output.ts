@@ -38,6 +38,27 @@ export async function normalizeHopOutput(
       effective = { ...turn, output: fileContent };
     }
   }
+  // Checked before the output branches: a spun turn almost always HAS prose
+  // (the model narrating the re-runs), so an output-first check would classify
+  // it as a clean success — the same defect that hid truncated turns. A
+  // producer's own failure still wins, matching classifyEmptyOutputFailure.
+  if (effective.spinStopped === true && effective.adapterFailure === undefined) {
+    getSafeLogger()?.warn("callop", "Spin breaker ended the turn", {
+      storyId: ctx.storyId,
+      opName: ctx.opName,
+      agentName: ctx.dispatchAgent,
+    });
+    return {
+      ...effective,
+      adapterFailure: {
+        category: "quality",
+        outcome: "fail-spin",
+        retriable: true,
+        message: "[callOp] spin breaker ended the turn: repeated tool calls with no progress",
+        reason: "spin-breaker",
+      },
+    };
+  }
   if (!effective.output?.trim()) {
     const failure = classifyEmptyOutputFailure(effective);
     if (failure) return { ...effective, adapterFailure: failure };
