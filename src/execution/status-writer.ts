@@ -85,6 +85,22 @@ export class StatusWriter {
    */
   private _mutex: Promise<void> = Promise.resolve();
 
+  /**
+   * The latest run total passed to update() — monotonic (never regresses).
+   *
+   * #2006 companion: the crash handlers read the runner's `getTotalCost()`,
+   * whose local is assigned only after the whole execution phase returns —
+   * so a SIGINT-terminated run used to write `run.complete` with
+   * `totalCost: 0`. Every story boundary hands the reconciled run total to
+   * update(); retaining it gives the runner's getter a live reading.
+   */
+  private _lastTotalCost = 0;
+
+  /** Latest reconciled run total seen by update(); 0 before the first call. */
+  get lastTotalCost(): number {
+    return this._lastTotalCost;
+  }
+
   constructor(statusFile: string, config: NaxConfig, ctx: StatusWriterContext) {
     this.statusFile = statusFile;
     this.costLimit = config.execution.costLimit === Number.POSITIVE_INFINITY ? null : config.execution.costLimit;
@@ -218,6 +234,9 @@ export class StatusWriter {
    */
   async update(totalCost: number, iterations: number, overrides: Partial<RunStateSnapshot> = {}): Promise<void> {
     if (!this._prd) return;
+    // Monotonic retention — a lower total is a stale reading (e.g. an
+    // accumulator that has not yet absorbed the aggregator), not a refund.
+    if (totalCost > this._lastTotalCost) this._lastTotalCost = totalCost;
     // Serialize: chain onto the tail of _mutex. The call to _doUpdate is
     // deferred inside the .then()/.catch() callbacks so it does not start
     // running (and does not touch the shared .tmp file) until prior writes

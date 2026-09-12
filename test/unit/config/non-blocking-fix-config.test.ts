@@ -350,4 +350,34 @@ describe("migrateLegacyNonBlockingFix — AC9 (end-to-end wiring via loadConfig)
     expect(nbfWarnings).toHaveLength(1);
     expect(nbfWarnings[0]).toContain("review.nonBlockingFix");
   });
+
+  test("CFG-1: legacy key in BOTH global and project layers emits exactly one warning (per-load dedupe)", async () => {
+    // The dedupe (compat-shims.ts `createConfigWarnDedupe`) is shared across
+    // every layer of ONE load call. Two layers carrying the same legacy key
+    // must be reported once — otherwise "migrate your config" reads like
+    // "migrate your two configs" for what is one finding.
+    mkdirSync(join(tempDir, ".global-nax"), { recursive: true });
+    await Bun.write(
+      join(tempDir, ".global-nax", "config.json"),
+      JSON.stringify({ review: { adversarial: { nonBlockingFix: { enabled: true } } } }),
+    );
+    await writeProjectConfig({
+      review: {
+        adversarial: {
+          nonBlockingFix: { enabled: false, scope: "source", regressionAttempts: 1 },
+        },
+      },
+    });
+
+    const warnings = await captureLoadWarnings(() => loadConfig(tempDir));
+
+    // Later layer wins: project's migrated value is the resolved one.
+    const config = await loadConfig(tempDir);
+    expect(config.review?.nonBlockingFix?.enabled).toBe(false);
+    expect(probe(config.review?.adversarial, ["nonBlockingFix"])).toBeUndefined();
+
+    const nbfWarnings = warnings.filter((m) => m.includes("review.adversarial.nonBlockingFix"));
+    expect(nbfWarnings).toHaveLength(1);
+    expect(nbfWarnings[0]).toContain("review.nonBlockingFix");
+  });
 });

@@ -298,10 +298,30 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       emitError: (reason: string) => {
         pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
       },
-      onShutdown: async () => {
+      onShutdown: async (abortSignal?: AbortSignal) => {
         // force=true: signal-driven shutdown must hard-terminate daemons (acpx stop)
         // regardless of session state to prevent orphaned acpx/claude/opencode processes.
-        await closeAllRunSessions(sessionManager, options.agentGetFn, { force: true });
+        await closeAllRunSessions(sessionManager, options.agentGetFn, { force: true, signal: abortSignal });
+        // #2014: drain the run's ledgers on the signal path too. runtime.close()
+        // is the only caller of costAggregator.drain() (plus the prompt/review
+        // auditor flushes) — without this, a Ctrl+C-terminated run exits with
+        // the whole run's spend still in memory: no cost/<runId>.jsonl at all.
+        // Sessions close first (the killAll() sweep after performTeardown's
+        // onShutdown needs the PIDs those spawns registered); the drain runs
+        // last because it only writes buffered JSONL and has no live
+        // dependencies. Bounded by FATAL_TEARDOWN_DEADLINE_MS, armed before
+        // performTeardown — a wedged drain cannot defeat Ctrl+C.
+        // Idempotent: the normal-path finally also calls runtime.close().
+        // SIG-1: a failed close here would lose the ledger silently — the
+        // swallow stays (the teardown deadline must win over a wedged flush),
+        // but the failure becomes auditable.
+        await runtime.close().catch((err) => {
+          getSafeLogger()?.warn(
+            "run-setup",
+            "Signal-path runtime close failed — cost/prompt/review ledgers may not have been drained",
+            { error: errorMessage(err) },
+          );
+        });
       },
     });
 

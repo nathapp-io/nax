@@ -7,11 +7,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import {
+  assertDefined,
+  makeDispatchContext,
+  makeMockRuntime,
+  makePluginRegistry,
+  makeStatusWriter,
+} from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { InteractionConfig } from "@/config/runtime-types";
 import { stopHeartbeat } from "@/execution/crash-recovery";
-import type { SequentialExecutionContext } from "@/execution/unified-executor";
+import { _unifiedExecutorDeps, executeUnified, type SequentialExecutionContext } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction";
 import { InteractionChain } from "@/interaction";
@@ -178,8 +184,8 @@ describe("AC-7 — cost-limit exit after parallel batch (runtime)", () => {
         },
       },
     };
+    const result = await executeUnified(ctx, prd);
 
-    const result = await executeUnified(ctx, prd).catch(() => ({ exitReason: "error" }) as { exitReason: string });
     expect(result.exitReason).not.toBe("cost-limit");
   });
 });
@@ -616,5 +622,78 @@ describe("BUG-7 — pre-dispatch cost gate on the parallel batch path", () => {
 
     expect(result.exitReason).not.toBe("cost-limit");
     expect(runParallelBatchMock).toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #2006 — the run total must reconcile with the cost aggregator at the batch
+// boundary. batchResult.totalCost sums only the orchestrator's phaseCosts, so
+// spend the orchestrator structurally cannot see (pre-run pipeline dispatches
+// tagged with the storyId, failed-dispatch spend) is invisible to the
+// accumulator the statusWriter and the crash path report — while the budget
+// guard already reads the aggregator. One number, everywhere.
+// ---------------------------------------------------------------------------
+
+describe("#2006 — run total reconciles with the cost aggregator at the batch boundary", () => {
+  let origRunParallelBatch: typeof _unifiedExecutorDeps.runParallelBatch;
+  let origSelectIndependentBatch: typeof _unifiedExecutorDeps.selectIndependentBatch;
+
+  beforeEach(() => {
+    origRunParallelBatch = _unifiedExecutorDeps.runParallelBatch;
+    origSelectIndependentBatch = _unifiedExecutorDeps.selectIndependentBatch;
+  });
+
+  afterEach(() => {
+    _unifiedExecutorDeps.runParallelBatch = origRunParallelBatch;
+    _unifiedExecutorDeps.selectIndependentBatch = origSelectIndependentBatch;
+    mock.restore();
+  });
+
+  test("result.totalCost and the statusWriter read the reconciled total, not the batch sum alone", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    _unifiedExecutorDeps.selectIndependentBatch = mock(() => [
+      story1,
+      story2,
+    ]) as typeof _unifiedExecutorDeps.selectIndependentBatch;
+    _unifiedExecutorDeps.runParallelBatch = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>([
+        [story1.id, 1],
+        [story2.id, 1],
+      ]),
+      // Orchestrator's phaseCosts sum — misses pre-run pipeline spend.
+      totalCost: 2,
+    })) as typeof _unifiedExecutorDeps.runParallelBatch;
+
+    const prd = makePrd([story1, story2]);
+    const statusWriter = makeStatusWriter();
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      statusWriter,
+      config: {
+        ...baseCtx.config,
+        execution: { ...baseCtx.config.execution, costLimit: 100, maxIterations: 1 },
+      },
+      runtime: {
+        ...baseCtx.runtime,
+        costAggregator: {
+          ...baseCtx.runtime.costAggregator,
+          snapshot: () => ({ ...baseCtx.runtime.costAggregator.snapshot(), totalCostUsd: 6 }),
+        },
+      },
+    };
+
+    const result = await executeUnified(ctx, prd);
+
+    expect(result.exitReason).not.toBe("cost-limit");
+    expect(result.totalCost).toBe(6);
+    const lastUpdate = statusWriter.update.mock.calls.at(-1);
+    assertDefined(lastUpdate, "statusWriter.update call");
+    expect(lastUpdate[0]).toBe(6);
   });
 });

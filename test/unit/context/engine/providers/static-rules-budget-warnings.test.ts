@@ -60,7 +60,8 @@ describe("StaticRulesProvider budget warnings — US-003", () => {
     const message = calls.find((call) => call.message.includes("Rule sections"))?.message;
     expect(message).toMatch(/would be truncated/i);
     expect(message).not.toMatch(/were truncated/i);
-    expect(message).toContain("enforceBudget");
+    // MSG-1 — the message names the real config path, not a bare knob name.
+    expect(message).toContain("context.v2.rules.enforceBudget");
   });
 
   test("AC2: enforced-budget truncation warning retains its existing wording", async () => {
@@ -90,7 +91,7 @@ describe("StaticRulesProvider budget warnings — US-003", () => {
     );
 
     const message = calls.find((call) => call.message.includes("approaching"))?.message;
-    expect(message).toContain("enforceBudget");
+    expect(message).toContain("context.v2.rules.enforceBudget");
     expect(message).not.toMatch(/were truncated|were dropped/i);
   });
 });

@@ -548,7 +548,9 @@ export class ExecutionPlan {
     const summary: Record<string, unknown> = {
       storyId: this.ctx.storyId,
       success,
-      totalCostUsd,
+      // #2006: sum of the phases the orchestrator ran — not the story total
+      // (see storySpendUsd); the two are different accounting bases, not a bug.
+      orchestratedCostUsd: totalCostUsd,
       durationMs,
       phaseCount: Object.keys(phaseOutputs).length,
       failedPhases: failedPhases.length > 0 ? failedPhases : undefined,

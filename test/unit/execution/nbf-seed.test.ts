@@ -480,3 +480,62 @@ describe("deriveNbfSeed — AC4 dedup key boundary", () => {
     expect(seed.findings[0]?.message).toBe("shared-msg");
   });
 });
+
+// NBF-1 — the boundary guard must drop content-less entries (a `source`
+// alone) so the fix pass never burns a session over a finding that names
+// no defect. The guard is the last line of defence before the rectifier
+// prompt builders; it must narrow, not pass anything through.
+describe("deriveNbfSeed — NBF-1: shape guard drops content-less findings", () => {
+  test("a finding with a source but no message is dropped, not seeded", () => {
+    // Deliberately outside the Finding type: the seed boundary sees raw
+    // phase outputs, and the guard exists precisely for malformed entries.
+    // (Inlined envelope kept untyped so the malformed entry needs no cast.)
+    const contentLess = { source: "adversarial-review" };
+    const real = adversarial({ message: "real advisory" });
+    const seed = deriveNbfSeed({
+      phaseOutputs: {
+        "adversarial-review": {
+          success: true,
+          passed: true,
+          advisoryFindings: [contentLess, real],
+        },
+      },
+      sources: ["adversarial"],
+      storyId: "US-002",
+    });
+    expect(seed.findings.map((f) => f.message)).toEqual(["real advisory"]);
+    expect(seed.shouldRun).toBe(true);
+  });
+
+  test("an empty-string message is dropped with the same guard", () => {
+    const blank = adversarial({ message: "" });
+    const seed = deriveNbfSeed({
+      phaseOutputs: bothReviewsPassed({ adversarial: [blank] }),
+      sources: ["adversarial"],
+      storyId: "US-002",
+    });
+    expect(seed.findings).toHaveLength(0);
+    expect(seed.shouldRun).toBe(false);
+  });
+
+  test("an all-content-less bucket closes nbf rather than seeding an empty pass", () => {
+    const seed = deriveNbfSeed({
+      phaseOutputs: {
+        "adversarial-review": {
+          success: true,
+          passed: true,
+          advisoryFindings: [{ source: "adversarial-review" }],
+        },
+        "semantic-review": {
+          success: true,
+          passed: true,
+          advisoryFindings: [{ source: "semantic-review" }],
+        },
+      },
+      sources: ["adversarial", "semantic"],
+      storyId: "US-002",
+    });
+    expect(seed.findings).toHaveLength(0);
+    expect(seed.shouldRun).toBe(false);
+  });
+});
