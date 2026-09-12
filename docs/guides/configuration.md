@@ -78,7 +78,7 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.acp.promptRetries` | `0` | ACP only. Becomes acpx's `--prompt-retries`; the retry runs inside the spawned agent process. |
 | `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
 | `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
-| `agent.native.catalogOverrides` | `[]` | Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot. Provider-scoped; each entry is a **complete** record — `id`, `protocol`, `contextWindow`, optional `maxTokens`, `supportsTools`, `thinkingLevels`, and `pricing` in nax-ai's `input`/`output`/`cacheRead`/`cacheWrite` per-1M vocabulary. Applied below every pin route (tier entries, literal `{agent, model}` pins, fallback rungs). The client is built once per process, so keep one list. See [nax-ai surface](../architecture/nax-ai-surface.md#context-window). |
+| `agent.native.catalogOverrides` | `[]` | Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot. Provider-scoped; each entry is a **complete** record — `id`, `protocol`, `contextWindow`, optional `maxTokens`, `supportsTools`, `thinkingLevels`, and `pricing` in nax-ai's `input`/`output`/`cacheRead`/`cacheWrite` per-1M vocabulary. An entry may also carry provider-wide `baseUrl` and `headers` (nax#2019) — see the warning below. Applied below every pin route (tier entries, literal `{agent, model}` pins, fallback rungs). The client is built once per process, so keep one list. See [nax-ai surface](../architecture/nax-ai-surface.md#context-window). |
 
 **Scope — what this controls.** Only the *availability* retry layer (auth / 429 / service down). Transport retries (broken socket, stale session) stay on the same agent inside the adapter. Agent-internal retries (a stalled stream or a 502/503 inside one call) stay on the same agent too, in the spawned agent process on ACP and in the native turn loop on native — see `agent.acp.promptRetries` and `agent.native.transportRetry` above. Payload-shape retries (JSON parse fail) stay on the same agent inside the caller. See [Agents — How fallback works](agents.md#how-fallback-works) for the full split.
 
@@ -114,6 +114,44 @@ The override must amend a provider the bundled catalog already carries and use a
 protocol that provider already has a model on; an entry that tries to introduce a
 new provider fails with a clear error when the first request lazily constructs the
 protocol, before any provider request is sent.
+
+**Redirecting a provider to a proxy or gateway (nax#2019).** An override entry may
+also carry provider-wide `baseUrl` and `headers`:
+
+```json
+"catalogOverrides": [{
+  "provider": "openrouter",
+  "baseUrl": "http://127.0.0.1:8080/v1",
+  "headers": { "X-Route": "pinned" },
+  "models": [{ "...": "as above" }]
+}]
+```
+
+Three things about these two fields differ from everything else in the block, and
+each has bitten someone:
+
+- **They are PROVIDER-wide, not per model**, despite sitting beside a model list.
+  A `baseUrl` redirects *every* model of that provider, **including ones from the
+  bundled catalog that the override does not mention**. Declaring one throwaway
+  model id is enough to reroute a model you actually dispatch. Put either field on
+  a `models[]` entry and the load fails — that spelling is rejected on purpose.
+- **`headers` REPLACES, it does not merge.** nax-ai applies
+  `override.headers ?? provider.headers`, so adding one diagnostic header deletes
+  every header the bundled provider carried. There is no merge syntax; omit the
+  key to leave them alone. An empty `{}` is rejected, because it would read as
+  "this provider now has no headers" rather than as a no-op.
+- **A redirect carries your credential.** Auth is resolved from the provider *name*
+  with no reference to the destination host, so the stored credential for that
+  provider is sent to whatever `baseUrl` names. Therefore `baseUrl` must be `https`
+  (plain `http` is accepted only for `localhost`/`127.0.0.1`, where nothing leaves
+  the machine), and a URL embedding `user:password@` is rejected. A precheck
+  warning names the provider and the host on every run that has a redirect
+  configured — if you see one you did not intend, treat the config as untrusted.
+  Remember `.nax/config.json` is usually committed, so a redirect can arrive with
+  a cloned repo or a pull request.
+
+`headers` values are masked in `nax config` and `nax config profile show`; header
+names and `baseUrl` stay readable so a misrouted request is still diagnosable.
 
 Select it with an ordinary `{ agent, model }` pin — native reads provider and model
 from the model **string**, so the declared id is the whole address:

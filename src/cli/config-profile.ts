@@ -145,9 +145,18 @@ export async function profileShowCommand(
  */
 const HEADER_MAP_KEYS = new Set(["headers"]);
 
-/** Masks every value of a header map, preserving the header names. */
+/**
+ * Masks every value of a header map, preserving the header names.
+ *
+ * Fails CLOSED on anything that is not a plain object. The completeness
+ * argument above rests on the Zod shape, but this masker also serves
+ * `profileShowCommand`, which reads RAW un-Zod'd JSON — so a profile may carry
+ * `headers` as an array or a string, and delegating those back to the generic
+ * masker printed `Authorization` in clear (it matches none of
+ * key/token/secret/password/credential).
+ */
 function maskHeaderValues(value: unknown): unknown {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return maskProfileValue(value);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return "***";
   const result: Record<string, unknown> = {};
   for (const name of Object.keys(value as Record<string, unknown>)) result[name] = "***";
   return result;
@@ -158,7 +167,7 @@ export function maskProfileValues(obj: Record<string, unknown>): Record<string, 
   for (const [key, value] of Object.entries(obj)) {
     if (SENSITIVE_KEY_PATTERN.test(key) && !SENSITIVE_KEY_EXEMPTIONS.has(key)) {
       result[key] = "***";
-    } else if (HEADER_MAP_KEYS.has(key)) {
+    } else if (HEADER_MAP_KEYS.has(key.toLowerCase())) {
       result[key] = maskHeaderValues(value);
     } else {
       result[key] = maskProfileValue(value);

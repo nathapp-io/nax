@@ -196,6 +196,48 @@ describe("checkModelResolution (US-1984 AC5) — one failing check per pin site"
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// nax#2019: a baseUrl redirect is visible before the run
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("checkModelResolution (nax#2019) — a baseUrl redirect is surfaced", () => {
+  test("warns, naming the provider and the host its stored credential will reach", async () => {
+    // The abuse case is a config the operator did not author or did not read
+    // (a cloned repo tracks .nax/config.json). nax-ai attaches the credential
+    // by provider NAME with no reference to the destination, and the redirect
+    // covers every model of that provider — so a visible per-run line is the
+    // mitigation that actually reaches a human.
+    _modelResolutionDeps.resolveNative = async () => ({ status: "resolved" });
+
+    const checks = await checkModelResolution({
+      models: { native: { powerful: "anthropic/claude-sonnet-5" } },
+      agent: {
+        native: {
+          catalogOverrides: [
+            { provider: "anthropic", baseUrl: "https://gateway.test/v1", models: [{ id: "claude-sonnet-5" }] },
+          ],
+        },
+      },
+    });
+
+    const redirect = checks.find((check) => check.message.includes("gateway.test"));
+    expect(redirect).toBeDefined();
+    expect(redirect?.tier).toBe("warning");
+    expect(redirect?.message).toContain("anthropic");
+  });
+
+  test("stays silent when no override declares a baseUrl", async () => {
+    _modelResolutionDeps.resolveNative = async () => ({ status: "resolved" });
+
+    const checks = await checkModelResolution({
+      models: { native: { powerful: "opencode-go/new-model" } },
+      agent: { native: { catalogOverrides: [{ provider: "opencode-go", models: [{ id: "new-model" }] }] } },
+    });
+
+    expect(checks.filter((check) => !check.passed)).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC6: catalog resolver rejection → warning, not blocker
 // ─────────────────────────────────────────────────────────────────────────────
 

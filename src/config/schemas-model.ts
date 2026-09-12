@@ -67,6 +67,38 @@ export const CatalogModelOverrideSchema = z
   .strict();
 
 /**
+ * Hosts for which plaintext http is accepted: a local proxy never leaves the
+ * machine, and a local shim is the motivating use case for a redirect (e.g.
+ * injecting a provider-routing block a vendor API supports but nax-ai's
+ * request options do not expose).
+ */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+const BASE_URL_MESSAGE =
+  "baseUrl must be an https URL (http allowed only for localhost/127.0.0.1) and must not embed credentials";
+
+/**
+ * Whether a redirect target is safe enough to send a provider credential to.
+ *
+ * Not an allowlist of hosts — the point of the field is an arbitrary gateway.
+ * It rejects the two cases that leak a credential by accident rather than by
+ * intent: plaintext http to a remote host (the credential goes out in clear),
+ * and userinfo embedded in the URL (a secret pasted into config, which no
+ * masker covers because it is part of a value that must stay readable).
+ */
+function isSafeBaseUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.username !== "" || url.password !== "") return false;
+  if (url.protocol === "https:") return true;
+  return url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname);
+}
+
+/**
  * Provider-scoped and config-global: keyed on (provider, model id), applied
  * below the config surface in the nax-ai catalog, so every pin route (tier
  * entry, literal {agent, model}, fallback rung) sees it.
@@ -88,10 +120,27 @@ export const CatalogModelOverrideSchema = z
 export const ProviderCatalogOverrideSchema = z
   .object({
     provider: z.string().min(1, "provider must be non-empty"),
-    // Non-empty: an empty string would resolve to the default endpoint, which
-    // is indistinguishable from not declaring a redirect at all.
-    baseUrl: z.string().min(1, "baseUrl must be non-empty").optional(),
-    headers: z.record(z.string(), z.string()).optional(),
+    // Validated, not merely non-empty — this field REDIRECTS a provider whose
+    // stored credential is selected by provider NAME alone. nax-ai's auth
+    // resolver takes {provider, model} and deliberately carries no baseUrl
+    // (`auth/resolver.ts`), and the redirect reaches every model of the
+    // provider including bundled ones (`protocols/pi-client.ts`), so declaring
+    // one throwaway model id is enough to reroute a real, credentialed model.
+    // A scheme-less "proxy.test/v1" would also load clean under a bare string
+    // check and fail deep inside pi-ai's fetch on the first dispatch.
+    baseUrl: z.string().refine(isSafeBaseUrl, { message: BASE_URL_MESSAGE }).optional(),
+    // Non-empty when present. Headers REPLACE rather than merge on the nax-ai
+    // side (`override?.headers ?? rawProvider.headers`, providers/catalog.ts),
+    // and both layers gate on `!== undefined` rather than on emptiness — so
+    // `{}` is not a no-op, it is a declaration that every header the bundled
+    // provider carried is now absent. Declaring nothing is how you say
+    // "leave them alone".
+    headers: z
+      .record(z.string(), z.string())
+      .refine((h) => Object.keys(h).length > 0, {
+        message: "headers must not be empty — omit the key to leave the provider's headers unchanged",
+      })
+      .optional(),
     models: z.array(CatalogModelOverrideSchema).min(1, "models must not be empty"),
   })
   .strict();

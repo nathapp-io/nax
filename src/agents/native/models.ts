@@ -144,7 +144,11 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
     // `!== undefined` as a declaration and checks it against the protocol
     // entries (nax#2019).
     ...(override.baseUrl !== undefined ? { baseUrl: override.baseUrl } : {}),
-    ...(override.headers !== undefined ? { headers: override.headers } : {}),
+    // Copied, not aliased: nax-ai's client catalog assigns this reference
+    // straight onto ResolvedProvider.headers (providers/catalog.ts) without a
+    // copy of its own, so forwarding the live config object would let a later
+    // mutation reach an already-built client.
+    ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
     models: override.models.map((model) => ({
       id: model.id,
       provider: override.provider,

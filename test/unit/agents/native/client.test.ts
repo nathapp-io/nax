@@ -201,7 +201,8 @@ describe("catalog overrides", () => {
       await client.complete(model, { messages: [{ role: "user", content: "hi" }] }).catch(() => undefined);
     } finally {
       globalThis.fetch = realFetch;
-      process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+      if (originalGlobalDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+      else process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
       _resetCredentialStore();
       cleanupTempDir(dir);
     }

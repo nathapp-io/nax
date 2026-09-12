@@ -86,6 +86,57 @@ describe("agent.native.catalogOverrides", () => {
       expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl: "" }] })).toThrow();
     });
 
+    test("rejects an empty headers map, which would WIPE the provider's bundled headers", () => {
+      // Worse than the empty-baseUrl case, which is merely indistinguishable
+      // from silence. nax-ai gates on `!== undefined`, not on emptiness, and
+      // headers REPLACE rather than merge (nax-ai providers/catalog.ts:74
+      // `override?.headers ?? rawProvider.headers`, protocols/pi-client.ts),
+      // so `{}` is a declaration that every bundled header is now absent.
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, headers: {} }] })).toThrow();
+    });
+
+    test("rejects a baseUrl that is not a parseable URL", () => {
+      // `.url()` matches the repo's precedent for endpoints
+      // (schemas-reporters.ts). A scheme-less host loads clean under a bare
+      // string check and then fails deep inside pi-ai's fetch on the first
+      // dispatch, which is the opaque-late-failure this schema exists to avoid.
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl: "proxy.test/v1" }] })).toThrow();
+    });
+
+    test.each([
+      ["a plaintext http scheme", "http://gateway.test/v1"],
+      ["userinfo credentials in the URL", "https://user:tok@gateway.test/v1"],
+      ["a non-http scheme", "file:///etc/passwd"],
+    ])("rejects %s", (_label, baseUrl) => {
+      // baseUrl redirects a provider whose stored credential is attached by
+      // PROVIDER NAME alone — nax-ai's auth resolver takes {provider, model}
+      // and deliberately carries no baseUrl (nax-ai auth/resolver.ts), and the
+      // redirect applies to every model of that provider including bundled
+      // ones (protocols/pi-client.ts). So a bad baseUrl sends a real
+      // credential somewhere unintended. https keeps it off the plaintext
+      // wire; userinfo in a URL is a credential in config by accident.
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl }] })).toThrow();
+    });
+
+    test.each([
+      ["https", "https://gateway.test/v1"],
+      ["http on loopback, for a local proxy", "http://127.0.0.1:8080/v1"],
+      ["http on localhost, for a local proxy", "http://localhost:8080/v1"],
+    ])("accepts %s", (_label, baseUrl) => {
+      // A local shim is the motivating use case (injecting an OpenRouter
+      // provider block), and loopback never leaves the machine.
+      const config = parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl }] });
+      expect(config.agent?.native?.catalogOverrides?.[0]?.baseUrl).toBe(baseUrl);
+    });
+
+    test("rejects baseUrl placed on a MODEL entry, where an operator will misplace it", () => {
+      // The real misplacement risk, given the field sits next to a model list
+      // but applies provider-wide. CatalogModelOverrideSchema is .strict(), so
+      // this must fail rather than be stripped and silently ignored.
+      const model = { ...VALID_OVERRIDE.models[0], baseUrl: "https://proxy.test/v1" };
+      expect(() => parseNative({ catalogOverrides: [{ provider: "opencode-go", models: [model] }] })).toThrow();
+    });
+
     test("rejects a non-string header value instead of coercing it", () => {
       const override = { ...VALID_OVERRIDE, headers: { "X-Retries": 3 } };
       expect(() => parseNative({ catalogOverrides: [override] })).toThrow();
