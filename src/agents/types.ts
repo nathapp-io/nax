@@ -168,6 +168,8 @@ export interface AgentRunOptions {
   codingToolRuntime?: import("@/tools").CodingToolRuntime;
   /** Tools this operation declared; resolveDeclaredTools() has already applied the default. */
   declaredTools?: readonly import("@/tools").CodingToolName[];
+  /** Per-tool narrowing from the op's `toolPatterns`; applied to the resolved grants. */
+  toolPatterns?: import("@/tools").ToolPatternNarrowing;
   /**
    * Permitted root for coding tools.
    *

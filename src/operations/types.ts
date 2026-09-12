@@ -258,6 +258,12 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
    */
   readonly tools?: readonly CodingToolName[];
   /**
+   * Per-tool path globs this op is held to, narrowing — never widening — the
+   * grants its permission profile resolved. `{ Write: [".nax-x.json"] }` means
+   * "this role may write, but only that file". See src/tools/narrow-grants.ts.
+   */
+  readonly toolPatterns?: import("../tools").ToolPatternNarrowing;
+  /**
    * Optional resolver for whether the session should remain open after the
    * turn. When omitted, callOp derives this from `session.lifetime`
    * (`warm` => keepOpen, `fresh` => close after turn).
