@@ -1,9 +1,11 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { verifierOp } from "@/operations";
+import { VERDICT_FILE } from "@/tdd";
 import { _codingToolDeps } from "@/tools";
 import { gitWithTimeout } from "@/utils/git";
 
@@ -265,5 +267,53 @@ describe("buildCodingToolSupport — declared-command seam and audit sink", () =
       sessionName: "s1",
     });
     expect(support?.auditSink).toBeDefined();
+  });
+});
+
+/**
+ * End-to-end proof that an op's `toolPatterns` actually reach the compiled
+ * policy at dispatch time (nax#2013) -- not just that `narrowGrants` behaves
+ * correctly in isolation, and not just that `verifierOp.tools` /
+ * `verifierOp.toolPatterns` hold the right literals. Exercises the real seam
+ * (`buildCodingToolSupport` -> `narrowGrants` -> `compileToolPolicy`) under an
+ * `unrestricted`-shaped grant set (`["*"]`), the exact shape that would hide a
+ * dropped forwarding: a permit-only assertion would still pass if
+ * `toolPatterns` were silently ignored, so the refusal case is load-bearing.
+ */
+describe("buildCodingToolSupport — toolPatterns reaches the compiled policy (nax#2013)", () => {
+  let verifierRoot: string;
+
+  beforeEach(() => {
+    verifierRoot = makeTempDir("nax-verifier-toolpatterns-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(verifierRoot);
+  });
+
+  function buildVerifierSupport() {
+    const unrestrictedGrants = verifierOp.tools?.map((tool) => ({ tool, patterns: ["*"] })) ?? [];
+    return buildCodingToolSupport({
+      root: verifierRoot,
+      grants: unrestrictedGrants,
+      declared: verifierOp.tools ?? [],
+      toolPatterns: verifierOp.toolPatterns,
+    });
+  }
+
+  test("permits a write to the verdict file", async () => {
+    const support = buildVerifierSupport();
+
+    const outcome = await support?.runtime.callTool("Write", { path: VERDICT_FILE, content: "{}" });
+
+    expect(outcome?.kind).toBe("ok");
+  });
+
+  test("refuses a write to any other path -- the half a dropped forwarding would not catch", async () => {
+    const support = buildVerifierSupport();
+
+    const outcome = await support?.runtime.callTool("Write", { path: "src/index.ts", content: "// nope" });
+
+    expect(outcome?.kind).toBe("denied");
   });
 });

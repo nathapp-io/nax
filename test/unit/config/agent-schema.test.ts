@@ -296,4 +296,37 @@ describe("AgentConfigSchema", () => {
   test("agent.native.transportRetry rejects a non-positive baseDelayMs", () => {
     expect(() => NaxConfigSchema.parse({ agent: { native: { transportRetry: { baseDelayMs: 0 } } } })).toThrow();
   });
+
+  // nax#2013: the .refine() is what stops a misconfigured breaker from ending
+  // every turn with no warning ever reaching the model. It fails silently if
+  // broken, so it needs its own regression coverage at the real config
+  // boundary (NaxConfigSchema), not just a hand check against the sub-schema.
+  test("agent.spinBreaker rejects stopAfterRepeats at or below nudgeAfterRepeats", () => {
+    const result = NaxConfigSchema.safeParse({
+      agent: { spinBreaker: { nudgeAfterRepeats: 40, stopAfterRepeats: 30 } },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.path.includes("stopAfterRepeats"));
+    expect(issue).toBeDefined();
+    expect(issue?.message).toBe("agent.spinBreaker.stopAfterRepeats must be greater than nudgeAfterRepeats");
+  });
+
+  test("agent.spinBreaker accepts a valid nudge/stop pairing", () => {
+    const result = NaxConfigSchema.safeParse({
+      agent: { spinBreaker: { nudgeAfterRepeats: 25, stopAfterRepeats: 50 } },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("agent.spinBreaker applies all five documented defaults from an empty config", () => {
+    const result = NaxConfigSchema.parse({});
+    expect(result.agent?.spinBreaker).toEqual({
+      enabled: true,
+      nudgeAfterRepeats: 25,
+      maxNudges: 3,
+      stopAfterRepeats: 50,
+      recentKeyWindow: 64,
+    });
+  });
 });

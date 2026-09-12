@@ -78,6 +78,14 @@ export { _promptAuditorDeps, createNoOpPromptAuditor, PromptAuditor } from "./pr
 export { formatSessionName } from "./session-name";
 export type { CanonicalSessionRole, SessionRole } from "./session-role";
 export { isSessionRole, KNOWN_SESSION_ROLES } from "./session-role";
+export {
+  createSpinBreaker,
+  DEFAULT_SPIN_BREAKER_SETTINGS,
+  type ResolvedSpinBreakerSettings,
+  type SpinBreaker,
+  type SpinSummary,
+  type SpinVerdict,
+} from "./spin-breaker";
 
 import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";

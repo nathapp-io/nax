@@ -20,8 +20,10 @@ import {
   createRunCommandTool,
   createToolAuditSink,
   EXEC_TOOL_NAME,
+  narrowGrants,
   type ToolAuditSink,
   type ToolGrant,
+  type ToolPatternNarrowing,
 } from "@/tools";
 import { toolAuditDir } from "../config/paths";
 import { resolvePermissions } from "../config/permissions";
@@ -55,6 +57,8 @@ export function buildCodingToolSupport(args: {
   allowScripts?: boolean;
   /** `config.execution.denyPaths` (nax#1972); forwarded to createCodingToolRuntime verbatim. */
   denyPaths?: readonly string[];
+  /** Per-tool narrowing from the op's `toolPatterns` (nax#2013). */
+  toolPatterns?: ToolPatternNarrowing;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -97,7 +101,7 @@ export function buildCodingToolSupport(args: {
   // stages from the git root) as its backstop -- see task-10-report.md.
   const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
-    policy: compileToolPolicy(grants, args.root, { execTouchedPaths }),
+    policy: compileToolPolicy(narrowGrants(grants, args.toolPatterns), args.root, { execTouchedPaths }),
     declaredCommands: new Set(declaredCommands.keys()),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.denyPaths !== undefined ? { denyPaths: args.denyPaths } : {}),
@@ -164,6 +168,7 @@ export async function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
     | "declaredTools"
+    | "toolPatterns"
     | "codingToolRoot"
     | "codingToolRepoRoot"
     | "outputDir"
@@ -234,6 +239,7 @@ export async function resolveCodingToolSupport(
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
     grants: resolved.toolGrants,
     declared,
+    ...(options.toolPatterns !== undefined ? { toolPatterns: options.toolPatterns } : {}),
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     declaredCommands,
     stripEnvVars,

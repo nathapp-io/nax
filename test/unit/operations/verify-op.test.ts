@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
-import { assertDefined, makeSpawn, makeStory } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeSpawn, makeStory } from "@test/helpers";
 import { type ConfigSelector, DEFAULT_CONFIG, type TddConfig, tddConfigSelector } from "@/config";
 import type { Logger } from "@/logger";
 import { verifierOp } from "@/operations";
 import type { PackageView } from "@/runtime";
+import { VERDICT_FILE } from "@/tdd";
+import { narrowGrants } from "@/tools";
 
 /**
  * A real `PackageView` over `DEFAULT_CONFIG`. `parse` reads nothing from it,
@@ -321,5 +323,53 @@ describe("verifierOp.model — tdd.sessionTiers.verifier", () => {
   test("returns undefined when sessionTiers is absent", () => {
     const resolver = verifierOp.model as (i: unknown, c: unknown) => unknown;
     expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
+  });
+});
+
+describe("verifierOp — timeout budget", () => {
+  test("resolves its own timeout from tdd.verifierTimeoutSeconds", () => {
+    // makeNaxConfig deep-merges onto DEFAULT_CONFIG, so the rest of the tdd
+    // block keeps its defaults and this pins the override path alone.
+    const config = tddConfigSelector.select(makeNaxConfig({ tdd: { verifierTimeoutSeconds: 600 } }));
+    const ctx = { packageView: makePackageView(), config };
+
+    const timeoutMs = verifierOp.timeoutMs?.({ story: makeStory({ id: "US-001" }) }, ctx);
+
+    expect(timeoutMs).toBe(600_000);
+  });
+
+  test("defaults to 1800s rather than inheriting the two-hour session timeout", () => {
+    const timeoutMs = verifierOp.timeoutMs?.({ story: makeStory({ id: "US-001" }) }, makeParseCtx());
+
+    expect(timeoutMs).toBe(1_800_000);
+    expect(timeoutMs).not.toBe(DEFAULT_CONFIG.execution.sessionTimeoutSeconds * 1000);
+  });
+});
+
+describe("verifierOp — verdict-file write capability", () => {
+  test("declares Write so the verdict-file instruction is satisfiable", () => {
+    expect(verifierOp.tools).toContain("Write");
+  });
+
+  test("narrows Write to the verdict file alone", () => {
+    expect(verifierOp.toolPatterns?.Write).toEqual([VERDICT_FILE]);
+  });
+
+  test("still withholds Edit, Delete and GitCommit — a verifier must not repair", () => {
+    expect(verifierOp.tools).not.toContain("Edit");
+    expect(verifierOp.tools).not.toContain("Delete");
+    expect(verifierOp.tools).not.toContain("GitCommit");
+  });
+
+  test("the narrowing holds against an unrestricted profile", () => {
+    const granted = narrowGrants(
+      [
+        { tool: "Write", patterns: ["*"] },
+        { tool: "Read", patterns: ["*"] },
+      ],
+      verifierOp.toolPatterns,
+    );
+
+    expect(granted).toContainEqual({ tool: "Write", patterns: [VERDICT_FILE] });
   });
 });

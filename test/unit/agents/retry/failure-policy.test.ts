@@ -13,6 +13,7 @@ const ALL_OUTCOMES: ReadonlyArray<AdapterFailure["outcome"]> = [
   "fail-adapter-error",
   "fail-quality",
   "fail-unknown",
+  "fail-spin",
 ];
 
 describe("failurePolicyFor", () => {
@@ -31,6 +32,15 @@ describe("failurePolicyFor", () => {
     expect(policy.swap).toBe("after-retry-lane");
     expect(policy.cooldown).toBe("none");
     expect(policy.sameAgentRetry).toBe("timeout");
+  });
+
+  test("fail-spin retries on the same agent with a fresh session, then swaps", () => {
+    const policy = failurePolicyFor("fail-spin");
+
+    expect(policy.sameAgentRetry).toBe("timeout");
+    expect(policy.swap).toBe("after-retry-lane");
+    expect(policy.cooldown).toBe("none");
+    expect(policy.terminalBackoff).toBe(false);
   });
 
   test("fail-service-down gets the adapter-error lane and a terminal backoff", () => {

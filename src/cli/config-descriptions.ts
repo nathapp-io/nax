@@ -134,6 +134,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "tdd.sessionTiers.implementer":
     "Ignored by design — implementer follows story.routing.modelTier + escalation, not this field. Kept optional so legacy configs still parse.",
   "tdd.sessionTiers.verifier": "Model tier for verifier session",
+  "tdd.verifierTimeoutSeconds":
+    "Wall-clock budget for one verifier turn in seconds (default: 1800). Its own knob, not execution.sessionTimeoutSeconds",
   "tdd.testWriterAllowedPaths": "Glob patterns for files test-writer can modify",
   "tdd.rollbackOnFailure": "Rollback git changes when TDD fails",
   "tdd.greenfieldDetection": "Force tdd-simple on projects with no test files",
@@ -255,6 +257,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
   "agent.maxInteractionTurns":
     "Max turns in multi-turn interaction loop when interactionBridge is active (default: 10)",
+  "agent.spinBreaker": "Repetition breaker — ends a turn that repeats tool calls with no progress (nax#2013)",
+  "agent.spinBreaker.enabled": "Enable the repetition breaker (default: true)",
+  "agent.spinBreaker.nudgeAfterRepeats": "Repeats since the last new call before the first in-band nudge (default: 25)",
+  "agent.spinBreaker.maxNudges": "Nudges to spend before the hard stop (default: 3)",
+  "agent.spinBreaker.stopAfterRepeats": "Repeats since the last new call at which the turn ends (default: 50)",
+  "agent.spinBreaker.recentKeyWindow": "How many recent distinct calls count as already seen (default: 64)",
   // quality.testing (ENH-010) — per-package overridable
   "quality.testing": "Hermetic test enforcement — per-package overridable (ENH-010)",
   "quality.testing.hermetic":

@@ -9,11 +9,21 @@ import { packageWorkdir } from "../runtime/packages";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { FailureCategory, IsolationCheck } from "../tdd/types";
 import type { VerdictCategorization, VerifierVerdict } from "../tdd/verdict";
-import { categorizeVerdict, cleanupVerdict, coerceVerdict, isValidVerdict, readVerdict } from "../tdd/verdict";
+import {
+  categorizeVerdict,
+  cleanupVerdict,
+  coerceVerdict,
+  isValidVerdict,
+  readVerdict,
+  VERDICT_FILE,
+} from "../tdd/verdict";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { BuildContext, RunOperationWithHooks, VerifyContext } from "./types";
 
 void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
+
+/** Fallback when config was built without zod parsing; matches the schema default. */
+const DEFAULT_VERIFIER_TIMEOUT_SECONDS = 1800;
 
 export interface VerifierInput {
   readonly story: UserStory;
@@ -192,17 +202,28 @@ export const verifierOp: RunOperationWithHooks<VerifierInput, VerifierOutput, Td
   stage: "verify",
   session: { role: "verifier", lifetime: "fresh" },
   config: tddConfigSelector,
-  // Read + run, never write. `RunCommand` because the role's first instruction
+  // Read + run + one write. `RunCommand` because the role's first instruction
   // is "Run ONLY the story's scoped test files"; `Git` so it can independently
   // inspect test-file history per its own instruction to "check whether the
   // implementer modified test files after the test-writer phase" -- separate
   // from the deterministic `beforeRef` isolation check the orchestrator runs
-  // after this turn. Write/Edit/GitCommit are withheld deliberately: a
-  // verifier that can repair what it judges is not a verifier, and its
-  // isolation check assumes it changed nothing.
-  tools: ["Read", "Glob", "Grep", "Git", "RunCommand"],
+  // after this turn. `Write` is narrowed to the verdict file alone by
+  // `toolPatterns` below: the prompt has always instructed the verifier to
+  // write it (prompts/sections/verdict.ts) and `recover` has always read it,
+  // but without the grant the instruction was unsatisfiable and the fallback
+  // unreachable (nax#2013). Edit/Delete/GitCommit stay withheld: a verifier
+  // that can repair what it judges is not a verifier, and its isolation check
+  // assumes it changed nothing but the verdict.
+  tools: ["Read", "Glob", "Grep", "Git", "RunCommand", "Write"],
+  // The verdict file is the ONLY path this role may write. Narrowing, never
+  // widening — see src/tools/narrow-grants.ts.
+  toolPatterns: { Write: [VERDICT_FILE] },
   // Verification is a cheap scoped task — follows the configured per-role tier.
   model: (_input, ctx) => ctx.config.tdd?.sessionTiers?.verifier,
+  // Verification is a scoped, read-only task — it must not inherit the
+  // two-hour session budget. Mirrors the review ops, which have always
+  // carried their own (nax#2013).
+  timeoutMs: (_input, ctx) => (ctx.config.tdd?.verifierTimeoutSeconds ?? DEFAULT_VERIFIER_TIMEOUT_SECONDS) * 1000,
   // Mirror semantic-review: maxAttempts=2, in-session re-prompt on parse failure.
   retry: makeParseRetryStrategy({
     validate: (parsed) => {

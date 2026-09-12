@@ -253,8 +253,8 @@ export interface TddConfig {
     /** ConfiguredModel for verifier session (default: "fast") */
     verifier?: ConfiguredModel;
   };
-  /** Glob patterns for files test-writer can modify (soft violations, logged as warnings) */
-  testWriterAllowedPaths?: string[];
+  verifierTimeoutSeconds?: number; // Wall-clock budget for one verifier turn, in seconds (default: 1800)
+  testWriterAllowedPaths?: string[]; // Glob patterns for files test-writer can modify (soft violations, logged as warnings)
   /** Rollback git changes when TDD fails (default: true). Prevents partial commits when TDD fails. */
   rollbackOnFailure?: boolean;
   /** Enable greenfield detection to force tdd-simple on projects with no test files (default: true, BUG-010) */

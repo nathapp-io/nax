@@ -339,8 +339,15 @@ export function attachAgentIdleWatchdog(
         const state = activeStates.get(event.callId);
         if (state && activityKinds.has("usage_update")) {
           state.usageUpdates++;
-          state.lastNonToolCallActivityAt = event.timestamp;
-          resetActivity(state, event.timestamp, { clearGrace: true });
+          // A per-round-trip usage report is a round-trip boundary, not
+          // semantic progress: on native it arrives once per `complete()`, so
+          // treating it as non-tool-call activity let a spin reset the
+          // tool-call-only timer forever (nax#2013). It still counts as
+          // activity for the primary idle timer.
+          if (event.perRoundTrip !== true) state.lastNonToolCallActivityAt = event.timestamp;
+          resetActivity(state, event.timestamp, {
+            clearGrace: event.perRoundTrip !== true || state.graceReason === "idle_timeout_exceeded",
+          });
         }
         break;
       }

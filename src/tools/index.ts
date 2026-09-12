@@ -9,6 +9,7 @@ export { buildGitArgv, DEFAULT_LOG_MAX_COUNT, GIT_ESCAPE_FLAGS, GIT_READ_VERBS, 
 export { buildCommitArgvs, gitCommitTool } from "./git-commit";
 export { globTool } from "./glob";
 export { _grepDeps, buildGrepArgv, grepTool } from "./grep";
+export { narrowGrants, type ToolPatternNarrowing } from "./narrow-grants";
 export type { ExecTarget, NormalizeInput, NormalizeResult } from "./package-managers";
 export { classifyExec, isKnownManager, normalizeExec, normalizeManagerBinary } from "./package-managers";
 export type { ToolPolicyOptions } from "./policy";

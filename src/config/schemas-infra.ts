@@ -254,6 +254,40 @@ const AgentIdleWatchdogConfigSchema = z
     message: "idleTimeoutSeconds must be > 0 when mode is not 'off'",
   });
 
+/**
+ * Repetition breaker for a native turn (nax#2013): ends a turn that keeps
+ * repeating the same tool call with no progress. See `src/runtime/spin-breaker.ts`
+ * for the mechanism this config resolves settings for.
+ */
+export const DEFAULT_AGENT_SPIN_BREAKER_CONFIG: {
+  enabled: boolean;
+  nudgeAfterRepeats: number;
+  maxNudges: number;
+  stopAfterRepeats: number;
+  recentKeyWindow: number;
+} = {
+  enabled: true,
+  nudgeAfterRepeats: 25,
+  maxNudges: 3,
+  stopAfterRepeats: 50,
+  recentKeyWindow: 64,
+};
+
+const AgentSpinBreakerConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    nudgeAfterRepeats: z.number().int().min(2).max(500).default(25),
+    maxNudges: z.number().int().min(1).max(10).default(3),
+    stopAfterRepeats: z.number().int().min(3).max(1000).default(50),
+    recentKeyWindow: z.number().int().min(2).max(1024).default(64),
+  })
+  // A stop at or below the first nudge point would end turns with no warning
+  // ever reaching the model, which is the opposite of the breaker's contract.
+  .refine((cfg) => cfg.stopAfterRepeats > cfg.nudgeAfterRepeats, {
+    message: "agent.spinBreaker.stopAfterRepeats must be greater than nudgeAfterRepeats",
+    path: ["stopAfterRepeats"],
+  });
+
 const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
   /**
@@ -345,6 +379,7 @@ export const AgentConfigSchema = z.object({
   }),
   idleWatchdog: AgentIdleWatchdogConfigSchema.default(DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG),
   timeoutRetry: AgentTimeoutRetryConfigSchema.default(DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG),
+  spinBreaker: AgentSpinBreakerConfigSchema.default(DEFAULT_AGENT_SPIN_BREAKER_CONFIG),
 });
 
 export const PrecheckConfigSchema = z.object({

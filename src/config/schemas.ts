@@ -217,6 +217,7 @@ export const NaxConfigSchema = z
         testWriter: "fast",
         verifier: "fast",
       },
+      verifierTimeoutSeconds: 1800,
       testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
       rollbackOnFailure: true,
       greenfieldDetection: true,
@@ -328,6 +329,13 @@ export const NaxConfigSchema = z
       native: { transportRetry: { maxAttempts: 3, baseDelayMs: 2000 }, catalogOverrides: [] },
       idleWatchdog: DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
       timeoutRetry: DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
+      spinBreaker: {
+        enabled: true,
+        nudgeAfterRepeats: 25,
+        maxNudges: 3,
+        stopAfterRepeats: 50,
+        recentKeyWindow: 64,
+      },
     }),
     precheck: PrecheckConfigSchema.optional().default({
       storySizeGate: {

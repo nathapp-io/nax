@@ -119,6 +119,12 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * ignores it; acpx has its own knob (`promptRetries`).
    */
   transportRetry?: import("./native/session/turn-retry").TurnRetryConfig;
+  /**
+   * Native: resolved repetition-breaker settings (nax#2013), threaded the same
+   * way as `compaction` and `transportRetry` — a resolved primitive, never
+   * NaxConfig. ACP ignores it; its loop is bounded by `maxInteractions`.
+   */
+  spinBreaker?: import("../runtime/spin-breaker").ResolvedSpinBreakerSettings;
 }
 
 /** Options for sendTurn(). */
@@ -229,6 +235,17 @@ export interface TurnResult {
    * the wiring layer does (see operations/turn-failure-classification.ts).
    */
   turnIncomplete?: boolean;
+  /**
+   * Transport fact: the loop returned because the spin breaker stopped it —
+   * the model kept issuing calls whose shape it had already issued, with no
+   * new work between them (nax#2013).
+   *
+   * Like `timedOut` and `turnIncomplete`, the adapter never classifies WHY; the
+   * wiring layer maps it to the `fail-spin` policy outcome
+   * (operations/call-hop-output.ts). A spin-stopped turn also sets
+   * `turnIncomplete`, since work the model asked for was left unexecuted.
+   */
+  spinStopped?: true;
 }
 
 /**

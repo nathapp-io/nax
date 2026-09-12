@@ -141,13 +141,14 @@ export function makeThinkingUpdateEvent(overrides: { callId?: string } = {}): Ag
   } as AgentStreamEvent;
 }
 
-export function makeUsageUpdateEvent(overrides: { callId?: string } = {}): AgentStreamEvent {
+export function makeUsageUpdateEvent(overrides: { callId?: string; perRoundTrip?: true } = {}): AgentStreamEvent {
   return {
     kind: "agent.usage_update",
     ...baseEvent(overrides.callId ?? "call-123"),
     inputTokens: 100,
     outputTokens: 200,
     costUsd: 0.01,
+    ...(overrides.perRoundTrip !== undefined ? { perRoundTrip: overrides.perRoundTrip } : {}),
   } as AgentStreamEvent;
 }
 

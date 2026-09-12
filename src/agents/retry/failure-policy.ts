@@ -94,6 +94,20 @@ const POLICIES: Readonly<Record<AdapterFailure["outcome"], FailurePolicy>> = Obj
     cooldownScope: "model",
     terminalBackoff: false,
   },
+  /**
+   * Reuses the `timeout` lane rather than inventing a third: that lane already
+   * does exactly what a spin wants — same agent, FRESH session (so the
+   * repeating transcript is dropped) at a reduced budget, then a swap once the
+   * lane is spent. `trySameAgentRetry` dispatches on the lane, not the
+   * outcome, so this needs no new retry machinery (nax#2013).
+   */
+  "fail-spin": {
+    sameAgentRetry: "timeout",
+    swap: "after-retry-lane",
+    cooldown: "none",
+    cooldownScope: "model",
+    terminalBackoff: false,
+  },
   "fail-adapter-error": {
     sameAgentRetry: "adapter-error",
     swap: "quality-gated",

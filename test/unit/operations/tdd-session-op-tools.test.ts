@@ -24,7 +24,9 @@ describe("verifierOp tools", () => {
   test("cannot repair what it is judging", () => {
     const tools = resolveDeclaredTools(verifierOp);
 
-    expect(tools).not.toContain("Write");
+    // Write is granted, but narrowed to the verdict file alone
+    // (verifierOp.toolPatterns) — see nax#2013. Edit/GitCommit stay withheld:
+    // a verifier that can repair what it judges is not a verifier.
     expect(tools).not.toContain("Edit");
     expect(tools).not.toContain("GitCommit");
   });
