@@ -111,11 +111,12 @@ function dedupKey(f: Finding): string {
 /**
  * Union of actionable advisory findings across the declared sources,
  * deduplicated by (file, line, message) and gated on the green precondition
- * (no required phase may have failed).
+ * (no phase that produced output may have failed).
  *
  * Returns `{ findings, shouldRun }`. `shouldRun` is false when:
  *   - `sources` is empty (explicit no-seed),
- *   - any required phase output fails `phasePassed` (AC8 — red tree, do not act),
+ *   - any phase output (not just the named sources) fails `phasePassed`
+ *     (AC8 — red tree, do not act; mirrors `storyCurrentlyGreen`),
  *   - or no findings survive actionability + dedup.
  */
 export function deriveNbfSeed(input: DeriveNbfSeedInput): NbfSeed {
@@ -125,9 +126,21 @@ export function deriveNbfSeed(input: DeriveNbfSeedInput): NbfSeed {
     return { findings: [], shouldRun: false };
   }
 
-  // First pass: gate on the green precondition for every declared source.
-  // A missing output is "reviewer did not run" (empty bucket, not a failure —
-  // mirrors `phasePassed`'s defensive behaviour for non-strict reviewers).
+  // AC8 — green precondition: EVERY phase that produced output must have
+  // passed. A failing non-source phase (e.g. full-suite-gate, verifier,
+  // lint-check, typecheck-check) closes nbf regardless of advisory findings,
+  // mirroring `storyCurrentlyGreen` in `execution-plan.ts`. Phases absent
+  // from `phaseOutputs` (the reviewer did not run) are skipped — they
+  // aren't "failed", they simply weren't dispatched.
+  for (const [name, output] of Object.entries(phaseOutputs)) {
+    if (!isPhasePassedLike(name, output, storyId)) {
+      return { findings: [], shouldRun: false };
+    }
+  }
+
+  // First pass: read each declared source's advisory bucket. A missing
+  // reviewer output is "did not run" (empty bucket, not a failure — mirrors
+  // `phasePassed`'s defensive behaviour for non-strict reviewers).
   const buckets: Finding[][] = [];
   for (const source of sources) {
     const phaseName = SOURCE_TO_PHASE[source];
@@ -135,9 +148,6 @@ export function deriveNbfSeed(input: DeriveNbfSeedInput): NbfSeed {
     if (output === undefined) {
       buckets.push([]);
       continue;
-    }
-    if (!isPhasePassedLike(phaseName, output, storyId)) {
-      return { findings: [], shouldRun: false };
     }
     buckets.push([...actionableAdvisoryFindings(readAdvisoryBucket(output))]);
   }
