@@ -109,45 +109,53 @@ What makes a mixed-threshold union safe today is that nbf's strategy set passes 
 Move the nbf block out of `AdversarialReviewConfigSchema` to `review.nonBlockingFix`, add `sources` defaulting to `["adversarial"]`, re-point the `NonBlockingFixConfig` alias, and migrate the legacy path through the compat-shim chain.
 Dependencies: none.
 
-- Context Files:
-  - `src/config/schemas-review.ts`
-  - `src/config/selectors.ts`
-  - `src/config/migrations.ts`
-  - `src/config/compat-shims.ts`
-  - `.nax/rules/config-patterns.md`
-- Modifies:
-  - **US-001** `test/unit/config/non-blocking-fix-config.test.ts` — every case parses through `AdversarialReviewConfigSchema` and the first asserts `cfg.nonBlockingFix` deep-equals the defaults literal. Once the block moves, that schema strips the key and the field is `undefined`, so a correct implementation fails these assertions. Replacement invariant: the same default-shape and validation assertions, made against the new standalone nbf schema and through `review.nonBlockingFix`, plus the legacy path asserted via the migration rather than via the adversarial schema.
-  - **US-001** `test/unit/execution/non-blocking-fix-retirement.test.ts` — two `as const` nbf literals are passed to `shouldRunNonBlockingFix` and `runNonBlockingFix`, both of which take a `NonBlockingFixConfig`. Once `sources` is a defaulted field it is required on that type, so the literals stop typechecking. Replacement invariant: the same retired-only gate-closure assertions, with each literal naming `sources`.
-  - **US-001** `test/unit/execution/nbf-readonly-flake-triage.test.ts` — the quarantine-transaction literal is passed to `runNonBlockingFix`, whose options declare `cfg: NonBlockingFixConfig`, so it stops typechecking for the same reason. Replacement invariant: the same quarantine-transaction assertions, with the literal naming `sources`.
-  - **US-001** `test/unit/execution/rectification-overrides.test.ts` — the literal is passed to `StoryOrchestratorBuilder.addNonBlockingFix`, whose first parameter is a `NonBlockingFixConfig`, so it stops typechecking for the same reason. Replacement invariant: the same "builder does not throw" assertion, with the literal naming `sources`.
-  - **US-001** `test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts` — two fixtures declare a fully-enumerated `review.adversarial` block with `nonBlockingFix` nested inside it. That key is no longer part of the adversarial schema, so the fixtures no longer describe a reachable config shape. Replacement invariant: the same triage-assembly assertions, with nbf declared at `review.nonBlockingFix` and `sources` named.
-  - **US-001** `test/unit/execution/non-blocking-fix-wiring.test.ts` — three fixtures nest `nonBlockingFix` under `review.adversarial` for the same reason. Replacement invariant: the same wiring and green-precondition assertions, with nbf declared canonically and `sources` named.
-
 **US-002 — nbf seeds from every reviewer named in `sources`**
 Extract the nbf seed derivation out of `execution-plan.ts` into its own module, and have it union the advisory buckets of the reviewers named in `sources`, deduplicated, through the existing actionable filter. Pin nbf's render floor as independent of `review.blockingThreshold`.
 Dependencies: US-001.
-
-- Context Files:
-  - `src/execution/story-orchestrator/execution-plan.ts`
-  - `src/execution/non-blocking-fix.ts`
-  - `src/execution/story-orchestrator/types.ts`
-  - `src/execution/build-plan-for-strategy.ts`
-  - `src/review/semantic-helpers.ts`
-- Creates:
-  - `src/execution/story-orchestrator/nbf-seed.ts`
 
 **US-003 — static-rules soft mode stops reporting truncation it did not perform**
 Make both budget warnings state what happened under a non-enforcing budget, and correct the `ProviderBudgetPressure` field documentation. No change to the returned pressure object or to enforced-mode output.
 Dependencies: none.
 
-- Context Files:
-  - `src/context/engine/providers/static-rules.ts`
-  - `src/context/engine/manifest-types.ts`
-  - `src/context/engine/providers/static-rules-budget-notice.ts`
+### Context Files (per story)
+
+**US-001**
+- `src/config/schemas-review.ts`
+- `src/config/selectors.ts`
+- `src/config/migrations.ts`
+- `src/config/compat-shims.ts`
+- `.nax/rules/config-patterns.md`
+
+**US-002**
+- `src/execution/story-orchestrator/execution-plan.ts`
+- `src/execution/non-blocking-fix.ts`
+- `src/execution/story-orchestrator/types.ts`
+- `src/execution/build-plan-for-strategy.ts`
+- `src/review/semantic-helpers.ts`
+
+**US-003**
+- `src/context/engine/providers/static-rules.ts`
+- `src/context/engine/manifest-types.ts`
+- `src/context/engine/providers/static-rules-budget-notice.ts`
+
+### Creates (per story)
+
+**US-002**
+- `src/execution/story-orchestrator/nbf-seed.ts`
+
+### Modifies
+
+**US-001**
+- `test/unit/config/non-blocking-fix-config.test.ts` — every case parses through `AdversarialReviewConfigSchema` and the first asserts `cfg.nonBlockingFix` deep-equals the defaults literal. Once the block moves, that schema strips the key and the field is `undefined`, so a correct implementation fails these assertions. Replacement invariant: the same default-shape and validation assertions, made against the new standalone nbf schema and through `review.nonBlockingFix`, plus the legacy path asserted via the migration rather than via the adversarial schema.
+- `test/unit/execution/non-blocking-fix-retirement.test.ts` — two `as const` nbf literals are passed to `shouldRunNonBlockingFix` and `runNonBlockingFix`, both of which take a `NonBlockingFixConfig`. Once `sources` is a defaulted field it is required on that type, so the literals stop typechecking. Replacement invariant: the same retired-only gate-closure assertions, with each literal naming `sources`.
+- `test/unit/execution/nbf-readonly-flake-triage.test.ts` — the quarantine-transaction literal is passed to `runNonBlockingFix`, whose options declare `cfg: NonBlockingFixConfig`, so it stops typechecking for the same reason. Replacement invariant: the same quarantine-transaction assertions, with the literal naming `sources`.
+- `test/unit/execution/rectification-overrides.test.ts` — the literal is passed to `StoryOrchestratorBuilder.addNonBlockingFix`, whose first parameter is a `NonBlockingFixConfig`, so it stops typechecking for the same reason. Replacement invariant: the same "builder does not throw" assertion, with the literal naming `sources`.
+- `test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts` — two fixtures declare a fully-enumerated `review.adversarial` block with `nonBlockingFix` nested inside it. That key is no longer part of the adversarial schema, so the fixtures no longer describe a reachable config shape. Replacement invariant: the same triage-assembly assertions, with nbf declared at `review.nonBlockingFix` and `sources` named.
+- `test/unit/execution/non-blocking-fix-wiring.test.ts` — three fixtures nest `nonBlockingFix` under `review.adversarial` for the same reason. Replacement invariant: the same wiring and green-precondition assertions, with nbf declared canonically and `sources` named.
 
 ### Seams
 
-- **US-001 → US-002.** US-001 introduces the `sources` field on the nbf config slice; US-002 is its only consumer. US-002's AC-9 stubs the reviewer phase outputs and asserts that the seed honours `sources`, proving the field is read rather than merely declared.
+- **US-001 -> US-002.** US-001 introduces the `sources` field on the nbf config slice; US-002 is its only consumer. US-002's AC-9 stubs the reviewer phase outputs and asserts that the seed honours `sources`, proving the field is read rather than merely declared.
 - **US-002's extracted module.** `nbf-seed.ts` exports the seed derivation that `execution-plan.ts` calls. AC-10 enters at the story-orchestrator phase-completion path — the outermost production entry point that reaches the seed — rather than calling the module directly, so the wiring is proven and not just the function.
 
 ## Acceptance Criteria
