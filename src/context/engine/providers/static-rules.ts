@@ -370,22 +370,24 @@ export class StaticRulesProvider implements IContextProvider {
         scopingReport.sectionCount = allSections.length;
 
         const budgetResult = _staticRulesDeps.applySectionBudget(allSections, effectiveBudget);
+        const budgetData = {
+          storyId: request.storyId,
+          totalTokens: budgetResult.totalTokens,
+          budgetTokens: effectiveBudget,
+          droppedCount: budgetResult.droppedIds.length,
+        };
         if (budgetResult.totalTokens >= Math.floor(effectiveBudget * 0.75)) {
-          logger.warnOnce("static-rules", "Canonical rules are approaching/exceeding static rules budget", {
-            storyId: request.storyId,
-            totalTokens: budgetResult.totalTokens,
-            budgetTokens: effectiveBudget,
-            droppedCount: budgetResult.droppedIds.length,
-          });
+          const msg = this.enforceBudget
+            ? "Canonical rules are approaching/exceeding static rules budget"
+            : "Canonical rules are approaching/exceeding static rules budget — enforce enforceBudget to truncate sections";
+          logger.warnOnce("static-rules", msg, budgetData);
         }
         if (budgetResult.droppedIds.length > 0) {
-          logger.warnOnce("static-rules", "Rule sections truncated by static rules budget", {
-            storyId: request.storyId,
-            totalTokens: budgetResult.totalTokens,
-            usedTokens: budgetResult.usedTokens,
-            budgetTokens: effectiveBudget,
-            droppedCount: budgetResult.droppedIds.length,
-          });
+          const truncateData = { ...budgetData, usedTokens: budgetResult.usedTokens };
+          const msg = this.enforceBudget
+            ? "Rule sections truncated by static rules budget"
+            : "Rule sections would be truncated by static rules budget (enforce enforceBudget to apply)";
+          logger.warnOnce("static-rules", msg, truncateData);
         }
 
         const effectiveSections = this.enforceBudget ? budgetResult.retainedSections : allSections;

@@ -30,9 +30,21 @@ export interface ChunkEffectiveness {
 export interface ProviderBudgetPressure {
   /** max(0, produced - providerBudget). Non-zero whenever the provider is over. */
   overageTokens: number;
-  /** Items discarded to satisfy the budget. Zero unless the budget is enforced. */
+  /**
+   * Sections that would be discarded to satisfy the budget.
+   *
+   * - Enforcing budget (`enforceBudget: true`): items actually omitted from the result.
+   * - Non-enforcing budget (`enforceBudget: false`): items that *would* be omitted if the
+   *   budget were enforced — a pressure signal, not an actual discard. The result still
+   *   contains every section; use `overageTokens` as the enforcement-independent signal.
+   */
   droppedCount: number;
-  /** Token total of discarded items. Zero unless the budget is enforced. */
+  /**
+   * Token total of sections that would be discarded to satisfy the budget.
+   *
+   * Same semantics as `droppedCount` — pressure signal in soft mode, actual discard in
+   * enforced mode. `overageTokens` is the enforcement-independent pressure signal.
+   */
   droppedTokens: number;
   /** Stable ids of discarded items, for manifest-level debugging. */
   droppedIds: string[];
