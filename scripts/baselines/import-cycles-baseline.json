@@ -1,6 +1,6 @@
 {
-  "count": 135,
-  "updatedAt": "2026-08-20T14:03:46.844Z",
+  "count": 132,
+  "updatedAt": "2026-09-12T17:03:29.084Z",
   "modules": [
     "src/agents/acp/adapter-close-physical.ts",
     "src/agents/acp/adapter-lifecycle.ts",
@@ -123,13 +123,10 @@
     "src/prompts/builders/tdd-builder.ts",
     "src/prompts/index.ts",
     "src/quality/diagnostics.ts",
-    "src/review/adversarial-outcomes.ts",
-    "src/review/adversarial.ts",
     "src/review/index.ts",
     "src/review/lint-parsing/index.ts",
     "src/review/lint-parsing/parse.ts",
     "src/review/review-iteration-store.ts",
-    "src/review/semantic.ts",
     "src/review/typecheck-parsing/index.ts",
     "src/review/typecheck-parsing/parse.ts",
     "src/routing/index.ts",
