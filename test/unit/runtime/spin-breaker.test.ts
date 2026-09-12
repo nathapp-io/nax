@@ -39,13 +39,23 @@ describe("createSpinBreaker", () => {
 
   test("counts alternating shapes as repetition, which is what the incident did", () => {
     const breaker = createSpinBreaker(settings());
-    let nudges = 0;
+    let nudgeCount = 0;
+    let firstNudgeRepeats: number | undefined;
 
     for (let i = 0; i < 30; i += 1) {
-      if (breaker.observe("RunCommand", i % 2 === 0 ? TEST_CMD : OTHER_CMD).action === "nudge") nudges += 1;
+      const verdict = breaker.observe("RunCommand", i % 2 === 0 ? TEST_CMD : OTHER_CMD);
+      if (verdict.action === "nudge") {
+        nudgeCount += 1;
+        firstNudgeRepeats ??= verdict.repeats;
+      }
     }
 
-    expect(nudges).toBeGreaterThan(0);
+    // Calls 1-2 establish both shapes (progress). From call 3 on, every call
+    // is a repeat of an already-seen shape regardless of which one it is, so
+    // repeatsSinceProgress climbs by 1 per call starting there: by call 30 it
+    // reaches 28, crossing the first nudge point (25) exactly once.
+    expect(nudgeCount).toBe(1);
+    expect(firstNudgeRepeats).toBe(25);
   });
 
   test("escalates through maxNudges then stops", () => {
@@ -101,7 +111,7 @@ describe("createSpinBreaker", () => {
 
     const summary = breaker.summary();
     expect(summary.totalCalls).toBe(31);
-    expect(summary.distinctKeys).toBe(2);
+    expect(summary.newKeyEvents).toBe(2);
     expect(summary.maxRepeatRun).toBe(29);
     expect(summary.nudges).toBe(1);
   });

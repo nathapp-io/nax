@@ -47,7 +47,17 @@ export type SpinVerdict =
 
 export interface SpinSummary {
   readonly totalCalls: number;
-  readonly distinctKeys: number;
+  /**
+   * Cache-misses against the bounded `recentKeyWindow`, i.e. how many times
+   * this session did something new. Equal to true key cardinality only while
+   * the session's distinct-key count stays within `recentKeyWindow` — once a
+   * key is evicted from the window, seeing it again counts as another new-key
+   * event, so this is NOT a reliable "unique calls this session made" count
+   * for a long session. Deliberately not backed by an unbounded Set: the
+   * window exists to bound memory, and "how many new things happened" is the
+   * more useful number for a spin diagnostic anyway.
+   */
+  readonly newKeyEvents: number;
   readonly maxRepeatRun: number;
   readonly nudges: number;
 }
@@ -68,15 +78,22 @@ function stableStringify(value: unknown): string {
   return `{${entries.map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`).join(",")}}`;
 }
 
+/**
+ * Tool names are fixed identifiers (e.g. "Read", "RunCommand") that never
+ * contain a space, so concatenating on one never lets `toolName="a:b"` +
+ * `body="c"` collide with `toolName="a"` + `body="b:c"` the way a colon would.
+ */
+const KEY_SEPARATOR = " ";
+
 function callKey(toolName: string, input: unknown): string {
   const body = stableStringify(input);
   const clipped = body.length > MAX_KEY_BYTES ? String(Bun.hash(body)) : body;
-  return `${toolName}:${clipped}`;
+  return `${toolName}${KEY_SEPARATOR}${clipped}`;
 }
 
 /**
  * Nudge points are derived from the three knobs rather than configured
- * separately: with 25/50/3 they fall at 25, 33 and 41, leaving the stop at 50.
+ * separately: with 25/50/3 they fall at 25, 33 and 42, leaving the stop at 50.
  */
 function nudgePoints(settings: ResolvedSpinBreakerSettings): readonly number[] {
   const span = settings.stopAfterRepeats - settings.nudgeAfterRepeats;
@@ -103,17 +120,33 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
   const recent = new Map<string, true>();
   let repeatsSinceProgress = 0;
   let totalCalls = 0;
-  let distinctKeys = 0;
+  let newKeyEvents = 0;
   let maxRepeatRun = 0;
   let nudges = 0;
 
   function remember(key: string): void {
     recent.set(key, true);
-    distinctKeys += 1;
+    newKeyEvents += 1;
     if (recent.size > settings.recentKeyWindow) {
       const oldest = recent.keys().next();
       if (!oldest.done) recent.delete(oldest.value);
     }
+  }
+
+  function buildNudge(toolName: string): SpinVerdict {
+    nudges += 1;
+    getSafeLogger()?.warn("spin-breaker", "Repeated calls with no progress — nudging", {
+      tool: toolName,
+      repeats: repeatsSinceProgress,
+      nudgeNumber: nudges,
+      newKeyEvents,
+    });
+    return {
+      action: "nudge",
+      nudgeNumber: nudges,
+      repeats: repeatsSinceProgress,
+      text: nudgeText(nudges, repeatsSinceProgress),
+    };
   }
 
   return {
@@ -135,35 +168,21 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
         getSafeLogger()?.error("spin-breaker", "Ending the turn — repeated calls with no progress", {
           tool: toolName,
           repeats: repeatsSinceProgress,
-          distinctKeys,
+          newKeyEvents,
           totalCalls,
           nudges,
         });
         return { action: "stop", repeats: repeatsSinceProgress };
       }
 
-      const pointIndex = points.indexOf(repeatsSinceProgress);
-      if (pointIndex !== -1 && nudges < settings.maxNudges) {
-        nudges += 1;
-        getSafeLogger()?.warn("spin-breaker", "Repeated calls with no progress — nudging", {
-          tool: toolName,
-          repeats: repeatsSinceProgress,
-          nudgeNumber: nudges,
-          distinctKeys,
-        });
-        return {
-          action: "nudge",
-          nudgeNumber: nudges,
-          repeats: repeatsSinceProgress,
-          text: nudgeText(nudges, repeatsSinceProgress),
-        };
-      }
+      const isNudgePoint = points.includes(repeatsSinceProgress);
+      if (isNudgePoint && nudges < settings.maxNudges) return buildNudge(toolName);
 
       return { action: "allow" };
     },
 
     summary() {
-      return { totalCalls, distinctKeys, maxRepeatRun, nudges };
+      return { totalCalls, newKeyEvents, maxRepeatRun, nudges };
     },
   };
 }
