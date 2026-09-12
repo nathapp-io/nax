@@ -174,7 +174,11 @@ describe("nbf-seed strategy set — AC11: promptSeverityFloor stays 'info' regar
     assertDefined(implementer, "autofix-implementer");
 
     // Drive a warning advisory through the strategy's `buildInput` and assert
-    // the floor reached the op input as `info` (NOT the run threshold `error`).
+    // (a) the floor reached the op input as `info` (NOT the run threshold `error`),
+    // AND (b) the warning finding is preserved in the rectifier input — the
+    // AC11 contract is "render the warning finding into rectifier input", not
+    // just "set the threshold". A regression that drops `findings` while
+    // keeping the threshold would still pass under the old assertion.
     const advisory: Finding = {
       source: "adversarial-review",
       severity: "warning",
@@ -184,6 +188,7 @@ describe("nbf-seed strategy set — AC11: promptSeverityFloor stays 'info' regar
     };
     const input = implementer.buildInput([advisory], [], makeFixCycleContext());
     expect(input.blockingThreshold).toBe("info");
+    expect(input.findings).toEqual([advisory]);
   });
 
   test("AC11: review.blockingThreshold='warning' + warning advisory → autofix-implementer still uses promptSeverityFloor='info'", async () => {
@@ -222,6 +227,13 @@ describe("nbf-seed strategy set — AC11: promptSeverityFloor stays 'info' regar
     };
     const input = implementer.buildInput([advisory], [], makeFixCycleContext());
     expect(input.blockingThreshold).toBe("info");
+    // AC11 contract: the warning finding renders into the rectifier input.
+    // The run threshold is `warning`, so without the "info" floor the
+    // prompt builder would filter the warning finding out by severity.
+    // Asserting on `findings` is what pins that contract — a regression
+    // that drops `findings` while keeping the threshold would otherwise
+    // pass under the threshold-only assertion.
+    expect(input.findings).toEqual([advisory]);
   });
 });
 
