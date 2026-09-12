@@ -3,7 +3,7 @@
   "feature": "advisory-and-budget-truth",
   "branchName": "feat/advisory-and-budget-truth",
   "createdAt": "2026-09-11T00:00:00.000Z",
-  "updatedAt": "2026-09-12T03:23:13.148Z",
+  "updatedAt": "2026-09-12T03:48:44.079Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,8 +28,8 @@
         "review"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -115,7 +115,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The new seed seam changes execution-plan wiring, plan assembly, reviewer-source selection, deduplication, and phase-completion integration while preserving safety gates."
+        "reasoning": "The new seed seam changes execution-plan wiring, plan assembly, reviewer-source selection, deduplication, and phase-completion integration while preserving safety gates.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/execution-plan.ts",
@@ -129,7 +132,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9547005f30de7c6e9628db6798c8493d0c2d2c67"
     },
     {
       "id": "US-003",
