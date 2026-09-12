@@ -33,6 +33,7 @@ import {
   closeNativeSession,
   markNativeTurnOutcome,
   nativeSessionCompaction,
+  nativeSessionSpinBreaker,
   nativeSessionStreamHooks,
   nativeSessionTimeouts,
   nativeSessionTransportRetry,
@@ -283,6 +284,9 @@ export class NativeAgentAdapter implements AgentAdapter {
           : {}),
         ...(nativeSessionTransportRetry.get(handle.id) !== undefined
           ? { transportRetry: nativeSessionTransportRetry.get(handle.id) }
+          : {}),
+        ...(nativeSessionSpinBreaker.get(handle.id) !== undefined
+          ? { spinBreaker: nativeSessionSpinBreaker.get(handle.id) }
           : {}),
         pricingSource,
         onActivity: (activity) => {

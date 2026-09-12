@@ -114,6 +114,20 @@ export interface AgentTimeoutRetryConfig {
   budgetMultiplier?: number;
 }
 
+/** Repetition breaker for an agent turn (nax#2013) */
+export interface AgentSpinBreakerConfig {
+  /** Master switch (default: true) */
+  enabled?: boolean;
+  /** Repeats since the last new call before the first nudge (default: 25) */
+  nudgeAfterRepeats?: number;
+  /** Nudges to spend before the hard stop (default: 3) */
+  maxNudges?: number;
+  /** Repeats since the last new call at which the turn ends (default: 50) */
+  stopAfterRepeats?: number;
+  /** How many recent distinct keys count as already seen (default: 64) */
+  recentKeyWindow?: number;
+}
+
 /** Agent protocol configuration (ACP-003) */
 export interface AgentConfig {
   /** Protocol to use for agent communication — a capability gate, not a router ('acp' | 'native' | 'hybrid', default 'acp') */
@@ -134,4 +148,6 @@ export interface AgentConfig {
   idleWatchdog?: IdleWatchdogConfig;
   /** Bounded same-agent retry after a wall-clock timeout */
   timeoutRetry?: AgentTimeoutRetryConfig;
+  /** Repetition breaker for a native turn (nax#2013) */
+  spinBreaker?: AgentSpinBreakerConfig;
 }

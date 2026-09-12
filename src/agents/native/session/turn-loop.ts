@@ -13,6 +13,13 @@ import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } fro
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
+// `spin-breaker` is its own nested barrel (src/runtime/spin-breaker/index.ts),
+// not an internal file reached through the parent — an EXACT barrel match is
+// legal for a value import even though it bypasses @/runtime, the same
+// pattern as src/review/runner and src/execution/helpers. That promotion is
+// what lets this avoid widening the session -> runtime barrel import surface
+// (project-conventions.md's cycle-avoidance escape hatch).
+import { createSpinBreaker, type ResolvedSpinBreakerSettings } from "@/runtime/spin-breaker";
 import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
 import {
   applyCompaction,
@@ -89,6 +96,11 @@ export interface TurnDeps {
    * a real session always wants to actually wait.
    */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Resolved repetition-breaker settings (nax#2013). Absent disables the
+   * breaker — the pre-#2013 behaviour of an unbounded call count.
+   */
+  spinBreaker?: ResolvedSpinBreakerSettings;
 }
 
 /**
@@ -179,6 +191,11 @@ export async function runNativeTurn(
   let timedOut = false;
   const interactions: InteractionExchange[] = [];
 
+  const spinBreaker = deps.spinBreaker !== undefined ? createSpinBreaker(deps.spinBreaker) : undefined;
+  // Set ONLY when the breaker ended the turn, so the wiring layer can classify
+  // it as `fail-spin` rather than a generic incomplete turn.
+  let spinStopped = false;
+
   const anchor = nativeSessionLastUsage.get(handle.id);
   let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
   let anchorIndex = anchor?.anchorIndex;
@@ -187,9 +204,10 @@ export async function runNativeTurn(
   // throws must persist too — the retry reopens the same deterministic session
   // name, so an unsaved conversation is one the model silently resumes without.
   try {
-    // Deliberately unbounded by count. A coding agent working a story is bounded
-    // by wall clock (deps.deadline) and by the idle watchdog, never by how many
-    // times it needed to call a tool. `agent.maxInteractionTurns` is NOT this
+    // Deliberately unbounded by COUNT of varied calls. A coding agent working a
+    // story is bounded by wall clock (deps.deadline), by the idle watchdog, and
+    // — since nax#2013 — by the spin breaker, which ends a turn that keeps
+    // REPEATING a call it already made. `agent.maxInteractionTurns` is NOT this
     // budget — it bounds human Q&A exchanges, which are counted separately.
     while (true) {
       // Checked before starting a round-trip rather than after finishing one:
@@ -420,6 +438,14 @@ export async function runNativeTurn(
             messages.push({ role: "tool-result", toolCallId: call.id, content: answer.answer });
             continue;
           }
+          const verdict = spinBreaker?.observe(call.name, call.input) ?? { action: "allow" as const };
+          if (verdict.action === "stop") {
+            spinStopped = true;
+            // The call is deliberately NOT executed and NOT answered: the turn
+            // is over, and a tool-result for a call nobody will read only grows
+            // the transcript the retry drops anyway.
+            break;
+          }
           const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
           if (kind === "coding-tool") codingToolsCalled.push(call.name);
           const answer = await opts.interactionHandler.onInteraction(
@@ -434,12 +460,17 @@ export async function runNativeTurn(
             messages.push({
               role: "tool-result",
               toolCallId: call.id,
-              content: answer.answer,
+              content: verdict.action === "nudge" ? `[nax] ${verdict.text}\n\n---\n\n${answer.answer}` : answer.answer,
               denied: answer.denied,
             });
             continue;
           }
-          messages.push({ role: "tool-result", toolCallId: call.id, content: answer?.answer ?? "" });
+          const answerText = answer?.answer ?? "";
+          messages.push({
+            role: "tool-result",
+            toolCallId: call.id,
+            content: verdict.action === "nudge" ? `[nax] ${verdict.text}\n\n---\n\n${answerText}` : answerText,
+          });
         } catch (err) {
           // A tool failure is data, not a turn failure: the existing pull-tool
           // contract already surfaces a handler throw as status "error".
@@ -451,6 +482,7 @@ export async function runNativeTurn(
           });
         }
       }
+      if (spinStopped) break;
     }
   } catch (err) {
     // Best-effort, and deliberately unlike the clean-exit save: there a write
@@ -490,6 +522,14 @@ export async function runNativeTurn(
     });
   }
 
+  if (spinStopped) {
+    getSafeLogger()?.error("native-adapter", "turn ended by the spin breaker", {
+      sessionName: handle.id,
+      roundTrips,
+      ...spinBreaker?.summary(),
+    });
+  }
+
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
@@ -508,6 +548,7 @@ export async function runNativeTurn(
     ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),
     ...(completedNormally ? {} : { turnIncomplete: true }),
     ...(timedOut ? { timedOut: true } : {}),
+    ...(spinStopped ? { spinStopped: true as const } : {}),
     ...(interactions.length > 0 ? { interactions } : {}),
     ...(deps.pricingSource !== undefined ? { pricingSource: deps.pricingSource } : {}),
   };

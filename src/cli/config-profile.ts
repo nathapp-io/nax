@@ -57,6 +57,7 @@ const SENSITIVE_KEY_EXEMPTIONS = new Set([
   "contextProviderTokenBudget",
   "emptyKeyword",
   "fallbackToKeywords",
+  "recentKeyWindow",
 ]);
 
 /**

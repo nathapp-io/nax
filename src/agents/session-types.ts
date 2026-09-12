@@ -119,6 +119,12 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * ignores it; acpx has its own knob (`promptRetries`).
    */
   transportRetry?: import("./native/session/turn-retry").TurnRetryConfig;
+  /**
+   * Native: resolved repetition-breaker settings (nax#2013), threaded the same
+   * way as `compaction` and `transportRetry` — a resolved primitive, never
+   * NaxConfig. ACP ignores it; its loop is bounded by `maxInteractions`.
+   */
+  spinBreaker?: import("../runtime/spin-breaker").ResolvedSpinBreakerSettings;
 }
 
 /** Options for sendTurn(). */

@@ -10,10 +10,13 @@
 import type { ResolvedCompaction } from "../agents/native/session/compaction";
 import type { TurnRetryConfig } from "../agents/native/session/turn-retry";
 import type { AgentManagerConfig } from "../config/selectors";
+import type { ResolvedSpinBreakerSettings } from "../runtime/spin-breaker";
+import { selectSpinBreakerSettings } from "./spin-breaker-selection";
 
 export interface NativeTurnConfigSelection {
   compaction?: ResolvedCompaction;
   transportRetry: TurnRetryConfig;
+  spinBreaker: ResolvedSpinBreakerSettings;
 }
 
 /**
@@ -26,11 +29,18 @@ export interface NativeTurnConfigSelection {
  * `AgentNativeTransportRetryConfigSchema`), so a hand-built NaxConfig that
  * skipped zod parsing still gets a sane policy rather than `undefined`
  * fields reaching the adapter.
+ *
+ * `spinBreaker` (nax#2013) is resolved by its own module, `selectSpinBreakerSettings`,
+ * because the breaker itself is transport-neutral (`src/runtime/spin-breaker.ts`) —
+ * only its current consumer is native. Bundled into this same return value
+ * rather than spread separately at the `manager.ts` call site: that file is a
+ * grandfathered oversized file that may not grow by even one line.
  */
 export function selectNativeTurnConfig(config: AgentManagerConfig | undefined): NativeTurnConfigSelection {
   const retry = config?.agent?.native?.transportRetry;
   return {
     compaction: config?.execution?.compaction,
     transportRetry: { maxAttempts: retry?.maxAttempts ?? 3, baseDelayMs: retry?.baseDelayMs ?? 2000 },
+    spinBreaker: selectSpinBreakerSettings(config),
   };
 }

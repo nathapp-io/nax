@@ -257,6 +257,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
   "agent.maxInteractionTurns":
     "Max turns in multi-turn interaction loop when interactionBridge is active (default: 10)",
+  "agent.spinBreaker": "Repetition breaker — ends a turn that repeats tool calls with no progress (nax#2013)",
+  "agent.spinBreaker.enabled": "Enable the repetition breaker (default: true)",
+  "agent.spinBreaker.nudgeAfterRepeats": "Repeats since the last new call before the first in-band nudge (default: 25)",
+  "agent.spinBreaker.maxNudges": "Nudges to spend before the hard stop (default: 3)",
+  "agent.spinBreaker.stopAfterRepeats": "Repeats since the last new call at which the turn ends (default: 50)",
+  "agent.spinBreaker.recentKeyWindow": "How many recent distinct calls count as already seen (default: 64)",
   // quality.testing (ENH-010) — per-package overridable
   "quality.testing": "Hermetic test enforcement — per-package overridable (ENH-010)",
   "quality.testing.hermetic":
