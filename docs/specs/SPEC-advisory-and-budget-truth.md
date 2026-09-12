@@ -99,6 +99,7 @@ What makes a mixed-threshold union safe today is that nbf's strategy set passes 
 - Per-reviewer `blockingThreshold` configuration (`review.semantic.blockingThreshold` / `review.adversarial.blockingThreshold`). One shared threshold stays the only threshold; if per-reviewer thresholds are wanted they are a separate change, landing after this one so the union's semantics are already pinned by tests.
 - Changing what `budgetPressure.droppedCount` counts in soft mode. It remains a pressure signal — the count of sections that would be dropped — and the existing US-003 AC 3 assertion at `static-rules.test.ts:667` stays green. Only the log wording and the field documentation change.
 - Changing nbf's `scope`, `sourceDiffCap`, `regressionAttempts` or `verifierGuard` semantics, or making any of them per-source. One fix pass, one set of knobs.
+- Adding a category filter to what nbf seeds. `actionableAdvisoryFindings` filters on `actionRequired`, `acDropped` and recurrence-retirement only, never on `category`, so an adversarial `out-of-scope` finding is seeded today and still will be. Whether a scope violation should drive an automated fix is #1359's decision to make, and this change must not settle it through a side door — the same reason `acDropped` findings are filtered at the seeding site rather than at the reviewer (`non-blocking-fix.ts:66-71`, holding #1801). The union adds nothing here either way: `out-of-scope` is an adversarial-only category, and adversarial was already the seeded source.
 - Adding a `category` to semantic-review findings. 132 of 145 carry none today; that is a reviewer-prompt question, not a seeding question.
 - Emitting a `stale` chunk-exclusion reason, persisting `ChunkKind`, or any curator heuristic change (#1931, #1930, #1445).
 - Aggregating the plan-time Context Files drop telemetry (#1474).
@@ -187,6 +188,8 @@ Dependencies: none.
 10. `[integration]` Repeat the previous scenario, changing only `sources` to name just `"adversarial"`; assert the nbf runner was not invoked.
 11. `[unit]` The nbf strategy set builds its implementer strategy with a severity floor of `"info"` when `review.blockingThreshold` is `"error"`, and with the same `"info"` floor when `review.blockingThreshold` is `"warning"`, so an advisory finding at `warning` severity is rendered into the rectifier input under both settings.
 12. `[unit]` A finding whose `source` is `"semantic-review"` and whose `fixTarget` is `"source"` is claimed by the autofix implementer strategy built by the nbf strategy set.
+13. `[integration]` Stub the nbf runner; with a config that enables review with `checks` containing `"semantic"` and not `"adversarial"`, nbf enabled, and `sources` naming `"semantic"`, drive a story through the story-orchestrator phase-completion path with rectification enabled, a story id set, and a passing semantic-review phase carrying one actionable advisory finding; assert the nbf runner was invoked once with that finding.
+14. `[integration]` Repeat the previous scenario with `sources` naming only `"adversarial"`; assert the nbf runner was not invoked, confirming the pass is gated by `sources` rather than by which reviewer slots the config happens to declare.
 
 ### US-003
 

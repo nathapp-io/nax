@@ -1,0 +1,183 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "advisory-and-budget-truth",
+  "branchName": "feat/advisory-and-budget-truth",
+  "createdAt": "2026-09-12T00:00:00.000Z",
+  "updatedAt": "2026-09-12T03:00:05.131Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Move non-blocking-fix configuration to review with reviewer sources",
+      "description": "**Goal** — Move the nbf configuration to `review.nonBlockingFix`, give it a schema-defaulted per-reviewer `sources` list, and preserve legacy configuration through the compatibility pipeline. **Motivation** — Both reviewers build the same `advisoryFindings` bucket, deliberately so since #1865 / PR #1908; `semantic-review.ts:440-445` says as much in a comment. But the nbf seed reads one phase by name (`execution-plan.ts:397`), so the semantic bucket is reported at run end and then dropped. **Approach** — Per-reviewer seeding is a config `sources` list, not a widened boolean. The four states operators need are adversarial-only, semantic-only, both, and neither. A `sources` array expresses all four in one place and keeps a single set of `scope` / `sourceDiffCap` knobs governing the one fix pass. **Approach** — The nbf block moves to `review.nonBlockingFix`. It currently lives inside `AdversarialReviewConfigSchema` (`schemas-review.ts:167`), which is why the seed was adversarial-shaped in the first place. Configuring semantic's opt-in under `review.adversarial` would reproduce that drift. The legacy path keeps working through a migration shim, per the project's config conventions: a benign rename with no semantic change takes a shim that warns, copies to the new key and drops the old — not a pre-parse reject guard, which is reserved for removals that would silently drop behaviour. **Approach** — `sources` defaults to `[\"adversarial\"]`. Existing configs behave exactly as today and semantic seeding is opt-in, matching how nbf itself shipped (\"Opt-in; ramp to true after validating signal quality\"). The default is declared with Zod's `.default()`, per the project's config convention that defaults live in the schema. The consequence is deliberate and must not be \"simplified\" away: `.default()` makes `sources` **required on the inferred output type**, so every existing object literal passed where a `NonBlockingFixConfig` is expected stops typechecking until it names the field. US-001's `Modifies` list authorises exactly those files. Declaring `sources` as `.optional()` and resolving the fallback at the read site would avoid the cascade but would move a default out of the schema, which the convention forbids. **Scope** — In: export the standalone nbf object schema; attach its optional slice to ReviewConfigSchema; derive NonBlockingFixConfig from that schema; migrate the legacy raw path in every config layer; and update the prescribed config, migration, layering, and typed-fixture tests. Out: consuming the sources union in orchestration (US-002); changing nbf's `scope`, `sourceDiffCap`, `regressionAttempts` or `verifierGuard` semantics, or making any of them per-source; per-reviewer thresholds. **Interface** — `NonBlockingFixConfig` is derived from the new standalone nbf schema rather than `AdversarialReviewConfigSchema`; the new exported migration accepts `raw` config and a config warning logger, returning migrated raw config. Canonical wins, legacy is dropped with a warning naming both keys when both locations are present; legacy-only input is copied to `review.nonBlockingFix`, dropped from the old location, and warned; absent legacy input is returned unchanged without an nbf warning.",
+      "acceptanceCriteria": [
+        "When `review.nonBlockingFix` is parsed as an empty object, then it resolves `enabled` to `false`, `scope` to `\"both\"`, `regressionAttempts` to `1`, `verifierGuard` to `true`, and `sourceDiffCap` to `{ maxFiles: 10, maxLines: 500 }`.",
+        "When `review.nonBlockingFix` is parsed as an empty object, then `sources` equals `[\"adversarial\"]`.",
+        "When `review.nonBlockingFix.sources` is parsed with `[\"adversarial\", \"semantic\"]`, then it preserves both entries in declared order.",
+        "When `review.nonBlockingFix.sources` contains an unrecognised reviewer name, then parsing rejects with a validation error naming `sources`.",
+        "When a config omits `review.nonBlockingFix`, then the parsed slice is `undefined` and no nbf defaults are synthesised elsewhere in the parsed config.",
+        "When config loading receives only `review.adversarial.nonBlockingFix`, then the resolved nbf slice equals the canonical declaration's resolved slice and one config warning names both the legacy and canonical keys.",
+        "When config loading receives both `review.adversarial.nonBlockingFix` and `review.nonBlockingFix`, then the resolved slice uses the canonical block's values and emits a warning naming both keys without throwing.",
+        "When config loading receives neither nbf location, then it leaves the config unchanged and emits no config warning about nbf.",
+        "When an earlier config layer supplies `review.adversarial.nonBlockingFix` and a later layer supplies `review.nonBlockingFix`, then the merged resolved slice uses the later layer's canonical value, demonstrating migration runs before layer merge.",
+        "When `AdversarialReviewConfigSchema` parses an adversarial block containing `nonBlockingFix`, then the parsed object has no `nonBlockingFix` property."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "migration",
+        "review"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This changes four existing schema and compatibility modules using established Zod and shim patterns, with layer-precedence regression behavior."
+      },
+      "contextFiles": [
+        "src/config/schemas-review.ts",
+        "src/config/selectors.ts",
+        "src/config/migrations.ts",
+        "src/config/compat-shims.ts",
+        ".nax/rules/config-patterns.md"
+      ],
+      "outOfScope": [
+        "Changing nbf's `scope`, `sourceDiffCap`, `regressionAttempts` or `verifierGuard` semantics, or making any of them per-source. One fix pass, one set of knobs.",
+        "Per-reviewer `blockingThreshold` configuration (`review.semantic.blockingThreshold` / `review.adversarial.blockingThreshold`). One shared threshold stays the only threshold; if per-reviewer thresholds are wanted they are a separate change, landing after this one so the union's semantics are already pinned by tests."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/config/non-blocking-fix-config.test.ts",
+          "reason": "every case parses through `AdversarialReviewConfigSchema` and the first asserts `cfg.nonBlockingFix` deep-equals the defaults literal. Once the block moves, that schema strips the key and the field is `undefined`, so a correct implementation fails these assertions. Replacement invariant: the same default-shape and validation assertions, made against the new standalone nbf schema and through `review.nonBlockingFix`, plus the legacy path asserted via the migration rather than via the adversarial schema."
+        },
+        {
+          "path": "test/unit/execution/non-blocking-fix-retirement.test.ts",
+          "reason": "two `as const` nbf literals are passed to `shouldRunNonBlockingFix` and `runNonBlockingFix`, both of which take a `NonBlockingFixConfig`. Once `sources` is a defaulted field it is required on that type, so the literals stop typechecking. Replacement invariant: the same retired-only gate-closure assertions, with each literal naming `sources`."
+        },
+        {
+          "path": "test/unit/execution/nbf-readonly-flake-triage.test.ts",
+          "reason": "the quarantine-transaction literal is passed to `runNonBlockingFix`, whose options declare `cfg: NonBlockingFixConfig`, so it stops typechecking for the same reason. Replacement invariant: the same quarantine-transaction assertions, with the literal naming `sources`."
+        },
+        {
+          "path": "test/unit/execution/rectification-overrides.test.ts",
+          "reason": "the literal is passed to `StoryOrchestratorBuilder.addNonBlockingFix`, whose first parameter is a `NonBlockingFixConfig`, so it stops typechecking for the same reason. Replacement invariant: the same \"builder does not throw\" assertion, with the literal naming `sources`."
+        },
+        {
+          "path": "test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts",
+          "reason": "two fixtures declare a fully-enumerated `review.adversarial` block with `nonBlockingFix` nested inside it. That key is no longer part of the adversarial schema, so the fixtures no longer describe a reachable config shape. Replacement invariant: the same triage-assembly assertions, with nbf declared at `review.nonBlockingFix` and `sources` named."
+        },
+        {
+          "path": "test/unit/execution/non-blocking-fix-wiring.test.ts",
+          "reason": "three fixtures nest `nonBlockingFix` under `review.adversarial` for the same reason. Replacement invariant: the same wiring and green-precondition assertions, with nbf declared canonically and `sources` named."
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Seed non-blocking fixes from configured review advisories",
+      "description": "**Goal** — Extract nbf seed derivation into a size-safe orchestrator seam and union actionable advisory buckets selected by `sources`. **Motivation** — The nbf seed reads one phase by name (`execution-plan.ts:397`), so the semantic bucket is reported at run end and then dropped. **Approach** — Two independent changes, no shared module. The nbf work is a config move plus one extracted seam; the static-rules work is a log-wording change with no behavioural effect. **Approach** — Per-reviewer seeding is a config `sources` list, not a widened boolean. The four states operators need are adversarial-only, semantic-only, both, and neither. A `sources` array expresses all four in one place and keeps a single set of `scope` / `sourceDiffCap` knobs governing the one fix pass. **Approach** — That derivation moves to a new module and the call site consumes its result. **This extraction is mandatory, not stylistic:** the file is exactly 600 lines, the `SRC_LIMIT` in `scripts/check-file-sizes.ts`, and it is not in `scripts/baselines/file-sizes-baseline.json` — it has zero headroom and any added line fails the ratchet. **Design notes** — `actionableAdvisoryFindings(findings: readonly Finding[]): readonly Finding[]` (`src/execution/non-blocking-fix.ts:65`) filters `actionRequired === false`, `acDropped === true`, and `isRecurrenceRetired(f)`. Applies unchanged to both sources. `shouldRunNonBlockingFix(cfg: NonBlockingFixConfig | undefined, advisoryCount: number): boolean` (`src/execution/non-blocking-fix.ts:80`) requires `cfg?.enabled === true && advisoryCount > 0`. Phase-name → state-key map at `src/execution/story-orchestrator/types.ts:224-225`: `\"semantic-review\" → semanticReview`, `\"adversarial-review\" → adversarialReview`. No per-reviewer `blockingThreshold`. There is one threshold, on `ReviewConfigSchema` (`schemas-review.ts:231`), and both reviewers read the identical value at `plan-inputs.ts:376` and `:428`; all 2,991 threshold-stamped records in the corpus carry `\"error\"`, with zero stories where the two reviewers stamped different values. Divergence is unreachable via config and out of scope here. What makes a mixed-threshold union safe today is that nbf's strategy set passes `promptSeverityFloor: \"info\"` at all six call sites in `build-plan-for-strategy.ts:395-427`, so the rectifier prompt's render floor never reads `review.blockingThreshold`. That is load-bearing behaviour resting on a hardcoded literal, documented only as a comment about empty findings lists and pinned by no test. US-002 pins it. **Scope** — In: create nbf-seed.ts; move green gating, selected-source reads, actionable filtering, deduplicated union, and run decision from execution-plan; wire the phase-completion path; read canonical nbf config and construct nbf strategies whenever either review slot is present rather than requiring the adversarial slot; preserve info floor and semantic implementer claiming. Out: defining/migrating sources (US-001); static-rules work (US-003); threshold or nbf-scope semantic changes. **Interface** — `export function actionableAdvisoryFindings(findings: readonly Finding[]): readonly Finding[];` and `export function shouldRunNonBlockingFix(cfg: NonBlockingFixConfig | undefined, advisoryCount: number): boolean;`. nbf-seed.ts exports the seed derivation execution-plan calls. A selected phase that did not run or is disabled contributes nothing without error; deduplicate identical reviewer findings before dispatch.",
+      "acceptanceCriteria": [
+        "Given a story with two actionable semantic-review advisories, no adversarial-review advisories, and nbf `sources` `[\"adversarial\", \"semantic\"]`, when the seed is derived, then it returns both semantic findings.",
+        "Given those same phase outputs and nbf `sources` `[\"adversarial\"]`, when the seed is derived, then it returns an empty list and reports that nbf should not run.",
+        "Given one actionable adversarial-review advisory, two actionable semantic-review advisories, and both sources, when the seed is derived, then it returns three findings.",
+        "Given both advisory buckets contain a finding with the same file, line, and message and both sources are selected, when the seed is derived, then it returns that finding once.",
+        "Given a selected semantic advisory has `meta.recurrence.disposition === \"retired\"`, when the seed is derived, then it excludes that finding.",
+        "Given a selected semantic advisory has `actionRequired === false`, when the seed is derived, then it excludes that finding.",
+        "Given semantic-review did not run and both sources are selected, when the seed is derived, then it returns the adversarial findings without reporting an error.",
+        "Given any phase output fails the phase-passed predicate, when the seed is derived, then it reports that nbf should not run regardless of advisory count.",
+        "Given rectification is enabled, a story id is set, nbf is enabled with both sources, semantic-review passes with one actionable advisory, and adversarial-review passes with none, when the story is driven through the story-orchestrator phase-completion path, then the stubbed nbf runner is invoked once with the semantic finding.",
+        "Given the prior integration scenario except nbf `sources` is `[\"adversarial\"]`, when the story is driven through the story-orchestrator phase-completion path, then the stubbed nbf runner is not invoked.",
+        "Given `review.blockingThreshold` is `\"error\"` or `\"warning\"`, when the nbf strategy set builds its implementer strategy, then its severity floor is `\"info\"` and a warning-severity advisory is rendered into rectifier input under either setting.",
+        "Given a finding with `source` `\"semantic-review\"` and `fixTarget` `\"source\"`, when the nbf strategy set builds its autofix implementer strategy, then that strategy claims the finding.",
+        "Given nbf `sources` is empty, when the seed is derived, then it returns no findings and reports that nbf should not run.",
+        "Given every selected source produces no actionable advisory findings, when the seed is derived, then it reports that nbf should not run."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "orchestration",
+        "review",
+        "autofix"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "A new seed seam is wired into production orchestration and intersects review outputs, plan construction, deduplication, and rectifier rendering across multiple modules."
+      },
+      "contextFiles": [
+        "src/execution/story-orchestrator/execution-plan.ts",
+        "src/execution/non-blocking-fix.ts",
+        "src/execution/story-orchestrator/types.ts",
+        "src/execution/build-plan-for-strategy.ts",
+        "src/review/semantic-helpers.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/story-orchestrator/nbf-seed.ts"
+      ],
+      "outOfScope": [
+        "Per-reviewer `blockingThreshold` configuration (`review.semantic.blockingThreshold` / `review.adversarial.blockingThreshold`). One shared threshold stays the only threshold; if per-reviewer thresholds are wanted they are a separate change, landing after this one so the union's semantics are already pinned by tests.",
+        "Changing nbf's `scope`, `sourceDiffCap`, `regressionAttempts` or `verifierGuard` semantics, or making any of them per-source. One fix pass, one set of knobs.",
+        "Adding a `category` to semantic-review findings. 132 of 145 carry none today; that is a reviewer-prompt question, not a seeding question."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Make static-rules soft-budget warnings truthful",
+      "description": "**Goal** — Make static-rules budget warnings distinguish potential soft-budget truncation from actual enforced truncation, without changing provider output or pressure. **Motivation** — With `enforceBudget: false` the provider correctly delivers every rule section, but the `enforceBudget` guard is applied to the chunk output (`static-rules.ts:391`), the empty-branch notice chunk (`:414`) and the notice chunk (`:460`) — and omitted from the two warning logs at `:373` and `:382`. **Approach** — Two independent changes, no shared module. The nbf work is a config move plus one extracted seam; the static-rules work is a log-wording change with no behavioural effect. **Approach** — Under `enforceBudget: false` the messages state that sections *would* be truncated and name the flag; under `enforceBudget: true` message text and payloads are unchanged. The file is 597 of 600 lines, so the change must be net-neutral or shrink; the provider's returned `budgetPressure` is not touched. **Approach** — The doc comment on `droppedCount` and `droppedTokens` states that under a non-enforcing budget these count sections that *would* be discarded, and that `overageTokens` is the enforcement-independent signal. **Scope** — In: branch both canonical-rule budget warnings by enforcement state; preserve enforced wording and payload; make soft warnings conditional and name enforceBudget; correct pressure comments; add logger behavioral coverage while retaining existing soft output/pressure assertions. Out: returned pressure, chunks/notices, curator/rule-budget behavior, and US-001/US-002 work. **Interface** — `export interface ProviderBudgetPressure { overageTokens: number; droppedCount: number; droppedTokens: number; droppedIds: string[]; }`. droppedCount and droppedTokens remain potential-drop pressure signals in soft mode; overageTokens remains enforcement-independent.",
+      "acceptanceCriteria": [
+        "When canonical rules exceed budget with `enforceBudget: false`, then the emitted truncation warning says sections would be truncated, names `enforceBudget`, and does not say sections were truncated.",
+        "When canonical rules exceed budget with `enforceBudget: true`, then the emitted truncation warning message is unchanged from today's text.",
+        "When canonical rules exceed budget with `enforceBudget: false`, then the provider returns one chunk per canonical rule and withholds no section.",
+        "When canonical rules exceed budget with `enforceBudget: false`, then returned `budgetPressure` has non-zero `overageTokens` and the same `droppedCount` as enforcing configuration for the same ruleset, confirming the pressure object is unchanged by this story.",
+        "When canonical rules fit inside budget with `enforceBudget: false`, then the provider emits no truncation warning.",
+        "When canonical-rule tokens reach the approaching-budget threshold with `enforceBudget: false`, then the approaching-budget warning names `enforceBudget` and does not assert that any section was dropped."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "logging",
+        "budget"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The implementation is a bounded two-source-file conditional-log and documentation change with precise soft- and enforced-mode regression assertions."
+      },
+      "contextFiles": [
+        "src/context/engine/providers/static-rules.ts",
+        "src/context/engine/manifest-types.ts",
+        "src/context/engine/providers/static-rules-budget-notice.ts"
+      ],
+      "outOfScope": [
+        "Changing what `budgetPressure.droppedCount` counts in soft mode. It remains a pressure signal — the count of sections that would be dropped — and the existing US-003 AC 3 assertion at `static-rules.test.ts:667` stays green. Only the log wording and the field documentation change.",
+        "Emitting a `stale` chunk-exclusion reason, persisting `ChunkKind`, or any curator heuristic change (#1931, #1930, #1445).",
+        "Aggregating the plan-time Context Files drop telemetry (#1474)."
+      ]
+    }
+  ],
+  "analysis": "Existing TypeScript/Zod code. The nbf schema is nested in AdversarialReviewConfigSchema at src/config/schemas-review.ts:167-214, ReviewConfigSchema exposes semantic and adversarial blocks at src/config/schemas-review.ts:258-259, and NonBlockingFixConfig derives from that nesting at src/config/selectors.ts:182. build-plan-for-strategy reads config.review?.adversarial?.nonBlockingFix and only builds nbf strategies when the adversarial review input exists (src/execution/build-plan-for-strategy.ts:367-371); both must change so canonical config and semantic-only review plans are reachable. Defaults must remain in a standalone Zod schema because .default() deliberately makes sources required on the inferred output type. Every typed NonBlockingFixConfig fixture named by the spec must gain sources. applyConfigCompatShims runs on each raw config layer before merge and Zod parsing (src/config/compat-shims.ts:467-502). Mirror migrateLegacyReviewModelKey (src/config/migrations.ts:100-141): absent legacy input is a no-op, output is immutable, canonical wins when both keys exist, legacy is removed, and a structured warning names legacy and canonical keys. Add the migration to the chain before layering so a later canonical layer overrides a migrated earlier legacy layer. This follows .nax/rules/config-patterns.md:23-45. The seed is inline in the 600-line, no-headroom execution plan (src/execution/story-orchestrator/execution-plan.ts:379-410), currently requires all phases to pass, gates nbf on adversarial state, reads only adversarial-review output, and filters it. Extract it to nbf-seed.ts so execution-plan shrinks. Preserve the green predicate; select source-named reviewer phase outputs; ignore absent or disabled phases; apply actionableAdvisoryFindings unchanged to both buckets; and deduplicate the union. The phase map is in src/execution/story-orchestrator/types.ts:205-225; nonBlockingExcludePhases already excludes all review phases at src/execution/non-blocking-fix.ts:84-87; semantic-review is already an implementer source at src/operations/autofix-implementer-strategy.ts:11; semantic helper output is the relevant finding source/fixTarget producer. Preserve the six promptSeverityFloor: info nbf strategy calls at src/execution/build-plan-for-strategy.ts:370-427 and add direct threshold-independence coverage. Config tests presently parse the adversarial schema (test/unit/config/non-blocking-fix-config.test.ts); use the standalone schema/review config, migrations.test.ts, and loader layering tests. Update typed nbf fixtures in retirement, readonly-flake triage, rectification overrides, triage assembly, and wiring tests. StaticRulesProvider calculates budget pressure before choosing emitted sections. Its two warning logs at src/context/engine/providers/static-rules.ts:370-390 lack enforcement guards, while effective section selection and notice chunks are correctly guarded at :392-461. Branch only log wording: preserve enforced messages and payloads; in soft mode say sections would be truncated and name enforceBudget. Do not alter buildSectionBudgetPressure (src/context/engine/providers/static-rules-budget-notice.ts:18-38), chunks, notices, or pressure values. Correct manifest-types.ts:31-34 comments. static-rules.ts is 597/600 lines, so the implementation must be net-neutral or shrink. Existing tests pin soft-mode chunk retention and droppedCount potential drops at test/unit/context/engine/providers/static-rules.test.ts:637-682; add logger assertions without weakening them. Principal risks are silently stripping legacy config, changing config-layer precedence, retaining an adversarial-only strategy-construction gate, double-seeding duplicates, running nbf on a red story, or changing soft-mode pressure/output while correcting logs.",
+  "outOfScope": [
+    "Per-reviewer `blockingThreshold` configuration (`review.semantic.blockingThreshold` / `review.adversarial.blockingThreshold`). One shared threshold stays the only threshold; if per-reviewer thresholds are wanted they are a separate change, landing after this one so the union's semantics are already pinned by tests.",
+    "Changing what `budgetPressure.droppedCount` counts in soft mode. It remains a pressure signal — the count of sections that would be dropped — and the existing US-003 AC 3 assertion at `static-rules.test.ts:667` stays green. Only the log wording and the field documentation change.",
+    "Changing nbf's `scope`, `sourceDiffCap`, `regressionAttempts` or `verifierGuard` semantics, or making any of them per-source. One fix pass, one set of knobs.",
+    "Adding a `category` to semantic-review findings. 132 of 145 carry none today; that is a reviewer-prompt question, not a seeding question.",
+    "Emitting a `stale` chunk-exclusion reason, persisting `ChunkKind`, or any curator heuristic change (#1931, #1930, #1445).",
+    "Aggregating the plan-time Context Files drop telemetry (#1474)."
+  ],
+  "routingProfile": "native"
+}
