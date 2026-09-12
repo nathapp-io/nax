@@ -34,6 +34,7 @@
 import type { NonBlockingFixConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import { actionableAdvisoryFindings } from "./non-blocking-fix";
+import { phasePassed } from "./story-orchestrator/phase-eval";
 
 /** A reviewer whose advisory bucket the seed derivation may pull from. */
 export type NbfSource = "adversarial" | "semantic";
@@ -84,23 +85,18 @@ function readAdvisoryBucket(output: unknown): readonly Finding[] {
 }
 
 /**
- * Defensive shape match for an op's success/passed verdict, mirroring the
- * defensive behaviour of `phasePassed` for the reviewer phases (which are NOT
- * in `STRICT_VERDICT_PHASE_NAMES`). A missing output passes the predicate —
- * the reviewer simply did not run. A present output that carries neither
- * `success` nor `passed` defaults to passing.
+ * Defensive shape match delegated to the canonical `phasePassed` predicate
+ * in `story-orchestrator/phase-eval.ts`. Strict verdict phases
+ * (`full-suite-gate`, `verify-scoped`, `lint-check`, `typecheck-check`,
+ * `verifier`) treat null/undefined/non-object outputs and missing verdict
+ * fields as failures — mirroring the orchestrator's `storyCurrentlyGreen`.
+ * Non-strict phases (reviewers, implementer) defensively pass on the same
+ * shapes. The seed derivation must apply the real predicate so AC8's "any
+ * phase output fails the phase-passed predicate" is satisfied for strict
+ * phases too.
  */
 function isPhasePassedLike(opName: string, output: unknown, storyId: string | undefined): boolean {
-  if (output === null || output === undefined) return true;
-  if (typeof output !== "object") return true;
-  const r = output as Record<string, unknown>;
-  if ("success" in r) return r.success !== false;
-  if ("passed" in r) return r.passed !== false;
-  // No verdict field — defer to phasePassed's defensive default (reviewers are
-  // non-strict, so a malformed envelope passes rather than failing closed).
-  void opName;
-  void storyId;
-  return true;
+  return phasePassed(opName, output, storyId);
 }
 
 /** Build the (file, line, message) dedup key. Missing file/line collapses to message-only. */
