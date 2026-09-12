@@ -1,6 +1,6 @@
 {
-  "count": 132,
-  "updatedAt": "2026-09-12T17:03:29.084Z",
+  "count": 130,
+  "updatedAt": "2026-09-12T17:03:54.680Z",
   "modules": [
     "src/agents/acp/adapter-close-physical.ts",
     "src/agents/acp/adapter-lifecycle.ts",
@@ -131,8 +131,6 @@
     "src/review/typecheck-parsing/parse.ts",
     "src/routing/index.ts",
     "src/routing/router.ts",
-    "src/routing/strategies/llm.ts",
-    "src/test-runners/index.ts",
-    "src/test-runners/scoped-selection.ts"
+    "src/routing/strategies/llm.ts"
   ]
 }
