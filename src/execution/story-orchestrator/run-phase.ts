@@ -4,7 +4,7 @@ import type { Finding, FindingSeverity, FixStrategy, Iteration } from "@/finding
 import { markNaxBailWrapper, runFixCycle } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { AdversarialReviewInput, CallContext, SemanticReviewInput } from "@/operations";
-import { callOp } from "@/operations";
+import { callOp, verifierOp } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
 import type { PhaseDetails } from "@/plugins/types";
@@ -17,6 +17,7 @@ import {
   toNoDispatchCheckResult,
 } from "@/review";
 import { totalSpendUsd } from "@/runtime";
+import { cleanupVerdict } from "@/tdd";
 import { errorMessage } from "@/utils/errors";
 import { _gitDeps, captureGitRef } from "@/utils/git";
 import { captureTreeState as realCaptureTreeState } from "../checkpoint/resume-hydrate";
@@ -35,6 +36,7 @@ export const _storyOrchestratorDeps = {
   callOp,
   runFixCycle,
   captureGitRef,
+  cleanupVerdict,
   prepareSemanticReviewInput,
   prepareAdversarialReviewInput,
   runNonBlockingFix,
@@ -71,6 +73,24 @@ export const _storyOrchestratorDeps = {
   },
   loadCheckpoints: async (_featureDir: string): Promise<Map<string, StoryCheckpoint>> => new Map(),
 };
+
+/**
+ * Delete any verdict file before the verifier dispatches, so a file found
+ * afterwards is necessarily this turn's.
+ *
+ * Needed once the verifier can actually write one (nax#2013): `cleanupVerdict`
+ * otherwise runs only in `verifierOp.recover`'s `finally` and once at
+ * post-run, so story A's verdict would survive into story B, where `recover`
+ * would read it and rule on the wrong story. Deleting before dispatch is
+ * stronger than comparing timestamps — there is no clock to get wrong.
+ *
+ * Best-effort: a failure here must not fail the phase, and the worst case is
+ * the pre-existing behaviour.
+ */
+export async function clearStaleVerdictBeforeDispatch(opName: string, packageDir: string): Promise<void> {
+  if (opName !== verifierOp.name || packageDir.trim() === "") return;
+  await _storyOrchestratorDeps.cleanupVerdict(packageDir).catch(() => undefined);
+}
 
 /**
  * @internal
@@ -182,7 +202,8 @@ export async function runPhase(
   // would be misleading.
   const isTddPhase = isThreeSession && TDD_OP_NAMES.has(opName);
 
-  // Pre-phase: capture git ref for TDD phases; emit phase-begin log.
+  // Pre-phase: clear any stale verdict, capture git ref for TDD phases; emit phase-begin log.
+  await clearStaleVerdictBeforeDispatch(opName, ctx.packageDir);
   const beforeRef = isTddPhase ? await _storyOrchestratorDeps.captureGitRef(ctx.packageDir) : undefined;
   let dispatchInput = isTddPhase && beforeRef ? { ...(slot.input as Record<string, unknown>), beforeRef } : slot.input;
   // Refresh stat/diff/etc for review phases — plan-build's snapshot is stale.

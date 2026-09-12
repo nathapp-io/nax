@@ -12,11 +12,13 @@ import { collectOps, findViolations, REQUIRED_TOOLS_BY_ROLE } from "@scripts/che
 import { byCodePoint } from "@/utils/sort";
 
 describe("REQUIRED_TOOLS_BY_ROLE", () => {
-  test("a verifier must be able to run commands but never to write", () => {
+  test("a verifier must be able to run commands and write its verdict, but never to edit", () => {
     const required = REQUIRED_TOOLS_BY_ROLE.verifier;
 
     expect(required).toContain("RunCommand");
-    expect(required).not.toContain("Write");
+    // Write is required so the mandatory verdict-file write is satisfiable
+    // (nax#2013) — narrowed to that one file by verifierOp.toolPatterns.
+    expect(required).toContain("Write");
     expect(required).not.toContain("Edit");
   });
 

@@ -4,6 +4,8 @@ import { type ConfigSelector, DEFAULT_CONFIG, type TddConfig, tddConfigSelector 
 import type { Logger } from "@/logger";
 import { verifierOp } from "@/operations";
 import type { PackageView } from "@/runtime";
+import { VERDICT_FILE } from "@/tdd";
+import { narrowGrants } from "@/tools";
 
 /**
  * A real `PackageView` over `DEFAULT_CONFIG`. `parse` reads nothing from it,
@@ -341,5 +343,33 @@ describe("verifierOp — timeout budget", () => {
 
     expect(timeoutMs).toBe(1_800_000);
     expect(timeoutMs).not.toBe(DEFAULT_CONFIG.execution.sessionTimeoutSeconds * 1000);
+  });
+});
+
+describe("verifierOp — verdict-file write capability", () => {
+  test("declares Write so the verdict-file instruction is satisfiable", () => {
+    expect(verifierOp.tools).toContain("Write");
+  });
+
+  test("narrows Write to the verdict file alone", () => {
+    expect(verifierOp.toolPatterns?.Write).toEqual([VERDICT_FILE]);
+  });
+
+  test("still withholds Edit, Delete and GitCommit — a verifier must not repair", () => {
+    expect(verifierOp.tools).not.toContain("Edit");
+    expect(verifierOp.tools).not.toContain("Delete");
+    expect(verifierOp.tools).not.toContain("GitCommit");
+  });
+
+  test("the narrowing holds against an unrestricted profile", () => {
+    const granted = narrowGrants(
+      [
+        { tool: "Write", patterns: ["*"] },
+        { tool: "Read", patterns: ["*"] },
+      ],
+      verifierOp.toolPatterns,
+    );
+
+    expect(granted).toContainEqual({ tool: "Write", patterns: [VERDICT_FILE] });
   });
 });

@@ -40,9 +40,9 @@ const BASELINE_FILE = join(import.meta.dir, "baselines", "op-tool-capability-bas
 /**
  * Minimum tools a session role's work requires.
  *
- * `verifier` is deliberately run-only: a verifier that can repair what it is
- * judging is not a verifier, and the isolation check it performs assumes it
- * changed nothing.
+ * `verifier` never edits an existing file (no Edit requirement): a verifier
+ * that can repair what it is judging is not a verifier, and the isolation
+ * check it performs assumes it changed nothing but the verdict.
  */
 export const REQUIRED_TOOLS_BY_ROLE: Record<string, readonly string[]> = {
   implementer: ["Write", "Edit"],
@@ -54,7 +54,13 @@ export const REQUIRED_TOOLS_BY_ROLE: Record<string, readonly string[]> = {
   "repo-scoped-test-fix": ["Write", "Edit"],
   "fix-gen": ["Write", "Edit"],
   "finish-fix": ["Write", "Edit"],
-  verifier: ["RunCommand"],
+  /**
+   * The verifier runs the story's scoped tests AND writes one fresh output
+   * file — the same `fileOutput`-style contract as the four roles below. It
+   * was omitted from that group, so the prompt's mandatory verdict-file write
+   * had no tool behind it and `recover`'s disk fallback was dead (nax#2013).
+   */
+  verifier: ["RunCommand", "Write"],
   /**
    * These four roles never edit an existing file (no Edit requirement) — each
    * writes ONE fresh output file via a `fileOutput`-style contract ("write JSON
