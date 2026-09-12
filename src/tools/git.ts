@@ -76,6 +76,58 @@ const GIT_DIFF_FILTER_VERBS: readonly string[] = ["diff", "log", "show"];
 const GIT_ONELINE_VERBS: readonly string[] = ["log", "show"];
 
 /**
+ * `log` alone takes a commit bound. Every other read verb already names what it
+ * operates on -- `show` and `blame` take a ref, `diff` a range, `status` the
+ * working tree -- so none of them is unbounded in the way `log` is, and
+ * defaulting them would invent a truncation nobody asked for.
+ */
+const GIT_MAX_COUNT_VERBS: readonly string[] = ["log"];
+
+/**
+ * Commit bound applied to a `log` that does not supply its own.
+ *
+ * `log` was the one read verb with no bound on how much it returns: a pathspec
+ * selects WHICH commits to show, then each selected commit prints in full. With
+ * `nameOnly` that compounds, because `--name-only` lists every file in each
+ * matching commit rather than the path that selected it -- nax#2009 measured
+ * 79KB from 7 commits on a single-file pathspec, the largest call in a
+ * 267-call session.
+ *
+ * The default is the load-bearing half of the fix: a caller that does not know
+ * to ask for a bound is exactly the caller that got 79KB back. 20 covers the
+ * "what recently touched this file" question that the audit shows `log` is
+ * actually used for, and a caller wanting more says so.
+ */
+export const DEFAULT_LOG_MAX_COUNT = 20;
+
+/**
+ * A positive-integer field, gated to the verbs it applies to.
+ *
+ * Refused rather than coerced, for the reason `flagFromBoolean` gives: a
+ * non-integer would reach git as `--max-count=1.5` and come back as a git usage
+ * error the model then has to interpret. `true` is excluded explicitly because
+ * it is not a number at all, and `Number.isInteger` already rejects NaN and
+ * Infinity.
+ */
+function flagFromPositiveInteger(
+  input: Record<string, unknown>,
+  field: string,
+  subcommand: string,
+  validVerbs: readonly string[],
+  flag: string,
+): string | null | { error: string } {
+  const value = input[field];
+  if (value === undefined) return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    return { error: `"${field}" must be a positive integer` };
+  }
+  if (!validVerbs.includes(subcommand)) {
+    return { error: `"${field}" is not valid for "${subcommand}" (valid for: ${validVerbs.join(", ")})` };
+  }
+  return `${flag}=${value}`;
+}
+
+/**
  * A boolean flag field: absent or `false` emits nothing, `true` emits the flag.
  *
  * A non-boolean is refused rather than coerced — `nameOnly: "false"` is truthy
@@ -153,6 +205,11 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
   if (oneline !== null && typeof oneline === "object") return oneline;
   if (oneline !== null) argv.push(oneline);
 
+  const maxCount = flagFromPositiveInteger(input, "maxCount", subcommand, GIT_MAX_COUNT_VERBS, "--max-count");
+  if (maxCount !== null && typeof maxCount === "object") return maxCount;
+  if (maxCount !== null) argv.push(maxCount);
+  else if (GIT_MAX_COUNT_VERBS.includes(subcommand)) argv.push(`--max-count=${DEFAULT_LOG_MAX_COUNT}`);
+
   for (const ref of refs) {
     if (typeof ref !== "string") return { error: "refs must be strings" };
     // A ref that begins with "-" would be parsed as an option, which is how an
@@ -203,13 +260,21 @@ export const gitTool: CodingTool = {
       subcommand: { type: "string", enum: [...GIT_READ_VERBS], description: "Read-only git subcommand" },
       refs: { type: "array", items: { type: "string" }, description: "Refs, e.g. ['HEAD~1','HEAD']" },
       paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the permitted root" },
-      nameOnly: { type: "boolean", description: "List file names only, no content (diff, log)" },
+      nameOnly: {
+        type: "boolean",
+        description:
+          "List file names only, no content (diff, log, show). On log a pathspec selects which commits to show, and every file in each of those commits is then listed — not just the pathspec; narrow with maxCount, or use oneline to see only the commits.",
+      },
       diffFilter: {
         type: "string",
         enum: [...GIT_DIFF_FILTERS],
         description: "Select only files Added (A), Modified (M), Deleted (D) or Renamed (R) (diff)",
       },
       oneline: { type: "boolean", description: "One line per commit (log)" },
+      maxCount: {
+        type: "integer",
+        description: `Maximum commits to return (log). Defaults to ${DEFAULT_LOG_MAX_COUNT}; raise it to walk further back.`,
+      },
     },
     required: ["subcommand"],
   },
