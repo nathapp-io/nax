@@ -19,7 +19,13 @@ export interface ChunkEffectiveness {
 
 /**
  * A provider's own budget pressure — how far over its token budget it
- * went, and (when the budget is enforced) what it discarded to fit.
+ * went, and what it discarded (or would discard if enforced) to fit.
+ *
+ * When the budget is enforced (`enforceBudget: true`), the pressure fields
+ * reflect actual discards. When the budget is non-enforcing (`enforceBudget: false`),
+ * the pressure fields are a forward-looking signal: they report what *would* be
+ * discarded if the budget were enforced, while the result still contains every
+ * section. Use `overageTokens` as the enforcement-independent pressure signal.
  *
  * Emitted on `ContextProviderResult.budgetPressure` by providers that have
  * a token budget and can lose information when they exceed it. Omitted
@@ -46,7 +52,10 @@ export interface ProviderBudgetPressure {
    * enforced mode. `overageTokens` is the enforcement-independent pressure signal.
    */
   droppedTokens: number;
-  /** Stable ids of discarded items, for manifest-level debugging. */
+  /**
+   * Stable ids of items that were (enforced) or would be (non-enforcing) discarded.
+   * In soft mode these are the ids that would be omitted if the budget were enforced.
+   */
   droppedIds: string[];
 }
 
