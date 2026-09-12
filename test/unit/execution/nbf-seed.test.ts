@@ -10,7 +10,7 @@
 // or "silently drops semantic advisories" cannot pass review.
 import { describe, expect, test } from "bun:test";
 import { makeFinding } from "@test/helpers";
-import { deriveNbfSeed, type NbfSource } from "@/execution/nbf-seed";
+import { deriveNbfSeed, type NbfSource } from "@/execution/story-orchestrator/nbf-seed";
 import type { Finding } from "@/findings";
 
 function semantic(overrides: Partial<Finding> = {}): Finding {

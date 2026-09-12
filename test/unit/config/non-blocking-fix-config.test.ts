@@ -21,15 +21,19 @@ import { addSink, initLogger, resetLogger } from "@/logger";
 
 type NonBlockingFixLogger = ConfigWarnLogger;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 /** Walk a key path through a raw (pre-Zod) config object, yielding `undefined`
  * whenever any hop is missing — mirrors the optional-chain reads the
  * `migrateLegacyTestPattern` test suite uses, so the new shim's tests can
- * avoid per-read `as Record<string, unknown>` casts. */
+ * avoid per-read record casts. */
 function probe(root: unknown, keys: readonly string[]): unknown {
   let current: unknown = root;
   for (const key of keys) {
-    if (typeof current !== "object" || current === null || !(key in (current as object))) return undefined;
-    current = (current as Record<string, unknown>)[key];
+    if (!isRecord(current)) return undefined;
+    current = current[key];
   }
   return current;
 }
@@ -65,7 +69,7 @@ describe("NonBlockingFixConfigSchema — defaults and validation (AC1, AC2)", ()
       thrown = err;
     }
     expect(thrown).not.toBeNull();
-    const message = (thrown as Error).message ?? String(thrown);
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
     expect(message).toContain("sources");
   });
 
@@ -135,7 +139,7 @@ describe("ReviewConfigSchema — nonBlockingFix is a top-level optional field (A
     expect(parsed).not.toHaveProperty("nonBlockingFix");
   });
 
-  test("ReviewConfigSchema parses review.nonBlockingFix and exposes it as a typed slice", () => {
+  test("ReviewConfigSchema parses review.nonBlockingFix and exposes a typed slice", () => {
     const parsed = ReviewConfigSchema.parse({
       enabled: true,
       checks: [],
@@ -340,7 +344,7 @@ describe("migrateLegacyNonBlockingFix — AC9 (end-to-end wiring via loadConfig)
     // ever stops running the shim, the legacy key would still be present here
     // before strip — the migration's job is to drop it pre-parse so the
     // post-parse config never sees it.
-    expect((config.review?.adversarial as Record<string, unknown> | undefined)?.nonBlockingFix).toBeUndefined();
+    expect(probe(config.review?.adversarial, ["nonBlockingFix"])).toBeUndefined();
 
     const nbfWarnings = warnings.filter((m) => m.includes("review.adversarial.nonBlockingFix"));
     expect(nbfWarnings).toHaveLength(1);

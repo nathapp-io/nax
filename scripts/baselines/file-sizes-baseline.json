@@ -8,7 +8,7 @@
     "src/session/manager.ts": 679,
     "test/unit/agents/acp/spawn-client.test.ts": 810,
     "test/unit/cli/plan.test.ts": 1201,
-    "test/unit/context/engine/providers/static-rules.test.ts": 888,
+    "test/unit/context/engine/providers/static-rules.test.ts": 803,
     "test/unit/debate/runner-plan.test.ts": 1038,
     "test/unit/execution/escalation/tier-escalation.test.ts": 1025,
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": 849,

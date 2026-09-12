@@ -6,7 +6,7 @@ import { NaxConfigSchema } from "../../../src/config/schemas";
 import { AdversarialReviewConfigSchema } from "../../../src/config/schemas-review";
 import { deepMergeConfig } from "../../../src/config/merger";
 import { shouldRunNonBlockingFix } from "../../../src/execution/non-blocking-fix";
-import { deriveNbfSeed } from "../../../src/execution/nbf-seed";
+import { deriveNbfSeed } from "../../../src/execution/story-orchestrator/nbf-seed";
 
 /**
  * Local replacement for the orchestrator-internal `runNonBlockingFixPhaseCompletion`.

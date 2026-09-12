@@ -50,10 +50,15 @@ function makeTddRetryInputs(story: UserStory, extra: Partial<PlanInputs> = {}): 
 }
 
 /** Capture the `advisoryFindings` argument passed into `runNonBlockingFix`. */
+function hasAdvisoryFindings(value: unknown): value is NonBlockingFixArgs {
+  return typeof value === "object" && value !== null && "advisoryFindings" in value;
+}
+
 function capturedAdvisories(runNonBlockingFix: ReturnType<typeof mock>): readonly Finding[] {
   const call = runNonBlockingFix.mock.calls[0];
   if (!call) throw new Error("runNonBlockingFix was not invoked");
-  const args = call[0] as NonBlockingFixArgs;
+  const args = call[0];
+  if (!hasAdvisoryFindings(args)) throw new Error("runNonBlockingFix call did not include advisory findings");
   return args.advisoryFindings;
 }
 

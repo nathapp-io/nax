@@ -31,10 +31,9 @@
  *   - Missing phase outputs (the reviewer did not run) are treated as empty
  *     buckets, not as errors.
  */
-import type { NonBlockingFixConfig } from "../config/selectors";
-import type { Finding } from "../findings/types";
-import { actionableAdvisoryFindings } from "./non-blocking-fix";
-import { phasePassed } from "./story-orchestrator/phase-eval";
+import type { Finding } from "@/findings";
+import { actionableAdvisoryFindings } from "../non-blocking-fix";
+import { phasePassed } from "./phase-eval";
 
 /** A reviewer whose advisory bucket the seed derivation may pull from. */
 export type NbfSource = "adversarial" | "semantic";
@@ -181,8 +180,3 @@ export function deriveNbfSeed(input: DeriveNbfSeedInput): NbfSeed {
 
   return { findings, shouldRun: findings.length > 0 };
 }
-
-/** Re-export `NonBlockingFixConfig` for type-only consumers. */
-export type { NonBlockingFixConfig };
-/** Re-export `actionableAdvisoryFindings` so tests can target a single import. */
-export { actionableAdvisoryFindings };
