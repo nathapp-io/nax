@@ -29,7 +29,7 @@ import {
   warnFallbackMisconfiguration,
   warnProfileMismatch,
 } from "@/execution/lifecycle/run-setup";
-import type { NaxRuntime } from "@/runtime";
+import { createNoOpCostAggregator, type NaxRuntime } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -655,6 +655,107 @@ describe("setupRun — US-002 AC10: sweepFeatureTranscripts wiring", () => {
       _runSetupDeps.createRuntime = origCreateRuntime;
       _runSetupDeps.detectProjectProfile = origDetect;
       depsWithSweep.sweepFeatureTranscripts = origSweep;
+      rmSync(setupWorkdir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #2014: the signal path must drain the run's cost ledger.
+//
+// `costAggregator.drain()` has exactly one caller — `runtime.close()`. The
+// crash handlers' `onShutdown` used to force-close agent sessions and stop
+// there, so a SIGINT-terminated run exited with the ledger still in memory:
+// no `cost/<runId>.jsonl`, and a plausible-looking `totalCost: 0` in the
+// run.complete event. The session force-close must still run first (the
+// `killAll()` sweep that follows needs the PIDs those spawns registered);
+// the runtime close — which owns the drain — must run after it.
+// ---------------------------------------------------------------------------
+
+describe("setupRun — #2014: signal-path shutdown drains the cost ledger", () => {
+  const runtimesToClose: NaxRuntime[] = [];
+
+  afterEach(async () => {
+    await Promise.allSettled(runtimesToClose.map((r) => r.close()));
+    runtimesToClose.length = 0;
+  });
+
+  test("onShutdown force-closes sessions, then closes the runtime", async () => {
+    const setupWorkdir = makeTempDir("nax-test-runsetup-sigint-");
+    const prdPath = join(setupWorkdir, "prd.json");
+    writeFileSync(prdPath, JSON.stringify(makePRD({ feature: "sigint-feature", userStories: [] }), null, 2), "utf8");
+
+    // Ordering log: `sessions` from the session sweep, `close` from
+    // runtime.close(). The drain lives inside the latter.
+    const events: string[] = [];
+    let capturedShutdown: ((abortSignal?: AbortSignal) => Promise<void>) | undefined;
+
+    const origInstallCrashHandlers = _runSetupDeps.installCrashHandlers;
+    const origCreateRuntime = _runSetupDeps.createRuntime;
+
+    _runSetupDeps.installCrashHandlers = ((ctx: Parameters<typeof origInstallCrashHandlers>[0]) => {
+      capturedShutdown = ctx.onShutdown;
+      return origInstallCrashHandlers(ctx);
+    }) as typeof _runSetupDeps.installCrashHandlers;
+
+    _runSetupDeps.createRuntime = ((...args: Parameters<typeof origCreateRuntime>) => {
+      const opts = args[2];
+      // setupRun owns the SessionManager instance (new SessionManager()) and
+      // hands it to createRuntime — the same object the onShutdown closure
+      // sweep reads. Wrap its listActive to mark "sessions" ran.
+      const sm = opts?.sessionManager;
+      if (sm) {
+        const origListActive = sm.listActive.bind(sm);
+        sm.listActive = () => {
+          events.push("sessions");
+          return origListActive();
+        };
+      }
+      const runtime = origCreateRuntime(args[0], args[1], {
+        ...opts,
+        costAggregator: createNoOpCostAggregator(),
+      });
+      runtimesToClose.push(runtime);
+      const realClose = runtime.close.bind(runtime);
+      runtime.close = async () => {
+        events.push("close");
+        await realClose();
+      };
+      return runtime;
+    }) as typeof _runSetupDeps.createRuntime;
+
+    try {
+      const options: RunSetupOptions = {
+        prdPath,
+        workdir: setupWorkdir,
+        config: makeNaxConfig(),
+        hooks: { hooks: {} },
+        feature: "sigint-test-feature",
+        dryRun: false,
+        statusFile: join(setupWorkdir, "status.json"),
+        runId: "run-sigint-drain-test",
+        startedAt: new Date().toISOString(),
+        startTime: Date.now(),
+        skipPrecheck: true,
+        headless: true,
+        formatterMode: "quiet",
+        getTotalCost: () => 0,
+        getIterations: () => 0,
+        getStoriesCompleted: () => 0,
+        getTotalStories: () => 0,
+      };
+
+      // setupRun may throw at a later setup step — irrelevant here: the
+      // shutdown context was already captured at installCrashHandlers time.
+      await setupRun(options).catch(() => {});
+
+      assertDefined(capturedShutdown, "capturedShutdown");
+      await capturedShutdown();
+
+      expect(events).toEqual(["sessions", "close"]);
+    } finally {
+      _runSetupDeps.installCrashHandlers = origInstallCrashHandlers;
+      _runSetupDeps.createRuntime = origCreateRuntime;
       rmSync(setupWorkdir, { recursive: true, force: true });
     }
   });

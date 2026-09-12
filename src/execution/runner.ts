@@ -217,7 +217,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
       headless,
       formatterMode,
       agentStreamEvents,
-      getTotalCost: () => totalCost,
+      // #2006: the crash handlers must read a live total. `totalCost` here is
+      // assigned only after the execution phase returns, so a mid-run SIGINT
+      // used to write `run.complete` with `totalCost: 0`. The status writer
+      // retains the reconciled total at every story boundary — read that
+      // once the setup phase has produced it, fall back to the local until
+      // then (setup itself has spent nothing).
+      getTotalCost: () => Math.max(totalCost, setupResult?.statusWriter.lastTotalCost ?? 0),
       getIterations: () => iterations,
       // @design: BUG-017: Pass getters for run.complete event on SIGTERM
       getStoriesCompleted: () => storiesCompleted,

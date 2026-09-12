@@ -1,7 +1,6 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
 import { pipelineEventBus } from "@/pipeline";
-import { totalSpendUsd } from "@/runtime";
 import { checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import { type StoryMetrics, toFallbackHops } from "../metrics";
@@ -35,6 +34,7 @@ import { synthesizeParallelStoryMetric } from "./parallel-story-metrics";
 import { handlePipelineFailure } from "./pipeline-result-handler";
 import { runPreRunPipeline } from "./pre-run";
 import { drainQueueAtBatchBoundary } from "./queue-handler";
+import { reconcileRunCost } from "./run-cost-reconcile";
 import { closeStorySessions } from "./session-manager-runtime";
 import { logStoryStart } from "./story-announce";
 import { resolveRetryCandidate, selectIndependentBatch, selectNextStories } from "./story-selector";
@@ -350,7 +350,8 @@ export async function executeUnified(
           const queueDrain = await drainQueueAtBatchBoundary(ctx.workdir, prd); // BUG-9
           await savePRD(prd, ctx.prdPath);
           await pipelineEventBus.drain();
-          totalCost += batchResult.totalCost;
+          // #2006: fold in aggregator spend the phaseCosts sum cannot see (pre-run pipeline, failed dispatches).
+          totalCost = reconcileRunCost(totalCost + batchResult.totalCost, ctx.runtime.costAggregator);
           storiesCompleted +=
             batchResult.completed.length + batchResult.mergeConflicts.filter((c) => c.rectified).length;
           prdDirty = true;
@@ -493,7 +494,7 @@ export async function executeUnified(
           [prd, storiesCompleted, totalCost, prdDirty] = [
             singleIter.prd,
             storiesCompleted + singleIter.storiesCompletedDelta,
-            totalCost + singleIter.costDelta,
+            reconcileRunCost(totalCost + singleIter.costDelta, ctx.runtime.costAggregator),
             singleIter.prdDirty,
           ];
           await closeStoryIfTerminal(ctx, singleStory.id, singleIter);
@@ -590,15 +591,14 @@ export async function executeUnified(
       [prd, storiesCompleted, totalCost, prdDirty] = [
         iter.prd,
         storiesCompleted + iter.storiesCompletedDelta,
-        totalCost + iter.costDelta,
+        reconcileRunCost(totalCost + iter.costDelta, ctx.runtime.costAggregator),
         iter.prdDirty,
       ];
       await closeStoryIfTerminal(ctx, selection.story.id, iter);
       warningSent = await maybeSendCostWarning(
         ctx,
-        // Same reading as the hard guard — a warning that fires on a different
-        // number than the stop would warn late, or not at all.
-        Math.max(totalCost, totalSpendUsd(ctx.runtime.costAggregator.snapshot())),
+        // #2006: totalCost is now the reconciled max — same reading as the guard.
+        totalCost,
         costLimit,
         warningSent,
       );
