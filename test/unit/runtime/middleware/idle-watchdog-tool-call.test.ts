@@ -10,6 +10,7 @@ import {
   makeCallStartedEvent,
   makeThinkingUpdateEvent,
   makeToolCallUpdateEvent,
+  makeUsageUpdateEvent,
   restoreWatchdogClock,
 } from "./_idle-watchdog-harness";
 
@@ -236,6 +237,52 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
       // Tool-call activity keeps refreshing the primary clock, so the 300ms
       // primary timeout is never reached within this window.
       await emitToolCallUpdatesForDuration(eventBus, 280, 30);
+
+      expect(count()).toBe(0);
+      await getLogger().flush();
+      const entries = await parseAllEntries(logFile);
+      expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(false);
+    } finally {
+      detach();
+    }
+  });
+
+  test("a per-round-trip usage update does not reset the tool-call-only timer", async () => {
+    const eventBus = new AgentStreamEventBus();
+    const { registry, count } = makeCountingRegistry();
+    const detach = attachAgentIdleWatchdog(eventBus, registry, makeWatchdogConfig());
+
+    try {
+      eventBus.emitAgentStream(makeCallStartedEvent());
+      // A native spin: one tool call and one usage update per round trip, for
+      // longer than toolCallOnlyIdleTimeoutSeconds (0.12s in makeWatchdogConfig).
+      for (let elapsed = 0; elapsed < 220; elapsed += 25) {
+        eventBus.emitAgentStream(makeToolCallUpdateEvent());
+        eventBus.emitAgentStream(makeUsageUpdateEvent({ perRoundTrip: true }));
+        await clock.advance(25);
+      }
+
+      expect(count()).toBe(1);
+      await getLogger().flush();
+      const entries = await parseAllEntries(logFile);
+      expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(true);
+    } finally {
+      detach();
+    }
+  });
+
+  test("a usage update without the flag still resets it — ACP parity is unchanged", async () => {
+    const eventBus = new AgentStreamEventBus();
+    const { registry, count } = makeCountingRegistry();
+    const detach = attachAgentIdleWatchdog(eventBus, registry, makeWatchdogConfig());
+
+    try {
+      eventBus.emitAgentStream(makeCallStartedEvent());
+      for (let elapsed = 0; elapsed < 220; elapsed += 25) {
+        eventBus.emitAgentStream(makeToolCallUpdateEvent());
+        eventBus.emitAgentStream(makeUsageUpdateEvent());
+        await clock.advance(25);
+      }
 
       expect(count()).toBe(0);
       await getLogger().flush();

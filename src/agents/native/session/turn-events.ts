@@ -9,8 +9,10 @@
  * are emitted at round-trip boundaries rather than continuously. That is
  * sufficient: a HUNG call is already bounded by the per-call abort, and the
  * watchdog's unique job is the productive-looking loop that keeps calling tools
- * forever, which emits `tool` on every iteration and trips
- * `toolCallOnlyIdleTimeout`.
+ * forever. That loop emits `tool` AND `usage` on every iteration, so the usage
+ * event carries `perRoundTrip` to mark it as a round-trip boundary rather than
+ * semantic progress — otherwise it reset `lastNonToolCallActivityAt` every
+ * iteration and `toolCallOnlyIdleTimeout` could never fire (nax#2013).
  */
 
 import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
@@ -48,6 +50,10 @@ export function buildNativeStreamEvent(
         inputTokens: activity.inputTokens,
         outputTokens: activity.outputTokens,
         costUsd: activity.costUsd,
+        // Native emits exactly one usage report per round trip, so this event
+        // is a round-trip marker, not semantic progress — see the field's doc
+        // comment on AgentUsageUpdateEvent (nax#2013).
+        perRoundTrip: true,
       };
     case "tool":
       return { ...common, kind: "agent.tool_call_update", toolName: activity.toolName };

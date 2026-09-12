@@ -34,6 +34,20 @@ export interface AgentUsageUpdateEvent extends AgentStreamEventBase {
   readonly inputTokens?: number;
   readonly outputTokens?: number;
   readonly costUsd?: number;
+  /**
+   * Set when this usage report IS one round trip, which is the native
+   * transport's cadence: `turn-loop.ts` emits exactly one per `complete()`.
+   *
+   * The idle watchdog reads it to classify the event as tool-call-tier
+   * activity rather than semantic progress. Without it, a spinning native
+   * session reset `lastNonToolCallActivityAt` on every iteration and
+   * `toolCallOnlyIdleTimeoutSeconds` — the timer built for exactly that shape
+   * — could never expire (nax#2013).
+   *
+   * Absent on ACP, whose loop is separately bounded by `maxInteractions` and
+   * whose usage cadence is the agent's, not nax's.
+   */
+  readonly perRoundTrip?: true;
 }
 
 export interface AgentToolCallUpdateEvent extends AgentStreamEventBase {
