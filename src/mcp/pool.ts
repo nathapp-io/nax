@@ -76,8 +76,13 @@ export function createMcpPool(opts: {
     if (server === undefined || !server.enabled) return undefined;
 
     for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
+      // Declared above the try so the catch can tell "connect failed" — where
+      // client.ts has already closed the transport — from "connected, then
+      // tools/list failed", where the connection below must be reaped or its
+      // subprocess becomes an orphan that outlives the pool (spec US-002).
+      let connection: McpConnection | undefined;
       try {
-        const connection = await connectMcpServer({
+        connection = await connectMcpServer({
           serverId,
           workdir,
           command: server.command,
@@ -98,6 +103,11 @@ export function createMcpPool(opts: {
         });
         return { connection, tools };
       } catch (error) {
+        if (connection !== undefined) {
+          const pid = connection.pid;
+          await connection.close().catch(() => {});
+          if (pid !== null) await opts.pidRegistry?.unregister(pid).catch(() => {});
+        }
         const reason = error instanceof Error ? error.message : String(error);
         record({ kind: "connect-failed", serverId, workdir, at: new Date().toISOString(), reason, attempt });
         getSafeLogger()?.warn("mcp", `[pool] ${serverId} connect failed`, {
