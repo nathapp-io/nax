@@ -32,7 +32,7 @@ nothing. The agent **cannot author a shell string**. Reserved built-ins
 (`src/tools/registry.ts:74-87`) are `Read, Glob, Grep, Write, Edit, Delete, Git,
 GitCommit, RunCommand, RequestCapability, Exec`, and only two of them reach a shell:
 
-- **`RunCommand`** (`src/tools/run-command.ts:226-363`) — the model names a *key* from
+- **`RunCommand`** (`src/tools/run-command.ts:225-363`) — the model names a *key* from
   `.nax/config.json` `quality.commands` and supplies `{{placeholder}}` values, quoted via
   `shellQuoteArg`. The template is project-authored and trusted, equivalent in trust to a
   Makefile. Executes through `runQualityCommand`.
@@ -418,7 +418,7 @@ tripped breaker says so in its artifacts.
 **Checked and found to be a non-issue:** rtk's filtered mode merges the child's stdout and
 stderr before filtering, which looked like it would change what nax sees. It does not —
 `runQualityCommand` already merges them itself: `const output = [stdout, stderr]
-.filter(Boolean).join("\n")` (`src/quality/runner.ts:240`). The two behaviours agree, and
+.filter(Boolean).join("\n")` (`src/quality/runner.ts:241`). The two behaviours agree, and
 rtk's own `rtk:`-prefixed internal errors still land in that merged stream where H1's
 detection can read them. Recorded so this is not re-raised as a blocker later.
 

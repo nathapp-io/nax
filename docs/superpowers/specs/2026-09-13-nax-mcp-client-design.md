@@ -43,7 +43,7 @@ What already exists, and what this design leans on:
 
 | Seam | Location | Note |
 |---|---|---|
-| `CodingTool` interface | `src/tools/registry.ts:63-80` | `name`, `description`, `inputSchema`, `scope`, `run()` |
+| `CodingTool` interface | `src/tools/registry.ts:56-73` | `name`, `description`, `inputSchema`, `scope`, `run()` |
 | Reserved built-in names | `src/tools/registry.ts:74-87` | 11 names; may never be re-registered |
 | Per-session tool injection | `src/tools/runtime.ts:90`, consulted at `:104-105` | `extraTools` is looked up **before** the global registry |
 | Advertisement | `src/tools/runtime.ts:174-184` | `advertised(declared)` = declared ∩ granted, then lookup |
@@ -52,9 +52,9 @@ What already exists, and what this design leans on:
 | Grant expressions | `src/config/permissions.ts:144-154` | `Read`, `Write(src/**)`, `Git(diff,log)` |
 | Policy check | `src/tools/policy.ts:288` (`grantedTools`), `:291+` (`check`) | ungranted tool ⇒ denial |
 | Run lifecycle | `src/runtime/index.ts:282` (`createRuntime`), `:424-447` (`close`) | `close()` already idempotent |
-| PID registry | `src/runtime/index.ts:318` | existing kill path for child processes |
+| PID registry | `src/runtime/index.ts:319` | existing kill path for child processes |
 | Tool ledger | `src/tools/tool-audit.ts` | `ToolCallRecord` JSONL sink |
-| Dispatch routing | `src/agents/native/session/turn-loop.ts:452` | `codingToolNames.has(call.name) ? "coding-tool" : "context-tool"` |
+| Dispatch routing | `src/agents/native/session/turn-loop.ts:449` | `codingToolNames.has(call.name) ? "coding-tool" : "context-tool"` |
 
 `registerCodingTool` (`registry.ts:91-127`) is documented as an in-process extension
 point and **has no caller outside tests**. It is not used by this design; `extraTools` is
@@ -94,7 +94,7 @@ attachment mechanism that lived only in `execution.permissions` would therefore 
 nothing for most users.
 
 **R5 — MCP is never wildcard-granted.** `unrestricted` enumerates its built-ins
-explicitly (`permissions.ts:163-180`) rather than granting all registered tools, so MCP is
+explicitly (`permissions.ts:164-178`) rather than granting all registered tools, so MCP is
 already excluded there *by construction*. This ruling records that property as an
 invariant to preserve and test, not a new rule to add. `safe` denies all MCP.
 
@@ -199,14 +199,14 @@ down in `close()` (`:424-447`).
 - **Memoized per key.** Concurrent first-use for the same `(serverId, workdir)` awaits one
   in-flight connect, never two.
 - **Requests may be serialized per connection.** The turn loop dispatches tool calls in a
-  sequential `for` loop (`src/agents/native/session/turn-loop.ts:404`), awaiting each
+  sequential `for` loop (`src/agents/native/session/turn-loop.ts:406`), awaiting each
   before the next, so a single hop never has two calls in flight against one server. A
   simple request/response client is sufficient; concurrent request-id correlation would
   be machinery no code path exercises. (Distinct worktrees get distinct connections per
   R7, so cross-story parallelism does not contradict this.)
 - **Teardown** follows the `argv-exec` precedent (`src/utils/argv-exec.ts:57-93`):
   `detached: true` so `killProcessGroup` reaches grandchildren, bounded graceful close,
-  then SIGKILL. Children register in `pidRegistry` (`src/runtime/index.ts:318`) so nax's
+  then SIGKILL. Children register in `pidRegistry` (`src/runtime/index.ts:319`) so nax's
   existing kill paths reach them. `close()` stays idempotent.
 
 **Acceptance:** two workdirs against one server id produce two subprocesses; `close()`
@@ -279,7 +279,7 @@ Wiring:
   then applies the narrowing and expands the result into the per-tool grants above.
 - `resolveCodingToolSupport` appends the resolved MCP tool names to the declared array
   before calling `advertised()`. **`advertised()` is unchanged** (R3).
-- `turn-loop.ts:452` needs no change: once the names are in `codingToolNames` they route
+- `turn-loop.ts:449` needs no change: once the names are in `codingToolNames` they route
   as `"coding-tool"` and dispatch through `runtime.callTool` unmodified.
 - `policy.check` needs no new branch. With `scope` carrying no `argvField`, no
   `verbField` and empty `pathFields`, the grant lookup is the whole gate — which is the
