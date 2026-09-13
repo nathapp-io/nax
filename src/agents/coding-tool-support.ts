@@ -22,6 +22,7 @@ import {
   createToolAuditSink,
   EXEC_TOOL_NAME,
   narrowGrants,
+  type ResolvedProviderTools,
   resolveProviderTools,
   type ToolAuditSink,
   type ToolGrant,
@@ -50,6 +51,8 @@ export function buildCodingToolSupport(args: {
   declared: readonly CodingToolName[];
   /** Provider-supplied tools for this hop, looked up before the global registry. */
   extraTools?: readonly CodingTool[];
+  /** Advertised provider tool name -> owning provider id, for the ledger. */
+  providerIdByTool?: ReadonlyMap<string, string>;
   storyId?: string;
   declaredCommands?: ReadonlyMap<string, QualityCommandSpec>;
   stripEnvVars?: readonly string[];
@@ -139,6 +142,7 @@ export function buildCodingToolSupport(args: {
           ]
         : []),
     ],
+    ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),
   });
   const tools = runtime.advertised(advertised);
   if (tools.length === 0) return undefined;
@@ -249,10 +253,15 @@ export async function resolveCodingToolSupport(
   // An empty/absent root already throws in buildCodingToolSupport, so skipping
   // resolution there is correct; it also keeps a possibly-undefined root out of
   // resolveProviderTools.
-  const providerResult =
+  const providerResult: ResolvedProviderTools =
     root !== undefined && root.trim() !== ""
       ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root)
-      : { tools: [], grants: [], failures: [] as readonly { providerId: string; reason: string }[] };
+      : {
+          tools: [],
+          grants: [],
+          failures: [] as readonly { providerId: string; reason: string }[],
+          providerIdByTool: new Map<string, string>(),
+        };
   const declaredWithProviders = [...declared, ...providerResult.tools.map((t) => t.name)] as readonly CodingToolName[];
   for (const failure of providerResult.failures) {
     getSafeLogger()?.warn("tools", "[provider] dropped", {
@@ -267,6 +276,7 @@ export async function resolveCodingToolSupport(
     grants: [...(resolved.toolGrants ?? []), ...providerResult.grants],
     declared: declaredWithProviders,
     extraTools: providerResult.tools,
+    providerIdByTool: providerResult.providerIdByTool,
     ...(options.toolPatterns !== undefined ? { toolPatterns: options.toolPatterns } : {}),
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     declaredCommands,

@@ -17,6 +17,12 @@ export interface ResolvedProviderTools {
   readonly tools: readonly CodingTool[];
   readonly grants: readonly ToolGrant[];
   readonly failures: readonly { providerId: string; reason: string }[];
+  /**
+   * Advertised tool name -> owning provider id, carried explicitly so the
+   * ledger never has to parse the `<id>__<local>` name apart (a naming
+   * convention change would otherwise break telemetry silently).
+   */
+  readonly providerIdByTool: ReadonlyMap<string, string>;
 }
 
 export async function resolveProviderTools(
@@ -27,6 +33,7 @@ export async function resolveProviderTools(
   const tools: CodingTool[] = [];
   const entries: { providerId: string; localNames: string[] }[] = [];
   const failures: { providerId: string; reason: string }[] = [];
+  const providerIdByTool = new Map<string, string>();
 
   for (const provider of providers) {
     if (!providerAttachesTo(provider, stage)) continue;
@@ -34,7 +41,9 @@ export async function resolveProviderTools(
       const sanitized = sanitizeProviderTools(provider.kind, await provider.tools(workdir));
       const localNames: string[] = [];
       for (const tool of sanitized) {
-        tools.push(adaptProviderTool(provider.id, tool));
+        const adapted = adaptProviderTool(provider.id, tool);
+        tools.push(adapted);
+        providerIdByTool.set(adapted.name, provider.id);
         localNames.push(tool.localName);
       }
       entries.push({ providerId: provider.id, localNames });
@@ -43,5 +52,18 @@ export async function resolveProviderTools(
     }
   }
 
-  return { tools, grants: expandProviderGrants(entries), failures };
+  return { tools, grants: expandProviderGrants(entries), failures, providerIdByTool };
+}
+
+/**
+ * Bytes a tool list costs the prompt, paid on EVERY hop whether or not any
+ * tool is called. This is the per-hop tax that appears in no ledger today and
+ * which nax#1991's context-burn report needs.
+ */
+export function advertisedSchemaBytes(tools: readonly CodingTool[]): number {
+  let total = 0;
+  for (const tool of tools) {
+    total += tool.description.length + JSON.stringify(tool.inputSchema).length;
+  }
+  return total;
 }
