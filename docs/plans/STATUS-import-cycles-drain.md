@@ -12,44 +12,31 @@ analysis. You *do* need to re-measure after every task.
 
 ---
 
-## 0. Current state - measured 2026-09-13 after Wave 4 (Tasks 7-12 + one bonus cut)
+## 0. Current state - measured 2026-09-13 after Wave 5 (Tasks 13-17): the drain is complete
 
 ```
 bun run scripts/check-import-cycles.ts
-[OK] 20 modules in runtime import cycles (baseline: 20).
+[OK] 0 modules in runtime import cycles (baseline: 0).
 ```
 
 | Reading | Value |
 |:--|--:|
-| Baseline file `count` | **20** |
-| Actual cyclic modules in `src/` | **20** |
-| Strongly-connected components (SCCs) that are cyclic | **1** |
-| Largest SCC | **20 modules** |
+| Baseline file `count` | **0** |
+| Actual cyclic modules in `src/` | **0** |
+| Strongly-connected components (SCCs) that are cyclic | **0** |
 
-The one component is exactly the section 5 residue, verified module-for-module:
+**The drain is complete: 132 -> 0.** Wave 5 is fully landed; section 8.9 records the
+per-task measured counts. The baseline file is `count: 0` with an empty `modules` array and
+the gate is now zero-tolerance: any newly introduced cycle fails CI on the spot.
 
-| # | Size | Territory |
-|--:|--:|:--|
-| 1 | **20** | `execution/` (15) + `pipeline/` (5) — the section 5 knot, unaltered |
-
-~~The drain is **complete**: 132 -> 20, exactly the plan's end state.~~ **Superseded
-2026-09-13 - see 8.8.** Re-measurement found that 13 of these 20 are ordinary mechanical
-edges Wave 4 left uncut (nine unfinished `@/pipeline/event-bus` migrations from Task 5, one
-self-barrel edge, one separable two-module recursion), and that the real `execution` <->
-`pipeline` knot is only **7** modules - dissolvable from either direction. **Wave 5
-(Tasks 13-17) takes this to 0.** Section 8.7 still records the Wave 4 path and the one bonus
-cut needed to land on 20 after Task 8 under-delivered.
-
-**Simulated end state of this plan: 132 -> 20.** The 17 edge cuts across the 12 tasks in
-section 3 were chosen by greedy search over every internal edge of every component (remove
-edge, recompute Tarjan SCCs, keep the edge whose removal frees the most modules), then
-**simulated again as the exact task sequence below** - so the per-task expected counts are
-measured against this plan's ordering, not a generic ranking. The residue is one 20-module
-`execution/` + `pipeline/` knot described in section 5.
-
-The unconstrained greedy optimum is 15, not 20. The difference is one cut this plan
-deliberately refuses: `src/execution/index.ts -> ./lifecycle` (frees 5) would mean deleting a
-public barrel re-export, which section 1.4 forbids. Those 5 modules stay in the residue.
+**The architectural debt is real and still open.** A1 (Task 16) removed the
+*initialisation-order* cycle by deferring `../pipeline/stages` out of the two execution
+entry points; it did **not** make `pipeline` and `execution` independent layers.
+`pipeline/stages/*` still calls into `@/execution` for `appendProgress`,
+`processQueueFile` and six planning symbols, and that dependency is now invisible to the
+gate. The real fix is dependency inversion on the stage list, designed at
+`docs/plans/2026-09-13-execution-pipeline-layering-design.md` — see the rewritten
+section 5.
 
 ---
 
@@ -1475,26 +1462,44 @@ bun run test:full                          # FULL=1 NAX_PRECHECK=1 - section 4 r
 
 ## 4. Definition of done for this plan
 
-- [ ] `bun run scripts/check-import-cycles.ts` reports **20 or fewer** cyclic modules.
-- [ ] `scripts/baselines/import-cycles-baseline.json` `count` equals the measured count
-      (no drift), and its `modules` array contains only the residue from section 5.
-- [ ] `bun run check:all` passes.
-- [ ] `bun run test:coverage` passes.
-- [ ] `bun run test:full` passes at least once at the end of the drain (`FULL=1 NAX_PRECHECK=1`).
-- [ ] Section 8 has one appended entry per wave, recording measured (not predicted) counts.
-- [ ] `.nax/rules/project-conventions.md`'s "Cycle ratchet" paragraph still describes reality.
+- [x] `bun run scripts/check-import-cycles.ts` reports **0** cyclic modules.
+- [x] `scripts/baselines/import-cycles-baseline.json` `count` is **0** with an empty
+      `modules` array (no drift).
+- [x] `bun run check:all` passes.
+- [x] `bun run test:coverage` passes.
+- [x] `bun run test:full` passes at least once at the end of the drain (`FULL=1 NAX_PRECHECK=1`).
+- [x] Section 8 has one appended entry per wave, recording measured (not predicted) counts.
+- [x] `.nax/rules/project-conventions.md`'s "Cycle ratchet" paragraph still describes reality.
 
 ---
 
-## 5. The residue - what this plan deliberately does not fix
+## 5. The residue - rewritten 2026-09-13 by Task 17 (the drain is complete)
 
-> **CORRECTION 2026-09-13 - this section is substantially wrong and is retained only until
-> Task 17 rewrites it.** Its central claim - that these 20 modules are an irreducible mutual
-> dependency needing a design decision - was re-measured and does not hold. Thirteen of them
-> are mechanical edges Wave 4 left uncut; the real knot is 7 modules and dissolves from
-> either direction. Its claim that "every remaining edge frees exactly 1 module" is false:
-> one nine-line specifier rewrite frees 10. **Read Wave 5 in section 3 and log entry 8.8
-> instead.** Do not plan work from the text below.
+**The residue is empty.** The baseline reads `count: 0` with an empty `modules` array, and
+the gate is zero-tolerance: any newly introduced cycle fails CI on the spot. The section-5
+"20 modules needing a design decision" claim, written after Wave 4, was re-measured in 8.8
+and found to be wrong for 13 of those modules (mechanical edges) and resolved for the other
+7 (route A1). 8.7 and 8.8 stand as the record of what was believed when; the correction
+banner at the bottom of this section documents the change.
+
+**The architectural debt is still real.** A1 (Task 16) removed the *initialisation-order*
+cycle by deferring `../pipeline/stages` from `execution/iteration-runner.ts` and
+`execution/unified-executor.ts` with `await import(...)`, per the ruling in 8.8. It did not
+make `pipeline` and `execution` independent layers: `pipeline/stages/*` still calls into
+`@/execution` for `appendProgress`, `processQueueFile` and six planning symbols, and that
+dependency is now invisible to the gate. A green ratchet is not a clean layering.
+
+The real fix is dependency inversion on the stage list, not contract extraction — route A3
+from 8.8 guessed at a shared contract, which turned out to already be resolved. The design
+note at **`docs/plans/2026-09-13-execution-pipeline-layering-design.md`** owns that work;
+it moves public exports out of `@/pipeline` / `@/execution`, engages section 1.4, and needs
+its own spec and reviewers. Task 5's nested-barrel move of `pipeline/event-bus` was its
+first brick.
+
+> **CORRECTION 2026-09-13 - the text below this banner is the pre-Wave-5 section 5 and is
+> retained only as the record of the wrong belief it produced.** It claimed 20 modules were
+> an irreducible mutual dependency needing a design decision. That was false; see 8.8 and
+> the Wave 5 tasks. Do not plan work from it.
 
 After all 12 tasks, one SCC of **20 modules** remains:
 
@@ -1972,3 +1977,60 @@ is unchanged; Task 17 is the one and only lowering to zero.
 with no context.** Expected path, every step measured rather than predicted:
 **20 -> 10 -> 9 -> 7 -> 0.** Section 5 is left standing until Task 17 rewrites it, with a
 correction banner pointing here; section 8 remains append-only.
+
+### 8.9 - 2026-09-13 - Wave 5 complete (Tasks 13-17): 20 -> 0, the drain is done
+
+Measured, not predicted. The baseline file reads `count: 0` with an empty `modules` array;
+the gate is now zero-tolerance. Section 5 was rewritten by Task 17; section 0 re-measured.
+
+Per-task drops (all exactly as Wave 5's table predicted, every step 2026-09-13):
+
+- **Task 13 (nine `@/pipeline/event-bus` specifier rewrites, frees 10): 20 -> 10, exactly.**
+  The nine files in the table were edited verbatim; `usePipelineBusEvents.ts` and
+  `finish/phase.ts` left untouched per the task's note. tsc + alias-internals + lint clean.
+  Commit `b8588d058`.
+- **Task 14 (tier-escalation self-barrel, frees 1): 10 -> 9, exactly.** The pre-commit hook
+  caught one biome `organizeImports` ordering change (the `../progress` / `./escalation`
+  pair) — fixed with `biome check --write` before committing. Commit `f0b283e11`.
+- **Task 15 (extract `resolveMaxAttemptsOutcome`, frees 2): 9 -> 7, exactly.**
+  Deviations from the prescribed edit list: the leaf's type import is spelled
+  `@/tdd/types` (the plan prose said `@/tdd`; the file's own specifier wins). Biome again
+  re-ordered imports in `tier-outcome.ts`; `test:coverage` green (new `src/` file
+  `max-attempts-outcome.ts` above the per-file floor, 0 below). 136 escalation tests
+  unchanged and green. Commit `6ffa5b36d`.
+- **Task 16 (defer `../pipeline/stages`, frees 7): 7 -> 0, exactly.** The edit landed as
+  prescribed: import lines deleted, `await import` added above the two `unified-executor.ts`
+  call sites (inside their `if` blocks, per the task's warning) and above the
+  `iteration-runner.ts` call site with the call line byte-identical (the
+  `iteration-runner-worktree.test.ts` source-scraping assertion stayed green).
+  **One plan gap, fixed inline:** the +2 lines pushed `unified-executor.ts` to 735, one over
+  its 734-line grandfathered file-size record — the section 1.5 reminder that the gate is a
+  ratchet, not a suggestion. Applied the prescribed remedy (split, not raise): extracted
+  `reconcileBatchOutcome` (+ its load-bearing doc comment) verbatim to a new leaf
+  `src/execution/reconcile-batch-outcome.ts`, repointed the one internal call site and the
+  one test import via a re-export, dropped the now-unused `markStoryFailed`/
+  `markStoryPassed` imports, and lowered the file-sizes baseline (734 -> 702). Blast-radius
+  items re-confirmed: grep of the ten stage files found no module-scope side effects beyond
+  `const` declarations and the already-lazy `defaultPipeline` Proxy; `bun run build` still
+  emits a single `dist/nax.js`; per-story hot path cost is one module-cache lookup. Commit
+  `19e178db9`.
+- **Task 17 (baseline to 0 + section 5 rewrite): done here.** Section 0 re-measured
+  (0 modules / 0 SCCs), section 5 rewritten in place with the correction banner retained,
+  section 4's boxes checked, `.nax/rules/project-conventions.md` "Cycle ratchet" paragraph
+  re-read and confirmed still accurate at zero (it describes the mechanism, not a count).
+
+Full gates at end of drain: cycles **0/baseline 0**, tsc clean, alias-internals clean,
+file-sizes clean (baseline lowered), lint clean, `check:all` green, `test:coverage` green,
+build single-file. `test:full` (`FULL=1 NAX_PRECHECK=1`): **18460 pass, 4 fail** — the same
+four pre-existing integration failures 8.7 recorded (logger write-error handling, gitignore
+coverage, precheck emoji/summary). Re-confirmed pre-existing this wave by reproducing the
+identical 41-pass/4-fail result on the pre-drain base `e69bb5fdf` in a worktree — not caused
+by this drain.
+
+Commits this wave, in order: `b8588d058` (13), `f0b283e11` (14), `6ffa5b36d` (15),
+`19e178db9` (16), plus the final doc commit (17).
+
+**The drain is done: 132 -> 0.** The remaining `execution <-> pipeline` dependency is
+invisible to the gate and belongs to
+`docs/plans/2026-09-13-execution-pipeline-layering-design.md` (route A3, dependency
+inversion on the stage list).
