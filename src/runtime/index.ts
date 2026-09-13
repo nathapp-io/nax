@@ -101,6 +101,7 @@ import type { Iteration, StoryFixHistory } from "../findings";
 import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
 import { getLogger } from "../logger";
+import { createMcpPool, createMcpProviders } from "../mcp";
 import type { IReviewAuditor } from "../review/review-audit";
 import { createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
 import type { RoutingDecision } from "../routing/decision";
@@ -248,6 +249,16 @@ export interface NaxRuntime {
    * an empty cache; no explicit "clear on first story" heuristic is needed.
    */
   readonly routingCache: Map<string, RoutingDecision>;
+  /**
+   * MCP connection pool for this run, keyed by (serverId, workdir). Closed by
+   * `close()`. Exposed so the run rollup can read its lifecycle events.
+   */
+  readonly mcpPool: import("../mcp").McpPool;
+  /**
+   * Tool providers advertised to every native dispatch this run. Built from
+   * `config.mcp`; empty when no server is configured or all are disabled.
+   */
+  readonly toolProviders: readonly import("@/tools").ToolProvider[];
   close(): Promise<void>;
 }
 
@@ -317,6 +328,19 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     (config.review?.audit?.enabled ? new ReviewAuditor(runId, outputDir) : createNoOpReviewAuditor());
 
   const pidRegistry = opts?.pidRegistry ?? new PidRegistry(workdir);
+
+  // Constructed synchronously and connected LAZILY: a run does not know its
+  // stage set upfront, and an eager connect would pay subprocess cost for
+  // servers no executed stage ever reaches.
+  const mcpPool = createMcpPool({
+    servers: config.mcp?.servers ?? {},
+    pidRegistry,
+  });
+  const toolProviders = createMcpProviders({
+    config: config.mcp,
+    pool: mcpPool,
+    projectRoot: workdir,
+  });
 
   const watchdogControllerRegistry = new Map<string, () => Promise<void>>();
 
@@ -402,6 +426,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     agentStreamEvents,
     packages,
     pidRegistry,
+    mcpPool,
+    toolProviders,
     logger,
     quarantineMemo,
     adversarialIterations,
@@ -436,6 +462,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       }
       agentManager.close();
       if (sessionManager instanceof SessionManager) sessionManager.close();
+      await mcpPool.close();
       const results = await Promise.allSettled([promptAuditor.flush(), reviewAuditor.flush(), costAggregator.drain()]);
       for (const r of results) {
         if (r.status === "rejected") {
