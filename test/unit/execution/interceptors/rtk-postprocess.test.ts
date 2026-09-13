@@ -26,6 +26,13 @@ describe("rtk postProcess", () => {
     expect(output).not.toContain("rtk recall");
   });
 
+  test("strips a full-output hint", () => {
+    // US-005 item 1 names `[full output: rtk recall <hash>]` as the third hint
+    // shape rtk appends — the acceptance is "no rtk hint string survives into
+    // a tool result".
+    expect(postProcess()("body\n[full output: rtk recall 3f9c2a81d4e7]", req).output).toBe("body");
+  });
+
   test("leaves output with no hints untouched", () => {
     expect(postProcess()("plain body", req).output).toBe("plain body");
   });

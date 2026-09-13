@@ -52,15 +52,16 @@ function defaultRecord(state: InterceptorState): void {
 
 /**
  * A trailing hint line rtk appends to the output it returns, e.g.
- * `[full diff: rtk git diff --no-compact]` or `[+12 hidden: rtk recall …]`.
- * A nax agent has no shell, so these are instructions it cannot follow (R4);
- * strip them before the output reaches the agent.
+ * `[full diff: rtk git diff --no-compact]`, `[full output: rtk recall …]` or
+ * `[+12 hidden: rtk recall …]` (spec US-005 item 1 names all three). A nax
+ * agent has no shell, so these are instructions it cannot follow (R4); strip
+ * them before the output reaches the agent.
  *
  * Stripping is hint-shaped, not a trim: output with no trailing hint is
  * returned byte-for-byte, trailing whitespace included — `trimEnd()` at the
  * call site is the only thing allowed to do that.
  */
-const RTK_HINT_LINE = /\n?\[(?:full diff: rtk |\+\d+ hidden: rtk )[^\]]*\]\s*$/;
+const RTK_HINT_LINE = /\n?\[(?:full diff: rtk |full output: rtk |\+\d+ hidden: rtk )[^\]]*\]\s*$/;
 
 type Mode =
   | { readonly kind: "disabled" }

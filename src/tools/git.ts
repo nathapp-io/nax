@@ -327,8 +327,17 @@ export const gitTool: CodingTool = {
         ctx.maxBytes,
         intercepted.argv,
       );
+      // Computed before the error branch so a REWRITTEN command that ran and
+      // FAILED is still ledged — replay fidelity is exactly where the failure
+      // path matters (US-008). `InterceptOutcome.executed` is optional but
+      // `ToolResult.audit.executed` is required, so the narrowing stays.
+      const audit = intercepted.executed !== undefined ? { executed: intercepted.executed } : undefined;
       if (exitCode !== 0 && stdout.trim() === "") {
-        return { content: stderr.trim() || `git exited ${exitCode}`, isError: true };
+        return {
+          content: stderr.trim() || `git exited ${exitCode}`,
+          isError: true,
+          ...(audit !== undefined ? { audit } : {}),
+        };
       }
       // postProcess runs BEFORE trimEnd/truncate: stripping a hint changes what
       // the trailing whitespace and the byte budget apply to, and truncating
@@ -351,7 +360,6 @@ export const gitTool: CodingTool = {
       // bound after post-processing, which changes the drain contract — its own
       // change.
       const content = truncate(body.trimEnd(), ctx.maxBytes) || "(no output)";
-      const audit = intercepted.executed !== undefined ? { executed: intercepted.executed } : undefined;
       return { content, ...(audit !== undefined ? { audit } : {}) };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };

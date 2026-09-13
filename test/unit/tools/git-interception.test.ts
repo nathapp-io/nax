@@ -70,6 +70,22 @@ describe("Git tool interception", () => {
     expect(result.isError).toBe(true);
     expect(calls[0]?.[0]).toBe("rtk"); // it really was the rewritten command that ran
     expect(calls).toHaveLength(1); // and it was NOT re-run raw
+    // US-008: a ledger row for a rewritten command carries both forms even on
+    // the failure path — replay fidelity is exactly where it matters.
+    expect(result.audit?.executed?.[0]).toBe("rtk");
+    expect(result.audit?.executed).toContain("git");
+  });
+
+  test("a rewritten command that fails with output still ledges what executed", async () => {
+    // Non-zero exit with non-empty stdout does not hit the isError branch, but
+    // the rewritten argv must still reach the ledger.
+    _gitDeps.spawn = makeSpawn(() => ({ stdout: "some log output", stderr: "warning", exitCode: 128 })).spawn;
+    _gitToolDeps.interceptor = prefixer();
+
+    const result = await gitTool.run({ subcommand: "log" }, ctx());
+
+    expect(result.content).toContain("some log output");
+    expect(result.audit?.executed?.[0]).toBe("rtk");
   });
 
   test("an internal gitWithTimeout caller is NEVER intercepted", async () => {
