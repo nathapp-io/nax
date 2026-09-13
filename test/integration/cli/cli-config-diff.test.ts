@@ -255,6 +255,29 @@ describe("Config Command --diff", () => {
       expect(output).toContain("[..."); // Compact array notation
     });
 
+    test("masks header values before rendering differences", async () => {
+      const naxDir = join(tempDir, ".nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        reporters: {
+          webhook: {
+            headers: { Authorization: "leak-token" },
+          },
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+      expect(output).toContain("reporters.webhook.headers.Authorization");
+      expect(output).toContain("***");
+      expect(output).not.toContain("leak-token");
+    });
+
     test("handles boolean differences correctly", async () => {
       const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
