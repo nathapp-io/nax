@@ -15,13 +15,23 @@
  *
  * Both `globToRegex` and `normalizePath` are re-exported by the context-engine
  * barrel (`src/context/engine/index.ts` line 21), so the production module
- * must consume them through the barrel — not via the internal subdirectory
- * path. These tests pin that contract: the source file must not bypass the
- * barrel for any value import that the barrel already re-exports.
+ * would normally have to consume them through the barrel — not via the
+ * internal subdirectory path. These tests pin that contract: the source file
+ * must not bypass the barrel for any value import that the barrel already
+ * re-exports.
+ *
+ * Exception — documented 2026-09-13 as part of the import-cycle drain
+ * (`docs/plans/STATUS-import-cycles-drain.md` Task 2): `effectiveness.ts`
+ * imports `globToRegex`/`normalizePath` from `./providers/static-rules`
+ * deliberately. Routing them through `./index` (the context-engine barrel)
+ * closes a runtime import cycle — the barrel re-exports `effectiveness.ts`
+ * itself, so the import is a self-barrel edge. The symbols are values used at
+ * call time, so no `import type` alternative exists. The exemption is scoped
+ * to exactly these two symbols from `./providers/static-rules`; everything
+ * else must still come through the barrel.
  *
  * Each test reads the source file as text and asserts on the import
- * statements it contains. The tests fail until the source is updated to
- * use the barrel.
+ * statements it contains.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -94,28 +104,34 @@ async function loadSourceImports(): Promise<{
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("effectiveness.ts — barrel-import convention (US-003 adversarial finding)", () => {
-  test("[barrel] does not import globToRegex or normalizePath from './providers/static-rules'", async () => {
+  // Cycle-drain exemption (see header): these two symbols may be imported
+  // from the defining leaf because the barrel route closes a runtime
+  // import cycle.
+  const EXEMPT_SYMBOLS = new Set(["globToRegex", "normalizePath"]);
+  const EXEMPT_MODULE = "./providers/static-rules";
+
+  test("[barrel] no provider-leaf value imports beyond the cycle-drain exemption", async () => {
     const { imports } = await loadSourceImports();
 
     const offending = imports.filter(
       (imp) =>
         !imp.isTypeOnly &&
-        imp.module === "./providers/static-rules" &&
-        (imp.specifiers.includes("globToRegex") || imp.specifiers.includes("normalizePath")),
+        imp.module.startsWith("./providers/") &&
+        !(imp.module === EXEMPT_MODULE && imp.specifiers.every((s) => EXEMPT_SYMBOLS.has(s))),
     );
 
     expect(offending).toHaveLength(0);
   });
 
-  test("[barrel] does not import any symbol from a './providers/...' subdirectory path", async () => {
-    // Boundary case — the convention generalises beyond the two flagged
-    // symbols. Any value import that traverses a `./providers/...` path
-    // bypasses the barrel when the symbol is re-exported.
+  test("[barrel] the cycle-drain exemption is scoped to exactly globToRegex and normalizePath", async () => {
+    // Pins the exemption so it cannot widen silently: the only legal
+    // provider-leaf value import is the two-symbol static-rules statement.
     const { imports } = await loadSourceImports();
 
-    const providerImports = imports.filter((imp) => !imp.isTypeOnly && imp.module.startsWith("./providers/"));
+    const exemptImports = imports.filter((imp) => !imp.isTypeOnly && imp.module === EXEMPT_MODULE);
 
-    expect(providerImports).toHaveLength(0);
+    expect(exemptImports).toHaveLength(1);
+    expect(exemptImports[0]?.specifiers.sort()).toEqual(["globToRegex", "normalizePath"]);
   });
 
   test("[barrel, boundary] type-only imports from './providers/...' are permitted (singleton-safe)", async () => {
