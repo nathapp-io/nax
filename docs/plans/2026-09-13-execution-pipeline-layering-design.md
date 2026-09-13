@@ -1,6 +1,8 @@
 # Design note: `execution` <-> `pipeline` layering
 
 **Status:** open - proposal, not a ruling. No ADR yet.
+**Resolved so far:** the section-1.4 escalation for A3a (section 9, ruled 2026-09-13) and
+open question 7.1. A3b remains unruled.
 **Opened:** 2026-09-13
 **Origin:** route A3 in `STATUS-import-cycles-drain.md` section 8.8.
 **Prerequisite:** Wave 5 of that plan (Tasks 13-17). This note assumes the cycle ratchet
@@ -61,19 +63,47 @@ All figures from `src/` on 2026-09-13 unless noted.
 
 `context.ts` is prior art: someone already hit this and solved their instance locally.
 
-**3.2 - `appendProgress` and `processQueueFile` are not shared contract. They are misfiled.**
+**3.2 - `appendProgress` and `processQueueFile` are not shared contract.**
+
+> **Revised 2026-09-13 (section 9).** This section originally claimed both were "directory
+> misplacement, not architecture". That holds for `queue-handler.ts` and **does not hold for
+> `progress.ts`** - see 3.2.1. The revised text is below.
 
 Each has **exactly one consumer outside `src/execution/`**, and that consumer is the stage
-file above. Their defining modules barely depend on `execution` at all:
+file above. Neither defining module imports anything from `execution/`:
 
 | File | Lines | Non-type imports |
 |:--|--:|:--|
 | `src/execution/progress.ts` | 57 | `node:fs/promises`, `node:path`, `../logger`, `../utils/errors` |
 | `src/execution/queue-handler.ts` | 341 | `../config`, `../errors`, `../logger`, `../prd`, **`../queue`**, `../utils/*` |
 
-Neither imports anything from `execution/`. `progress.ts` is a 57-line append-to-a-file
-helper. `queue-handler.ts` is queue logic living outside `src/queue/`. **These two are
-directory misplacement, not architecture.**
+**3.2.1 - but only one of them is actually misplaced.**
+
+`queue-handler.ts` **is** misplaced. `CLAUDE.md:113` describes `src/queue/` as "Mid-run queue
+control (PAUSE, ABORT, SKIP)", which is precisely this file's job. `src/queue/` today contains
+only the *parsing* half (`parseQueueFile`, `QueueCommand`, `QueueFileResult` - 106 B of
+barrel, one exported function); `queue-handler.ts` is the *applying* half: file I/O, locking,
+and PRD mutation (`injectStory`, `markStorySkipped`, `resetStoryToPending`,
+`setStoryPriority`). It already imports `../queue`. Its dependencies are all lower layers.
+
+`progress.ts` **is not misplaced.** It writes `progress.txt` into `featureDir`, takes a
+`StoryStatus` from `@/prd`, logs under the `"execution"` stage label, and its docstring is
+entirely about story completion and the BUG-09 terminal-failure paths (tier exhaustion, max
+attempts, escalation failure). It is small and dependency-light, but it is **execution-domain
+code**. Relocating it to `src/utils/` would be filing by size rather than by domain.
+
+**3.2.2 - every execution-internal consumer already bypasses the barrel.**
+
+| Symbol | Barrel (`@/execution`) consumers | Relative-path consumers |
+|:--|:--|:--|
+| `appendProgress` | `stages/completion.ts:20` | `merge-conflict-outcomes.ts:26`, `pipeline-result-handler.ts:29`, `escalation/tier-outcome.ts:15`, `escalation/tier-escalation.ts:22` |
+| `processQueueFile` | `stages/queue-check.ts:11` | - |
+| `drainQueueAtBatchBoundary` | - | `unified-executor.ts:36` |
+| `readQueueFile`, `clearQueueFile`, `BatchQueueDrainResult` | - | - |
+
+So `src/execution/index.ts:92-94` exist to serve **two import statements**, and both are the
+stage files this note is about. This is the fact that resolves the section 1.4 question -
+see section 9.
 
 **3.3 - The other three symbols genuinely belong to `execution`.**
 
@@ -129,22 +159,39 @@ naturally but inverts the dependency.
 Two independent pieces. **A3a is worth doing on its own merits even if A3b is never
 approved.**
 
-### A3a - correct the two misplacements (small, low risk)
+### A3a - two different fixes, not one (small, low risk)
 
-Kills the `completion.ts -> @/execution` and `queue-check.ts -> @/execution` edges outright,
-by moving code to where it already belongs (3.2).
+> **Revised 2026-09-13 (section 9).** Originally written as "correct the two misplacements".
+> Only one of the two is a misplacement (3.2.1), so the halves now differ in both technique
+> and in how much they actually buy.
 
-1. **`execution/queue-handler.ts` -> `src/queue/`.** It is queue logic, it already imports
-   `../queue`, and `src/queue/` exists with a barrel. Re-export from `@/execution` for one
-   release if convenient - but note that a value re-export keeps an edge, so prefer updating
-   the call sites.
-2. **`execution/progress.ts` -> a neutral home.** 57 lines, no `execution` imports, one
-   outside consumer. Candidates: `src/utils/progress.ts`, or its own `src/progress/`.
-   **Open question (7.1): which.**
+Together these kill the `completion.ts -> @/execution` and `queue-check.ts -> @/execution`
+edges.
 
-Cost: two file moves, a handful of import rewrites, `bun run test:coverage` (files move under
-`src/`), and the `@/execution` barrel loses two exports - which **engages section 1.4 of the
-drain plan** (public barrel API change) and is why this is a design note and not a task.
+**A3a-i - `execution/queue-handler.ts` -> `src/queue/` (a real correction).** It is queue
+control living outside the directory `CLAUDE.md` defines for queue control, it already
+imports `../queue`, and `src/queue/` has a barrel holding only the parsing half. Move the
+file, update `src/queue/index.ts`, and repoint the two relative importers plus
+`stages/queue-check.ts`. **Do not leave a value re-export in `@/execution`** - that would keep
+the edge and defeat the move; update the call sites instead.
+
+**A3a-ii - `execution/progress.ts` -> `src/execution/progress/index.ts` (a nested barrel).**
+`progress.ts` is execution-domain code (3.2.1) and should stay in `execution/`. Promote it to
+its own nested barrel - technique (C) in the drain plan - so `stages/completion.ts` can import
+`@/execution/progress` without loading `src/execution/index.ts`. **This is exactly what
+`stages/context.ts:40` already does with `@/execution/helpers`** (3.1), comment and all, so it
+is precedented rather than novel.
+
+**Be honest about what A3a-ii buys.** It *narrows* the wrong-way edge - `pipeline` ends up
+depending on one 57-line leaf instead of the whole `@/execution` barrel - but `pipeline` still
+depends on `execution` code. That is the same criticism that ruled out route A2 in the drain
+plan's 8.8. It is worth doing because a narrow, named edge is honest and reviewable where a
+barrel edge is not, **but it is not a layering fix and must not be described as one.** Only
+A3b is that.
+
+Cost: one file move, one nested-barrel promotion, 4 import statements in `src/` and 2 in
+`test/` (3.2.2), plus `bun run test:coverage` because files move under `src/`.
+**Section 1.4 is not engaged - see section 9.**
 
 ### A3b - invert the composition (larger, the real fix)
 
@@ -196,9 +243,10 @@ To stop these being re-proposed:
 
 ## 7. Open questions
 
-1. **A3a:** where does `progress.ts` go - `src/utils/progress.ts`, or its own `src/progress/`?
-   57 lines and one outside consumer argues for `utils/`; a run-artifact writer arguably
-   deserves its own name.
+1. ~~**A3a:** where does `progress.ts` go - `src/utils/progress.ts`, or its own
+   `src/progress/`?~~ **Resolved 2026-09-13 (section 9): neither.** It stays in `execution/`
+   and is promoted to a nested barrel. The premise of the question - that it was misplaced -
+   was wrong.
 2. **A3b:** move `stages/execution.ts` into `execution/`, or add a registration seam to
    `pipeline/` and have `execution/` supply the stage?
 3. **Scope:** is A3a worth doing on its own now, or should both halves wait for one spec?
@@ -212,12 +260,109 @@ To stop these being re-proposed:
 
 ## 8. Recommendation
 
-Take **A3a now** as a small, separately-reviewed change: it corrects two genuine
-misplacements, needs no architectural ruling beyond the section 1.4 barrel-export question,
-and removes two of the three wrong-way edges.
+Take **A3a now** as a small, separately-reviewed change. Section 1.4 is resolved (section 9)
+and the remaining work is one file move plus one nested-barrel promotion, touching six import
+statements. It removes two of the three wrong-way edges - though only A3a-i is a genuine
+correction; A3a-ii narrows an edge rather than removing the dependency.
 
 Hold **A3b** until someone is prepared to fund a spec with 62 test files in scope. Record it
 here rather than in the drain plan, so the drain can close at 0.
 
 **Do not open A3b as a "finish the drain" task.** The drain is finished. This is separate
 work that happens to have been discovered by it.
+
+---
+
+## 9. Ruling - section 1.4 is not engaged by A3a
+
+**Question.** A3a removes `appendProgress` and the `queue-handler` symbols from the
+`@/execution` barrel. Section 1.4 of `STATUS-import-cycles-drain.md` says: *"Do not delete or
+relocate a public re-export from a barrel to break a cycle ... That changes the public API of
+`@/context`. If a task looks like it needs this, stop and escalate."* This is that escalation.
+
+**Ruled 2026-09-13: section 1.4 does not apply to A3a. Proceed without further escalation.**
+Three independent grounds, each sufficient on its own.
+
+### 9.1 - there is no public API to change
+
+`package.json` for `@nathapp/nax` declares **no `main`, no `module`, no `types`, and no
+`exports` field**. It ships:
+
+```json
+"bin":   { "nax": "./dist/nax.js" },
+"files": ["dist/", "README.md", "CHANGELOG.md"]
+```
+
+`src/` is never published. The sole artifact is a single bundled `dist/nax.js` (the build has
+no `--splitting` flag). **No consumer outside this repository can import `@/execution` at
+all**, so no barrel here has a public API in the semver sense. `@/execution` is an internal
+module boundary whose entire consumer set is `src/`, `bin/` and `test/` in this tree - all of
+which are edited in the same commit.
+
+Section 1.4's worked example is `@/context`, and the same is true of it. The rule's phrase
+"public API" should be read as "a boundary other modules rely on", not "a published surface".
+
+### 9.2 - the exports in question have one consumer each, and both are already in scope
+
+Every execution-internal consumer of these symbols **already imports them by relative path**
+and never touches the barrel (3.2.2). `src/execution/index.ts:92-94` therefore serve exactly
+two import statements in `src/`:
+
+- `src/pipeline/stages/completion.ts:20` - `appendProgress`
+- `src/pipeline/stages/queue-check.ts:11` - `processQueueFile`
+
+Both are the precise sites A3a exists to fix. `readQueueFile`, `clearQueueFile` and
+`BatchQueueDrainResult` are exported from the barrel and have **zero importers anywhere** -
+they are dead barrel surface.
+
+Full churn, measured:
+
+| Scope | Import statements to rewrite |
+|:--|--:|
+| `src/` | 4 |
+| `test/` | 2 (`test/unit/execution/queue-handler.test.ts:15`, `test/integration/execution/progress.test.ts:6`) |
+| `bin/` | 0 (`bin/nax.ts:92` imports only `run`) |
+
+Nothing does `export * from "@/execution"`. One test does
+`import * as checkpointBarrel from "@/execution"`
+(`test/unit/execution/checkpoint/resume-plan.test.ts:20`) but asserts on a named symbol
+(`buildResumePlan`), not on barrel shape - so it is unaffected. **Checked, not assumed.**
+
+This is not the situation section 1.4 was written to prevent. That rule exists because
+removing `export ... from "./engine"` in `src/context/index.ts` would silently break an
+unknown number of importers to make a number go down. Here the importer set is two, both
+known, both being edited.
+
+### 9.3 - section 1.4 governs cycle-breaking, and A3a does not break a cycle
+
+The rule is scoped by its own wording: *"to break a cycle"*. A3a is sequenced **after** Wave 5
+Task 17, at a measured count of 0. There is no cycle for it to break, and the ratchet cannot
+move. The barrel export moves because **the code moves**; the export is following its
+definition, not being surgically removed to satisfy a gate.
+
+That distinction is the whole point of the rule. Section 1.4 forbids using barrel surgery as a
+cheap way to make the ratchet green. A3a is ordinary refactoring justified on domain grounds
+(3.2.1), whose effect on the ratchet is nil.
+
+### 9.4 - what the ruling does not cover
+
+- **A3b is still escalated.** It moves the stage lists and possibly `stages/execution.ts`,
+  whose barrel exports have real consumers - including `src/cli/prompts-main.ts:14` and 62
+  test files (3.5, 3.6). Section 1.4's concern applies there with full force. A3b needs a
+  spec, not this ruling.
+- **Do not generalise 9.1 into "barrel exports are free to move".** The operative reason is
+  9.2 - a measured, two-element importer set. Re-measure for any other barrel before citing
+  this ruling; the `@/context` and `@/pipeline` barrels have broader consumers.
+- **A3a-ii is narrowed, not removed.** After A3a, `pipeline` still depends on `execution`
+  code. See the honesty note under A3a in section 5.
+
+### 9.5 - conditions on proceeding
+
+1. Do A3a **after** the drain closes at 0, not inside it.
+2. Delete the three dead barrel exports (`readQueueFile`, `clearQueueFile`,
+   `BatchQueueDrainResult`) rather than relocating them, unless a consumer appears - re-grep
+   first, since this note's counts are a 2026-09-13 snapshot.
+3. Run `bun run test:coverage` - files move under `src/`.
+4. Re-run `bun run scripts/check-import-cycles.ts` and confirm it still reads **0**. A3a must
+   not be the thing that reveals a new cycle; if it does, stop and re-open this note.
+5. A3a-i and A3a-ii are independent. They can land as two commits and be reviewed separately.
