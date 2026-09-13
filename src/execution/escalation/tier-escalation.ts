@@ -12,14 +12,14 @@ import { isThreeSessionStrategy } from "@/config";
 import type { Finding } from "@/findings";
 import type { LoadedHooksConfig } from "@/hooks";
 import { getSafeLogger } from "@/logger";
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
 import { markStoryFailed, savePRD } from "@/prd";
 import type { RoutingDecision } from "@/routing";
 import { storySpendUsd } from "@/runtime";
 import type { FailureCategory } from "@/tdd/types";
-import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { appendProgress } from "../progress";
+import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 import { verifyEscalationQuotes } from "./quote-integrity";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
 
@@ -73,45 +73,7 @@ function buildEscalationRecord(
   };
 }
 
-/**
- * Determine the outcome when max attempts are reached for an escalation.
- *
- * Returns 'pause' if the failure category requires human review
- * (isolation-violation or verifier-rejected). For all other categories
- * (session-failure, tests-failing, or no category) returns 'fail'.
- *
- * Exported for unit-testing without running the full runner loop.
- */
-export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "pause" | "fail" {
-  if (!failureCategory) {
-    return "fail";
-  }
-
-  switch (failureCategory) {
-    case "isolation-violation":
-    case "verifier-rejected":
-    case "greenfield-no-tests":
-    case "no-tests-authored":
-    case "test-incorrect":
-      return "pause";
-    case "runtime-crash":
-      return "pause";
-    // Exhausted all tiers without ever running the configured review — the gate
-    // stayed red and the story never got semantic/adversarial judgment. Needs a
-    // human, same as verifier-rejected.
-    case "review-incomplete":
-      return "pause";
-    case "session-failure":
-    case "tests-failing":
-    case "full-suite-gate-exhausted":
-    case "dependency-prep":
-      return "fail";
-    default:
-      // Exhaustive check: if a new FailureCategory is added, this will error
-      failureCategory satisfies never;
-      return "fail";
-  }
-}
+export { resolveMaxAttemptsOutcome } from "./max-attempts-outcome";
 
 export interface PreIterationCheckResult {
   shouldSkipIteration: boolean;

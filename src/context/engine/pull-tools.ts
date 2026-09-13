@@ -26,6 +26,7 @@ import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { ScratchEntry } from "@/session";
 import { scratchFilePath } from "@/session";
+import { DEFAULT_MAX_TOKENS_PER_CALL } from "./pull-tools-constants";
 import type { JSONSchema, ToolDescriptor } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ export const _pullToolsDeps = {
  * and clobber every descriptor's own ceiling.
  */
 export const DEFAULT_MAX_CALLS_PER_SESSION = ContextV2ConfigSchema.parse({}).pull.maxCallsPerSession;
-export const DEFAULT_MAX_TOKENS_PER_CALL = 2048;
+export { DEFAULT_MAX_TOKENS_PER_CALL } from "./pull-tools-constants";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Descriptor: query_neighbor

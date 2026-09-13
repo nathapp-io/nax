@@ -5,8 +5,8 @@ import { markNaxBailWrapper, runFixCycle } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { AdversarialReviewInput, CallContext, SemanticReviewInput } from "@/operations";
 import { callOp, verifierOp } from "@/operations";
-import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PhaseDetails } from "@/plugins/types";
 import {
   getReviewIterations,

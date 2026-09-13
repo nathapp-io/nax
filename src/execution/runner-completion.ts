@@ -13,7 +13,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";

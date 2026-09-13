@@ -20,7 +20,7 @@
 
 import { estimateTokens } from "@/optimizer";
 import { fencedLineIndices } from "@/utils/markdown-fence";
-import type { CanonicalRule } from "./rules-frontmatter";
+import type { CanonicalRule } from "../rules-frontmatter";
 
 export interface RuleSection {
   /** Identity of the owning rule (e.g. the file id set by the loader). */

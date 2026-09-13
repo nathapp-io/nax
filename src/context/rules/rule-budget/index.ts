@@ -31,8 +31,8 @@
  * See: docs/specs/SPEC-bounded-rules-floor.md §US-002
  */
 
-import type { RuleSection } from "./rule-sections";
-import { FRONTMATTER_PRIORITY_DEFAULT } from "./rules-frontmatter";
+import type { RuleSection } from "../rule-sections";
+import { FRONTMATTER_PRIORITY_DEFAULT } from "../rules-frontmatter";
 
 export interface SectionBudgetResult {
   retainedSections: RuleSection[];

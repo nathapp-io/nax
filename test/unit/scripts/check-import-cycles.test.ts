@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildImportGraph, findCyclicModules, formatReport, resolveSpecifier } from "@scripts/check-import-cycles";
+import {
+  buildImportGraph,
+  findCyclicModules,
+  formatReport,
+  resolveSpecifier,
+  stripComments,
+} from "@scripts/check-import-cycles";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { byCodePoint } from "@/utils/sort";
 
@@ -62,6 +68,126 @@ describe("buildImportGraph", () => {
 
     const graph = buildImportGraph(root);
     expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([join(root, "src/a/other.ts")]);
+  });
+
+  // Regression: the matcher ran over raw file text, so prose in a comment that
+  // happened to contain the shape `import ... from "..."` was parsed as a real
+  // dependency. src/cli/plan-command.ts carries exactly such a comment and it
+  // fabricated a plan-command -> plan edge, which then showed up as a runtime
+  // import cycle that did not exist. Comments are stripped before matching.
+  test("ignores an import-shaped line comment", () => {
+    write(root, "src/a/leaf.ts", '// callers that import from "./other" still work\nexport const a = 1;\n');
+    write(root, "src/a/other.ts", "export const b = 1;\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([]);
+  });
+
+  test("ignores an import-shaped block comment", () => {
+    write(
+      root,
+      "src/a/leaf.ts",
+      '/**\n * Historically you would import { b } from "./other" here.\n */\nexport const a = 1;\n',
+    );
+    write(root, "src/a/other.ts", "export const b = 1;\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([]);
+  });
+
+  test("keeps a real import that carries a trailing comment", () => {
+    write(
+      root,
+      "src/a/leaf.ts",
+      'import { b } from "./other"; // and not import { c } from "./third"\nexport const a = b;\n',
+    );
+    write(root, "src/a/other.ts", "export const b = 1;\n");
+    write(root, "src/a/third.ts", "export const c = 1;\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([join(root, "src/a/other.ts")]);
+  });
+
+  // A naive stripper treats the `/*` inside this string literal as opening a
+  // block comment and swallows the real import that follows it.
+  test("does not treat a comment marker inside a string literal as a comment", () => {
+    write(root, "src/a/leaf.ts", 'const s = "/*";\nimport { b } from "./other";\nexport const a = b + s;\n');
+    write(root, "src/a/other.ts", "export const b = 1;\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([join(root, "src/a/other.ts")]);
+  });
+
+  // Regression: the prelude used to be `[^"']*?`, which crosses newlines, so a
+  // match could start at `export interface X {` and run down to an unrelated
+  // statement's `from "..."`. The prelude then lost its `type` prefix and a
+  // type-only re-export was counted as a value edge. src/config/runtime-types.ts
+  // has exactly this shape. A quote in the intervening text masked it, which is
+  // why stripping comments surfaced it.
+  test("a type-only re-export below an interface block is not a value edge", () => {
+    write(
+      root,
+      "src/a/leaf.ts",
+      [
+        "export interface Thing {",
+        "  name?: string;",
+        "}",
+        "",
+        "// Re-exported to keep a single source of truth",
+        'export type { B } from "./other";',
+        "",
+      ].join("\n"),
+    );
+    write(root, "src/a/other.ts", "export interface B { n: number }\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([]);
+  });
+
+  test("still records a multi-line value re-export", () => {
+    write(root, "src/a/leaf.ts", 'export {\n  b,\n  c,\n} from "./other";\n');
+    write(root, "src/a/other.ts", "export const b = 1;\nexport const c = 2;\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([join(root, "src/a/other.ts")]);
+  });
+
+  test("records a namespace import as a value edge", () => {
+    write(root, "src/a/leaf.ts", 'import * as other from "./other";\nexport const a = other.b;\n');
+    write(root, "src/a/other.ts", "export const b = 1;\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([join(root, "src/a/other.ts")]);
+  });
+});
+
+describe("stripComments", () => {
+  test("blanks a line comment but keeps the line count", () => {
+    const out = stripComments('// import { b } from "./other"\nconst a = 1;\n');
+    expect(out).not.toContain("import");
+    expect(out.split("\n")).toHaveLength(3);
+  });
+
+  test("blanks a block comment and preserves its newlines", () => {
+    const out = stripComments('/*\nimport { b } from "./other";\n*/\nconst a = 1;\n');
+    expect(out).not.toContain("import");
+    expect(out.split("\n")).toHaveLength(5);
+  });
+
+  test("leaves string literals intact so real specifiers survive", () => {
+    const source = 'import { b } from "./other";\n';
+    expect(stripComments(source)).toBe(source);
+  });
+
+  test("does not open a comment on a marker inside a string", () => {
+    expect(stripComments('const s = "// not a comment";\nconst a = 1;\n')).toContain("// not a comment");
+  });
+
+  test("keeps an escaped quote from ending a string early", () => {
+    const source = 'const s = "a\\"b"; // gone\n';
+    const out = stripComments(source);
+    expect(out).toContain('"a\\"b"');
+    expect(out).not.toContain("gone");
   });
 });
 

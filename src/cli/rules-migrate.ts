@@ -16,7 +16,7 @@ import { basename, join } from "node:path";
 import { CANONICAL_RULES_DIR, NEUTRALITY_RULES } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { errorMessage } from "../utils/errors";
-import { _rulesCLIDeps } from "./rules";
+import { _rulesCLIDeps } from "./rules-cli-deps";
 import type { MigrationPlanEntry } from "./rules-migrate-plan";
 import { planMigration } from "./rules-migrate-plan";
 

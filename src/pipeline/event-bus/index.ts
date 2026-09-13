@@ -17,9 +17,10 @@
  * - Zero dependencies on pipeline internals
  */
 
-import type { TestStrategy } from "../config";
-import { getLogger } from "../logger";
-import type { PhaseDetails, RunPhaseDetails } from "../plugins/extensions";
+import type { TestStrategy } from "@/config";
+import { getLogger } from "@/logger";
+import type { RunFallbackAggregate } from "@/metrics";
+import type { PhaseDetails, RunPhaseDetails } from "@/plugins/extensions";
 // ---------------------------------------------------------------------------
 // Event types
 // ---------------------------------------------------------------------------
@@ -104,7 +105,7 @@ export interface RunCompletedEvent {
    * Absent when no swaps occurred in this run. Subscribers (reporters,
    * events writer, TUI) should treat it as an optional enrichment.
    */
-  fallback?: import("../metrics/types").RunFallbackAggregate;
+  fallback?: RunFallbackAggregate;
 }
 
 export interface HumanReviewRequestedEvent {

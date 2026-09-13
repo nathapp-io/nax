@@ -18,11 +18,11 @@
 
 import { createHash } from "node:crypto";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
-import { FeatureContextProvider as FeatureContextProviderV1 } from "@/context";
 import {
   listFragmentStoryIds as listFragmentStoryIdsImpl,
   readFragment as readFragmentImpl,
 } from "@/context/fragments";
+import { FeatureContextProvider as FeatureContextProviderV1 } from "@/context/providers/feature-context";
 import { getLogger } from "@/logger";
 import type { PRD, UserStory } from "@/prd";
 import { loadPRD as loadPRDImpl } from "@/prd";

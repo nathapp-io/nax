@@ -1,7 +1,7 @@
 {
-  "updatedAt": "2026-09-11T14:41:15.921Z",
+  "updatedAt": "2026-09-13T03:19:14.309Z",
   "byFile": {
-    "src/execution/unified-executor.ts": 734,
+    "src/execution/unified-executor.ts": 703,
     "src/interaction/plugins/telegram.ts": 602,
     "src/prd/schema.ts": 629,
     "src/prompts/builders/rectifier-builder.ts": 902,

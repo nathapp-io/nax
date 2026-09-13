@@ -23,12 +23,10 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Canonical rules delivery
  */
 
-import { mkdir } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import type { CanonicalRule } from "../context/rules/canonical-loader";
-import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
+import { CANONICAL_RULES_DIR } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
-import { getLogger } from "../logger";
 
 export {
   _rulesLintDeps,
@@ -41,8 +39,10 @@ export {
   type RulesLintOptions,
 } from "./rules-lint";
 
-import { rulesLintCommand as _rulesLintCommandImpl, _rulesLintDeps } from "./rules-lint";
+import { _rulesCLIDeps } from "./rules-cli-deps";
+import { rulesLintCommand as _rulesLintCommandImpl } from "./rules-lint";
 
+export { _rulesCLIDeps } from "./rules-cli-deps";
 export {
   type MigrationOutcome,
   neutralizeContent,
@@ -51,38 +51,6 @@ export {
   translateLegacyFrontmatter,
   withReviewNotice,
 } from "./rules-migrate";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Injectable deps
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const _rulesCLIDeps = {
-  readFile: async (path: string): Promise<string> => Bun.file(path).text(),
-  writeFile: async (path: string, content: string): Promise<void> => {
-    await Bun.write(path, content);
-  },
-  fileExists: async (path: string): Promise<boolean> => Bun.file(path).exists(),
-  globInDir: (dir: string): string[] => {
-    try {
-      return [...new Bun.Glob("*.md").scanSync({ cwd: dir })].sort().map((f) => join(dir, f));
-    } catch {
-      return [];
-    }
-  },
-  mkdir: async (path: string): Promise<void> => {
-    await mkdir(path, { recursive: true });
-  },
-  // Delegate lazily (not a value-copy) so overriding _rulesLintDeps.* is
-  // observed here too — a plain field copy at module-eval time would silently
-  // diverge from whatever `nax rules lint` actually runs.
-  globCanonicalRuleFiles: (workdir: string): string[] => _rulesLintDeps.globCanonicalRuleFiles(workdir),
-  globHasMatch: (pattern: string, cwd: string): boolean => _rulesLintDeps.globHasMatch(pattern, cwd),
-  loadCanonicalRules,
-  getLogger,
-  // US-002: forward the workspace resolver so the `nax rules lint` entry
-  // point keeps the same injectable seam as the inner implementation.
-  discoverWorkspacePackages: (workdir: string): Promise<string[]> => _rulesLintDeps.discoverWorkspacePackages(workdir),
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // rules lint command (uses _rulesCLIDeps for testability)

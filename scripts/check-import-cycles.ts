@@ -53,8 +53,26 @@ const SCAN_DIR = "src";
 /** Extensions tried, in order, when resolving a specifier to a file on disk. */
 const RESOLVE_SUFFIXES = ["/index.ts", ".ts", ".tsx"] as const;
 
-/** Captures the import/export prelude in group 1 and the specifier in group 2. */
-const STATIC_IMPORT_RE = /((?:import|export)\s+(?:type\s+)?[^"']*?)from\s+["']([^"']+)["']/g;
+/**
+ * Captures the import/export prelude in group 1 and the specifier in group 2.
+ *
+ * Two constraints keep a match inside one real statement:
+ *
+ * `^` with the `m` flag — a match must begin at the start of a line, not at any
+ * `import`/`export` substring. Every such statement in `src/` starts at column
+ * 0 (a multi-line import's closing `} from "..."` line included), so this costs
+ * nothing.
+ *
+ * The prelude class admits only what an import clause can hold — identifiers,
+ * `{}`, `,`, `*`, and whitespace. It used to be `[^"']*?`, which matches almost
+ * anything including newlines, so a match could start at `export interface Foo {`
+ * and run twenty lines down to an unrelated statement's `from "..."`. The
+ * prelude then did not begin with `type`, and a type-only import was counted as
+ * a value edge. A quote anywhere in between used to block that by accident,
+ * which is why stripping comments exposed it: blanking a comment removes the
+ * apostrophe that was holding the false match back.
+ */
+const STATIC_IMPORT_RE = /^[ \t]*((?:import|export)\s+(?:type\s+)?[A-Za-z0-9_$*,{}\s]*?)from\s+["']([^"']+)["']/gm;
 
 export interface CyclicModule {
   /** Repo-relative path of a module that participates in a runtime cycle. */
@@ -75,6 +93,84 @@ interface Baseline {
 
 function isTypeOnlyImport(prelude: string): boolean {
   return /^\s*(?:import|export)\s+type\b/.test(prelude);
+}
+
+/**
+ * Blank out comments so prose cannot be mistaken for a dependency.
+ *
+ * `STATIC_IMPORT_RE` is matched against file text, so a sentence like
+ * `// callers that import from "./plan" still work` matched as a real import
+ * and fabricated an edge — which then surfaced as a runtime import cycle that
+ * does not exist. `src/cli/plan-command.ts` carried exactly that comment, and
+ * it invented a `plan-command -> plan` edge counted against the baseline.
+ *
+ * String literals are tracked rather than skipped: a `//` or `/*` inside one is
+ * data, not a comment opener, and blanking from there would swallow the real
+ * imports that follow it. Comment bodies are replaced space-for-space with
+ * newlines preserved, so byte offsets and line numbers are unchanged.
+ *
+ * Known limit: regex literals are not tracked, so an unescaped `//` inside one
+ * blanks the remainder of that line. That can only hide an import sharing a
+ * line with a regex literal — which no file in `src/` does, verified by
+ * diffing the whole import graph before and after this change — and it cannot
+ * invent an edge, only drop one.
+ */
+export function stripComments(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+
+    if (ch === '"' || ch === "'" || ch === "`") {
+      out += ch;
+      i++;
+      while (i < source.length) {
+        const c = source[i];
+        out += c;
+        i++;
+        if (c === "\\") {
+          // Consume the escaped character so `"\\""` does not end the string early.
+          if (i < source.length) {
+            out += source[i];
+            i++;
+          }
+          continue;
+        }
+        if (c === ch) break;
+        // Only a template literal may span lines; bail out on an unterminated one
+        // so a stray quote cannot swallow the rest of the file.
+        if (c === "\n" && ch !== "`") break;
+      }
+      continue;
+    }
+
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        out += " ";
+        i++;
+      }
+      continue;
+    }
+
+    if (ch === "/" && next === "*") {
+      out += "  ";
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+        out += source[i] === "\n" ? "\n" : " ";
+        i++;
+      }
+      if (i < source.length) {
+        out += "  ";
+        i += 2;
+      }
+      continue;
+    }
+
+    out += ch;
+    i++;
+  }
+  return out;
 }
 
 function* walk(dir: string): Generator<string> {
@@ -123,7 +219,7 @@ export function resolveSpecifier(rootDir: string, fromFile: string, spec: string
 export function buildImportGraph(rootDir: string): Map<string, string[]> {
   const graph = new Map<string, string[]>();
   for (const file of walk(join(rootDir, SCAN_DIR))) {
-    const content = readFileSync(file, "utf8");
+    const content = stripComments(readFileSync(file, "utf8"));
     const deps: string[] = [];
     for (const match of content.matchAll(STATIC_IMPORT_RE)) {
       if (isTypeOnlyImport(match[1] ?? "")) continue;

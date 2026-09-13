@@ -8,7 +8,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";

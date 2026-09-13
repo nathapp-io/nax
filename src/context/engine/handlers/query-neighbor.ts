@@ -14,7 +14,7 @@
 import { NaxError } from "@/errors";
 import { CodeNeighborProvider } from "../providers/code-neighbor";
 import type { PullToolBudget } from "../pull-tools";
-import { _pullToolsDeps, DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools";
+import { DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools-constants";
 import type { ContextRequest } from "../types";
 
 /**
@@ -93,6 +93,7 @@ export async function handleQueryNeighbor(
     chunkIds: result.chunks.map((c) => c.id),
   });
 
+  const { _pullToolsDeps } = await import("../pull-tools");
   const logger = _pullToolsDeps.getLogger();
   const logData: Record<string, unknown> = {
     storyId: storyId ?? "_pull-tool",

@@ -7,19 +7,19 @@
 
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import type { NaxConfig } from "../config";
-import { validateFilePath } from "../config/path-security";
-import { NaxError } from "../errors";
-import { byCodePoint } from "../utils/sort";
-import { aiderGenerator } from "./generators/aider";
-import { claudeGenerator } from "./generators/claude";
-import { codexGenerator } from "./generators/codex";
-import { cursorGenerator } from "./generators/cursor";
-import { geminiGenerator } from "./generators/gemini";
-import { opencodeGenerator } from "./generators/opencode";
-import { windsurfGenerator } from "./generators/windsurf";
-import { buildProjectMetadata } from "./injector";
-import type { AgentContextGenerator, AgentType, ContextContent, GeneratorMap } from "./types";
+import type { NaxConfig } from "@/config";
+import { validateFilePath } from "@/config";
+import { NaxError } from "@/errors";
+import { byCodePoint } from "@/utils/sort";
+import { aiderGenerator } from "../generators/aider";
+import { claudeGenerator } from "../generators/claude";
+import { codexGenerator } from "../generators/codex";
+import { cursorGenerator } from "../generators/cursor";
+import { geminiGenerator } from "../generators/gemini";
+import { opencodeGenerator } from "../generators/opencode";
+import { windsurfGenerator } from "../generators/windsurf";
+import { buildProjectMetadata } from "../injector";
+import type { AgentContextGenerator, AgentType, ContextContent, GeneratorMap } from "../types";
 
 /**
  * Swappable I/O dependencies for testing.

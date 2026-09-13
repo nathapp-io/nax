@@ -123,7 +123,7 @@ simple cycles with a DFS that marked each node done after its first visit, so
 within one strongly connected component only the first loop found was ever
 reported — a module could join an existing component and the check would still
 read clean. Enumerating every loop instead is not viable (`src/`'s largest
-component has 94 modules), so it uses Tarjan's SCC algorithm, which is complete
+component has 20 modules), so it uses Tarjan's SCC algorithm, which is complete
 and linear.
 
 **When a conversion is rejected**, do not route the import through the barrel.

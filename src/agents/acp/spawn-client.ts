@@ -19,10 +19,8 @@ import { applyReasoningEffort } from "./reasoning-effort";
 import { parseSessionIds } from "./session-ids";
 import { _spawnClientDeps } from "./spawn-client-deps";
 import { runTrackedSpawn } from "./spawn-client-process";
-import { SpawnAcpSession } from "./spawn-client-session";
 
 export { _spawnClientDeps } from "./spawn-client-deps";
-export { SpawnAcpSession } from "./spawn-client-session";
 
 export const DEFAULT_ACP_TIMEOUT_SECONDS = 1800;
 
@@ -184,6 +182,7 @@ export class SpawnAcpClient implements AcpClient {
       storyId: this.storyId,
       spawn: (c) => this.trackedSpawn(c),
     });
+    const { SpawnAcpSession } = await import("./spawn-client-session");
     return new SpawnAcpSession({
       agentName: opts.agentName,
       sessionName,
@@ -241,6 +240,7 @@ export class SpawnAcpClient implements AcpClient {
       storyId: this.storyId,
       spawn: (c) => this.trackedSpawn(c),
     });
+    const { SpawnAcpSession } = await import("./spawn-client-session");
     return new SpawnAcpSession({
       agentName,
       sessionName,

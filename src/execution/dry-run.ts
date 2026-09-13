@@ -4,7 +4,7 @@
  * Extracted from pipeline-result-handler.ts to slim that file below 200 lines.
  */
 
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins";
 import { markStoryPassed } from "../prd";

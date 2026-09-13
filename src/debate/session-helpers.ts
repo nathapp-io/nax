@@ -8,7 +8,8 @@ import type { CallContext } from "../operations/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../session/types";
 import type { SelectorContext } from "./selectors";
-import { pickSelectorKind, resolveSelector } from "./selectors";
+import { pickSelectorKind } from "./selectors/pick";
+import { resolveSelector } from "./selectors/registry";
 import type { DebateResult, Debater, DebateStageConfig } from "./types";
 
 /** Fallback agent name used when resolver.agent is not specified for synthesis/judge */

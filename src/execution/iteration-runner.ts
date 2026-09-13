@@ -12,7 +12,6 @@ import { loadConfigForWorkdir } from "../config/loader";
 import { getLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
-import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
 import { markStoryFailed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
@@ -212,6 +211,7 @@ export async function runIteration(
   });
   await ctx.statusWriter.update(totalCost, iterations);
 
+  const { defaultPipeline } = await import("../pipeline/stages");
   const pipelineResult = await _iterationRunnerDeps.runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
 
   // Tear down warm story sessions (implementer + per-role) on escalation so the

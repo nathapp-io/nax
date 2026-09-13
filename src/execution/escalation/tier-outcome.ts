@@ -8,14 +8,14 @@
  */
 
 import { getSafeLogger } from "@/logger";
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import { markStoryFailed, markStoryPaused, savePRD } from "@/prd";
 import { storySpendUsd } from "@/runtime";
 import type { FailureCategory } from "@/tdd/types";
 import { appendProgress } from "../progress";
+import { resolveMaxAttemptsOutcome } from "./max-attempts-outcome";
 import { verifyEscalationQuotes } from "./quote-integrity";
 import type { EscalationHandlerContext, EscalationHandlerResult } from "./tier-escalation";
-import { resolveMaxAttemptsOutcome } from "./tier-escalation";
 
 /**
  * Handle case when no tier is available for escalation
