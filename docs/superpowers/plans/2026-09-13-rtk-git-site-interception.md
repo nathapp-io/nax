@@ -84,9 +84,19 @@ review because it violated all four. They are not hypothetical — each is enfor
 **1. The barrel gate** (`scripts/check-alias-internals.ts`). A value-level
 `@/<dir>/<internal>` import from `src/` is forbidden when `src/<dir>/index.ts` exists —
 and `src/tools/index.ts` and `src/execution/index.ts` both do. An **exact barrel match**
-(`@/execution/command-interceptor` where `command-interceptor/index.ts` exists) is legal;
-an internal path is not. Hence the nested-directory layout below. Precedents:
+is legal: `listBarrelDirs` (line 130) recurses and registers every directory holding an
+`index.ts`, and `classify` (line 211) returns `null` — no violation — when the import path
+equals a registered barrel exactly. Hence the nested-directory layout below. Precedents:
 `src/execution/checkpoint/`, `src/execution/helpers/`, `src/review/runner/`.
+
+⚠️ **Create the directory form only.** `findShadowedBarrels` (line 157) *removes* a barrel
+that has a same-named sibling file, so leaving a stray `src/execution/command-interceptor.ts`
+beside `command-interceptor/index.ts` silently un-registers the barrel and every import of
+it becomes a violation — with an error message that points at the import, not at the stray
+file. If you refactor a `.ts` into a `/index.ts`, delete the original in the same step.
+
+Note also that `test/` files are **exempt** from this gate for `@/` paths, so a passing
+test suite proves nothing about it. Only `check:all` does.
 
 **2. The import-cycle gate** (`scripts/check-import-cycles.ts`, baseline 0). A cycle here
 is **certain, not possible**: `src/tools/git.ts:18` already imports `gitWithTimeout` from
