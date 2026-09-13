@@ -16,21 +16,26 @@
 This plan and the ruling it implements are **not on `origin/main` yet**. At the time of
 writing they live on branch `feat/rtk-site-scope-ruling`:
 
-| commit | what it carries |
-|---|---|
-| `580e9d9e3` | US-001's measured results, and **R10** — the ruling that defines this plan's scope |
-| `865bbe406` | this plan |
+The branch carries US-001's measured results, **R10** (the ruling that defines this plan's
+scope), the corrected spec, and this plan — across several commits. Take the branch tip; do
+not cherry-pick, and do not rely on any single commit hash, since both documents were
+revised after they were first written.
 
 **If you read the spec from `origin/main` you will build the wrong thing.** The version on
-main still describes three interception sites, still carries a `sites` config key, and
-still lists predicted verb values that the measurement removed. It contains no R10 at all.
+main still describes three interception sites, still carries a `sites` config key, still
+lists predicted verb values that the measurement removed, and — most dangerously — still
+names `gitWithTimeout` as the interception site, which would silently corrupt nax's own git
+parsing (see Task 4). It contains no R10 at all.
 
 Before Task 1:
 
 ```bash
-git log --oneline origin/main..HEAD          # expect the two commits above, or none if merged
 grep -c "R10" docs/superpowers/specs/2026-09-13-nax-rtk-command-interception-design.md
+grep -c "52 callers" docs/superpowers/specs/2026-09-13-nax-rtk-command-interception-design.md
 ```
+
+Both must be non-zero. The second is the load-bearing one: it proves you have the spec
+*after* the interception site was corrected, not merely after R10 landed.
 
 If the grep returns 0, you are on the wrong base. Check out `feat/rtk-site-scope-ruling`,
 or — if it has since merged — re-pull `main` and confirm the grep is non-zero before
