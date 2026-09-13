@@ -32,9 +32,13 @@ The one component is exactly the section 5 residue, verified module-for-module:
 |--:|--:|:--|
 | 1 | **20** | `execution/` (15) + `pipeline/` (5) — the section 5 knot, unaltered |
 
-The drain is **complete**: 132 -> 20, exactly the plan's end state. Everything outside the
-documented residue is acyclic. Section 8.7 records the Wave 4 path and the one bonus cut
-needed to land on 20 after Task 8 under-delivered.
+~~The drain is **complete**: 132 -> 20, exactly the plan's end state.~~ **Superseded
+2026-09-13 - see 8.8.** Re-measurement found that 13 of these 20 are ordinary mechanical
+edges Wave 4 left uncut (nine unfinished `@/pipeline/event-bus` migrations from Task 5, one
+self-barrel edge, one separable two-module recursion), and that the real `execution` <->
+`pipeline` knot is only **7** modules - dissolvable from either direction. **Wave 5
+(Tasks 13-17) takes this to 0.** Section 8.7 still records the Wave 4 path and the one bonus
+cut needed to land on 20 after Task 8 under-delivered.
 
 **Simulated end state of this plan: 132 -> 20.** The 17 edge cuts across the 12 tasks in
 section 3 were chosen by greedy search over every internal edge of every component (remove
@@ -1059,6 +1063,414 @@ bun run check:import-cycles:update
 
 ---
 
+### Wave 5 - the "residue" was mostly not a residue (20 -> 0)
+
+> **Read this first.** Section 5 as written after Wave 4 claimed all 20 remaining modules
+> were "a genuine mutual dependency ... breaking it needs a design decision". **That was
+> wrong for 13 of the 20.** A re-measurement on 2026-09-13 (section 8.8) found that Wave 4
+> left two ordinary mechanical edges uncut, and that the real knot is only **7 modules**.
+> Every number in this wave was **measured by simulating the edit and re-running the gate**,
+> not predicted. Section 5 is corrected in place by Task 17.
+>
+> The design decision for the 7-module knot **has been made** - route **A1, defer with
+> `await import`** (ruled 2026-09-13, see 8.8). You do not need to re-open it. Task 16 is a
+> refactor, not a design task.
+
+Tasks run **in order**; the measured count after each is exact.
+
+| Task | Edge cut | Technique | Count after |
+|:--|:--|:--|--:|
+| 13 | 9 files -> `@/pipeline` parent barrel for `pipelineEventBus` | (C) existing nested barrel | **10** |
+| 14 | `escalation/tier-escalation.ts -> ../escalation` (self-barrel) | (B) relative leaf | **9** |
+| 15 | `escalation/tier-outcome.ts -> ./tier-escalation` | extract shared leaf | **7** |
+| 16 | `execution/{iteration-runner,unified-executor} -> ../pipeline/stages` | (D) `await import` | **0** |
+| 17 | baseline to 0, gate becomes zero-tolerance, correct section 5 | doc + baseline | **0** |
+
+---
+
+### Task 13: nine files still reach `pipelineEventBus` through the parent barrel (frees 10)
+
+Task 5 (Wave 2) promoted the event bus to its own nested barrel at
+`src/pipeline/event-bus/index.ts`. Three call sites were switched over at the time -
+`src/execution/cost-guard.ts:6`, `src/execution/merge-conflict-outcomes.ts:20` and
+`src/execution/story-orchestrator/run-phase.ts:9` - and the rest were never migrated. Every
+one of them still pulls in the whole `@/pipeline` barrel (and therefore `pipeline/stages`,
+and therefore `@/execution`) to reach one exported object.
+
+`@/pipeline/event-bus` is an **exact** nested-barrel match, so `check:alias-internals` is
+satisfied. This is technique (C) with the barrel already built for you - there is no file to
+move, only an import specifier to change.
+
+**Edit.** In each of these **nine** files, replace the whole line
+
+```ts
+import { pipelineEventBus } from "@/pipeline";
+```
+
+with
+
+```ts
+import { pipelineEventBus } from "@/pipeline/event-bus";
+```
+
+| # | File | Line (snapshot) |
+|--:|:--|--:|
+| 1 | `src/execution/dry-run.ts` | 7 |
+| 2 | `src/execution/unified-executor.ts` | 3 |
+| 3 | `src/execution/pipeline-result-handler.ts` | 11 |
+| 4 | `src/execution/runner-completion.ts` | 16 |
+| 5 | `src/execution/lifecycle/run-setup.ts` | 22 |
+| 6 | `src/execution/lifecycle/run-completion.ts` | 19 |
+| 7 | `src/execution/lifecycle/run-regression.ts` | 16 |
+| 8 | `src/execution/escalation/tier-outcome.ts` | 11 |
+| 9 | `src/execution/escalation/tier-escalation.ts` | 15 |
+
+> **Do not touch the other two hits.** `src/tui/hooks/usePipelineBusEvents.ts:15` and
+> `src/finish/phase.ts:18` have the same import line but are **not** in any cycle. Changing
+> them is a harmless consistency win, not part of this task - leave them, or do them in a
+> separate commit, so the measured delta below stays attributable.
+
+Because the import order is alphabetical by specifier, moving `@/pipeline` to
+`@/pipeline/event-bus` does **not** change a file's sort position (`@/pipeline` <
+`@/pipeline/event-bus` and both sort after `@/metrics`, before `@/prd`). Biome should not
+re-order anything; if `bun run lint` disagrees, take its fix.
+
+**Proof.**
+```bash
+bun run scripts/check-import-cycles.ts    # expect: 10 (down 10)
+```
+Measured 2026-09-13: **20 -> 10.**
+
+---
+
+### Task 14: `escalation/tier-escalation.ts` stops importing its own parent barrel (frees 1)
+
+Same shape as Tasks 1 and 2 in Wave 1. `src/execution/escalation/tier-escalation.ts` reaches
+three symbols through the directory's own `index.ts`:
+
+```ts
+import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
+```
+
+`../escalation` from inside `src/execution/escalation/` resolves to
+`src/execution/escalation/index.ts` - its own barrel - whose line 6 is
+`export { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";`.
+The defining leaf is `src/execution/escalation/escalation.ts`, a sibling.
+
+**Edit.** Technique (B), one line:
+
+```ts
+import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
+```
+
+`./sibling` is inside biome's `noRestrictedImports` allowance (only `../../*` is banned), and
+`check-alias-internals` does not inspect relative specifiers.
+
+> **The confusing bit:** the directory is `escalation/` **and** the leaf file is
+> `escalation.ts`, so `../escalation` and `./escalation` differ by one character and resolve
+> to completely different modules. Match on the quoted text and re-read the line after
+> editing.
+
+**Proof.**
+```bash
+bun run scripts/check-import-cycles.ts --list    # expect: 9
+```
+Measured 2026-09-13: **10 -> 9.** The two modules left in that corner are
+`tier-escalation.ts` and `tier-outcome.ts`, now cycling directly with each other - which is
+Task 15.
+
+---
+
+### Task 15: break the `tier-escalation` / `tier-outcome` mutual recursion (frees 2)
+
+This one *is* a real mutual dependency, but a tiny and obvious one:
+
+| Direction | Symbols | Sites |
+|:--|:--|:--|
+| `tier-escalation.ts -> ./tier-outcome` | `handleMaxAttemptsReached`, `handleNoTierAvailable` | lines 423, 466, 482 |
+| `tier-outcome.ts -> ./tier-escalation` | `resolveMaxAttemptsOutcome` | lines 28, 98 |
+
+The second direction carries exactly one symbol, and that symbol is a **pure synchronous
+function with no imports of its own** - `resolveMaxAttemptsOutcome(failureCategory?:
+FailureCategory): "pause" | "fail"`, a `switch` over categories at
+`src/execution/escalation/tier-escalation.ts:85`. It is stranded in a 598-line file that
+otherwise does async orchestration. Extracting it is the right change on its own merits and
+removes the back-edge as a side effect.
+
+**Step 1 - create `src/execution/escalation/max-attempts-outcome.ts`.** Move the whole
+`resolveMaxAttemptsOutcome` function there verbatim, **including its comments** (the block at
+line 99 explaining the review-incomplete case is load-bearing context - do not drop it). Its
+only dependency is `import type { FailureCategory } from "@/tdd";` - a type import, so it adds
+no edge.
+
+**Step 2 - `tier-escalation.ts`:** delete the function body and add, next to its other
+sibling imports,
+
+```ts
+export { resolveMaxAttemptsOutcome } from "./max-attempts-outcome";
+```
+
+Keep this re-export. It is a value `export ... from`, so it adds a
+`tier-escalation -> max-attempts-outcome` edge - which is fine, the new leaf imports nothing
+back. It exists to keep **two existing deep test imports** working:
+`test/unit/execution/escalation/tier-escalation-greenfield.test.ts:12` imports the symbol
+from `@/execution/escalation/tier-escalation`, and if `tier-escalation.ts` also *uses* the
+function itself, import it from the leaf rather than relying on the re-export.
+
+**Step 3 - `tier-outcome.ts:18`:** repoint to the leaf.
+
+```ts
+import { resolveMaxAttemptsOutcome } from "./max-attempts-outcome";
+```
+
+**Step 4 - `escalation/index.ts` is unchanged.** Line 18 already re-exports
+`resolveMaxAttemptsOutcome` from within this directory, and so does `execution/index.ts:33`
+and `execution/runner.ts:48`. **No public barrel export moves or disappears**, so section 1.4
+is not engaged. The other three test files reach it via `@/execution` and
+`@/execution/runner` and keep working untouched.
+
+> **Trap (1.5, file-size gate):** this *shrinks* `tier-escalation.ts`, which is safe. But
+> technique (C)-adjacent tasks that add a file under `src/` need the coverage gate - a new
+> `.ts` file with a single pure function is exactly the kind of file that can land under the
+> per-file floor. **Run `bun run test:coverage` for this task.** If the new file is short of
+> the floor, the existing assertions in `tier-escalation.test.ts` and
+> `tier-escalation-greenfield.test.ts` already cover every branch of the `switch` - the fix is
+> to point the coverage baseline entry at the new path, not to write new tests.
+
+**Proof.**
+```bash
+bun run scripts/check-import-cycles.ts    # expect: 7
+bun run test:coverage
+bun test test/unit/execution/escalation/ --timeout=30000
+```
+Measured 2026-09-13: **9 -> 7.** What remains is the real knot, and only the real knot.
+
+---
+
+### Task 16: defer `pipeline/stages` from the two execution entry points (frees 7, reaches 0)
+
+**This is the task the plan previously said needed a design decision. The decision was made
+on 2026-09-13: route A1, defer with `await import`. Implement it; do not re-litigate it.**
+
+The knot is seven modules and it is genuinely bidirectional:
+
+```
+pipeline/stages/index.ts
+  -> stages/completion.ts   -> @/execution  (appendProgress)
+  -> stages/queue-check.ts  -> @/execution  (processQueueFile)
+  -> stages/execution.ts    -> @/execution  (6 symbols)
+                                  |
+                            execution/index.ts
+                                  |
+       +--------------------------+--------------------------+
+       v                                                     v
+execution/iteration-runner.ts                     execution/unified-executor.ts
+       -> ../pipeline/stages (defaultPipeline)      -> ../pipeline/stages (pre/postRunPipeline)
+```
+
+Cutting **either** direction fully dissolves it - both were simulated and both reach 0. A1
+cuts the `execution -> pipeline/stages` direction, because it is two files and three call
+sites, and because technique (D) removes the edge from the **real ESM initialisation order**,
+not merely from the ratchet (section 1.3(D): "Not a loophole; it is the honest fix").
+
+All three call sites were checked and are **already inside `await` expressions in `async`
+functions**, so no signature anywhere has to change.
+
+**Step 1 - `src/execution/iteration-runner.ts`.** Delete line 15:
+
+```ts
+import { defaultPipeline } from "../pipeline/stages";
+```
+
+At line 215 the symbol is consumed in an already-async call:
+
+```ts
+const pipelineResult = await _iterationRunnerDeps.runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
+```
+
+Replace with a deferred load immediately above it:
+
+```ts
+const { defaultPipeline } = await import("../pipeline/stages");
+const pipelineResult = await _iterationRunnerDeps.runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
+```
+
+> This sits on the per-iteration path, so it runs once per story attempt rather than once per
+> process. That is not a performance concern: the ESM module cache makes every call after the
+> first a resolved-promise lookup, and `defaultPipeline` is *already* a lazy `Proxy` over an
+> array (`src/pipeline/stages/index.ts:59`) precisely so its stages are not materialised at
+> module-evaluation time. If you would rather hoist it, hoist it to the top of the enclosing
+> async function - **not** to module scope, which re-adds the edge.
+
+**Step 2 - `src/execution/unified-executor.ts`.** Delete line 8:
+
+```ts
+import { postRunPipeline, preRunPipeline } from "../pipeline/stages";
+```
+
+Two consumption sites, both inside `await runPipeline(...)` calls:
+
+- **line ~170**, `preRunPipeline` passed as the last argument to a `runPipeline` call inside
+  an `if` block.
+- **line ~641**, `postRunPipeline` passed as the first argument to `await runPipeline(...)`
+  inside the `if (ctx.config.acceptance?.enabled)` block.
+
+Add a `const { preRunPipeline } = await import("../pipeline/stages");` (resp.
+`postRunPipeline`) as the first statement inside each of those two blocks. They are in
+different branches and neither runs unconditionally, so **do not** try to share one load
+between them at function scope.
+
+> Re-grep between Step 1 and Step 2 and between the two sites in Step 2. Deleting line 8
+> shifts every later line in `unified-executor.ts` up by one, and adding a statement shifts
+> the second site down. Match on the quoted text (`preRunPipeline,` / `postRunPipeline,`).
+
+**Step 3 - leave `../pipeline/runner` alone.** Both files also import `runPipeline` /
+`logPipelineOutcome` from `../pipeline/runner`, and so do `pre-run.ts` and
+`parallel-worker.ts`. `src/pipeline/runner.ts` is **not** in the cycle and never was. Do not
+convert those - you would be adding dynamic imports for nothing.
+
+**Proof.**
+```bash
+bun run scripts/check-import-cycles.ts    # expect: 0
+bun run check:all
+bun run test:coverage
+```
+Measured 2026-09-13 (by deleting both import lines to simulate the cut): **7 -> 0.**
+
+> **Do not skip the test run here.** This is the only task in the whole drain that changes
+> *when* a module is evaluated on a hot path. `bun run test:full` (`FULL=1 NAX_PRECHECK=1`)
+> is required by section 4 at the end of the drain, and this is the task that makes it worth
+> running.
+
+---
+
+#### Task 16 blast radius - read before editing
+
+Tasks 13-15 are import-specifier rewrites: nothing about *when* a module is evaluated
+changes, so their blast radius is the type checker and nothing else. **Task 16 is the only
+task in this entire drain that changes runtime evaluation order**, and it does it on the
+per-story hot path. Everything below was checked on 2026-09-13; the conclusion is that the
+radius is small, but each item is checked for a reason and you should re-confirm rather than
+assume.
+
+**1. Stage side effects at module scope - the one thing that could actually break.**
+Deferring `../pipeline/stages` means `pipeline/stages/index.ts` and everything it statically
+imports (`acceptance`, `acceptance-setup`, `completion`, `constitution`, `context`,
+`execution`, `optimizer`, `prompt`, `queue-check`, `routing`) are no longer evaluated when
+`execution/iteration-runner.ts` is loaded. They are evaluated on **first call** instead. If
+any of those ten modules performs a side effect at module scope that some *other* module
+silently depends on having already happened - registering a subscriber, mutating a shared
+registry, seeding a cache - deferring it moves that side effect later and the dependent
+breaks. Grep the ten stage files for top-level statements that are not `import`, `export`,
+`const`/`function` declarations or type aliases before you edit. This is the failure mode
+section 1.1 describes, running in the opposite direction.
+
+**2. `defaultPipeline` is already lazy - this is the reassuring part.**
+`src/pipeline/stages/index.ts:59` defines it as a `Proxy` over an empty array whose every
+trap calls `getDefaultPipeline()`, which memoises `buildDefaultPipeline()` on first property
+access. The stage list was *already* not materialised at module-evaluation time. Deferring
+the import moves the module evaluation, not the pipeline construction, and the construction
+was already happening at first use. `preRunPipeline` and `postRunPipeline` (lines 86 and 92)
+are plain arrays holding one stage each and are constructed eagerly - but they are only ever
+passed straight into `runPipeline`, so moving their construction to the call site is inert.
+
+**3. Cost on the hot path: one module-cache lookup per story attempt.** The
+`iteration-runner.ts` site runs once per story attempt, not once per process. After the first
+call `await import(...)` is a resolved-promise lookup in the ESM registry - microseconds, and
+already awaited inside an async function that is about to spawn an agent. Not a concern.
+
+**4. The build emits one file and keeps emitting one file.** `bun run build` is
+`bun build bin/nax.ts --outdir dist --target bun` with **no `--splitting` flag**, so Bun
+inlines dynamic imports rather than emitting chunks. `dist/` is a single `nax.js` today
+*with 84 dynamic imports already in the graph*, several of them reachable from this same
+path (`src/pipeline/stages/acceptance.ts:50`, `src/operations/full-suite-gate.ts:165`).
+Task 16 adds no new build artifact and no new load-time fetch. Still run `bun run build` and
+confirm `dist/` is one file.
+
+**5. Test mocking is unaffected, and if anything improves.** No test anywhere does
+`mock.module` on `../pipeline/stages` or on `@/pipeline` - checked across all of `test/`.
+Both edited files also expose `_deps` seams (`_iterationRunnerDeps` at
+`iteration-runner.ts:308`, `_unifiedExecutorDeps`) and `runPipeline` is injected through
+them, so the tests that exercise this path stub the *runner*, never the stage list. A
+deferred import also resolves **after** `mock.module` calls in a test body rather than before,
+which makes future mocking easier, not harder.
+
+**6. One source-scraping test will break if you deviate from the recipe.**
+`test/unit/execution/iteration-runner-worktree.test.ts:54` reads
+`src/execution/iteration-runner.ts` as **text** and asserts that the index of
+`"prepareWorktreeDependencies"` is less than the index of the literal substring
+`"runPipeline(defaultPipeline"`. The recipe in Step 1 preserves that substring exactly,
+because it adds a line *above* the call and leaves the call itself untouched. If you rename
+the destructured binding, inline the import into the argument list
+(`runPipeline((await import(...)).defaultPipeline, ...)`), or let a formatter wrap the call,
+**this test fails on a change that is otherwise correct**. Keep the call line byte-identical.
+
+**7. What Task 16 does *not* change.** No exported signature, no public barrel export, no
+`_deps` seam shape, no config, no behaviour observable to a caller. `check:alias-internals`
+is untouched (relative specifiers). The three `../pipeline/runner` imports in these two files
+stay static - see Step 3.
+
+**8. What it leaves behind - state this in the PR description.** A1 removes the
+initialisation-order cycle; it does **not** make `pipeline` and `execution` independent.
+`pipeline/stages/*` still calls into `@/execution`, and after Task 17 lowers the baseline to
+0 that dependency is invisible to the gate. See Task 17 Step 3 and route A3 in 8.8.
+
+**Verification sequence for this task specifically** - do not compress it:
+```bash
+bun run scripts/check-import-cycles.ts                       # expect 0
+bun x tsc --noEmit
+bun test test/unit/execution/ --timeout=30000                # the scraping test lives here
+bun test test/unit/pipeline/ --timeout=30000
+bun run check:all
+bun run build && ls dist                                     # expect exactly nax.js
+bun run test:coverage
+bun run test:full                                            # FULL=1 NAX_PRECHECK=1
+```
+
+---
+
+### Task 17: baseline to zero, and correct section 5
+
+The drain ends here. Ruled 2026-09-13: **the baseline goes to 0 and the gate becomes
+zero-tolerance** - any newly introduced cycle fails CI on the spot.
+
+**Step 1 - lower the baseline.**
+```bash
+bun run check:import-cycles:update
+```
+Then **read the diff**. `scripts/baselines/import-cycles-baseline.json` must end up with
+`count: 0` and an **empty** `modules` array. Section 1.4's "never raise the baseline" still
+stands; this is the one and only lowering to zero.
+
+**Step 2 - correct section 5 of this document.** Its central claim - that all 20 modules were
+an irreducible mutual dependency needing a design decision - is now known to be false for 13
+of them, and resolved for the other 7. Replace the section body with a short statement that
+the residue is empty and that the `execution` <-> `pipeline` mutual dependency is now broken
+at the `execution -> pipeline/stages` edge by deferral. **Section 8 stays append-only** -
+correct section 5 in place, and let 8.7 and 8.8 stand as the record of what was believed when.
+
+**Step 3 - the architectural debt is still real.** A1 removed the *initialisation-order*
+cycle; it did not make `pipeline` and `execution` independent layers. `pipeline/stages/*`
+still calls into `@/execution` for `appendProgress`, `processQueueFile` and six planning
+symbols, and that dependency is now invisible to the gate. Note this explicitly in the
+rewritten section 5 so a future reader does not mistake a green ratchet for a clean layering.
+Route A3 from 8.8 - extracting the shared contract into a third layer both sides depend on
+and neither owns - remains the real fix and belongs in its own design note, not here.
+
+**Step 4 - check section 4's boxes** and confirm
+`.nax/rules/project-conventions.md`'s "Cycle ratchet" paragraph still describes reality now
+that the baseline reads 0.
+
+**Proof.**
+```bash
+bun run scripts/check-import-cycles.ts    # [OK] 0 modules ... (baseline: 0)
+bun run check:all
+bun run test:coverage
+bun run test:full                          # FULL=1 NAX_PRECHECK=1 - section 4 requires this once
+```
+
+---
+
 ## 4. Definition of done for this plan
 
 - [ ] `bun run scripts/check-import-cycles.ts` reports **20 or fewer** cyclic modules.
@@ -1073,6 +1485,14 @@ bun run check:import-cycles:update
 ---
 
 ## 5. The residue - what this plan deliberately does not fix
+
+> **CORRECTION 2026-09-13 - this section is substantially wrong and is retained only until
+> Task 17 rewrites it.** Its central claim - that these 20 modules are an irreducible mutual
+> dependency needing a design decision - was re-measured and does not hold. Thirteen of them
+> are mechanical edges Wave 4 left uncut; the real knot is 7 modules and dissolves from
+> either direction. Its claim that "every remaining edge frees exactly 1 module" is false:
+> one nine-line specifier rewrite frees 10. **Read Wave 5 in section 3 and log entry 8.8
+> instead.** Do not plan work from the text below.
 
 After all 12 tasks, one SCC of **20 modules** remains:
 
@@ -1460,3 +1880,88 @@ Commits, in order: `3e313e65f` (7), `a3e72f7e7` (8), `5b33f15ac` (9), `d51fffc51
 (section 5). Breaking it is a design decision — extract the shared contract (event bus,
 queue interface, result types) into a third layer. Task 5's nested-barrel move of
 `pipeline/event-bus` remains the first brick of that extraction.
+### 8.8 - 2026-09-13 - the 20-module "residue" re-measured; Wave 5 planned; A1 ruled
+
+**Trigger.** Section 5, written after Wave 4, claimed all 20 remaining modules were "a genuine
+mutual dependency between the `execution` and `pipeline` layers, not a barrel accident", that
+"every remaining edge frees exactly 1 module", and that breaking it "needs a design decision,
+not a refactor pass". That framing was taken to the design-decision conversation. It did not
+survive re-measurement.
+
+**Method.** Every number below was produced by making the edit in the working tree, running
+`bun run scripts/check-import-cycles.ts --list`, and then reverting. Nothing is predicted.
+The tree was confirmed back at 20 after each probe and again at the end.
+
+**Finding 1 - 10 of the 20 were a Wave-2 migration that was never finished.** Task 5 promoted
+the event bus to `src/pipeline/event-bus/index.ts` and switched three call sites
+(`cost-guard.ts`, `merge-conflict-outcomes.ts`, `story-orchestrator/run-phase.ts`). **Nine
+other files in the cycle still imported `pipelineEventBus` from the `@/pipeline` parent
+barrel**, dragging in `pipeline/stages` and therefore `@/execution` to reach one object. A
+pure specifier rewrite on nine lines: **20 -> 10, measured.** This is the single largest
+unclaimed win left in the drain and it required no decision of any kind.
+
+**Finding 2 - 1 more was an ordinary self-barrel edge.**
+`src/execution/escalation/tier-escalation.ts:21` imported `{ calculateMaxIterations,
+escalateTier, getTierConfig }` from `"../escalation"` - its own directory barrel - when the
+defining leaf is the sibling `./escalation`. Identical in shape to Waves 1's Tasks 1 and 2.
+The directory and the leaf file share a name, which is presumably why the ranker's output was
+misread. **10 -> 9, measured.**
+
+**Finding 3 - 2 more were a real but trivially separable mutual recursion.**
+`tier-escalation.ts` <-> `tier-outcome.ts`. The back-edge carries exactly one symbol,
+`resolveMaxAttemptsOutcome`, a pure synchronous `switch` with no value imports, stranded in a
+598-line async-orchestration file. Extracting it to its own leaf is correct on its own merits
+and no public barrel export moves. **9 -> 7.**
+
+**Finding 4 - the real knot is 7 modules, and section 5's "every remaining edge frees exactly
+1 module" is false of it.** The knot is
+`pipeline/stages/{index,completion,execution,queue-check}` <-> `execution/{index,
+iteration-runner,unified-executor}`. Cutting **either** direction dissolves the whole thing:
+
+| Route | What was simulated | Measured |
+|:--|:--|--:|
+| A1 | delete the two `../pipeline/stages` import lines in `iteration-runner.ts` and `unified-executor.ts` | **7 -> 0** |
+| A2 | delete the three `@/execution` imports in `stages/{completion,queue-check,execution}.ts` | **7 -> 0** |
+
+So this was never a choice between "fix it" and "accept it"; it was a choice of which
+direction to cut and by which technique.
+
+**Decision (ruled by the maintainer, 2026-09-13): route A1 - defer with `await import`.**
+
+- **A1 (chosen).** Two files, three call sites, all three already inside `await` expressions
+  in `async` functions. Technique (D), which section 1.3 describes as "not a loophole; it is
+  the honest fix" because it removes the edge from the real ESM initialisation order rather
+  than only from the ratchet. 84 existing precedents in `src/`. Blast radius documented in
+  full under Task 16 - the short version is that `defaultPipeline` was *already* a lazy
+  `Proxy`, the build has no `--splitting` flag so `dist/` stays a single `nax.js`, no test
+  mocks the stages module, and exactly one source-scraping assertion
+  (`iteration-runner-worktree.test.ts:54`) constrains how the edit must be spelled.
+- **A2 (rejected).** Promoting ~5 execution leaves (`progress`, `queue-handler`,
+  `plan-inputs`, `build-plan-for-strategy`, `post-run`) to nested barrels. Keeps every import
+  static and eager, so its runtime blast radius is nil - but it is five directory moves plus
+  a `test:coverage` pass, and it makes the dependency one-directional **in spelling only**:
+  `pipeline` would still depend on `execution` code, just spelled so the gate cannot see it.
+  More churn than A1 for a weaker result.
+- **A3 (deferred, not rejected).** Extract the shared contract - the event bus, the queue
+  interface, the result types - into a third layer both sides depend on and neither owns.
+  **This is the only route that actually fixes the layering, and it is the one with the large
+  blast radius**: it moves public exports out of `@/pipeline` and `@/execution` (engaging
+  section 1.4), touches every import site of the moved symbols across `src/` and `test/`, and
+  cannot be handed to an implementer as a mechanical recipe the way Tasks 13-17 can. Task 5
+  already laid its first brick by giving the event bus its own nested barrel. It belongs in
+  its own design note with its own spec, **not** in this drain.
+
+**Consequence to keep visible.** A1 buys a green ratchet without buying clean layering.
+`pipeline/stages/*` still calls into `@/execution` for `appendProgress`, `processQueueFile`
+and six planning symbols; after Task 17 lowers the baseline to 0 that dependency is invisible
+to the gate. Task 17 Step 3 requires this to be written into the rewritten section 5 so a
+future reader does not mistake a passing check for a resolved architecture.
+
+**Second ruling: the baseline goes to 0 and the gate becomes zero-tolerance.** Any newly
+introduced cycle fails CI immediately from then on. Section 1.4's "never raise the baseline"
+is unchanged; Task 17 is the one and only lowering to zero.
+
+**Wave 5 (Tasks 13-17) is written up in section 3 and is ready for handover to an implementer
+with no context.** Expected path, every step measured rather than predicted:
+**20 -> 10 -> 9 -> 7 -> 0.** Section 5 is left standing until Task 17 rewrites it, with a
+correction banner pointing here; section 8 remains append-only.
