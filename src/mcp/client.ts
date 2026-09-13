@@ -147,6 +147,7 @@ export async function connectMcpServer(args: {
     },
     async close() {
       await client.close().catch(() => {});
+      await transport.close().catch(() => {});
     },
   };
 }
