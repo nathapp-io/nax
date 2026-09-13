@@ -18,8 +18,8 @@ import { markStoryFailed, savePRD } from "@/prd";
 import type { RoutingDecision } from "@/routing";
 import { storySpendUsd } from "@/runtime";
 import type { FailureCategory } from "@/tdd/types";
-import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { appendProgress } from "../progress";
+import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 import { verifyEscalationQuotes } from "./quote-integrity";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
 
