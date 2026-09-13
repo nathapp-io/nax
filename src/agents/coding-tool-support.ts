@@ -10,6 +10,7 @@
  */
 
 import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
 import {
   type CodingTool,
   type CodingToolName,
@@ -253,6 +254,13 @@ export async function resolveCodingToolSupport(
       ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root)
       : { tools: [], grants: [], failures: [] as readonly { providerId: string; reason: string }[] };
   const declaredWithProviders = [...declared, ...providerResult.tools.map((t) => t.name)] as readonly CodingToolName[];
+  for (const failure of providerResult.failures) {
+    getSafeLogger()?.warn("tools", "[provider] dropped", {
+      storyId: options.storyId,
+      providerId: failure.providerId,
+      reason: failure.reason,
+    });
+  }
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
