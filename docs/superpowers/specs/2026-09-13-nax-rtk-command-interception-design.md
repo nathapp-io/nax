@@ -3,8 +3,12 @@
 Design only. Status: **design approved, not yet implemented.** No code changes are to be
 made against this spec while the import-cycles refactor is in flight.
 
-Companion spec: `2026-09-13-nax-mcp-client-design.md`. The two share no files and may land
-in either order, but see §3 R5 for one mechanism they both need.
+**Prerequisite: `2026-09-13-nax-provider-tools-design.md`** — but only for US-006, the
+recall tool. Everything else here (the interception seam, all three sites, the rtk
+provider, output post-processing) is independent of it and can land first.
+
+Companion spec: `2026-09-13-nax-mcp-client-design.md`. It shares only the provider-tools
+prerequisite; the two otherwise share no files and may land in either order.
 
 ## 1. Goal
 
@@ -124,10 +128,11 @@ mode (prompts implying a shell that does not exist) and burns turns on denials.
 **R5 — The recall escape hatch is a tool contributed by the interceptor**, not a nax
 built-in. Otherwise "generic seam" is fiction and nax hard-depends on rtk.
 
-This needs the same mechanism as the MCP spec: **externally-provided tools injected
-through `extraTools` (`src/tools/runtime.ts:90`) with dynamic names and config-driven
-grants.** Whichever spec lands second reuses the first's plumbing rather than building a
-parallel one. This is the only coupling between the two specs.
+The mechanism is owned by **`2026-09-13-nax-provider-tools-design.md`**, a prerequisite
+for this spec. The recall tool is a **`static`-kind** provider: its schema is authored in
+nax's repo and reviewed in nax's PRs, so it carries none of the sanitization or pinning
+obligations that a `discovered` provider (an MCP server) does. That distinction is the
+reason the mechanism is its own spec rather than something either feature owns.
 
 **R6 — Rewrite output is validated against nax's own escape-flag ban.** rtk accepts git
 global options nax deliberately refuses (`-C`, `-c`, `--git-dir`, `--work-tree`,
@@ -309,23 +314,49 @@ Applied to output from a rewritten command:
    fix, and widening the change risks entangling it with the refactor — but a marker that
    claims "truncated at 40000 bytes" after a 40 000-*character* cut would be actively
    wrong, so the marker and the cut must at least agree with each other.
-3. **Preserve the recall hash** out-of-band, for US-006.
+3. **Preserve the recall hash** out-of-band via `postProcess`'s `notes`, and **re-expose
+   it through nax's own marker**.
+
+**Closing the loop — the part that is easy to get wrong.** Stripping the hint (R4) and
+carrying the hash out-of-band would leave the agent with no way to know a recall is even
+possible, making US-006's tool unreachable. So the two halves must be connected: nax's
+marker names a tool the agent actually has, rather than a shell command it does not.
+
+```
+... [truncated at 40000 bytes; full output available via Recall(id: "3f9c2a81d4e7")]
+```
+
+The distinction from rtk's own hint is the whole point of R4. `rtk recall 3f9c2a81d4e7`
+asks the agent to run a shell command it cannot express — nax#1800's failure mode.
+`Recall(id: …)` names a tool in its advertised list. Same hash, same capability, one of
+them actionable.
+
+Consequence for sequencing: when the recall tool is **not** advertised — US-006 not yet
+landed, provider ungranted, or the stage not attached — the marker must **not** name it.
+It degrades to a plain truncation notice. Offering a tool the agent does not have is worse
+than offering nothing, because it burns a turn on a denial to discover that.
 
 **Acceptance:** no rtk hint string survives into a tool result; a truncated `RunCommand`
-result carries a marker; a non-truncated one does not.
+result carries a marker; a non-truncated one does not; the marker names `Recall` only when
+that tool is advertised for this hop, and omits it otherwise.
 
 ### US-006 — The recall tool
 
 An interceptor-contributed tool (R5) exposing `rtk recall <hash>`, so the escape hatch is
 expressible rather than a dead end. Gated by config and by the policy layer like any other
-tool, injected through `extraTools`.
+tool.
 
-Dependent on the externally-provided-tools mechanism shared with the MCP spec. If the MCP
-spec lands first, this reuses it; if this lands first, MCP reuses it.
+Implemented as a **`static`-kind `ToolProvider`** per the provider-tools spec — nax
+authors the schema, so no sanitization and no pinning. That spec is a hard prerequisite
+for this story and only this story: US-001 through US-005 do not depend on it.
+
+The recall hash reaches this tool through `postProcess`'s `notes` (US-002), never by the
+agent reading it out of command output — the hint strings carrying it are stripped before
+the agent sees them (R4).
 
 **Acceptance:** a hash from a stripped hint can be retrieved through the tool; an
 ungranted call is denied like any other tool; with the interceptor disabled the tool is
-not advertised.
+not advertised **and no marker offers it** (US-005).
 
 ### US-007 — Config
 

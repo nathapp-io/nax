@@ -3,8 +3,14 @@
 Design only. Status: **design approved, not yet implemented.** No code changes are to be
 made against this spec while the import-cycles refactor is in flight.
 
-Companion spec: `2026-09-13-nax-rtk-command-interception-design.md` (written separately;
-the two share no files and may land in either order).
+**Prerequisite: `2026-09-13-nax-provider-tools-design.md`**, which owns the mechanism for
+dynamically-named tools — `extraTools` injection, grant expansion, namespacing,
+advertisement, and the audit field. This spec supplies a `discovered`-kind provider and
+the MCP-specific parts: connection lifecycle, discovery, and pinning.
+
+Companion spec: `2026-09-13-nax-rtk-command-interception-design.md`. It shares only the
+provider-tools prerequisite; the two otherwise share no files and may land in either
+order.
 
 ## 1. Goal
 
@@ -259,19 +265,11 @@ Wiring:
   `safe` yields none (R5).
 
 - **Grants must be emitted already expanded, one `ToolGrant` per namespaced tool name.**
-  This is the single easiest thing to get wrong in this design. `compileToolPolicy` keys
-  grants by exact tool name — `compiled.get(tool)` in `check`, and `grantedTools()`
-  returns `[...compiled.keys()]` (`src/tools/policy.ts:288-295`). Meanwhile `advertised()`
-  tests `granted.has(name)` where `name` is the full `mcp__<server>__<tool>`. So a grant
-  left in its parsed shape `{ tool: "Mcp", patterns: ["codebase-memory"] }` compiles to
-  the key `"Mcp"`, which matches no advertised name, and **every MCP call is denied**.
-
-  `resolvePermissions` therefore emits:
-
-  ```
-  { tool: "mcp__codebase-memory__search_graph", patterns: ["*"] }
-  { tool: "mcp__codebase-memory__trace_path",   patterns: ["*"] }
-  ```
+  Owned by the provider-tools spec (its R3 and US-003), which is where the mechanism and
+  its regression test live. Restated here only because it is the single easiest thing to
+  get wrong in this feature: a grant left in its parsed shape
+  `{ tool: "Mcp", patterns: ["codebase-memory"] }` compiles to the key `"Mcp"`, matches no
+  advertised name, and **every MCP call is denied** while every parser test stays green.
 
   `Mcp(...)` is **surface syntax only** — a way for a human to write a narrowing rule in a
   scoped profile. It never survives into a compiled grant.
