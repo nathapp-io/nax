@@ -14,7 +14,8 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { withDepsRestore } from "@test/helpers";
-import { _spawnClientDeps, createSpawnAcpClient, SpawnAcpClient, SpawnAcpSession } from "@/agents/acp/spawn-client";
+import { _spawnClientDeps, createSpawnAcpClient, SpawnAcpClient } from "@/agents/acp/spawn-client";
+import { SpawnAcpSession } from "@/agents/acp/spawn-client-session";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
