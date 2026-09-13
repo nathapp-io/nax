@@ -1,6 +1,6 @@
 {
-  "count": 43,
-  "updatedAt": "2026-09-13T02:27:56.903Z",
+  "count": 42,
+  "updatedAt": "2026-09-13T02:29:18.654Z",
   "modules": [
     "src/agents/acp/index.ts",
     "src/agents/acp/stdout-line-reader.ts",
@@ -13,7 +13,6 @@
     "src/context/engine/handlers/query-feature-context.ts",
     "src/context/engine/handlers/query-neighbor.ts",
     "src/context/engine/pull-tools.ts",
-    "src/debate/selectors/index.ts",
     "src/debate/selectors/judge.ts",
     "src/debate/selectors/registry.ts",
     "src/debate/selectors/synthesis.ts",
