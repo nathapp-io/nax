@@ -4,8 +4,8 @@
  */
 
 import type { AcpLineActivity, AcpParseState } from "@/agents";
-import { parseAcpxJsonLine } from "@/agents";
 import { getSafeLogger } from "@/logger";
+import { parseAcpxJsonLine } from "./parser";
 
 /**
  * @internal Not part of the `@/agents` public surface. It is re-exported from

@@ -1,12 +1,7 @@
 {
-  "count": 42,
-  "updatedAt": "2026-09-13T02:29:18.654Z",
+  "count": 37,
+  "updatedAt": "2026-09-13T02:29:49.082Z",
   "modules": [
-    "src/agents/acp/index.ts",
-    "src/agents/acp/stdout-line-reader.ts",
-    "src/agents/complete-exception-classifier.ts",
-    "src/agents/index.ts",
-    "src/agents/manager.ts",
     "src/cli/index.ts",
     "src/cli/plan-command.ts",
     "src/cli/plan.ts",
