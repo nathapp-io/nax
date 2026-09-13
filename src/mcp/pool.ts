@@ -154,7 +154,22 @@ export function createMcpPool(opts: {
         return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
       }
       try {
-        return await resolved.connection.callTool(tool, input, callOpts);
+        // Belt and braces: the SDK honours `timeout` per request, but a
+        // transport wedged below the protocol layer (a child that accepted the
+        // write and never answers) would otherwise hold the hop open. The
+        // ceiling lives here so it is enforced whatever the transport does.
+        const deadline = new Promise<McpCallResult>((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                content: `MCP call ${serverId}__${tool} exceeded ${callOpts.timeoutMs}ms`,
+                isError: true,
+                bytesPreTruncation: 0,
+              }),
+            callOpts.timeoutMs,
+          ).unref?.(),
+        );
+        return await Promise.race([resolved.connection.callTool(tool, input, callOpts), deadline]);
       } catch (error) {
         const content = `MCP server "${serverId}" is unavailable: ${String(error)}`;
         return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
