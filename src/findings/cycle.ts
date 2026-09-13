@@ -10,7 +10,6 @@
 
 import type { Logger } from "@/logger";
 import { getSafeLogger } from "@/logger";
-import { callOp as _callOp, newCorrelationId } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import { dispatchGroup } from "./cycle-dispatch";
 import { recordIteration } from "./cycle-iteration-log";
@@ -42,8 +41,14 @@ import { findingRecurrenceKey } from "./types";
 // re-exported here because that is where callers have always found it.
 export type { CallOpFn } from "./cycle-types";
 
-export const _cycleDeps = {
-  callOp: _callOp as unknown as CallOpFn,
+/**
+ * Injectable deps. `callOp` is deliberately absent by default: binding it here
+ * would need a static `@/operations` import, and that edge closes a runtime
+ * import cycle (see docs/plans/STATUS-import-cycles-drain.md). `runFixCycle`
+ * resolves the real `callOp` lazily at call time; set this field only to
+ * override it.
+ */
+export const _cycleDeps: { callOp?: CallOpFn; now: () => string } = {
   now: () => new Date().toISOString(),
 };
 
@@ -127,7 +132,9 @@ export async function runFixCycle<F extends Finding>(
   } = {},
 ): Promise<FixCycleResult<F>> {
   const logger = _deps.logger !== undefined ? _deps.logger : getSafeLogger();
-  const doCallOp = _deps.callOp ?? _cycleDeps.callOp;
+  const ops = await import("@/operations");
+  const doCallOp = _deps.callOp ?? _cycleDeps.callOp ?? (ops.callOp as unknown as CallOpFn);
+  const newCallId = ops.newCorrelationId;
   const now = _deps.now ?? _cycleDeps.now;
 
   const storyId = ctx.storyId;
@@ -280,7 +287,7 @@ export async function runFixCycle<F extends Finding>(
       ctx,
       findingsBefore,
       spentBeforeUsd: totalCostUsd,
-      deps: { callOp: doCallOp, newCallId: newCorrelationId, logger, logCtx, now },
+      deps: { callOp: doCallOp, newCallId, logger, logCtx, now },
     });
     if (dispatch.kind === "no-dispatch") return finish(dispatch.result);
     const { fixesApplied, startedAt } = dispatch;
