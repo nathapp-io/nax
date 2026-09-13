@@ -13,6 +13,7 @@ import { type Client, createClient, defaultProtocols, defaultProviders } from "@
 
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import { NaxError } from "@/errors";
+import { byCodePoint } from "@/utils/sort";
 import { naxCredentialStore } from "./credentials";
 import { toProviderOverrides } from "./models";
 
@@ -87,12 +88,77 @@ export const _clientDeps = {
   defaultProtocols,
 };
 
+/**
+ * Recursively rebuild plain objects with keys sorted by code point. Array
+ * order is preserved — model lists keep their declared order because nax-ai
+ * replaces entries by id and a duplicate id is last-wins. Built with
+ * `Object.fromEntries` (not key assignment) so a header literally named
+ * `__proto__` survives as an own property instead of being swallowed by the
+ * prototype setter.
+ */
+function canonicalise(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => canonicalise(item));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => byCodePoint(a, b))
+        .map(([key, val]): [string, unknown] => [key, canonicalise(val)]),
+    );
+  }
+  return value;
+}
+
+/**
+ * Deterministic serialisation of an override set (nax#2025): overrides sorted
+ * by provider and object keys sorted by code point (`byCodePoint`, per CTX-5 —
+ * the ordering feeds both the cache key and the digest, so it must be stable
+ * across locales and ICU versions), so two sets that differ only in listing
+ * order or header key order — semantically identical on the nax-ai side —
+ * serialise identically. Two overrides with the SAME provider keep their
+ * declared order: duplicate providers are last-wins by design, so their
+ * relative order is part of the semantics.
+ */
+function canonicalOverrideKey(overrides: readonly ProviderCatalogOverride[]): string {
+  const sorted = [...overrides].sort((a, b) => byCodePoint(a.provider, b.provider));
+  return JSON.stringify(canonicalise(sorted));
+}
+
+/** Hex prefix length of the set digest used in error summaries. */
+const DIGEST_LENGTH = 12;
+
+/**
+ * Secret-free summary of an override set for error context: provider names,
+ * header key NAMES (never values — an `Authorization` header is a credential,
+ * nax#2025), and a digest of the canonical key so sets that differ only in
+ * redacted material stay distinguishable.
+ *
+ * The digest is an IDENTIFIER, not a security boundary: it hashes the raw
+ * canonical key, so it must only ever appear next to the sanitised summary —
+ * never logged beside the redacted-but-inferable override set.
+ */
+function summariseOverrides(overrides: readonly ProviderCatalogOverride[]): {
+  providers: string[];
+  headerKeys: string[];
+  digest: string;
+} {
+  return {
+    providers: overrides.map((o) => o.provider).sort(),
+    headerKeys: [...new Set(overrides.flatMap((o) => Object.keys(o.headers ?? {})))].sort(),
+    digest: new Bun.CryptoHasher("sha256")
+      .update(canonicalOverrideKey(overrides))
+      .digest("hex")
+      .slice(0, DIGEST_LENGTH),
+  };
+}
+
 let cached: Promise<Client> | undefined;
+/** Override set the cached build was created for — kept for secret-free summarising. */
+let cachedOverrides: readonly ProviderCatalogOverride[] | undefined;
 /** Serialised override set the cached build was created for. */
 let cachedOverridesKey: string | undefined;
 
 export async function getNativeClient(catalogOverrides: readonly ProviderCatalogOverride[] = []): Promise<Client> {
-  const overridesKey = JSON.stringify(catalogOverrides);
+  const overridesKey = canonicalOverrideKey(catalogOverrides);
   if (cached !== undefined && overridesKey !== cachedOverridesKey) {
     // The client is a constant of the process (catalog load is ~50ms / ~650KB),
     // so overrides must be collected into ONE set before the first build. A
@@ -101,15 +167,19 @@ export async function getNativeClient(catalogOverrides: readonly ProviderCatalog
       "The native client was already built for a different catalog-override set. " +
         "Collect every override into one agent.native.catalogOverrides list instead of varying them per call.",
       "NATIVE_CLIENT_OVERRIDES_MISMATCH",
-      { builtFor: cachedOverridesKey, requested: overridesKey },
+      { builtFor: summariseOverrides(cachedOverrides ?? []), requested: summariseOverrides(catalogOverrides) },
     );
   }
   if (cached === undefined) {
+    // Shallow copy: the caller's array may later be mutated (e.g. a push), which
+    // would mislabel `builtFor` — the summary must describe the set that was built.
+    cachedOverrides = [...catalogOverrides];
     cachedOverridesKey = overridesKey;
     // Cache the promise, not the value, so concurrent callers share one build.
     // Drop it on rejection: a failed catalog load should not be permanent.
     cached = _clientDeps.build(catalogOverrides).catch((err: unknown) => {
       cached = undefined;
+      cachedOverrides = undefined;
       cachedOverridesKey = undefined;
       throw err;
     });
@@ -120,5 +190,6 @@ export async function getNativeClient(catalogOverrides: readonly ProviderCatalog
 /** Clears the memo. Tests only. */
 export function _resetNativeClient(): void {
   cached = undefined;
+  cachedOverrides = undefined;
   cachedOverridesKey = undefined;
 }
