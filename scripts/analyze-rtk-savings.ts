@@ -59,3 +59,55 @@ export function buildQualityCorpus(commands: Record<string, unknown>): CorpusEnt
   }
   return out;
 }
+
+/** nax's per-tool output ceiling; see DEFAULT_TOOL_MAX_BYTES in src/tools/runtime.ts. */
+export const TOOL_MAX_BYTES = 40_000;
+
+/** What the model is actually told, after nax truncates. The number that matters. */
+export function slice(bytes: number): number {
+  return Math.min(bytes, TOOL_MAX_BYTES);
+}
+
+export interface Measurement {
+  readonly id: string;
+  readonly verb: string;
+  readonly rawBytes: number;
+  readonly rtkBytes: number;
+  readonly rawExit: number;
+  readonly rtkExit: number;
+  readonly parity: boolean;
+  readonly rawMs: number;
+  readonly rtkMs: number;
+  readonly sliced: { readonly raw: number; readonly rtk: number };
+}
+
+async function run(argv: readonly string[], cwd: string): Promise<{ bytes: number; exit: number; ms: number }> {
+  const started = Date.now();
+  const proc = Bun.spawn([...argv], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const exit = await proc.exited;
+  // nax merges the two streams (src/quality/runner.ts:241), so measure the merge.
+  return { bytes: [out, err].filter(Boolean).join("\n").length, exit, ms: Date.now() - started };
+}
+
+export async function measure(entry: CorpusEntry, cwd: string): Promise<Measurement> {
+  const rawArgv = entry.kind === "shell" ? ["/bin/sh", "-c", entry.command ?? ""] : [...(entry.argv ?? [])];
+  const rtkArgv =
+    entry.kind === "shell" ? ["/bin/sh", "-c", `rtk ${entry.command ?? ""}`] : ["rtk", ...(entry.argv ?? [])];
+
+  const raw = await run(rawArgv, cwd);
+  const rtk = await run(rtkArgv, cwd);
+
+  return {
+    id: entry.id,
+    verb: entry.verb,
+    rawBytes: raw.bytes,
+    rtkBytes: rtk.bytes,
+    rawExit: raw.exit,
+    rtkExit: rtk.exit,
+    parity: raw.exit === rtk.exit,
+    rawMs: raw.ms,
+    rtkMs: rtk.ms,
+    sliced: { raw: slice(raw.bytes), rtk: slice(rtk.bytes) },
+  };
+}
