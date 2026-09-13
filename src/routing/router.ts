@@ -12,7 +12,6 @@ import { resolveDefaultAgent } from "../agents";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy } from "../config";
 import { getSafeLogger } from "../logger";
 import type { CallContext } from "../operations";
-import { callOp, classifyRouteBatchOp, classifyRouteOp } from "../operations";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
 import type { NaxRuntime } from "../runtime";
@@ -160,6 +159,7 @@ export async function resolveRouting(
   dispatchContext: DispatchContext,
 ): Promise<RoutingDecision> {
   const logger = getSafeLogger();
+  const { callOp, classifyRouteOp } = await import("@/operations");
   const runtimeContext = dispatchContext as DispatchContext | undefined;
 
   // 0. PRD wins — if story already has routing values set (either manually by the user
@@ -362,6 +362,7 @@ export async function tryLlmBatchRoute(
 ): Promise<void> {
   const mode = config.routing.llm?.mode ?? "hybrid";
   if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
+  const { callOp, classifyRouteBatchOp } = await import("@/operations");
 
   // PRD wins: skip stories that already have routing set (from plan or previous run)
   const needsRouting = stories.filter((s) => !(s.routing?.complexity && s.routing?.testStrategy));

@@ -1,6 +1,6 @@
 {
-  "count": 37,
-  "updatedAt": "2026-09-13T02:29:49.082Z",
+  "count": 34,
+  "updatedAt": "2026-09-13T02:30:34.204Z",
   "modules": [
     "src/cli/index.ts",
     "src/cli/plan-command.ts",
@@ -27,7 +27,6 @@
     "src/execution/runner-completion.ts",
     "src/execution/runner.ts",
     "src/execution/unified-executor.ts",
-    "src/operations/classify-route.ts",
     "src/operations/debate-hybrid.ts",
     "src/operations/index.ts",
     "src/pipeline/index.ts",
@@ -36,8 +35,6 @@
     "src/pipeline/stages/index.ts",
     "src/pipeline/stages/queue-check.ts",
     "src/plan/strategies/context-builder.ts",
-    "src/plan/strategies/index.ts",
-    "src/routing/index.ts",
-    "src/routing/router.ts"
+    "src/plan/strategies/index.ts"
   ]
 }
