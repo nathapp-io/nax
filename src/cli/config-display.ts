@@ -51,7 +51,9 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     }
 
     const globalConf = await loadGlobalConfig();
-    const diffs = deepDiffConfigs(globalConf, projectConf);
+    const maskedGlobalConf = maskProfileValues(globalConf);
+    const maskedProjectConf = maskProfileValues(projectConf);
+    const diffs = deepDiffConfigs(maskedGlobalConf, maskedProjectConf);
 
     if (diffs.length === 0) {
       console.log("No differences between project and global config");
