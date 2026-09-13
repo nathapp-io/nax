@@ -424,8 +424,26 @@ throws degrades to the raw output rather than failing the command.
 
 Per R10 there is **one** site, not three.
 
-- **Site 3**, `src/utils/git.ts:71-91` (`gitWithTimeout`) — argv shape, gated by
-  `git.verbs`. Intercept between argv construction and the spawn.
+- **The site is `src/tools/git.ts:319`**, the `Git` tool's own call into
+  `gitWithTimeout` — argv shape, gated by `git.verbs`.
+
+  ⚠️ **Not `gitWithTimeout` itself.** Earlier revisions of this spec named
+  `src/utils/git.ts:71` and claimed it "covers the `Git` and `GitCommit` tools." That was
+  wrong, and dangerously so: `gitWithTimeout` has **52 callers**, and at least nine issue
+  `log`/`diff` and then machine-parse the stdout — `verification/smart-runner.ts:484,550`
+  (filenames → which tests to run), `verification/changed-line-ranges.ts:44` (unified
+  hunks), `verification/flake-baseline-diff.ts:54`, `review/runner/index.ts:207`,
+  `worktree/merge.ts:366` (conflict detection), `finish/review/audit-gaps.ts:88`,
+  `utils/git.ts:221`, `context/engine/providers/git-history.ts:73`.
+
+  rtk's purpose is to compact output. Compacting a `--name-only` list that nax then splits
+  into filenames is not a token saving — it is scoped test selection running the wrong
+  tests and merge-conflict detection missing files, silently. Intercepting at
+  `gitWithTimeout` would do exactly that.
+
+  Nothing is lost by narrowing: those internal outputs never reach a model, so there were
+  no tokens to save there. **Only the `Git` tool's output is agent-facing, and it is the
+  only thing this feature may touch.**
 
 Sites 1 (`src/quality/runner.ts`) and 2 (`src/verification/executor.ts`) are **out of
 scope and must not be touched.** A change to either is a spec violation, not an
