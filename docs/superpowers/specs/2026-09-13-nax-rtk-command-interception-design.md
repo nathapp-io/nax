@@ -96,6 +96,26 @@ given.
 
 This is why §6 makes measurement the first story rather than an afterthought.
 
+**The addressable surface bounds the ceiling.** Over every `~/.nax/nax/features/*/runs/*.jsonl`
+run ledger — 22,411 real tool calls, 81.6 MB of tool output:
+
+| Tool | Calls | Total KB | Share of bytes | % at 40 KB cap |
+|---|---|---|---|---|
+| Read | 7,405 | 55,672 | **66.6%** | 0.5% |
+| Git | 1,065 | 9,201 | 11.0% | **10.0%** |
+| Grep | 4,380 | 8,793 | 10.5% | 1.3% |
+| RunCommand | 5,468 | 7,721 | 9.2% | 0.4% |
+| Glob | 1,124 | 1,622 | 1.9% | — |
+
+`RunCommand` + `Git` — rtk's whole addressable surface — come to ≈20% of tool output
+bytes (~14.6% once the portion already above the cap is excluded). `Read` alone is 66.6%
+and rtk cannot touch it: that is nax's own in-process file read, not a command. So rtk's
+ceiling is bounded well below any figure rtk's own README reports for bash output
+generally, and any claim that rtk cuts nax's context cost by a large fraction is false
+before measurement starts. The 40 KB cap is not usually binding (0.4% of `RunCommand`,
+10% of `Git` calls), so sub-cap reduction does convert into delivered savings; `Git` is
+the exception to watch.
+
 ## 3. Rulings
 
 **R1 — The seam is generic; rtk is a consumer.** No rtk knowledge in `src/quality/`,
@@ -213,6 +233,43 @@ Output is the per-verb table that populates `sites` and `git.verbs`.
 value; `git diff` and `show` carry some; `status`, `log --name-only` and `blame` carry
 none. If that holds, `git.verbs` ships `["diff","show"]`. If the measurement disagrees,
 the measurement wins.
+
+Measured result (corpus run 2026-09-13 at the repo root, rtk installed, via
+`scripts/analyze-rtk-savings.ts`):
+
+```
+verb	n	rawKB	rtkKB	saved%	delivered-saved%	verdict
+log	3	134	9	93.5	85.4	ok
+blame	1	23	23	0.0	0.0	ok
+diff	3	9	9	1.8	1.8	ok
+show	2	4	4	10.7	10.7	DISQUALIFIED — exit-code divergence on 1/2 (e.g. show-nameonly: raw 0 vs rtk 128)
+coverage	1	4	4	-3.9	-3.9	ok
+lint	2	1	0	92.0	92.0	DISQUALIFIED — exit-code divergence on 2/2 (e.g. lint[0]: raw 0 vs rtk 127)
+status	1	0	0	50.3	50.3	ok
+test	1	0	0	0.0	0.0	ok
+build	1	0	0	0.0	0.0	ok
+lintFix	1	0	0	0.0	0.0	ok
+formatFix	1	0	0	0.0	0.0	ok
+typecheck	2	0	0	0.0	0.0	ok
+```
+
+The prediction is falsified on the two points that matter. `log` is the headliner: 93.5%
+raw, 85.4% *delivered* after nax's 40 KB slice — the §2.5 "full passthrough, zero gain"
+conjecture is wrong in the aggregate. `diff` is ~nothing (1.8%, raw and delivered
+coincide because the cap is not binding here). `show` is DISQUALIFIED on exit-code
+divergence (rtk 128 vs raw 0), not on savings, and `status` halves its already-tiny
+output. `git.verbs` therefore ships `["log","diff","status","blame"]` (US-007), not the
+predicted `["diff","show"]`. The site-1-and-2 side of the prediction is not borne out
+either: every quality command measures ~0 KB output (the repo's commands are quiet-piped,
+`--silent` / quiet-on-success wrappers), so the shell sites show no measurable savings in
+this corpus — but see the caveat immediately below before reading that as a verdict.
+
+The `lint` DISQUALIFICATION (rtk 127, command-not-found) is an artifact of the harness
+wrapping env-prefixed commands verbatim as `rtk AGENT=1 bun run lint:biome`. US-004's
+actual site-1 seam is `rtk rewrite`, which parses compound commands — so treat this row
+as an integration caveat for site 1, not as a verdict on `rtk rewrite`. The gate proves
+naive `rtk <cmd>` prefixing of env-prefixed commands is wrong; whether the real seam
+saves anything at site 1 is unmeasured here.
 
 **Acceptance:** the harness runs without rtk installed (skipping, not failing); a verb
 with any exit-code divergence is reported as disqualified; the report distinguishes
@@ -366,8 +423,8 @@ not advertised **and no marker offers it** (US-005).
     "commandInterceptor": {
       "provider": "rtk",
       "enabled": false,
-      "sites": ["quality", "verification"],
-      "git": { "verbs": [] },
+      "sites": ["quality", "verification", "git"],
+      "git": { "verbs": ["log", "diff", "status", "blame"] },
       "failuresBeforeDisable": 3
     }
   }
@@ -378,12 +435,18 @@ One interceptor, not a list — a second provider can widen the schema when one 
 `.strict()`, mounted in the existing `execution` block, documented in
 `src/cli/config-descriptions.ts`.
 
+These are the post-measurement values, taken from US-001's table rather than asserted
+here: `sites` enables the git site, and `git.verbs` carries exactly the verbs
+measurement cleared (`log`, `diff`, `status`, `blame`). A verb marked DISQUALIFIED must
+**not** appear in `git.verbs` regardless of its savings — `show` was disqualified on
+exit-code divergence and is therefore absent even though the prediction expected it.
+
 **`sites` and `git.verbs` compose as AND, not OR.** The git site is active only when
 `"git" ∈ sites` **and** the verb is in `git.verbs`. Two knobs governing one site reads as
 redundant, and it is — deliberately: `sites` is the coarse on/off that matches the other
 two sites, while `git.verbs` carries US-001's per-verb findings. An empty `git.verbs` with
-`"git" ∈ sites` intercepts nothing, and that is not an error — it is the shipping default
-once measurement has not yet run.
+`"git" ∈ sites` intercepts nothing, and that is not an error — that was the pre-measurement
+default, before US-001's table had run; the measured default above replaces it.
 
 **Acceptance:** default config leaves behaviour unchanged; an unknown key fails with
 `CONFIG_SCHEMA_INVALID`; `sites: []` disables interception without disabling the provider;
