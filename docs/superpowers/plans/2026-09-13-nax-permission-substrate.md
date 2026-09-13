@@ -22,7 +22,12 @@
 - Conventional commits; one concern per commit. Never `git push` unless told.
 - `Mcp(...)` expressions remain load-time errors in this plan (`CONFIG_PERMISSIONS_UNKNOWN_TOOL`) — expansion is Plan B (spec R7); accepting the syntax without expansion would recreate the provider-tools R3 trap (a grant that matches nothing while parser tests stay green).
 
-**Deviations from spec US-001 (deliberate, record in the PR):** `resolvePermissions`/`resolveScopedPermissions` stay in `src/config/permissions.ts` rather than moving to `src/permissions/resolve.ts` — that path is pinned by `scripts/check-permission-mode-ssot.ts`, CLAUDE.md's "Permission Resolution (Mandatory)" section, and `.nax/rules/` references; moving it is churn with no behavior change. `src/permissions/` owns what is NEW: rule types, grammar, ask seam. `bash-rules.ts` from the spec's file list is Plan B.
+**Deviations from the spec (deliberate — record ALL of these in the PR):**
+1. (US-001) `resolvePermissions`/`resolveScopedPermissions` stay in `src/config/permissions.ts` rather than moving to `src/permissions/resolve.ts` — that path is pinned by `scripts/check-permission-mode-ssot.ts`, CLAUDE.md's "Permission Resolution (Mandatory)" section, and `.nax/rules/` references; moving it is churn with no behavior change. `src/permissions/` owns what is NEW: rule types, grammar, ask seam. `bash-rules.ts` from the spec's file list is Plan B.
+2. (US-003) `PolicyVerdict`'s false branch carries an **optional** `outcome?: "denied" | "ask"` (absent = denied), not the spec's required `outcome: "denied" | "denied:ask"` — the optional field keeps every existing verdict-constructing site and test fixture valid, and `denied:ask` exists at the ledger (`ToolCallRecord.outcome`), which is where the spec's telemetry requirement actually bites.
+3. (US-001) No `RuleSet` type: `compileToolPolicy` keeps its `ToolGrant[]` first parameter and takes `denyRules`/`askRules` via options; `ResolvedPermissions` carries the same three lists. Equivalent data, far smaller diff, and the byte-identity gate is easier to prove.
+4. (US-002) The "a deny/ask rule for a tool never allowable at any layer is a warn, not an error" nicety is dropped from Plan A (dead rules are silently legal); revisit in Plan B alongside `Mcp(...)` validation if wanted.
+5. (Task 3 semantics) For a tool the profile baseline already grants, a block `allow` rule REPLACES that tool's compiled patterns (last-write-wins) rather than unioning — this preserves the shipped compiler byte-for-byte and matches the documented `Exec(...)`-replaces-`BUILT_IN_EXEC_PATTERNS` semantics; spec R10's "allow adds" holds for tools the baseline lacks.
 
 ---
 
@@ -215,7 +220,7 @@ git commit -m "feat(permissions): permission-subsystem module — rule grammar a
 **Files:**
 - Modify: `src/config/schemas-execution.ts:183-190` (`PermissionBlockSchema`)
 - Modify: `src/config/config-guards.ts:311-380` (`validatePermissionsBlock`)
-- Test: `test/unit/config/config-guards.test.ts` (extend existing file; if it exceeds 800 lines, create `test/unit/config/config-guards-permissions.test.ts`)
+- Test: `test/unit/config/scoped-profile-accepted.test.ts` (extend — this 119-line file is where the existing `validatePermissionsBlock` suite and its throw-assertion conventions live, e.g. message-regex assertions like `/unknown tool "Reed"/` at :42-60). NOT `config-guards.test.ts` — that file tests only `warnQualityCommandChains`. Related suites your Step 4 run also exercises: `scoped-permissions.test.ts`, `scoped-profile-guard.test.ts`, `permissions-exec-grant.test.ts`.
 
 **Interfaces:**
 - Produces: config keys `execution.permissions.<stage>.{allow,deny,ask}` (each `string[]`, optional, `.strict()` block); load error codes `CONFIG_PERMISSIONS_ALLOW_ALIAS_CONFLICT` (new), plus the existing `CONFIG_PERMISSIONS_UNKNOWN_TOOL` / `CONFIG_PERMISSIONS_BAD_PATTERN` now applied to all four lists.
@@ -223,7 +228,7 @@ git commit -m "feat(permissions): permission-subsystem module — rule grammar a
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to the config-guards test file:
+Add to `test/unit/config/scoped-profile-accepted.test.ts`:
 
 ```typescript
 import { describe, expect, test } from "bun:test";
@@ -264,7 +269,7 @@ Note on the thrown shape: match the existing file's convention for asserting `Na
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `bun test test/unit/config/config-guards*.test.ts --timeout=30000`
+Run: `bun test test/unit/config/scoped-profile-accepted.test.ts --timeout=30000`
 Expected: FAIL — the `.strict()` schema is not in play here (guards read raw config), so failures are: alias conflict not thrown, `deny`/`ask` lists not scanned.
 
 - [ ] **Step 3: Implement**
@@ -360,7 +365,7 @@ export interface ResolvedPermissions {
 **Semantics to implement (spec R10 + R6):**
 - The per-stage block lookup (stage → `inherit` chain → `default` → none) runs for **every** profile, not only `scoped`. Extract the walk currently inside `resolveScopedPermissions` (`permissions.ts:203-224`) into a private `lookupStageBlock(blocks, stage)` returning the resolved block or `undefined`; `resolveScopedPermissions`'s observable behavior is preserved through it.
 - A block's rule lists resolve as: `allow` = `block.allow ?? block.allowedTools ?? []` (the load guard from Task 2 makes both-present unreachable), `deny` = `block.deny ?? []`, `ask` = `block.ask ?? []`.
-- Profile baselines are unchanged: `unrestricted` keeps `unconditionalGrants([...DEFAULT_CODING_TOOLS, "Write", ..., EXEC_TOOL_NAME])`; `safe` keeps `unconditionalGrants(DEFAULT_CODING_TOOLS)`; `scoped` keeps no baseline. The block's `allow` rules are **concatenated after** the baseline (`toolGrants: [...baseline, ...allowRules]`) — the policy compiler treats multiple grants for one tool as a union, with `"*"` swallowing (Task 4 handles the merge; do not dedupe here).
+- Profile baselines are unchanged: `unrestricted` keeps `unconditionalGrants([...DEFAULT_CODING_TOOLS, "Write", ..., EXEC_TOOL_NAME])`; `safe` keeps `unconditionalGrants(DEFAULT_CODING_TOOLS)`; `scoped` keeps no baseline. The block's `allow` rules are **concatenated after** the baseline (`toolGrants: [...baseline, ...allowRules]`). ⚠️ The grant compiler (`policy.ts:202-211`) is **last-write-wins per tool** — do NOT change that (regression gate). Consequences, both intended: an allow rule for a NEW tool adds it; an allow rule for a tool the baseline already grants **replaces** that tool's patterns at the policy level (e.g. `allow: ["Exec(bun x tsc*)"]` under `unrestricted` replaces `BUILT_IN_EXEC_PATTERNS`, matching the documented "a project's own Exec(...) REPLACES this list" semantics at `permissions.ts:100-111`). Task 7 pins last-write-wins with a test.
 - `deny`/`ask` lists attach under every profile including the invalid-profile arm's fail-closed return? No — the invalid arm (`permissions.ts:183-189`) stays exactly as it is (no grants, no rules): config validation was bypassed, nothing from that config is trusted.
 - No-blocks configs are byte-identical to today: `unrestricted`/`safe` return exactly the current objects (assert with `toEqual` against the pre-change literals); `scoped` with no blocks returns `{ mode: "approve-reads", toolGrants: [] }` as now.
 
@@ -369,10 +374,12 @@ export interface ResolvedPermissions {
 ```typescript
 import { describe, expect, test } from "bun:test";
 import { resolvePermissions } from "@/config/permissions";
-import type { AgentManagerConfig } from "@/config/selectors";
+import { makeNaxConfig } from "@test/helpers";
 
-const cfg = (execution: Record<string, unknown>): AgentManagerConfig =>
-  ({ execution }) as unknown as AgentManagerConfig; // annotate the binding, never `as never`
+// NEVER `as unknown as` — the check:test-as-unknown-as ratchet fails CI on any
+// new occurrence. Mirror test/unit/config/scoped-permissions.test.ts:6-9's
+// sanctioned idiom: makeNaxConfig(...) from @test/helpers takes a DeepPartial.
+const cfg = (execution: Record<string, unknown>) => makeNaxConfig({ execution });
 
 describe("resolvePermissions — rules under every profile (spec R10)", () => {
   test("unrestricted with no permissions block is byte-identical to today", () => {
@@ -407,7 +414,9 @@ describe("resolvePermissions — rules under every profile (spec R10)", () => {
       "run",
     );
     expect(resolved.toolGrants).toContainEqual({ tool: "Exec", patterns: ["bun x tsc*"] });
-    // Baseline still present — allow ADDS, never replaces (spec R10).
+    // Baseline grants for OTHER tools stay. (At resolve level both Exec grants
+    // are present; at compile level last-write-wins means the allow rule
+    // replaces Exec's baseline patterns — see the Semantics block and Task 7.)
     expect(resolved.toolGrants?.some((g) => g.tool === "Read" && g.patterns.includes("*"))).toBe(true);
   });
 
@@ -539,7 +548,7 @@ function withRules(base: ResolvedPermissions, rules: StageRules): ResolvedPermis
   }
 ```
 
-For the `scoped` arm, preserve the existing no-block/no-allow result exactly: when the lookup found no block or the block has no allow list, return `{ mode: "approve-reads", toolGrants: [] }` (with deny/ask rules still attached if the block declared them). Delete `resolveScopedPermissions` and move its doc comment onto `lookupStageBlock`/the `scoped` arm; keep the "#374" and containment-note prose.
+For the `scoped` arm, preserve the existing no-block/no-allow result exactly: when the lookup found no block or the block has no allow list, return `{ mode: "approve-reads", toolGrants: [] }` (with deny/ask rules still attached if the block declared them). **Keep the `resolveScopedPermissions` name** — refactor its body to use `lookupStageBlock` + `withRules`, and keep its doc comment (the "#374" and containment-note prose). The name is referenced by comments in `config-guards.ts:326` and `schemas-execution.ts:194`, by CLAUDE.md's "Permission Resolution" section, and by `.nax/rules`-generated docs; deleting it would strand all of those (and CLAUDE.md is generated — never hand-edit it).
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -558,9 +567,9 @@ git commit -m "feat(permissions): resolve allow/deny/ask stage rules under every
 ### Task 4: `PolicyVerdict` three-state + deny/ask evaluation in `compileToolPolicy`
 
 **Files:**
-- Modify: `src/tools/types.ts:104-118` (`PolicyVerdict`)
+- Modify: `src/tools/types.ts:109-111` (`PolicyVerdict`)
 - Modify: `src/tools/policy.ts` (compile deny/ask; evaluate in `check()`; `grantedTools()` excludes unconditionally-denied tools)
-- Test: `test/unit/tools/policy.test.ts` (extend; the file is near limits — if over 800 lines, create `test/unit/tools/policy-rules.test.ts`)
+- Test: `test/unit/tools/policy.test.ts` (416 lines today — room to extend; split into `test/unit/tools/policy-rules.test.ts` only if it approaches the 800-line cap)
 
 **Interfaces:**
 - Produces:
@@ -721,7 +730,7 @@ Expected: FAIL — `denyRules`/`askRules` options unknown (typecheck) or ignored
   const askBy = compileRuleMap(options?.askRules);
 ```
 
-(Refactor the existing grant-compile loop through `compileRuleMap` too, so there is exactly one compiler — the grant loop's body at `policy.ts:202-211` is the same structure.)
+Do **NOT** route the existing allow-grant loop (`policy.ts:202-211`) through `compileRuleMap`: the allow compiler is last-write-wins per tool (`compiled.set` overwrites), and unifying it with `compileRuleMap`'s merge semantics silently changes verdicts for any config carrying two expressions for one tool — breaching the byte-identity regression gate. `compileRuleMap` (merge) is for `denyRules`/`askRules` ONLY, where merging is safe because the lists are new. Leave the grant loop untouched.
 
 - `grantedTools()` becomes `[...compiled.keys()].filter((t) => denyBy.get(t)?.unconditional !== true)`.
 - In `check()`:
@@ -766,7 +775,7 @@ git commit -m "feat(tools): three-state PolicyVerdict with deny/ask rule evaluat
 
 **Files:**
 - Modify: `src/tools/runtime.ts` (resolver option; ask handling in `callTool`; `log()` outcome widening)
-- Modify: `src/tools/tool-audit.ts:20` (`ToolCallRecord.outcome` union)
+- Modify: `src/tools/tool-audit.ts:21` (`ToolCallRecord.outcome` union)
 - Test: `test/unit/tools/runtime.test.ts` (extend the existing runtime suite)
 
 **Interfaces:**
@@ -854,7 +863,14 @@ describe("callTool — ask resolution (spec US-007)", () => {
 });
 ```
 
-(`root` + a readable `file.txt`: use the runtime test file's existing tmp-dir fixture helpers.)
+Fixture reality check: `test/unit/tools/runtime.test.ts:19-22` has NO shared helpers — a plain inline `beforeAll` creating a mkdtemp root containing only `src/a.ts`. Your tests read `file.txt`, so create it explicitly or the GREEN step fails with `kind: "error"` (a missing file is a tool error, not a denial) and you will misdiagnose it:
+
+```typescript
+beforeAll(() => {
+  root = mkdtempSync(join(tmpdir(), "runtime-ask-"));
+  writeFileSync(join(root, "file.txt"), "hello");
+});
+```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -934,12 +950,16 @@ describe("buildCodingToolSupport — deny/ask plumbing", () => {
 
 (Adjust `Write` input fields to the write tool's actual schema as the existing tests in the file use it.)
 
+Fixture reality check: `test/unit/agents/coding-tool-support.test.ts:14-16` creates an **empty** mkdtemp root. The `Read` assertions above need `file.txt` to exist — `writeFileSync(join(root, "file.txt"), "x")` in the setup — or the "allowed" call returns `kind: "error"` instead of `"ok"`.
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `bun test test/unit/agents/coding-tool-support*.test.ts --timeout=30000`
 Expected: FAIL — `denyRules` arg unknown.
 
 - [ ] **Step 3: Implement** — add the two optional args to `buildCodingToolSupport`, forward into `compileToolPolicy` options; in `resolveCodingToolSupport`, spread `...(resolved.denyRules !== undefined ? { denyRules: resolved.denyRules } : {})` and the `askRules` analog into the `buildCodingToolSupport` call (`coding-tool-support.ts:298-314`).
+
+  Also change `coding-tool-support.ts:93` from `grants.find((grant) => grant.tool === EXEC_TOOL_NAME)` to `grants.findLast(...)`: Task 3 concatenates baseline + allow rules, and the compiled policy is last-write-wins per tool — `find` (first) would hand the RunCommand exec branch's advertised allowlist (`describeExecAllowlist`) the baseline patterns while the policy enforces the block's, telling the model forms are ungrantable that would actually pass. With a single Exec grant (every existing config) `findLast` ≡ `find`, so the regression gate holds. Add a test: unrestricted + `allow: ["Exec(bun x tsc*)"]` → the support's exec patterns are `["bun x tsc*"]`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -969,10 +989,20 @@ git commit -m "feat(agents): thread deny/ask rules from resolved permissions int
 import { describe, expect, test } from "bun:test";
 import { resolvePermissions } from "@/config/permissions";
 import { compileToolPolicy } from "@/tools";
-import type { AgentManagerConfig } from "@/config/selectors";
+import { makeNaxConfig } from "@test/helpers";
 
-const cfg = (execution: Record<string, unknown>): AgentManagerConfig =>
-  ({ execution }) as unknown as AgentManagerConfig;
+// NEVER `as unknown as` — the check:test-as-unknown-as ratchet fails CI on any
+// new occurrence. Mirror test/unit/config/scoped-permissions.test.ts:6-9's
+// sanctioned idiom: makeNaxConfig(...) from @test/helpers takes a DeepPartial.
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const cfg = (execution: Record<string, unknown>) => makeNaxConfig({ execution });
+
+// This file is NEW — no fixtures to reuse. Anchor on a real tmp dir:
+const root = mkdtempSync(join(tmpdir(), "substrate-equivalence-"));
+writeFileSync(join(root, "file.txt"), "x");
 
 function policyFor(execution: Record<string, unknown>, stage: "run" | "verify" = "run") {
   const resolved = resolvePermissions(cfg(execution), stage);
@@ -1029,6 +1059,18 @@ describe("substrate equivalence (regression gate, spec §5 step 1)", () => {
     expect(policy.grantedTools()).not.toContain("Delete");
   });
 
+  test("two expressions for one tool: LAST wins (pins today's compiler)", () => {
+    // Guards the byte-identity gate: the allow compiler is last-write-wins per
+    // tool (policy.ts grant loop). If this test surprises you, do not "fix" the
+    // compiler — see Task 4's warning; changing it alters shipped-config verdicts.
+    const policy = policyFor({
+      permissionProfile: "scoped",
+      permissions: { run: { allow: ["Write(src/**)", "Write(test/**)"] } },
+    });
+    expect(policy.check("Write", { pathFields: ["path"] }, { path: "test/a.ts" }).allowed).toBe(true);
+    expect(policy.check("Write", { pathFields: ["path"] }, { path: "src/a.ts" }).allowed).toBe(false);
+  });
+
   test("stage inheritance carries rules end-to-end", () => {
     const policy = policyFor(
       {
@@ -1052,10 +1094,9 @@ Expected: PASS (everything is implemented; a failure here is a real integration 
 
 Run, in order:
 - `bun run test` — full suite green.
-- `bun run lint` — includes `check:file-sizes`, `check:alias-internals`, `check:import-cycles`, `check:permission-mode-ssot` (script name per `package.json`), rules-drift.
+- `bun run check:all` — this is what CI runs. NOTE: `bun run lint` alone does NOT cover `check:permission-mode-ssot`, `check:test-as-unknown-as`, `check:test-escape-hatches`, or `check:rules-drift` — those run only under `check:all` / `check:all-without-biome` (`package.json`), so a green `lint` is not the gate.
 - `bun run typecheck`.
-- `bun run test:coverage` — every new `src/permissions/*` and modified file ≥0.8 per-file (NOT part of `bun run test`; run explicitly).
-- `bun run check:test-escape-hatches` if present as a separate script (otherwise it ran under lint) — no new `looseCast` over baseline.
+- `bun run test:coverage` — every new `src/permissions/*` and modified file ≥0.8 per-file (NOT part of `bun run test` or `check:all`; run explicitly).
 
 Expected: all green. If `check:permission-mode-ssot` flags `src/permissions/`: the module contains no mode literals by design — fix the code, not the script (Deviations note: resolution stayed in `src/config/permissions.ts` precisely to avoid touching the script).
 
