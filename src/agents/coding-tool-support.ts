@@ -21,6 +21,7 @@ import {
   createToolAuditSink,
   EXEC_TOOL_NAME,
   narrowGrants,
+  resolveProviderTools,
   type ToolAuditSink,
   type ToolGrant,
   type ToolPatternNarrowing,
@@ -46,6 +47,8 @@ export function buildCodingToolSupport(args: {
   repoRoot?: string;
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
+  /** Provider-supplied tools for this hop, looked up before the global registry. */
+  extraTools?: readonly CodingTool[];
   storyId?: string;
   declaredCommands?: ReadonlyMap<string, QualityCommandSpec>;
   stripEnvVars?: readonly string[];
@@ -106,8 +109,9 @@ export function buildCodingToolSupport(args: {
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.denyPaths !== undefined ? { denyPaths: args.denyPaths } : {}),
     sink,
-    extraTools:
-      declaredCommands.size > 0 || allowExec
+    extraTools: [
+      ...(args.extraTools ?? []),
+      ...(declaredCommands.size > 0 || allowExec
         ? [
             createRunCommandTool(declaredCommands, {
               stripEnvVars: args.stripEnvVars,
@@ -132,7 +136,8 @@ export function buildCodingToolSupport(args: {
                 : {}),
             }),
           ]
-        : [],
+        : []),
+    ],
   });
   const tools = runtime.advertised(advertised);
   if (tools.length === 0) return undefined;
@@ -168,6 +173,7 @@ export async function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
     | "declaredTools"
+    | "providers"
     | "toolPatterns"
     | "codingToolRoot"
     | "codingToolRepoRoot"
@@ -234,11 +240,25 @@ export async function resolveCodingToolSupport(
     root !== undefined && root.trim() !== "" && declared.includes(EXEC_TOOL_NAME)
       ? await resolvePackageName(root)
       : undefined;
+  // Provider tools bypass the DECLARATION half of advertisement (spec R4):
+  // operation declarations live in code, so requiring a code edit to use a
+  // configured provider would defeat config-only onboarding. `advertised()`
+  // itself is unchanged — the names are appended to `declared` here.
+  //
+  // An empty/absent root already throws in buildCodingToolSupport, so skipping
+  // resolution there is correct; it also keeps a possibly-undefined root out of
+  // resolveProviderTools.
+  const providerResult =
+    root !== undefined && root.trim() !== ""
+      ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root)
+      : { tools: [], grants: [], failures: [] as readonly { providerId: string; reason: string }[] };
+  const declaredWithProviders = [...declared, ...providerResult.tools.map((t) => t.name)] as readonly CodingToolName[];
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
-    grants: resolved.toolGrants,
-    declared,
+    grants: [...(resolved.toolGrants ?? []), ...providerResult.grants],
+    declared: declaredWithProviders,
+    extraTools: providerResult.tools,
     ...(options.toolPatterns !== undefined ? { toolPatterns: options.toolPatterns } : {}),
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     declaredCommands,
