@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
-import { loadConfig as _loadConfig, DEFAULT_CONFIG, deepMergeConfig } from "../config";
+import { loadConfig as _loadConfig, DEFAULT_CONFIG, deepMergeConfig, findProjectDir } from "../config";
 import type { Complexity, ComplexityRung, ModelTier } from "../config/schema-types";
 import { NaxError } from "../errors";
 import type { RunMetrics } from "../metrics";
@@ -28,7 +28,8 @@ export interface RoutingCalibrateResult {
 export interface RoutingCalibrateDeps {
   loadRunMetrics: (outputDir: string) => Promise<RunMetrics[]>;
   readConfig: (workdir: string) => Promise<NaxConfig | null>;
-  writeConfig: (workdir: string, config: NaxConfig) => Promise<void>;
+  readProjectConfig: (workdir: string) => Promise<Record<string, unknown>>;
+  writeConfig: (workdir: string, config: Record<string, unknown>) => Promise<void>;
   stdout: (msg: string) => void;
   stderr: (msg: string) => void;
 }
@@ -41,8 +42,14 @@ export const _routingCalibrateDeps: RoutingCalibrateDeps = {
   // be swallowed into `null` — treating it as "no prior config" would let `--apply`
   // silently overwrite the user's real (if stale) config with defaults.
   readConfig: (workdir: string): Promise<NaxConfig | null> => _loadConfig(workdir),
-  writeConfig: async (workdir: string, config: NaxConfig): Promise<void> => {
-    const dir = projectInputDir(workdir);
+  readProjectConfig: async (workdir: string): Promise<Record<string, unknown>> => {
+    const filePath = join(resolveProjectConfigDir(workdir), "config.json");
+    const configFile = Bun.file(filePath);
+    if (!(await configFile.exists())) return {};
+    return JSON.parse(await configFile.text()) as Record<string, unknown>;
+  },
+  writeConfig: async (workdir: string, config: Record<string, unknown>): Promise<void> => {
+    const dir = resolveProjectConfigDir(workdir);
     mkdirSync(dir, { recursive: true });
     const filePath = join(dir, "config.json");
     await saveJsonFile(filePath, config, "routing-calibrate");
@@ -54,6 +61,10 @@ export const _routingCalibrateDeps: RoutingCalibrateDeps = {
     process.stderr.write(`${msg}\n`);
   },
 };
+
+function resolveProjectConfigDir(workdir: string): string {
+  return findProjectDir(workdir) ?? projectInputDir(workdir);
+}
 
 /**
  * Parse the `--min-samples` CLI flag value (delivered as a string by
@@ -139,6 +150,10 @@ function mergeComplexityRouting(
   return merged;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
 function printHumanView(emit: (msg: string) => void, proposal: CalibrationProposal): void {
   emit(`[routing-calibrate] generated at ${proposal.generatedAt}`);
   for (const adj of proposal.adjustments) {
@@ -219,10 +234,11 @@ export async function routingCalibrateCommand(
   }
 
   if (options.apply && proposal.adjustments.length > 0) {
-    const nextConfig: NaxConfig = {
-      ...priorConfig,
+    const projectConfig = await deps.readProjectConfig(workdir);
+    const nextConfig = {
+      ...projectConfig,
       autoMode: {
-        ...priorConfig.autoMode,
+        ...asRecord(projectConfig.autoMode),
         complexityRouting: mergeComplexityRouting(priorConfig.autoMode.complexityRouting, proposal.adjustments),
       },
     };

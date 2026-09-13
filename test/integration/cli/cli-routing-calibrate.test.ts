@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -35,9 +35,9 @@ const PRIOR_MAPPING = {
 
 function makeNaxConfigWithMapping(mapping = PRIOR_MAPPING): NaxConfig {
   return {
-    ...(structuredClone(DEFAULT_CONFIG) as NaxConfig),
+    ...DEFAULT_CONFIG,
     autoMode: {
-      ...(structuredClone(DEFAULT_CONFIG) as NaxConfig).autoMode,
+      ...DEFAULT_CONFIG.autoMode,
       complexityRouting: { ...mapping },
     },
     name: "fixture-project",
@@ -126,14 +126,15 @@ function makeRunsWithEscalatingSimpleBand(): RunMetrics[] {
 }
 
 function makeCalibrateDepsFixture() {
-  const writes: Array<{ workdir: string; config: NaxConfig }> = [];
+  const writes: Array<{ workdir: string; config: Record<string, unknown> }> = [];
   const stdoutLines: string[] = [];
   const stderrLines: string[] = [];
 
   const deps: CalibrateDeps = {
     loadRunMetrics: mock(async (_outputDir: string): Promise<RunMetrics[]> => []),
     readConfig: mock(async (_workdir: string): Promise<NaxConfig | null> => null),
-    writeConfig: mock(async (workdir: string, config: NaxConfig): Promise<void> => {
+    readProjectConfig: mock(async (_workdir: string): Promise<Record<string, unknown>> => ({})),
+    writeConfig: mock(async (workdir: string, config: Record<string, unknown>): Promise<void> => {
       writes.push({ workdir, config });
     }),
     stdout: mock((msg: string) => {
@@ -145,6 +146,17 @@ function makeCalibrateDepsFixture() {
   };
 
   return { deps, writes, stdoutLines, stderrLines };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function writtenComplexityRouting(config: Record<string, unknown> | undefined): Record<string, unknown> {
+  const autoMode = config?.autoMode;
+  if (!isRecord(autoMode)) return {};
+  const complexityRouting = autoMode.complexityRouting;
+  return isRecord(complexityRouting) ? complexityRouting : {};
 }
 
 // ─── Save / restore deps ────────────────────────────────────────────────────
@@ -294,12 +306,47 @@ describe("routingCalibrateCommand — AC4: --apply writes merged complexityRouti
     expect(writes).toHaveLength(1);
     const written = writes[0]?.config;
     expect(written).toBeDefined();
+    const complexityRouting = writtenComplexityRouting(written);
     // simple was the proposed band — must move fast → balanced.
-    expect(written?.autoMode.complexityRouting.simple).toBe("balanced");
+    expect(complexityRouting.simple).toBe("balanced");
     // Other bands must be preserved.
-    expect(written?.autoMode.complexityRouting.medium).toBe("balanced");
-    expect(written?.autoMode.complexityRouting.complex).toBe("powerful");
-    expect(written?.autoMode.complexityRouting.expert).toBe("powerful");
+    expect(complexityRouting.medium).toBe("balanced");
+    expect(complexityRouting.complex).toBe("powerful");
+    expect(complexityRouting.expert).toBe("powerful");
+  });
+
+  test("AC4 regression: --apply writes only the raw project config plus the calibrated mapping", async () => {
+    const runs = makeRunsWithEscalatingSimpleBand();
+    const effectiveConfig = makeNaxConfigWithMapping();
+    const rawProjectConfig = {
+      version: 1,
+      execution: { maxConcurrentStories: 2 },
+    };
+    const { deps, writes } = makeCalibrateDepsFixture();
+    const depsWithRawProjectConfig = Object.assign(deps, {
+      readProjectConfig: mock(async () => rawProjectConfig),
+    });
+    (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(effectiveConfig);
+
+    await routingCalibrateCommand(
+      { apply: true, json: false, workdir: WORKDIR, outputDir: OUTPUT_DIR },
+      depsWithRawProjectConfig,
+    );
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.config).toEqual({
+      version: 1,
+      execution: { maxConcurrentStories: 2 },
+      autoMode: {
+        complexityRouting: {
+          simple: "balanced",
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    });
   });
 
   test("AC4 boundary: writeConfig is invoked with the configured workdir", async () => {
@@ -611,10 +658,11 @@ describe("routingCalibrateCommand — missing project config", () => {
     expect(writes).toHaveLength(1);
     const written = writes[0]?.config;
     expect(written).toBeDefined();
-    expect(written?.autoMode.complexityRouting.simple).toBe("balanced");
-    expect(written?.autoMode.complexityRouting.medium).toBe("balanced");
-    expect(written?.autoMode.complexityRouting.complex).toBe("powerful");
-    expect(written?.autoMode.complexityRouting.expert).toBe("powerful");
+    const complexityRouting = writtenComplexityRouting(written);
+    expect(complexityRouting.simple).toBe("balanced");
+    expect(complexityRouting.medium).toBe("balanced");
+    expect(complexityRouting.complex).toBe("powerful");
+    expect(complexityRouting.expert).toBe("powerful");
   });
 });
 
@@ -634,6 +682,30 @@ describe("_routingCalibrateDeps.readConfig — delegates to the repo's layered l
       expect(result?.execution).toBeDefined();
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("reads and writes the nearest ancestor project config for a nested workdir", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "nax-routing-project-"));
+    const nestedWorkdir = join(projectDir, "packages", "api");
+    const configDir = join(projectDir, ".nax");
+    const configPath = join(configDir, "config.json");
+    try {
+      mkdirSync(nestedWorkdir, { recursive: true });
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(configPath, JSON.stringify({ version: 1, name: "ancestor-project" }));
+
+      expect(await _routingCalibrateDeps.readProjectConfig(nestedWorkdir)).toEqual({
+        version: 1,
+        name: "ancestor-project",
+      });
+
+      await _routingCalibrateDeps.writeConfig(nestedWorkdir, { version: 1, name: "calibrated-project" });
+
+      expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual({ version: 1, name: "calibrated-project" });
+      expect(existsSync(join(nestedWorkdir, ".nax", "config.json"))).toBe(false);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
     }
   });
 });
