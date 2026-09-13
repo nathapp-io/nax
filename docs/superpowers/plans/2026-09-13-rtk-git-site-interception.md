@@ -4,7 +4,7 @@
 
 **Goal:** Route nax's `Git` tool calls through rtk for two measured verbs, behind an opt-in config flag, without any nax module outside one file knowing rtk exists.
 
-**Architecture:** A generic `CommandInterceptor` seam consulted by `gitWithTimeout` between argv construction and spawn. One provider implements it for rtk as a static per-verb argv prefix. Every rewrite is validated, ledgered, and bounded by a circuit breaker. With the interceptor disabled — the default — every call site is byte-identical to today.
+**Architecture:** A generic `CommandInterceptor` seam consulted by `gitWithTimeout` between argv construction and spawn. One provider implements it for rtk as a static per-verb argv prefix. Every rewrite is validated and ledgered; a provider that cannot run declines, and nax runs the original. With the interceptor disabled — the default — every call site is byte-identical to today.
 
 **Tech Stack:** TypeScript strict, Bun (`Bun.spawn`, `Bun.which`), `bun:test`, Biome, zod (config schemas).
 
@@ -54,8 +54,8 @@ You have no context from the session that wrote this. Read, in order:
 
 ## Global Constraints
 
-- **R10 is binding: do not add an interception seam to `src/quality/runner.ts` or `src/verification/executor.ts`.** Those sites are dropped. Task 3 adds a test that fails if anyone re-adds one. `RunCommand` is therefore NOT covered by this feature — it reaches the shell through the dropped quality site.
-- **R1: no nax module outside `src/execution/interceptors/rtk.ts` may mention rtk.** Not the git tool, not config validation, not the ledger. The string `"rtk"` appearing anywhere else in `src/` is a review failure.
+- **R10 is binding: do not add an interception seam to `src/quality/runner.ts` or `src/verification/executor.ts`.** Those sites are dropped. Task 6 Step 5 adds a test that fails if anyone re-adds one. `RunCommand` is therefore NOT covered by this feature — it reaches the shell through the dropped quality site.
+- **R1: no nax module outside `src/execution/interceptors/rtk/` may *depend on* rtk.** R1 is about dependency, not spelling: only that directory and the composition site may **import** the provider. Naming rtk in a comment, or as a config default string, is fine and unavoidable — the provider has to be named somewhere. Task 6 Step 5's fence enforces the import rule; two earlier revisions used a substring scan and were broken by their own comments.
 - **R7: `enabled` defaults to `false`.** Every task's tests must prove the disabled path is unchanged.
 - Source files ≤ **600 lines**, test files ≤ **800** (`scripts/check-file-sizes.ts`; new files get no grandfathering).
 - Runtime import cycles must stay at **0** (`bun run scripts/check-import-cycles.ts`, baseline 0).
@@ -123,7 +123,8 @@ never need either.
 | `src/execution/command-interceptor/index.ts` | Nested barrel → `@/execution/command-interceptor` is a legal exact match. Holds the vocabulary, `validateRewrite`, and `interceptArgv`. |
 | `src/execution/interceptors/rtk/index.ts` | Nested barrel, same reason. The only file that knows how to talk to rtk. |
 | `src/tools/git.ts` | The **only** interception site. Gains `_gitToolDeps`, one `interceptArgv` call and one guarded `postProcess` call. 328 lines, ample headroom. |
-| `src/utils/git.ts` | **Untouched.** `gitWithTimeout` has 52 callers that machine-parse their output — see Task 4. |
+| `src/utils/git.ts` | **Not untouched:** gains one optional `argvOverride` parameter (~4 lines, 579/600) so the Git tool can supply a full argv — Task 4 Step 3. No interception logic and no seam: `gitWithTimeout` has 52 callers that machine-parse their output, and none of them pass it. |
+| `src/tools/index.ts` | Re-exports `_gitToolDeps`, following `_grepDeps` at line 11 — `src/` code cannot legally import `@/tools/git` directly (barrel gate). |
 
 ## Four scope decisions, already settled — do not re-open them
 
@@ -717,8 +718,10 @@ describe("Git tool interception", () => {
 });
 ```
 
-Build the `ctx()` helper from the repo's existing tool tests — read `test/unit/tools/git.test.ts`
-and reuse whatever `ToolRunContext` fixture it already has rather than inventing a second shape.
+The `ctx()` shape above is lifted from `test/unit/tools/git-commit.test.ts:23`, which is the
+fixture to copy. Note `test/unit/tools/git.test.ts` has **no** `ToolRunContext` fixture and
+never calls `gitTool.run` — it exercises `buildGitArgv` against real temp repos — so do not
+go looking there for one.
 
 - [ ] **Step 2: Run and watch it fail**
 
@@ -868,9 +871,10 @@ git add -A && git commit -m "feat(tools): intercept the Git tool's argv and ledg
 **There is no circuit breaker, and no `failuresBeforeDisable`.** An earlier revision
 specified both. They cannot work: preflight runs once at construction and `intercept()`
 performs **no I/O at all** — a rewrite is a pure string prefix and `postProcess` is pure
-string work — so at most one failure can ever occur and any threshold above 1 is
-unreachable. The config key would have been a field that can never fire, which is the same
-objection this plan uses to drop `notes` in Task 6. If a future change introduces
+string work — so there is nothing for a breaker to protect against. A pure
+function that throws throws *identically every time*, and fail-open (R3) already runs the
+original command in that case — a breaker would change nothing except add a config key that
+can never usefully fire, the same objection this plan uses to drop `notes` in Task 6. If a future change introduces
 per-request I/O (calling `rtk rewrite`, say), reintroduce the breaker **with** it.
 
 **The `record` sink.** The default implementation writes one structured log line through
@@ -1211,7 +1215,7 @@ All six tasks committed, `check:all` and the full suite green, and:
 - Under entry points that do **not** call `setupRun` (`nax finish`, `nax plan`, acceptance
   and debate flows), `_gitToolDeps.interceptor` stays `undefined` and interception simply
   does not apply. That is fail-safe and accepted for this plan; widening it means moving the
-  install to `resolveCodingToolSupport` (`src/agents/coding-tool-support.ts:110`), which is
+  install to `resolveCodingToolSupport` (`src/agents/coding-tool-support.ts:177`), which is
   a bigger change than this feature warrants until the A/B justifies it.
 - **Every internal `gitWithTimeout` caller still spawns raw git**, whatever `enabled` says.
 - With `enabled: true` and rtk **absent**, every command still runs and succeeds.

@@ -142,9 +142,9 @@ command fails to spawn at all — rtk removed from PATH after preflight passed, 
 changed — then *nothing ran*, so re-running raw once costs nothing and risks nothing. This
 does not contradict the rule above, which is about exit codes from a command that actually
 executed. The two are cleanly distinguishable: `runQualityCommand`'s catch block returns
-`exitCode: -1` (`src/quality/runner.ts:254-263`), a value no real process produces. A
-spawn failure also trips the circuit breaker, so the fallback happens at most once per
-run.
+`exitCode: -1` (`src/quality/runner.ts:254-263`), a value no real process produces. (This
+carve-out described the shell sites, which R10 drops, and the circuit breaker, which is
+removed — see US-004. It is retained as the record of the rule, not as live design.)
 
 **R4 — rtk's recovery hints are stripped.** A nax agent has no shell and no `noCompact`
 field, so `[full diff: rtk git diff --no-compact]` and `[+N hidden: rtk recall <hash>]`
@@ -465,7 +465,7 @@ the reverse. A test asserts that no interception seam exists in `src/quality/run
 
 ### US-004 — The rtk provider
 
-New `src/execution/interceptors/rtk.ts`, the only file that knows rtk exists.
+New `src/execution/interceptors/rtk/index.ts` — a directory, not a flat file: `@/execution/interceptors/rtk` must be an exact barrel match to satisfy `check-alias-internals`, and leaving both forms silently un-registers the barrel. The only module that knows rtk exists.
 
 - **shell requests** → `rtk rewrite "<command>"`, mapping the exit-code protocol:
   `0` → rewritten · `1` → unchanged · `2` → unchanged (rtk's deny rules govern rtk, not
@@ -609,16 +609,19 @@ Every rewrite records **requested vs executed**, following the `audit.executed` 
 replay of a run that used rtk must reproduce what actually executed, not what was asked
 for.
 
-Preflight records the rtk version; the circuit breaker records the trip and its cause.
+Preflight records the rtk version, and the interceptor records its own state — enabled,
+version, verbs — once per run **whether or not interception is enabled**. That is what makes
+the §7 A/B comparable: a run with interception off must be distinguishable in its artifacts
+from a run that simply made no git calls.
 
-**Acceptance:** a ledger row for a rewritten command carries both forms; a run with a
-tripped breaker says so in its artifacts.
+**Acceptance:** a ledger row for a rewritten command carries both forms; every run records
+the interceptor's state, including when it is disabled.
 
 ## 5. Hazards
 
 | # | Hazard | Mitigation |
 |---|---|---|
-| H1 | **Exit-code ambiguity.** rtk's internal errors exit `1`, identical to a legitimately failing lint. nax computes `success: exitCode === 0`, so an rtk crash reads as a quality-gate failure and triggers a fix cycle against a non-existent defect | R3 preflight + circuit breaker. The `rtk:`-prefixed stderr signature is used to *report* distinctly, never to retry |
+| H1 | **Exit-code ambiguity.** rtk's internal errors exit `1`, identical to a legitimately failing lint. nax computes `success: exitCode === 0`, so an rtk crash reads as a quality-gate failure and triggers a fix cycle against a non-existent defect | R3 preflight; a missing or broken binary declines terminally. The `rtk:`-prefixed stderr signature is used to *report* distinctly, never to retry |
 | H2 | **Dead-end recovery hints** → nax#1800's failure mode | R4 strip + US-006 recall tool |
 | H3 | **Working-root integrity** in parallel worktrees | R6 escape-flag ban + cwd invariance on every rewrite. Observed concretely: an rtk-rewritten `git` command was refused by a worktree-isolated session because its target root could not be verified |
 | H4 | **Truncation interaction** | `never_worse` bounds the downside; US-005 adds the missing marker |
