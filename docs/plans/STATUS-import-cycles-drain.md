@@ -12,35 +12,29 @@ analysis. You *do* need to re-measure after every task.
 
 ---
 
-## 0. Current state - measured 2026-09-13 after Wave 3 (Task 6)
+## 0. Current state - measured 2026-09-13 after Wave 4 (Tasks 7-12 + one bonus cut)
 
 ```
 bun run scripts/check-import-cycles.ts
-[OK] 50 modules in runtime import cycles (baseline: 50).
+[OK] 20 modules in runtime import cycles (baseline: 20).
 ```
 
 | Reading | Value |
 |:--|--:|
-| Baseline file `count` | **50** |
-| Actual cyclic modules in `src/` | **50** |
-| Strongly-connected components (SCCs) that are cyclic | **5** |
+| Baseline file `count` | **20** |
+| Actual cyclic modules in `src/` | **20** |
+| Strongly-connected components (SCCs) that are cyclic | **1** |
 | Largest SCC | **20 modules** |
 
-The five components:
+The one component is exactly the section 5 residue, verified module-for-module:
 
 | # | Size | Territory |
 |--:|--:|:--|
-| 1 | **20** | `execution/` + `pipeline/` — the section 5 residue |
-| 2 | **12** | `agents/` (`acp/` 7 + registry/manager/complete-exception-classifier + `index.ts`) |
-| 3 | **10** | `debate/selectors/` (4) + `debate/session-helpers.ts` + `operations/debate-hybrid.ts` + `routing/` (3) + `operations/classify-route.ts` + `operations/index.ts` |
-| 4 | **5** | `cli/{index,plan,plan-command}` + `plan/strategies/` |
-| 5 | **3** | `context/engine/` remnant |
+| 1 | **20** | `execution/` (15) + `pipeline/` (5) — the section 5 knot, unaltered |
 
-The 15-module `context/engine` + `context/index.ts` component is gone: the four
-back-edge cuts (Task 6) took it to a 3-module remnant, and that remnant is untouched by
-the remaining tasks (its three modules stay cyclic through the `pull-tools` / `handlers` /
-`providers` knot task 12 partially unwinds — but the plan's expected 20 assumes context
-does not ship further modules into the residue; see the Task 12 note at section 8.3).
+The drain is **complete**: 132 -> 20, exactly the plan's end state. Everything outside the
+documented residue is acyclic. Section 8.7 records the Wave 4 path and the one bonus cut
+needed to land on 20 after Task 8 under-delivered.
 
 **Simulated end state of this plan: 132 -> 20.** The 17 edge cuts across the 12 tasks in
 section 3 were chosen by greedy search over every internal edge of every component (remove
@@ -82,7 +76,7 @@ Ranked cheapest-first. Prefer the earliest one that applies.
 
 **(A) Convert the value import to `import type`.** Type-only imports are erased by
 TypeScript, so both gates exempt them. `check-import-cycles.ts` skips any specifier whose
-prelude matches `/^\s*(?:import|export)\s+type\b/`.
+prelude matches `/^\s*(?:import|export)\s+type/`.
 
 - Applies when every symbol in the statement is used only in type position.
 - **Trap:** a statement like `import { type Foo, bar } from "x"` is *still a value edge* -
@@ -1346,7 +1340,6 @@ Wave 3-4 edges have different freed-counts now (measured, section 2.2 ranker at 
 
 ### 8.6 - 2026-09-13 - Wave 3 complete (Task 6): 62 -> 50
 
-Measured, not predicted. All four back-edges cut; the 15-module `context/engine` +
 `context/index.ts` component is gone. The edge-by-edge drops were **1, 1, 2, 8** across
 the four files (plan predicted 1, 1, 1, 8; static-rules' multi-symbol edge freed 2 instead
 of 1 because its cut also unloaded the `static-rules-budget-notice` type-only re-route —
@@ -1394,3 +1387,76 @@ shows `agents/acp/adapter-lifecycle.ts -> spawn-client.ts` and `operations/index
 debate-hybrid.ts` as the highest-value extra edges after the Task 7/8/9 cuts, so the 21
 may collapse to 20 with a free edge at the end — re-measure after each cut and trust the
 tool.
+
+### 8.7 - 2026-09-13 - Wave 4 complete (Tasks 7-12 + bonus cut): 50 -> 20
+
+
+Measured, not predicted. The drain is done — 132 -> 20, the plan's exact end state, with
+the residue verified module-for-module against section 5 (diff of `--list` output vs the
+20 listed modules: empty).
+
+Per-task drops and deviations from the plan's simulated counts:
+
+- **Task 7 (defer `SpawnAcpSession`, frees 7): 50 -> 43, exactly.** Scripted edit landed
+  verbatim: delete the import + the value re-export, `await import()` before both `new`
+  sites, repoint the one test. Zero surprises, 1416 agent tests green.
+- **Task 8 (`session-helpers` leaf imports): 43 -> 42, freed 1 of the simulated 6.** The
+  plan's simulation was wrong about this edge surviving the graph changes of Waves 2-3:
+  the loop re-routed through my new `session-helpers -> selectors/registry` edge into
+  `selectors/judge.ts -> @/operations` (ranked frees=6 at the time). The prescribed edit
+  was made exactly as written; the count just didn't follow. Re-ranked per section 6.1.
+- **Task 9 (`stdout-line-reader -> ./parser`, frees 5): 42 -> 37, exactly.**
+- **Task 10 (defer `@/operations` in `routing/router.ts`): 37 -> 34, freed 3** (simulated
+  4; the 8.6 adjustment said 3). Both call sites confirmed inside `async` before
+  applying (D); `await import("@/operations")` added at the top of `resolveRouting` and
+  `tryLlmBatchRoute`.
+- **Task 11 (cli/plan strategies knot, frees 5): 34 -> 29, exactly, component killed.**
+  Technique (C) required a cascade the plan did not list: `plan-runtime/index.ts`'s
+  `../context/generator` would have become `../../`, so `src/context/generator.ts` was
+  promoted to a nested barrel alongside the two `src/cli/` files. Three other relative
+  specifiers inside the moved files (incl. two dynamic `import()`s at lines 112/122)
+  were respelled to `@/precheck` / `../plan-decompose`. All three moved files' internal
+  `../` imports were respelled to barrels; the `@/analyze`, `@/interaction`,
+  `@/context/generator` targets were verified to be exact barrel matches first.
+  `context-builder.ts` lines 2-8 replaced with the two new imports verbatim from the
+  plan.
+- **Task 12 (pull-tools handlers, frees 3): 29 -> 26, exactly.** Extracted
+  `DEFAULT_MAX_TOKENS_PER_CALL` to `pull-tools-constants.ts`; re-exported from
+  `pull-tools.ts`, imported as a leaf by both handlers, `_pullToolsDeps` deferred to
+  `await import("../pull-tools")` at the call sites. Deviation: `pull-tools.ts` itself
+  also consumes the constant (lines 96/127/179), so it needed the leaf import in
+  addition to the re-export — the pure re-export alone left three `TS2304` errors.
+- **Bonus cut (deferential `_debateSessionDeps`, frees 6): 26 -> 20, the plan's target.**
+  At 26, `routing`/`operations`/`debate` still held a 6-module loop
+  (`session-helpers -> selectors/registry -> judge/synthesis -> @/operations ->
+  debate-hybrid -> session-helpers`) — the residue Task 8 was supposed to have killed.
+  Ranker said the load-bearing back-edge is `operations/debate-hybrid.ts ->
+  session-helpers.ts` (frees 6) — the exact edge Task 8's prose named but whose cut the
+  plan did not prescribe (section 6.1: re-rank and trust the tool; the plan's task list
+  is the simulation's). Applied technique (D): deleted the static import and resolved
+  the logger directly from `@/logger` (the deps object's `getSafeLogger` is an identity
+  cast of the logger's own function, so behavior is unchanged). Caveat: `_debateSessionDeps`
+  is exported and test-mocked elsewhere (`runner-*.test.ts`); only `debate-hybrid.ts`
+  was switched. One test
+  (`test/unit/operations/debate-hybrid.test.ts` "hopBody sends proposal first...") pins
+  that `ctx.send` runs **synchronously before the first await** — the naive
+  `await import()` at the top of `hopBody` broke it; `@/logger`'s static import avoids
+  the extra microtask and keeps the timing contract.
+
+**Definition of done status:** cycles 20/baseline 20 with residue matching section 5
+module-for-module; `check:all` green; `test:coverage` green; `.nax/rules/
+project-conventions.md` "Cycle ratchet" paragraph updated (94 -> 20 modules) and
+re-exported via `nax rules export --agent=claude` (rules-drift clean).
+`test:full` (`FULL=1 NAX_PRECHECK=1`) run end-of-drain: **4 pre-existing failures in
+`test/integration/plan/logger.test.ts` and `test/integration/cli/cli-precheck-checks
+.test.ts` (logger write-error handling, gitignore coverage, precheck emoji/summary)**,
+reproduced identically on the pre-drain base commit `e69bb5fdf` in a worktree — not
+caused by this drain, out of scope.
+
+Commits, in order: `3e313e65f` (7), `a3e72f7e7` (8), `5b33f15ac` (9), `d51fffc51` (10),
+`3fe744a05` (11), `6d1384c29` (12), `ce906f83` (bonus).
+
+**Looking forward:** the 20-module `execution`/`pipeline` knot is untouched by design
+(section 5). Breaking it is a design decision — extract the shared contract (event bus,
+queue interface, result types) into a third layer. Task 5's nested-barrel move of
+`pipeline/event-bus` remains the first brick of that extraction.
