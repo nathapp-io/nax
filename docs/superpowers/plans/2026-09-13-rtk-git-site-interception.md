@@ -487,7 +487,15 @@ describe("execution.commandInterceptor", () => {
     expect(parsed.commandInterceptor.enabled).toBe(false);
     expect(parsed.commandInterceptor.provider).toBe("rtk");
     expect(parsed.commandInterceptor.git.verbs).toEqual(["log", "diff"]);
-    expect(parsed.commandInterceptor.failuresBeforeDisable).toBe(3);
+  });
+
+  test("has no failuresBeforeDisable key", () => {
+    // There is no per-request I/O to fail: preflight runs once at construction
+    // and a rewrite is a pure string prefix. A circuit breaker would be a
+    // config key that can never fire. See Task 5.
+    expect(() =>
+      ExecutionConfigSchema.parse({ ...base, commandInterceptor: { failuresBeforeDisable: 3 } }),
+    ).toThrow();
   });
 
   test("an empty verb list is valid and intercepts nothing", () => {
@@ -532,7 +540,6 @@ const CommandInterceptorConfigSchema = z
     provider: z.string().min(1).default("rtk"),
     enabled: z.boolean().default(false),
     git: z.object({ verbs: z.array(z.string().min(1)).default(["log", "diff"]) }).default({ verbs: ["log", "diff"] }),
-    failuresBeforeDisable: z.number().int().positive().default(3),
   })
   .strict();
 ```
@@ -544,7 +551,6 @@ Add to `ExecutionConfigSchema`:
     provider: "rtk",
     enabled: false,
     git: { verbs: ["log", "diff"] },
-    failuresBeforeDisable: 3,
   }),
 ```
 
@@ -557,8 +563,6 @@ Add to `ExecutionConfigSchema`:
   "execution.commandInterceptor.provider": "Which interceptor to use. Only 'rtk' exists today.",
   "execution.commandInterceptor.git.verbs":
     "Git subcommands eligible for interception. Measured values: log and diff. status and blame measured no benefit; show is excluded for changing git's exit code.",
-  "execution.commandInterceptor.failuresBeforeDisable":
-    "Interception failures tolerated before the provider is disabled for the rest of the run.",
 ```
 
 - [ ] **Step 5: Run and commit**
@@ -580,6 +584,8 @@ git commit -m "feat(config): opt-in command interceptor block with measured git 
 **Files:**
 - Modify: `src/tools/git.ts` (add `_gitToolDeps`; intercept at line 319; return `audit`)
 - Modify: `src/tools/registry.ts` (make `ToolResult.audit.target` optional)
+- Modify: `src/utils/git.ts` (one optional `argvOverride` parameter — see Step 3)
+- Modify: `src/tools/index.ts` (re-export `_gitToolDeps`)
 - Test: `test/unit/tools/git-interception.test.ts`
 
 **Interfaces:**
@@ -607,8 +613,12 @@ and at least nine of them run `log`/`diff` and then machine-parse the stdout:
 rtk exists to compact output. Compacting a `--name-only` list that nax splits into
 filenames means scoped test selection runs the wrong tests and merge-conflict detection
 misses files — with no error anywhere. **Nothing is lost by narrowing:** those outputs
-never reach a model, so there were never tokens to save there. Only the `Git` tool's output
-is agent-facing.
+never reach a model, so there were never tokens to save there.
+
+`GitCommit` (`src/tools/git-commit.ts:57,62`) is the *other* agent-facing tool that shells
+out to git, and it is **not** intercepted: US-003 excludes it, and its verbs (`add`,
+`commit`) are not in `git.verbs` anyway. So the precise invariant is *the `Git` tool's
+output is the only thing this feature touches* — not "the only agent-facing git".
 
 `src/tools/git.ts` is 328 lines against the 600 cap, so unlike `src/utils/git.ts` (579)
 there is ample headroom here. That is a consequence of the correct design, not the reason
@@ -631,6 +641,14 @@ function fake(result: InterceptResult): CommandInterceptor {
   return { provider: "rtk", intercept: async () => result };
 }
 
+/** A rewriter that actually passes validateRewrite: prefix, derived from the request. */
+function prefixer(): CommandInterceptor {
+  return {
+    provider: "rtk",
+    intercept: async (req) => ({ kind: "rewritten", argv: ["rtk", ...req.argv], provider: "rtk" }),
+  };
+}
+
 describe("Git tool interception", () => {
   const calls: string[][] = [];
 
@@ -644,7 +662,9 @@ describe("Git tool interception", () => {
     }).spawn;
   });
 
-  const ctx = () => ({ root: "/repo", maxBytes: 40_000 });
+    // ToolRunContext requires all four (src/tools/registry.ts:35-55). This shape is
+  // lifted from test/unit/tools/git-commit.test.ts:23 — reuse it, do not invent one.
+  const ctx = () => ({ root: "/repo", resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 });
 
   test("spawns the original argv when no interceptor is installed", async () => {
     _gitToolDeps.interceptor = undefined;
@@ -653,10 +673,10 @@ describe("Git tool interception", () => {
   });
 
   test("spawns the rewritten argv and reports what executed", async () => {
-    _gitToolDeps.interceptor = fake({ kind: "rewritten", argv: [], provider: "rtk" });
-    // NOTE: the fake must echo back the real argv the tool built. Read the tool's
-    // buildGitArgv output first, or make the fake compute ["rtk", ...req.argv]
-    // from the request rather than hardcoding it.
+    // The fake MUST derive argv from the request. A hardcoded literal fails
+    // validateRewrite's length check, silently degrades to "declined", and the
+    // test then passes for the wrong reason.
+    _gitToolDeps.interceptor = prefixer();
     const result = await gitTool.run({ subcommand: "log" }, ctx());
     expect(calls[0]?.[0]).toBe("rtk");
     expect(result.audit?.executed?.[0]).toBe("rtk");
@@ -675,12 +695,13 @@ describe("Git tool interception", () => {
       calls.push([...cmd]);
       return { stdout: "", stderr: "fatal: bad revision", exitCode: 128 };
     }).spawn;
-    _gitToolDeps.interceptor = fake({ kind: "rewritten", argv: [], provider: "rtk" });
+    _gitToolDeps.interceptor = prefixer();
 
     const result = await gitTool.run({ subcommand: "log" }, ctx());
 
     expect(result.isError).toBe(true);
-    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toBe("rtk"); // it really was the rewritten command that ran
+    expect(calls).toHaveLength(1); // and it was NOT re-run raw
   });
 
   test("an internal gitWithTimeout caller is NEVER intercepted", async () => {
@@ -732,13 +753,50 @@ At line 319, intercept between `buildGitArgv`'s result and the call:
       );
 ```
 
-⚠️ `gitWithTimeout` prepends `"git"` itself (`src/utils/git.ts:77`), so the argv handed to
-it must **not** include it. `interceptArgv` works on the full argv because that is what a
-rewrite prefixes; strip the leading token on the way back in. If a rewrite happened,
-`intercepted.argv` is `["rtk","git",...]`, and slicing one leaves `["git",...]` — which
-`gitWithTimeout` turns into `git git ...`. **This is the trap in this task.** Either extend
-`gitWithTimeout` to accept a full argv, or have the tool call `_gitDeps.spawn` directly.
-Pick one, write the test first, and state the choice in the commit message.
+⚠️ **`gitWithTimeout` prepends `"git"` itself** (`src/utils/git.ts:77` spawns
+`["git", ...args]`). So the snippet above is wrong on the rewritten path, and this is the
+trap in this task: `intercepted.argv` is `["rtk","git",...built]`, `.slice(1)` leaves
+`["git",...built]`, and `gitWithTimeout` turns that into **`git git log …`** — the rewrite
+never runs rtk and the command fails instead. The un-rewritten path round-trips correctly
+(`["git",...built] → .slice(1) → built`), which is why the disabled default stays
+byte-identical.
+
+**The resolution, already decided — do not re-litigate it.** Give `gitWithTimeout` an
+optional full-argv parameter and have the `Git` tool pass one:
+
+```typescript
+export async function gitWithTimeout(
+  args: string[],
+  workdir: string,
+  timeoutMs: number = _gitDeps.gitTimeoutMs,
+  maxBytes?: number,
+  /** Full argv INCLUDING argv[0]. Callers that must control argv[0] pass this;
+   *  everyone else gets ["git", ...args] as before. */
+  argvOverride?: readonly string[],
+): Promise<...> {
+  const proc = _gitDeps.spawn([...(argvOverride ?? ["git", ...args])], { ... });
+```
+
+Roughly three lines in a 579/600-line file, and it adds **no** interception to
+`src/utils/git.ts` — no import of the seam, no behaviour change for the other 51 callers,
+who never pass the parameter. The call site then becomes:
+
+```typescript
+      const intercepted = await interceptArgv(["git", ...built], ctx.root, _gitToolDeps.interceptor);
+      const { stdout, stderr, exitCode } = await gitWithTimeout(
+        built,
+        ctx.root,
+        undefined,
+        ctx.maxBytes,
+        intercepted.argv,
+      );
+```
+
+The alternative — calling `_gitDeps.spawn` directly, as `src/tools/grep.ts:129` does — was
+rejected: `src/tools/git.ts`'s own header comment (lines 12-15) says it reuses
+`gitWithTimeout` precisely because `git log -p` is the output that fills a 64 KB pipe
+buffer and deadlocks a naive drain. Duplicating that contract in a second place to save a
+parameter is a bad trade.
 
 - [ ] **Step 4: Widen the audit field and return it**
 
@@ -748,8 +806,19 @@ sets `executed` with no `target` — the repoRoot/package distinction does not a
 read. Verified safe: `src/tools/runtime.ts:139` already types both fields optional
 internally, `run-command-exec.ts:126` supplies both, and no test requires `target`.
 
-Return `audit: { executed: intercepted.executed }` from `gitTool.run` when a rewrite
-happened, and no `audit` when none did. Do **not** try to set the ledger's `provider`
+Return `audit` from `gitTool.run` **only** when a rewrite happened. Note `executed` is
+required on `ToolResult.audit` but optional on `InterceptOutcome`, so it must be narrowed
+or TS2322 fires under `strict`:
+
+```typescript
+const audit = intercepted.executed !== undefined ? { executed: intercepted.executed } : undefined;
+return { content, ...(audit !== undefined ? { audit } : {}) };
+```
+
+**Also add `_gitToolDeps` to the `src/tools/index.ts` barrel**, beside `_grepDeps` at line
+11. Without it, Task 6's composition site cannot import it: `src/tools/index.ts` exists, so
+`@/tools/git` is an alias-into-internal import and `check-alias-internals` rejects it from
+`src/` (only `test/` is exempt). Do **not** try to set the ledger's `provider`
 field — that comes from `opts.providerIdByTool`, a map of *provider-tool* names, and `Git`
 is not one.
 
@@ -774,30 +843,42 @@ git add -A && git commit -m "feat(tools): intercept the Git tool's argv and ledg
 **Interfaces:**
 - `interface InterceptorState { enabled: boolean; version: string | null; verbs: readonly string[] }`
 - `interface RtkDeps { which(bin: string): string | null; version(): string | null; record(state: InterceptorState): void }`
-- `createRtkInterceptor(opts: { enabled: boolean; verbs: readonly string[]; failuresBeforeDisable: number; _deps?: Partial<RtkDeps> }): CommandInterceptor`
+- `createRtkInterceptor(opts: { enabled: boolean; verbs: readonly string[]; _deps?: Partial<RtkDeps> }): CommandInterceptor`
 
-**Settled semantics. Implement exactly these — each was ambiguous in an earlier revision.**
+**Settled semantics. Implement exactly these.**
 
 1. **Preflight is eager, at construction, and only when `enabled`.** It calls `which("rtk")`
-   and then `version()`. This is once per run and costs one process; it is not on a hot path.
+   and then `version()`. Once per run, one process, not on a hot path. It must be
+   synchronous (`Bun.spawnSync`) because `createRtkInterceptor` returns a
+   `CommandInterceptor`, not a promise.
 2. **`record(state)` fires exactly once, at construction, after preflight**, whatever
-   `enabled` is. When enabled, `version` is the resolved version string. When disabled
-   nothing is probed and `version` is `null` — honest, because nothing ran.
-
-   *Why eager:* an earlier revision had preflight lazy and `record` at construction, which
-   made `version` structurally always `null` and the H6 justification unachievable. If you
-   find yourself making preflight lazy again, `record` has to move with it.
+   `enabled` is. Enabled → `version` is the resolved string. Disabled → nothing is probed
+   and `version` is `null`, which is honest because nothing ran.
 3. **`enabled: false`** → `intercept()` returns `{ kind: "unchanged" }` always; nothing is
    ever probed.
-4. **Missing binary** (`which` → `null`) is a *terminal* state, not a breaker failure: every
-   request returns `declined` and the binary is never probed again. A user without rtk
-   installed must not accumulate "failures."
-5. **A throwing `which` or `version`** counts as one breaker failure. On reaching
-   `failuresBeforeDisable` the interceptor latches: every later request returns `declined`
-   without touching the binary.
+4. **A missing binary** (`which` → `null`) is terminal: every request returns `declined`,
+   and the binary is never probed again. A user without rtk installed must not accumulate
+   "failures".
+5. **Construction never throws.** A throwing `which` or `version` is caught and degrades to
+   the same terminal-declined state as a missing binary. A crash here takes down run setup.
 6. The verb is `argv[1]` (`argv[0]` is always `"git"`). Not in `verbs` → `unchanged`.
 7. Rewrite is a static prefix: `["rtk", ...req.argv]`. **Never** call `rtk rewrite` — scope
    decision 2.
+
+**There is no circuit breaker, and no `failuresBeforeDisable`.** An earlier revision
+specified both. They cannot work: preflight runs once at construction and `intercept()`
+performs **no I/O at all** — a rewrite is a pure string prefix and `postProcess` is pure
+string work — so at most one failure can ever occur and any threshold above 1 is
+unreachable. The config key would have been a field that can never fire, which is the same
+objection this plan uses to drop `notes` in Task 6. If a future change introduces
+per-request I/O (calling `rtk rewrite`, say), reintroduce the breaker **with** it.
+
+**The `record` sink.** The default implementation writes one structured log line through
+`getSafeLogger()` — the same seam `src/utils/git.ts:321` uses — at info level, with
+`enabled`, `version` and `verbs` as fields. This is what makes the spec §7 A/B comparable:
+a run with interception off must be distinguishable in its artifacts from a run that made
+no git calls, and a version change between arms invalidates the comparison (H6) and must be
+visible after the fact rather than inferred.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -814,7 +895,7 @@ const req = (verb: string) => ({
 });
 const present = { which: () => "/usr/bin/rtk", version: () => "0.45.0", record: () => {} };
 const make = (o: Partial<Parameters<typeof createRtkInterceptor>[0]> = {}) =>
-  createRtkInterceptor({ enabled: true, verbs: ["log"], failuresBeforeDisable: 3, _deps: present, ...o });
+  createRtkInterceptor({ enabled: true, verbs: ["log"], _deps: present, ...o });
 
 describe("rtk interceptor", () => {
   test("rewrites a verb in the configured list", async () => {
@@ -843,48 +924,46 @@ describe("rtk interceptor", () => {
     expect(probed).toBe(false);
   });
 
-  test("records real version at construction when enabled", () => {
+  test("records the real version at construction when enabled", () => {
     const states: InterceptorState[] = [];
     make({ _deps: { ...present, record: (s) => states.push(s) } });
     expect(states).toEqual([{ enabled: true, version: "0.45.0", verbs: ["log"] }]);
   });
 
-  test("records a null version when disabled, and still records", () => {
+  test("still records, with a null version, when disabled", () => {
     const states: InterceptorState[] = [];
     make({ enabled: false, _deps: { ...present, record: (s) => states.push(s) } });
     expect(states).toEqual([{ enabled: false, version: null, verbs: ["log"] }]);
   });
 
-  test("a missing binary declines forever without probing again", async () => {
+  test("a missing binary declines forever and is probed exactly once", async () => {
     let probes = 0;
-    const i = make({
-      _deps: { ...present, which: () => { probes += 1; return null; } },
-    });
+    const i = make({ _deps: { ...present, which: () => { probes += 1; return null; } } });
     expect((await i.intercept(req("log"))).kind).toBe("declined");
     expect((await i.intercept(req("log"))).kind).toBe("declined");
-    // Absence is terminal, not a "failure" to be counted.
     expect(probes).toBe(1);
   });
 
-  test("the circuit breaker latches after the configured failure count", async () => {
-    let probes = 0;
-    const i = make({
-      failuresBeforeDisable: 2,
-      _deps: { ...present, which: () => { probes += 1; throw new Error("boom"); } },
-    });
-    expect((await i.intercept(req("log"))).kind).toBe("declined");
-    expect(probes).toBeLessThanOrEqual(2);
-    const settled = probes;
-    await i.intercept(req("log"));
-    await i.intercept(req("log"));
-    expect(probes).toBe(settled);
+  test("construction never throws, and a throwing probe degrades to declined", async () => {
+    // A throw here would take down run setup (Task 6 installs this in setupRun).
+    let i: ReturnType<typeof make> | undefined;
+    expect(() => {
+      i = make({ _deps: { ...present, which: () => { throw new Error("boom"); } } });
+    }).not.toThrow();
+    expect((await i!.intercept(req("log"))).kind).toBe("declined");
+  });
+
+  test("construction never throws when the version probe is the thing that fails", async () => {
+    let i: ReturnType<typeof make> | undefined;
+    expect(() => {
+      i = make({ _deps: { ...present, version: () => { throw new Error("boom"); } } });
+    }).not.toThrow();
+    expect((await i!.intercept(req("log"))).kind).toBe("declined");
   });
 });
 ```
 
-Note: preflight being eager means a throwing `which` throws during `createRtkInterceptor`.
-**It must not.** Catch it, count it, and construct a latched-or-degraded interceptor —
-construction never throws. Assert that explicitly if you add a test.
+The `i!` non-null assertions above are on a local in a test, not a cast — `check-test-escape-hatches` counts `as X` casts, not `!`. If you prefer, restructure with a helper that returns the interceptor.
 
 - [ ] **Step 2: Run and watch it fail**
 
@@ -897,7 +976,7 @@ Expected: FAIL — module not found.
 
 ```bash
 CI=1 AGENT=1 bun test test/unit/execution/ && AGENT=1 bun run check:all && bun run test:coverage
-git add -A && git commit -m "feat(execution): rtk interceptor with eager preflight and circuit breaker"
+git add -A && git commit -m "feat(execution): rtk interceptor with eager preflight and state record"
 ```
 
 ---
@@ -936,7 +1015,6 @@ function postProcess() {
   const { postProcess: fn } = createRtkInterceptor({
     enabled: true,
     verbs: ["log"],
-    failuresBeforeDisable: 3,
     _deps: present,
   });
   if (fn === undefined) throw new Error("rtk interceptor must define postProcess");
@@ -954,8 +1032,14 @@ describe("rtk postProcess", () => {
     expect(output).not.toContain("rtk recall");
   });
 
-  test("leaves output with no hints untouched, including trailing whitespace", () => {
+  test("leaves output with no hints untouched", () => {
     expect(postProcess()("plain body", req).output).toBe("plain body");
+  });
+
+  test("does not eat trailing whitespace when there is no hint to strip", () => {
+    // Stripping is hint-shaped, not a general trim: trimEnd happens later at
+    // the call site, and postProcess must not pre-empt it.
+    expect(postProcess()("plain body\n\n", req).output).toBe("plain body\n\n");
   });
 });
 ```
@@ -968,8 +1052,15 @@ Expected: FAIL — `postProcess` is undefined.
 - [ ] **Step 3: Implement `postProcess` and the guarded call site**
 
 In `src/tools/git.ts`, call `postProcess` **only** when `intercepted.rewritten`, inside a
-`try`/`catch` that falls back to the raw output. Add to
-`test/unit/tools/git-interception.test.ts`:
+`try`/`catch` that falls back to the raw output.
+
+**Order matters, so fix it deliberately:** line 323 already does `stdout.trimEnd()` and
+then `truncate(body, ctx.maxBytes)`. Run `postProcess` **before** both — stripping a hint
+changes what the trailing whitespace and the byte budget apply to, and running it after
+`truncate` would try to strip a hint that truncation may have already cut in half. Add a
+test asserting a hint is stripped from output that also needs trimming.
+
+Add to `test/unit/tools/git-interception.test.ts`:
 
 ```typescript
 test("a throwing postProcess degrades to the raw output", async () => {
@@ -1027,7 +1118,6 @@ const ci = config.execution.commandInterceptor;
 _gitToolDeps.interceptor = createRtkInterceptor({
   enabled: ci.enabled,
   verbs: ci.git.verbs,
-  failuresBeforeDisable: ci.failuresBeforeDisable,
 });
 ```
 
@@ -1060,6 +1150,13 @@ import { describe, expect, test } from "bun:test";
 /** Only these may IMPORT the rtk provider. Naming rtk in a comment or a config default is fine. */
 const MAY_IMPORT_RTK = new Set(["execution/lifecycle/run-setup.ts"]);
 
+/**
+ * Matches the alias form AND any relative spelling — `run-setup.ts` already
+ * uses relative imports for its siblings (`../helpers`, `../crash-recovery`),
+ * so an alias-only regex would match nothing and pass vacuously.
+ */
+const IMPORTS_RTK = /from\s+["'](?:@\/execution|\.{1,2}(?:\/\.\.)*)\/?.*interceptors\/rtk(?:\/index)?["']/;
+
 describe("R10 / R1: interception stays where it belongs", () => {
   test("the Git tool is the only interception site", async () => {
     for (const path of ["src/quality/runner.ts", "src/verification/executor.ts", "src/utils/git.ts"]) {
@@ -1075,9 +1172,17 @@ describe("R10 / R1: interception stays where it belongs", () => {
       if (rel.startsWith("execution/interceptors/rtk/")) continue;
       if (MAY_IMPORT_RTK.has(rel)) continue;
       const source = await Bun.file(`src/${rel}`).text();
-      if (/from ["']@\/execution\/interceptors\/rtk["']/.test(source)) offenders.push(rel);
+      if (IMPORTS_RTK.test(source)) offenders.push(rel);
     }
     expect(offenders).toEqual([]);
+  });
+
+  test("the fence is not vacuous — the composition site really does import it", async () => {
+    // Without this, a relative import spelling makes the test above pass by
+    // matching nothing at all, and the allowlist becomes decorative.
+    for (const rel of MAY_IMPORT_RTK) {
+      expect(IMPORTS_RTK.test(await Bun.file(`src/${rel}`).text())).toBe(true);
+    }
   });
 });
 ```
@@ -1099,8 +1204,15 @@ git add -A && git commit -m "feat(execution): strip rtk hints and activate inter
 All six tasks committed, `check:all` and the full suite green, and:
 
 - With `enabled: false` (the default) every git call spawns exactly what it does today.
-- With `enabled: true` and rtk installed, **the `Git` tool's** `log` and `diff` calls spawn
-  through rtk, the ledger records what executed, and no rtk hint string reaches the agent.
+- Under **`nax run`** with `enabled: true` and rtk installed, **the `Git` tool's** `log` and
+  `diff` calls spawn through rtk (verify the spawned argv really begins `rtk`, not
+  `git git` — see Task 4 Step 3), the ledger records what executed, and no rtk hint string
+  reaches the agent.
+- Under entry points that do **not** call `setupRun` (`nax finish`, `nax plan`, acceptance
+  and debate flows), `_gitToolDeps.interceptor` stays `undefined` and interception simply
+  does not apply. That is fail-safe and accepted for this plan; widening it means moving the
+  install to `resolveCodingToolSupport` (`src/agents/coding-tool-support.ts:110`), which is
+  a bigger change than this feature warrants until the A/B justifies it.
 - **Every internal `gitWithTimeout` caller still spawns raw git**, whatever `enabled` says.
 - With `enabled: true` and rtk **absent**, every command still runs and succeeds.
 

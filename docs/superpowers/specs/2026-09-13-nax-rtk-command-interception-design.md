@@ -442,8 +442,9 @@ Per R10 there is **one** site, not three.
   `gitWithTimeout` would do exactly that.
 
   Nothing is lost by narrowing: those internal outputs never reach a model, so there were
-  no tokens to save there. **Only the `Git` tool's output is agent-facing, and it is the
-  only thing this feature may touch.**
+  no tokens to save there. `GitCommit` also shells out to git and is also agent-facing, but
+  it stays excluded (see below) and its verbs are not in `git.verbs`. **The `Git` tool's
+  output is the only thing this feature may touch.**
 
 Sites 1 (`src/quality/runner.ts`) and 2 (`src/verification/executor.ts`) are **out of
 scope and must not be touched.** A change to either is a spec violation, not an
@@ -476,11 +477,17 @@ New `src/execution/interceptors/rtk.ts`, the only file that knows rtk exists.
   re-splitting.
 - **Preflight**: one `rtk --version` per run gates all rewriting and records the version
   into run artifacts (H6).
-- **Circuit breaker**: after `failuresBeforeDisable` interception failures, rtk is
-  disabled for the remainder of the run.
+- **Circuit breaker**: ~~after `failuresBeforeDisable` interception failures, rtk is
+  disabled for the remainder of the run.~~ **Removed.** With the shell path dropped (R10)
+  there is no per-request I/O left to fail: preflight runs once at construction and a
+  rewrite is a pure string prefix. At most one failure can ever occur, so any threshold
+  above 1 is unreachable and the config key could never fire. A missing or broken binary is
+  instead a terminal state — every request declines. Reintroduce the breaker if and when
+  something reintroduces per-request I/O.
 
-**Acceptance:** each of the four exit codes maps as specified; a missing rtk binary yields
-`declined` on every request and never throws; the circuit breaker latches.
+**Acceptance:** a missing rtk binary yields `declined` on every request and never throws;
+construction never throws even when the probe does; the resolved rtk version is recorded
+once per run, and the state record is written whether or not interception is enabled.
 
 ### US-005 — Output post-processing
 
@@ -552,8 +559,7 @@ not advertised **and no marker offers it** (US-005).
     "commandInterceptor": {
       "provider": "rtk",
       "enabled": false,
-      "git": { "verbs": ["log", "diff"] },
-      "failuresBeforeDisable": 3
+      "git": { "verbs": ["log", "diff"] }
     }
   }
 }
