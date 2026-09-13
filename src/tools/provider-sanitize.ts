@@ -25,19 +25,46 @@ function strip(value: string): string {
   return value.replace(CONTROL_CHARS, "");
 }
 
+/**
+ * Truncate to a byte ceiling without splitting a code point.
+ *
+ * `String.prototype.slice` counts UTF-16 code units, so a multi-byte code point
+ * straddling the boundary is cut in half and becomes a replacement character.
+ * Iterating code points and stopping at the ceiling keeps the result valid.
+ */
+function truncateToBytes(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  let out = "";
+  let bytes = 0;
+  for (const char of value) {
+    const charBytes = Buffer.byteLength(char, "utf8");
+    if (bytes + charBytes > maxBytes) break;
+    out += char;
+    bytes += charBytes;
+  }
+  return out;
+}
+
 export function sanitizeProviderTools(kind: ProviderKind, tools: readonly ProviderTool[]): readonly ProviderTool[] {
   if (kind === "static") return tools;
 
   const out: ProviderTool[] = [];
+  let schemaBytes = 0;
   for (const tool of tools) {
     const schema = tool.inputSchema as unknown;
     if (typeof schema !== "object" || schema === null || Array.isArray(schema)) continue;
-    if (JSON.stringify(schema).length > MAX_PROVIDER_SCHEMA_BYTES) continue;
+    // US-005 caps the TOTAL schema bytes one provider may put into the prompt,
+    // not just each schema: many small tools still add up to an unbounded hop
+    // tax. A single oversized schema fails the same test with a zero running
+    // total, which preserves the per-tool skip this file already had.
+    const toolBytes = Buffer.byteLength(JSON.stringify(schema), "utf8");
+    if (schemaBytes + toolBytes > MAX_PROVIDER_SCHEMA_BYTES) continue;
+    schemaBytes += toolBytes;
 
     out.push({
       ...tool,
       localName: strip(tool.localName),
-      description: strip(tool.description).slice(0, MAX_PROVIDER_DESCRIPTION_BYTES),
+      description: truncateToBytes(strip(tool.description), MAX_PROVIDER_DESCRIPTION_BYTES),
     });
   }
   return out;

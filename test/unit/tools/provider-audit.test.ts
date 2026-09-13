@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compileToolPolicy } from "@/tools/policy";
@@ -31,29 +31,33 @@ describe("advertisedSchemaBytes", () => {
 describe("provider tool audit", () => {
   test("a provider tool call ledgers with the explicit provider id", async () => {
     const root = await mkdtemp(join(tmpdir(), "provider-audit-"));
-    const adapted = adaptProviderTool("acme", {
-      localName: "probe",
-      description: "probe tool",
-      inputSchema: { type: "object", properties: {} },
-      run: async () => ({ content: "" }),
-    });
-    const captured: ToolCallRecord[] = [];
-    const sink: ToolAuditSink = {
-      record(entry) {
-        captured.push(entry);
-      },
-      async flush() {},
-    };
-    const runtime = createCodingToolRuntime({
-      policy: compileToolPolicy([{ tool: adapted.name, patterns: ["*"] }], root),
-      extraTools: [adapted],
-      providerIdByTool: new Map([[adapted.name, "acme"]]),
-      sink,
-    });
+    try {
+      const adapted = adaptProviderTool("acme", {
+        localName: "probe",
+        description: "probe tool",
+        inputSchema: { type: "object", properties: {} },
+        run: async () => ({ content: "" }),
+      });
+      const captured: ToolCallRecord[] = [];
+      const sink: ToolAuditSink = {
+        record(entry) {
+          captured.push(entry);
+        },
+        async flush() {},
+      };
+      const runtime = createCodingToolRuntime({
+        policy: compileToolPolicy([{ tool: adapted.name, patterns: ["*"] }], root),
+        extraTools: [adapted],
+        providerIdByTool: new Map([[adapted.name, "acme"]]),
+        sink,
+      });
 
-    await runtime.callTool(adapted.name, {});
+      await runtime.callTool(adapted.name, {});
 
-    expect(captured).toHaveLength(1);
-    expect(captured[0]?.provider).toBe("acme");
+      expect(captured).toHaveLength(1);
+      expect(captured[0]?.provider).toBe("acme");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

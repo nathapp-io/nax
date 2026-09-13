@@ -25,9 +25,10 @@ function provider(over: Partial<ToolProvider> = {}): ToolProvider {
 
 describe("resolveProviderTools", () => {
   test("advertises a provider attached to this stage", async () => {
-    const { tools, grants } = await resolveProviderTools([provider()], "run", "/w/a");
+    const { tools, grants, providerIdByTool } = await resolveProviderTools([provider()], "run", "/w/a");
     expect(tools.map((t) => t.name)).toEqual(["fake__probe"]);
     expect(grants).toEqual([{ tool: "fake__probe", patterns: ["*"] }]);
+    expect(providerIdByTool.get("fake__probe")).toBe("fake");
   });
 
   test("skips a provider not attached to this stage", async () => {

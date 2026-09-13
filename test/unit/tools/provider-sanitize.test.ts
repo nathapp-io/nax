@@ -49,4 +49,23 @@ describe("sanitizeProviderTools", () => {
     ]);
     expect(out.map((t) => t.localName)).toEqual(["good"]);
   });
+
+  test("a provider total over the schema cap drops the excess tools", () => {
+    const schema = () => ({ type: "object", properties: { p: { description: "y".repeat(7_900) } } });
+    const out = sanitizeProviderTools("discovered", [
+      tool({ localName: "one", inputSchema: schema() }),
+      tool({ localName: "two", inputSchema: schema() }),
+      tool({ localName: "three", inputSchema: schema() }),
+    ]);
+    expect(out.map((t) => t.localName)).toEqual(["one", "two"]);
+  });
+
+  test("byte truncation never splits a code point", () => {
+    const [out] = sanitizeProviderTools("discovered", [
+      tool({ description: "😀".repeat(MAX_PROVIDER_DESCRIPTION_BYTES) }),
+    ]);
+    expect(Buffer.byteLength(out.description, "utf8")).toBeLessThanOrEqual(MAX_PROVIDER_DESCRIPTION_BYTES);
+    // A split surrogate pair would leave an odd number of UTF-16 units.
+    expect(out.description.length % 2).toBe(0);
+  });
 });

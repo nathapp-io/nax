@@ -63,7 +63,7 @@ export async function resolveProviderTools(
 export function advertisedSchemaBytes(tools: readonly CodingTool[]): number {
   let total = 0;
   for (const tool of tools) {
-    total += tool.description.length + JSON.stringify(tool.inputSchema).length;
+    total += Buffer.byteLength(tool.description, "utf8") + Buffer.byteLength(JSON.stringify(tool.inputSchema), "utf8");
   }
   return total;
 }
