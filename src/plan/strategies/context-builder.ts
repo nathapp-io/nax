@@ -1,11 +1,6 @@
 import { join } from "node:path";
-import {
-  buildPackageSummary,
-  buildSourceRootsSection,
-  createPlanRuntime,
-  DEFAULT_TIMEOUT_SECONDS,
-  detectProjectName,
-} from "@/cli";
+import { buildPackageSummary, buildSourceRootsSection } from "@/cli/plan-helpers";
+import { createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, detectProjectName } from "@/cli/plan-runtime";
 import type { NaxConfig } from "@/config";
 import { planConfigSelector } from "@/config";
 import { NaxError } from "@/errors";

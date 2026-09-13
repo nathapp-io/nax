@@ -8,20 +8,20 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { scanSourceRoots } from "../analyze/scanner";
-import type { NaxConfig } from "../config";
-import { DEFAULT_CONFIG, isUnrecognizedLiteralModel, resolveConfiguredModel } from "../config";
-import { discoverWorkspacePackages } from "../context/generator";
-import type { DebateRunnerOptions } from "../debate";
-import { DebateRunner } from "../debate";
-import { initInteractionChain } from "../interaction/init";
-import { getLogger } from "../logger";
-import type { PRD } from "../prd/types";
-import type { PrecheckResultWithCode } from "../precheck";
-import type { NaxRuntime } from "../runtime";
-import { claimProjectIdentity, createRuntime } from "../runtime";
-import { errorMessage } from "../utils/errors";
-import { createCliInteractionBridge } from "./plan-helpers";
+import { scanSourceRoots } from "@/analyze";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG, isUnrecognizedLiteralModel, resolveConfiguredModel } from "@/config";
+import { discoverWorkspacePackages } from "@/context/generator";
+import type { DebateRunnerOptions } from "@/debate";
+import { DebateRunner } from "@/debate";
+import { initInteractionChain } from "@/interaction";
+import { getLogger } from "@/logger";
+import type { PRD } from "@/prd";
+import type { PrecheckResultWithCode } from "@/precheck";
+import type { NaxRuntime } from "@/runtime";
+import { claimProjectIdentity, createRuntime } from "@/runtime";
+import { errorMessage } from "@/utils/errors";
+import { createCliInteractionBridge } from "../plan-helpers";
 
 export const DEFAULT_TIMEOUT_SECONDS = 600;
 
@@ -109,7 +109,7 @@ export const _planDeps = {
     prd: PRD,
     opts: { workdir: string; silent?: boolean },
   ): Promise<PrecheckResultWithCode> => {
-    const { runPrecheck } = await import("../precheck");
+    const { runPrecheck } = await import("@/precheck");
     return runPrecheck(config, prd, opts);
   },
   getLogger: () => getLogger(),
@@ -119,5 +119,5 @@ export const _planDeps = {
     config: NaxConfig,
     opts: { feature: string; storyId: string },
   ): Promise<() => void> =>
-    import("./plan-decompose").then(({ planDecomposeCommand }) => planDecomposeCommand(workdir, config, opts)),
+    import("../plan-decompose").then(({ planDecomposeCommand }) => planDecomposeCommand(workdir, config, opts)),
 };

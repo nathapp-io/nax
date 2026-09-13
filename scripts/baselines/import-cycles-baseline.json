@@ -1,10 +1,7 @@
 {
-  "count": 34,
-  "updatedAt": "2026-09-13T02:30:34.204Z",
+  "count": 29,
+  "updatedAt": "2026-09-13T02:33:54.206Z",
   "modules": [
-    "src/cli/index.ts",
-    "src/cli/plan-command.ts",
-    "src/cli/plan.ts",
     "src/context/engine/handlers/query-feature-context.ts",
     "src/context/engine/handlers/query-neighbor.ts",
     "src/context/engine/pull-tools.ts",
@@ -33,8 +30,6 @@
     "src/pipeline/stages/completion.ts",
     "src/pipeline/stages/execution.ts",
     "src/pipeline/stages/index.ts",
-    "src/pipeline/stages/queue-check.ts",
-    "src/plan/strategies/context-builder.ts",
-    "src/plan/strategies/index.ts"
+    "src/pipeline/stages/queue-check.ts"
   ]
 }
