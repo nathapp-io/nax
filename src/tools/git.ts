@@ -169,15 +169,7 @@ function flagFromBoolean(
   return flag;
 }
 
-/**
- * Flags that escape the repository or execute code.
- *
- * `-c` is included because config injection is a command-execution vector:
- * `-c core.pager=<cmd>` runs <cmd>. These are never emitted, and a test asserts
- * their absence from every built argv so a later refactor cannot reintroduce
- * one silently.
- */
-export const GIT_ESCAPE_FLAGS: readonly string[] = ["-C", "--git-dir", "--work-tree", "--exec-path", "-c"];
+export { GIT_ESCAPE_FLAGS } from "@/tools/git-flags";
 
 function looksLikeFlag(value: string): boolean {
   return value.startsWith("-");
