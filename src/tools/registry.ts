@@ -25,10 +25,14 @@ export interface ToolResult {
    * runtime so the ledger records the argv that actually ran. Task 7 reads
    * this to write `executed`/`target` onto the ledger row; this task only
    * defines and returns it.
+   *
+   * The `Git` tool also sets `audit` when a command interceptor rewrote its
+   * argv — there `target` is absent, because the repoRoot/package distinction
+   * does not apply to a git read.
    */
   readonly audit?: {
     readonly executed: readonly string[];
-    readonly target: "repoRoot" | "package";
+    readonly target?: "repoRoot" | "package";
   };
 }
 

@@ -73,8 +73,11 @@ export async function gitWithTimeout(
   workdir: string,
   timeoutMs: number = _gitDeps.gitTimeoutMs,
   maxBytes?: number,
+  /** Full argv INCLUDING argv[0]. Callers that must control argv[0] pass this;
+   *  everyone else gets ["git", ...args] as before. */
+  argvOverride?: readonly string[],
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = _gitDeps.spawn(["git", ...args], {
+  const proc = _gitDeps.spawn([...(argvOverride ?? ["git", ...args])], {
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",

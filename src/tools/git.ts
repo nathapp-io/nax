@@ -15,8 +15,19 @@
  * 64KB pipe buffer and deadlocks a naive implementation.
  */
 
+import type { CommandInterceptor } from "@/execution/command-interceptor";
+import { interceptArgv } from "@/execution/command-interceptor";
 import { gitWithTimeout } from "@/utils/git";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+
+/**
+ * Interception seam for the Git TOOL only.
+ *
+ * Deliberately here and not on `_gitDeps`: `gitWithTimeout` is shared by 52
+ * callers, nine of which machine-parse `log`/`diff` stdout. Compacting their
+ * output breaks them silently. Only this tool's output is agent-facing.
+ */
+export const _gitToolDeps = { interceptor: undefined as CommandInterceptor | undefined };
 
 /**
  * Read-only verbs. Mutating verbs are not representable in the input type.
@@ -308,11 +319,20 @@ export const gitTool: CodingTool = {
     if ("error" in built) return { content: built.error, isError: true };
 
     try {
-      const { stdout, stderr, exitCode } = await gitWithTimeout(built, ctx.root, undefined, ctx.maxBytes);
+      const intercepted = await interceptArgv(["git", ...built], ctx.root, _gitToolDeps.interceptor);
+      const { stdout, stderr, exitCode } = await gitWithTimeout(
+        built,
+        ctx.root,
+        undefined,
+        ctx.maxBytes,
+        intercepted.argv,
+      );
       if (exitCode !== 0 && stdout.trim() === "") {
         return { content: stderr.trim() || `git exited ${exitCode}`, isError: true };
       }
-      return { content: truncate(stdout.trimEnd(), ctx.maxBytes) || "(no output)" };
+      const content = truncate(stdout.trimEnd(), ctx.maxBytes) || "(no output)";
+      const audit = intercepted.executed !== undefined ? { executed: intercepted.executed } : undefined;
+      return { content, ...(audit !== undefined ? { audit } : {}) };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };
     }
