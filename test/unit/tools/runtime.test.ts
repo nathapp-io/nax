@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeLogger } from "@test/helpers";
+import type { AskResolver } from "@/permissions";
 import {
   _codingToolDeps,
   _resetBuiltinsForTest,
@@ -20,6 +21,9 @@ beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "nax-runtime-"));
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "a.ts"), "const a = 1;\n");
+  // The ask-resolution tests below read `file.txt`; without it a missing file
+  // would surface as kind:"error" and masquerade as a broken ask path.
+  writeFileSync(join(root, "file.txt"), "hello");
 
   // A real git repo, for the Git-tool hard-boundary and no-regression tests
   // below — status/log/show run for real rather than through a mock, so a
@@ -84,6 +88,56 @@ describe("createCodingToolRuntime", () => {
     // come from the tool itself, surfacing as 'error', not 'denied'.
     const out = await rt.callTool("Git", { subcommand: "status" });
     expect(out.kind).toBe("error");
+  });
+});
+
+describe("callTool — ask resolution (spec US-007)", () => {
+  test("headless default refuses an ask-matched call with the ask reason and ledgers denied:ask", async () => {
+    const records: { outcome: string; reason?: string }[] = [];
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Read", patterns: ["*"] }],
+      }),
+      sink: { record: (e) => void records.push(e), flush: async () => {} },
+    });
+    runtime.advertised(["Read"]);
+    const outcome = await runtime.callTool("Read", { path: "file.txt" });
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind === "denied") {
+      expect(outcome.reason).toContain("approval");
+      expect(outcome.breach).toBe(false);
+    }
+    expect(records.at(-1)?.outcome).toBe("denied:ask");
+  });
+
+  test("an approving resolver lets the call run", async () => {
+    const approveAll: AskResolver = { resolve: () => Promise.resolve("allow") };
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Read", patterns: ["*"] }],
+      }),
+      askResolver: approveAll,
+    });
+    runtime.advertised(["Read"]);
+    const outcome = await runtime.callTool("Read", { path: "file.txt" });
+    expect(outcome.kind).toBe("ok");
+  });
+
+  test("plain denials never consult the resolver", async () => {
+    let consulted = 0;
+    const counting: AskResolver = {
+      resolve: () => {
+        consulted++;
+        return Promise.resolve("allow");
+      },
+    };
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([], root), // nothing granted
+      askResolver: counting,
+    });
+    const outcome = await runtime.callTool("Read", { path: "file.txt" });
+    expect(outcome.kind).toBe("denied");
+    expect(consulted).toBe(0);
   });
 });
 
