@@ -201,7 +201,6 @@ function withRules(base: ResolvedPermissions, rules: StageRules): ResolvedPermis
  */
 export function resolvePermissions(config: AgentManagerConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
   const profile: PermissionProfile = config?.execution?.permissionProfile ?? DEFAULT_PERMISSION_PROFILE;
-  const rules = stageRules(config, _stage);
 
   switch (profile) {
     case "unrestricted":
@@ -220,10 +219,13 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
             EXEC_TOOL_NAME,
           ]),
         },
-        rules,
+        stageRules(config, _stage),
       );
     case "safe":
-      return withRules({ mode: "approve-reads", toolGrants: unconditionalGrants(DEFAULT_CODING_TOOLS) }, rules);
+      return withRules(
+        { mode: "approve-reads", toolGrants: unconditionalGrants(DEFAULT_CODING_TOOLS) },
+        stageRules(config, _stage),
+      );
     case "scoped":
       return resolveScopedPermissions(config, _stage);
     default:
