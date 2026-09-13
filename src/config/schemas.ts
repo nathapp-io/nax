@@ -39,6 +39,7 @@ import {
   PromptsConfigSchema,
   RoutingConfigSchema,
 } from "./schemas-infra";
+import { McpConfigSchema } from "./schemas-mcp";
 import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { validateProtocolGate } from "./schemas-protocol-gate";
 import { ReportersConfigSchema } from "./schemas-reporters";
@@ -47,6 +48,7 @@ import { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfig
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
 export { AcceptanceConfigSchema, PlanConfigSchema, PromptsConfigSchema } from "./schemas-infra";
+export { McpConfigSchema } from "./schemas-mcp";
 export {
   AdversarialReviewConfigSchema,
   NonBlockingFixConfigSchema,
@@ -498,6 +500,9 @@ export const NaxConfigSchema = z
         rerun: "on-change",
         timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
       }),
+    // Derived, not hand-written — same reason as `context:` above: a literal
+    // default here would shadow every inner `.default()` in McpConfigSchema.
+    mcp: McpConfigSchema.default(() => McpConfigSchema.parse({})),
     reporters: ReportersConfigSchema,
     profile: z.string().default("default"),
     profileChain: z.array(z.string()).default([]),
