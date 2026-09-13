@@ -1,11 +1,7 @@
 {
-  "count": 26,
-  "updatedAt": "2026-09-13T02:36:19.743Z",
+  "count": 20,
+  "updatedAt": "2026-09-13T02:39:33.212Z",
   "modules": [
-    "src/debate/selectors/judge.ts",
-    "src/debate/selectors/registry.ts",
-    "src/debate/selectors/synthesis.ts",
-    "src/debate/session-helpers.ts",
     "src/execution/dry-run.ts",
     "src/execution/escalation/index.ts",
     "src/execution/escalation/tier-escalation.ts",
@@ -21,8 +17,6 @@
     "src/execution/runner-completion.ts",
     "src/execution/runner.ts",
     "src/execution/unified-executor.ts",
-    "src/operations/debate-hybrid.ts",
-    "src/operations/index.ts",
     "src/pipeline/index.ts",
     "src/pipeline/stages/completion.ts",
     "src/pipeline/stages/execution.ts",

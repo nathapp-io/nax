@@ -1,9 +1,9 @@
 import type { TurnResult } from "../agents/types";
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
-import { _debateSessionDeps } from "../debate/session-helpers";
 import { DEFAULT_DEBATE_TIMEOUT_SECONDS, type Debater } from "../debate/types";
 import { type DebateTurnSemaphore, raceAgainstAbort } from "../debate/utils";
+import { getSafeLogger } from "../logger";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
 
@@ -36,7 +36,6 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
   timeoutMs: (input) => (input.timeoutSeconds ?? DEFAULT_DEBATE_TIMEOUT_SECONDS) * 1_000,
   async hopBody(initialPrompt, ctx) {
-    const logger = _debateSessionDeps.getSafeLogger();
     let totalCostUsd = 0;
 
     const proposal = ctx.input.turnSemaphore
@@ -56,6 +55,7 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
 
     let lastTurn: TurnResult = proposal;
     const priorRoundOutputs: string[][] = [];
+    const logger = getSafeLogger();
     for (let round = 1; round <= ctx.input.rounds; round++) {
       logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
         storyId: ctx.input.storyId,
