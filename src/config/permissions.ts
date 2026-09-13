@@ -9,7 +9,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
-import { parseToolExpression } from "@/permissions";
+import { parseRuleList } from "@/permissions";
 import type { CodingToolName, ToolGrant } from "@/tools";
 import { EXEC_TOOL_NAME } from "@/tools";
 import type { AgentManagerConfig } from "./selectors";
@@ -39,6 +39,13 @@ export interface ResolvedPermissions {
    * config layer while the decision stays here, in the gated SSOT.
    */
   toolGrants?: readonly ToolGrant[];
+  /**
+   * Deny rules for the stage (spec R6: deny > ask > allow). Same {tool, patterns}
+   * shape as `toolGrants`; compiled and enforced by src/tools/.
+   */
+  denyRules?: readonly ToolGrant[];
+  /** Ask rules for the stage; resolved by an AskResolver at call time (spec R1). */
+  askRules?: readonly ToolGrant[];
 }
 
 /**
@@ -135,31 +142,88 @@ function unconditionalGrants(tools: readonly string[]): ToolGrant[] {
   );
 }
 
+interface StageBlock {
+  allowedTools?: string[];
+  allow?: string[];
+  deny?: string[];
+  ask?: string[];
+  inherit?: string;
+}
+
+/** Stage -> inherit chain -> `default` -> undefined. The walk formerly inside
+ * resolveScopedPermissions; now shared by every profile (spec R10). */
+function lookupStageBlock(
+  blocks: Record<string, StageBlock | undefined> | undefined,
+  stage: PipelineStage,
+): StageBlock | undefined {
+  if (!blocks) return undefined;
+  const seen = new Set<string>();
+  let key: string | undefined = stage;
+  let block = blocks[stage];
+  while (block?.inherit !== undefined && key !== undefined && !seen.has(key)) {
+    seen.add(key);
+    key = block.inherit;
+    block = blocks[key];
+  }
+  return block ?? blocks.default;
+}
+
+interface StageRules {
+  readonly allow: readonly ToolGrant[];
+  readonly deny: readonly ToolGrant[];
+  readonly ask: readonly ToolGrant[];
+}
+
+function stageRules(config: AgentManagerConfig | undefined, stage: PipelineStage): StageRules {
+  const blocks = config?.execution?.permissions as Record<string, StageBlock | undefined> | undefined;
+  const block = lookupStageBlock(blocks, stage);
+  return {
+    allow: parseRuleList(block?.allow ?? block?.allowedTools ?? []),
+    deny: parseRuleList(block?.deny ?? []),
+    ask: parseRuleList(block?.ask ?? []),
+  };
+}
+
+/** Attach rule fields only when non-empty, so no-block configs stay
+ * byte-identical to the pre-rules shape (the regression gate). */
+function withRules(base: ResolvedPermissions, rules: StageRules): ResolvedPermissions {
+  return {
+    ...base,
+    ...(rules.allow.length > 0 ? { toolGrants: [...(base.toolGrants ?? []), ...rules.allow] } : {}),
+    ...(rules.deny.length > 0 ? { denyRules: rules.deny } : {}),
+    ...(rules.ask.length > 0 ? { askRules: rules.ask } : {}),
+  };
+}
+
 /**
  * Resolve permissions for a given pipeline stage.
  * Single source of truth — all adapters call this.
  */
 export function resolvePermissions(config: AgentManagerConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
   const profile: PermissionProfile = config?.execution?.permissionProfile ?? DEFAULT_PERMISSION_PROFILE;
+  const rules = stageRules(config, _stage);
 
   switch (profile) {
     case "unrestricted":
-      return {
-        mode: "approve-all",
-        toolGrants: unconditionalGrants([
-          ...DEFAULT_CODING_TOOLS,
-          "Write",
-          "Edit",
-          "Delete",
-          "Git",
-          "GitCommit",
-          "RunCommand",
-          "RequestCapability",
-          EXEC_TOOL_NAME,
-        ]),
-      };
+      return withRules(
+        {
+          mode: "approve-all",
+          toolGrants: unconditionalGrants([
+            ...DEFAULT_CODING_TOOLS,
+            "Write",
+            "Edit",
+            "Delete",
+            "Git",
+            "GitCommit",
+            "RunCommand",
+            "RequestCapability",
+            EXEC_TOOL_NAME,
+          ]),
+        },
+        rules,
+      );
     case "safe":
-      return { mode: "approve-reads", toolGrants: unconditionalGrants(DEFAULT_CODING_TOOLS) };
+      return withRules({ mode: "approve-reads", toolGrants: unconditionalGrants(DEFAULT_CODING_TOOLS) }, rules);
     case "scoped":
       return resolveScopedPermissions(config, _stage);
     default:
@@ -183,27 +247,15 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
  * profile can widen, enforced in src/tools/policy.ts.
  */
 function resolveScopedPermissions(config: AgentManagerConfig | undefined, stage: PipelineStage): ResolvedPermissions {
-  const blocks = config?.execution?.permissions as
-    | Record<string, { allowedTools?: string[]; inherit?: string } | undefined>
-    | undefined;
-  if (!blocks) return { mode: "approve-reads", toolGrants: [] };
-
-  const seen = new Set<string>();
-  let key: string | undefined = stage;
-  let block = blocks[stage];
-
-  // Bounded inherit chain. validatePermissionsBlock refuses both a cycle and a
-  // dangling target at load, so neither should reach here -- this stays as the
-  // backstop for a config that never went through the loader, and because
-  // falling through to `default` is the right failure even then: fewer grants,
-  // never more, and never a throw mid-run.
-  while (block?.inherit !== undefined && key !== undefined && !seen.has(key)) {
-    seen.add(key);
-    key = block.inherit;
-    block = blocks[key];
-  }
-  block ??= blocks.default;
-  if (!block?.allowedTools) return { mode: "approve-reads", toolGrants: [] };
-
-  return { mode: "approve-reads", toolGrants: block.allowedTools.map(parseToolExpression) };
+  // No baseline: withRules concatenates the block's allow rules onto []. When
+  // the lookup finds no block (or a block with no allow list) and the block
+  // declared no deny/ask, withRules returns `{ mode: "approve-reads",
+  // toolGrants: [] }` unchanged.
+  //
+  // The bounded inherit chain lives in lookupStageBlock now. It backstops a
+  // config that never went through the loader: validatePermissionsBlock refuses
+  // both a cycle and a dangling target at load, and falling through to
+  // `default` remains the right failure even then -- fewer grants, never more,
+  // and never a throw mid-run.
+  return withRules({ mode: "approve-reads", toolGrants: [] }, stageRules(config, stage));
 }

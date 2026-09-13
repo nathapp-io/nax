@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { PipelineStage } from "@/config/permissions";
 import { DEFAULT_PERMISSION_PROFILE, resolvePermissions, SESSION_CLOSE_PERMISSION_MODE } from "@/config/permissions";
@@ -152,5 +153,101 @@ describe("resolvePermissions — dangerouslySkipPermissions absent from src/", (
     });
     const matches = result.stdout.toString().trim();
     expect(matches).toBe("");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rule lists under every profile (spec R10)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// NEVER a double cast through `unknown` — the check:test-as-unknown-as ratchet
+// fails CI on any new occurrence. Mirror test/unit/config/scoped-permissions
+// .test.ts:6-9's sanctioned idiom: makeNaxConfig(...) from @test/helpers takes
+// a DeepPartial.
+const cfg = (execution: Record<string, unknown>) => makeNaxConfig({ execution });
+
+describe("resolvePermissions — rules under every profile (spec R10)", () => {
+  test("unrestricted with no permissions block is byte-identical to today", () => {
+    const resolved = resolvePermissions(cfg({ permissionProfile: "unrestricted" }), "run");
+    expect(resolved.mode).toBe("approve-all");
+    expect(resolved.denyRules).toBeUndefined();
+    expect(resolved.askRules).toBeUndefined();
+    expect(resolved.toolGrants).toEqual(
+      resolvePermissions(cfg({ permissionProfile: "unrestricted" }), "verify").toolGrants,
+    );
+  });
+
+  test("deny and ask rules attach under unrestricted", () => {
+    const resolved = resolvePermissions(
+      cfg({
+        permissionProfile: "unrestricted",
+        permissions: { run: { deny: ["Delete"], ask: ["GitCommit"] } },
+      }),
+      "run",
+    );
+    expect(resolved.mode).toBe("approve-all");
+    expect(resolved.denyRules).toEqual([{ tool: "Delete", patterns: ["*"] }]);
+    expect(resolved.askRules).toEqual([{ tool: "GitCommit", patterns: ["*"] }]);
+  });
+
+  test("allow rules extend the unrestricted baseline (extra Exec patterns)", () => {
+    const resolved = resolvePermissions(
+      cfg({
+        permissionProfile: "unrestricted",
+        permissions: { run: { allow: ["Exec(bun x tsc*)"] } },
+      }),
+      "run",
+    );
+    expect(resolved.toolGrants).toContainEqual({ tool: "Exec", patterns: ["bun x tsc*"] });
+    // Baseline grants for OTHER tools stay. (At resolve level both Exec grants
+    // are present; at compile level last-write-wins means the allow rule
+    // replaces Exec's baseline patterns — see the Semantics block and Task 7.)
+    expect(resolved.toolGrants?.some((g) => g.tool === "Read" && g.patterns.includes("*"))).toBe(true);
+  });
+
+  test("safe profile: rules attach, baseline stays reads-only", () => {
+    const resolved = resolvePermissions(
+      cfg({ permissionProfile: "safe", permissions: { run: { deny: ["Read(.env*)"] } } }),
+      "run",
+    );
+    expect(resolved.mode).toBe("approve-reads");
+    expect(resolved.toolGrants?.map((g) => g.tool)).toEqual(["Read", "Glob", "Grep"]);
+    expect(resolved.denyRules).toEqual([{ tool: "Read", patterns: [".env*"] }]);
+  });
+
+  test("scoped: allow is an alias-compatible replacement for allowedTools", () => {
+    const viaAlias = resolvePermissions(
+      cfg({ permissionProfile: "scoped", permissions: { run: { allowedTools: ["Read", "Write(src/**)"] } } }),
+      "run",
+    );
+    const viaAllow = resolvePermissions(
+      cfg({ permissionProfile: "scoped", permissions: { run: { allow: ["Read", "Write(src/**)"] } } }),
+      "run",
+    );
+    expect(viaAllow).toEqual(viaAlias);
+  });
+
+  test("inherit carries all three lists", () => {
+    const resolved = resolvePermissions(
+      cfg({
+        permissionProfile: "scoped",
+        permissions: {
+          run: { allow: ["Read"], deny: ["Delete"], ask: ["GitCommit"] },
+          verify: { inherit: "run" },
+        },
+      }),
+      "verify",
+    );
+    expect(resolved.toolGrants).toEqual([{ tool: "Read", patterns: ["*"] }]);
+    expect(resolved.denyRules).toEqual([{ tool: "Delete", patterns: ["*"] }]);
+    expect(resolved.askRules).toEqual([{ tool: "GitCommit", patterns: ["*"] }]);
+  });
+
+  test("scoped with no block for the stage and no default: no grants, no rules", () => {
+    const resolved = resolvePermissions(
+      cfg({ permissionProfile: "scoped", permissions: { plan: { allow: ["Read"] } } }),
+      "run",
+    );
+    expect(resolved).toEqual({ mode: "approve-reads", toolGrants: [] });
   });
 });
