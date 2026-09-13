@@ -88,7 +88,15 @@ export function formatTrackedNaxArtifactsReport(violations: readonly string[]): 
 }
 
 export async function main(): Promise<void> {
-  const violations = findTrackedNaxArtifacts(process.cwd());
+  let violations: string[];
+  try {
+    violations = findTrackedNaxArtifacts(process.cwd());
+  } catch (err) {
+    // A git failure is a gate failure, not an unhandled rejection: surface it
+    // in the same [FAIL] form and exit non-zero so CI reports it as this gate.
+    console.error(`[FAIL] ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
   const report = formatTrackedNaxArtifactsReport(violations);
   if (violations.length > 0) {
     console.error(report);

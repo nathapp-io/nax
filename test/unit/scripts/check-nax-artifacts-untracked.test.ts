@@ -63,6 +63,12 @@ describe("findTrackedNaxArtifacts", () => {
     expect(findTrackedNaxArtifacts(root)).toEqual(["packages/app/.nax/features/demo/status.json"]);
   });
 
+  test("reports a tracked top-level .nax/status.json", () => {
+    const root = makeRepo({ ".nax/status.json": "{}\n" });
+
+    expect(findTrackedNaxArtifacts(root)).toEqual([".nax/status.json"]);
+  });
+
   test("reports nothing for a clean fixture", () => {
     const root = makeRepo({ "src/a.ts": "export const a = 1;\n" });
 
@@ -91,8 +97,7 @@ describe("formatTrackedNaxArtifactsReport", () => {
       ".nax/features/demo/progress.txt",
     ]);
 
-    expect(report).toContain("[FAIL]");
-    expect(report).toContain("3");
+    expect(report).toContain("[FAIL] 3 tracked file(s) match a nax gitignore entry");
     expect(report).toContain("status.json: 2");
     expect(report).toContain("progress.txt: 1");
     expect(report).toContain("git rm --cached");
