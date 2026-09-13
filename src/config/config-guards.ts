@@ -300,6 +300,34 @@ function rebuildAtPath(
 }
 
 /**
+ * @internal Validate one tool expression (`Tool` or `Tool(pattern, ...)`)
+ * against the known-tool set, naming the stage in every error. Private because
+ * only `validatePermissionsBlock` owns the decision of which lists to scan.
+ */
+function validateToolExpression(stage: string, expression: string, known: Set<string>): void {
+  const open = expression.indexOf("(");
+  const tool = (open === -1 ? expression : expression.slice(0, open)).trim();
+  if (!known.has(tool)) {
+    throw new NaxError(
+      [
+        `Invalid configuration — execution.permissions.${stage} grants unknown tool "${tool}".`,
+        `Known tools: ${[...known].join(", ")}.`,
+        "An unrecognised name would grant nothing while appearing to grant something.",
+      ].join("\n"),
+      "CONFIG_PERMISSIONS_UNKNOWN_TOOL",
+      { stage: "config", tool },
+    );
+  }
+  if (open !== -1 && !expression.trimEnd().endsWith(")")) {
+    throw new NaxError(
+      `Invalid configuration — execution.permissions.${stage} has an unclosed pattern list in "${expression}".`,
+      "CONFIG_PERMISSIONS_BAD_PATTERN",
+      { stage: "config" },
+    );
+  }
+}
+
+/**
  * @internal Validate `execution.permissions` at load time.
  *
  * Replaces rejectUnimplementedScopedProfile/rejectUnimplementedPermissionsBlock,
@@ -310,7 +338,12 @@ function rebuildAtPath(
  */
 export function validatePermissionsBlock(conf: Record<string, unknown>): void {
   const execution = conf.execution as Record<string, unknown> | undefined;
-  const blocks = execution?.permissions as Record<string, { allowedTools?: unknown; inherit?: unknown }> | undefined;
+  const blocks = execution?.permissions as
+    | Record<
+        string,
+        { allowedTools?: unknown; allow?: unknown; deny?: unknown; ask?: unknown; inherit?: unknown } | undefined
+      >
+    | undefined;
   if (!blocks) return;
 
   const known = new Set<string>(RESERVED_TOOL_NAMES);
@@ -351,29 +384,25 @@ export function validatePermissionsBlock(conf: Record<string, unknown>): void {
       seen.add(cursor);
       cursor = blocks[cursor]?.inherit;
     }
-    if (block?.allowedTools === undefined) continue;
-    if (!Array.isArray(block.allowedTools)) continue;
-    for (const expression of block.allowedTools) {
-      if (typeof expression !== "string") continue;
-      const open = expression.indexOf("(");
-      const tool = (open === -1 ? expression : expression.slice(0, open)).trim();
-      if (!known.has(tool)) {
-        throw new NaxError(
-          [
-            `Invalid configuration — execution.permissions.${stage} grants unknown tool "${tool}".`,
-            `Known tools: ${[...known].join(", ")}.`,
-            "An unrecognised name would grant nothing while appearing to grant something.",
-          ].join("\n"),
-          "CONFIG_PERMISSIONS_UNKNOWN_TOOL",
-          { stage: "config", tool },
-        );
-      }
-      if (open !== -1 && !expression.trimEnd().endsWith(")")) {
-        throw new NaxError(
-          `Invalid configuration — execution.permissions.${stage} has an unclosed pattern list in "${expression}".`,
-          "CONFIG_PERMISSIONS_BAD_PATTERN",
-          { stage: "config" },
-        );
+
+    if (block?.allowedTools !== undefined && block?.allow !== undefined) {
+      throw new NaxError(
+        [
+          `Invalid configuration — execution.permissions.${stage} carries both "allowedTools" and "allow".`,
+          `"allowedTools" is the legacy alias of "allow"; a block may use one, never both,`,
+          "because a merge would silently decide which list wins.",
+        ].join("\n"),
+        "CONFIG_PERMISSIONS_ALLOW_ALIAS_CONFLICT",
+        { stage: "config" },
+      );
+    }
+
+    for (const key of ["allowedTools", "allow", "deny", "ask"] as const) {
+      const list = block?.[key];
+      if (list === undefined || !Array.isArray(list)) continue;
+      for (const expression of list) {
+        if (typeof expression !== "string") continue;
+        validateToolExpression(stage, expression, known);
       }
     }
   }

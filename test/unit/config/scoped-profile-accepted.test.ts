@@ -117,3 +117,31 @@ describe("validatePermissionsBlock — inherit cycles", () => {
     expect(check({ a: { inherit: "b" }, b: { inherit: "c" }, c: { allowedTools: ["Read"] } })).not.toThrow();
   });
 });
+
+const conf = (block: Record<string, unknown>) => ({ execution: { permissions: { run: block } } });
+
+describe("validatePermissionsBlock — allow/deny/ask lists", () => {
+  test("accepts allow, deny and ask lists of known tools", () => {
+    expect(() =>
+      validatePermissionsBlock(conf({ allow: ["Read", "Write(src/**)"], deny: ["Delete"], ask: ["GitCommit"] })),
+    ).not.toThrow();
+  });
+
+  test("rejects a block carrying both allowedTools and allow", () => {
+    expect(() => validatePermissionsBlock(conf({ allowedTools: ["Read"], allow: ["Read"] }))).toThrow(
+      /CONFIG_PERMISSIONS_ALLOW_ALIAS_CONFLICT|both "allowedTools" and "allow"/,
+    );
+  });
+
+  test.each(["allow", "deny", "ask"] as const)("rejects an unknown tool in %s", (key) => {
+    expect(() => validatePermissionsBlock(conf({ [key]: ["Ncat(payload)"] }))).toThrow(/unknown tool "Ncat"/);
+  });
+
+  test.each(["allow", "deny", "ask"] as const)("rejects an unclosed pattern list in %s", (key) => {
+    expect(() => validatePermissionsBlock(conf({ [key]: ["Write(src/**"] }))).toThrow(/unclosed pattern list/);
+  });
+
+  test("still validates the legacy allowedTools list", () => {
+    expect(() => validatePermissionsBlock(conf({ allowedTools: ["Nope"] }))).toThrow(/unknown tool "Nope"/);
+  });
+});
