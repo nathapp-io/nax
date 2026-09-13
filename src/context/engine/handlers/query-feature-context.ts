@@ -16,7 +16,7 @@ import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import type { UserStory } from "@/prd";
 import { FeatureContextProviderV2 } from "../providers/feature-context";
 import type { PullToolBudget } from "../pull-tools";
-import { _pullToolsDeps, DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools";
+import { DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools-constants";
 import type { ContextRequest } from "../types";
 
 /**
@@ -95,6 +95,7 @@ export async function handleQueryFeatureContext(
     chunkIds: result.chunks.map((c) => c.id),
   });
 
+  const { _pullToolsDeps } = await import("../pull-tools");
   const logger = _pullToolsDeps.getLogger();
   logger.info("pull-tool", "invoked", {
     storyId: story.id,
