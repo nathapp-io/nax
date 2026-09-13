@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "servers": {
+    "codebase-memory": {
+      "check_index_coverage": "f483bdba47ec1394",
+      "delete_project": "45dbba3dc46a8289",
+      "detect_changes": "7126992d1eaf555a",
+      "get_architecture": "f0cfa49dc77560be",
+      "get_code_snippet": "a8ab4d77622a0d7e",
+      "get_graph_schema": "45dbba3dc46a8289",
+      "index_repository": "acbd0353cac261f2",
+      "index_status": "7d00631e6b2d47b0",
+      "ingest_traces": "2f5ddb99faddae6f",
+      "list_projects": "e2f8fdae271443de",
+      "manage_adr": "e6153146ee9eed9e",
+      "query_graph": "6ede5c4f555d4db7",
+      "search_code": "406fb786696b3663",
+      "search_graph": "e503dd429cd62d3e",
+      "trace_path": "7db1d3d8215bea76"
+    }
+  }
+}
