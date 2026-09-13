@@ -137,6 +137,7 @@ export function createCodingToolRuntime(opts: {
     reason?: string,
     routineErrors?: boolean,
     audit?: { executed?: readonly string[]; target?: "package" | "repoRoot" },
+    resultBytesPreTruncation?: number,
   ): void {
     // The level is the console filter: `normal` mode drops debug, and the file
     // sink writes every level regardless, so demoting keeps the record without
@@ -181,6 +182,7 @@ export function createCodingToolRuntime(opts: {
       ...(audit?.executed !== undefined ? { executed: audit.executed } : {}),
       ...(audit?.target !== undefined ? { target: audit.target } : {}),
       ...(provider !== undefined ? { provider } : {}),
+      ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
     });
   }
 
@@ -260,6 +262,7 @@ export function createCodingToolRuntime(opts: {
           kind === "error" ? result.content : undefined,
           tool.routineErrors,
           result.audit,
+          result.resultBytesPreTruncation,
         );
         return { kind, content: result.content };
       } catch (err) {

@@ -101,7 +101,7 @@ import type { Iteration, StoryFixHistory } from "../findings";
 import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
 import { getLogger } from "../logger";
-import { createMcpPool, createMcpProviders } from "../mcp";
+import { buildMcpRollup, createMcpPool, createMcpProviders, writeMcpRollup } from "../mcp";
 import type { IReviewAuditor } from "../review/review-audit";
 import { createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
 import type { RoutingDecision } from "../routing/decision";
@@ -336,10 +336,12 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     servers: config.mcp?.servers ?? {},
     pidRegistry,
   });
+  const mcpWithheld: import("../mcp").McpWithheldEntry[] = [];
   const toolProviders = createMcpProviders({
     config: config.mcp,
     pool: mcpPool,
     projectRoot: workdir,
+    onWithheld: (entry) => mcpWithheld.push(entry),
   });
 
   const watchdogControllerRegistry = new Map<string, () => Promise<void>>();
@@ -463,6 +465,9 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       agentManager.close();
       if (sessionManager instanceof SessionManager) sessionManager.close();
       await mcpPool.close();
+      await writeMcpRollup(outputDir, buildMcpRollup({ runId, events: mcpPool.events(), withheld: mcpWithheld })).catch(
+        (error: unknown) => logger.warn("runtime", "mcp rollup write failed", { error: String(error) }),
+      );
       const results = await Promise.allSettled([promptAuditor.flush(), reviewAuditor.flush(), costAggregator.drain()]);
       for (const r of results) {
         if (r.status === "rejected") {
