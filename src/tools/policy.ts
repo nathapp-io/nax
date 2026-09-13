@@ -18,6 +18,17 @@ import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
 import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
 import { pathListElements } from "./path-list";
+import {
+  type CompiledEntry,
+  type CompiledPattern,
+  compileArgvPattern,
+  compileRuleMap,
+  globToRegExp,
+  matchedArgvSource,
+  matchedGlobSource,
+  matchesAny,
+  matchesArgvGrant,
+} from "./policy-match";
 import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 
 /**
@@ -86,83 +97,9 @@ export function resolveWithin(root: string, candidate: string, execTouchedPaths?
   return null;
 }
 
-/**
- * Minimatch-style glob to RegExp: `**` spans separators, `*` does not.
- *
- * `**` followed by `/` is zero or more COMPLETE directory segments, which is
- * why it does not simply compile to `.*`. `.*` both spans separators and
- * matches the empty string, so emitting it and dropping the separator erased
- * the boundary: `src/**\/config.ts` became `^src\/.*config\.ts$`, and a grant
- * for files named `config.ts` also admitted `src/legacyconfig.ts`.
- *
- * That was never a root escape -- containment runs before any pattern matching
- * -- but it made a *scoped* grant wider than its author wrote, which is the one
- * thing a scoped profile exists to prevent.
- */
-function globToRegExp(pattern: string): RegExp {
-  let out = "";
-  for (let i = 0; i < pattern.length; i += 1) {
-    const char = pattern[i];
-    if (char === "*") {
-      if (pattern[i + 1] === "*") {
-        i += 1;
-        if (pattern[i + 1] === "/") {
-          // Optional, so `x/**/y` still matches `x/y` -- minimatch's behaviour.
-          out += "(?:.*/)?";
-          i += 1;
-        } else {
-          out += ".*";
-        }
-      } else {
-        out += "[^/]*";
-      }
-      continue;
-    }
-    if (char === "?") {
-      out += "[^/]";
-      continue;
-    }
-    out += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  }
-  return new RegExp(`^${out}$`);
-}
-
-/** A compiled glob, keeping its source so verb names can be told from paths. */
-interface CompiledPattern {
-  readonly source: string;
-  readonly re: RegExp;
-}
-
-function matchesAny(patterns: readonly CompiledPattern[], value: string): boolean {
-  return patterns.some((p) => p.re.test(value));
-}
-
-/**
- * Split a grant pattern into whitespace-separated tokens, each compiled
- * independently. Per-token compilation (rather than joining argv with
- * spaces and matching one regex against the joined string) is deliberate:
- * a joined string lets a value containing spaces or glob metacharacters
- * shift what a later token appears to match. `"bun add*"` must mean "argv[0]
- * is exactly bun, argv[1] starts with add", never "the space-joined argv
- * matches this glob".
- */
-function compileArgvPattern(pattern: string): readonly CompiledPattern[] {
-  return pattern
-    .split(/\s+/)
-    .filter((token) => token.length > 0)
-    .map((token) => ({ source: token, re: globToRegExp(token) }));
-}
-
-/** A grant pattern's tokens are a PREFIX of argv — trailing argv tokens
- * (the package name, flags, ...) are the payload a prefix grant like
- * `bun add*` does not itself constrain. */
-function matchesArgvPattern(tokens: readonly CompiledPattern[], argv: readonly string[]): boolean {
-  if (tokens.length > argv.length) return false;
-  return tokens.every((token, i) => token.re.test(argv[i] as string));
-}
-
-function matchesArgvGrant(argvPatterns: readonly (readonly CompiledPattern[])[], argv: readonly string[]): boolean {
-  return argvPatterns.some((tokens) => matchesArgvPattern(tokens, argv));
+/** Mutable scratch shared by `check()`'s branch helpers: first ask rule matched. */
+interface RuleState {
+  ask?: string;
 }
 
 /** Read a top-level or dot-addressed path-bearing input field. */
@@ -184,11 +121,25 @@ export interface ToolPolicyOptions {
    * reflected on every subsequent `check()` without recompiling the policy.
    */
   readonly execTouchedPaths?: readonly string[];
+  /**
+   * Stage deny rules (spec R6). Same {tool, patterns} shape as grants; matched
+   * per branch and evaluated BEFORE ask and allow. A tool's unconditional
+   * deny rule also de-advertises it (see `grantedTools`).
+   */
+  readonly denyRules?: readonly ToolGrant[];
+  /**
+   * Stage ask rules (spec R1/R6). An ask match does not grant or refuse on its
+   * own: it marks a call the stage already granted as needing approval. An ask
+   * on an ungranted call is a plain denial.
+   */
+  readonly askRules?: readonly ToolGrant[];
 }
 
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string, options?: ToolPolicyOptions): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
   const execTouchedPaths = options?.execTouchedPaths;
+  const denyBy = compileRuleMap(options?.denyRules);
+  const askBy = compileRuleMap(options?.askRules);
   const compiled = new Map<
     string,
     {
@@ -225,7 +176,27 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
   }
 
   function deny(reason: string, breach = false): PolicyVerdict {
-    return { allowed: false, reason, breach };
+    return { allowed: false, reason, breach, outcome: "denied" };
+  }
+
+  /**
+   * `allowed: false` on purpose: any consumer that only reads `allowed` fails
+   * closed. `outcome: "ask"` is the sole signal that an AskResolver may approve
+   * this call, and `resolvedPaths` is what an approval would admit.
+   */
+  function askVerdict(resolvedPaths: readonly string[], rule: string): PolicyVerdict {
+    return {
+      allowed: false,
+      reason: `matched ask rule "${rule}" — requires approval before it may run`,
+      breach: false,
+      outcome: "ask",
+      resolvedPaths,
+    };
+  }
+
+  /** `Tool` for an unconditional entry, else `Tool(pattern, ...)`. */
+  function ruleExpr(tool: string, entry: CompiledEntry): string {
+    return entry.unconditional ? tool : `${tool}(${entry.raw.join(", ")})`;
   }
 
   /**
@@ -282,158 +253,254 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     return "resolves outside the permitted root";
   }
 
+  /**
+   * Deny (spec R6) outranks ask, and both are evaluated per resolved path.
+   * Returns a denial verdict when a deny glob matches; otherwise records the
+   * matching ask source on `state` and returns undefined. Ask never grants on
+   * its own: the caller's allow checks still run, so an ungranted path stays
+   * denied and an ask on an ungranted call never becomes an approval prompt.
+   */
+  function applyPathRules(tool: string, rel: string, state: RuleState): PolicyVerdict | undefined {
+    const denyEntry = denyBy.get(tool);
+    const askEntry = askBy.get(tool);
+    if (denyEntry !== undefined && (denyEntry.unconditional || matchesAny(denyEntry.matchers, rel))) {
+      return deny(`${tool} path "${rel}" is denied for this stage`);
+    }
+    if (askEntry !== undefined && (askEntry.unconditional || matchesAny(askEntry.matchers, rel))) {
+      state.ask = askEntry.unconditional ? tool : (matchedGlobSource(askEntry.matchers, rel) ?? tool);
+    }
+    return undefined;
+  }
+
+  /**
+   * RunCommand's `Exec` branch, checked entirely here and never falling through
+   * to verbField/pathFields: there is no "command" field on this shape for
+   * verbField to read. `validateArgv` runs FIRST -- before this grant's patterns
+   * are even consulted -- so a malformed token can never be admitted by a `*`
+   * grant that would otherwise wave anything through unchecked. Returns
+   * undefined when this is not an argv call, so the caller tries the next branch.
+   */
+  function argvBranch(
+    tool: string,
+    scope: ToolScope,
+    input: Record<string, unknown>,
+    grant: CompiledEntry,
+  ): PolicyVerdict | undefined {
+    if (scope.argvField === undefined) return undefined;
+    const rawArgv = input[scope.argvField];
+    if (rawArgv === undefined) return undefined;
+    const invalid = validateArgv(rawArgv);
+    if (invalid !== undefined) return deny(invalid);
+    const argv = rawArgv as readonly string[];
+
+    const denyEntry = denyBy.get(tool);
+    if (denyEntry !== undefined && (denyEntry.unconditional || matchesArgvGrant(denyEntry.argvPatterns, argv))) {
+      return deny(`${tool} is denied for argv "${argv.join(" ")}" for this stage`);
+    }
+    if (!grant.unconditional && !matchesArgvGrant(grant.argvPatterns, argv)) {
+      // Name the granted forms, not just the refusal. A bare "no" is what
+      // produced the defect this branch exists to fix: denied with no legal
+      // alternative named, the model deleted the requirement instead of
+      // installing it. An unconditional grant never enters this branch (see
+      // the guard above), so `raw` cannot contain the bare "*" element --
+      // entries *containing* "*" (`bun add*`) are exactly what we want to name.
+      const granted = grant.raw.join(", ");
+      const alternatives = granted === "" ? "no argv forms are granted for this stage" : `granted forms: ${granted}`;
+      return deny(`${tool} is not granted for argv "${argv.join(" ")}" -- ${alternatives}`);
+    }
+    const askEntry = askBy.get(tool);
+    if (askEntry !== undefined && (askEntry.unconditional || matchesArgvGrant(askEntry.argvPatterns, argv))) {
+      const rule = askEntry.unconditional ? tool : (matchedArgvSource(askEntry, argv) ?? tool);
+      return askVerdict([], rule);
+    }
+    return { allowed: true, resolvedPaths: [] };
+  }
+
+  /**
+   * Verb gating: the tool's own allowedVerbs bound what config can grant, so a
+   * "*" grant can never reach a mutating subcommand. A deny/ask rule names a
+   * verb directly here -- unlike the allow path (`pathMatchers`), these are not
+   * filtered through `allowedVerbs`, so a deny for a verb the tool does not even
+   * allow still reads as the rule's denial, not a generic "not a permitted
+   * subcommand". Returns undefined once the gate passes (or is absent), so the
+   * caller can check paths next.
+   */
+  function verbBranch(
+    tool: string,
+    scope: ToolScope,
+    input: Record<string, unknown>,
+    grant: CompiledEntry,
+    state: RuleState,
+  ): PolicyVerdict | undefined {
+    if (scope.verbField === undefined) return undefined;
+    const verb = input[scope.verbField];
+    if (typeof verb !== "string") return deny(`"${scope.verbField}" must be a string`);
+
+    const denyEntry = denyBy.get(tool);
+    if (denyEntry !== undefined && (denyEntry.unconditional || denyEntry.raw.includes(verb))) {
+      return deny(`${tool} is denied the "${verb}" subcommand for this stage`);
+    }
+
+    // Name what the stage can actually use, not merely what the tool allows
+    // (nax#1971). `allowedVerbs` alone would advertise a verb a narrower grant
+    // refuses one line below -- sending the model straight back into a denial,
+    // which is the defect #1937 exists to fix.
+    const usableVerbs =
+      scope.allowedVerbs === undefined
+        ? []
+        : grant.unconditional
+          ? [...scope.allowedVerbs]
+          : scope.allowedVerbs.filter((v) => grant.raw.includes(v));
+    const permitted =
+      usableVerbs.length === 0 ? "no subcommands are permitted for this stage" : `permitted: ${usableVerbs.join(", ")}`;
+
+    if (scope.allowedVerbs !== undefined && !scope.allowedVerbs.includes(verb)) {
+      return deny(`"${verb}" is not a permitted ${tool} subcommand -- ${permitted}`);
+    }
+    if (!grant.unconditional && !grant.raw.includes(verb)) {
+      return deny(`${tool} is not granted the "${verb}" subcommand for this stage -- ${permitted}`);
+    }
+
+    const askEntry = askBy.get(tool);
+    if (askEntry !== undefined && (askEntry.unconditional || askEntry.raw.includes(verb))) {
+      state.ask = askEntry.unconditional ? tool : verb;
+    }
+    return undefined;
+  }
+
+  /**
+   * Containment runs before any pattern matching and wins over everything.
+   * Each resolved path is then evaluated deny -> ask -> allow. A verb-only
+   * grant declares no path globs, leaving the root as the only bound --
+   * unchanged behaviour, now an authoring choice rather than something the
+   * grant syntax could not express.
+   */
+  function pathsBranch(
+    tool: string,
+    scope: ToolScope,
+    input: Record<string, unknown>,
+    grant: CompiledEntry,
+    state: RuleState,
+  ): PolicyVerdict {
+    const globs = pathMatchers(grant.matchers, scope);
+    const relativeTo = (resolved: string) => relative(resolvedRoot, resolved).split(sep).join("/");
+    const restrictPaths = !grant.unconditional && globs.length > 0;
+    const resolvedPaths: string[] = [];
+
+    for (const field of scope.pathFields) {
+      const value = pathFieldValue(input, field);
+      if (value === undefined) continue;
+      if (typeof value !== "string") return deny(`"${field}" must be a string path`);
+
+      const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
+      if (resolved === null) {
+        return deny(`path "${value}" ${outOfRootReason(tool, resolvedRoot, value)}`, true);
+      }
+
+      const rel = relativeTo(resolved);
+      const ruleDenial = applyPathRules(tool, rel, state);
+      if (ruleDenial !== undefined) return ruleDenial;
+      if (!grant.unconditional && !matchesAny(globs, rel)) {
+        return deny(`${tool} is not granted "${rel}" for this stage`);
+      }
+      resolvedPaths.push(resolved);
+    }
+
+    for (const field of scope.listPathFields ?? []) {
+      const value = pathFieldValue(input, field);
+      if (value === undefined) continue;
+      if (typeof value !== "string") return deny(`"${field}" must be a string path`);
+
+      for (const element of pathListElements(value, resolvedRoot)) {
+        const resolved = resolveWithin(resolvedRoot, element, execTouchedPaths);
+        if (resolved === null) {
+          return deny(`path "${element}" ${outOfRootReason(tool, resolvedRoot, element)}`, true);
+        }
+        const rel = relativeTo(resolved);
+        const ruleDenial = applyPathRules(tool, rel, state);
+        if (ruleDenial !== undefined) return ruleDenial;
+        if (!grant.unconditional && !matchesAny(globs, rel)) {
+          return deny(`${tool} is not granted "${rel}" for this stage`);
+        }
+        resolvedPaths.push(resolved);
+      }
+    }
+
+    for (const field of scope.arrayPathFields ?? []) {
+      const values = input[field];
+      if (values === undefined) continue;
+      if (!Array.isArray(values)) return deny(`"${field}" must be an array of string paths`);
+
+      for (const value of values) {
+        if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
+        const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
+        if (resolved === null) {
+          return deny(`"${field}" entry "${value}" ${outOfRootReason(tool, resolvedRoot, value)}`, true);
+        }
+        const rel = relativeTo(resolved);
+        const ruleDenial = applyPathRules(tool, rel, state);
+        if (ruleDenial !== undefined) return ruleDenial;
+        if (restrictPaths && !matchesAny(globs, rel)) {
+          return deny(`${tool} is not granted "${rel}" for this stage`);
+        }
+        resolvedPaths.push(resolved);
+      }
+    }
+
+    for (const field of scope.refPathFields ?? []) {
+      const values = input[field];
+      if (values === undefined) continue;
+      if (!Array.isArray(values)) return deny(`"${field}" must be an array of string refs`);
+
+      for (const value of values) {
+        if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
+        const colonAt = value.indexOf(":");
+        if (colonAt === -1) continue; // pure revision, no path to check
+        const candidatePath = value.slice(colonAt + 1);
+        if (candidatePath === "") continue; // e.g. "HEAD:" — no path to check
+
+        const resolved = resolveWithin(resolvedRoot, candidatePath, execTouchedPaths);
+        if (resolved === null) {
+          return deny(`"${field}" entry "${value}" ${outOfRootReason(tool, resolvedRoot, candidatePath)}`, true);
+        }
+        const rel = relativeTo(resolved);
+        const ruleDenial = applyPathRules(tool, rel, state);
+        if (ruleDenial !== undefined) return ruleDenial;
+        if (restrictPaths && !matchesAny(globs, rel)) {
+          return deny(`${tool} is not granted "${rel}" for this stage`);
+        }
+        resolvedPaths.push(resolved);
+      }
+    }
+
+    return state.ask === undefined ? { allowed: true, resolvedPaths } : askVerdict(resolvedPaths, state.ask);
+  }
+
   return {
     root: resolvedRoot,
 
     grantedTools() {
-      return [...compiled.keys()];
+      // A tool with an UNCONDITIONAL deny never reaches a caller; a scoped
+      // (pattern) deny leaves it advertised, because some calls still pass.
+      return [...compiled.keys()].filter((t) => denyBy.get(t)?.unconditional !== true);
     },
 
     check(tool, scope, input) {
       const grant = compiled.get(tool);
       if (grant === undefined) return deny(`tool "${tool}" is not permitted for this stage`);
 
-      // An argv-bearing call (RunCommand's `Exec` branch) is checked entirely
-      // here, never falling through to the verbField/pathFields logic below:
-      // there is no "command" field on this shape for verbField to read.
-      // `validateArgv` runs FIRST — before this grant's patterns are even
-      // consulted — so a malformed token can never be admitted by a `*`
-      // grant that would otherwise wave anything through unchecked.
-      if (scope.argvField !== undefined) {
-        const rawArgv = input[scope.argvField];
-        if (rawArgv !== undefined) {
-          const invalid = validateArgv(rawArgv);
-          if (invalid !== undefined) return deny(invalid);
-          const argv = rawArgv as readonly string[];
-          if (!grant.unconditional && !matchesArgvGrant(grant.argvPatterns, argv)) {
-            // Name the granted forms, not just the refusal. A bare "no" is what
-            // produced the defect this branch exists to fix: denied with no
-            // legal alternative named, the model deleted the requirement
-            // instead of installing it. An unconditional grant never enters
-            // this branch (see the guard above), so `raw` cannot contain the
-            // bare "*" element -- entries *containing* "*" (`bun add*`) are
-            // exactly what we want to name.
-            const granted = grant.raw.join(", ");
-            const alternatives =
-              granted === "" ? "no argv forms are granted for this stage" : `granted forms: ${granted}`;
-            return deny(`${tool} is not granted for argv "${argv.join(" ")}" -- ${alternatives}`);
-          }
-          return { allowed: true, resolvedPaths: [] };
-        }
+      // Unconditional deny is final and outranks every other gate.
+      const denyEntry = denyBy.get(tool);
+      if (denyEntry?.unconditional === true) {
+        return deny(`tool "${tool}" is denied for this stage by rule ${ruleExpr(tool, denyEntry)}`);
       }
 
-      // Verb gating: the tool's own allowedVerbs bound what config can grant,
-      // so a "*" grant can never reach a mutating subcommand.
-      if (scope.verbField !== undefined) {
-        const verb = input[scope.verbField];
-        if (typeof verb !== "string") return deny(`"${scope.verbField}" must be a string`);
-
-        // Name what the stage can actually use, not merely what the tool
-        // allows (nax#1971). `allowedVerbs` alone would advertise a verb a
-        // narrower grant refuses one line below -- sending the model straight
-        // back into a denial, which is the defect #1937 exists to fix.
-        const usableVerbs =
-          scope.allowedVerbs === undefined
-            ? []
-            : grant.unconditional
-              ? [...scope.allowedVerbs]
-              : scope.allowedVerbs.filter((v) => grant.raw.includes(v));
-        const permitted =
-          usableVerbs.length === 0
-            ? "no subcommands are permitted for this stage"
-            : `permitted: ${usableVerbs.join(", ")}`;
-
-        if (scope.allowedVerbs !== undefined && !scope.allowedVerbs.includes(verb)) {
-          return deny(`"${verb}" is not a permitted ${tool} subcommand -- ${permitted}`);
-        }
-        if (!grant.unconditional && !grant.raw.includes(verb)) {
-          return deny(`${tool} is not granted the "${verb}" subcommand for this stage -- ${permitted}`);
-        }
-      }
-
-      const globs = pathMatchers(grant.matchers, scope);
-      const relativeTo = (resolved: string) => relative(resolvedRoot, resolved).split(sep).join("/");
-      // A verb-only grant declares no path globs. That leaves the root as the
-      // only bound -- unchanged behaviour, but now an authoring choice rather
-      // than something the grant syntax could not express.
-      const restrictPaths = !grant.unconditional && globs.length > 0;
-
-      const resolvedPaths: string[] = [];
-      for (const field of scope.pathFields) {
-        const value = pathFieldValue(input, field);
-        if (value === undefined) continue;
-        if (typeof value !== "string") return deny(`"${field}" must be a string path`);
-
-        const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
-        if (resolved === null) {
-          return deny(`path "${value}" ${outOfRootReason(tool, resolvedRoot, value)}`, true);
-        }
-
-        if (!grant.unconditional && !matchesAny(globs, relativeTo(resolved))) {
-          return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
-        }
-        resolvedPaths.push(resolved);
-      }
-
-      for (const field of scope.listPathFields ?? []) {
-        const value = pathFieldValue(input, field);
-        if (value === undefined) continue;
-        if (typeof value !== "string") return deny(`"${field}" must be a string path`);
-
-        for (const element of pathListElements(value, resolvedRoot)) {
-          const resolved = resolveWithin(resolvedRoot, element, execTouchedPaths);
-          if (resolved === null) {
-            return deny(`path "${element}" ${outOfRootReason(tool, resolvedRoot, element)}`, true);
-          }
-          if (!grant.unconditional && !matchesAny(globs, relativeTo(resolved))) {
-            return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
-          }
-          resolvedPaths.push(resolved);
-        }
-      }
-
-      for (const field of scope.arrayPathFields ?? []) {
-        const values = input[field];
-        if (values === undefined) continue;
-        if (!Array.isArray(values)) return deny(`"${field}" must be an array of string paths`);
-
-        for (const value of values) {
-          if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
-          const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
-          if (resolved === null) {
-            return deny(`"${field}" entry "${value}" ${outOfRootReason(tool, resolvedRoot, value)}`, true);
-          }
-          if (restrictPaths && !matchesAny(globs, relativeTo(resolved))) {
-            return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
-          }
-          resolvedPaths.push(resolved);
-        }
-      }
-
-      for (const field of scope.refPathFields ?? []) {
-        const values = input[field];
-        if (values === undefined) continue;
-        if (!Array.isArray(values)) return deny(`"${field}" must be an array of string refs`);
-
-        for (const value of values) {
-          if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
-          const colonAt = value.indexOf(":");
-          if (colonAt === -1) continue; // pure revision, no path to check
-          const candidatePath = value.slice(colonAt + 1);
-          if (candidatePath === "") continue; // e.g. "HEAD:" — no path to check
-
-          const resolved = resolveWithin(resolvedRoot, candidatePath, execTouchedPaths);
-          if (resolved === null) {
-            return deny(`"${field}" entry "${value}" ${outOfRootReason(tool, resolvedRoot, candidatePath)}`, true);
-          }
-          if (restrictPaths && !matchesAny(globs, relativeTo(resolved))) {
-            return deny(`${tool} is not granted "${relativeTo(resolved)}" for this stage`);
-          }
-          resolvedPaths.push(resolved);
-        }
-      }
-
-      return { allowed: true, resolvedPaths };
+      const state: RuleState = {};
+      return (
+        argvBranch(tool, scope, input, grant) ??
+        verbBranch(tool, scope, input, grant, state) ??
+        pathsBranch(tool, scope, input, grant, state)
+      );
     },
   };
 }
