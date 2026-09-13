@@ -9,6 +9,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
+import { parseToolExpression } from "@/permissions";
 import type { CodingToolName, ToolGrant } from "@/tools";
 import { EXEC_TOOL_NAME } from "@/tools";
 import type { AgentManagerConfig } from "./selectors";
@@ -132,25 +133,6 @@ function unconditionalGrants(tools: readonly string[]): ToolGrant[] {
   return tools.map((tool) =>
     tool === EXEC_TOOL_NAME ? { tool, patterns: BUILT_IN_EXEC_PATTERNS } : { tool, patterns: ["*"] },
   );
-}
-
-/**
- * Parse one #374 tool expression.
- *
- * `Read`                  -> unconditional
- * `Write(src/**,test/**)` -> those two globs
- * `Git(diff,log)`         -> those two subcommands
- */
-function parseToolExpression(expression: string): ToolGrant {
-  const open = expression.indexOf("(");
-  if (open === -1) return { tool: expression.trim(), patterns: ["*"] };
-  const tool = expression.slice(0, open).trim();
-  const inner = expression.slice(open + 1, expression.lastIndexOf(")"));
-  const patterns = inner
-    .split(",")
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-  return { tool, patterns: patterns.length > 0 ? patterns : ["*"] };
 }
 
 /**
