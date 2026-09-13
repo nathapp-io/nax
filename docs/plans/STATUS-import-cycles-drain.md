@@ -12,31 +12,40 @@ analysis. You *do* need to re-measure after every task.
 
 ---
 
-## 0. Current state - measured 2026-09-13 after Wave 1 (Tasks 1-3)
+## 0. Current state - measured 2026-09-13 after Wave 2 (Tasks 4-5)
 
 ```
 bun run scripts/check-import-cycles.ts
-[OK] 128 modules in runtime import cycles (baseline: 128).
+[OK] 62 modules in runtime import cycles (baseline: 62).
 ```
 
 | Reading | Value |
 |:--|--:|
-| Baseline file `count` | **128** |
-| Actual cyclic modules in `src/` | **128** |
-| Strongly-connected components (SCCs) that are cyclic | **3** |
-| Largest SCC | **92 modules** |
+| Baseline file `count` | **62** |
+| Actual cyclic modules in `src/` | **62** |
+| Strongly-connected components (SCCs) that are cyclic | **5** |
+| Largest SCC | **20 modules** |
 
-The three components:
+The five components:
 
 | # | Size | Territory |
 |--:|--:|:--|
-| 1 | **92** | `operations/` + `findings/` + `review/` + `context/engine/` + `agents/` + `debate/selectors/` + `debate/session-helpers.ts` + `prompts/` + `routing/` + `metrics/` + `context/index.ts` |
-| 2 | **31** | `execution/` + `pipeline/` |
-| 3 | **5** | `cli/{index,plan,plan-command}` + `plan/strategies/` |
+| 1 | **20** | `execution/` + `pipeline/` — exactly the section 5 residue, already separated |
+| 2 | **15** | `context/engine/` (14) + `context/index.ts` |
+| 3 | **12** | `agents/` (`acp/` 7 + registry/manager/complete-exception-classifier + `index.ts`) |
+| 4 | **10** | `debate/selectors/` (4) + `debate/session-helpers.ts` + `operations/debate-hybrid.ts` + `routing/` (3) + `operations/classify-route.ts` + `operations/index.ts` |
+| 5 | **5** | `cli/{index,plan,plan-command}` + `plan/strategies/` |
 
-Components #4 (`test-runners`) and #5 (`cli/{rules,rules-migrate}`) from the original
-measurement are gone. The plan's simulated **127** after Wave 1 did not materialise:
-**128**. See section 8.4 for why (Task 2's edge measured 0 freed).
+The 92-module mega-component split exactly as Task 4 predicted: **92 -> 55 freed + 37
+leftover**, and the leftover is precisely the 15 + 12 + 10 modules above. The section 5
+residue (20) is already its own SCC; Waves 3-4 now shrink the rest (37 -> 20 expected).
+
+Section 6.1's caution applies loudly now: the per-task expected counts in section 3 were
+simulated against the pre-drain graph, and Wave 2 changed the graph enough that some later
+edges now free different amounts (e.g. `context/index.ts -> context/engine/index.ts`
+ranks at frees=12 instead of the simulated 9, and `routing/router.ts -> @/operations`
+ranks at frees=3 instead of 4). The tasks and techniques are unchanged; re-measure after
+every cut and trust the tool.
 
 **Simulated end state of this plan: 132 -> 20.** The 17 edge cuts across the 12 tasks in
 section 3 were chosen by greedy search over every internal edge of every component (remove
@@ -1289,3 +1298,53 @@ Commits: `ff994cb74` (Task 1), `f56a625f1` (Task 2), `3ee38f3ba` (Task 3).
 **128 -> 62** (Task 4's 55 and Task 5's 11 are unaffected by the shift — re-confirmed
 against the current graph with the section 2.2 ranker, which still reads frees=55 and
 frees=11; 128 - 66 = 62, not the plan's 61).
+
+### 8.5 - 2026-09-13 - Wave 2 complete (Tasks 4-5): 128 -> 62
+
+Measured, not predicted. Both edges landed exactly as the 8.4 adjustment said they would.
+
+- **Task 4 (defer `@/operations` in findings/cycle, frees 55): 128 -> 73, exactly.**
+  The entire cut was scripted: delete the static import, make `_cycleDeps.callOp`
+  optional, `await import("@/operations")` at the top of `runFixCycle`, use the local
+  `newCallId` at the dispatch site. `grep -rn "_cycleDeps"` pre-check confirmed no test or
+  other `src/` file reads the field. All 227 `test/unit/findings/` tests pass; `check:all`
+  green. The 92-module component split into the 20-module residue (section 5), a 15, a
+  12, and a 10 — no surprise stragglers.
+- **Task 5 (promote `pipeline/event-bus` to a nested barrel, frees 11): 73 -> 62,
+  exactly.** Three plan deviations, none structural:
+  - The four relative specifiers inside the moved file (`../config`, `../logger`,
+    `../plugins/extensions`, an inline `import("../metrics/types").RunFallbackAggregate`)
+    would have become `../../*` and ran into biome's ban. They were respelled as `@/`
+    specifiers per plan step 3 — except `@/metrics/types` is *not* legal (alias-into-
+    internal, even type-only): the gate's own docs exempt `import type` statements but
+    not inline `import(...)` types, and the gate flagged it. Since the metrics barrel
+    re-exports `RunFallbackAggregate` (`src/metrics/index.ts:29`), the inline type was
+    hoisted to a top-level `import type { RunFallbackAggregate } from "@/metrics"`.
+  - `run-phase.ts` needs the barrel edge cut to actually land: my first pass moved the
+    file and fixed its internals, and the count correctly *stayed* at 73 until I also
+    changed `run-phase.ts:8` from `@/pipeline` to `@/pipeline/event-bus` (plan step 5) —
+    immediate drop to 62. Order matters: the move alone frees nothing.
+  - Two tests pin the module's old path as text (`test/unit/execution/parallel-cleanup.
+    test.ts` BUG-071 `StoryCompletedEvent` block, `test/unit/cleanup/decompose-removal.
+    test.ts` AC5): `readSrc("pipeline/event-bus.ts")` was failing to read the moved
+    file. Both updated to `pipeline/event-bus/index.ts`, test names adjusted.
+
+Full gates after Wave 2: cycles 62/baseline 62, tsc clean, alias-internals clean (92
+barrels), file-sizes clean, `test/unit/pipeline/` + `test/unit/execution/` 2538 pass,
+`test:coverage` OK.
+
+Commits: `560fed8d3` (Task 4), `26827e735` (Task 5).
+
+**Expected-count adjustment going forward:** the graph has changed enough that some
+Wave 3-4 edges have different freed-counts now (measured, section 2.2 ranker at 8.5):
+- Task 6's four back-edges: `feature-context.ts -> @/context` now frees **4** alone
+  (simulated 8 for the fourth edge); expect the component to split over three cuts, with
+  the last one landing the big drop. Do **not** take the `context/index.ts ->
+  context/engine/index.ts` cut (ranks at frees=12) — still a public re-export, section
+  1.4.
+- Task 10 (`routing/router.ts -> @/operations`) now frees **3** (simulated 4).
+- Tasks 7, 8, 11 unchanged (frees 7, 6, 5).
+- Wave 3-4 land **20** either way: the residue is already separated, so the 37 leftover
+  modules are the whole remaining story. 15 (Task 6) + 12 and 10 partly (Tasks 7-10) +
+  5 (Task 11) + Task 12's 3 -> exactly 20 at the end, per the plan's simulation of the
+  final residue.
