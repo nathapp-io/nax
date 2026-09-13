@@ -34,6 +34,14 @@ export interface ToolResult {
     readonly executed: readonly string[];
     readonly target?: "repoRoot" | "package";
   };
+  /**
+   * Result size in bytes BEFORE the tool truncated to `ctx.maxBytes`. Set by
+   * tools whose payload is unbounded by nature — an MCP graph query can return
+   * megabytes. `resultBytes` on the ledger is measured after the slice, so
+   * without this a 2 MB result and a 40 KB one are indistinguishable and "how
+   * much did we discard" is unanswerable.
+   */
+  readonly resultBytesPreTruncation?: number;
 }
 
 export interface ToolRunContext {
