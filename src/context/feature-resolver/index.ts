@@ -7,10 +7,10 @@
  */
 import { join } from "node:path";
 import { Glob } from "bun";
-import { featureDir, PROJECT_FEATURES_DIR } from "../config";
-import { getLogger } from "../logger";
-import type { UserStory } from "../prd";
-import { errorMessage } from "../utils/errors";
+import { featureDir, PROJECT_FEATURES_DIR } from "@/config";
+import { getLogger } from "@/logger";
+import type { UserStory } from "@/prd";
+import { errorMessage } from "@/utils/errors";
 
 /**
  * Per-workdir index: Map<workdir, Map<storyId, featureId | null>>

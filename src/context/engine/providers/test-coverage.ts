@@ -10,8 +10,8 @@
 import { createHash } from "node:crypto";
 import { relative } from "node:path";
 import type { NaxConfig } from "@/config/types";
-import { generateTestCoverageSummary } from "@/context";
 import type { TestScanOptions, TestScanResult } from "@/context/test-scanner";
+import { generateTestCoverageSummary } from "@/context/test-scanner";
 import { getLogger } from "@/logger";
 import { getContextFiles } from "@/prd";
 import type { UserStory } from "@/prd/types";

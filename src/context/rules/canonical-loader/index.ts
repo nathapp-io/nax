@@ -24,20 +24,20 @@ import { basename, join } from "node:path";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 
-export type { CanonicalRule, ParsedFrontmatter } from "./rules-frontmatter";
+export type { CanonicalRule, ParsedFrontmatter } from "../rules-frontmatter";
 export {
   FRONTMATTER_PRIORITY_DEFAULT,
   KNOWN_FRONTMATTER_KEYS,
   parseFrontmatter,
   RulesFrontmatterError,
-} from "./rules-frontmatter";
+} from "../rules-frontmatter";
 
 import {
   type CanonicalRule,
   FRONTMATTER_PRIORITY_DEFAULT,
   parseFrontmatter,
   RulesFrontmatterError,
-} from "./rules-frontmatter";
+} from "../rules-frontmatter";
 
 // storyId omission note: canonical-rules loading is a project-level operation
 // that runs outside any story context (project-conventions.md §Logging scopes

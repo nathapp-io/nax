@@ -9,10 +9,10 @@
 import { stat as _nodeStat } from "node:fs/promises";
 import path from "node:path";
 import { Glob } from "bun";
-import { getLogger } from "../logger";
-import { estimateTokens } from "../optimizer/types";
-import { DEFAULT_SCAN_TEST_DIRS, DEFAULT_TS_DERIVE_SUFFIXES, extractTestDirs } from "../test-runners/conventions";
-import { errorMessage } from "../utils/errors";
+import { getLogger } from "@/logger";
+import { estimateTokens } from "@/optimizer";
+import { DEFAULT_SCAN_TEST_DIRS, DEFAULT_TS_DERIVE_SUFFIXES, extractTestDirs } from "@/test-runners";
+import { errorMessage } from "@/utils/errors";
 
 // ============================================================================
 // Injectable deps
