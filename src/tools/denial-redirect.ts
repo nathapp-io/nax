@@ -29,6 +29,40 @@ const GIT_READ_VERBS = new Set(["diff", "log", "show", "status", "blame"]);
  */
 const GIT_COMMIT_VERBS = new Set(["add", "commit"]);
 
+/**
+ * Git verbs that revert tracked paths. Checked separately from the intent
+ * table: when the paths are nax's own `.nax/` run state, no tool serves the
+ * intent, so the refusal teaches instead of naming one (nax#2007).
+ */
+const GIT_REVERT_VERBS = new Set(["checkout", "restore"]);
+
+const NAX_OWNED_RUN_STATE_EXPLANATION =
+  "`.nax/` is nax's own run state, written by the harness during this run. It is not part of your diff and must not be reverted.";
+
+/**
+ * The sentence explaining a revert of nax's own run state, or undefined.
+ *
+ * Deliberately NOT an `Intent`: `render()` wraps every hit as "this session
+ * already has `X`", which is false here -- no tool reverts `.nax/`, and the
+ * module's header forbids naming one it does not hold. So this predicate is
+ * checked BEFORE `intentFor` in both entry points and returns its own sentence.
+ *
+ * Verb scope is `checkout` and `restore` only; `git stash` is the agent's own
+ * WIP, not nax's state, and has no operands to gate on. The gate is a `.nax`
+ * path SEGMENT (split on `/`), never a substring, so `src/nax-helpers.ts` and
+ * `docs/.naxignore` stay unanswered. `--` is a separator, not an operand.
+ */
+function naxOwnedRunStateExplanation(tokens: readonly string[]): string | undefined {
+  const hasGitPrefix = tokens[0] === "git";
+  const verb = hasGitPrefix ? tokens[1] : tokens[0];
+  if (verb === undefined || !GIT_REVERT_VERBS.has(verb)) return undefined;
+  for (const operand of tokens.slice(hasGitPrefix ? 2 : 1)) {
+    if (operand === "--") continue;
+    if (operand.split("/").includes(".nax")) return NAX_OWNED_RUN_STATE_EXPLANATION;
+  }
+  return undefined;
+}
+
 interface Intent {
   readonly tool: string;
   readonly how: string;
@@ -177,6 +211,8 @@ export function redirectForArgv(
   available: ReadonlySet<string>,
   declaredCommands: ReadonlySet<string>,
 ): string | undefined {
+  const ownedRunState = naxOwnedRunStateExplanation(argv);
+  if (ownedRunState !== undefined) return ownedRunState;
   const hit = intentFor(argv);
   if (hit === undefined) return taskRunnerFallback(argv, available, declaredCommands);
   return render(hit, available, declaredCommands);
@@ -202,6 +238,9 @@ export function redirectForVerb(
     .split(/\s+/)
     .filter((token) => token.length > 0);
   if (tokens.length === 0) return undefined;
+
+  const ownedRunState = naxOwnedRunStateExplanation(tokens);
+  if (ownedRunState !== undefined) return ownedRunState;
 
   const hit = intentFor(tokens);
   if (hit === undefined) return taskRunnerFallback(tokens, available, declaredCommands);
