@@ -165,5 +165,14 @@
         "budgetTokens": 20000
       }
     }
+  },
+  "mcp": {
+    "servers": {
+      "codebase-memory": {
+        "command": "codebase-memory-mcp",
+        "stages": ["run"],
+        "allowedTools": ["search_graph", "trace_path", "get_code_snippet"]
+      }
+    }
   }
 }

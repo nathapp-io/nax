@@ -486,7 +486,6 @@ export interface TestingConfig {
    */
   mockGuidance?: string;
 }
-
 // Re-exported from debate/types.ts to maintain single source of truth
 export type {
   DebateConfig,
@@ -498,8 +497,8 @@ export type {
   SessionMode,
 } from "../debate/types";
 export type { FinishConfig, FinishTimeoutsConfig } from "./runtime-types-finish";
+export type { McpConfig, McpServerConfig, McpStage } from "./runtime-types-mcp";
 export type { ProjectProfile } from "./runtime-types-project";
-
 /** Full nax configuration */
 export interface NaxConfig {
   /** Project name — used as the default projectKey for output directory. Lowercase alphanumeric, hyphens, underscores. */
@@ -543,6 +542,8 @@ export interface NaxConfig {
   reporters?: import("./schemas-reporters").ReportersConfig;
   /** nax-finish autonomous finish flow settings */
   finish?: import("./runtime-types-finish").FinishConfig;
+  /** External MCP servers the native agent may call tools on (client only) */
+  mcp?: import("./runtime-types-mcp").McpConfig;
   /** Hooks configuration (v0.10) */
   hooks?: RawHooksConfig;
   /** Interaction settings (v0.15.0) */

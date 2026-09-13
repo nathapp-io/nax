@@ -24,6 +24,7 @@ export {
   AcceptanceConfigSchema,
   ContextConfigSchema,
   ContextV2ConfigSchema,
+  McpConfigSchema,
   NaxConfigSchema,
   PlanConfigSchema,
 } from "./schemas";
@@ -51,6 +52,9 @@ export type {
   InteractionConfig,
   LlmRoutingConfig,
   LlmRoutingMode,
+  McpConfig,
+  McpServerConfig,
+  McpStage,
   ModelDef,
   ModelEntry,
   ModelMap,

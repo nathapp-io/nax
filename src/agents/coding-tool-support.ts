@@ -12,6 +12,7 @@
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import {
+  advertisedSchemaBytes,
   type CodingTool,
   type CodingToolName,
   type CodingToolRuntime,
@@ -145,6 +146,18 @@ export function buildCodingToolSupport(args: {
     ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),
   });
   const tools = runtime.advertised(advertised);
+  // The fixed per-hop cost of advertising provider tools: their schemas enter
+  // the prompt whether or not any is called. #2031 shipped the meter and left
+  // it unread; this is its consumer, and the same instrument nax#1991's
+  // context-burn report needs.
+  const providerTools = tools.filter((tool) => args.providerIdByTool?.has(tool.name) === true);
+  if (providerTools.length > 0) {
+    getSafeLogger()?.debug("tools", "[provider] advertised", {
+      storyId: args.storyId,
+      count: providerTools.length,
+      schemaBytes: advertisedSchemaBytes(providerTools),
+    });
+  }
   if (tools.length === 0) return undefined;
   return { runtime, tools, auditSink: sink };
 }

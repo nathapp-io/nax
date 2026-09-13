@@ -120,9 +120,21 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
     "hooks": {
       "on-all-stories-complete": { "command": "npm run build" }  // Fire after all stories pass
     }
+  },
+  "mcp": {
+    "servers": {
+      "codebase-memory": {
+        "command": "codebase-memory-mcp",     // stdio MCP server binary (client only)
+        "args": [],                            // Optional server args
+        "stages": ["run"],                     // Attach in these pipeline stages ("*" = all)
+        "allowedTools": ["search_graph"]       // Optional: subset of locked tools that is grantable
+      }
+    }
   }
 }
 ```
+
+`mcp` attaches external Model Context Protocol (MCP) servers as tool providers — nax is a client only, never an MCP server. The server id is the tool-name namespace: the `codebase-memory` server advertises its tools as `codebase-memory__search_graph`, `codebase-memory__trace_path`, and so on. Before any of those tools are grantable, run `nax mcp lock` at the project root: it connects every enabled server once, pins the advertised tool surface (name + input-schema hash) to `.nax/mcp-lock.json`, and that lockfile is committed like `bun.lock`. `stages` is the attachment control — a server's tools attach only to the listed pipeline stages, and an empty list attaches nowhere. MCP tools are advertised under the `unrestricted` permission profile only; `safe` and `scoped` resolve no provider tools at all. `allowedTools` narrows which locked tools are grantable; omitted means every locked tool is.
 
 See [Configuration Guide](docs/guides/configuration.md) for the full schema.
 

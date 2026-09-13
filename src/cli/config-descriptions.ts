@@ -313,4 +313,19 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "debate.stages.plan.debaters[].agent": "Agent name (e.g. 'claude', 'opencode')",
   "debate.stages.plan.debaters[].model":
     "Optional model override — resolved from config.models.fast at runtime when absent",
+
+  // MCP
+  mcp: "External MCP servers the native agent may call tools on (client only; nax is not an MCP server)",
+  "mcp.servers":
+    "Map of server id to server block. The id is the tool-name namespace: a tool named search_graph on server codebase-memory is advertised as codebase-memory__search_graph",
+  "mcp.servers.<id>.command": "Executable to spawn for this stdio MCP server",
+  "mcp.servers.<id>.args": "Arguments passed to the command (default: [])",
+  "mcp.servers.<id>.env": "Environment overlaid on the inherited environment for this server (default: {})",
+  "mcp.servers.<id>.stages":
+    'Pipeline stages this server attaches to, e.g. ["run", "review"]. ["*"] means every stage. Empty (the default) means the server is configured but never advertised. There is no \'implement\' stage - implementation runs under \'run\'',
+  "mcp.servers.<id>.allowedTools":
+    "Optional narrowing to specific tool names. Omitted means every tool present in .nax/mcp-lock.json is grantable",
+  "mcp.servers.<id>.timeoutMs": "Per-call timeout in milliseconds (default: 60000)",
+  "mcp.servers.<id>.enabled":
+    "Kill switch. false means the server is not connected, not locked and contributes no tools (default: true)",
 };
