@@ -1454,8 +1454,10 @@ cycle; it did not make `pipeline` and `execution` independent layers. `pipeline/
 still calls into `@/execution` for `appendProgress`, `processQueueFile` and six planning
 symbols, and that dependency is now invisible to the gate. Note this explicitly in the
 rewritten section 5 so a future reader does not mistake a green ratchet for a clean layering.
-Route A3 from 8.8 - extracting the shared contract into a third layer both sides depend on
-and neither owns - remains the real fix and belongs in its own design note, not here.
+Route A3 from 8.8 remains the real fix and belongs in its own design note, not here - it is
+open at **`docs/plans/2026-09-13-execution-pipeline-layering-design.md`**. Link that note from
+the rewritten section 5. (That note also overturns 8.8's own guess at A3's shape: there is no
+shared contract left to extract, and the fix is dependency inversion on the stage list.)
 
 **Step 4 - check section 4's boxes** and confirm
 `.nax/rules/project-conventions.md`'s "Cycle ratchet" paragraph still describes reality now
@@ -1942,8 +1944,13 @@ direction to cut and by which technique.
   a `test:coverage` pass, and it makes the dependency one-directional **in spelling only**:
   `pipeline` would still depend on `execution` code, just spelled so the gate cannot see it.
   More churn than A1 for a weaker result.
-- **A3 (deferred, not rejected).** Extract the shared contract - the event bus, the queue
+- **A3 (deferred, not rejected).** Make the two layers genuinely independent. At the time of
+  this ruling A3 was assumed to mean extracting the shared contract - the event bus, the queue
   interface, the result types - into a third layer both sides depend on and neither owns.
+  **That assumption was later found to be wrong**: all three pieces are already resolved, and
+  the actual fix is dependency inversion on the stage list. See
+  `docs/plans/2026-09-13-execution-pipeline-layering-design.md`, which supersedes this
+  paragraph's description of A3 while leaving the ruling itself intact.
   **This is the only route that actually fixes the layering, and it is the one with the large
   blast radius**: it moves public exports out of `@/pipeline` and `@/execution` (engaging
   section 1.4), touches every import site of the moved symbols across `src/` and `test/`, and
