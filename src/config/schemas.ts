@@ -12,6 +12,7 @@ import { DebateConfigSchema } from "./schemas-debate";
 import {
   AutoModeConfigSchema,
   AutoRouteConfigSchema,
+  CommandInterceptorConfigSchema,
   ConstitutionConfigSchema,
   DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
   ExecutionConfigSchema,
@@ -156,6 +157,11 @@ export const NaxConfigSchema = z
         maxMutants: 3,
         timeoutSeconds: 60,
       },
+      // BUG-20 — derived, not hand-written (same rationale as `rectification`
+      // above): a literal here would shadow CommandInterceptorConfigSchema's
+      // own defaults and leave `execution.commandInterceptor` missing from
+      // NaxConfigSchema.parse({}) / DEFAULT_CONFIG.
+      commandInterceptor: CommandInterceptorConfigSchema.parse({}),
     } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
     install: InstallConfigSchema.default({ allowScripts: false }),
     quality: QualityConfigSchema.default({

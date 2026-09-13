@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { makeSpawn, withDepsRestore } from "@test/helpers";
 import type { CommandInterceptor, InterceptResult } from "@/execution/command-interceptor";
+import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import { _gitToolDeps, gitTool } from "@/tools/git";
 import { _gitDeps } from "@/utils/git";
 
@@ -80,5 +81,55 @@ describe("Git tool interception", () => {
     await gitWithTimeout(["diff", "--name-only"], "/repo");
 
     expect(calls.at(-1)?.[0]).toBe("git");
+  });
+
+  test("a throwing postProcess degrades to the raw output", async () => {
+    _gitDeps.spawn = makeSpawn(() => "body\n[full diff: rtk git diff --no-compact]").spawn;
+    _gitToolDeps.interceptor = {
+      provider: "rtk",
+      intercept: async (r) => ({ kind: "rewritten", argv: ["rtk", ...r.argv], provider: "rtk" }),
+      postProcess: () => {
+        throw new Error("post-process blew up");
+      },
+    };
+
+    const result = await gitTool.run({ subcommand: "log" }, ctx());
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toContain("body");
+  });
+
+  test("postProcess is never consulted for a command that was not rewritten", async () => {
+    let called = false;
+    _gitDeps.spawn = makeSpawn(() => "body").spawn;
+    _gitToolDeps.interceptor = {
+      provider: "rtk",
+      intercept: async () => ({ kind: "unchanged" }),
+      postProcess: () => {
+        called = true;
+        return { output: "" };
+      },
+    };
+
+    await gitTool.run({ subcommand: "log" }, ctx());
+
+    expect(called).toBe(false);
+  });
+
+  test("a hint is stripped from output that also needs trimming", async () => {
+    // The call site runs postProcess BEFORE trimEnd, so it must strip a hint
+    // even when the hint is not the final characters — the trailing whitespace
+    // after it is exactly what trimEnd would otherwise remove.
+    _gitDeps.spawn = makeSpawn(() => "body\n[full diff: rtk git diff --no-compact]\n   ").spawn;
+    _gitToolDeps.interceptor = createRtkInterceptor({
+      enabled: true,
+      verbs: ["log"],
+      _deps: { which: () => "/usr/bin/rtk", version: () => "0.45.0", record: () => {} },
+    });
+
+    const result = await gitTool.run({ subcommand: "log" }, ctx());
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toBe("body");
   });
 });

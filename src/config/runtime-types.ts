@@ -12,6 +12,7 @@ import type { AgentConfig, GenerateConfig } from "./runtime-types-agent";
 import type { AutoRouteConfig } from "./runtime-types-auto-route";
 import type { ContextConfig } from "./runtime-types-context";
 import type {
+  CommandInterceptorConfig,
   FlakeDetectionConfig,
   InstallConfig,
   MutationCheckConfig,
@@ -123,11 +124,7 @@ export interface ExecutionConfig {
   /** Token budget for plugin context providers (default: 2000) */
   contextProviderTokenBudget: number;
   /** Native context compaction settings, resolved as percentages of the model's window. */
-  compaction: {
-    enabled: boolean;
-    compactAtPercent: number;
-    keepRecentPercent: number;
-  };
+  compaction: { enabled: boolean; compactAtPercent: number; keepRecentPercent: number };
   /** Test command override (null = disabled, undefined = auto-detect from package.json) */
   testCommand?: string | null;
   /** Lint command override (null = disabled, undefined = auto-detect from package.json) */
@@ -167,6 +164,8 @@ export interface ExecutionConfig {
   flakeDetection: FlakeDetectionConfig;
   /** Mutation-check spot-check config (US-001) — opt-in mutation testing after GREEN. */
   mutationCheck: MutationCheckConfig;
+  /** Command interception (rtk git-site) — opt-in; installed into the Git tool seam at run setup. */
+  commandInterceptor: CommandInterceptorConfig;
   /** Glob denylist narrowing Delete beyond tracked/gitignored (nax#1972). */
   denyPaths?: string[];
 }

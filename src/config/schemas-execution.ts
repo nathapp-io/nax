@@ -204,7 +204,7 @@ export const PermissionsBlockSchema = z.record(z.string(), PermissionBlockSchema
  * (byte-identical) were measured and excluded; `show` is disqualified on
  * exit-code divergence. Read the results doc before changing this list.
  */
-const CommandInterceptorConfigSchema = z
+export const CommandInterceptorConfigSchema = z
   .object({
     provider: z.string().min(1).default("rtk"),
     enabled: z.boolean().default(false),

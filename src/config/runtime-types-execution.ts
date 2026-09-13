@@ -65,3 +65,21 @@ export interface SmartTestRunnerConfig {
   /** Max test files scanned (post-filter) before truncating (default: 200) */
   maxScanFiles: number;
 }
+
+/** Command interception (rtk git-site) — opt-in; installed into the Git tool seam at run setup. */
+export interface CommandInterceptorConfig {
+  /** Which interceptor to use. Only "rtk" exists today. */
+  provider: string;
+  /**
+   * Opt-in (R7): interception changes what the agent sees, so it must not
+   * switch on merely because the provider binary is installed.
+   */
+  enabled: boolean;
+  /**
+   * Measured git verbs to intercept: `log` and `diff` by default (US-001 run
+   * 4). Read the results doc before changing this list.
+   */
+  git: {
+    verbs: string[];
+  };
+}

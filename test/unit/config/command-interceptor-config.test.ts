@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import { ExecutionConfigSchema } from "@/config/schemas-execution";
 
 const base = {
@@ -32,5 +33,17 @@ describe("execution.commandInterceptor", () => {
 
   test("rejects an unknown key rather than stripping it", () => {
     expect(() => ExecutionConfigSchema.parse({ ...base, commandInterceptor: { sites: ["git"] } })).toThrow();
+  });
+
+  test("the full NaxConfig default carries the block (BUG-20 shadowing)", () => {
+    // The inner-schema tests above cannot catch this: a field added to
+    // ExecutionConfigSchema but forgotten in the outer NaxConfigSchema
+    // `execution` default literal silently vanishes from
+    // NaxConfigSchema.parse({}) / DEFAULT_CONFIG, while resolving fine for a
+    // config that supplies `execution` partially. setupRun's install reads
+    // config.execution.commandInterceptor, so a missing field would crash
+    // every run that relies on the default.
+    expect(DEFAULT_CONFIG.execution.commandInterceptor).toBeDefined();
+    expect(DEFAULT_CONFIG.execution.commandInterceptor.enabled).toBe(false);
   });
 });

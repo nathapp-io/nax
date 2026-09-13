@@ -15,6 +15,7 @@
 import path from "node:path";
 import { globalConfigDir, type NaxConfig } from "@/config";
 import { LockAcquisitionError, NaxError } from "@/errors";
+import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
 import { initInteractionChain } from "@/interaction";
@@ -29,6 +30,7 @@ import { detectProjectProfile } from "@/project";
 import { createRuntime, type NaxRuntime } from "@/runtime";
 import { SessionManager, sweepFeatureTranscripts } from "@/session";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
+import { _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
 import { installCrashHandlers } from "../crash-recovery";
@@ -212,6 +214,20 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     getTotalCost,
     getIterations,
   } = options;
+
+  // ── Command interception ────────────────────────────────────────────────────
+  // Installed unconditionally, once per run, before the first tool dispatch:
+  // setupRun is Phase 1 of runner.run(), and the Git tool is only consulted
+  // from Phase 2 agent sessions, so this always precedes the first git call.
+  // `enabled` governs behaviour, not whether the interceptor exists — the state
+  // record is written every run, which is what makes spec §7 A/B arms
+  // distinguishable. Entry points that skip setupRun leave the seam undefined
+  // and interception simply does not apply — fail-safe.
+  const ci = config.execution.commandInterceptor;
+  _gitToolDeps.interceptor = createRtkInterceptor({
+    enabled: ci.enabled,
+    verbs: ci.git.verbs,
+  });
 
   // ── Status writer (encapsulates status file state and write logic) ───────
   const statusWriter = new StatusWriter(statusFile, config, {

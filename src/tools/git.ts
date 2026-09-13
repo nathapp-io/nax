@@ -15,7 +15,7 @@
  * 64KB pipe buffer and deadlocks a naive implementation.
  */
 
-import type { CommandInterceptor } from "@/execution/command-interceptor";
+import type { CommandInterceptor, InterceptRequest } from "@/execution/command-interceptor";
 import { interceptArgv } from "@/execution/command-interceptor";
 import { gitWithTimeout } from "@/utils/git";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
@@ -330,7 +330,27 @@ export const gitTool: CodingTool = {
       if (exitCode !== 0 && stdout.trim() === "") {
         return { content: stderr.trim() || `git exited ${exitCode}`, isError: true };
       }
-      const content = truncate(stdout.trimEnd(), ctx.maxBytes) || "(no output)";
+      // postProcess runs BEFORE trimEnd/truncate: stripping a hint changes what
+      // the trailing whitespace and the byte budget apply to, and truncating
+      // first would hand postProcess a hint that truncation cut in half. It is
+      // consulted only for output of a command this interceptor actually
+      // rewrote, and a throw degrades to the raw output (advisory, like the
+      // rewrite-time fail-open in interceptArgv).
+      let body = stdout;
+      if (intercepted.rewritten) {
+        const req: InterceptRequest = { kind: "argv", argv: ["git", ...built], cwd: ctx.root, site: "git" };
+        try {
+          body = _gitToolDeps.interceptor?.postProcess?.(stdout, req)?.output ?? stdout;
+        } catch {
+          body = stdout;
+        }
+      }
+      // Known limitation: gitWithTimeout bounds stdout with ctx.maxBytes BEFORE
+      // postProcess sees it, so a trailing hint on a very large output can be
+      // truncated mid-string and escape stripping. Fixing it means moving the
+      // bound after post-processing, which changes the drain contract — its own
+      // change.
+      const content = truncate(body.trimEnd(), ctx.maxBytes) || "(no output)";
       const audit = intercepted.executed !== undefined ? { executed: intercepted.executed } : undefined;
       return { content, ...(audit !== undefined ? { audit } : {}) };
     } catch (err) {
