@@ -106,6 +106,14 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.worktreeDependencies.setupCommand":
     'Install command run from the worktree root before a story starts, e.g. "bun install --frozen-lockfile". Rejected unless mode is "provision".',
 
+  "execution.commandInterceptor":
+    "Route tool commands through an external filter to shrink their output. Off by default.",
+  "execution.commandInterceptor.enabled":
+    "Master switch for command interception. Off by default: interception changes what the agent sees, so it does not switch on merely because the provider is installed. This is the only switch — there is no CLI flag or env override. Flip it here, run the same story twice, and compare cost-ledger spend to judge whether it earns its place.",
+  "execution.commandInterceptor.provider": "Which interceptor to use. Only 'rtk' exists today.",
+  "execution.commandInterceptor.git.verbs":
+    "Git subcommands eligible for interception. Measured values: log and diff. status and blame measured no benefit; show is excluded for changing git's exit code.",
+
   // Quality
   quality: "Quality gate configuration",
   "quality.commands": "Custom quality commands",
