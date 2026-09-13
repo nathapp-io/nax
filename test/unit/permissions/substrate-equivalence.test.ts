@@ -70,6 +70,37 @@ describe("substrate equivalence (regression gate, spec §5 step 1)", () => {
     expect(policy.grantedTools()).not.toContain("Delete");
   });
 
+  test("R10: allow under unrestricted REPLACES the baseline pattern for that tool", () => {
+    // On base, execution.permissions was ignored unless the profile was scoped.
+    // Spec R10 runs stageRules under EVERY profile, and the allow compiler is
+    // last-write-wins per tool (policy.ts grant loop), so a lone
+    // `Write(src/**)` REPLACES the baseline `Write(*)` rather than adding to
+    // it. Both the `allow` and legacy `allowedTools` spellings must do this.
+    for (const key of ["allow", "allowedTools"] as const) {
+      const policy = policyFor({
+        permissionProfile: "unrestricted",
+        permissions: { run: { [key]: ["Write(src/**)"] } },
+      });
+      expect(policy.check("Write", { pathFields: ["path"] }, { path: "src/a.ts" }).allowed).toBe(true);
+      expect(policy.check("Write", { pathFields: ["path"] }, { path: "test/a.ts" }).allowed).toBe(false);
+      // Another baseline tool is untouched by the Write override.
+      expect(policy.check("Read", { pathFields: ["path"] }, { path: "file.txt" }).allowed).toBe(true);
+    }
+  });
+
+  test("R10: allow under safe ADDS a tool on top of the reads-only baseline", () => {
+    const policy = policyFor({
+      permissionProfile: "safe",
+      permissions: { run: { allow: ["Write"] } },
+    });
+    // The block's grant is added.
+    expect(policy.check("Write", { pathFields: ["path"] }, { path: "file.txt" }).allowed).toBe(true);
+    // safe's reads-only baseline is otherwise unchanged: reads pass, and a tool
+    // it never granted (Edit) stays denied.
+    expect(policy.check("Read", { pathFields: ["path"] }, { path: "file.txt" }).allowed).toBe(true);
+    expect(policy.check("Edit", { pathFields: ["path"] }, { path: "file.txt" }).allowed).toBe(false);
+  });
+
   test("two expressions for one tool: LAST wins (pins today's compiler)", () => {
     // Guards the byte-identity gate: the allow compiler is last-write-wins per
     // tool (policy.ts grant loop). If this test surprises you, do not "fix" the

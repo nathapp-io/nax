@@ -167,14 +167,64 @@ describe("resolvePermissions — dangerouslySkipPermissions absent from src/", (
 const cfg = (execution: Record<string, unknown>) => makeNaxConfig({ execution });
 
 describe("resolvePermissions — rules under every profile (spec R10)", () => {
+  // Literal pre-change baselines, hardcoded on purpose. Deriving these from
+  // DEFAULT_CODING_TOOLS / BUILT_IN_EXEC_PATTERNS (or from a second
+  // resolvePermissions call) would make this test track a drift in those
+  // constants instead of catching it, which is exactly the regression gate the
+  // reviewer asked for.
+  const PRE_CHANGE_UNRESTRICTED_TOOL_GRANTS = [
+    { tool: "Read", patterns: ["*"] },
+    { tool: "Glob", patterns: ["*"] },
+    { tool: "Grep", patterns: ["*"] },
+    { tool: "Write", patterns: ["*"] },
+    { tool: "Edit", patterns: ["*"] },
+    { tool: "Delete", patterns: ["*"] },
+    { tool: "Git", patterns: ["*"] },
+    { tool: "GitCommit", patterns: ["*"] },
+    { tool: "RunCommand", patterns: ["*"] },
+    { tool: "RequestCapability", patterns: ["*"] },
+    {
+      tool: "Exec",
+      patterns: [
+        "bun install",
+        "bun add*",
+        "npm ci",
+        "npm install*",
+        "pnpm install*",
+        "pnpm add*",
+        "yarn install*",
+        "yarn add*",
+        "pip install*",
+        "uv sync*",
+        "uv add*",
+        "go mod download",
+        "go get*",
+        "cargo fetch",
+        "cargo add*",
+      ],
+    },
+  ];
+
+  const PRE_CHANGE_SAFE_TOOL_GRANTS = [
+    { tool: "Read", patterns: ["*"] },
+    { tool: "Glob", patterns: ["*"] },
+    { tool: "Grep", patterns: ["*"] },
+  ];
+
   test("unrestricted with no permissions block is byte-identical to today", () => {
     const resolved = resolvePermissions(cfg({ permissionProfile: "unrestricted" }), "run");
     expect(resolved.mode).toBe("approve-all");
     expect(resolved.denyRules).toBeUndefined();
     expect(resolved.askRules).toBeUndefined();
-    expect(resolved.toolGrants).toEqual(
-      resolvePermissions(cfg({ permissionProfile: "unrestricted" }), "verify").toolGrants,
-    );
+    expect(resolved.toolGrants).toEqual(PRE_CHANGE_UNRESTRICTED_TOOL_GRANTS);
+  });
+
+  test("safe with no permissions block is byte-identical to today", () => {
+    const resolved = resolvePermissions(cfg({ permissionProfile: "safe" }), "run");
+    expect(resolved.mode).toBe("approve-reads");
+    expect(resolved.denyRules).toBeUndefined();
+    expect(resolved.askRules).toBeUndefined();
+    expect(resolved.toolGrants).toEqual(PRE_CHANGE_SAFE_TOOL_GRANTS);
   });
 
   test("deny and ask rules attach under unrestricted", () => {
