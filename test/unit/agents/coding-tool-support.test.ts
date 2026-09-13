@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
@@ -13,6 +13,9 @@ let root: string;
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), "nax-support-"));
+  // The deny/ask tests read a granted file to prove only the matching rule
+  // refuses; Read on a missing path returns kind "error", masking the "ok".
+  writeFileSync(join(root, "file.txt"), "x");
 });
 
 describe("buildCodingToolSupport", () => {
@@ -315,5 +318,68 @@ describe("buildCodingToolSupport — toolPatterns reaches the compiled policy (n
     const outcome = await support?.runtime.callTool("Write", { path: "src/index.ts", content: "// nope" });
 
     expect(outcome?.kind).toBe("denied");
+  });
+});
+
+/**
+ * The deny/ask rule lists travel from resolved permissions into the compiled
+ * policy through this seam. Without the forwarding, a stage's deny/ask config
+ * is silently inert: the tool runs as if the rule did not exist.
+ */
+describe("buildCodingToolSupport — deny/ask rule plumbing", () => {
+  test("a deny rule reaches the compiled policy", async () => {
+    const support = buildCodingToolSupport({
+      root,
+      grants: [{ tool: "Read", patterns: ["*"] }],
+      declared: ["Read"],
+      denyRules: [{ tool: "Read", patterns: [".env*"] }],
+    });
+    expect(support).toBeDefined();
+    const denied = await support?.runtime.callTool("Read", { path: ".env.local" });
+    expect(denied?.kind).toBe("denied");
+    const allowed = await support?.runtime.callTool("Read", { path: "file.txt" });
+    expect(allowed?.kind).toBe("ok");
+  });
+
+  // narrowGrants only rewrites allow grants; deny/ask are separate args and
+  // therefore bypass it by construction. This pins that an op's toolPatterns
+  // cannot silently erase a deny rule.
+  test("op toolPatterns narrowing does not erase a deny rule", async () => {
+    const support = buildCodingToolSupport({
+      root,
+      grants: [{ tool: "Write", patterns: ["*"] }],
+      declared: ["Write"],
+      toolPatterns: { Write: ["src/**"] },
+      denyRules: [{ tool: "Write", patterns: ["src/generated/**"] }],
+    });
+    const denied = await support?.runtime.callTool("Write", {
+      path: "src/generated/x.ts",
+      content: "x",
+    });
+    expect(denied?.kind).toBe("denied");
+  });
+});
+
+/**
+ * Task 3 concatenates the unrestricted baseline's Exec grant with the stage's
+ * `allow` rules, and the compiled policy is last-write-wins per tool. The
+ * advertised allowlist (RunCommand's description) must read the LAST grant —
+ * `find` (first) would name the baseline patterns the policy no longer
+ * enforces, telling the model forms are ungrantable that would actually pass.
+ */
+describe("buildCodingToolSupport — Exec grant selection (findLast)", () => {
+  test("advertises the last Exec grant, matching the policy's last-write-wins", async () => {
+    const execution: Record<string, unknown> = {
+      permissionProfile: "unrestricted",
+      permissions: { run: { allow: ["Exec(bun x tsc*)"] } },
+    };
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand", "Exec"],
+      codingToolRoot: root,
+      pipelineStage: "run",
+      config: makeNaxConfig({ execution }),
+    });
+    const runCommand = support?.tools.find((tool) => tool.name === "RunCommand");
+    expect(runCommand?.description).toContain("permitted forms: bun x tsc*");
   });
 });

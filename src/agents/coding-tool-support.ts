@@ -67,6 +67,10 @@ export function buildCodingToolSupport(args: {
   denyPaths?: readonly string[];
   /** Per-tool narrowing from the op's `toolPatterns` (nax#2013). */
   toolPatterns?: ToolPatternNarrowing;
+  /** Stage deny rules (spec R6); forwarded to `compileToolPolicy`. Bypasses `narrowGrants`. */
+  denyRules?: readonly ToolGrant[];
+  /** Stage ask rules (spec R1/R6); forwarded to `compileToolPolicy`. Bypasses `narrowGrants`. */
+  askRules?: readonly ToolGrant[];
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -90,7 +94,7 @@ export function buildCodingToolSupport(args: {
   // must never reach runtime.advertised() itself, or the lookup for a tool
   // named "Exec" would simply fail and the marker would vanish from the
   // advertised set without a trace of why.
-  const execGrant = grants.find((grant) => grant.tool === EXEC_TOOL_NAME);
+  const execGrant = grants.findLast((grant) => grant.tool === EXEC_TOOL_NAME);
   const allowExec = args.declared.includes(EXEC_TOOL_NAME) && execGrant !== undefined;
   const advertised = args.declared.filter((name) => name !== EXEC_TOOL_NAME);
 
@@ -109,7 +113,11 @@ export function buildCodingToolSupport(args: {
   // stages from the git root) as its backstop -- see task-10-report.md.
   const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
-    policy: compileToolPolicy(narrowGrants(grants, args.toolPatterns), args.root, { execTouchedPaths }),
+    policy: compileToolPolicy(narrowGrants(grants, args.toolPatterns), args.root, {
+      execTouchedPaths,
+      ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
+      ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
+    }),
     declaredCommands: new Set(declaredCommands.keys()),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.denyPaths !== undefined ? { denyPaths: args.denyPaths } : {}),
@@ -303,6 +311,8 @@ export async function resolveCodingToolSupport(
     extraTools: providerResult.tools,
     providerIdByTool: providerResult.providerIdByTool,
     ...(options.toolPatterns !== undefined ? { toolPatterns: options.toolPatterns } : {}),
+    ...(resolved.denyRules !== undefined ? { denyRules: resolved.denyRules } : {}),
+    ...(resolved.askRules !== undefined ? { askRules: resolved.askRules } : {}),
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     declaredCommands,
     stripEnvVars,
