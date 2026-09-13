@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   buildGitArgv,
   compileToolPolicy,
@@ -113,7 +113,7 @@ describe("buildGitArgv", () => {
  * pathspecs there and exits 128.
  */
 describe("buildGitArgv — nax-owned paths are excluded from the default view", () => {
-  const GIT_EXCLUDES = [":(exclude).nax", ":(exclude)**/.nax"];
+  const GIT_EXCLUDES = [":(exclude).nax", ":(glob,exclude)**/.nax/**"];
 
   test("the shared SSOT constant is the git exclude form the tool uses", () => {
     expect([...NAX_OWNED_GIT_EXCLUDE_PATHSPECS]).toEqual(GIT_EXCLUDES);
@@ -158,6 +158,65 @@ describe("buildGitArgv — nax-owned paths are excluded from the default view", 
     expect(argv).toContain(`--max-count=${DEFAULT_LOG_MAX_COUNT}`);
     expect(argv.slice(-GIT_EXCLUDES.length)).toEqual(GIT_EXCLUDES);
     expect(argv[argv.length - GIT_EXCLUDES.length - 1]).toBe(".");
+  });
+});
+
+/**
+ * #2007 — the exclusion must hide a NESTED `.nax/` too, not just the repo-root
+ * one. Proven against a real repository: a bare doublestar without `:(glob)`
+ * left `packages/app/.nax/...` in the default view, so a monorepo package's
+ * run state still reported as the agent's own diff.
+ */
+describe("gitTool — the default view hides nested and root .nax run state", () => {
+  const repos: string[] = [];
+
+  afterEach(() => {
+    for (const dir of repos.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  const NAX_PATHS = [".nax/features/f/prd.json", "packages/app/.nax/features/f/prd.json"];
+
+  /** Commits the three seed files, then dirties all three. */
+  async function makeRepo(): Promise<string> {
+    const repo = mkdtempSync(join(tmpdir(), "nax-git-nax-exclude-"));
+    repos.push(repo);
+    for (const relativePath of [...NAX_PATHS, "src/a.ts"]) {
+      const full = join(repo, relativePath);
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, "seed\n");
+    }
+    const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    await run(["init", "-q"]).exited;
+    await run(["config", "user.email", "t@e.com"]).exited;
+    await run(["config", "user.name", "T"]).exited;
+    await run(["add", "-A"]).exited;
+    await run(["commit", "-q", "-m", "seed"]).exited;
+    for (const relativePath of [...NAX_PATHS, "src/a.ts"]) {
+      writeFileSync(join(repo, relativePath), "dirty\n");
+    }
+    return repo;
+  }
+
+  test("status reports the dirtied src/a.ts but neither .nax path", async () => {
+    const repo = await makeRepo();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const content = contentOf(await rt.callTool("Git", { subcommand: "status" }));
+
+    expect(content).toContain("src/a.ts");
+    expect(content).not.toContain(".nax/features/f/prd.json");
+    expect(content).not.toContain("packages/app/.nax/features/f/prd.json");
+  });
+
+  test("diff reports the dirtied src/a.ts but neither .nax path", async () => {
+    const repo = await makeRepo();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const content = contentOf(await rt.callTool("Git", { subcommand: "diff" }));
+
+    expect(content).toContain("src/a.ts");
+    expect(content).not.toContain(".nax/features/f/prd.json");
+    expect(content).not.toContain("packages/app/.nax/features/f/prd.json");
   });
 });
 
