@@ -130,13 +130,24 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
         "allowedTools": ["search_graph"]       // Optional: subset of locked tools that is grantable
       }
     }
+  },
+  "execution": {
+    "commandInterceptor": {
+      "provider": "rtk",                       // Token-reducing proxy for the Git tool
+      "enabled": true,                         // Off by default — opt in per project
+      "git": { "verbs": ["log", "diff"] }      // Only these subcommands are rewritten
+    }
   }
 }
 ```
 
 `mcp` attaches external Model Context Protocol (MCP) servers as tool providers — nax is a client only, never an MCP server. The server id is the tool-name namespace: the `codebase-memory` server advertises its tools as `codebase-memory__search_graph`, `codebase-memory__trace_path`, and so on. Before any of those tools are grantable, run `nax mcp lock` at the project root: it connects every enabled server once, pins the advertised tool surface (name + input-schema hash) to `.nax/mcp-lock.json`, and that lockfile is committed like `bun.lock`. `stages` is the attachment control — a server's tools attach only to the listed pipeline stages, and an empty list attaches nowhere. MCP tools are advertised under the `unrestricted` permission profile only; `safe` and `scoped` resolve no provider tools at all. `allowedTools` narrows which locked tools are grantable; omitted means every locked tool is.
 
-See [Configuration Guide](docs/guides/configuration.md) for the full schema.
+`execution.commandInterceptor` rewrites the `Git` tool's argv through `rtk` so `log` and `diff` output reaches the model compressed. It is confined to the Git site: user-authored `quality.commands` and `acceptance.command` are never wrapped. It fails open — if the `rtk` binary is missing the call runs as plain git.
+
+**Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. Set `agent.protocol: "hybrid"` and `agent.default: "native"` first.
+
+See [MCP & Command Interception](docs/guides/mcp-and-interception.md) for setup, verification and troubleshooting, and the [Configuration Guide](docs/guides/configuration.md) for the full schema.
 
 ---
 
