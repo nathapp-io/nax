@@ -111,3 +111,90 @@ export async function measure(entry: CorpusEntry, cwd: string): Promise<Measurem
     sliced: { raw: slice(raw.bytes), rtk: slice(rtk.bytes) },
   };
 }
+
+export interface VerbRow {
+  readonly verb: string;
+  readonly n: number;
+  readonly rawKB: number;
+  readonly rtkKB: number;
+  /** Reduction in FULL output. The headline, and the misleading one. */
+  readonly savedPct: number;
+  /** Reduction in what the model is actually told. The number that matters. */
+  readonly slicedSavedPct: number;
+  readonly disqualified: boolean;
+  readonly reason?: string;
+}
+
+export function summarize(measurements: readonly Measurement[]): VerbRow[] {
+  const byVerb = new Map<string, Measurement[]>();
+  for (const m of measurements) {
+    const list = byVerb.get(m.verb) ?? [];
+    list.push(m);
+    byVerb.set(m.verb, list);
+  }
+
+  const rows: VerbRow[] = [];
+  for (const [verb, list] of byVerb) {
+    const raw = list.reduce((s, m) => s + m.rawBytes, 0);
+    const rtk = list.reduce((s, m) => s + m.rtkBytes, 0);
+    const slicedRaw = list.reduce((s, m) => s + m.sliced.raw, 0);
+    const slicedRtk = list.reduce((s, m) => s + m.sliced.rtk, 0);
+    const diverged = list.filter((m) => !m.parity);
+
+    rows.push({
+      verb,
+      n: list.length,
+      rawKB: raw / 1024,
+      rtkKB: rtk / 1024,
+      savedPct: raw === 0 ? 0 : (100 * (raw - rtk)) / raw,
+      slicedSavedPct: slicedRaw === 0 ? 0 : (100 * (slicedRaw - slicedRtk)) / slicedRaw,
+      disqualified: diverged.length > 0,
+      // Exit-code parity is a CORRECTNESS gate: a verb that changes a command's
+      // exit code is unusable no matter how much output it saves, because nax
+      // computes `success: exitCode === 0` from it.
+      reason:
+        diverged.length > 0
+          ? `exit-code divergence on ${diverged.length}/${list.length} (e.g. ${diverged[0].id}: raw ${diverged[0].rawExit} vs rtk ${diverged[0].rtkExit})`
+          : undefined,
+    });
+  }
+  return rows.sort((a, b) => b.rawKB - a.rawKB);
+}
+
+export function formatReport(rows: readonly VerbRow[]): string {
+  const lines = ["verb\tn\trawKB\trtkKB\tsaved%\tdelivered-saved%\tverdict"];
+  for (const r of rows) {
+    lines.push(
+      [
+        r.verb,
+        r.n,
+        r.rawKB.toFixed(0),
+        r.rtkKB.toFixed(0),
+        r.savedPct.toFixed(1),
+        r.slicedSavedPct.toFixed(1),
+        r.disqualified ? `DISQUALIFIED — ${r.reason}` : "ok",
+      ].join("\t"),
+    );
+  }
+  return lines.join("\n");
+}
+
+if (import.meta.main) {
+  const hasRtk = Bun.spawnSync(["rtk", "--version"]).exitCode === 0;
+  if (!hasRtk) {
+    console.log("rtk not on PATH — skipping. Install rtk to produce the measurement table.");
+    process.exit(0);
+  }
+  const cwd = process.cwd();
+  const configPath = `${cwd}/.nax/config.json`;
+  const commands =
+    (
+      await Bun.file(configPath)
+        .json()
+        .catch(() => ({}))
+    ).quality?.commands ?? {};
+  const corpus = [...buildGitCorpus(), ...buildQualityCorpus(commands)];
+  const measurements: Measurement[] = [];
+  for (const entry of corpus) measurements.push(await measure(entry, cwd));
+  console.log(formatReport(summarize(measurements)));
+}
