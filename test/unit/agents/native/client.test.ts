@@ -125,6 +125,27 @@ describe("catalog overrides", () => {
     };
   }
 
+  function overrideWithHeaders(
+    provider: string,
+    headers: Record<string, string>,
+    id = "nax-2025-header-probe",
+  ): ProviderCatalogOverride {
+    return {
+      provider,
+      headers,
+      models: [
+        {
+          id,
+          protocol: "openai-completions",
+          contextWindow: 1_000_000,
+          supportsTools: true,
+          thinkingLevels: ["off"],
+          pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
+        },
+      ],
+    };
+  }
+
   test("an override makes an id the bundled catalog does not know resolvable", async () => {
     // buildNativeClient is reached directly, not through _clientDeps.build
     // (test/preload.ts sentinels that). The real bundled catalog loads here,
@@ -278,6 +299,67 @@ describe("catalog overrides", () => {
     const err = await getNativeClient([override("mimo-v2-pro")]).catch((e: unknown) => e);
     assertNaxError(err, "native client override mismatch");
     expect(err.code).toBe("NATIVE_CLIENT_OVERRIDES_MISMATCH");
+  });
+
+  test("the mismatch error context summarises the sets without exposing header values (nax#2025)", async () => {
+    _clientDeps.build = async () => FAKE_CLIENT;
+
+    const secret = "sk-nax-2025-secrettoken-abcdef0123456789";
+    await getNativeClient([overrideWithHeaders("opencode-go", { authorization: `Bearer ${secret}` })]);
+    const err = await getNativeClient([override("mimo-v2-pro")]).catch((e: unknown) => e);
+    assertNaxError(err, "second getNativeClient rejection");
+
+    const serialised = JSON.stringify(err.context);
+    expect(serialised).not.toContain(secret);
+    expect(serialised).not.toContain("Bearer");
+    expect(err.message).not.toContain(secret);
+    expect(err.context).toEqual({
+      builtFor: {
+        providers: ["opencode-go"],
+        headerKeys: ["authorization"],
+        digest: expect.stringMatching(/^[0-9a-f]{12}$/),
+      },
+      requested: { providers: ["opencode-go"], headerKeys: [], digest: expect.stringMatching(/^[0-9a-f]{12}$/) },
+    });
+  });
+
+  test("header key order does not count as a different override set (nax#2025)", async () => {
+    let built = 0;
+    _clientDeps.build = async () => {
+      built += 1;
+      return FAKE_CLIENT;
+    };
+
+    const setA = [overrideWithHeaders("opencode-go", { "x-api-key": "k1", "x-tenant": "t1" })];
+    const setB = [overrideWithHeaders("opencode-go", { "x-tenant": "t1", "x-api-key": "k1" })];
+
+    const a = await getNativeClient(setA);
+    const b = await getNativeClient(setB);
+
+    expect(built).toBe(1);
+    expect(a).toBe(b);
+  });
+
+  test("a header VALUE change still trips the guard, and the digest identifies each set (nax#2025)", async () => {
+    _clientDeps.build = async () => FAKE_CLIENT;
+
+    await getNativeClient([
+      overrideWithHeaders("opencode-go", { authorization: "Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaa" }),
+    ]);
+    const err = await getNativeClient([
+      overrideWithHeaders("opencode-go", { authorization: "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbb" }),
+    ]).catch((e: unknown) => e);
+    assertNaxError(err, "second getNativeClient rejection");
+    expect(err.code).toBe("NATIVE_CLIENT_OVERRIDES_MISMATCH");
+
+    const builtFor = err.context?.builtFor as { providers: string[]; headerKeys: string[]; digest: string };
+    const requested = err.context?.requested as { providers: string[]; headerKeys: string[]; digest: string };
+    expect(builtFor.providers).toEqual(["opencode-go"]);
+    expect(requested.providers).toEqual(["opencode-go"]);
+    expect(builtFor.headerKeys).toEqual(["authorization"]);
+    expect(requested.headerKeys).toEqual(["authorization"]);
+    expect(builtFor.digest).toMatch(/^[0-9a-f]{12}$/);
+    expect(builtFor.digest).not.toBe(requested.digest);
   });
 
   test("a failed build is not memoised, so a later different set can build", async () => {
