@@ -79,3 +79,22 @@ skills/
 .claude/worktrees/
 .codex/
 .superpowers/
+
+# nax - generated files
+**/.nax/features/*/runs/
+**/.nax/features/*/plan/
+**/.nax/features/*/sessions/
+**/.nax/features/*/stories/
+**/.nax/features/*/fragments/
+**/.nax/features/*/interactions/
+**/.nax/features/*/semantic-verdicts/
+**/.nax/features/*/status.json
+**/.nax/features/*/checkpoint.jsonl
+**/.nax/features/*/progress.txt
+**/.nax/features/*/acp-sessions.json
+**/.nax/features/*/acceptance-refined.json
+**/.nax/features/*/*.bak
+**/.nax-acceptance*
+**/_nax_acceptance_test.py
+**/_nax_suggested_test.py
+**/.nax/status.json

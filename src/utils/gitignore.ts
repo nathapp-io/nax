@@ -53,6 +53,10 @@ export const NAX_GITIGNORE_ENTRIES = [
   "nax.lock",
   ".nax/**/runs/",
   ".nax/metrics.json",
+  // Top-level run state — the no-outputDir fallback written beside metrics.json.
+  // The per-feature `status.json` is covered by FEATURE_RUN_ARTIFACTS above; the
+  // leading `**/` here also covers a monorepo package's own `.nax/`.
+  "**/.nax/status.json",
   ...FEATURE_RUN_ARTIFACTS,
   ".nax-pids",
   ".nax-wt/",

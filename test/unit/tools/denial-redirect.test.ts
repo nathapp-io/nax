@@ -376,3 +376,87 @@ describe("the #1971 denial shapes each name an affordance", () => {
     expect(redirectForVerb("Git", "diff", WITH_GREP, CMDS)).toBeUndefined();
   });
 });
+
+// nax#2007: an agent tried to `git checkout` nax's own run state back to a
+// clean tree. A tool redirect misstates the intent -- there is no tool that
+// reverts these paths, and the paths are not the agent's diff at all. The
+// refusal must teach instead, gated on a `.nax` path SEGMENT so a checkout of
+// the agent's own file stays silent.
+describe("a .nax run-state revert is explained, not redirected (nax#2007)", () => {
+  const EXPLANATION =
+    "`.nax/` is nax's own run state, written by the harness during this run. It is not part of your diff and must not be reverted.";
+
+  test("argv checkout of a .nax path returns the explanation", () => {
+    expect(redirectForArgv(["git", "checkout", "--", ".nax/features/f/prd.json"], ALL, CMDS)).toBe(EXPLANATION);
+  });
+
+  test("argv checkout of the .nax directory itself returns the explanation", () => {
+    expect(redirectForArgv(["git", "checkout", "--", ".nax/"], ALL, CMDS)).toBe(EXPLANATION);
+  });
+
+  test("argv restore of a .nax path returns the explanation", () => {
+    expect(redirectForArgv(["git", "restore", ".nax/features/f/prd.json"], ALL, CMDS)).toBe(EXPLANATION);
+  });
+
+  test("a verb-slot command line reverting .nax returns the explanation", () => {
+    expect(
+      redirectForVerb(
+        "RunCommand",
+        "git checkout -- .nax/features/f/checkpoint.jsonl .nax/features/f/prd.json",
+        ALL,
+        CMDS,
+      ),
+    ).toBe(EXPLANATION);
+  });
+
+  test("a bare checkout head in Git's own slot returns the explanation", () => {
+    expect(redirectForVerb("Git", "checkout -- .nax/features/f/prd.json", ALL, CMDS)).toBe(EXPLANATION);
+  });
+
+  test("a .nax segment deeper in a monorepo path still matches", () => {
+    expect(redirectForArgv(["git", "checkout", "--", "packages/app/.nax/features/f/prd.json"], ALL, CMDS)).toBe(
+      EXPLANATION,
+    );
+  });
+
+  test("a checkout of the agent's own file stays unexplained", () => {
+    expect(redirectForArgv(["git", "checkout", "--", "test/unit/foo.test.ts"], ALL, CMDS)).toBeUndefined();
+  });
+
+  test("a path merely containing the letters does not match a .nax segment", () => {
+    expect(redirectForArgv(["git", "checkout", "--", "src/nax-helpers.ts"], ALL, CMDS)).toBeUndefined();
+    expect(redirectForArgv(["git", "checkout", "--", "docs/.naxignore"], ALL, CMDS)).toBeUndefined();
+  });
+
+  test("git stash stays undefined -- it is the agent's own WIP, not nax's state", () => {
+    expect(redirectForArgv(["git", "stash"], ALL, CMDS)).toBeUndefined();
+  });
+
+  test("a non-reverting git verb still redirects as before", () => {
+    expect(redirectForVerb("RunCommand", "git status", ALL, CMDS)).toContain("Git");
+  });
+
+  test("the explanation names no tool, even when nothing is advertised", () => {
+    expect(redirectForArgv(["git", "checkout", "--", ".nax/x"], new Set(), CMDS)).toBe(EXPLANATION);
+  });
+
+  // The module already treats `timeout N <cmd>` as a wrapper via
+  // `withoutTimeoutPrefix`, used by both `intentFor` and `taskRunnerFallback`.
+  // The predicate must strip it too, or it silently fails to teach for a form
+  // the harness knows about.
+  test("a timeout-wrapped argv checkout of a .nax path returns the explanation", () => {
+    expect(redirectForArgv(["timeout", "30", "git", "checkout", "--", ".nax/features/f/prd.json"], ALL, CMDS)).toBe(
+      EXPLANATION,
+    );
+  });
+
+  test("a timeout-wrapped verb-slot command line reverting .nax returns the explanation", () => {
+    expect(redirectForVerb("RunCommand", "timeout 30 git checkout -- .nax/features/f/prd.json", ALL, CMDS)).toBe(
+      EXPLANATION,
+    );
+  });
+
+  test("a timeout-wrapped bare checkout head returns the explanation", () => {
+    expect(redirectForVerb("Git", "timeout 30 checkout -- .nax/features/f/prd.json", ALL, CMDS)).toBe(EXPLANATION);
+  });
+});

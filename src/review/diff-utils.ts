@@ -9,13 +9,14 @@ import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { isTestFile } from "../test-runners";
 import { GIT_TIMEOUT_MS, getMergeBase, isGitRefValid } from "../utils/git";
+import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "../utils/nax-owned-paths";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Maximum diff size in bytes before truncation. 50KB keeps prompts within LLM context. */
 export const DIFF_CAP_BYTES = 51_200;
 
 /** nax metadata paths — always excluded from diffs (never production code). */
-export const ALWAYS_EXCLUDED = [":!.nax/", ":!.nax-pids"];
+export const ALWAYS_EXCLUDED: string[] = [...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS];
 
 interface DiffIgnoreOptions {
   naxIgnoreIndex?: NaxIgnoreIndex;
