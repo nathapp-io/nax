@@ -6,12 +6,14 @@ import {
   buildGitArgv,
   compileToolPolicy,
   createCodingToolRuntime,
+  DEFAULT_LOG_MAX_COUNT,
   GIT_ESCAPE_FLAGS,
   GIT_READ_VERBS,
   gitTool,
 } from "@/tools";
 import { GIT_DIFF_FILTERS } from "@/tools/git";
 import { _gitDeps } from "@/utils/git";
+import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 
 function contentOf(result: { kind: string; content?: string }): string {
   if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}: ${JSON.stringify(result)}`);
@@ -30,7 +32,13 @@ describe("buildGitArgv", () => {
   // the cwd, which is the permitted root. See the root-boundary tests below for
   // the two escapes this shape closes.
   test("scopes a plain diff to the root and terminates the revision list", () => {
-    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--relative", "--", "."]);
+    expect(argvOf({ subcommand: "diff" })).toEqual([
+      "diff",
+      "--relative",
+      "--",
+      ".",
+      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
+    ]);
   });
 
   test("appends refs then paths after a '--' separator", () => {
@@ -98,6 +106,62 @@ describe("buildGitArgv", () => {
 });
 
 /**
+ * nax#2007 — nax writes run state under `.nax/`, and during a run it is
+ * git-tracked, so an unscoped Git call reported it back to the agent as its own
+ * diff. The fix narrows only the DEFAULT view: a caller that names a path gets
+ * exactly what it asked for. `blame` is exempt because git rejects exclude
+ * pathspecs there and exits 128.
+ */
+describe("buildGitArgv — nax-owned paths are excluded from the default view", () => {
+  const GIT_EXCLUDES = [":(exclude).nax", ":(exclude)**/.nax"];
+
+  test("the shared SSOT constant is the git exclude form the tool uses", () => {
+    expect([...NAX_OWNED_GIT_EXCLUDE_PATHSPECS]).toEqual(GIT_EXCLUDES);
+  });
+
+  test("status with no paths ends with the root and the nax exclusions", () => {
+    expect(argvOf({ subcommand: "status" })).toEqual(["status", "--", ".", ...GIT_EXCLUDES]);
+  });
+
+  test("diff with no paths gets the exclusions, with --relative still ahead of the refs", () => {
+    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--relative", "--", ".", ...GIT_EXCLUDES]);
+    expect(argvOf({ subcommand: "diff", refs: ["HEAD~1", "HEAD"] })).toEqual([
+      "diff",
+      "--relative",
+      "HEAD~1",
+      "HEAD",
+      "--",
+      ".",
+      ...GIT_EXCLUDES,
+    ]);
+  });
+
+  test("blame with no paths is exempt — exclude pathspecs are a git usage error there", () => {
+    expect(argvOf({ subcommand: "blame" })).toEqual(["blame", "--", "."]);
+  });
+
+  test("an explicitly named path is answered as given, with no exclusion injected", () => {
+    expect(argvOf({ subcommand: "diff", paths: ["src/a.ts"] })).toEqual(["diff", "--relative", "--", "src/a.ts"]);
+  });
+
+  test("an explicitly named .nax path still reaches the file", () => {
+    expect(argvOf({ subcommand: "diff", paths: [".nax/features/f/prd.json"] })).toEqual([
+      "diff",
+      "--relative",
+      "--",
+      ".nax/features/f/prd.json",
+    ]);
+  });
+
+  test("log with no refs keeps the --max-count default alongside the exclusions", () => {
+    const argv = argvOf({ subcommand: "log" });
+    expect(argv).toContain(`--max-count=${DEFAULT_LOG_MAX_COUNT}`);
+    expect(argv.slice(-GIT_EXCLUDES.length)).toEqual(GIT_EXCLUDES);
+    expect(argv[argv.length - GIT_EXCLUDES.length - 1]).toBe(".");
+  });
+});
+
+/**
  * #1818 — typed flag fields.
  *
  * Every flag git needs here is emitted by nax, never supplied by the model: a
@@ -110,7 +174,14 @@ describe("buildGitArgv", () => {
  */
 describe("buildGitArgv — typed flag fields", () => {
   test("emits --name-only for diff and log", () => {
-    expect(argvOf({ subcommand: "diff", nameOnly: true })).toEqual(["diff", "--relative", "--name-only", "--", "."]);
+    expect(argvOf({ subcommand: "diff", nameOnly: true })).toEqual([
+      "diff",
+      "--relative",
+      "--name-only",
+      "--",
+      ".",
+      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
+    ]);
     expect(argvOf({ subcommand: "log", nameOnly: true })).toContain("--name-only");
   });
 
@@ -160,15 +231,32 @@ describe("buildGitArgv — typed flag fields", () => {
   });
 
   test("a false or omitted boolean emits nothing", () => {
-    expect(argvOf({ subcommand: "diff", nameOnly: false })).toEqual(["diff", "--relative", "--", "."]);
+    expect(argvOf({ subcommand: "diff", nameOnly: false })).toEqual([
+      "diff",
+      "--relative",
+      "--",
+      ".",
+      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
+    ]);
     expect(argvOf({ subcommand: "log", oneline: false })).not.toContain("--oneline");
   });
 
   // `false` asks for nothing, so refusing it for the wrong verb would invent a
   // refusal — the failure class this change exists to reduce.
   test("an explicitly-false flag is accepted even on a verb it does not apply to", () => {
-    expect(argvOf({ subcommand: "status", nameOnly: false })).toEqual(["status", "--", "."]);
-    expect(argvOf({ subcommand: "diff", oneline: false })).toEqual(["diff", "--relative", "--", "."]);
+    expect(argvOf({ subcommand: "status", nameOnly: false })).toEqual([
+      "status",
+      "--",
+      ".",
+      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
+    ]);
+    expect(argvOf({ subcommand: "diff", oneline: false })).toEqual([
+      "diff",
+      "--relative",
+      "--",
+      ".",
+      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
+    ]);
   });
 
   // The closed enum is the whole safety property: were the value interpolated

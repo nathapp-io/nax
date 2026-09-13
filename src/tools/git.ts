@@ -18,6 +18,7 @@
 import type { CommandInterceptor, InterceptRequest } from "@/execution/command-interceptor";
 import { interceptArgv } from "@/execution/command-interceptor";
 import { gitWithTimeout } from "@/utils/git";
+import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 /**
@@ -256,6 +257,14 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
     // the command's own scope was. `.` is resolved by git against the cwd,
     // which gitWithTimeout sets to the permitted root.
     argv.push(".");
+    // nax's own run state under .nax/ is git-tracked during a run, so an
+    // unscoped call reported it back as the agent's diff (#2007). Excluded only
+    // on this DEFAULT branch: a caller that names a path under .nax/ gets it --
+    // the tool is read-only, and silently returning nothing for an explicitly
+    // requested path would be a worse failure than the one being fixed.
+    // `blame` is exempt because git rejects exclude pathspecs on it and exits
+    // 128; do not "unify" it back in.
+    if (subcommand !== "blame") argv.push(...NAX_OWNED_GIT_EXCLUDE_PATHSPECS);
     return argv;
   }
 
