@@ -12,17 +12,17 @@ analysis. You *do* need to re-measure after every task.
 
 ---
 
-## 0. Current state - measured 2026-09-13 after Wave 2 (Tasks 4-5)
+## 0. Current state - measured 2026-09-13 after Wave 3 (Task 6)
 
 ```
 bun run scripts/check-import-cycles.ts
-[OK] 62 modules in runtime import cycles (baseline: 62).
+[OK] 50 modules in runtime import cycles (baseline: 50).
 ```
 
 | Reading | Value |
 |:--|--:|
-| Baseline file `count` | **62** |
-| Actual cyclic modules in `src/` | **62** |
+| Baseline file `count` | **50** |
+| Actual cyclic modules in `src/` | **50** |
 | Strongly-connected components (SCCs) that are cyclic | **5** |
 | Largest SCC | **20 modules** |
 
@@ -30,22 +30,17 @@ The five components:
 
 | # | Size | Territory |
 |--:|--:|:--|
-| 1 | **20** | `execution/` + `pipeline/` — exactly the section 5 residue, already separated |
-| 2 | **15** | `context/engine/` (14) + `context/index.ts` |
-| 3 | **12** | `agents/` (`acp/` 7 + registry/manager/complete-exception-classifier + `index.ts`) |
-| 4 | **10** | `debate/selectors/` (4) + `debate/session-helpers.ts` + `operations/debate-hybrid.ts` + `routing/` (3) + `operations/classify-route.ts` + `operations/index.ts` |
-| 5 | **5** | `cli/{index,plan,plan-command}` + `plan/strategies/` |
+| 1 | **20** | `execution/` + `pipeline/` — the section 5 residue |
+| 2 | **12** | `agents/` (`acp/` 7 + registry/manager/complete-exception-classifier + `index.ts`) |
+| 3 | **10** | `debate/selectors/` (4) + `debate/session-helpers.ts` + `operations/debate-hybrid.ts` + `routing/` (3) + `operations/classify-route.ts` + `operations/index.ts` |
+| 4 | **5** | `cli/{index,plan,plan-command}` + `plan/strategies/` |
+| 5 | **3** | `context/engine/` remnant |
 
-The 92-module mega-component split exactly as Task 4 predicted: **92 -> 55 freed + 37
-leftover**, and the leftover is precisely the 15 + 12 + 10 modules above. The section 5
-residue (20) is already its own SCC; Waves 3-4 now shrink the rest (37 -> 20 expected).
-
-Section 6.1's caution applies loudly now: the per-task expected counts in section 3 were
-simulated against the pre-drain graph, and Wave 2 changed the graph enough that some later
-edges now free different amounts (e.g. `context/index.ts -> context/engine/index.ts`
-ranks at frees=12 instead of the simulated 9, and `routing/router.ts -> @/operations`
-ranks at frees=3 instead of 4). The tasks and techniques are unchanged; re-measure after
-every cut and trust the tool.
+The 15-module `context/engine` + `context/index.ts` component is gone: the four
+back-edge cuts (Task 6) took it to a 3-module remnant, and that remnant is untouched by
+the remaining tasks (its three modules stay cyclic through the `pull-tools` / `handlers` /
+`providers` knot task 12 partially unwinds — but the plan's expected 20 assumes context
+does not ship further modules into the residue; see the Task 12 note at section 8.3).
 
 **Simulated end state of this plan: 132 -> 20.** The 17 edge cuts across the 12 tasks in
 section 3 were chosen by greedy search over every internal edge of every component (remove
@@ -1348,3 +1343,54 @@ Wave 3-4 edges have different freed-counts now (measured, section 2.2 ranker at 
   modules are the whole remaining story. 15 (Task 6) + 12 and 10 partly (Tasks 7-10) +
   5 (Task 11) + Task 12's 3 -> exactly 20 at the end, per the plan's simulation of the
   final residue.
+
+### 8.6 - 2026-09-13 - Wave 3 complete (Task 6): 62 -> 50
+
+Measured, not predicted. All four back-edges cut; the 15-module `context/engine` +
+`context/index.ts` component is gone. The edge-by-edge drops were **1, 1, 2, 8** across
+the four files (plan predicted 1, 1, 1, 8; static-rules' multi-symbol edge freed 2 instead
+of 1 because its cut also unloaded the `static-rules-budget-notice` type-only re-route —
+the total is unchanged at exactly the plan's **50**).
+
+Deviation from the plan's edit list: the plan's "pick (B) or (C)" prose allowed (B) for
+leaves in `src/context/engine/`, but **no** defining leaf of the four sits under
+`engine/` — they are all in `src/context/` proper, one level above `providers/`, so every
+edge used technique (C):
+- `generateTestCoverageSummary` -> promote `src/context/test-scanner.ts` to
+  `test-scanner/index.ts` (its own `../` imports respelled to `@/optimizer`,
+  `@/test-runners`, `@/logger`, `@/utils/errors` — all verified barrel-legal).
+- `loadCanonicalRules` + `type CanonicalRule` -> promote `rules/canonical-loader.ts`;
+  the mixed `{ type CanonicalRule, loadCanonicalRules }` statement was split per plan
+  step 2, with both halves now pointing at `@/context/rules/canonical-loader` (the
+  type-only half could have stayed on `@/context` but the leaf is equally legal).
+- `static-rules.ts` multi-symbol block -> promote `rules/rule-sections.ts` and
+  `rules/rule-budget.ts` in addition to canonical-loader; all five symbols now come
+  from `@/context/rules/{rule-sections,rule-budget,canonical-loader}`.
+- `FeatureContextProvider as FeatureContextProviderV1` -> promote
+  `providers/feature-context.ts` (V1) to `providers/feature-context/index.ts`. That
+  cascaded one level: V1 imports `resolveFeatureId` from `../feature-resolver`, which
+  would have become `../../` (banned), so `src/context/feature-resolver.ts` was
+  promoted to its own nested barrel too and V1 spells it `@/context/feature-resolver`.
+
+Collision checks (plan step 4 / Task 5 step 4) run after every promotion: no
+file-vs-barrel shadowing, `check:alias-internals` clean at every step (98 barrels at
+completion).
+
+The 3-module remnant is exactly the Task 12 knot (`pull-tools.ts` <-> the two
+`handlers/query-*` files); Task 12's expected frees of 3 applies to it directly.
+
+Full gates after Wave 3: cycles 50/baseline 50, tsc clean, alias-internals clean,
+file-sizes clean, `check:all` green (one biome import-order fix needed after the moves),
+`test/unit/context/` 1544 pass, `test:coverage` OK (six `src/` files moved).
+
+Commit: `7afbc01ad`.
+
+**Expected-count adjustment going forward:** Task 6's realized total (12 freed) matches
+the plan's 62 -> 50 exactly. Wave 4 targets: Tasks 7, 8, 11 unchanged (7, 6, 5);
+Task 10 frees **3** (not 4) — re-measured after Wave 3, the `routing/router.ts` cut
+trawls one fewer module; Task 9's edge was 5; Task 12 frees **3**. Sum of remaining
+cuts: 7+6+5+3+5+3 = 29 -> **50 - 29 = 21**, one above the plan's 20. The ranker at Wave 3
+shows `agents/acp/adapter-lifecycle.ts -> spawn-client.ts` and `operations/index.ts ->
+debate-hybrid.ts` as the highest-value extra edges after the Task 7/8/9 cuts, so the 21
+may collapse to 20 with a free edge at the end — re-measure after each cut and trust the
+tool.
