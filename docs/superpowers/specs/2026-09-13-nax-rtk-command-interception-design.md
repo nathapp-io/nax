@@ -4,7 +4,7 @@ Design only. Status: **design approved, not yet implemented.** No code changes a
 made against this spec while the import-cycles refactor is in flight.
 
 **Prerequisite: `2026-09-13-nax-provider-tools-design.md`** — but only for US-006, the
-recall tool. Everything else here (the interception seam, all three sites, the rtk
+recall tool. Everything else here (the interception seam, the git site, the rtk
 provider, output post-processing) is independent of it and can land first.
 
 Companion spec: `2026-09-13-nax-mcp-client-design.md`. It shares only the provider-tools
@@ -62,15 +62,21 @@ by an existing `origin: "harness" | "agent-tool"` field (`src/quality/runner.ts:
 | 2 | `src/verification/executor.ts:85-125` | `/bin/sh -c` | Acceptance and test runs |
 | 3 | `src/utils/git.ts:71-91` (`gitWithTimeout`) | argv | The `Git` and `GitCommit` tools |
 
-Site 1 is the highest-value by a wide margin: it is one function covering both the
-harness's own gates and the agent's only shell-reaching tool.
+Site 1 was predicted to be the highest-value by a wide margin: one function covering
+both the harness's own gates and the agent's only shell-reaching tool. **US-001 refuted
+that prediction outright** — see R10. Sites 1 and 2 are out of scope; only site 3 is
+wired. The table above is retained because it describes where commands actually leave
+nax, which is still the map anyone reasoning about this feature needs.
 
 ### 2.4 What rtk offers
 
 - **`rtk rewrite "<cmd>"`** — a real integration API with an exit-code protocol:
   `0`+stdout = rewritten, `1` = no equivalent, `2` = deny rule matched, `3`+stdout =
   rewrite but ask. This is what every other agent's PreToolUse hook consumes, and it is
-  what site 1 and 2 should use rather than blindly prefixing `rtk`.
+  what a shell site would have had to use rather than blindly prefixing `rtk`. R10 drops
+  both shell sites, so nax never calls `rtk rewrite`; recorded because it is the API any
+  future reopening would start from, and because it is the reason a naive `rtk <cmd>`
+  prefix is the wrong shape (see R10, reason 3).
 - **`never_worse`** (`src/core/guard.rs:18-24`) — a global invariant: if the filtered
   output would estimate larger than the raw output, rtk emits the raw. rtk structurally
   cannot cost more tokens than the unwrapped command. This is the strongest safety
@@ -136,9 +142,9 @@ command fails to spawn at all — rtk removed from PATH after preflight passed, 
 changed — then *nothing ran*, so re-running raw once costs nothing and risks nothing. This
 does not contradict the rule above, which is about exit codes from a command that actually
 executed. The two are cleanly distinguishable: `runQualityCommand`'s catch block returns
-`exitCode: -1` (`src/quality/runner.ts:254-263`), a value no real process produces. A
-spawn failure also trips the circuit breaker, so the fallback happens at most once per
-run.
+`exitCode: -1` (`src/quality/runner.ts:254-263`), a value no real process produces. (This
+carve-out described the shell sites, which R10 drops, and the circuit breaker, which is
+removed — see US-004. It is retained as the record of the rule, not as live design.)
 
 **R4 — rtk's recovery hints are stripped.** A nax agent has no shell and no `noCompact`
 field, so `[full diff: rtk git diff --no-compact]` and `[+N hidden: rtk recall <hash>]`
@@ -164,10 +170,22 @@ fails silently rather than loudly.
 **R7 — Opt-in.** `enabled: false` by default. Interception changes what the agent sees;
 it should not switch on because a binary happens to be installed.
 
-**R8 — Measurement decides the verb table.** `sites` and `git.verbs` ship conservative and
-are opened by US-001's data, not by this document's assertions.
+**R8 — Measurement decides the verb table.** `git.verbs` ships conservative and is opened
+by US-001's data, not by this document's assertions. A verb enters the table only on a
+saving that survives **re-sampling** — a single-sample result is not data (see US-001's
+sampling note), and a verb whose measured saving is an artifact of which commit HEAD sat
+on stays out.
 
-**R9 — A rewritten shell string is executed; the trust boundary moves, and must be
+**R9 — RETIRED by R10, retained as the record of why the shell sites are not worth it.**
+R9 applied only to sites 1 and 2, the two shell-string sites. R10 drops both, so no
+rewritten shell string is ever executed and none of the narrowing below is implemented.
+Read this ruling as the cost side of R10's ledger: it is the security burden the feature
+would have carried for a measured 0% saving. If a future measurement ever reopens a shell
+site, this ruling is the precondition for doing so — it does not get re-litigated.
+
+The original ruling follows.
+
+**A rewritten shell string is executed; the trust boundary moves, and must be
 narrowed.** This is the most security-relevant consequence of the whole design and it
 deserves to be stated plainly rather than left implicit.
 
@@ -201,6 +219,63 @@ the binary to prefix commands".
 An argv rewrite needs none of this: it is a static per-verb mapping built by nax (US-004),
 never a string parsed back from a subprocess.
 
+**R10 — nax does not wrap user-authored command strings. Sites 1 and 2 are dropped; the
+git site is the whole feature.** (User ruling, 2026-09-13, on US-001's measured table.)
+
+`quality.commands.*` and `acceptance.command` are authored by the user in
+`.nax/config.json`. The git site is different in kind: that argv is built by nax in
+`buildGitArgv`, and the user has no way to reach it.
+
+Four reasons, in the order that decided it:
+
+1. **On the success path the measurement found nothing to save, and the failure path is
+   unresolved.** Every passing quality command in nax's own repo is byte-identical through
+   rtk (`test` 312→312, `build` 200→200, `typecheck` 0→0). The failing path was probed
+   twice and disagreed with itself: a failure whose output is a Bun stack trace compressed
+   well (`test` 8,156→3,419, 58%), while a failure whose output is structured Biome
+   diagnostics compressed not at all (`lint` 2,964→2,964, 0%). rtk's filters are
+   shape-sensitive, and a gate's failure output shape is a property of the user's toolchain,
+   not something nax can predict.
+
+   So this reason is narrower than "no saving exists": it is "no saving on the path that
+   always runs, and an unpredictable one on the path that sometimes does." That is not a
+   sufficient basis to move a trust boundary, but it is also not the load-bearing reason.
+   Reasons 2-4 are, and none of them depends on a number.
+
+2. **The user can already do this, precisely, without us.** Anyone who wants rtk on their
+   test command writes `rtk bun run test` in their own config. That path is explicit,
+   visible in the file the user already maintains, and needs no nax feature. A `sites`
+   flag would only add a second, less obvious way to express what the config line already
+   says — and the two could disagree.
+
+3. **Auto-prefixing a user string is fragile in a way nax cannot fix.** A command may
+   carry env assignments (`AGENT=1 bun run lint:biome`), pipelines, redirections, or
+   subshells. Naive prefixing turns the first of those into `rtk AGENT=1 bun …`, where rtk
+   execs `AGENT=1` and exits 127 — turning a green gate red. The measurement harness hit
+   exactly this bug and mis-reported it as an rtk disqualification. nax would be shipping
+   a shell-syntax parser to guess where a user meant the wrapper to go; the user knows,
+   and can just type it.
+
+4. **Dropping these two sites deletes R9 entirely.** R9's operator-skeleton, segment-prefix
+   and redirection checks exist solely to contain a rewritten shell string. With no shell
+   site, the string reaching `/bin/sh -c` still originates in `.nax/config.json` — the
+   trusted-as-a-Makefile boundary `src/verification/executor.ts` documents today — and the
+   feature's most security-sensitive machinery is not built rather than built carefully.
+
+**What this costs.** A failing gate is verbose, and that is exactly when nax re-reads it —
+so the 58% stack-trace sample is a real saving this ruling declines to capture
+automatically. The ruling accepts that knowingly. Reasons 2-4 do not depend on the
+measurement at all: a user whose gates fail verbosely can capture the same saving with one
+edit to a line they already own, and nax wrapping it for them would still be moving a trust
+boundary to do automatically what the user can do explicitly. What the ruling buys in
+exchange is that no user's command string is ever rewritten by a binary nax does not
+control.
+
+**Reopening.** Not on savings numbers alone — a red-build measurement showing a large
+saving argues for documenting `rtk` in the config example, not for wiring a site. Reopen
+only if some command string is shown to be genuinely unreachable by the user, which no
+known case is.
+
 ## 4. Design
 
 ### US-001 — Measurement harness
@@ -227,49 +302,79 @@ Run each raw and through rtk, recording:
 | wall-clock delta | rtk adds a process hop |
 | SQLite contention under parallel invocation | H5 below; rtk writes tracking rows on every call and nax runs parallel worktrees |
 
-Output is the per-verb table that populates `sites` and `git.verbs`.
+Output is the per-verb table that populates `git.verbs`.
 
 **Stated expectation, so the data can falsify it:** sites 1 and 2 carry nearly all the
 value; `git diff` and `show` carry some; `status`, `log --name-only` and `blame` carry
 none. If that holds, `git.verbs` ships `["diff","show"]`. If the measurement disagrees,
 the measurement wins.
 
-Measured result (corpus run 2026-09-13 at the repo root, rtk installed, via
-`scripts/analyze-rtk-savings.ts`):
+*Retained verbatim as the record of a prediction that the data reversed almost entirely.*
+Sites 1 and 2 carried none of the value on the success path, `log` was the largest win
+rather than a predicted zero, and `show` — the one verb the prediction was confident
+about — is the only verb disqualified outright. The measurement won.
+
+Measured result — **run 4**, 2026-09-13, repo root at `230f25551`, rtk 0.45.0,
+12-commit sample, via `scripts/analyze-rtk-savings.ts`. Full write-up, including the two
+superseded runs and the defects they exposed, in
+`docs/superpowers/results/2026-09-13-rtk-savings-measurement.md`.
 
 ```
-verb	n	rawKB	rtkKB	saved%	delivered-saved%	verdict
-log	3	134	9	93.5	85.4	ok
-blame	1	23	23	0.0	0.0	ok
-diff	3	9	9	1.8	1.8	ok
-show	2	4	4	10.7	10.7	DISQUALIFIED — exit-code divergence on 1/2 (e.g. show-nameonly: raw 0 vs rtk 128)
-coverage	1	4	4	-3.9	-3.9	ok
-lint	2	1	0	92.0	92.0	DISQUALIFIED — exit-code divergence on 2/2 (e.g. lint[0]: raw 0 vs rtk 127)
-status	1	0	0	50.3	50.3	ok
-test	1	0	0	0.0	0.0	ok
-build	1	0	0	0.0	0.0	ok
-lintFix	1	0	0	0.0	0.0	ok
-formatFix	1	0	0	0.0	0.0	ok
-typecheck	2	0	0	0.0	0.0	ok
+verb	n	rawKB	rtkKB	saved%	delivered-saved%	median%	min%	max%	verdict
+show	24	1042	257	75.4	41.9	52.9	0.0	99.6	DISQUALIFIED — exit-code divergence on 12/24
+diff	14	951	286	70.0	27.9	21.6	-7.3	53.3	ok
+log	3	139	9	93.2	85.0	84.6	0.0	91.7	ok
+blame	1	23	23	0.0	0.0	0.0	0.0	0.0	ok
+coverage	1	4	4	-0.4	-0.4	-0.4	-0.4	-0.4	ok
+lint	2	1	1	0.0	0.0	0.0	0.0	0.0	ok
+status	1	1	0	47.1	47.1	47.1	47.1	47.1	ok
+test	1	0	0	0.0	0.0	0.0	0.0	0.0	ok
+build	1	0	0	0.0	0.0	0.0	0.0	0.0	ok
+typecheck	2	0	0	0.0	0.0	0.0	0.0	0.0	ok
+
+NOT MEASURED (absent from the table above, not a measured zero):
+  testScoped	placeholder template, not executable as written
+  lintFix	mutating: would write to the working tree
+  formatFix	mutating: would write to the working tree
 ```
 
-The prediction is falsified on the two points that matter. `log` is the headliner: 93.5%
-raw, 85.4% *delivered* after nax's 40 KB slice — the §2.5 "full passthrough, zero gain"
-conjecture is wrong in the aggregate. `diff` is ~nothing (1.8%, raw and delivered
-coincide because the cap is not binding here). `show` is DISQUALIFIED on exit-code
-divergence (rtk 128 vs raw 0), not on savings, and `status` halves its already-tiny
-output. `git.verbs` therefore ships `["log","diff","status","blame"]` (US-007), not the
-predicted `["diff","show"]`. The site-1-and-2 side of the prediction is not borne out
-either: every quality command measures ~0 KB output (the repo's commands are quiet-piped,
-`--silent` / quiet-on-success wrappers), so the shell sites show no measurable savings in
-this corpus — but see the caveat immediately below before reading that as a verdict.
+**The git half.** `log` is the headliner: 93.2% raw, 85.0% *delivered* after nax's 40 KB
+slice — §2.5's "full passthrough, zero gain" conjecture is wrong. `diff` is a real but
+smaller win at 27.9% delivered (median 21.6%) across 14 commits. `blame` is byte-identical (rtk passes it
+through), and `status`'s 44% is 44% of 100 bytes. `show` saves as much as `diff` and is
+still excluded: `rtk git show <ref> --name-only` exits 128 where raw git exits 0, on all
+12 sampled commits. Parity is a correctness gate — nax derives `success` from that code.
 
-The `lint` DISQUALIFICATION (rtk 127, command-not-found) is an artifact of the harness
-wrapping env-prefixed commands verbatim as `rtk AGENT=1 bun run lint:biome`. US-004's
-actual site-1 seam is `rtk rewrite`, which parses compound commands — so treat this row
-as an integration caveat for site 1, not as a verdict on `rtk rewrite`. The gate proves
-naive `rtk <cmd>` prefixing of env-prefixed commands is wrong; whether the real seam
-saves anything at site 1 is unmeasured here.
+**Sampling is load-bearing, and this is the methodological finding of US-001.** `diff-ref`
+and `show` measure one commit, so they measure whatever that commit contained. Run 1 sat
+on a docs commit (8.6 KB) and scored `diff` at 1.8% delivered; run 2 sat on a feature merge
+(76.8 KB) and scored the same verb at 37.5% delivered (67.4% raw). Neither number was
+about rtk. Only the
+12-commit sample above (27.9%, median 21.6%) is evidence, and R8 now requires re-sampling before any
+verb enters the table. `log`, whose output does not depend on HEAD position, scored 93.5%
+and 93.2% across two independent runs — which is what a stable measurement looks like.
+
+**The shell half on the success path: no saving exists.** Every passing quality command is
+byte-identical through rtk (`test` 312→312, `build` 200→200, `typecheck` 0→0). `coverage`
+measures slightly *larger* through rtk, but its raw output is not byte-stable run to run
+(4,161 / 4,324 / 4,342 bytes across three runs, because it prints timings), so read its
+−3.9%/−8.4% as noise around zero rather than as a regression. For the failure path, which
+is a different and unsettled story, see R10 reason 1. Two earlier caveats are now closed
+rather than open:
+
+- The run-1 `lint` DISQUALIFICATION (rtk 127) was a harness defect, not an rtk property —
+  the wrapper emitted `rtk AGENT=1 bun run lint:biome`, so rtk tried to exec `AGENT=1`.
+  Fixed by `injectRtk`, which places `rtk` after leading assignments. `lint` now measures
+  at parity and 0.0% saving. The defect is preserved as R10's reason 3: naive prefixing of
+  a user's command string is wrong, and nax should not be in the business of guessing.
+- Runs 1 and 2 executed `lintFix` and `formatFix` — mutating commands the plan's own
+  constraints forbid — four times each. Fixed by `isMutatingQualityCommand`.
+
+**The limit of this evidence, stated so it is not overread.** The shell-half rows measure
+the **success path only**: nax's quality commands route through `scripts/quiet-run.ts`,
+which prints one `OK:` line when `AGENT=1` and the command passes. A *failing* gate is
+verbose, and that is when nax re-reads it. R10 does not rest on this row alone — see its
+reasons 2-4, which hold regardless of what a red build would measure.
 
 **Acceptance:** the harness runs without rtk installed (skipping, not failing); a verb
 with any exit-code divergence is reported as disqualified; the report distinguishes
@@ -315,27 +420,52 @@ byte-identical to today **and is never asked to post-process**; a fake returning
 mismatch is rejected; a fake introducing `-C` is rejected; a fake whose `postProcess`
 throws degrades to the raw output rather than failing the command.
 
-### US-003 — Wiring the three sites
+### US-003 — Wiring the git site
 
-- **Site 1**, `src/quality/runner.ts:150-165` — intercept between command resolution and
-  the `/bin/sh -c` spawn. Covers `RunCommand` and every harness gate at once. Reuses
-  `_qualityRunnerDeps.spawn` for test injection.
-- **Site 2**, `src/verification/executor.ts:85-125` — same shape.
-- **Site 3**, `src/utils/git.ts:71-91` — argv shape, gated by `git.verbs`.
+Per R10 there is **one** site, not three.
 
-`GitCommit` is included at site 3 only if US-001 shows a benefit; rtk's `run_commit`
-inherits stdin for editor/GPG/credential-helper prompts, which is correct behaviour but
-interacts with nax's timeouts.
+- **The site is `src/tools/git.ts:319`**, the `Git` tool's own call into
+  `gitWithTimeout` — argv shape, gated by `git.verbs`.
 
-**Acceptance:** with the interceptor disabled, all three sites produce byte-identical
+  ⚠️ **Not `gitWithTimeout` itself.** Earlier revisions of this spec named
+  `src/utils/git.ts:71` and claimed it "covers the `Git` and `GitCommit` tools." That was
+  wrong, and dangerously so: `gitWithTimeout` has **52 callers**, and at least nine issue
+  `log`/`diff` and then machine-parse the stdout — `verification/smart-runner.ts:484,550`
+  (filenames → which tests to run), `verification/changed-line-ranges.ts:44` (unified
+  hunks), `verification/flake-baseline-diff.ts:54`, `review/runner/index.ts:207`,
+  `worktree/merge.ts:366` (conflict detection), `finish/review/audit-gaps.ts:88`,
+  `utils/git.ts:221`, `context/engine/providers/git-history.ts:73`.
+
+  rtk's purpose is to compact output. Compacting a `--name-only` list that nax then splits
+  into filenames is not a token saving — it is scoped test selection running the wrong
+  tests and merge-conflict detection missing files, silently. Intercepting at
+  `gitWithTimeout` would do exactly that.
+
+  Nothing is lost by narrowing: those internal outputs never reach a model, so there were
+  no tokens to save there. `GitCommit` also shells out to git and is also agent-facing, but
+  it stays excluded (see below) and its verbs are not in `git.verbs`. **The `Git` tool's
+  output is the only thing this feature may touch.**
+
+Sites 1 (`src/quality/runner.ts`) and 2 (`src/verification/executor.ts`) are **out of
+scope and must not be touched.** A change to either is a spec violation, not an
+improvement: both take user-authored strings, both measured no saving, and wiring either
+one re-introduces R9. `RunCommand` is therefore *not* covered by this feature — it reaches
+the shell through site 1.
+
+`GitCommit` is excluded: US-001 measured no read-verb benefit that would justify it, and
+rtk's `run_commit` inherits stdin for editor/GPG/credential-helper prompts, which
+interacts badly with nax's timeouts.
+
+**Acceptance:** with the interceptor disabled, `gitWithTimeout` produces byte-identical
 behaviour to today, proven by tests that do not reference rtk; with a fake interceptor
 that rewrites, the exit code nax observes is the rewritten command's exit code unchanged,
-including a non-zero one — a rewrite must never turn a failing gate into a passing one, or
-the reverse.
+including a non-zero one — a rewrite must never turn a failing call into a passing one, or
+the reverse. A test asserts that no interception seam exists in `src/quality/runner.ts` or
+`src/verification/executor.ts`, so a later change cannot quietly re-add one.
 
 ### US-004 — The rtk provider
 
-New `src/execution/interceptors/rtk.ts`, the only file that knows rtk exists.
+New `src/execution/interceptors/rtk/index.ts` — a directory, not a flat file: `@/execution/interceptors/rtk` must be an exact barrel match to satisfy `check-alias-internals`, and leaving both forms silently un-registers the barrel. The only module that knows rtk exists.
 
 - **shell requests** → `rtk rewrite "<command>"`, mapping the exit-code protocol:
   `0` → rewritten · `1` → unchanged · `2` → unchanged (rtk's deny rules govern rtk, not
@@ -347,11 +477,17 @@ New `src/execution/interceptors/rtk.ts`, the only file that knows rtk exists.
   re-splitting.
 - **Preflight**: one `rtk --version` per run gates all rewriting and records the version
   into run artifacts (H6).
-- **Circuit breaker**: after `failuresBeforeDisable` interception failures, rtk is
-  disabled for the remainder of the run.
+- **Circuit breaker**: ~~after `failuresBeforeDisable` interception failures, rtk is
+  disabled for the remainder of the run.~~ **Removed.** With the shell path dropped (R10)
+  there is no per-request I/O left to fail: preflight runs once at construction and a
+  rewrite is a pure string prefix. At most one failure can ever occur, so any threshold
+  above 1 is unreachable and the config key could never fire. A missing or broken binary is
+  instead a terminal state — every request declines. Reintroduce the breaker if and when
+  something reintroduces per-request I/O.
 
-**Acceptance:** each of the four exit codes maps as specified; a missing rtk binary yields
-`declined` on every request and never throws; the circuit breaker latches.
+**Acceptance:** a missing rtk binary yields `declined` on every request and never throws;
+construction never throws even when the probe does; the resolved rtk version is recorded
+once per run, and the state record is written whether or not interception is enabled.
 
 ### US-005 — Output post-processing
 
@@ -423,9 +559,7 @@ not advertised **and no marker offers it** (US-005).
     "commandInterceptor": {
       "provider": "rtk",
       "enabled": false,
-      "sites": ["quality", "verification", "git"],
-      "git": { "verbs": ["log", "diff", "status", "blame"] },
-      "failuresBeforeDisable": 3
+      "git": { "verbs": ["log", "diff"] }
     }
   }
 }
@@ -435,23 +569,38 @@ One interceptor, not a list — a second provider can widen the schema when one 
 `.strict()`, mounted in the existing `execution` block, documented in
 `src/cli/config-descriptions.ts`.
 
-These are the post-measurement values, taken from US-001's table rather than asserted
-here: `sites` enables the git site, and `git.verbs` carries exactly the verbs
-measurement cleared (`log`, `diff`, `status`, `blame`). A verb marked DISQUALIFIED must
-**not** appear in `git.verbs` regardless of its savings — `show` was disqualified on
-exit-code divergence and is therefore absent even though the prediction expected it.
+**There is no `sites` key.** Earlier drafts carried one because there were three sites to
+select among; R10 leaves a single site, so `enabled` is the on/off and `git.verbs` is the
+only scope knob. A `sites` key would now be a field with one legal value.
 
-**`sites` and `git.verbs` compose as AND, not OR.** The git site is active only when
-`"git" ∈ sites` **and** the verb is in `git.verbs`. Two knobs governing one site reads as
-redundant, and it is — deliberately: `sites` is the coarse on/off that matches the other
-two sites, while `git.verbs` carries US-001's per-verb findings. An empty `git.verbs` with
-`"git" ∈ sites` intercepts nothing, and that is not an error — that was the pre-measurement
-default, before US-001's table had run; the measured default above replaces it.
+`git.verbs` carries **measured** values (US-001 run 4, 2026-09-13, 12-commit sample,
+recorded in `docs/superpowers/results/2026-09-13-rtk-savings-measurement.md`). Two verbs
+cleared the bar:
+
+| verb | n | delivered saving | in `verbs` |
+|---|---|---|---|
+| `log` | 3 | **85.0%** | yes |
+| `diff` | 14 | **27.9%** (median 21.6%, range −7.3% to 53.3%) | yes |
+| `status` | 1 | 47.1% of ~1 KB | **no** — a percentage of nothing |
+| `blame` | 1 | 0.0% | **no** — rtk passes it through byte-identical |
+| `show` | 24 | 41.9% | **no** — DISQUALIFIED on exit-code divergence |
+
+An earlier revision listed `["log", "diff", "status", "blame"]`. That list did not follow
+from its own table — it included `blame` at a measured 0.0% and `diff` at a measured 1.8%
+— and both of its `diff`/`show` figures came from a **single-commit sample**, which R8 now
+forbids. Treat any verb table in this spec as provisional unless it cites the results
+doc.
+
+`show` is excluded even though it saves as much as `diff`: `rtk git show HEAD --name-only`
+returns `fatal: options '--name-only', '--name-status', '--check', and '-s' cannot be used
+together` and exits 128 where raw git exits 0. Exit-code parity is a correctness gate, not
+a savings metric — nax computes `success` from that code. Note this is the same
+`show --name-only` shape as open issues #2011 and #1800.
 
 **Acceptance:** default config leaves behaviour unchanged; an unknown key fails with
-`CONFIG_SCHEMA_INVALID`; `sites: []` disables interception without disabling the provider;
-`"git" ∈ sites` with empty `verbs` intercepts no git call; a verb in `git.verbs` with
-`"git" ∉ sites` intercepts nothing.
+`CONFIG_SCHEMA_INVALID`; an empty `git.verbs` intercepts nothing and is not an error; a
+verb absent from `git.verbs` is never intercepted; `enabled: false` disables interception
+without requiring `git.verbs` to be empty.
 
 ### US-008 — Audit and replay
 
@@ -460,23 +609,26 @@ Every rewrite records **requested vs executed**, following the `audit.executed` 
 replay of a run that used rtk must reproduce what actually executed, not what was asked
 for.
 
-Preflight records the rtk version; the circuit breaker records the trip and its cause.
+Preflight records the rtk version, and the interceptor records its own state — enabled,
+version, verbs — once per run **whether or not interception is enabled**. That is what makes
+the §7 A/B comparable: a run with interception off must be distinguishable in its artifacts
+from a run that simply made no git calls.
 
-**Acceptance:** a ledger row for a rewritten command carries both forms; a run with a
-tripped breaker says so in its artifacts.
+**Acceptance:** a ledger row for a rewritten command carries both forms; every run records
+the interceptor's state, including when it is disabled.
 
 ## 5. Hazards
 
 | # | Hazard | Mitigation |
 |---|---|---|
-| H1 | **Exit-code ambiguity.** rtk's internal errors exit `1`, identical to a legitimately failing lint. nax computes `success: exitCode === 0`, so an rtk crash reads as a quality-gate failure and triggers a fix cycle against a non-existent defect | R3 preflight + circuit breaker. The `rtk:`-prefixed stderr signature is used to *report* distinctly, never to retry |
+| H1 | **Exit-code ambiguity.** rtk's internal errors exit `1`, identical to a legitimately failing lint. nax computes `success: exitCode === 0`, so an rtk crash reads as a quality-gate failure and triggers a fix cycle against a non-existent defect | R3 preflight; a missing or broken binary declines terminally. The `rtk:`-prefixed stderr signature is used to *report* distinctly, never to retry |
 | H2 | **Dead-end recovery hints** → nax#1800's failure mode | R4 strip + US-006 recall tool |
 | H3 | **Working-root integrity** in parallel worktrees | R6 escape-flag ban + cwd invariance on every rewrite. Observed concretely: an rtk-rewritten `git` command was refused by a worktree-isolated session because its target root could not be verified |
 | H4 | **Truncation interaction** | `never_worse` bounds the downside; US-005 adds the missing marker |
 | H5 | **SQLite tracking contention** under parallel stories. Unmeasured | Measured in US-001; `RTK_DATA_DIR` per run is the lever if it bites |
 | H6 | **Version skew** — rtk behaviour is version-dependent | Preflight records the version into run artifacts, so telemetry cannot silently straddle a behaviour change |
-| H7 | **stdin.** rtk's filtered modes default stdin to null; `rtk proxy` does not wire it at all | Sites 1 and 2 never use stdin. Site 3's `GitCommit` does, which is why it is gated on US-001 |
-| H8 | **Provider stdout is executed as shell** at sites 1 and 2 — a trust-boundary move from project-authored config to a third-party binary | R9's skeleton/prefix/redirection validation, plus R7's opt-in default |
+| H7 | **stdin.** rtk's filtered modes default stdin to null; `rtk proxy` does not wire it at all | The read verbs in `git.verbs` never use stdin. `GitCommit`, which does, is excluded by US-003 |
+| H8 | ~~**Provider stdout is executed as shell**~~ — **cannot occur.** R10 drops both shell sites, so no provider output ever reaches `/bin/sh -c` | Structural: the code is not written. R9 records the narrowing that *would* have been required |
 
 **Checked and found to be a non-issue:** rtk's filtered mode merges the child's stdout and
 stderr before filtering, which looked like it would change what nax sees. It does not —
@@ -487,12 +639,14 @@ detection can read them. Recorded so this is not re-raised as a blocker later.
 
 ## 6. Sequence
 
-US-001 (measurement) gates everything — it decides whether sites 2 and 3 are worth wiring
-at all. US-002 (interface) → US-003 (sites) → US-004 (provider) is then a chain, with
-US-007 (config) alongside US-002. US-005 depends on US-004. US-006 depends on US-005 and
-on the shared externally-provided-tools mechanism (R5). US-008 lands with US-003.
+US-001 (measurement) has run; its outcome is R10, which cut the feature to the git site
+and fixed `git.verbs`. What remains is a chain: US-002 (interface) → US-003 (git site) →
+US-004 (provider), with US-007 (config) alongside US-002. US-005 depends on US-004. US-006
+depends on US-005 and on the shared externally-provided-tools mechanism (R5), which has
+since shipped (nax#2031). US-008 lands with US-003.
 
-The first end-to-end verifiable slice is US-004 against site 1 only.
+The first end-to-end verifiable slice is US-004 against the git site — which is now the
+only site, so it is also the last.
 
 ## 7. Verification
 
@@ -509,11 +663,14 @@ reliable but its absolute counts are approximate. nax's cost ledger is the autho
 
 ## 8. Out of scope
 
-- **ACP.** Sites 1 and 2 are harness-side and shared, but the tool-facing half of this
-  design (site 3, US-005, US-006) is native-only by construction — coding tools never
-  reach the ACP adapter. No ACP-specific guard is added.
+- **ACP.** The whole design is native-only by construction: the git site, US-005 and
+  US-006 are tool-facing, and coding tools never reach the ACP adapter. No ACP-specific
+  guard is added. (The harness-side shell sites that would have been shared are dropped
+  by R10.)
 - **A second interceptor provider.** The schema admits one; widening it is cheap when a
   real second consumer exists.
+- **Wrapping user-authored command strings** (`quality.commands.*`, `acceptance.command`).
+  Dropped by R10 — a user who wants rtk there writes it into the command themselves.
 - **`rtk init` / rtk's own hook installation.** nax calls rtk as a library-shaped CLI; it
   does not participate in rtk's hook-installation flow, and must not write to the user's
   agent settings files.

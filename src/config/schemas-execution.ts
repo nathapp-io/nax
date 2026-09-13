@@ -195,6 +195,23 @@ const PermissionBlockSchema = z
  */
 export const PermissionsBlockSchema = z.record(z.string(), PermissionBlockSchema);
 
+/**
+ * Command interception. Opt-in (R7): interception changes what the agent sees,
+ * so it must not switch on merely because the provider binary is installed.
+ *
+ * `git.verbs` carries MEASURED values (US-001 run 4): `log` at 85.0% and `diff`
+ * at 27.9% delivered savings. `status` (47% of ~1 KB) and `blame`
+ * (byte-identical) were measured and excluded; `show` is disqualified on
+ * exit-code divergence. Read the results doc before changing this list.
+ */
+export const CommandInterceptorConfigSchema = z
+  .object({
+    provider: z.string().min(1).default("rtk"),
+    enabled: z.boolean().default(false),
+    git: z.object({ verbs: z.array(z.string().min(1)).default(["log", "diff"]) }).default({ verbs: ["log", "diff"] }),
+  })
+  .strict();
+
 export const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
@@ -258,6 +275,11 @@ export const ExecutionConfigSchema = z.object({
     enabled: false,
     maxMutants: 3,
     timeoutSeconds: 60,
+  }),
+  commandInterceptor: CommandInterceptorConfigSchema.default({
+    provider: "rtk",
+    enabled: false,
+    git: { verbs: ["log", "diff"] },
   }),
 });
 

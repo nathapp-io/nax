@@ -15,8 +15,19 @@
  * 64KB pipe buffer and deadlocks a naive implementation.
  */
 
+import type { CommandInterceptor, InterceptRequest } from "@/execution/command-interceptor";
+import { interceptArgv } from "@/execution/command-interceptor";
 import { gitWithTimeout } from "@/utils/git";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+
+/**
+ * Interception seam for the Git TOOL only.
+ *
+ * Deliberately here and not on `_gitDeps`: `gitWithTimeout` is shared by 52
+ * callers, nine of which machine-parse `log`/`diff` stdout. Compacting their
+ * output breaks them silently. Only this tool's output is agent-facing.
+ */
+export const _gitToolDeps = { interceptor: undefined as CommandInterceptor | undefined };
 
 /**
  * Read-only verbs. Mutating verbs are not representable in the input type.
@@ -169,15 +180,7 @@ function flagFromBoolean(
   return flag;
 }
 
-/**
- * Flags that escape the repository or execute code.
- *
- * `-c` is included because config injection is a command-execution vector:
- * `-c core.pager=<cmd>` runs <cmd>. These are never emitted, and a test asserts
- * their absence from every built argv so a later refactor cannot reintroduce
- * one silently.
- */
-export const GIT_ESCAPE_FLAGS: readonly string[] = ["-C", "--git-dir", "--work-tree", "--exec-path", "-c"];
+export { GIT_ESCAPE_FLAGS } from "@/tools/git-flags";
 
 function looksLikeFlag(value: string): boolean {
   return value.startsWith("-");
@@ -316,11 +319,48 @@ export const gitTool: CodingTool = {
     if ("error" in built) return { content: built.error, isError: true };
 
     try {
-      const { stdout, stderr, exitCode } = await gitWithTimeout(built, ctx.root, undefined, ctx.maxBytes);
+      const intercepted = await interceptArgv(["git", ...built], ctx.root, _gitToolDeps.interceptor);
+      const { stdout, stderr, exitCode } = await gitWithTimeout(
+        built,
+        ctx.root,
+        undefined,
+        ctx.maxBytes,
+        intercepted.argv,
+      );
+      // Computed before the error branch so a REWRITTEN command that ran and
+      // FAILED is still ledged — replay fidelity is exactly where the failure
+      // path matters (US-008). `InterceptOutcome.executed` is optional but
+      // `ToolResult.audit.executed` is required, so the narrowing stays.
+      const audit = intercepted.executed !== undefined ? { executed: intercepted.executed } : undefined;
       if (exitCode !== 0 && stdout.trim() === "") {
-        return { content: stderr.trim() || `git exited ${exitCode}`, isError: true };
+        return {
+          content: stderr.trim() || `git exited ${exitCode}`,
+          isError: true,
+          ...(audit !== undefined ? { audit } : {}),
+        };
       }
-      return { content: truncate(stdout.trimEnd(), ctx.maxBytes) || "(no output)" };
+      // postProcess runs BEFORE trimEnd/truncate: stripping a hint changes what
+      // the trailing whitespace and the byte budget apply to, and truncating
+      // first would hand postProcess a hint that truncation cut in half. It is
+      // consulted only for output of a command this interceptor actually
+      // rewrote, and a throw degrades to the raw output (advisory, like the
+      // rewrite-time fail-open in interceptArgv).
+      let body = stdout;
+      if (intercepted.rewritten) {
+        const req: InterceptRequest = { kind: "argv", argv: ["git", ...built], cwd: ctx.root, site: "git" };
+        try {
+          body = _gitToolDeps.interceptor?.postProcess?.(stdout, req)?.output ?? stdout;
+        } catch {
+          body = stdout;
+        }
+      }
+      // Known limitation: gitWithTimeout bounds stdout with ctx.maxBytes BEFORE
+      // postProcess sees it, so a trailing hint on a very large output can be
+      // truncated mid-string and escape stripping. Fixing it means moving the
+      // bound after post-processing, which changes the drain contract — its own
+      // change.
+      const content = truncate(body.trimEnd(), ctx.maxBytes) || "(no output)";
+      return { content, ...(audit !== undefined ? { audit } : {}) };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };
     }
