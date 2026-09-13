@@ -86,6 +86,11 @@
     "permissionProfile": "unrestricted",
     "sessionTimeoutSeconds": 7200,
     "maxStoriesPerFeature": 15,
+    "commandInterceptor": {
+      "provider": "rtk",
+      "enabled": true,
+      "git": { "verbs": ["log", "diff"] }
+    },
     "mutationCheck": {
       "enabled": true,
       "maxMutants": 3,

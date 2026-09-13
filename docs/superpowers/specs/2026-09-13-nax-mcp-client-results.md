@@ -8,70 +8,112 @@ pool, provider, lockfile (`nax mcp lock`), audit telemetry. Implemented and comm
 
 Date: **2026-09-13**
 
-Status: **Measurement not collected.**
+Status: **Collected, with one causal result and one null result.**
 
-The A/B measurement was **not run**. The plan's standing rule requires the repo owner's
-explicit approval at launch time for any real `nax run`; at the launch moment the owner
-declined. The instrumentation to collect every metric below ships and is wired, but no
-number in this document is real — every cell in the results table reads "not collected".
+The A/B ran on the `nax-context-dogfood` fixture `native-full-run`, two arms differing in
+exactly one config key. The schema-bytes tax is **measured and causal**. The token/cost
+comparison is **confounded by run-to-run variance and proves nothing** — stated plainly
+below rather than dressed up as a delta.
 
-## What was to be measured
+## Method
 
-Design §6 is explicit: the premise that graph tools beat `Grep` sweeps is plausible and
-unmeasured — nax#1990's "48 % needs measuring, not assuming" applies. The planned A/B
-runs one story twice, once with `mcp.servers.codebase-memory.enabled: true` and once with
-it `false`, and compares:
-
-| Metric | Source |
+| | |
 |---|---|
-| Turn count per story | run summary |
-| Wall-clock per story | run summary |
-| Total tokens, total cost | cost ledger |
-| `Grep` / `Glob` call counts | tool-audit ledger |
-| MCP call count | tool-audit ledger |
-| `resultBytesPreTruncation` totals | tool-audit ledger — bytes before the `maxBytes` slice, so elision is visible |
-| Advertised schema bytes per hop | `[provider] advertised` debug lines — the fixed per-hop tax paid whether or not a tool is called |
+| Fixture | `nax-context-dogfood/fixtures/native-full-run` (2 src files, 23 lines) |
+| Stories | US-001 (6 ACs), US-002 (4 ACs) |
+| PRD | planned **once**, frozen, byte-identical in both arms (`sha256 6d2a9106…`) |
+| Model | `openrouter/deepseek/deepseek-v4-flash` on every hop (`agent.default: native`, `fallback.enabled: false`) |
+| Server | `codebase-memory`, `stages: ["run"]`, `allowedTools: [search_graph, trace_path, get_code_snippet]` |
+| Graph | fixture indexed: 84 nodes, 88 edges |
+| Only difference | `mcp.servers.codebase-memory.enabled` `true` vs `false` |
+| n | **1 run per arm** |
+
+Both arms completed 2/2 stories in 3 iterations, exit 0.
 
 ## Results
 
 | Metric | With MCP (`enabled: true`) | Without MCP (`enabled: false`) |
 |---|---|---|
-| Turn count per story | not collected | not collected |
-| Wall-clock per story | not collected | not collected |
-| Total tokens | not collected | not collected |
-| Total cost | not collected | not collected |
-| `Grep` / `Glob` call counts | not collected | not collected |
-| MCP call count | not collected | not collected |
-| `resultBytesPreTruncation` totals | not collected | not collected |
-| Advertised schema bytes per hop | not collected | not collected |
+| Turn count (sessions) | 18 | 10 |
+| Wall-clock | 975 s (16.2 min) | 587 s (9.7 min) |
+| Total tokens (in / out) | 344,113 / 64,112 | 230,050 / 34,360 |
+| Cache read | 961,222 | 646,538 |
+| Total cost (ledger) | $0.05666 | $0.03650 |
+| `Grep` / `Glob` call counts | 4 / 58 | 5 / 29 |
+| **MCP call count** | **0** | 0 (n/a) |
+| `resultBytesPreTruncation` totals | never populated (no MCP call occurred) | n/a |
+| **Advertised schema bytes per hop** | **7,604** × 3 hops = **22,812 B** | 0 |
+
+### The `run` stage in isolation
+
+The whole-run rows above are confounded (see below). The `run` stage — the **only** stage
+the server attaches to — had an identical session shape in both arms (implementer ×2,
+test-writer ×1 = exactly the 3 advertised hops), so it is the one comparable slice:
+
+| `run` stage only | A (MCP on) | B (MCP off) |
+|---|---|---|
+| Sessions | 3 | 3 |
+| Tokens in / out | 57,393 / 9,995 | 76,377 / 11,213 |
+| Cost | $0.01074 | $0.01338 |
+| Tool calls | 57 | 48 |
+| `Grep` + `Glob` | 8 | 5 |
+| Tool result bytes | 27,048 | 58,177 |
+
+## Findings
+
+**1. The schema tax is real, unconditional, and was paid for nothing.** The server
+connected, advertised its 3 granted tools on each of 3 `run`-stage hops at **7,604 bytes
+per hop** (≈1,900 tokens; **22,812 bytes / ≈5,700 tokens total**), and the agent called it
+**zero times** — while the same run issued 62 `Grep`/`Glob` and 85 `Read` calls. Cost side
+confirmed, benefit side zero.
+
+**2. The token/cost comparison is confounded and supports no conclusion.** Arm A
+stochastically hit an acceptance failure and repaired it — sessions arm B never ran at all:
+`diagnose` ×1, `source-fix` ×1, `test-fix` ×1, `rectification/implementer` ×2, plus double
+the `reviewer-semantic` and `verifier` calls. That extra work, not MCP, accounts for
+essentially the entire 114,063-token gap; the schema tax could explain at most ~5,700 of
+it (5%). Arm A in fact used **fewer** run-stage input tokens than arm B (57,393 vs 76,377)
+despite paying the tax — which, with zero MCP calls, can only be noise. **n=1 per arm
+cannot isolate a ~5,700-token effect against ~114,000 tokens of variance.**
+
+**3. `stages: ["run"]` is narrower than it looks.** Only 3 of 18 sessions ever saw the
+tools. The reviewer, verifier, and acceptance sessions — which did much of the `Glob`/`Read`
+work — never had them available. Any future attempt to show benefit must widen `stages`
+or it is measuring a stage that barely explores.
 
 ## Verdict
 
-The premise that graph tools beat `Grep` sweeps remains **plausible and unmeasured**. The
-instrumentation to answer it — pre-truncation byte counts, the per-hop schema-bytes tax,
-and the per-run server rollup — ships and is wired, so the measurement can be run at any
-time with the owner's approval.
+Design §6's premise — that graph tools beat `Grep` sweeps — remains **unmeasured**, and
+this fixture **cannot** measure it. On a 23-line, 84-node repo there is no structure to
+query and `Grep` is free, so zero MCP calls is the by-construction outcome, not evidence
+against graph tools. What this run does establish is the **cost side, with certainty**:
+~1,900 tokens per attached hop, paid whether or not a tool is ever called.
 
-The honest interim guidance: the `codebase-memory` server is configured in
-`.nax/config.json` (attached to `run`, `allowedTools` narrowed to
-`["search_graph", "trace_path", "get_code_snippet"]`) and `.nax/mcp-lock.json` pins its 15
-advertised tools — all committed. But its value is **unproven**: either run the A/B before
-relying on it, or narrow `allowedTools` / leave it unattached until measured.
+Interim guidance, unchanged in direction but now with a number: keep `allowedTools`
+narrowed (3 tools cost 7,604 B/hop; all 15 would cost 21,650 B/hop — a ~64% saving), and
+do not attach `codebase-memory` to a stage on the assumption it pays for itself. To
+actually answer §6, run the A/B on a **large indexed repo** (nax itself, ~1,288 modules)
+with a story posing a genuine structural question, and with **n>1 per arm** so the
+rectification-lottery variance seen here does not swamp the effect.
 
-## How to run the measurement when approved
+## Incidental defects found while running this
 
-Two runs of the same story, identical except for one config key:
+- **`nax plan` masks a model failure behind an internal invariant.** With
+  `plan.mode: "refine"`, the model failed PRD JSON shape validation 3×; `callOp` then
+  returns a raw `TurnResult` instead of throwing, so `src/plan/strategies/refine.ts:41`
+  calls `writeOrRecoverPrd(ctx, null)` with no error and trips its own guard at
+  `src/plan/strategies/write-prd.ts:41` (`PLAN_WRITE_PRD_MISSING_ERR`). The real cause is
+  invisible. `plan.mode: "single"` succeeded on the same spec and model.
+- **`nax plan --auto` / `--one-shot` silently does nothing.** `resolvePlanMode`
+  (`src/cli/plan-command.ts:42`) reads `config.plan.mode` only; the CLI flag never reaches
+  mode selection.
+- **Run summary and cost ledger disagree.** Summary $0.0391 vs ledger $0.05666 (arm A);
+  $0.0330 vs $0.03650 (arm B). The gap does not correspond to excluding any single stage.
+  Not diagnosed here.
 
-1. Run with `mcp.servers.codebase-memory.enabled: true`.
-2. Run with `mcp.servers.codebase-memory.enabled: false`.
+## Reproducing
 
-Collect from the run artifacts:
-
-- **Turn count and wall-clock per story** — the run summary.
-- **Total tokens and cost** — the cost ledger.
-- **`Grep` / `Glob` call counts** — the tool-audit ledger.
-- **MCP call count and `resultBytesPreTruncation` totals** — the tool-audit ledger.
-- **Advertised schema bytes per hop** — the `[provider] advertised` debug log lines (the
-  fixed per-hop tax, paid whether or not a tool is called).
-
-Compare the two runs and replace the table above with real numbers.
+Artifacts land in `~/.nax/<project>/` (`cost/`, `tool-audit/`, `mcp/`, `prompt-audit/`),
+**not** in the repo `.nax/` — the repo path is only the no-`outputDir` fallback
+(`src/config/paths.ts:134-155`). A second arm appends to the same tree, so separate arms
+by run id or by timestamp window before analysing.
