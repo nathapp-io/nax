@@ -47,7 +47,7 @@ The seam that does fit already exists:
 | `resolvePermissions` | `src/config/permissions.ts:160-191` | permission SSOT, keyed by `PipelineStage` |
 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:167-252` | per-hop, already `async`, already builds `extraTools` |
 | `ToolCallRecord` | `src/tools/tool-audit.ts` | per-call ledger |
-| Dispatch routing | `src/agents/native/session/turn-loop.ts:452` | `codingToolNames.has(call.name)` decides coding-tool vs context-tool |
+| Dispatch routing | `src/agents/native/session/turn-loop.ts:449` | `codingToolNames.has(call.name)` decides coding-tool vs context-tool |
 
 The comment at `runtime.ts:104-105` states the intent directly: the global registry cannot
 hold session-local tools like `RunCommand`, whose declared commands are per-project, so
@@ -93,7 +93,7 @@ config-only requirement both consuming specs carry. Provider tool names are appe
 the declared array at resolve time. `advertised()` itself is not modified.
 
 **R5 — Provider tools are never wildcard-granted.** `unrestricted` enumerates its
-built-ins explicitly (`permissions.ts:163-180`) rather than granting every registered
+built-ins explicitly (`permissions.ts:164-178`) rather than granting every registered
 tool, so provider tools are excluded there by construction. This records that property as
 an invariant to preserve and test. `safe` grants none.
 
@@ -195,7 +195,7 @@ sitting on the object a provider will likely hang off, and reaching for it silen
 every worktree's calls to the main checkout. It passes every test that does not use two
 worktrees.
 
-`turn-loop.ts:452` needs no change: once the names are in `codingToolNames` they route as
+`turn-loop.ts:449` needs no change: once the names are in `codingToolNames` they route as
 `"coding-tool"` and dispatch through `runtime.callTool` unmodified.
 
 **Acceptance:** a provider attached to `run` is advertised there and absent elsewhere;
