@@ -50,13 +50,15 @@ const NAX_OWNED_RUN_STATE_EXPLANATION =
  * Verb scope is `checkout` and `restore` only; `git stash` is the agent's own
  * WIP, not nax's state, and has no operands to gate on. The gate is a `.nax`
  * path SEGMENT (split on `/`), never a substring, so `src/nax-helpers.ts` and
- * `docs/.naxignore` stay unanswered. `--` is a separator, not an operand.
+ * `docs/.naxignore` stay unanswered. `--` is a separator, not an operand, and a
+ * `timeout N` wrapper is stripped the same way `intentFor` strips it.
  */
 function naxOwnedRunStateExplanation(tokens: readonly string[]): string | undefined {
-  const hasGitPrefix = tokens[0] === "git";
-  const verb = hasGitPrefix ? tokens[1] : tokens[0];
+  const av = withoutTimeoutPrefix(tokens);
+  const hasGitPrefix = av[0] === "git";
+  const verb = hasGitPrefix ? av[1] : av[0];
   if (verb === undefined || !GIT_REVERT_VERBS.has(verb)) return undefined;
-  for (const operand of tokens.slice(hasGitPrefix ? 2 : 1)) {
+  for (const operand of av.slice(hasGitPrefix ? 2 : 1)) {
     if (operand === "--") continue;
     if (operand.split("/").includes(".nax")) return NAX_OWNED_RUN_STATE_EXPLANATION;
   }

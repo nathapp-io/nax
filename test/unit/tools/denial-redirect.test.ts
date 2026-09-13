@@ -439,4 +439,24 @@ describe("a .nax run-state revert is explained, not redirected (nax#2007)", () =
   test("the explanation names no tool, even when nothing is advertised", () => {
     expect(redirectForArgv(["git", "checkout", "--", ".nax/x"], new Set(), CMDS)).toBe(EXPLANATION);
   });
+
+  // The module already treats `timeout N <cmd>` as a wrapper via
+  // `withoutTimeoutPrefix`, used by both `intentFor` and `taskRunnerFallback`.
+  // The predicate must strip it too, or it silently fails to teach for a form
+  // the harness knows about.
+  test("a timeout-wrapped argv checkout of a .nax path returns the explanation", () => {
+    expect(redirectForArgv(["timeout", "30", "git", "checkout", "--", ".nax/features/f/prd.json"], ALL, CMDS)).toBe(
+      EXPLANATION,
+    );
+  });
+
+  test("a timeout-wrapped verb-slot command line reverting .nax returns the explanation", () => {
+    expect(redirectForVerb("RunCommand", "timeout 30 git checkout -- .nax/features/f/prd.json", ALL, CMDS)).toBe(
+      EXPLANATION,
+    );
+  });
+
+  test("a timeout-wrapped bare checkout head returns the explanation", () => {
+    expect(redirectForVerb("Git", "timeout 30 checkout -- .nax/features/f/prd.json", ALL, CMDS)).toBe(EXPLANATION);
+  });
 });
