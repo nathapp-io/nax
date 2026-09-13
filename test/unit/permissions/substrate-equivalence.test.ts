@@ -1,19 +1,25 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 // NEVER a double cast through `unknown` — the check:test-as-unknown-as ratchet
 // fails CI on any new occurrence. Mirror test/unit/config/scoped-permissions.test.ts:6-9's
 // sanctioned idiom: makeNaxConfig(...) from @test/helpers takes a DeepPartial.
-import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolvePermissions } from "@/config/permissions";
 import { compileToolPolicy } from "@/tools";
 
 const cfg = (execution: Record<string, unknown>) => makeNaxConfig({ execution });
 
-// This file is NEW — no fixtures to reuse. Anchor on a real tmp dir:
-const root = mkdtempSync(join(tmpdir(), "substrate-equivalence-"));
-writeFileSync(join(root, "file.txt"), "x");
+let root: string;
+
+beforeEach(() => {
+  root = makeTempDir("substrate-equivalence-");
+  writeFileSync(join(root, "file.txt"), "x");
+});
+
+afterEach(() => {
+  cleanupTempDir(root);
+});
 
 function policyFor(execution: Record<string, unknown>, stage: "run" | "verify" = "run") {
   const resolved = resolvePermissions(cfg(execution), stage);

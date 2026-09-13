@@ -120,6 +120,8 @@ export type PolicyVerdict =
       readonly breach: boolean;
       readonly outcome?: "denied" | "ask";
       readonly resolvedPaths?: readonly string[];
+      /** Present only with outcome "ask": the matching configured rule expression. */
+      readonly rule?: string;
     };
 
 export interface ToolPolicy {

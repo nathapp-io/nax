@@ -455,6 +455,16 @@ describe("compileToolPolicy — deny rules (spec R6)", () => {
 });
 
 describe("compileToolPolicy — ask rules (spec R1/R6)", () => {
+  test("an unconditional ask gates a granted tool with no policy fields", () => {
+    const policy = compileToolPolicy([{ tool: "Glob", patterns: ["*"] }], root, {
+      askRules: [{ tool: "Glob", patterns: ["*"] }],
+    });
+
+    const verdict = policy.check("Glob", { pathFields: [] }, { pattern: "src/**" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.outcome).toBe("ask");
+  });
+
   test("ask on a granted call yields outcome ask with resolvedPaths", () => {
     const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
       askRules: [{ tool: "Write", patterns: ["src/**"] }],

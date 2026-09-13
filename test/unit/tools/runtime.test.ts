@@ -123,6 +123,25 @@ describe("callTool — ask resolution (spec US-007)", () => {
     expect(outcome.kind).toBe("ok");
   });
 
+  test("passes the matched rule expression to an ask resolver", async () => {
+    let request: Parameters<AskResolver["resolve"]>[0] | undefined;
+    const resolver: AskResolver = {
+      resolve: (received) => {
+        request = received;
+        return Promise.resolve("deny");
+      },
+    };
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Read", patterns: ["file.txt"] }],
+      }),
+      askResolver: resolver,
+    });
+
+    await runtime.callTool("Read", { path: "file.txt" });
+    expect(request?.rule).toBe("Read(file.txt)");
+  });
+
   test("plain denials never consult the resolver", async () => {
     let consulted = 0;
     const counting: AskResolver = {

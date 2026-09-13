@@ -269,7 +269,7 @@ export function createCodingToolRuntime(opts: {
         const decision = await askResolver.resolve({
           tool: policyIdentity,
           stage: "unknown", // no stage in this layer; the ledger's session name carries role context
-          rule: verdict.reason,
+          rule: verdict.rule ?? verdict.reason,
           summary: `${policyIdentity} ${JSON.stringify(input).slice(0, 200)}`,
         });
         if (decision === "allow") {

@@ -24,8 +24,6 @@ import {
   compileArgvPattern,
   compileRuleMap,
   globToRegExp,
-  matchedArgvSource,
-  matchedGlobSource,
   matchesAny,
   matchesArgvGrant,
 } from "./policy-match";
@@ -135,6 +133,17 @@ export interface ToolPolicyOptions {
   readonly askRules?: readonly ToolGrant[];
 }
 
+function isFieldlessScope(scope: ToolScope): boolean {
+  return (
+    scope.argvField === undefined &&
+    scope.verbField === undefined &&
+    scope.pathFields.length === 0 &&
+    (scope.listPathFields?.length ?? 0) === 0 &&
+    (scope.arrayPathFields?.length ?? 0) === 0 &&
+    (scope.refPathFields?.length ?? 0) === 0
+  );
+}
+
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string, options?: ToolPolicyOptions): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
   const execTouchedPaths = options?.execTouchedPaths;
@@ -191,6 +200,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       breach: false,
       outcome: "ask",
       resolvedPaths,
+      rule,
     };
   }
 
@@ -267,7 +277,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       return deny(`${tool} path "${rel}" is denied for this stage`);
     }
     if (askEntry !== undefined && (askEntry.unconditional || matchesAny(askEntry.matchers, rel))) {
-      state.ask = askEntry.unconditional ? tool : (matchedGlobSource(askEntry.matchers, rel) ?? tool);
+      state.ask = ruleExpr(tool, askEntry);
     }
     return undefined;
   }
@@ -310,8 +320,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     }
     const askEntry = askBy.get(tool);
     if (askEntry !== undefined && (askEntry.unconditional || matchesArgvGrant(askEntry.argvPatterns, argv))) {
-      const rule = askEntry.unconditional ? tool : (matchedArgvSource(askEntry, argv) ?? tool);
-      return askVerdict([], rule);
+      return askVerdict([], ruleExpr(tool, askEntry));
     }
     return { allowed: true, resolvedPaths: [] };
   }
@@ -363,7 +372,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
     const askEntry = askBy.get(tool);
     if (askEntry !== undefined && (askEntry.unconditional || askEntry.raw.includes(verb))) {
-      state.ask = askEntry.unconditional ? tool : verb;
+      state.ask = ruleExpr(tool, askEntry);
     }
     return undefined;
   }
@@ -493,6 +502,11 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       const denyEntry = denyBy.get(tool);
       if (denyEntry?.unconditional === true) {
         return deny(`tool "${tool}" is denied for this stage by rule ${ruleExpr(tool, denyEntry)}`);
+      }
+
+      const askEntry = askBy.get(tool);
+      if (askEntry?.unconditional === true && isFieldlessScope(scope)) {
+        return askVerdict([], ruleExpr(tool, askEntry));
       }
 
       const state: RuleState = {};
