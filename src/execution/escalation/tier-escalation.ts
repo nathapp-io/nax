@@ -12,7 +12,7 @@ import { isThreeSessionStrategy } from "@/config";
 import type { Finding } from "@/findings";
 import type { LoadedHooksConfig } from "@/hooks";
 import { getSafeLogger } from "@/logger";
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
 import { markStoryFailed, savePRD } from "@/prd";
 import type { RoutingDecision } from "@/routing";

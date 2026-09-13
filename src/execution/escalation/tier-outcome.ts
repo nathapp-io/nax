@@ -8,7 +8,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import { markStoryFailed, markStoryPaused, savePRD } from "@/prd";
 import { storySpendUsd } from "@/runtime";
 import type { FailureCategory } from "@/tdd/types";

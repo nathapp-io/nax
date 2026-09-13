@@ -19,7 +19,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
 import { initInteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { AgentGetFn } from "@/pipeline/types";
 import { loadPlugins } from "@/plugins";
 import type { PluginRegistry } from "@/plugins/registry";

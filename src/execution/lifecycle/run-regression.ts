@@ -13,7 +13,7 @@ import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findi
 import { runFixCycle, testSummaryToFindings } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import { makeFullSuiteRectifyStrategy } from "@/operations";
-import { pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
 import { countStories } from "@/prd";
 import { renderCommandSpec } from "@/quality";
