@@ -122,7 +122,7 @@ export async function connectMcpServer(args: {
     throw new NaxError(
       `MCP server "${args.serverId}" failed to connect at ${args.workdir}: ${String(error)}`,
       "MCP_CONNECT_FAILED",
-      { stage: "tools" },
+      { stage: "tools", cause: error },
     );
   }
 
