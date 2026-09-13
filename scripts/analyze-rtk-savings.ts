@@ -180,7 +180,7 @@ export function formatReport(rows: readonly VerbRow[]): string {
 }
 
 if (import.meta.main) {
-  const hasRtk = Bun.spawnSync(["rtk", "--version"]).exitCode === 0;
+  const hasRtk = Bun.which("rtk") !== null;
   if (!hasRtk) {
     console.log("rtk not on PATH — skipping. Install rtk to produce the measurement table.");
     process.exit(0);
