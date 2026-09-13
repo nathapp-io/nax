@@ -79,14 +79,14 @@ describe("story.complete event uses runElapsedMs field instead of durationMs", (
     expect(storyCompleteBlock).toBeNull();
   });
 
-  test("StoryCompletedEvent in event-bus.ts uses runElapsedMs field", async () => {
-    const src = await readSrc("pipeline/event-bus.ts");
+  test("StoryCompletedEvent in event-bus/index.ts uses runElapsedMs field", async () => {
+    const src = await readSrc("pipeline/event-bus/index.ts");
 
     expect(src).toMatch(/runElapsedMs\s*:\s*number/);
   });
 
-  test("StoryCompletedEvent in event-bus.ts does NOT have durationMs field", async () => {
-    const src = await readSrc("pipeline/event-bus.ts");
+  test("StoryCompletedEvent in event-bus/index.ts does NOT have durationMs field", async () => {
+    const src = await readSrc("pipeline/event-bus/index.ts");
 
     const completedEventBlock = src.match(/interface StoryCompletedEvent\s*\{([\s\S]*?)\}/);
     expect(completedEventBlock).not.toBeNull();

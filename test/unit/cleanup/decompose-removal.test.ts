@@ -98,12 +98,12 @@ describe("AC4: src/pipeline/types.ts — decomposed action removed from StageAct
 // AC5: story:decomposed event type removed from event-bus.ts
 // ---------------------------------------------------------------------------
 
-describe("AC5: src/pipeline/event-bus.ts — story:decomposed event removed", () => {
+describe("AC5: src/pipeline/event-bus/index.ts — story:decomposed event removed", () => {
   test.each([
     ["StoryDecomposedEvent interface", "StoryDecomposedEvent"],
     ["story:decomposed in PipelineEvent union", "story:decomposed"],
   ])("does not contain %s", async (_label, needle) => {
-    const content = await fileContent("src/pipeline/event-bus.ts");
+    const content = await fileContent("src/pipeline/event-bus/index.ts");
     expect(content).not.toContain(needle);
   });
 });
