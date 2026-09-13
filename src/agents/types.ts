@@ -168,6 +168,8 @@ export interface AgentRunOptions {
   codingToolRuntime?: import("@/tools").CodingToolRuntime;
   /** Tools this operation declared; resolveDeclaredTools() has already applied the default. */
   declaredTools?: readonly import("@/tools").CodingToolName[];
+  /** Provider-supplied tools to advertise for this dispatch, resolved per hop. */
+  providers?: readonly import("@/tools").ToolProvider[];
   /** Per-tool narrowing from the op's `toolPatterns`; applied to the resolved grants. */
   toolPatterns?: import("@/tools").ToolPatternNarrowing;
   /**

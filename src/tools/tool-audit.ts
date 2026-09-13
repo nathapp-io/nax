@@ -42,6 +42,14 @@ export interface ToolCallRecord {
   readonly executed?: readonly string[];
   /** Which workspace root the argv branch executed against. */
   readonly target?: "package" | "repoRoot";
+  /** Provider id for a provider-supplied tool; absent for built-ins. */
+  readonly provider?: string;
+  /**
+   * Result size BEFORE the maxBytes slice. `resultBytes` is measured after,
+   * so elision is otherwise invisible — a 2 MB result and a 40 KB one both
+   * ledger as 40000.
+   */
+  readonly resultBytesPreTruncation?: number;
 }
 
 export interface ToolAuditSink {

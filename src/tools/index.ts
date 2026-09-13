@@ -14,6 +14,11 @@ export type { ExecTarget, NormalizeInput, NormalizeResult } from "./package-mana
 export { classifyExec, isKnownManager, normalizeExec, normalizeManagerBinary } from "./package-managers";
 export type { ToolPolicyOptions } from "./policy";
 export { compileToolPolicy, resolveWithin } from "./policy";
+export * from "./provider-adapt";
+export * from "./provider-advertise";
+export * from "./provider-grants";
+export * from "./provider-sanitize";
+export * from "./provider-types";
 export { readTool } from "./read";
 export type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 export {

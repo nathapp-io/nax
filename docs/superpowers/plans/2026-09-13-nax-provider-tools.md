@@ -1,0 +1,891 @@
+# Provider Tools Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Let the native agent call tools whose names are not in the closed `CodingToolName` union, supplied by configured providers, without changing `advertised()` or any operation's tool declaration.
+
+**Architecture:** A `ToolProvider` yields `ProviderTool`s for a workdir. Each is namespaced to `<providerId>__<localName>`, adapted to a plain `CodingTool`, and injected through the existing per-session `extraTools` seam. Permissions emit one fully-expanded `ToolGrant` per namespaced name, so the policy gates them by name with no new branch. Providers are split by schema trust: `static` (nax-authored) versus `discovered` (external, sanitized).
+
+**Tech Stack:** TypeScript, Bun, `bun:test`, Zod (config), existing `src/tools/` policy and runtime.
+
+**Spec:** `docs/superpowers/specs/2026-09-13-nax-provider-tools-design.md`
+
+## Before you start (fresh-session handover)
+
+You have no context from the session that wrote this. Read, in order:
+
+1. `CLAUDE.md` at the repo root — Bun-native APIs only, TypeScript strict, `bun:test`, Biome.
+2. `docs/architecture/ARCHITECTURE.md` — the index it names is mandatory before writing code.
+3. `.nax/rules/` — the canonical rule store. `project-conventions.md`, `error-handling.md`,
+   `test-writing.md` and `test-helpers.md` all bear on this plan. Never edit `.claude/rules/`;
+   it is generated from `.nax/rules/` by `nax generate`.
+4. The spec named above. This plan argues from it and does not restate its reasoning.
+
+Conventions this plan depends on, already verified against the tree at `8b65247dd`:
+
+| Thing | Correct form | Easy mistake |
+|---|---|---|
+| `NaxError` | `new NaxError(message, code)` | arguments reversed |
+| Policy verdict | `{ allowed: true, ... }` / `{ allowed: false, reason, breach }` | `.ok` |
+| `compileToolPolicy` | `(grants, root, options?)` | arg order |
+| `JSONSchema` | `import type { JSONSchema } from "@/context/engine"` | importing `/types` internals — `check:alias-internals` fails |
+| Control characters in a regex | escape sequences such as `\u0000` | a literal control byte — `check:no-control-bytes` fails and git hides the whole file from diff review |
+| Lint suppression | Biome (`biome-ignore`) | `eslint-disable` — this repo has no ESLint |
+
+Run `bun run check:all` before every commit; the pre-commit hook runs it anyway and will
+reject the commit otherwise.
+
+## Global Constraints
+
+- **Mechanism only — this plan adds no concrete provider and no tools.** (spec R7)
+- Files in `src/tools/` are flat, no subdirectories — match `deny-paths.ts`, `narrow-grants.ts`, `denial-redirect.ts`.
+- Provider id charset: `[a-z0-9][a-z0-9_-]*`.
+- Namespaced name format: `<providerId>__<localName>`, **never parsed back apart**.
+- Grants reaching `compileToolPolicy` must be fully expanded per-tool names. A grant keyed on an expression keyword such as `"Mcp"` is the defining bug this mechanism exists to prevent. (spec R3)
+- Provider tools are **never** wildcard-granted; `unrestricted` enumerates built-ins explicitly and must keep doing so. `safe` grants none. (spec R5)
+- The workdir handed to `tools(workdir)` is the **hop's permitted root**, never `createRuntime`'s workdir. (spec US-004)
+- Errors use `NaxError` (`@/errors`), per `scripts/check-nax-error.ts`.
+- Conventional commits. No attribution lines.
+
+---
+
+### Task 1: Provider types and validation
+
+**Files:**
+- Create: `src/tools/provider-types.ts`
+- Test: `test/unit/tools/provider-types.test.ts`
+
+**Interfaces:**
+- Consumes: `JSONSchema` from `@/context/engine` (the barrel — `check:alias-internals` forbids importing engine internals), `ToolResult`/`ToolRunContext` from `./registry`, `PipelineStage` from `@/config/permissions`.
+- Produces: `ProviderKind`, `ProviderTool`, `ToolProvider`, `PROVIDER_ID_RE`, `validateProviderId(id): void`, `providerAttachesTo(provider, stage): boolean`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+import { describe, expect, test } from "bun:test";
+import { providerAttachesTo, validateProviderId } from "@/tools/provider-types";
+
+describe("validateProviderId", () => {
+  test("accepts lowercase, digits, dash and underscore", () => {
+    expect(() => validateProviderId("codebase-memory")).not.toThrow();
+    expect(() => validateProviderId("rtk")).not.toThrow();
+    expect(() => validateProviderId("a1_b-c")).not.toThrow();
+  });
+
+  test("rejects ids that would make the namespace ambiguous", () => {
+    for (const bad of ["", "-lead", "Upper", "has space", "has__dunder", "has.dot"]) {
+      expect(() => validateProviderId(bad)).toThrow();
+    }
+  });
+});
+
+describe("providerAttachesTo", () => {
+  const base = { id: "p", kind: "static" as const, tools: async () => [] };
+
+  test("matches a listed stage", () => {
+    expect(providerAttachesTo({ ...base, stages: ["run", "verify"] }, "run")).toBe(true);
+  });
+
+  test("does not match an unlisted stage", () => {
+    expect(providerAttachesTo({ ...base, stages: ["run"] }, "review")).toBe(false);
+  });
+
+  test("wildcard matches every stage", () => {
+    expect(providerAttachesTo({ ...base, stages: ["*"] }, "acceptance")).toBe(true);
+  });
+
+  test("empty stages matches nothing", () => {
+    expect(providerAttachesTo({ ...base, stages: [] }, "run")).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `bun test test/unit/tools/provider-types.test.ts`
+Expected: FAIL — cannot resolve module `@/tools/provider-types`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+```ts
+/**
+ * Vocabulary for tools supplied by a provider rather than compiled into
+ * `CodingToolName`.
+ *
+ * Providers split by ONE axis that matters: who authored the tool's schema.
+ * A `static` provider's schema is written in this repo and reviewed in this
+ * repo's PRs, making it exactly as trustworthy as Read's. A `discovered`
+ * provider's schema arrives from an external process at runtime, which makes
+ * its description a prompt-injection surface and its schema an unbounded
+ * context cost. Sanitisation and pinning attach to the KIND, so a trusted
+ * provider never inherits ceremony it does not need.
+ */
+import type { PipelineStage } from "@/config/permissions";
+import { NaxError } from "@/errors";
+import type { JSONSchema } from "@/context/engine";
+import type { ToolResult, ToolRunContext } from "./registry";
+
+export type ProviderKind = "static" | "discovered";
+
+export interface ProviderTool {
+  /** Unqualified, as the provider knows it. Namespaced by `provider-adapt`. */
+  readonly localName: string;
+  readonly description: string;
+  readonly inputSchema: JSONSchema;
+  run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>;
+}
+
+export interface ToolProvider {
+  readonly id: string;
+  readonly kind: ProviderKind;
+  readonly stages: readonly (PipelineStage | "*")[];
+  /**
+   * `workdir` is the HOP'S PERMITTED ROOT, never the runtime's workdir. A
+   * provider may legitimately expose different tools per working root, and a
+   * run executes stories in parallel worktrees.
+   */
+  tools(workdir: string): Promise<readonly ProviderTool[]>;
+}
+
+/**
+ * No `__`: that sequence is the namespace separator, and an id containing it
+ * would make `<id>__<local>` ambiguous to a human reading a ledger row.
+ */
+export const PROVIDER_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
+
+export function validateProviderId(id: string): void {
+  if (!PROVIDER_ID_RE.test(id) || id.includes("__")) {
+    throw new NaxError(`provider id ${JSON.stringify(id)} must match ${PROVIDER_ID_RE}`, "PROVIDER_ID_INVALID");
+  }
+}
+
+export function providerAttachesTo(provider: Pick<ToolProvider, "stages">, stage: PipelineStage): boolean {
+  return provider.stages.some((s) => s === "*" || s === stage);
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `bun test test/unit/tools/provider-types.test.ts`
+Expected: PASS, 6 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/tools/provider-types.ts test/unit/tools/provider-types.test.ts
+git commit -m "feat(tools): add ToolProvider vocabulary and id validation"
+```
+
+---
+
+### Task 2: Namespacing and adaptation to CodingTool
+
+**Files:**
+- Create: `src/tools/provider-adapt.ts`
+- Test: `test/unit/tools/provider-adapt.test.ts`
+
+**Interfaces:**
+- Consumes: `ToolProvider`, `ProviderTool`, `validateProviderId` (Task 1); `RESERVED_TOOL_NAMES`, `CodingTool` from `./registry`.
+- Produces: `namespacedToolName(providerId, localName): string`, `adaptProviderTool(providerId, tool): CodingTool`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+import { describe, expect, test } from "bun:test";
+import { adaptProviderTool, namespacedToolName } from "@/tools/provider-adapt";
+import type { ProviderTool } from "@/tools/provider-types";
+
+function tool(localName: string): ProviderTool {
+  return {
+    localName,
+    description: "d",
+    inputSchema: { type: "object", properties: {} },
+    run: async () => ({ content: "ok" }),
+  };
+}
+
+describe("namespacedToolName", () => {
+  test("joins with a double underscore", () => {
+    expect(namespacedToolName("rtk", "recall")).toBe("rtk__recall");
+  });
+
+  test("a local name containing __ is preserved verbatim", () => {
+    // The namespaced name is never parsed back apart, so this needs no escaping.
+    expect(namespacedToolName("mcp", "a__b")).toBe("mcp__a__b");
+  });
+});
+
+describe("adaptProviderTool", () => {
+  test("produces a CodingTool gated at tool-name level only", () => {
+    const adapted = adaptProviderTool("rtk", tool("recall"));
+    expect(adapted.name).toBe("rtk__recall");
+    expect(adapted.scope).toEqual({ pathFields: [] });
+    expect(adapted.inputSchema).toEqual({ type: "object", properties: {} });
+  });
+
+  test("delegates run to the provider tool", async () => {
+    const adapted = adaptProviderTool("rtk", tool("recall"));
+    const result = await adapted.run({}, {
+      root: "/tmp",
+      resolvedPaths: [],
+      maxBytes: 100,
+      maxFileBytes: 100,
+    });
+    expect(result.content).toBe("ok");
+  });
+
+  test("refuses a namespaced name colliding with a built-in", () => {
+    // Defence-in-depth: a provider id cannot contain "__", so this is
+    // unreachable today. It guards a future change to the naming scheme.
+    expect(() => adaptProviderTool("read", { ...tool("x"), localName: "x" })).not.toThrow();
+    expect(() => namespacedToolName("Read", "x")).toThrow();
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `bun test test/unit/tools/provider-adapt.test.ts`
+Expected: FAIL — cannot resolve module `@/tools/provider-adapt`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+```ts
+/**
+ * Namespacing and adaptation of provider tools into plain CodingTools.
+ *
+ * The namespaced name is NEVER parsed back apart. That is what lets a local
+ * name contain `__` without escaping, and it is why the ledger carries an
+ * explicit `provider` field rather than expecting a consumer to string-split.
+ */
+import { NaxError } from "@/errors";
+import type { CodingTool } from "./registry";
+import { RESERVED_TOOL_NAMES } from "./registry";
+import type { ProviderTool } from "./provider-types";
+import { validateProviderId } from "./provider-types";
+
+export function namespacedToolName(providerId: string, localName: string): string {
+  validateProviderId(providerId);
+  if (localName.length === 0) {
+    throw new NaxError(`provider ${providerId} advertised a tool with an empty name`, "PROVIDER_TOOL_NAME_EMPTY");
+  }
+  const name = `${providerId}__${localName}`;
+  if ((RESERVED_TOOL_NAMES as readonly string[]).includes(name)) {
+    throw new NaxError(`provider tool ${name} collides with a built-in`, "PROVIDER_TOOL_NAME_RESERVED");
+  }
+  return name;
+}
+
+export function adaptProviderTool(providerId: string, tool: ProviderTool): CodingTool {
+  return {
+    name: namespacedToolName(providerId, tool.localName),
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    // No path fields and no verb field: the grant lookup is the whole gate,
+    // which is the honest expression for a tool whose arguments are not paths.
+    scope: { pathFields: [] },
+    run: (input, ctx) => tool.run(input, ctx),
+  };
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `bun test test/unit/tools/provider-adapt.test.ts`
+Expected: PASS, 5 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/tools/provider-adapt.ts test/unit/tools/provider-adapt.test.ts
+git commit -m "feat(tools): namespace and adapt provider tools to CodingTool"
+```
+
+---
+
+### Task 3: Sanitize `discovered` provider schemas
+
+**Files:**
+- Create: `src/tools/provider-sanitize.ts`
+- Test: `test/unit/tools/provider-sanitize.test.ts`
+
+**Interfaces:**
+- Consumes: `ProviderKind`, `ProviderTool` (Task 1).
+- Produces: `MAX_PROVIDER_DESCRIPTION_BYTES = 2_000`, `MAX_PROVIDER_SCHEMA_BYTES = 20_000`, `sanitizeProviderTools(kind, tools): readonly ProviderTool[]`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+import { describe, expect, test } from "bun:test";
+import { MAX_PROVIDER_DESCRIPTION_BYTES, sanitizeProviderTools } from "@/tools/provider-sanitize";
+import type { ProviderTool } from "@/tools/provider-types";
+
+function tool(over: Partial<ProviderTool> = {}): ProviderTool {
+  return {
+    localName: "t",
+    description: "fine",
+    inputSchema: { type: "object", properties: {} },
+    run: async () => ({ content: "" }),
+    ...over,
+  };
+}
+
+describe("sanitizeProviderTools", () => {
+  test("static tools pass through untouched", () => {
+    const long = tool({ description: "x".repeat(MAX_PROVIDER_DESCRIPTION_BYTES + 50) });
+    const [out] = sanitizeProviderTools("static", [long]);
+    expect(out.description).toBe(long.description);
+  });
+
+  test("discovered descriptions are truncated, not dropped", () => {
+    const long = tool({ description: "x".repeat(MAX_PROVIDER_DESCRIPTION_BYTES + 50) });
+    const [out] = sanitizeProviderTools("discovered", [long]);
+    expect(out.description.length).toBeLessThanOrEqual(MAX_PROVIDER_DESCRIPTION_BYTES);
+    expect(out.localName).toBe("t");
+  });
+
+  test("discovered control characters are stripped", () => {
+    const [out] = sanitizeProviderTools("discovered", [tool({ description: "ab\u0001c" })]);
+    expect(out.description).toBe("abc");
+  });
+
+  test("a non-object schema skips that tool only", () => {
+    const out = sanitizeProviderTools("discovered", [
+      tool({ localName: "good" }),
+      tool({ localName: "bad", inputSchema: "nope" as unknown as ProviderTool["inputSchema"] }),
+    ]);
+    expect(out.map((t) => t.localName)).toEqual(["good"]);
+  });
+
+  test("an oversized schema skips that tool only", () => {
+    const huge = { type: "object", properties: { p: { description: "y".repeat(30_000) } } };
+    const out = sanitizeProviderTools("discovered", [
+      tool({ localName: "good" }),
+      tool({ localName: "huge", inputSchema: huge as unknown as ProviderTool["inputSchema"] }),
+    ]);
+    expect(out.map((t) => t.localName)).toEqual(["good"]);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `bun test test/unit/tools/provider-sanitize.test.ts`
+Expected: FAIL — cannot resolve module `@/tools/provider-sanitize`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+```ts
+/**
+ * Bounds on what a `discovered` provider may put into the model's tool list.
+ *
+ * A discovered tool's description and schema come from an external process and
+ * go straight into the prompt, which makes the description a prompt-injection
+ * surface and the schema a per-hop context tax paid whether or not the tool is
+ * ever called. A `static` provider's schema is authored in this repo, so
+ * sanitising it would be theatre — hence the kind check rather than a blanket
+ * pass.
+ *
+ * Truncate rather than drop: an over-long description degrades into a shorter
+ * one, where dropping would remove a working tool over a cosmetic problem. A
+ * malformed or oversized SCHEMA is different — it cannot be safely truncated,
+ * so that one tool is skipped and its siblings survive.
+ */
+import type { ProviderKind, ProviderTool } from "./provider-types";
+
+export const MAX_PROVIDER_DESCRIPTION_BYTES = 2_000;
+export const MAX_PROVIDER_SCHEMA_BYTES = 20_000;
+
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g;
+
+function strip(value: string): string {
+  return value.replace(CONTROL_CHARS, "");
+}
+
+export function sanitizeProviderTools(
+  kind: ProviderKind,
+  tools: readonly ProviderTool[],
+): readonly ProviderTool[] {
+  if (kind === "static") return tools;
+
+  const out: ProviderTool[] = [];
+  for (const tool of tools) {
+    const schema = tool.inputSchema as unknown;
+    if (typeof schema !== "object" || schema === null || Array.isArray(schema)) continue;
+    if (JSON.stringify(schema).length > MAX_PROVIDER_SCHEMA_BYTES) continue;
+
+    out.push({
+      ...tool,
+      localName: strip(tool.localName),
+      description: strip(tool.description).slice(0, MAX_PROVIDER_DESCRIPTION_BYTES),
+    });
+  }
+  return out;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `bun test test/unit/tools/provider-sanitize.test.ts`
+Expected: PASS, 5 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/tools/provider-sanitize.ts test/unit/tools/provider-sanitize.test.ts
+git commit -m "feat(tools): bound discovered provider descriptions and schemas"
+```
+
+---
+
+### Task 4: Expand provider grants
+
+**Files:**
+- Create: `src/tools/provider-grants.ts`
+- Test: `test/unit/tools/provider-grants.test.ts`
+
+**Interfaces:**
+- Consumes: `namespacedToolName` (Task 2), `ToolGrant` from `./types`.
+- Produces: `expandProviderGrants(entries): readonly ToolGrant[]`, where `entries` is `readonly { providerId: string; localNames: readonly string[] }[]`.
+
+This is the task the whole mechanism exists to get right. `compileToolPolicy` keys grants by exact tool name (`compiled.get(tool)`), while `advertised()` looks up the namespaced name. A grant left as `{ tool: "Mcp", patterns: ["codebase-memory"] }` compiles to the key `"Mcp"`, matches nothing, and denies every call — with every expression-parser test still green.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+import { describe, expect, test } from "bun:test";
+import { compileToolPolicy } from "@/tools";
+import { expandProviderGrants } from "@/tools/provider-grants";
+
+describe("expandProviderGrants", () => {
+  test("emits one grant per namespaced tool name", () => {
+    expect(
+      expandProviderGrants([{ providerId: "codebase-memory", localNames: ["search_graph", "trace_path"] }]),
+    ).toEqual([
+      { tool: "codebase-memory__search_graph", patterns: ["*"] },
+      { tool: "codebase-memory__trace_path", patterns: ["*"] },
+    ]);
+  });
+
+  test("emits nothing for a provider with no granted tools", () => {
+    expect(expandProviderGrants([{ providerId: "rtk", localNames: [] }])).toEqual([]);
+  });
+
+  test("the compiled policy grants the namespaced names and no keyword", () => {
+    // The regression that matters: a grant surviving in parsed shape would
+    // compile to the key "Mcp" and deny every call at runtime.
+    const policy = compileToolPolicy(
+      expandProviderGrants([{ providerId: "codebase-memory", localNames: ["search_graph"] }]),
+      "/tmp",
+    );
+    const granted = policy.grantedTools();
+    expect(granted).toContain("codebase-memory__search_graph");
+    expect(granted).not.toContain("Mcp");
+    expect(granted).not.toContain("codebase-memory");
+  });
+
+  test("a granted provider tool passes the policy check", () => {
+    const policy = compileToolPolicy(expandProviderGrants([{ providerId: "rtk", localNames: ["recall"] }]), "/tmp");
+    expect(policy.check("rtk__recall", { pathFields: [] }, {}).allowed).toBe(true);
+  });
+
+  test("an ungranted provider tool is denied", () => {
+    const policy = compileToolPolicy(expandProviderGrants([{ providerId: "rtk", localNames: ["recall"] }]), "/tmp");
+    expect(policy.check("rtk__other", { pathFields: [] }, {}).allowed).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `bun test test/unit/tools/provider-grants.test.ts`
+Expected: FAIL — cannot resolve module `@/tools/provider-grants`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+```ts
+/**
+ * Expansion of provider grants into the only shape the policy can use.
+ *
+ * `compileToolPolicy` keys grants by exact tool name, and `advertised()` tests
+ * `granted.has(<namespaced name>)`. Any grant-expression sugar a consuming
+ * feature defines — `Mcp(server)`, `Mcp(server:tool)` — is SURFACE SYNTAX FOR
+ * HUMANS and must be expanded here before compilation. A grant that survives in
+ * parsed form compiles to the key `"Mcp"`, matches no advertised name, and
+ * denies every call while every parser unit test still passes.
+ */
+import { namespacedToolName } from "./provider-adapt";
+import type { ToolGrant } from "./types";
+
+export interface ProviderGrantEntry {
+  readonly providerId: string;
+  readonly localNames: readonly string[];
+}
+
+export function expandProviderGrants(entries: readonly ProviderGrantEntry[]): readonly ToolGrant[] {
+  const grants: ToolGrant[] = [];
+  for (const entry of entries) {
+    for (const localName of entry.localNames) {
+      grants.push({ tool: namespacedToolName(entry.providerId, localName), patterns: ["*"] });
+    }
+  }
+  return grants;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `bun test test/unit/tools/provider-grants.test.ts`
+Expected: PASS, 5 tests.
+
+- [ ] **Step 5: Verify the `unrestricted` invariant still holds**
+
+Add to the same test file:
+
+```ts
+import { resolvePermissions } from "@/config/permissions";
+
+test("unrestricted grants no provider tool", () => {
+  // permissions.ts enumerates its built-ins rather than wildcarding, so
+  // provider tools are excluded by construction. This locks that in.
+  const { toolGrants } = resolvePermissions({ execution: { permissionProfile: "unrestricted" } } as never, "run");
+  expect((toolGrants ?? []).some((g) => g.tool.includes("__"))).toBe(false);
+});
+
+test("safe grants no provider tool", () => {
+  const { toolGrants } = resolvePermissions({ execution: { permissionProfile: "safe" } } as never, "run");
+  expect((toolGrants ?? []).some((g) => g.tool.includes("__"))).toBe(false);
+});
+```
+
+Run: `bun test test/unit/tools/provider-grants.test.ts`
+Expected: PASS, 7 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/tools/provider-grants.ts test/unit/tools/provider-grants.test.ts
+git commit -m "feat(tools): expand provider grants to namespaced tool names"
+```
+
+---
+
+### Task 5: Advertise provider tools per hop
+
+**Files:**
+- Modify: `src/agents/coding-tool-support.ts`
+- Modify: `src/tools/index.ts` (export the four new modules)
+- Test: `test/unit/tools/provider-advertise.test.ts`
+
+**Interfaces:**
+- Consumes: `adaptProviderTool` (Task 2), `sanitizeProviderTools` (Task 3), `expandProviderGrants` (Task 4), `providerAttachesTo` (Task 1).
+- Produces: `resolveProviderTools(providers, stage, workdir): Promise<{ tools: readonly CodingTool[]; grants: readonly ToolGrant[] }>`, exported from `src/tools/provider-advertise.ts`.
+
+The workdir passed to `tools(workdir)` must be the hop's permitted root. `createRuntime(config, workdir)` has a workdir sitting on the object a provider pool will hang off, and reaching for it binds every worktree's calls to the main checkout — passing every test that does not use two worktrees.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+import { describe, expect, test } from "bun:test";
+import { resolveProviderTools } from "@/tools/provider-advertise";
+import type { ProviderTool, ToolProvider } from "@/tools/provider-types";
+
+function provider(over: Partial<ToolProvider> = {}): ToolProvider {
+  const seen: string[] = [];
+  return {
+    id: "fake",
+    kind: "static",
+    stages: ["run"],
+    tools: async (workdir: string) => {
+      seen.push(workdir);
+      return [
+        {
+          localName: "probe",
+          description: workdir,
+          inputSchema: { type: "object", properties: {} },
+          run: async () => ({ content: workdir }),
+        } satisfies ProviderTool,
+      ];
+    },
+    ...over,
+  };
+}
+
+describe("resolveProviderTools", () => {
+  test("advertises a provider attached to this stage", async () => {
+    const { tools, grants } = await resolveProviderTools([provider()], "run", "/w/a");
+    expect(tools.map((t) => t.name)).toEqual(["fake__probe"]);
+    expect(grants).toEqual([{ tool: "fake__probe", patterns: ["*"] }]);
+  });
+
+  test("skips a provider not attached to this stage", async () => {
+    const { tools, grants } = await resolveProviderTools([provider()], "review", "/w/a");
+    expect(tools).toEqual([]);
+    expect(grants).toEqual([]);
+  });
+
+  test("passes the hop root, not a shared one, to each provider", async () => {
+    // The two-worktree case: the bug this guards is invisible with one root.
+    const a = await resolveProviderTools([provider()], "run", "/w/a");
+    const b = await resolveProviderTools([provider()], "run", "/w/b");
+    expect(await a.tools[0].run({}, ctx("/w/a"))).toEqual({ content: "/w/a" });
+    expect(await b.tools[0].run({}, ctx("/w/b"))).toEqual({ content: "/w/b" });
+  });
+
+  test("no providers yields no tools and no grants", async () => {
+    expect(await resolveProviderTools([], "run", "/w/a")).toEqual({ tools: [], grants: [] });
+  });
+
+  test("a provider that throws is dropped, not fatal", async () => {
+    const bad = provider({ id: "bad", tools: async () => { throw new Error("boom"); } });
+    const { tools } = await resolveProviderTools([bad, provider()], "run", "/w/a");
+    expect(tools.map((t) => t.name)).toEqual(["fake__probe"]);
+  });
+});
+
+function ctx(root: string) {
+  return { root, resolvedPaths: [], maxBytes: 100, maxFileBytes: 100 };
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `bun test test/unit/tools/provider-advertise.test.ts`
+Expected: FAIL — cannot resolve module `@/tools/provider-advertise`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `src/tools/provider-advertise.ts`:
+
+```ts
+/**
+ * Per-hop resolution of provider tools.
+ *
+ * A provider whose `tools()` rejects is DROPPED, not fatal: a broken provider
+ * must never wedge a run. The failure is logged by the caller, which owns the
+ * logger; this module stays pure so it can be tested without one.
+ */
+import type { PipelineStage } from "@/config/permissions";
+import { adaptProviderTool } from "./provider-adapt";
+import { expandProviderGrants } from "./provider-grants";
+import { sanitizeProviderTools } from "./provider-sanitize";
+import { providerAttachesTo, type ToolProvider } from "./provider-types";
+import type { CodingTool } from "./registry";
+import type { ToolGrant } from "./types";
+
+export interface ResolvedProviderTools {
+  readonly tools: readonly CodingTool[];
+  readonly grants: readonly ToolGrant[];
+  readonly failures: readonly { providerId: string; reason: string }[];
+}
+
+export async function resolveProviderTools(
+  providers: readonly ToolProvider[],
+  stage: PipelineStage,
+  workdir: string,
+): Promise<ResolvedProviderTools> {
+  const tools: CodingTool[] = [];
+  const entries: { providerId: string; localNames: string[] }[] = [];
+  const failures: { providerId: string; reason: string }[] = [];
+
+  for (const provider of providers) {
+    if (!providerAttachesTo(provider, stage)) continue;
+    try {
+      const sanitized = sanitizeProviderTools(provider.kind, await provider.tools(workdir));
+      const localNames: string[] = [];
+      for (const tool of sanitized) {
+        tools.push(adaptProviderTool(provider.id, tool));
+        localNames.push(tool.localName);
+      }
+      entries.push({ providerId: provider.id, localNames });
+    } catch (error) {
+      failures.push({ providerId: provider.id, reason: String(error) });
+    }
+  }
+
+  return { tools, grants: expandProviderGrants(entries), failures };
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `bun test test/unit/tools/provider-advertise.test.ts`
+Expected: PASS, 5 tests.
+
+- [ ] **Step 5: Export from the barrel**
+
+Add to `src/tools/index.ts`:
+
+```ts
+export * from "./provider-adapt";
+export * from "./provider-advertise";
+export * from "./provider-grants";
+export * from "./provider-sanitize";
+export * from "./provider-types";
+```
+
+Run: `bun run check:all`
+Expected: PASS — in particular `check-alias-internals` and `check-import-cycles` (baseline 0).
+
+- [ ] **Step 6: Wire into `resolveCodingToolSupport`**
+
+In `src/agents/coding-tool-support.ts`, inside `resolveCodingToolSupport`, after `root` is resolved and before `buildCodingToolSupport` is called:
+
+```ts
+  // Provider tools bypass the DECLARATION half of advertisement (spec R4):
+  // operation declarations live in code, so requiring a code edit to use a
+  // configured provider would defeat config-only onboarding. `advertised()`
+  // itself is unchanged — the names are appended to `declared` here.
+  const providerResult = await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root);
+  const declaredWithProviders = [...declared, ...providerResult.tools.map((t) => t.name)] as readonly CodingToolName[];
+```
+
+Pass `extraTools: providerResult.tools` and `grants: [...resolved.toolGrants ?? [], ...providerResult.grants]` through to `buildCodingToolSupport`, and use `declaredWithProviders` in place of `declared`.
+
+Add `providers?: readonly ToolProvider[]` to the `AgentRunOptions` pick in the signature.
+
+- [ ] **Step 7: Run the full suite**
+
+Run: `bun test`
+Expected: PASS. Then `bun run check:all` — PASS.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/tools/provider-advertise.ts src/tools/index.ts src/agents/coding-tool-support.ts test/unit/tools/provider-advertise.test.ts
+git commit -m "feat(agents): advertise provider tools per hop at the permitted root"
+```
+
+---
+
+### Task 6: Ledger the provider and its schema cost
+
+**Files:**
+- Modify: `src/tools/tool-audit.ts`
+- Modify: `src/tools/runtime.ts`
+- Test: `test/unit/tools/provider-audit.test.ts`
+
+**Interfaces:**
+- Consumes: `ToolCallRecord` from `./tool-audit`.
+- Produces: `provider?: string` and `resultBytesPreTruncation?: number` on `ToolCallRecord`; `advertisedSchemaBytes(tools): number` exported from `src/tools/provider-advertise.ts`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+import { describe, expect, test } from "bun:test";
+import { advertisedSchemaBytes } from "@/tools/provider-advertise";
+import { adaptProviderTool } from "@/tools/provider-adapt";
+
+describe("advertisedSchemaBytes", () => {
+  test("counts description and schema bytes of every advertised tool", () => {
+    const tools = [
+      adaptProviderTool("p", {
+        localName: "a",
+        description: "12345",
+        inputSchema: { type: "object", properties: {} },
+        run: async () => ({ content: "" }),
+      }),
+    ];
+    // 5 description bytes + the JSON length of the schema.
+    const expected = 5 + JSON.stringify({ type: "object", properties: {} }).length;
+    expect(advertisedSchemaBytes(tools)).toBe(expected);
+  });
+
+  test("is zero when nothing is advertised", () => {
+    expect(advertisedSchemaBytes([])).toBe(0);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `bun test test/unit/tools/provider-audit.test.ts`
+Expected: FAIL — `advertisedSchemaBytes` is not exported.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Append to `src/tools/provider-advertise.ts`:
+
+```ts
+/**
+ * Bytes a tool list costs the prompt, paid on EVERY hop whether or not any
+ * tool is called. This is the per-hop tax that appears in no ledger today and
+ * which nax#1991's context-burn report needs.
+ */
+export function advertisedSchemaBytes(tools: readonly CodingTool[]): number {
+  let total = 0;
+  for (const tool of tools) {
+    total += tool.description.length + JSON.stringify(tool.inputSchema).length;
+  }
+  return total;
+}
+```
+
+In `src/tools/tool-audit.ts`, add to `ToolCallRecord`:
+
+```ts
+  /** Provider id for a provider-supplied tool; absent for built-ins. */
+  readonly provider?: string;
+  /**
+   * Result size BEFORE the maxBytes slice. `resultBytes` is measured after,
+   * so elision is otherwise invisible — a 2 MB result and a 40 KB one both
+   * ledger as 40000.
+   */
+  readonly resultBytesPreTruncation?: number;
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `bun test test/unit/tools/provider-audit.test.ts`
+Expected: PASS, 2 tests.
+
+- [ ] **Step 5: Populate `provider` on the ledger row**
+
+In `src/tools/runtime.ts`, where the record is built, derive the provider from the advertised provider tool set (do **not** string-split the name):
+
+```ts
+      // Never parse the namespaced name apart — the provider id is carried
+      // explicitly precisely so a naming-convention change cannot break
+      // telemetry silently.
+      const provider = opts.providerIdByTool?.get(name);
+```
+
+Add `providerIdByTool?: ReadonlyMap<string, string>` to `createCodingToolRuntime`'s options and pass it from `buildCodingToolSupport`.
+
+- [ ] **Step 6: Run the full suite**
+
+Run: `bun test && bun run check:all`
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/tools/tool-audit.ts src/tools/runtime.ts src/tools/provider-advertise.ts test/unit/tools/provider-audit.test.ts
+git commit -m "feat(tools): ledger provider id and advertised schema bytes"
+```
+
+---
+
+## Self-Review
+
+**Spec coverage:**
+
+| Spec item | Task |
+|---|---|
+| US-001 `ToolProvider` interface | 1 |
+| US-002 naming + reserved guard | 2 |
+| US-003 grant expansion | 4 |
+| US-004 advertisement, hop root | 5 |
+| US-005 sanitization, `discovered` only | 3 |
+| US-006 audit `provider` + schema bytes | 6 |
+| R1 `extraTools` not global registry | 5 (passes `extraTools`) |
+| R2 kind split | 1 (type), 3 (behaviour) |
+| R3 expansion before compilation | 4 |
+| R4 declaration bypassed, `advertised()` unchanged | 5 |
+| R5 never wildcard-granted | 4 Step 5 |
+| R6 per-stage attachment | 1, 5 |
+| R7 no concrete provider | whole plan — none added |
+
+**Type consistency:** `ProviderTool.localName` is used identically in Tasks 2, 3, 5. `namespacedToolName` is defined in Task 2 and consumed in Task 4. `resolveProviderTools` returns `{ tools, grants, failures }` in Task 5 and is extended (not renamed) in Task 6.
+
+**Known gap, deliberately deferred:** `resolveProviderTools` returns `failures`, but Task 5's test asserts only that a throwing provider is dropped. Surfacing failures into the run rollup belongs to the consuming specs (MCP US-006), which own what a degraded server means. The field exists so that work has somewhere to attach.

@@ -88,6 +88,11 @@ export function createCodingToolRuntime(opts: {
   storyId?: string;
   sink?: ToolAuditSink;
   extraTools?: readonly CodingTool[];
+  /**
+   * Advertised provider tool name -> owning provider id. Lets the ledger carry
+   * the provider explicitly instead of splitting the namespaced name apart.
+   */
+  providerIdByTool?: ReadonlyMap<string, string>;
   /** Declared command names, so a denial can name `testScoped` only when the project has one. */
   declaredCommands?: ReadonlySet<string>;
   /**
@@ -146,6 +151,13 @@ export function createCodingToolRuntime(opts: {
           ? "warn"
           : "debug";
 
+    // Never parse the namespaced name apart — the provider id is carried
+    // explicitly precisely so a naming-convention change cannot break
+    // telemetry silently. `tool` is the identity the ledger records: the
+    // namespaced name for a provider tool, `Exec` for the argv branch (which
+    // is not provider-supplied, so the lookup misses and the field is absent).
+    const provider = opts.providerIdByTool?.get(tool);
+
     // `reason` rides under the `error` key because the formatter's
     // readFailureReason() renders exactly that key on warn/error lines. The
     // message names the tool so the line is legible without the JSONL: these
@@ -168,6 +180,7 @@ export function createCodingToolRuntime(opts: {
       ...(reason !== undefined && reason.length > 0 ? { reason } : {}),
       ...(audit?.executed !== undefined ? { executed: audit.executed } : {}),
       ...(audit?.target !== undefined ? { target: audit.target } : {}),
+      ...(provider !== undefined ? { provider } : {}),
     });
   }
 

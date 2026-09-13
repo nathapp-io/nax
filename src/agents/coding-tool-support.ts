@@ -10,6 +10,7 @@
  */
 
 import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
 import {
   type CodingTool,
   type CodingToolName,
@@ -21,6 +22,8 @@ import {
   createToolAuditSink,
   EXEC_TOOL_NAME,
   narrowGrants,
+  type ResolvedProviderTools,
+  resolveProviderTools,
   type ToolAuditSink,
   type ToolGrant,
   type ToolPatternNarrowing,
@@ -46,6 +49,10 @@ export function buildCodingToolSupport(args: {
   repoRoot?: string;
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
+  /** Provider-supplied tools for this hop, looked up before the global registry. */
+  extraTools?: readonly CodingTool[];
+  /** Advertised provider tool name -> owning provider id, for the ledger. */
+  providerIdByTool?: ReadonlyMap<string, string>;
   storyId?: string;
   declaredCommands?: ReadonlyMap<string, QualityCommandSpec>;
   stripEnvVars?: readonly string[];
@@ -106,8 +113,9 @@ export function buildCodingToolSupport(args: {
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.denyPaths !== undefined ? { denyPaths: args.denyPaths } : {}),
     sink,
-    extraTools:
-      declaredCommands.size > 0 || allowExec
+    extraTools: [
+      ...(args.extraTools ?? []),
+      ...(declaredCommands.size > 0 || allowExec
         ? [
             createRunCommandTool(declaredCommands, {
               stripEnvVars: args.stripEnvVars,
@@ -132,7 +140,9 @@ export function buildCodingToolSupport(args: {
                 : {}),
             }),
           ]
-        : [],
+        : []),
+    ],
+    ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),
   });
   const tools = runtime.advertised(advertised);
   if (tools.length === 0) return undefined;
@@ -168,6 +178,7 @@ export async function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
     | "declaredTools"
+    | "providers"
     | "toolPatterns"
     | "codingToolRoot"
     | "codingToolRepoRoot"
@@ -180,7 +191,6 @@ export async function resolveCodingToolSupport(
   >,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
-  if (declared.length === 0) return undefined;
   const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
   // RULING F2: AgentRunOptions['config'] is typed as the agent-manager Pick
   // (agent/execution/profile), yet both hops source it from configLoader.current(),
@@ -234,11 +244,51 @@ export async function resolveCodingToolSupport(
     root !== undefined && root.trim() !== "" && declared.includes(EXEC_TOOL_NAME)
       ? await resolvePackageName(root)
       : undefined;
+  // Provider tools bypass the DECLARATION half of advertisement (spec R4):
+  // operation declarations live in code, so requiring a code edit to use a
+  // configured provider would defeat config-only onboarding. `advertised()`
+  // itself is unchanged — the names are appended to `declared` here.
+  //
+  // The profile is the OTHER half, and it is not bypassed (R12): only the
+  // `unrestricted` profile (approve-all) grants provider tools. Under `safe`
+  // and `scoped` a provider contributes no tools, no grants and no map entry,
+  // so a configured — possibly untrusted `discovered` — tool can never be
+  // advertised or called outside the profile that opted into it. An
+  // empty/absent root already throws in buildCodingToolSupport, so skipping
+  // resolution there is correct; it also keeps a possibly-undefined root out of
+  // resolveProviderTools. This gate consumes the mode resolvePermissions
+  // already decided; it chooses none of it.
+  const providersPermitted = resolved.mode === "approve-all" && root !== undefined && root.trim() !== ""; // nax-permission-mode-allow: consumes the resolved mode, deciding nothing
+  const providerResult: ResolvedProviderTools = providersPermitted
+    ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root)
+    : {
+        tools: [],
+        grants: [],
+        failures: [] as readonly { providerId: string; reason: string }[],
+        providerIdByTool: new Map<string, string>(),
+      };
+  const declaredWithProviders = [...declared, ...providerResult.tools.map((t) => t.name)] as readonly CodingToolName[];
+  // Logged before the empty-union return: a provider-only op whose only
+  // provider failed must still say so, not vanish silently. A no-op when
+  // providers were gated off (R12) and `failures` is empty.
+  for (const failure of providerResult.failures) {
+    getSafeLogger()?.warn("tools", "[provider] dropped", {
+      storyId: options.storyId,
+      providerId: failure.providerId,
+      reason: failure.reason,
+    });
+  }
+  // Resolved BEFORE this guard (R15): a provider-only op declares no built-in
+  // names, yet appending the provider names above is exactly what makes it a
+  // real op. An empty union is the only case that yields no support.
+  if (declaredWithProviders.length === 0) return undefined;
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
-    grants: resolved.toolGrants,
-    declared,
+    grants: [...(resolved.toolGrants ?? []), ...providerResult.grants],
+    declared: declaredWithProviders,
+    extraTools: providerResult.tools,
+    providerIdByTool: providerResult.providerIdByTool,
     ...(options.toolPatterns !== undefined ? { toolPatterns: options.toolPatterns } : {}),
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     declaredCommands,
