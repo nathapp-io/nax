@@ -12,31 +12,31 @@ analysis. You *do* need to re-measure after every task.
 
 ---
 
-## 0. Current state - measured 2026-09-13 at `2cf791a6a`
+## 0. Current state - measured 2026-09-13 after Wave 1 (Tasks 1-3)
 
 ```
 bun run scripts/check-import-cycles.ts
-[OK] 132 modules in runtime import cycles (baseline: 135) (down 3 since last baseline).
+[OK] 128 modules in runtime import cycles (baseline: 128).
 ```
 
 | Reading | Value |
 |:--|--:|
-| Baseline file `count` | **135** |
-| Actual cyclic modules in `src/` | **132** |
-| Strongly-connected components (SCCs) that are cyclic | **5** |
+| Baseline file `count` | **128** |
+| Actual cyclic modules in `src/` | **128** |
+| Strongly-connected components (SCCs) that are cyclic | **3** |
 | Largest SCC | **92 modules** |
 
-The five components:
+The three components:
 
 | # | Size | Territory |
 |--:|--:|:--|
-| 1 | **92** | `operations/` + `findings/` + `review/` + `context/engine/` + `agents/` + `debate/selectors/` + `prompts/` + `routing/` + `metrics/` |
+| 1 | **92** | `operations/` + `findings/` + `review/` + `context/engine/` + `agents/` + `debate/selectors/` + `debate/session-helpers.ts` + `prompts/` + `routing/` + `metrics/` + `context/index.ts` |
 | 2 | **31** | `execution/` + `pipeline/` |
 | 3 | **5** | `cli/{index,plan,plan-command}` + `plan/strategies/` |
-| 4 | **2** | `test-runners/{index,scoped-selection}` |
-| 5 | **2** | `cli/{rules,rules-migrate}` |
 
-**The baseline is 3 stale (135 recorded, 132 actual).** Task 0 fixes that before any real work.
+Components #4 (`test-runners`) and #5 (`cli/{rules,rules-migrate}`) from the original
+measurement are gone. The plan's simulated **127** after Wave 1 did not materialise:
+**128**. See section 8.4 for why (Task 2's edge measured 0 freed).
 
 **Simulated end state of this plan: 132 -> 20.** The 17 edge cuts across the 12 tasks in
 section 3 were chosen by greedy search over every internal edge of every component (remove
@@ -1244,3 +1244,48 @@ Known limit, recorded rather than hidden: regex literals are not tracked, so an 
 inside one blanks the rest of that line. It cannot invent an edge, only drop one, and it would
 require an import sharing a line with a regex literal - which the before/after diff confirms no
 file in `src/` does.
+
+### 8.4 - 2026-09-13 - Wave 1 complete (Tasks 1-3): 132 -> 128
+
+Measured, not predicted. Deviations from the section 3 simulation:
+
+- **Task 1 (test-runners self-barrel): 132 -> 130, exactly as simulated.** Component #4
+  (`test-runners/{index,scoped-selection}`) died. One extra shift: biome's
+  `organizeImports` reordered the new `./conventions` specifier relative to the `@/` and
+  `../` imports; the pre-commit hook caught it and it was fixed with `biome check --write`
+  before committing.
+- **Task 2 (context/engine effectiveness self-barrel): measured 130 -> 130, 0 freed**
+  (simulated 1). The cut still happened exactly as written (`./index` -> 
+  `./providers/static-rules`), but the ranker confirmed after Task 1 that the edge frees
+  nothing: `effectiveness.ts` stays in the 92-module component through the longer loop
+  `effectiveness -> static-rules -> @/context -> engine/index -> effectiveness`, whose
+  load-bearing back-edge (`static-rules -> @/context`) is Task 6's. The module is now
+  expected to free with Task 6, not Task 2.
+  **Plan gap found: `test/unit/context/engine/effectiveness-barrel.test.ts` (US-003
+  adversarial finding) pinned the OLD direction** - it asserted `effectiveness.ts` must
+  import `globToRegex`/`normalizePath` *through the barrel*, the exact opposite of this
+  task. The test was updated (with user approval) to carve out a scoped exemption for the
+  two cycle-drain symbols; the convention still holds for everything else and the exemption
+  is itself pinned so it cannot widen silently. 2 of 4 assertions changed; the other two
+  (type-only exemption, barrel re-exports precondition) untouched.
+- **Task 3 (_rulesCLIDeps extraction): 130 -> 128, exactly the simulated 2.** Component #5
+  (`cli/{rules,rules-migrate}`) died. Deviation from the plan's edit list: `rules.ts` also
+  *consumes* `_rulesCLIDeps` internally (not just re-exports it), so the re-export alone
+  left 14 `TS2552` errors; the fix was a local `import { _rulesCLIDeps } from
+  "./rules-cli-deps"` alongside the re-export. The extraction also orphaned three imports
+  in `rules.ts` (`loadCanonicalRules`, `getLogger`, `_rulesLintDeps`) which had been used
+  only by the moved object; each was removed and the file re-linted. Test-spelling
+  `@/cli/rules` for `_rulesCLIDeps` was preserved via the re-export, so all six
+  `test/unit/cli/rules*` suites passed unchanged.
+
+Full gates after Wave 1: cycles 128/baseline 128, tsc clean, alias-internals clean,
+file-sizes clean, `test/unit/cli/` 1050 pass, `test:coverage` OK (new `src/` file
+`rules-cli-deps.ts`, 0 files below floor).
+
+Commits: `ff994cb74` (Task 1), `f56a625f1` (Task 2), `3ee38f3ba` (Task 3).
+
+**Expected-count adjustment going forward:** Task 2's simulated freeing is dead;
+`effectiveness.ts` is credited to Task 6. Wave 2's simulated **127 -> 61** becomes
+**128 -> 62** (Task 4's 55 and Task 5's 11 are unaffected by the shift — re-confirmed
+against the current graph with the section 2.2 ranker, which still reads frees=55 and
+frees=11; 128 - 66 = 62, not the plan's 61).
