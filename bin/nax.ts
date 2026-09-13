@@ -1229,6 +1229,16 @@ authCmd
     process.exit(await authRmCommand(provider));
   });
 
+const mcpCmd = program.command("mcp").description("Manage MCP servers the native agent may call tools on");
+
+mcpCmd
+  .command("lock")
+  .description("Refresh .nax/mcp-lock.json from what each configured server advertises")
+  .action(async () => {
+    const { runMcpLockCommand } = await import("../src/cli/mcp");
+    await runMcpLockCommand(process.cwd());
+  });
+
 // ── routing ──────────────────────────────────────────
 const routingCmd = program.command("routing").description("Routing calibration helpers");
 
