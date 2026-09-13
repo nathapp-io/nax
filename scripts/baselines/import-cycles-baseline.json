@@ -1,6 +1,6 @@
 {
-  "count": 130,
-  "updatedAt": "2026-09-13T02:06:39.663Z",
+  "count": 128,
+  "updatedAt": "2026-09-13T02:08:48.835Z",
   "modules": [
     "src/agents/acp/adapter-close-physical.ts",
     "src/agents/acp/adapter-lifecycle.ts",
@@ -20,8 +20,6 @@
     "src/cli/index.ts",
     "src/cli/plan-command.ts",
     "src/cli/plan.ts",
-    "src/cli/rules-migrate.ts",
-    "src/cli/rules.ts",
     "src/context/engine/effectiveness.ts",
     "src/context/engine/handlers/query-feature-context.ts",
     "src/context/engine/handlers/query-neighbor.ts",
