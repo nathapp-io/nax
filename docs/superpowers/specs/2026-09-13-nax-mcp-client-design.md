@@ -150,11 +150,16 @@ default, which drifts.
 | `timeoutMs` | per-call timeout, default `60000` (US-006) |
 | `enabled` | kill switch without deleting the block |
 
-`stages` entries are validated against `PipelineStage`
-(`src/config/permissions.ts:18-27`): `plan | run | setup | verify | review |
-rectification | regression | acceptance | complete`. There is **no `implement` stage** —
-implementation work runs under `run`. An unknown stage name is a schema error, not a
-silently-ignored entry; a server attached to a stage that never executes is not an error.
+`stages` entries are validated against `PipelineStage | "*"` — `PipelineStage`
+(`src/config/permissions.ts:18-27`) being `plan | run | setup | verify | review |
+rectification | regression | acceptance | complete`, plus the literal `"*"` meaning every
+stage. There is **no `implement` stage** — implementation work runs under `run`. An
+unknown stage name is a schema error, not a silently-ignored entry; a server attached to
+a stage that never executes is not an error.
+
+`enabled: false` short-circuits before everything: the server is not connected, not
+locked, and contributes no grants. It does not need a lock entry to be disabled, and
+disabling a server never invalidates the lockfile.
 
 Server ids are constrained to `[a-z0-9][a-z0-9_-]*` so the `mcp__<server>__<tool>`
 namespace stays unambiguously splittable.
@@ -187,6 +192,12 @@ down in `close()` (`:424-447`).
   subprocess cost for servers no executed stage reaches. Connect carries its own timeout.
 - **Memoized per key.** Concurrent first-use for the same `(serverId, workdir)` awaits one
   in-flight connect, never two.
+- **Requests may be serialized per connection.** The turn loop dispatches tool calls in a
+  sequential `for` loop (`src/agents/native/session/turn-loop.ts:404`), awaiting each
+  before the next, so a single hop never has two calls in flight against one server. A
+  simple request/response client is sufficient; concurrent request-id correlation would
+  be machinery no code path exercises. (Distinct worktrees get distinct connections per
+  R7, so cross-story parallelism does not contradict this.)
 - **Teardown** follows the `argv-exec` precedent (`src/utils/argv-exec.ts:57-93`):
   `detached: true` so `killProcessGroup` reaches grandchildren, bounded graceful close,
   then SIGKILL. Children register in `pidRegistry` (`src/runtime/index.ts:318`) so nax's
@@ -210,8 +221,19 @@ scope:       { pathFields: [] }          // no path fields; gated at tool-name l
 run:         (input) => pool.call(serverId, workdir, toolName, input)
 ```
 
-A name colliding with `RESERVED_TOOL_NAMES` (`registry.ts:74-87`) is **refused at
-adaptation time**: an MCP server must never be able to shadow `Write` or `Delete`.
+**Which `workdir`?** The hop's **permitted root** (`ctx.root`, the policy root for that
+call), *not* the `workdir` passed to `createRuntime`. This is the whole point of R7 and
+the easiest place to lose it: an implementer reaching for the runtime's `workdir` —
+which is right there on the object the pool hangs off — silently reintroduces exactly
+the stale-index bug R7 exists to prevent, and it will pass every test that does not use
+two worktrees.
+
+A name colliding with `RESERVED_TOOL_NAMES` (`registry.ts:74-87`) is refused at
+adaptation time. To be honest about what this buys: the `mcp__` prefix already makes
+collision with `Read`/`Write`/`Delete` structurally impossible, so the check is
+defence-in-depth against a future change to the prefix scheme, not a live guard. Tool
+names containing `__` are fine and need no escaping — the namespaced name is never parsed
+back apart, which is why `ToolCallRecord` carries an explicit `server` field (US-007).
 
 **Lockfile — `.nax/mcp-lock.json`.** Records, per server, each discovered tool name and a
 hash of its input schema. Only tools present in the lock are grantable. A tool that
@@ -235,19 +257,45 @@ Wiring:
 - `resolvePermissions(config, stage)` (`permissions.ts:160-191`) gains MCP grants derived
   from `mcp.servers.*.stages` ∩ lock ∩ `allowedTools`, for `unrestricted` and `scoped`.
   `safe` yields none (R5).
-- `parseToolExpression` (`permissions.ts:144-154`) already parses `Mcp(a,b)` into
-  `{ tool: "Mcp", patterns: ["a","b"] }` without modification; the narrowing semantics
-  are applied by `resolveScopedPermissions`.
+
+- **Grants must be emitted already expanded, one `ToolGrant` per namespaced tool name.**
+  This is the single easiest thing to get wrong in this design. `compileToolPolicy` keys
+  grants by exact tool name — `compiled.get(tool)` in `check`, and `grantedTools()`
+  returns `[...compiled.keys()]` (`src/tools/policy.ts:288-295`). Meanwhile `advertised()`
+  tests `granted.has(name)` where `name` is the full `mcp__<server>__<tool>`. So a grant
+  left in its parsed shape `{ tool: "Mcp", patterns: ["codebase-memory"] }` compiles to
+  the key `"Mcp"`, which matches no advertised name, and **every MCP call is denied**.
+
+  `resolvePermissions` therefore emits:
+
+  ```
+  { tool: "mcp__codebase-memory__search_graph", patterns: ["*"] }
+  { tool: "mcp__codebase-memory__trace_path",   patterns: ["*"] }
+  ```
+
+  `Mcp(...)` is **surface syntax only** — a way for a human to write a narrowing rule in a
+  scoped profile. It never survives into a compiled grant.
+
+- `parseToolExpression` (`permissions.ts:144-154`) parses `Mcp(a,b)` into
+  `{ tool: "Mcp", patterns: ["a","b"] }` without modification. `resolveScopedPermissions`
+  then applies the narrowing and expands the result into the per-tool grants above.
 - `resolveCodingToolSupport` appends the resolved MCP tool names to the declared array
   before calling `advertised()`. **`advertised()` is unchanged** (R3).
 - `turn-loop.ts:452` needs no change: once the names are in `codingToolNames` they route
   as `"coding-tool"` and dispatch through `runtime.callTool` unmodified.
+- `policy.check` needs no new branch. With `scope` carrying no `argvField`, no
+  `verbField` and empty `pathFields`, the grant lookup is the whole gate — which is the
+  intended semantics for a tool with no path or verb surface.
 
 **Acceptance:** a server attached to `run` is advertised there and absent from a
 stage it does not list; under `safe` no MCP tool is advertised anywhere; under
 `unrestricted` a configured-but-unattached server is not advertised; a scoped profile
 narrowing to `Mcp(codebase-memory:search_graph)` advertises exactly one tool; a scoped
 profile naming a server with no `stages` entry widens nothing.
+
+The regression test that matters most: **`grantedTools()` contains the full namespaced
+names, and no entry equal to `"Mcp"`.** A grant that survives in its parsed shape denies
+every call at runtime while every unit test of the parser still passes.
 
 ### US-005 — Untrusted input from servers
 
