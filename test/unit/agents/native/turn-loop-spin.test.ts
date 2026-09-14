@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nativeTranscriptDirs } from "@/agents/native/session/session";
 import { loadTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn, type TurnDeps } from "@/agents/native/session/turn-loop";
+import { runNativeTurn } from "@/agents/native/session/turn-loop";
+import type { TurnDeps } from "@/agents/native/session/turn-types";
 import type { SendTurnOpts } from "@/agents/session-types";
 import { createSpinBreaker, DEFAULT_SPIN_BREAKER_SETTINGS } from "@/runtime/spin-breaker";
 

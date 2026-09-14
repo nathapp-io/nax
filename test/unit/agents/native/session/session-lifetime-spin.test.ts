@@ -18,7 +18,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeNativeSession, nativeSessionSpinBreaker, openNativeSession } from "@/agents/native/session/session";
-import { runNativeTurn, type TurnDeps } from "@/agents/native/session/turn-loop";
+import { runNativeTurn } from "@/agents/native/session/turn-loop";
+import type { TurnDeps } from "@/agents/native/session/turn-types";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@/agents/session-types";
 import {
   DEFAULT_SPIN_BREAKER_SETTINGS,

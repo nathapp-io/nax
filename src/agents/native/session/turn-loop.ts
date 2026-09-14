@@ -5,12 +5,16 @@
  * and while it asks for tools, execute them and call again. Tools are executed
  * through the InteractionHandler the ACP adapter already uses — this file never
  * touches the context engine.
+ *
+ * The public types this loop consumes (`TurnDeps`, `NativeTurnResponse`,
+ * `NativeSummaryResponse`) and the failure-usage ledger
+ * (`readNativeTurnFailureUsage` / `recordNativeTurnFailureUsage`) live in
+ * `./turn-types.ts`. Splitting them out keeps this file focused on the
+ * algorithm and below the 600-line hard limit (project-conventions.md).
  */
 
-import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
-import { inputClassTokens, type ResolvedRates, type TokenUsage } from "@/agents/cost";
+import { inputClassTokens } from "@/agents/cost";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
-import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 // `spin-breaker` is its own nested barrel (src/runtime/spin-breaker/index.ts),
@@ -19,7 +23,6 @@ import { getSafeLogger } from "@/logger";
 // pattern as src/review/runner and src/execution/helpers. That promotion is
 // what lets this avoid widening the session -> runtime barrel import surface
 // (project-conventions.md's cycle-avoidance escape hatch).
-import type { SpinBreaker } from "@/runtime/spin-breaker";
 import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
 import {
   applyCompaction,
@@ -27,7 +30,6 @@ import {
   keepBudget,
   type TranscriptMessage as NativeTranscriptMessage,
   prepareCompaction,
-  type ResolvedCompaction,
   shouldCompact,
 } from "./compaction";
 import { createInvalidCallBudget } from "./handle-invalid-tool-call";
@@ -35,109 +37,8 @@ import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenan
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
-import type { NativeTurnActivity } from "./turn-events";
-import { realSleep, retryTransportFault, type TurnRetryConfig } from "./turn-retry";
-
-export interface NativeTurnResponse {
-  readonly text: string;
-  readonly toolCalls?: readonly ToolCall[];
-  readonly thinking?: readonly ThinkingBlock[];
-  readonly usage: TokenUsage;
-  readonly costUsd: number;
-  /**
-   * US-002: the per-1M rates that priced this round-trip's `costUsd`.
-   * `runNativeTurn` stamps the LAST round-trip's `rates` on the
-   * `TurnResult` it returns — each round-trip re-prices on its own usage,
-   * and the most recent decision is what affected the user's last-mile
-   * spend. Optional so existing test fakes that build the response shape
-   * by hand keep compiling; the adapter's `complete` closure always sets
-   * it because native prices unconditionally.
-   */
-  readonly rates?: import("../../cost").ResolvedRates;
-}
-
-/** What one summarization call returns. Usage and cost are surfaced, not swallowed. */
-export interface NativeSummaryResponse {
-  readonly text: string;
-  readonly usage: TokenUsage;
-  readonly costUsd: number;
-  /** Per-1M rates that priced this summary call, when known. */
-  readonly rates?: ResolvedRates;
-}
-
-export interface TurnDeps {
-  complete(
-    messages: readonly ConversationMessage[],
-    tools: ReturnType<typeof toToolDefinitions>,
-  ): Promise<NativeTurnResponse>;
-  /**
-   * One model call, no tools, used only to summarize a dropped span. Separate
-   * from complete() because it must not advertise tools, must not count as a
-   * round trip, and its cost must be attributable.
-   */
-  summarize?(messages: readonly NativeTranscriptMessage[], previousSummary?: string): Promise<NativeSummaryResponse>;
-  /** ResolvedModel.contextWindow. Absent disables compaction. */
-  contextWindow?: number;
-  /** Resolved settings. Absent disables compaction. */
-  compaction?: ResolvedCompaction;
-  /**
-   * Whole-turn wall-clock budget. Absent means unbounded — the adapter always
-   * supplies one for a real session; tests may omit it.
-   */
-  deadline?: TurnDeadline;
-  /**
-   * Per-round-trip observability hook. Absent in unit tests; the adapter
-   * supplies one that forwards onto the runtime stream bus so the idle
-   * watchdog can see native sessions.
-   */
-  onActivity?: (activity: NativeTurnActivity) => void;
-  /**
-   * Which rate card priced this turn (US-003, first half of #1817). Absent
-   * on tests that build TurnDeps by hand and do not care about the source.
-   * When set, propagates to the returned TurnResult as `pricingSource` so the
-   * dispatch layer can stamp the row without re-deriving the rate-card branch.
-   */
-  pricingSource?: "catalog-rates" | "config-override";
-  /**
-   * nax#1870: bounded retry for a transport/overloaded fault thrown by
-   * deps.complete, resolved from `agent.native.transportRetry`. Absent
-   * disables retry — the pre-#1870 behaviour of rethrowing immediately.
-   */
-  transportRetry?: TurnRetryConfig;
-  /**
-   * Injectable sleep for the transport-retry backoff, so tests never
-   * actually wait (forbidden-patterns-tests.md). Absent uses a real timer —
-   * a real session always wants to actually wait.
-   */
-  sleep?: (ms: number) => Promise<void>;
-  /**
-   * Live repetition-breaker instance (nax#2013, session-lifetime since #2047). Absent disables the breaker.
-   */
-  spinBreaker?: SpinBreaker;
-}
-
-/**
- * nax#1840: round trips completed before a turn fails still spent real money.
- * `inputTokens`/`outputTokens`/`costUsd` are locals inside runNativeTurn and
- * reach a caller only through the clean-exit return, so a throw at round trip
- * N silently drops everything spent on round trips 1..N-1.
- *
- * Recorded against the thrown error's own identity (a WeakMap), never by
- * mutating the error itself: adapter.ts's `isProtocolStreamError` guard and
- * its "propagate a non-protocol error untouched" rule both depend on the
- * error's own shape staying exactly what was thrown.
- */
-export interface NativeTurnFailureUsage {
-  readonly tokenUsage: TokenUsage;
-  readonly costUsd: number;
-}
-
-const failureUsageByError = new WeakMap<object, NativeTurnFailureUsage>();
-
-/** Reads back what the catch block below recorded, if anything did. */
-export function readNativeTurnFailureUsage(err: unknown): NativeTurnFailureUsage | undefined {
-  return typeof err === "object" && err !== null ? failureUsageByError.get(err) : undefined;
-}
+import { realSleep, retryTransportFault } from "./turn-retry";
+import { cacheUsageFields, type NativeTurnResponse, recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
 /**
  * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
@@ -147,12 +48,6 @@ function isContextOverflow(err: unknown): boolean {
   if (typeof err !== "object" || err === null || !("protocolError" in err)) return false;
   const { protocolError } = err as { protocolError?: { kind?: unknown } };
   return protocolError?.kind === "context-overflow";
-}
-function cacheUsageFields(usage: TokenUsage): { cacheRead?: number; cacheWrite?: number } {
-  return {
-    ...(usage.cacheReadInputTokens !== undefined ? { cacheRead: usage.cacheReadInputTokens } : {}),
-    ...(usage.cacheCreationInputTokens !== undefined ? { cacheWrite: usage.cacheCreationInputTokens } : {}),
-  };
 }
 
 export async function runNativeTurn(
@@ -551,7 +446,7 @@ export async function runNativeTurn(
     // nax#1840: attach what was already spent, keyed on the error's own
     // identity so the error itself is rethrown byte-for-byte unmodified.
     if (typeof err === "object" && err !== null) {
-      failureUsageByError.set(err, {
+      recordNativeTurnFailureUsage(err, {
         tokenUsage: {
           inputTokens,
           outputTokens,
