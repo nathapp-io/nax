@@ -32,6 +32,12 @@ export interface AcpxLineActivity {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  /** Cache-read tokens the provider served from its prompt cache. Absent when
+   *  the wire reported none — never coerced to 0, so "no cache data" and
+   *  "zero cache tokens" stay distinguishable. */
+  cacheRead?: number;
+  /** Cache-creation (write) tokens. Absent for the same reason as `cacheRead`. */
+  cacheWrite?: number;
   toolName?: string;
 }
 
@@ -168,6 +174,13 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
             if (inp !== undefined) activity.inputTokens = inp;
             const out = asFiniteNumber(metaUsage.outputTokens, metaUsage.output_tokens);
             if (out !== undefined) activity.outputTokens = out;
+            // Cache figures ride the same _meta.usage object. Left absent when
+            // the wire omits them — the final-result breakdown path below keeps
+            // its own `?? 0`, but the activity path must not inherit it.
+            const cacheRead = asFiniteNumber(metaUsage.cachedReadTokens, metaUsage.cache_read_input_tokens);
+            if (cacheRead !== undefined) activity.cacheRead = cacheRead;
+            const cacheWrite = asFiniteNumber(metaUsage.cachedWriteTokens, metaUsage.cache_creation_input_tokens);
+            if (cacheWrite !== undefined) activity.cacheWrite = cacheWrite;
           }
           // Fall back to update.used for output tokens if breakdown was absent
           if (activity.outputTokens == null) {

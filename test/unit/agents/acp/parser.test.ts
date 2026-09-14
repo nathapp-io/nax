@@ -451,6 +451,57 @@ describe("BUG-12 — JSON-RPC usage_update rejects non-finite values", () => {
   });
 });
 
+// nax#2045 — the usage_update *activity* must carry cache figures when the wire
+// reports them, and leave them ABSENT when it doesn't. The final-result
+// token-breakdown path (parser.ts:215-216) coerces with `?? 0`; the activity
+// path must NOT inherit that, or every ACP row would claim a measured zero.
+describe("nax#2045 — usage_update activity carries cache figures", () => {
+  function usageUpdateLine(update: Record<string, unknown>): string {
+    return JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionId: "x", update: { sessionUpdate: "usage_update", ...update } },
+    });
+  }
+
+  test("reads cache figures with the snake_case spelling", () => {
+    const activity = parseAcpxJsonLine(
+      usageUpdateLine({
+        _meta: {
+          usage: { inputTokens: 7, outputTokens: 9, cache_read_input_tokens: 120, cache_creation_input_tokens: 34 },
+        },
+      }),
+      createParseState(),
+    );
+    expect(activity?.cacheRead).toBe(120);
+    expect(activity?.cacheWrite).toBe(34);
+  });
+
+  test("reads cache figures with the camelCase spelling", () => {
+    const activity = parseAcpxJsonLine(
+      usageUpdateLine({
+        _meta: { usage: { inputTokens: 7, outputTokens: 9, cachedReadTokens: 120, cachedWriteTokens: 34 } },
+      }),
+      createParseState(),
+    );
+    expect(activity?.cacheRead).toBe(120);
+    expect(activity?.cacheWrite).toBe(34);
+  });
+
+  test("leaves cache fields absent — never 0 — when the wire omits them", () => {
+    const activity = parseAcpxJsonLine(
+      usageUpdateLine({ _meta: { usage: { inputTokens: 7, outputTokens: 9 } } }),
+      createParseState(),
+    );
+    expect(activity?.inputTokens).toBe(7);
+    expect(activity?.outputTokens).toBe(9);
+    expect(activity?.cacheRead).toBeUndefined();
+    expect(activity?.cacheWrite).toBeUndefined();
+    expect(activity && "cacheRead" in activity).toBe(false);
+    expect(activity && "cacheWrite" in activity).toBe(false);
+  });
+});
+
 describe("BUG-10 — cumulative_token_usage rejects malformed (non-numeric) token values", () => {
   test("a string input_tokens is not assigned to state.tokenUsage as-is", () => {
     const state = createParseState();
