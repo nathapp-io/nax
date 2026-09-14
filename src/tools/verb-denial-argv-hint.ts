@@ -19,7 +19,7 @@ import { describeExecAllowlist } from "./exec-allowlist-text";
  * Extracted from `policy.ts` into its own module so that file (already at
  * its 600-line limit) can carry this explanation without trimming it.
  *
- * The clause names `argvField` explicitly ("argv" accepts: ...) rather than
+ * The clause names `argvField` explicitly (for "argv", ...) rather than
  * appending `describeExecAllowlist`'s bare "permitted forms: ..." after the
  * structural sentence: two unlabelled "permitted ..." lists back to back --
  * one for `verbField`'s enum, one for argv's grant -- reads as a single
@@ -28,7 +28,11 @@ import { describeExecAllowlist } from "./exec-allowlist-text";
  * exists to prevent). `describeExecAllowlist`'s own text is unchanged: the
  * tool description's surrounding sentence already establishes argv as the
  * subject there, so this supplies its own framing around the same list
- * rather than editing shared text to fit one caller.
+ * rather than editing shared text to fit one caller. The framing is a bare
+ * attribution ("for \"argv\", ...") precisely so it composes with whichever
+ * of describeExecAllowlist's three forms is returned -- prefixing a verb
+ * such as "accepts:" instead would double the label on the populated form
+ * ("accepts: permitted forms: ...") and misread the empty one.
  */
 export function argvShellHint(
   verbField: string,
@@ -36,5 +40,5 @@ export function argvShellHint(
   execPatterns: readonly string[],
 ): string {
   if (argvField === undefined) return "";
-  return ` -- "${verbField}" never takes a shell string -- "${argvField}" accepts: ${describeExecAllowlist(execPatterns)}`;
+  return ` -- "${verbField}" never takes a shell string -- for "${argvField}", ${describeExecAllowlist(execPatterns)}`;
 }

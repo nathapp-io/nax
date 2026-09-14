@@ -506,7 +506,7 @@ describe("verb denial names what is permitted (#1971)", () => {
     // values>" list, which an agent can misread as more legal `command`
     // values (denying again on the enum, the very loop this exists to end).
     expect(verdict.allowed === false && verdict.reason).toContain(
-      '"argv" accepts: permitted forms: bun install, bun add*, npm ci',
+      'for "argv", permitted forms: bun install, bun add*, npm ci',
     );
   });
 
@@ -516,7 +516,7 @@ describe("verb denial names what is permitted (#1971)", () => {
     const verdict = policy.check("RunCommand", scopeWithArgv, { command: "wc -l src/x.ts" });
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).toContain('"command" never takes a shell string');
-    expect(verdict.allowed === false && verdict.reason).toContain('"argv" accepts: no forms are currently granted');
+    expect(verdict.allowed === false && verdict.reason).toContain('for "argv", no forms are currently granted');
   });
 
   // A discriminating pair, not two independent assertions: the with-argv
