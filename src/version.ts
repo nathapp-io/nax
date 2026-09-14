@@ -7,12 +7,13 @@
  * `NAX_AI_VERSION` is the version of the pinned `@nathapp/nax-ai` catalog
  * package. The catalog's `exports` map declares only the package root (no
  * `./package.json` subpath), so a runtime read of the catalog's manifest
- * is not available, and the read must happen at the bundler's
- * static-import pass — a static import of `@nathapp/nax-ai/package.json`,
- * inlined by the bundler as a constant. The import lives in
+ * via a normal package import is not available. The read lives in
  * `src/agents/catalog/` (the only directory permitted by
- * `scripts/check-nax-ai-imports.ts`) and is re-exported here as
- * `NAX_AI_VERSION` for consumer convenience.
+ * `scripts/check-nax-ai-imports.ts`) and goes through `Bun.file()` on
+ * `node_modules/@nathapp/nax-ai/package.json` so a missing or unparsable
+ * manifest cannot crash module loading — that satisfies US-003 AC12.
+ * The read is re-exported here as `NAX_AI_VERSION` for consumer
+ * convenience.
  *
  * If the catalog pin is unreadable at build time — the dependency's
  * `package.json` is missing, the file cannot be parsed, or its `version`

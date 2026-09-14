@@ -7,9 +7,10 @@
  *     non-empty string matching the dotted numeric form
  *     `<major>.<minor>.<patch>`.
  *
- * The constant is the static read of `@nathapp/nax-ai`'s package.json, which
- * the bundler inlines as a constant — a runtime read is unavailable because
- * the catalog's `exports` map declares only the package root.
+ * The constant is read at module-load time from `@nathapp/nax-ai`'s
+ * package.json via `existsSync` / `readFileSync`. A runtime read of the
+ * catalog's manifest through a normal package import is unavailable
+ * because the catalog's `exports` map declares only the package root.
  */
 
 import { describe, expect, test } from "bun:test";

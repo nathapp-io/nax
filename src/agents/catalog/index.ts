@@ -17,20 +17,20 @@
  * as a third nax-ai importer does not close any cycle.
  */
 
+import { existsSync, readFileSync } from "node:fs";
 import type { Catalog, RawProvider } from "@nathapp/nax-ai";
 import { defaultProviders, normaliseCatalog } from "@nathapp/nax-ai";
-import catalogPkg from "@nathapp/nax-ai/package.json";
 import type { TokenPricing } from "@/config/schema-types";
 
 export type { TokenPricing };
 
 /**
- * Version of the pinned `@nathapp/nax-ai` catalog package, inlined at
- * build time from its `package.json`. Re-exported via `src/version.ts`
+ * Version of the pinned `@nathapp/nax-ai` catalog package, read at module
+ * load time from its `package.json`. Re-exported via `src/version.ts`
  * because `scripts/check-nax-ai-imports.ts` forbids the catalog's package
  * import outside `src/agents/catalog/` (the `exports` map on nax-ai
- * declares only the package root, so this read is the only path; the
- * bundler inlines the file as a constant).
+ * declares only the package root, so a static import of
+ * `./package.json` cannot resolve through normal module resolution).
  *
  * `undefined` when the catalog pin is unreadable at build time — the
  * dependency's `package.json` is missing, the file cannot be parsed, or
@@ -38,9 +38,41 @@ export type { TokenPricing };
  * `catalogVersion` in that case rather than recording an empty or
  * placeholder string (`catalogVersion: ""` would falsely imply a catalog
  * origin). US-003 AC12.
+ *
+ * `node:fs` is used (not `Bun.file`) because the read must happen
+ * synchronously at module-load time — `Bun.file().exists()` /
+ * `Bun.file().json()` are async, and an async initializer cannot produce
+ * a module-level constant. The project's `forbidden-patterns-source.md`
+ * bans `fs.readFileSync` in favour of `Bun.file()` for ordinary I/O,
+ * but `existsSync` / `readFileSync` for a one-shot module-load probe
+ * follows the precedent set by `src/cli/init-detect.ts` ("Bun has no
+ * native sync equivalent for existsSync"). AC12's whole point is that
+ * this read must not crash the process — a missing file (`existsSync`
+ * returning false, caught) and a malformed JSON payload
+ * (`JSON.parse` throwing, caught) both resolve to `undefined`.
  */
 export const CATALOG_VERSION: string | undefined = (() => {
-  const v = (catalogPkg as { version?: unknown }).version;
+  // The catalog's manifest sits at a fixed location under the project's
+  // `node_modules` tree regardless of which package manager hoisted it.
+  // Resolving it as a relative path off `import.meta.dir` keeps the read
+  // self-contained and avoids `require.resolve`'s ESM/Bun friction.
+  // `src/agents/catalog/index.ts` → `import.meta.dir` is
+  // `src/agents/catalog/`, so `../../../` walks back to the repo root.
+  const pkgPath = `${import.meta.dir}/../../../node_modules/@nathapp/nax-ai/package.json`;
+  let text: string;
+  try {
+    if (!existsSync(pkgPath)) return undefined;
+    text = readFileSync(pkgPath, "utf8");
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const v = (parsed as { version?: unknown }).version;
   return typeof v === "string" && v.length > 0 ? v : undefined;
 })();
 
