@@ -129,6 +129,14 @@ describe("deny suite (spec §6)", () => {
     );
   });
 
+  test.each([
+    ["a subshell", "(rm -rf file.txt)"],
+    ["a negation", "! rm -rf file.txt"],
+    ["a subshell after an allowed segment", "bun test && ( rm -rf file.txt )"],
+  ])("row 8b: %s cannot smuggle a denied command past a deny rule", async (_label, command) => {
+    expect((await call(session({ allow: ["*"], deny: ["rm *"] }), command)).kind).toBe("denied");
+  });
+
   test("row 9: an ask rule is refused headless, naming the rule", async () => {
     const outcome = await call(session({ allow: ["rm *"], ask: ["rm *"] }), "rm file.txt");
     expect(outcome.kind).toBe("denied");
