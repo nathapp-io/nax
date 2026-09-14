@@ -51,6 +51,19 @@ describe("Bash wiring", () => {
     if (outcome?.kind === "denied") expect(outcome.reason).not.toContain("unknown tool");
   });
 
+  test("the description names the NARROWED grant, not the raw one", () => {
+    const built = support({
+      declared: ["Bash"],
+      grants: [{ tool: "Bash", patterns: ["*"] }],
+      toolPatterns: { Bash: ["bun test *"] },
+    });
+    const description = built?.tools.find((tool) => tool.name === "Bash")?.description ?? "";
+    // narrowGrants is what the POLICY compiles, so a description built from the
+    // raw list would advertise forms the policy refuses.
+    expect(description).toContain("bun test *");
+    expect(description).not.toContain("every command form is granted");
+  });
+
   test("the project's shell reaches the tool", () => {
     const built = support({
       declared: ["Bash"],

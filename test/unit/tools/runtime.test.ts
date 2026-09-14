@@ -142,6 +142,28 @@ describe("callTool — ask resolution (spec US-007)", () => {
     expect(request?.rule).toBe("Read(file.txt)");
   });
 
+  test("carries the pipeline stage and a payload-free summary to an ask resolver", async () => {
+    let request: Parameters<AskResolver["resolve"]>[0] | undefined;
+    const resolver: AskResolver = {
+      resolve: (received) => {
+        request = received;
+        return Promise.resolve("deny");
+      },
+    };
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Write", patterns: ["*"] }],
+      }),
+      askResolver: resolver,
+      pipelineStage: "rectification",
+    });
+
+    await runtime.callTool("Write", { path: "src/a.ts", content: "SUPER-SECRET-PAYLOAD" });
+    expect(request?.stage).toBe("rectification");
+    expect(request?.summary).toContain("src/a.ts");
+    expect(request?.summary).not.toContain("SUPER-SECRET-PAYLOAD");
+  });
+
   test("contains a rejecting ask resolver as a tool error", async () => {
     const runtime = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
