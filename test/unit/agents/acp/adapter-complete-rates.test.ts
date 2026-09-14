@@ -19,11 +19,10 @@
  *
  * The tests drive the real `AcpAgentAdapter` paths through a stub client
  * that returns a configurable response, with `_acpAdapterDeps.resolveRateCard`
- * stubbed to a per-test card. The implementer must declare
- * `CompleteResult.rates?: ResolvedRates` and `TurnResult.rates?: ResolvedRates`,
- * run `priceCall` through the resolved rate card, and stamp the resulting
- * `ResolvedRates` onto the returned result — omitting the field whenever the
- * nonzero-usage guard skipped pricing.
+ * stubbed to a per-test card. The tests are contract checks at the adapter
+ * boundary: a priced call returns a `CompleteResult.rates` / `TurnResult.rates`
+ * whose four fields equal the effective rates that priced the call, and a
+ * call for which the nonzero-usage guard skipped pricing omits the field.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";

@@ -18,11 +18,6 @@
  * exercise, and assert on `CompleteResult.rates` after a priced call. The
  * fake client's `usage` is independent of the card so each test can vary
  * the rate values without touching the token totals.
- *
- * Stub note: `CompleteResult.rates` does not yet exist. The implementer
- * must declare the field on the interface and stamp `priceCall`'s
- * `resolvedRates` onto every priced `CompleteResult` in
- * `NativeAgentAdapter.complete()`.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
