@@ -141,6 +141,20 @@ describe("validatePermissionsBlock — allow/deny/ask lists", () => {
     expect(() => validatePermissionsBlock(conf({ [key]: ["Write(src/**"] }))).toThrow(/unclosed pattern list/);
   });
 
+  test.each(["allow", "deny", "ask"] as const)("rejects an empty pattern list in %s", (key) => {
+    // `parseToolExpression` collapses an empty list to ["*"], so `Bash()` left
+    // unchecked is `Bash(*)` — the widening the Mcp validator already refuses.
+    expect(() => validatePermissionsBlock(conf({ [key]: ["Bash()"] }))).toThrow(/names no pattern/);
+  });
+
+  test.each(["Bash( )", "Bash(,)", "Write(,,)"])("rejects the whitespace-only pattern list %s", (expression) => {
+    expect(() => validatePermissionsBlock(conf({ allow: [expression] }))).toThrow(/names no pattern/);
+  });
+
+  test("keeps accepting an explicit wildcard", () => {
+    expect(() => validatePermissionsBlock(conf({ allow: ["Bash(*)"] }))).not.toThrow();
+  });
+
   test("still validates the legacy allowedTools list", () => {
     expect(() => validatePermissionsBlock(conf({ allowedTools: ["Nope"] }))).toThrow(/unknown tool "Nope"/);
   });

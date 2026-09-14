@@ -326,6 +326,29 @@ function validateToolExpression(stage: string, expression: string, known: Set<st
       { stage: "config" },
     );
   }
+  // An EMPTY list is refused for EVERY tool, never widened. `parseToolExpression`
+  // (`src/permissions/grammar.ts`) collapses an empty list to ["*"], so a typo'd
+  // `Bash()` loads clean and grants every shell command -- the exact widening
+  // validateMcpExpression already refuses, and Bash is where it costs most. A
+  // bare `Bash` with no parentheses stays valid: that names the wildcard by
+  // omitting the list, which is a thing a human writes on purpose. `Mcp` is
+  // excluded because validateMcpExpression owns its whole surface shape,
+  // including a bare `Mcp`, and says so in the vocabulary of servers.
+  if (
+    tool !== MCP_RULE_TOOL &&
+    open !== -1 &&
+    expression
+      .slice(open + 1, expression.lastIndexOf(")"))
+      .split(",")
+      .every((p) => p.trim() === "")
+  ) {
+    throw new NaxError(
+      `Invalid configuration — execution.permissions.${stage} has "${expression}", which names no pattern. ` +
+        `An empty list is read as every pattern; write ${tool}(*) if that is what you meant, or name the patterns.`,
+      "CONFIG_PERMISSIONS_BAD_PATTERN",
+      { stage: "config" },
+    );
+  }
   if (tool === MCP_RULE_TOOL) validateMcpExpression(stage, expression);
 }
 
