@@ -3,7 +3,7 @@
   "feature": "cost-row-rate-provenance",
   "branchName": "feat/cost-row-rate-provenance",
   "createdAt": "2025-02-20T00:00:00.000Z",
-  "updatedAt": "2026-09-14T05:52:49.111Z",
+  "updatedAt": "2026-09-14T05:58:34.847Z",
   "userStories": [
     {
       "id": "US-001",
@@ -34,7 +34,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The public result shape and shared calculation change two production files while preserving existing tier and fallback contracts."
+        "reasoning": "The public result shape and shared calculation change two production files while preserving existing tier and fallback contracts.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/cost/estimate.ts",
@@ -42,7 +45,11 @@
         "src/config/schema-types.ts",
         "test/unit/agents/cost/estimate.test.ts",
         "src/agents/cost/types.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7ee77b95f3cec94bf4ce80199ceaa321b0f8d255"
     },
     {
       "id": "US-002",
@@ -84,7 +91,10 @@
         "src/agents/native/adapter.ts",
         "src/agents/acp/adapter.ts",
         "src/agents/acp/adapter-output.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -129,6 +139,9 @@
         "src/config/schemas-model.ts",
         "test/unit/runtime/middleware/cost.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "US-003 only: rates and catalog version on error rows, deferred per the feature-level Out of Scope entry."
       ]
