@@ -38,7 +38,8 @@
 5. **(US-006) `resolvePermissions` gains `providerScope?: "all" | "rules" | "none"` rather than coding-tool-support reading the profile.** `scoped` and `safe` both resolve to mode `approve-reads`, so the live gate (`resolved.mode === "approve-all"`, `src/agents/coding-tool-support.ts:300`) cannot tell them apart — and R7 says `scoped` gets providers while `safe` gets none. Deciding that in the SSOT keeps the permission decision where `check:permission-mode-ssot` expects it; the consumer just reads the answer.
 6. **(US-006) `resolveProviderTools` gains an `admits` predicate and returns `entries`.** Filtering by `Mcp(server:tool)` and expanding deny/ask rules both need `(providerId, localName)` pairs, and `src/tools/provider-adapt.ts:1-7` forbids parsing `<id>__<local>` back apart. The pairs already exist inside `resolveProviderTools` as its local `entries` array; this exposes them instead of re-deriving them by string surgery.
 7. **(US-005 lexer) `2>&1`, `&>`, here-docs and substitutions are all REFUSED with construct-naming reasons.** The spec only names substitutions and here-docs; fd duplication and `&>` are the same class (a shape the lexer does not model), and a named refusal teaches where a generic parse failure would not. Redirections `>`, `>>`, `<` and `2>file` are supported and containment-checked, per R11.
-8. **(US-008) `denied:ask` needs no code change.** Plan A already composes `${verdict.reason} -- ${ASK_UNAVAILABLE_REASON}` (`src/tools/runtime.ts`), and the reason names the matched rule. Task 7 pins that message with a test rather than rewriting it.
+8. **(§6 rows 1 + 11) The Bash tool is CONSTRUCTED on declaration and GATED on the grant — two different lines.** Row 11 wants an undeclared Bash unreachable; row 1 wants an ungranted Bash denied *with a redirect*. Those pull opposite ways, because `callTool` resolves a name before it consults advertisement: gating construction on the grant satisfies row 11 but turns row 1 into a bare "unknown tool" with no affordance, and gating on neither breaks row 11. So construction is gated on `args.declared.includes("Bash")` alone; the missing grant then denies inside `policy.check`, where the redirect is computed, and `grantedTools()` still withholds the tool from `advertised()` so it costs no prompt bytes. Both rows are pinned by tests (Task 4 Step 1, Task 8 rows 1/2/11).
+9. **(US-008) `denied:ask` needs no code change.** Plan A already composes `${verdict.reason} -- ${ASK_UNAVAILABLE_REASON}` (`src/tools/runtime.ts`), and the reason names the matched rule. Task 7 pins that message with a test rather than rewriting it.
 
 ---
 
@@ -253,6 +254,11 @@ function doubleQuoteEnd(command: string, from: number): number {
 }
 
 export function lexBashCommand(command: string): BashLexResult {
+  // Checked up front so the reason names the real problem. Leaving it to the
+  // final flushSegment() would report "an empty command segment", which is
+  // true and useless.
+  if (command.trim() === "") return refused("an empty command");
+
   const segments: BashSegment[] = [];
   let tokens: BashToken[] = [];
   let redirects: BashRedirect[] = [];
@@ -395,7 +401,6 @@ export function lexBashCommand(command: string): BashLexResult {
 
   const error = flushSegment();
   if (error !== undefined) return refused(error);
-  if (segments.length === 0) return refused("an empty command");
   return { kind: "ok", segments };
 }
 ```
@@ -435,7 +440,7 @@ git commit -m "feat(permissions): Bash command lexer with construct refusals"
 - Modify: `src/tools/types.ts` (add `"Bash"` to `CodingToolName`; export `BASH_TOOL_NAME`)
 - Modify: `src/tools/registry.ts:87-99` (add `"Bash"` to `RESERVED_TOOL_NAMES`)
 - Modify: `src/tools/index.ts` (export `BASH_TOOL_NAME`)
-- Modify: `src/config/permissions.ts:112-140` (comment only: why `Bash` is absent from every profile's grant list)
+- Modify: `src/config/permissions.ts:120-141` (comment only: why `Bash` is absent from every profile's grant list)
 - Test: `test/unit/permissions/bash-default-deny.test.ts`
 
 **Interfaces:**
@@ -517,7 +522,7 @@ Add `| "Bash"` to the `CodingToolName` union (after `"Exec"`), add `"Bash"` to `
 export { BASH_TOOL_NAME, EXEC_TOOL_NAME } from "./types";
 ```
 
-In `src/config/permissions.ts`, above `unconditionalGrants` (currently line 136), add the comment that makes the absence deliberate rather than accidental:
+In `src/config/permissions.ts`, above `unconditionalGrants` (line 139 on `3accdbd6f`; `BUILT_IN_EXEC_PATTERNS` ends at :136), add the comment that makes the absence deliberate rather than accidental:
 
 ```typescript
 /**
@@ -749,7 +754,7 @@ Expected: FAIL — `commandField` is not in `ToolScope`, so every call falls thr
 import { lexBashCommand } from "@/permissions";
 import type { BashSegment, BashToken } from "@/permissions";
 import { deniedFlag } from "./exec-guard";
-import { type CompiledEntry, type CompiledPattern, compileArgvPattern } from "./policy-match";
+import type { CompiledEntry, CompiledPattern } from "./policy-match";
 
 export type BashCheck =
   | { readonly kind: "allow" }
@@ -870,6 +875,7 @@ function checkPayload(args: BashCheckArgs, segment: BashSegment): BashCheck | un
 export function checkBashCommand(args: BashCheckArgs): BashCheck {
   const { command, tool } = args;
   if (typeof command !== "string") return deny(`"command" must be a string`);
+  if (command.trim() === "") return deny(`"command" must not be empty`);
 
   const lexed = lexBashCommand(command);
   if (lexed.kind === "refused") {
@@ -908,10 +914,6 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
   return { kind: "allow" };
 }
 
-/** @internal Test seam: compile a pattern list the way a rule map would. */
-export function compileBashPatterns(patterns: readonly string[]): readonly (readonly CompiledPattern[])[] {
-  return patterns.filter((pattern) => pattern !== "*").map((pattern) => compileArgvPattern(pattern));
-}
 ```
 
 - [ ] **Step 4: Wire the branch into the policy**
@@ -1203,11 +1205,15 @@ describe("Bash wiring", () => {
     if (outcome?.kind === "denied") expect(outcome.reason).toContain("unknown tool");
   });
 
-  test("declared but NOT granted: not advertised and denied (spec §6 rows 1-2)", async () => {
+  test("declared but NOT granted: not advertised, and denied BY THE POLICY (spec §6 rows 1-2)", async () => {
     const built = support({ declared: ["Read", "Bash"], grants: [{ tool: "Read", patterns: ["*"] }] });
     expect(built?.tools.map((tool) => tool.name)).not.toContain("Bash");
     const outcome = await built?.runtime.callTool("Bash", { command: "bun test" });
     expect(outcome?.kind).toBe("denied");
+    // NOT "unknown tool": the tool exists, the grant does not. That is what
+    // lets the denial carry a redirect (row 1), and it is the whole reason
+    // creation is gated on declaration rather than on the grant.
+    if (outcome?.kind === "denied") expect(outcome.reason).not.toContain("unknown tool");
   });
 
   test("the project's shell reaches the tool", () => {
@@ -1216,7 +1222,7 @@ describe("Bash wiring", () => {
       grants: [{ tool: "Bash", patterns: ["*"] }],
       shell: "/bin/zsh",
     });
-    expect(built?.tools.find((tool) => tool.name === "Bash")?.description).toBeDefined();
+    expect(built?.tools.find((tool) => tool.name === "Bash")?.description).toContain("/bin/zsh");
   });
 });
 ```
@@ -1377,15 +1383,24 @@ In `src/agents/coding-tool-support.ts`:
   shell?: string;
 ```
 
-3. Beside the `execGrant` lines (currently :95-98), resolve the Bash grant the same way — `findLast`, because the allow compiler is last-write-wins per tool:
+3. Beside the `execGrant` line (:97 on `3accdbd6f`), resolve the Bash grant the same way — `findLast`, because the allow compiler is last-write-wins per tool:
 
 ```typescript
-  // Declared-gated on purpose: a tool the runtime can LOOK UP is callable even
-  // when `advertised()` never returned it (callTool resolves the name first),
-  // so a stage that grants Bash must not hand it to a reviewer op that never
-  // declared it (spec §6 row 11 — the op ceiling is code, never config).
+  // Gated on DECLARATION ALONE — deliberately not on the grant.
+  //
+  // Declaration is the ceiling: a tool the runtime can LOOK UP is callable even
+  // when `advertised()` never returned it (callTool resolves the name before it
+  // consults advertisement), so a stage that grants Bash must not hand it to a
+  // reviewer op that never declared it (spec §6 row 11).
+  //
+  // But an op that DID declare it and holds no grant must be refused by the
+  // POLICY, not by a failed name lookup: "unknown tool" carries no redirect,
+  // and spec §6 row 1 requires the ungranted case to offer an alternative. So
+  // the tool is constructed either way; with no grant, `grantedTools()` still
+  // excludes it (never advertised, no schema cost in the prompt) and the call
+  // denies through `policy.check`, which is where a redirect is computed.
   const bashGrant = grants.findLast((grant) => grant.tool === BASH_TOOL_NAME);
-  const allowBash = args.declared.includes(BASH_TOOL_NAME) && bashGrant !== undefined;
+  const allowBash = args.declared.includes(BASH_TOOL_NAME);
 ```
 
 4. Add the tool to `extraTools`, alongside the `createRunCommandTool` entry:
@@ -1572,7 +1587,7 @@ git commit -m "feat(operations): declare Bash on the fix and verify roles"
 - Modify: `src/tools/provider-grants.ts` (the `Mcp` partition/admit/expand helpers)
 - Modify: `src/tools/provider-advertise.ts:16-56` (`admits` option; return `entries`)
 - Modify: `src/config/permissions.ts` (`ResolvedPermissions.providerScope`)
-- Modify: `src/agents/coding-tool-support.ts:296-325` (consume `providerScope`; partition and expand)
+- Modify: `src/agents/coding-tool-support.ts:282-325` (consume `providerScope`; partition and expand)
 - Test: `test/unit/tools/mcp-rules.test.ts`, `test/unit/agents/mcp-under-scoped.test.ts`, `test/unit/config/mcp-expression-validation.test.ts`
 
 **Interfaces:**
@@ -1656,7 +1671,6 @@ describe("expandMcpRuleGrants", () => {
 
 ```typescript
 import { describe, expect, test } from "bun:test";
-import { assertNaxError } from "@test/helpers";
 import { validatePermissionsBlock } from "@/config/config-guards";
 
 const block = (permissions: Record<string, unknown>) => ({ execution: { permissions } });
@@ -1673,15 +1687,26 @@ describe("Mcp(...) expressions at load", () => {
     expect(() => validatePermissionsBlock(block({ run: { allow: ["Mcp(never-configured)"] } }))).not.toThrow();
   });
 
+  // The repo idiom for a thrown NaxError is `toThrow(/regex/i)` on the message
+  // (see test/unit/config/scoped-profile-accepted.test.ts:38-66). `assertNaxError`
+  // from @test/helpers is something else entirely — it narrows an already-CAUGHT
+  // value (`assertNaxError(err, label)`), so do not reach for it here.
   test.each([["Mcp(Context7)"], ["Mcp(has spaces)"], ["Mcp(:no-server)"], ["Mcp(a__b)"]])(
-    "%s is a bad-pattern error",
+    "%s is a malformed-pattern error",
     (expression) => {
-      assertNaxError(
-        () => validatePermissionsBlock(block({ run: { allow: [expression] } })),
-        "CONFIG_PERMISSIONS_BAD_PATTERN",
-      );
+      expect(() => validatePermissionsBlock(block({ run: { allow: [expression] } }))).toThrow(/malformed Mcp pattern/i);
     },
   );
+
+  test("the malformed-pattern refusal carries the CONFIG_PERMISSIONS_BAD_PATTERN code", () => {
+    try {
+      validatePermissionsBlock(block({ run: { allow: ["Mcp(Context7)"] } }));
+      throw new Error("expected validatePermissionsBlock to throw");
+    } catch (err) {
+      assertNaxError(err, "validatePermissionsBlock rejection");
+      expect(err.code).toBe("CONFIG_PERMISSIONS_BAD_PATTERN");
+    }
+  });
 
   test("Mcp rules are legal in deny and ask lists too", () => {
     expect(() =>
@@ -1691,7 +1716,9 @@ describe("Mcp(...) expressions at load", () => {
 });
 ```
 
-Check `test/helpers/assert-nax-error.ts` for the real helper signature before using it; match its call shape.
+Add `import { assertNaxError } from "@test/helpers";` for the last case only — it is a
+caught-value narrower (`assertNaxError(value, label)`, `test/helpers/assert-nax-error.ts`),
+never a wrapper around a thrown call.
 
 `test/unit/agents/mcp-under-scoped.test.ts`:
 
@@ -1934,7 +1961,7 @@ Set it in each arm: `unrestricted` → `providerScope: "all"`, `safe` → `"none
 
 - [ ] **Step 6: Consume it, and expand the rules, in the dispatch seam**
 
-In `src/agents/coding-tool-support.ts`, replace the `providersPermitted` gate (currently :300) and the call that follows:
+In `src/agents/coding-tool-support.ts`, replace the `providersPermitted` gate (line 282 on `3accdbd6f`) and the `providerResult` call that follows (:283):
 
 ```typescript
   // Mcp(...) is surface syntax: partition it out BEFORE anything compiles a
@@ -1945,11 +1972,13 @@ In `src/agents/coding-tool-support.ts`, replace the `providersPermitted` gate (c
   const denied = partitionMcpRules(resolved.denyRules ?? []);
   const asked = partitionMcpRules(resolved.askRules ?? []);
 
+  // The root test is written inline rather than hoisted to a `hasRoot` boolean
+  // so TypeScript narrows `root` inside the branch — a hoisted flag would force
+  // an `as string` cast on a value the condition already proved.
   const providerScope = resolved.providerScope ?? "none";
-  const hasRoot = root !== undefined && root.trim() !== "";
-  const providersPermitted = providerScope !== "none" && hasRoot;
-  const providerResult: ResolvedProviderTools = providersPermitted
-    ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root as string, {
+  const providerResult: ResolvedProviderTools =
+    providerScope !== "none" && root !== undefined && root.trim() !== ""
+    ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root, {
         // "all" keeps today's behaviour; "rules" admits only what the stage's
         // Mcp rules name, evaluated before a tool is ever adapted.
         ...(providerScope === "rules"
@@ -1965,23 +1994,28 @@ In `src/agents/coding-tool-support.ts`, replace the `providersPermitted` gate (c
       };
 ```
 
-and feed the partitioned lists — plus the expanded deny/ask rules — into `buildCodingToolSupport`:
+then, above the `return buildCodingToolSupport({...})` call, expand the deny/ask Mcp rules:
+
+```typescript
+  // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask rules are
+  // expanded even when providerScope is "all" — a deny must be able to withdraw
+  // one tool from an otherwise fully-granted provider.
+  const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
+  const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
+```
+
+and feed the partitioned lists into it, REPLACING the three existing lines that read
+`grants:`, `...(resolved.denyRules !== undefined ...)` and `...(resolved.askRules !== undefined ...)`:
 
 ```typescript
     grants: [...allow.grants, ...providerResult.grants],
-    ...(() => {
-      // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask
-      // rules are expanded even when providerScope is "all".
-      const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
-      const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
-      return {
-        ...(denyRules.length > 0 ? { denyRules } : {}),
-        ...(askRules.length > 0 ? { askRules } : {}),
-      };
-    })(),
+    ...(denyRules.length > 0 ? { denyRules } : {}),
+    ...(askRules.length > 0 ? { askRules } : {}),
 ```
 
 Keep the existing `nax-permission-mode-allow` comment on whichever line still reads a mode literal; if no literal remains in this file, remove the now-false comment and re-run `bun run check:permission-mode-ssot`.
+
+**Then fix the comment this task falsifies.** The R12 block above the old gate (`src/agents/coding-tool-support.ts`, the paragraph beginning "Provider tools bypass the DECLARATION half of advertisement") states that *"only the `unrestricted` profile (approve-all) grants provider tools"* and that *"under `safe` and `scoped` a provider contributes no tools, no grants and no map entry."* Half of that is now false. Rewrite that half to read: `scoped` admits exactly what the stage's `Mcp(...)` rules name — evaluated before a tool is adapted, so an unadmitted tool still contributes no tool, grant or map entry — while `safe` continues to contribute nothing at all. A stale comment here is worse than no comment: it is the sentence a future reader will trust over the code.
 
 - [ ] **Step 7: Validate `Mcp(...)` at load**
 
@@ -2026,6 +2060,14 @@ Import `MCP_SERVER_ID_RE` from `./schemas-mcp` and `MCP_RULE_TOOL` from `@/tools
 Run: `bun test test/unit/tools/ test/unit/config/ test/unit/agents/ test/unit/mcp/`
 Expected: PASS. `test/unit/config/scoped-profile-accepted.test.ts` and the Plan A permission suites must stay green.
 
+One existing test stays green for a NEW reason and must be retitled, not left alone:
+`test/unit/agents/coding-tool-support-providers.test.ts:68` — *"does not advertise a provider
+tool under scoped"* — passes after this task because its block writes no `Mcp(...)` rule, not
+because `scoped` bars providers. Retitle it to *"does not advertise a provider tool under scoped
+with no Mcp rule"* and add one line saying that a stage WITH an `Mcp(...)` rule does get them
+(pointing at `mcp-under-scoped.test.ts`). A test whose name asserts the opposite of the shipped
+behaviour is how the next reader learns the wrong rule.
+
 - [ ] **Step 9: Commit**
 
 ```bash
@@ -2039,8 +2081,8 @@ git commit -m "feat(permissions): Mcp() grammar and MCP tools under scoped profi
 
 **Files:**
 - Modify: `src/tools/denial-redirect.ts` (a `Bash` intent, `bash`/`sh` heads, `redirectForCommand`)
-- Modify: `src/tools/index.ts` (export `redirectForCommand` if the barrel names the others explicitly — check first)
 - Modify: `src/tools/runtime.ts` (call it for a command-bearing denial)
+- **Not** `src/tools/index.ts`: `denial-redirect` is deliberately absent from the barrel — `runtime.ts` imports it relatively and tests reach it at `@/tools/denial-redirect` (`test/unit/tools/denial-redirect.test.ts:5`). Do not add it.
 - Test: `test/unit/tools/denial-redirect-bash.test.ts`
 
 **Interfaces:**
@@ -2053,7 +2095,9 @@ git commit -m "feat(permissions): Mcp() grammar and MCP tools under scoped profi
 
 ```typescript
 import { describe, expect, test } from "bun:test";
-import { redirectForArgv, redirectForCommand, redirectForVerb } from "@/tools";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { redirectForArgv, redirectForCommand, redirectForVerb } from "@/tools/denial-redirect";
+import { compileToolPolicy, createBashTool, createCodingToolRuntime } from "@/tools";
 
 const available = (...names: string[]) => new Set(names);
 const declared = (...names: string[]) => new Set(names);
@@ -2188,12 +2232,9 @@ and import `redirectForCommand` alongside the other two.
 
 - [ ] **Step 4: Pin the `denied:ask` message (no code change — spec US-008)**
 
-Append to `test/unit/tools/denial-redirect-bash.test.ts` (it exercises the runtime, so import what the existing `runtime.test.ts` imports — a compiled policy and `createCodingToolRuntime`; copy that file's fixture shape, and remember its temp roots are bare `mkdtemp` dirs with no `file.txt`):
+Append to `test/unit/tools/denial-redirect-bash.test.ts` — the imports it needs are already in the block above:
 
 ```typescript
-import { compileToolPolicy, createCodingToolRuntime } from "@/tools";
-import { createBashTool } from "@/tools";
-
 describe("the denied:ask message (spec US-007/US-008)", () => {
   test("names the rule and the headless limitation, not a prohibition", async () => {
     const root = makeTempDir("ask-message-");
@@ -2221,7 +2262,16 @@ describe("the denied:ask message (spec US-007/US-008)", () => {
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `bun test test/unit/tools/denial-redirect-bash.test.ts test/unit/tools/denial-redirect.test.ts test/unit/tools/runtime.test.ts`
-Expected: PASS. `denial-redirect.test.ts` is the large existing suite — if a case there now returns a `Bash` hint where it previously returned undefined, that case's `available` set contains `Bash`, which cannot happen unless the test added it; investigate rather than loosening the assertion.
+Expected: PASS. `denial-redirect.test.ts` is the large existing suite and stays green because
+neither of its fixtures (`ALL` at :10, `AVAILABLE` at :62) contains `Bash`, so `render()` still
+withholds the new rows. If a case there DOES start returning a `Bash` hint, a fixture gained the
+name — investigate rather than loosening the assertion.
+
+One comment there is now false and must be corrected: at `test/unit/tools/denial-redirect.test.ts`
+in *"still says nothing for a shape no tool serves"*, the comment reads *"bash/mv/git restore stay
+unanswered on purpose"*. After this task `bash` IS answered — when, and only when, the session
+actually holds `Bash`. Narrow that comment to `mv` and `git restore`, and say that the `bash` row
+returns undefined here because this fixture holds no `Bash`.
 
 - [ ] **Step 6: Commit**
 
@@ -2264,7 +2314,18 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 
-const FIX_TOOLS = ["Read", "Bash"] as const;
+/**
+ * A fix-shaped session. Read/Glob/Grep are declared AND granted deliberately:
+ * row 1 asserts that an ungranted Bash call is redirected to a structured
+ * tool, and `denial-redirect.ts` never names a tool the session does not hold
+ * — so a fixture that declares only Read cannot prove the redirect at all.
+ */
+const FIX_TOOLS = ["Read", "Glob", "Grep", "Bash"] as const;
+const STRUCTURED_GRANTS = [
+  { tool: "Read", patterns: ["*"] },
+  { tool: "Glob", patterns: ["*"] },
+  { tool: "Grep", patterns: ["*"] },
+] as const;
 
 let root: string;
 
@@ -2283,11 +2344,11 @@ function session(options?: {
   allow?: readonly string[];
   deny?: readonly string[];
   ask?: readonly string[];
-  declared?: readonly ("Read" | "Bash")[];
+  declared?: readonly ("Read" | "Glob" | "Grep" | "Bash")[];
   profileGrants?: readonly { tool: string; patterns: readonly string[] }[];
 }) {
   const grants = [
-    ...(options?.profileGrants ?? [{ tool: "Read", patterns: ["*"] }]),
+    ...(options?.profileGrants ?? STRUCTURED_GRANTS),
     ...(options?.allow !== undefined ? [{ tool: "Bash", patterns: options.allow }] : []),
   ];
   return buildCodingToolSupport({
@@ -2306,18 +2367,19 @@ describe("deny suite (spec §6)", () => {
   test("row 1: no grant at all -> denied, with an alternative named", async () => {
     const outcome = await call(session(), "grep -n foo src");
     expect(outcome.kind).toBe("denied");
-    if (outcome.kind === "denied") expect(outcome.reason).toContain("Read");
+    if (outcome.kind === "denied") {
+      // Denied by the POLICY (the tool exists, the grant does not), which is
+      // what lets the refusal carry a redirect at all.
+      expect(outcome.reason).not.toContain("unknown tool");
+      expect(outcome.reason).toContain("Grep");
+    }
   });
 
   test("row 2: the unrestricted blanket grant does not cover Bash", async () => {
     // What `unrestricted` actually hands out: every built-in at ["*"], Bash absent.
     const outcome = await call(
       session({
-        profileGrants: [
-          { tool: "Read", patterns: ["*"] },
-          { tool: "Write", patterns: ["*"] },
-          { tool: "Git", patterns: ["*"] },
-        ],
+        profileGrants: [...STRUCTURED_GRANTS, { tool: "Write", patterns: ["*"] }, { tool: "Git", patterns: ["*"] }],
       }),
       "bun test",
     );
@@ -2402,10 +2464,7 @@ describe("positive checks (spec §6, second half)", () => {
   test("an allow rule grants Bash under a blanket-granted profile too (spec R10)", async () => {
     const outcome = await call(
       session({
-        profileGrants: [
-          { tool: "Read", patterns: ["*"] },
-          { tool: "Write", patterns: ["*"] },
-        ],
+        profileGrants: [...STRUCTURED_GRANTS, { tool: "Write", patterns: ["*"] }],
         allow: ["echo *"],
       }),
       "echo ok",
@@ -2424,7 +2483,7 @@ Expected: PASS. Each denial must come from the reason the row names — if row 4
 
 - [ ] **Step 3: Write the ADR amendment**
 
-Append to `docs/adr/ADR-029-phase-c-native-coding-agent-scope.md`, immediately after the existing `#### Amendment, 2026-09-03` block inside §3 (so the section reads chronologically):
+Insert into `docs/adr/ADR-029-phase-c-native-coding-agent-scope.md` at the **END of §3** — after the existing `#### Amendment, 2026-09-06: an argv branch for RunCommand` block and immediately BEFORE `### 4. Permission policy stays in nax` (line 372 on `3accdbd6f`). §3 runs from line 171 to 371 and already carries TWO amendments (2026-09-03 at :182, 2026-09-06 at :256); appending after the 2026-09-03 one would put this amendment out of chronological order:
 
 ```markdown
 #### Amendment, 2026-09-14: the trigger fired, and what shipped instead of a sandbox
@@ -2529,7 +2588,7 @@ A code review runs BEFORE the push (standing user ruling). The PR carries this p
 
 ## Self-review notes (kept for executors)
 
-**Spec coverage.** US-004 → Tasks 2, 4, 5. US-005 → Tasks 1, 3. US-006 → Task 6. US-007 → verified-only (Plan A shipped the seam; Task 7 Step 4 pins the message, Task 8's row 9 pins the ledger-visible outcome). US-008 → Task 7. US-009 → Task 8. §5 sequence 4 → Tasks 1–5; 5 → Task 6; 6 → Tasks 7–8. §6: rows 1, 2, 11 → Task 8 (+ Task 4's wiring test); 3–8 → Tasks 3 and 8; 9 → Tasks 3, 7, 8; 10 → Task 6. R2 → Task 4's description and the untouched Git tool. R4 → Task 2. R9 → Task 8. R10 → Task 8's last positive check. R11 → Task 1.
+**Spec coverage.** US-004 → Tasks 2, 4, 5. US-005 → Tasks 1, 3. US-006 → Task 6. US-007 → verified-only (Plan A shipped the seam; Task 7 Step 4 pins the message, Task 8's row 9 pins the ledger-visible outcome). Rows 1 and 11 are satisfied by the construction/grant split — see Deviation 8, and do not "simplify" either gate without re-reading both rows. US-008 → Task 7. US-009 → Task 8. §5 sequence 4 → Tasks 1–5; 5 → Task 6; 6 → Tasks 7–8. §6: rows 1, 2, 11 → Task 8 (+ Task 4's wiring test); 3–8 → Tasks 3 and 8; 9 → Tasks 3, 7, 8; 10 → Task 6. R2 → Task 4's description and the untouched Git tool. R4 → Task 2. R9 → Task 8. R10 → Task 8's last positive check. R11 → Task 1.
 
 **Known gaps, deliberately left.** (a) An opaque `$VAR` in PAYLOAD position is admitted by a `*` pattern token — the spec permits `$VAR` expansion and this is its cost; a stage that cannot tolerate it writes narrower patterns. (b) `2>&1` and `&>` are refused rather than modelled; if real runs show that biting, the lexer grows those two forms in a follow-up, not by loosening the refusal. (c) The `AskResolver` is still injected nowhere (`runtime.ts` defaults to headless) — correct for v1, and the point at which an interactive channel plugs in is `resolveCodingToolSupport`.
 
