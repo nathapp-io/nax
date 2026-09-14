@@ -4,7 +4,8 @@ export {
   inputClassTokens,
   resolvePricingSource,
 } from "./calculate";
-export { estimateCostUsd } from "./estimate";
+export type { ResolvedRates } from "./estimate";
+export { estimateCostUsd, priceCall } from "./estimate";
 export {
   _resetRateCardWarnings,
   FALLBACK_RATES,
