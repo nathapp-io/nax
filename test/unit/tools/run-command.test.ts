@@ -272,6 +272,88 @@ describe("run() names the declared command that accepts a rejected value key", (
   });
 });
 
+// A model sending a string for "values" (instead of an object) gets no type
+// check today: run() cast the raw input straight to a keyed object with no
+// shape check, so the string is treated as an object. `Object.keys("")`
+// is empty (no error at all -- the wrong template's placeholder-unfilled
+// error fires instead), and `Object.keys("\t")` yields ["0"], producing a
+// rejected key literally named "0" that never existed in the input. Measured
+// in run-2026-09-14T08-21-43-607Z: 84 of 97 RunCommand calls hit one of
+// these two shapes in an unescapable loop, because neither message ever
+// says "values must be an object".
+describe("run() rejects a non-object values before it can misread one", () => {
+  test("a non-empty string is rejected, naming the expected shape", async () => {
+    const tool = createRunCommandTool(new Map([["testScoped", "bun test {{files}}"]]));
+    const result = await tool.run(
+      { command: "testScoped", values: "\t" },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('"values" must be an object');
+    expect(result.content).not.toContain('"0"');
+  });
+
+  test("an empty string is rejected the same way, not silently treated as no values", async () => {
+    const tool = createRunCommandTool(new Map([["testScoped", "bun test {{files}}"]]));
+    const result = await tool.run(
+      { command: "testScoped", values: "" },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('"values" must be an object');
+  });
+
+  test("an array is rejected, naming the expected shape", async () => {
+    const tool = createRunCommandTool(new Map([["testScoped", "bun test {{files}}"]]));
+    const result = await tool.run(
+      { command: "testScoped", values: ["a.test.ts"] },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('"values" must be an object');
+  });
+
+  test("null is rejected, naming the expected shape", async () => {
+    const tool = createRunCommandTool(new Map([["testScoped", "bun test {{files}}"]]));
+    const result = await tool.run(
+      { command: "testScoped", values: null },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('"values" must be an object');
+  });
+
+  test("the error names the placeholder-mapping shape the model should send", async () => {
+    const tool = createRunCommandTool(new Map([["testScoped", "bun test {{files}}"]]));
+    const result = await tool.run(
+      { command: "testScoped", values: "bad" },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.content).toBe(
+      '"values" must be an object mapping placeholder names to values, e.g. { files: "a.test.ts" } -- got a string instead',
+    );
+  });
+
+  test("values absent entirely stays valid", async () => {
+    const tool = createRunCommandTool(new Map([["noop", "echo hi"]]));
+    const result = await tool.run(
+      { command: "noop" },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBeFalsy();
+  });
+
+  test("a correct object is unaffected", async () => {
+    const tool = createRunCommandTool(new Map([["echoFiles", "echo {{files}}"]]));
+    const result = await tool.run(
+      { command: "echoFiles", values: { files: "a.test.ts" } },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toContain("a.test.ts");
+  });
+});
+
 test("a metacharacter in a value cannot run a second command", async () => {
   const tool = createRunCommandTool(new Map([["echoFiles", "echo {{files}}"]]));
   const result = await tool.run(
