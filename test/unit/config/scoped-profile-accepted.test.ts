@@ -151,6 +151,23 @@ describe("validatePermissionsBlock — allow/deny/ask lists", () => {
     expect(() => validatePermissionsBlock(conf({ allow: [expression] }))).toThrow(/names no pattern/);
   });
 
+  test.each(["allow", "allowedTools"] as const)("rejects two %s expressions naming the same tool", (key) => {
+    // compileToolPolicy is last-write-wins per tool, so the FIRST expression is
+    // silently discarded. Caught by a live run: a config granting
+    // `Bash(bun test *)` and `Bash(echo *)` reported "granted forms: echo *".
+    expect(() => validatePermissionsBlock(conf({ [key]: ["Bash(bun test *)", "Bash(echo *)"] }))).toThrow(
+      /names "Bash" more than once/,
+    );
+  });
+
+  test("the merged single-expression form is accepted", () => {
+    expect(() => validatePermissionsBlock(conf({ allow: ["Bash(bun test *, echo *)"] }))).not.toThrow();
+  });
+
+  test.each(["deny", "ask"] as const)("still accepts duplicate %s expressions, which MERGE", (key) => {
+    expect(() => validatePermissionsBlock(conf({ [key]: ["Bash(rm *)", "Bash(curl *)"] }))).not.toThrow();
+  });
+
   test("keeps accepting an explicit wildcard", () => {
     expect(() => validatePermissionsBlock(conf({ allow: ["Bash(*)"] }))).not.toThrow();
   });

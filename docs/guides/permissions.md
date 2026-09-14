@@ -73,6 +73,10 @@ Notes from the loader and guards:
 
 ## The expression grammar
 
+In an **allow** list, each tool may appear once: the allow compiler is last-write-wins per
+tool, so `["Bash(a)", "Bash(b)"]` would grant only `b`. Write `Bash(a, b)`. `deny` and `ask`
+merge instead, so duplicates there are legal and additive.
+
 An **empty** pattern list is a load error for every tool: `Bash()` would otherwise read as
 `Bash(*)`. Write `Bash(*)` when that is what you mean, or a bare `Bash`.
 

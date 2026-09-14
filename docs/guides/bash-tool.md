@@ -50,7 +50,7 @@ install command would hand that back by another route.
 {
   "execution": {
     "permissions": {
-      "run": { "allow": ["Bash(bun test *)", "Bash(bun x tsc *)"] },
+      "run": { "allow": ["Bash(bun test *, bun x tsc *)"] },
       "rectification": { "inherit": "run" }
     }
   }
@@ -75,6 +75,26 @@ A pattern is a **token prefix** with an optional trailing `*`:
 An **empty** pattern list is refused at config load for every tool. `Bash()` would otherwise
 read as `Bash(*)`, which is the opposite of what anyone typing it meant. Write `Bash(*)` when
 you mean it.
+
+### One expression per tool, in an allow list
+
+Put every pattern for a tool in **one** expression:
+
+```json
+"allow": ["Bash(bun test *, bun x tsc *)"]        // correct
+"allow": ["Bash(bun test *)", "Bash(bun x tsc *)"]  // load error
+```
+
+The allow compiler is last-write-wins per tool, so the second form would grant only
+`bun x tsc *` and silently drop the first. That is now a config load error naming the merged
+form, rather than a grant that quietly goes missing until a command is denied mid-run.
+
+`deny` and `ask` are the other way round — they **merge**, because a later rule must never
+withdraw an earlier refusal — so duplicates there are legal and mean what they say:
+
+```json
+"deny": ["Bash(rm *)", "Bash(curl *)"]            // both apply
+```
 
 Rules are matched **per segment**: every segment of a `&&` / `||` / `;` / `|` chain must
 independently satisfy an allow rule, and any segment matching a deny rule refuses the whole
