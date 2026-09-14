@@ -41,7 +41,8 @@ import {
   openNativeSession,
 } from "./session/session";
 import { buildNativeStreamEvent } from "./session/turn-events";
-import { readNativeTurnFailureUsage, runNativeTurn } from "./session/turn-loop";
+import { runNativeTurn } from "./session/turn-loop";
+import { readNativeTurnFailureUsage } from "./session/turn-types";
 import { nativeSessionId, newSessionKey } from "./session-affinity";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
