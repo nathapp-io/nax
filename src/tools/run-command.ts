@@ -214,6 +214,26 @@ function describeDeclaredCommands(declared: ReadonlyMap<string, QualityCommandSp
   return [...declared.entries()].map(([name, template]) => describeDeclaredCommand(name, template)).join(", ");
 }
 
+// The live-run defect this exists to fix (run-2026-09-14T08-21-43-607Z): the
+// "values" input was cast straight to Record<string, unknown> with no shape
+// check, so a model sending a STRING got its characters iterated as if they
+// were object keys. An empty string produced no rejected keys at all, so the
+// unrelated "has no value" branch fired instead; "\t" produced the key "0",
+// so the response named a placeholder that was never in the input. 84 of 97
+// RunCommand calls in that run hit one of these two shapes, in a loop the
+// model could not escape because neither message ever said "values" itself
+// was the wrong type. Checked before "raw" is derived, so a malformed shape
+// can never reach Object.keys/Object.entries below.
+function describeValuesType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
+  return `a ${typeof value}`;
+}
+
+function isPlainValuesObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 // #1924, third half (run-2026-09-14T05-55-54-734Z audit, Shape A): the
 // original error only ever named what the CHOSEN command declares, never
 // which OTHER declared command accepts the rejected key -- an agent that
@@ -307,6 +327,12 @@ export function createRunCommandTool(
       const template = declared.get(key);
       if (template === undefined) return { content: `unknown command "${key}"`, isError: true };
 
+      if (input.values !== undefined && !isPlainValuesObject(input.values)) {
+        return {
+          content: `"values" must be an object mapping placeholder names to values, e.g. { files: "a.test.ts" } -- got ${describeValuesType(input.values)} instead`,
+          isError: true,
+        };
+      }
       const raw = (input.values ?? {}) as Record<string, unknown>;
 
       // Shape A of the run-2026-09-14T05-55-54-734Z audit: check every
