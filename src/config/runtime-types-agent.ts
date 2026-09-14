@@ -28,13 +28,15 @@ export interface PromptAuditConfig {
   dir?: string;
 }
 
-/** Usage audit configuration — opt-in file-based per-round-trip usage records (nax#2045). */
+/** Usage audit configuration — opt-in file-based per-round-trip usage records (nax#2045).
+ *  `scopeId` is populated on the native transport only; ACP rows carry no exact ledger/transcript join. */
 export interface UsageAuditConfig {
   /** When true, every agent round trip's usage is written to a file for auditing. */
   enabled: boolean;
   /**
    * Directory to write usage audit files into.
-   * Absolute path, or relative to workdir. Defaults to `<outputDir>/usage` when absent.
+   * Absolute path, or used as-is — a relative path resolves against the process
+   * working directory, not `workdir`. Defaults to `<outputDir>/usage` when absent.
    */
   dir?: string;
 }
