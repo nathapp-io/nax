@@ -1,0 +1,153 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "cost-row-rate-provenance",
+  "branchName": "feat/cost-row-rate-provenance",
+  "createdAt": "2025-02-20T00:00:00.000Z",
+  "updatedAt": "2026-09-14T05:52:49.111Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Pricing returns effective rates",
+      "description": "**Goal** — Introduce a shared pricing result that preserves the exact effective per-1M rates used for the estimate. **Motivation** — A row stamped `pricingSource: \"catalog-rates\"` carries no signal that the catalog rate disagrees with the provider's published rate. **Approach** — Introduce `priceCall`, which computes a call's cost and returns the effective per-1M rates it multiplied by, with tier selection applied and the cache-rate fallback resolved. `estimateCostUsd` is retained unchanged as a wrapper over it, so every existing caller and every existing test keeps its current contract. **Approach** — `estimateCostUsd` selects one rate row for the whole request via its internal tier selection, then substitutes `inputPer1M` for any absent cache rate. Recording the post-selection, post-substitution numbers is what makes a row's arithmetic verifiable: token counts multiplied by the recorded rates must reproduce the recorded `estimatedCostUsd`. Recording the whole card instead would force every reader to re-run tier selection to learn what was actually billed. **Scope** — In: shared pricing calculation, public type and barrel export. Out: producer/event propagation (US-002), cost-row persistence (US-003), changes to tier-selection semantics, including which tier wins and the strictly-greater-than threshold comparison, and recording the full resolved rate card, including the `tiers` array, on a cost row. Only the post-selection effective rates are recorded. **Interface** — `estimateCostUsd(usage: TokenUsage, rates: TokenPricing): number` remains unchanged and becomes a thin wrapper returning the cost component of `priceCall`. `priceCall(usage: TokenUsage, rates: TokenPricing): { costUsd: number; resolvedRates: ResolvedRates }`. `ResolvedRates` is a new exported interface with four required numbers: `inputPer1M`, `outputPer1M`, `cacheReadPer1M`, and `cacheCreationPer1M`. All four are required, distinguishing it from the existing internal tier-selection shape whose cache fields are optional.",
+      "acceptanceCriteria": [
+        "When `priceCall` is imported from `@/agents/cost` and called with 1,000,000 input and 1,000,000 output tokens and rates `{ inputPer1M: 3, outputPer1M: 15 }`, then it returns `costUsd` equal to 18.",
+        "When `priceCall` is called with rates whose `cacheReadPer1M` is undefined, then `resolvedRates.cacheReadPer1M` equals the card's `inputPer1M`.",
+        "When `priceCall` is called with rates whose `cacheCreationPer1M` is undefined, then `resolvedRates.cacheCreationPer1M` equals the card's `inputPer1M`.",
+        "When `priceCall` is called with rates whose `cacheReadPer1M` is defined, then `resolvedRates.cacheReadPer1M` equals that defined value rather than `inputPer1M`.",
+        "When `priceCall` is called with a card carrying a tier at `inputTokensAbove` 100,000 and usage of 150,000 input tokens, then `resolvedRates.inputPer1M` equals that tier's `inputPer1M`.",
+        "When `priceCall` is called with a card carrying a tier at `inputTokensAbove` 100,000 and usage of exactly 100,000 input tokens, then `resolvedRates.inputPer1M` equals the card's base `inputPer1M`.",
+        "When `priceCall` is called with a card carrying two tiers whose thresholds are both crossed, then `resolvedRates` equals the tier with the higher `inputTokensAbove`.",
+        "When `priceCall` is called with any usage and card, then summing each token class divided by 1,000,000 times its matching `resolvedRates` field equals returned `costUsd`.",
+        "When `estimateCostUsd` and `priceCall` are called with the same usage and rates, then `estimateCostUsd` returns a number equal to `priceCall`'s `costUsd` for those inputs.",
+        "When `priceCall` is called with usage whose `cacheReadInputTokens` is undefined, then its `costUsd` charges nothing for cache reads."
+      ],
+      "tags": [
+        "feature",
+        "pricing",
+        "api"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The public result shape and shared calculation change two production files while preserving existing tier and fallback contracts."
+      },
+      "contextFiles": [
+        "src/agents/cost/estimate.ts",
+        "src/agents/cost/index.ts",
+        "src/config/schema-types.ts",
+        "test/unit/agents/cost/estimate.test.ts",
+        "src/agents/cost/types.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Propagate rates through adapters and dispatch",
+      "description": "**Goal** — Carry the effective rates billed by each producer to its dispatch event. **Motivation** — Both issues independently propose the same remedy: record the rate card on the row. **Approach** — Both adapters stamp the effective rates on the result they return, and the dispatch event forwards them, mirroring how `pricingSource` already travels this path. Adapters price via `priceCall` so the rates they report are the rates they billed, rather than a second independent resolution. **Approach** — The rates are known in the producer (the adapter, where pricing happens) and the row is written in the cost subscriber. That producer-to-row handoff already exists for `pricingSource`, which the subscriber copies through rather than re-deriving. The rates travel the same path — result object -> dispatch event -> cost row — so this feature adds a passenger to an existing seam rather than a new channel. **Approach** — The cache-rate fallback is resolved before recording. Pricing substitutes `inputPer1M` for an absent `cacheReadPer1M` or `cacheCreationPer1M`. Recording the substituted number is what makes the arithmetic check out; recording absence would leave the row unverifiable exactly where cache-read dominates. **Scope** — In: `CompleteResult`/`TurnResult`/`DispatchEvent` rate passengers, native and ACP calls to `priceCall`, and conditional event forwarding. Out: pricing calculation API (US-001), cost-row persistence and catalog version (US-003), and recording rates or catalog version on error rows, which carry a partial-spend estimate attributed from a failed dispatch. Deferred because the error carrier is a positional constructor and extending it is disproportionate to the partial-spend case. **Interface** — `deriveTokenUsage(wire, rateCard)` retains its return fields and adds `rates?: ResolvedRates`, absent when the nonzero-usage guard skipped pricing. `buildTurnResult(input: BuildTurnResultInput): TurnResult` retains its signature and its return additionally carries `rates` when the guard let pricing run. `CompleteResult` / `TurnResult` retain `pricingSource?: \"catalog-rates\" | \"config-override\" | \"fallback-rates\"` alongside `estimatedCostUsd` / `exactCostUsd` and gain `rates?: ResolvedRates`. `DispatchEvent` retains `pricingSource?` as a producer-supplied passenger and gains `rates?: ResolvedRates`.",
+      "acceptanceCriteria": [
+        "When the native adapter's `complete()` returns for a priced call, then its `CompleteResult.rates` has four fields equal to the effective rates used to price that call.",
+        "When the ACP adapter's `complete()` returns for a priced call, then its `CompleteResult.rates` has four fields equal to the effective rates used to price that call.",
+        "When the ACP adapter's `sendTurn()` returns for a priced turn, then its `TurnResult.rates` has four fields equal to the effective rates used to price that turn.",
+        "When native `complete()` uses a tiered rate card and usage crossing its tier threshold, then returned `CompleteResult.rates` equals the winning tier's rates and not the card's base rates.",
+        "When ACP `complete()` uses a tiered rate card and nonzero usage crossing its tier threshold, then returned `CompleteResult.rates` equals the winning tier's rates and not the card's base rates.",
+        "When native `complete()` receives zero input and zero output tokens, then its returned `CompleteResult` carries `rates` because the native path prices unconditionally.",
+        "When ACP `complete()` receives zero input and zero output tokens, then its returned `CompleteResult` has no `rates` field because its nonzero-usage guard skips pricing entirely.",
+        "When ACP `sendTurn()` returns for zero accumulated token usage, then its `TurnResult` has no `rates` field.",
+        "When a `DispatchEvent` is built from a result carrying `rates`, then its `rates` field exposes the same four rate values.",
+        "When a `DispatchEvent` is built from a result carrying no `rates`, then it omits the `rates` field rather than exposing it as undefined."
+      ],
+      "tags": [
+        "feature",
+        "pricing",
+        "adapters",
+        "events"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This spans two adapter implementations, session output construction, public result types, and dispatch transport, with tiered production-path seams rather than mock injection."
+      },
+      "contextFiles": [
+        "src/agents/session-types.ts",
+        "src/runtime/dispatch-events.ts",
+        "src/agents/native/adapter.ts",
+        "src/agents/acp/adapter.ts",
+        "src/agents/acp/adapter-output.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Persist rate provenance on cost rows",
+      "description": "**Goal** — Persist optional rate provenance on successful cost rows at schema version 5. **Motivation** — A cost row states a conclusion and discards its inputs. **Approach** — The cost subscriber stamps both new fields on the row and the schema version goes to 5. The catalog version is exposed as a build-time constant beside the existing nax version constant. The pricing-override field documentation gains a note that configured rates are treated as time-invariant, so operators know a time-varying provider rate must be reconstructed post-hoc. **Approach** — A cost row gains two optional fields: `rates` (the four effective per-1M numbers that were multiplied) and `catalogVersion` (the version of the catalog package those rates came from). `COST_ROW_SCHEMA_VERSION` goes 4 -> 5. Both fields are optional, so existing v4 rows stay readable and no consumer breaks on absence. **Approach** — `rates` describes `estimatedCostUsd`, not `costUsd`. When a wire-exact cost is present the row's `pricingSource` becomes `\"wire\"`, discarding the producer's branch. `rates` survives that branch: the row still carries an `estimatedCostUsd` computed from them, and a row where estimate and exact cost diverge is the interesting one. `pricingSource: \"wire\"` together with `rates` present is valid and intended. **Approach** — `catalogVersion` is stamped only when the producer's own reported source was the catalog. It keys off the producer-supplied value on the dispatch event, not off the row's final `pricingSource` — which the wire branch may have already overwritten. A `config-override` row's rates came from the operator's config, so stamping a catalog version there would assert a false origin. **Approach** — nax pins its catalog dependency exactly (no range), so the declared pin is an exact version string. It is read the same way the existing version module already reads nax's own version — a static import of `package.json`, which the bundler inlines as a constant. A runtime read of the dependency's own manifest is not available: its `exports` map declares only the package root, with no `./package.json` subpath. **Scope** — In: successful row fields, schema v5, static `NAX_AI_VERSION`, and override documentation. Out: producer propagation (US-002); changes to how `costUsd`, `exactCostUsd`, or `confidence` are computed, and to any budget gate or spend cap that reads them; backfilling, migrating, or re-pricing existing schemaVersion 4 cost rows; and any reader-side feature that consumes the new fields: reporting, drift dashboards, re-pricing tooling, or telemetry rollups. **Interface** — `CostEvent` retains `schemaVersion?`, `estimatedCostUsd`, and `pricingSource?` and gains `rates?: ResolvedRates` and `catalogVersion?: string`. `COST_ROW_SCHEMA_VERSION` changes from `4` to `5`.",
+      "acceptanceCriteria": [
+        "When a cost row is recorded from a dispatch event, then its `schemaVersion` equals 5.",
+        "When a cost row is recorded from a dispatch event carrying `rates`, then its `rates` field exposes the same four rate values.",
+        "When a cost row is recorded from a dispatch event carrying both `rates` and a wire-exact cost, then its `pricingSource` equals `\"wire\"` and it still carries the four rate values.",
+        "When a cost row is recorded from a dispatch event carrying no `rates`, then it omits the `rates` field.",
+        "When a cost row is recorded from a dispatch event whose producer `pricingSource` is `\"catalog-rates\"`, then its `catalogVersion` equals `NAX_AI_VERSION`.",
+        "When a cost row is recorded from a dispatch event whose producer `pricingSource` is `\"config-override\"`, then it has no `catalogVersion` field.",
+        "When a cost row is recorded from a dispatch event whose producer `pricingSource` is `\"fallback-rates\"`, then it has no `catalogVersion` field.",
+        "When a cost row is recorded from a catalog-rates dispatch event that also carries a wire-exact cost, then its `catalogVersion` equals `NAX_AI_VERSION` even though the row's `pricingSource` reads `\"wire\"`.",
+        "When `NAX_AI_VERSION` is imported from the version module, then it is a non-empty string matching the dotted numeric form `<major>.<minor>.<patch>`.",
+        "When an error row is recorded from a failed dispatch, then it carries neither a `rates` field nor a `catalogVersion` field.",
+        "When a session-turn cost row is recorded from a dispatch event carrying no token usage, then it has `usageMissing` true and no `rates` field.",
+        "When the catalog pin string is unreadable at build time, then a successful catalog-priced row omits `catalogVersion` rather than recording an empty or placeholder string."
+      ],
+      "tags": [
+        "feature",
+        "ledger",
+        "pricing",
+        "versioning"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is an additive optional-row schema change across the subscriber, aggregate type, version module, and existing configuration documentation."
+      },
+      "contextFiles": [
+        "src/runtime/middleware/cost.ts",
+        "src/runtime/cost-aggregator.ts",
+        "src/version.ts",
+        "src/config/schemas-model.ts",
+        "test/unit/runtime/middleware/cost.test.ts"
+      ],
+      "outOfScope": [
+        "US-003 only: rates and catalog version on error rows, deferred per the feature-level Out of Scope entry."
+      ]
+    }
+  ],
+  "analysis": "This additive TypeScript feature extends the existing price-to-ledger path. `src/agents/cost/estimate.ts:1-87` chooses the highest strictly-crossed tier, applies missing-cache fallback, and returns only a number; `src/agents/cost/index.ts:1-11` exports only `estimateCostUsd`. US-001 must expose `priceCall` and `ResolvedRates` without altering estimator behavior. Existing estimator coverage is `test/unit/agents/cost/estimate.test.ts`. Native one-shot pricing is `src/agents/native/adapter.ts:190-210`; native session cards are resolved at `:232-301`, while `src/agents/native/session/turn-loop.ts:525-553` currently only returns `pricingSource`. ACP guarded pricing is `src/agents/acp/adapter.ts:121-129`; ACP one-shot outputs are at `:178-242` and session-turn aggregation is `src/agents/acp/adapter-output.ts:234-246`. `TurnResult` is in `src/agents/session-types.ts:174-192`, but the actual `CompleteResult` is in `src/agents/types.ts:390-421`; both need optional rates. Dispatch types are in `src/runtime/dispatch-events.ts:13-77`, and builder propagation is `src/agents/manager-dispatch.ts:90-200`. US-002 must conditionally forward the producer passenger through all relevant result/event seams and use `priceCall`, not independent resolution. Tiered fixtures distinguish effective tier rates from base rates. Important tests are `test/unit/agents/acp/adapter-rate-card-pricing.test.ts` and `test/unit/agents/manager-dispatch-complete.test.ts`. Successful cost rows are built in `src/runtime/middleware/cost.ts:56-164`, where a wire-exact cost overwrites final row `pricingSource`; error rows are separate at `:166-207` and must remain rate-free. `CostEvent` is in `src/runtime/cost-aggregator.ts:3-111`. US-003 must copy rates conditionally and determine catalog provenance from the original event source, then bump schema v4 to v5. Ledger coverage is in `test/unit/runtime/middleware/cost.test.ts`, `cost-dispatch-error.test.ts`, and `cost-roundtrip-attribution.test.ts`. `src/version.ts:8-13` statically imports root `package.json`; the exactly pinned `@nathapp/nax-ai` dependency is `0.1.11` at `package.json:59`, so `NAX_AI_VERSION` must read the declared root-manifest pin, never the dependency manifest at runtime. `TokenPricingSchema` is `src/config/schemas-model.ts:21-31`; only documentation changes there. Risks are materializing undefined fields, altering tier/fallback arithmetic, losing catalog origin on wire rows, and falsely labeling override/fallback rates. Optional fields and conditional spreads preserve v4 rows and consumers. Native session turns aggregate potentially multiple priced round-trips; because a single `ResolvedRates` cannot reproduce an aggregate whose individual calls cross different tiers, implementation must preserve existing native cost arithmetic and escalate any requirement to make native session rows arithmetically self-describing across mixed-tier round-trips rather than silently attaching a misleading single rate object. Implement in US-001, US-002, US-003 order.",
+  "outOfScope": [
+    "Detecting catalog rate drift at runtime or in CI, including any command that fetches or scrapes a provider's published rate card. Issue #2020's active half stays open.",
+    "Any network request, HTTP fetch, HTML scraping, or provider API credential handling in the pricing path.",
+    "A rate table, bundled rate data, or any rate source owned by nax itself.",
+    "Expressing time-varying (peak/off-peak) rates in configuration, including any time predicate, UTC hour range, or weekday mask on a pricing tier. Issue #2021's active half stays open.",
+    "Changes to the pricing-override config schemas, their validation, or the wholesale-override precedence rule.",
+    "Changes to how `costUsd`, `exactCostUsd`, or `confidence` are computed, and to any budget gate or spend cap that reads them.",
+    "Changes to tier-selection semantics, including which tier wins and the strictly-greater-than threshold comparison.",
+    "Recording the full resolved rate card, including the `tiers` array, on a cost row. Only the post-selection effective rates are recorded.",
+    "Recording rates or catalog version on error rows, which carry a partial-spend estimate attributed from a failed dispatch. Deferred because the error carrier is a positional constructor and extending it is disproportionate to the partial-spend case.",
+    "Detecting that the installed catalog package differs from the declared pin, such as under a local development link or a package-manager override.",
+    "Backfilling, migrating, or re-pricing existing schemaVersion 4 cost rows.",
+    "Any reader-side feature that consumes the new fields: reporting, drift dashboards, re-pricing tooling, or telemetry rollups."
+  ],
+  "routingProfile": "native"
+}
