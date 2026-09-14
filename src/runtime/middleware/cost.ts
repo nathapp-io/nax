@@ -1,6 +1,21 @@
 import { resolvePricingSource } from "@/agents";
+import { NAX_AI_VERSION } from "@/version";
 import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
 import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCompletedEvent } from "../dispatch-events";
+
+/**
+ * Test seams for `attachCostSubscriber`. The catalog-version read is
+ * injectable so a unit test can simulate the "unreadable at build time"
+ * branch (US-003 AC12) without depending on a real installed package.
+ * Production code never reads from this object — it reads
+ * `NAX_AI_VERSION` once at module load and threads the value into the
+ * closure that constructs `costEvent`.
+ */
+export const _costSubscriberDeps = {
+  getCatalogVersion(): string | undefined {
+    return NAX_AI_VERSION;
+  },
+};
 
 /**
  * Cost-row schema version.
@@ -32,7 +47,7 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
  *     `gpt-5.6-luna[high]` and `gpt-5.6-luna` as distinct keys unless it
  *     normalizes v2 rows itself.
  *
- * 4 — current (US-001). Session-turn rows additionally carry `roundTrips` and
+ * 4 — (US-001). Session-turn rows additionally carry `roundTrips` and
  *     `roundTripUnit` (the unit discriminates ACP's delegated-agent-run count
  *     from native's model-call count — averaging the two without the
  *     discriminator produces a meaningless number, so the count is never
@@ -50,10 +65,26 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
  *     carry `model` (omitted when no `modelDef` was attributed, never
  *     defaulted to "unknown").
  *
+ * 5 — current (US-003). Successful rows additionally carry `rates` (the four
+ *     effective per-1M numbers that priced `estimatedCostUsd`, forwarded from
+ *     the dispatch event when the producer stamped them) and `catalogVersion`
+ *     (the version of the catalog package those rates came from, stamped
+ *     only when the producer's reported `pricingSource` was
+ *     `"catalog-rates"`). `rates` describes `estimatedCostUsd`, NOT
+ *     `costUsd`: a wire-exact cost may overwrite `pricingSource` to `"wire"`
+ *     while `rates` still carries the producer's report, so a row where
+ *     estimate and exact cost diverge is the interesting one. `catalogVersion`
+ *     is read at build time from `@nathapp/nax-ai`'s package.json
+ *     (`NAX_AI_VERSION`); when the pin is unreadable, a catalog-priced row
+ *     omits `catalogVersion` rather than recording an empty or placeholder
+ *     string. Error rows still omit both fields (US-003 deferred rates /
+ *     catalog version on error rows because the error carrier is a
+ *     positional constructor).
+ *
  * Bump this when adding or changing a field consumers key on, and extend the
  * list above — the constant is how a reader learns what a row guarantees.
  */
-export const COST_ROW_SCHEMA_VERSION = 4;
+export const COST_ROW_SCHEMA_VERSION = 5;
 
 export function attachCostSubscriber(
   bus: IDispatchEventBus,
@@ -66,10 +97,18 @@ export function attachCostSubscriber(
    */
   projectKey?: string,
 ): () => void {
+  const getCatalogVersion = _costSubscriberDeps.getCatalogVersion;
   const offDispatch = bus.onDispatch((event: DispatchEvent) => {
     const tu = event.tokenUsage;
     const wireExactCostUsd = event.exactCostUsd;
     const estimatedCostUsd = event.estimatedCostUsd ?? 0;
+    // Read the catalog version exactly once per event. `_costSubscriberDeps`
+    // is reassigned by the AC12 test (it owns the catalog-pin-unreadable
+    // branch); reading twice meant the guard and the value could observe
+    // different returns and persist `catalogVersion: undefined` for the
+    // narrow window between them. The guard now short-circuits on a single
+    // resolved string.
+    const catalogVersion = getCatalogVersion();
 
     const hasWireExactCost = typeof wireExactCostUsd === "number" && Number.isFinite(wireExactCostUsd);
     const exactCostUsd = hasWireExactCost ? wireExactCostUsd : estimatedCostUsd;
@@ -152,6 +191,30 @@ export function attachCostSubscriber(
       // dispatch event forwards it here. The ACP adapter (US-002) stamps its
       // rate card's branch the same way.
       pricingSource: hasWireExactCost ? "wire" : (event.pricingSource ?? resolvePricingSource(event.model)),
+      // US-003: rates describe estimatedCostUsd, NOT costUsd. The wire branch
+      // may have overwritten pricingSource above, but rates survives — a row
+      // where the wire and estimate diverge is the interesting case. Omitted
+      // (not undefined) when the producer did not stamp.
+      ...(event.rates !== undefined ? { rates: event.rates } : {}),
+      // US-003: catalogVersion stamps only when the producer's own reported
+      // source was the catalog AND `rates` is actually present. The wire
+      // branch above may have overwritten `pricingSource` to `"wire"` by
+      // this point, so we read the producer-supplied stamp directly off the
+      // event. A config-override row's rates came from operator config, and
+      // a fallback-rates row's rates from the generic card; stamping
+      // `catalogVersion` on either would falsely assert a catalog origin.
+      // The ACP producer stamps `pricingSource: rateCard.source`
+      // unconditionally but `rates` only when nonzero usage let `priceCall`
+      // run — without the `rates !== undefined` half of the guard, a
+      // zero-usage row would persist `catalogVersion` for a catalog
+      // origin whose rates are absent, which contradicts the field's
+      // documented meaning ("the version of the catalog package those
+      // rates came from"). When the catalog pin is unreadable at build
+      // time the stamp is dropped entirely — an empty or placeholder
+      // string would be a lie.
+      ...(event.pricingSource === "catalog-rates" && event.rates !== undefined && catalogVersion !== undefined
+        ? { catalogVersion }
+        : {}),
       durationMs: event.durationMs,
     };
     aggregator.record(costEvent);

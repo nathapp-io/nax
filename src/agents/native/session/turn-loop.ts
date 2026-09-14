@@ -8,7 +8,7 @@
  */
 
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
-import { inputClassTokens, type TokenUsage } from "@/agents/cost";
+import { inputClassTokens, type ResolvedRates, type TokenUsage } from "@/agents/cost";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
@@ -30,6 +30,7 @@ import {
   type ResolvedCompaction,
   shouldCompact,
 } from "./compaction";
+import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
@@ -42,6 +43,16 @@ export interface NativeTurnResponse {
   readonly thinking?: readonly ThinkingBlock[];
   readonly usage: TokenUsage;
   readonly costUsd: number;
+  /**
+   * US-002: the per-1M rates that priced this round-trip's `costUsd`.
+   * `runNativeTurn` stamps the LAST round-trip's `rates` on the
+   * `TurnResult` it returns — each round-trip re-prices on its own usage,
+   * and the most recent decision is what affected the user's last-mile
+   * spend. Optional so existing test fakes that build the response shape
+   * by hand keep compiling; the adapter's `complete` closure always sets
+   * it because native prices unconditionally.
+   */
+  readonly rates?: import("../../cost").ResolvedRates;
 }
 
 /** What one summarization call returns. Usage and cost are surfaced, not swallowed. */
@@ -49,6 +60,8 @@ export interface NativeSummaryResponse {
   readonly text: string;
   readonly usage: TokenUsage;
   readonly costUsd: number;
+  /** Per-1M rates that priced this summary call, when known. */
+  readonly rates?: ResolvedRates;
 }
 
 export interface TurnDeps {
@@ -180,6 +193,7 @@ export async function runNativeTurn(
   let cacheReadInputTokens: number | undefined;
   let cacheCreationInputTokens: number | undefined;
   let costUsd = 0;
+  const rateTotals = createRateTotals();
   let output = "";
   // Reported on the result so the review guards can corroborate a reviewer's
   // self-declared inspection trail against calls it actually made.
@@ -261,7 +275,14 @@ export async function runNativeTurn(
             });
             inputTokens += summary.usage.inputTokens;
             outputTokens += summary.usage.outputTokens;
+            if (summary.usage.cacheReadInputTokens !== undefined) {
+              cacheReadInputTokens = (cacheReadInputTokens ?? 0) + summary.usage.cacheReadInputTokens;
+            }
+            if (summary.usage.cacheCreationInputTokens !== undefined) {
+              cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + summary.usage.cacheCreationInputTokens;
+            }
             costUsd += summary.costUsd;
+            addRateTotals(rateTotals, summary.usage, summary.rates);
             // Resets the watchdog's lastActivityAt between the summary and the
             // round trip, so the two silent spans do not add up against one budget.
             deps.onActivity?.({
@@ -340,7 +361,14 @@ export async function runNativeTurn(
           messages = applyCompaction(messages, plan, summary.text);
           inputTokens += summary.usage.inputTokens;
           outputTokens += summary.usage.outputTokens;
+          if (summary.usage.cacheReadInputTokens !== undefined) {
+            cacheReadInputTokens = (cacheReadInputTokens ?? 0) + summary.usage.cacheReadInputTokens;
+          }
+          if (summary.usage.cacheCreationInputTokens !== undefined) {
+            cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + summary.usage.cacheCreationInputTokens;
+          }
           costUsd += summary.costUsd;
+          addRateTotals(rateTotals, summary.usage, summary.rates);
           deps.onActivity?.({
             kind: "usage",
             inputTokens: summary.usage.inputTokens,
@@ -364,6 +392,7 @@ export async function runNativeTurn(
         cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + res.usage.cacheCreationInputTokens;
       }
       costUsd += res.costUsd;
+      addRateTotals(rateTotals, res.usage, res.rates);
       output = res.text;
 
       // nax#1852: the anchor is the whole prompt the provider charged for, not
@@ -535,6 +564,7 @@ export async function runNativeTurn(
   // removed from the pipeline (ADR-028 s4).
   await saveTranscript(dir, handle.id, messages, transcriptOwner);
 
+  const rates = aggregateRates(rateTotals);
   return {
     output,
     tokenUsage: {
@@ -551,5 +581,6 @@ export async function runNativeTurn(
     ...(spinStopped ? { spinStopped: true as const } : {}),
     ...(interactions.length > 0 ? { interactions } : {}),
     ...(deps.pricingSource !== undefined ? { pricingSource: deps.pricingSource } : {}),
+    ...(rates !== undefined ? { rates } : {}),
   };
 }

@@ -3,13 +3,40 @@
  *
  * GIT_COMMIT is injected at build time via --define in the bun build script.
  * When running from source (bin/nax.ts), falls back to runtime git rev-parse.
+ *
+ * `NAX_AI_VERSION` is the version of the pinned `@nathapp/nax-ai` catalog
+ * package, re-exported from `src/agents/catalog`. The catalog's `exports`
+ * map declares only the package root (no `./package.json` subpath), so a
+ * runtime read of the catalog's own manifest via a normal package import
+ * is unavailable. The pin is read from nax's own `package.json`
+ * `dependencies` block (the only place it is declared), and the bundler
+ * inlines that read as a constant — exactly like `NAX_VERSION` — so a
+ * published `dist/nax.js` build carries the version without resolving
+ * the catalog at runtime.
+ *
+ * `undefined` when the declared pin is unreadable at build time — the
+ * `package.json` cannot be imported (covered by the bundler), the
+ * `dependencies` block is missing the catalog key, or the value is empty
+ * / non-string. A cost row omits `catalogVersion` in that case rather
+ * than recording an empty or placeholder string (`catalogVersion: ""`
+ * would falsely imply a catalog origin). Detection of an installed
+ * package that differs from the declared pin is out of scope.
  */
 
+import { CATALOG_VERSION } from "@/agents/catalog";
 import pkg from "../package.json";
 
 declare const GIT_COMMIT: string;
 
 export const NAX_VERSION: string = pkg.version;
+
+/**
+ * Version of the pinned `@nathapp/nax-ai` catalog package, inlined at
+ * build time from nax's own `package.json` via `src/agents/catalog`.
+ * `undefined` when the pin is unreadable at build time (US-003 AC12) —
+ * never an empty string.
+ */
+export const NAX_AI_VERSION: string | undefined = CATALOG_VERSION;
 
 /** Short git commit hash — injected at build time, or resolved at runtime from git. */
 export const NAX_COMMIT: string = (() => {

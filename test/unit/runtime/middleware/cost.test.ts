@@ -570,7 +570,7 @@ describe("attachCostSubscriber", () => {
     expect("effort" in recorded[0]).toBe(false);
   });
 
-  test("#1464 → US-001: rows carry schemaVersion 4 (bumped for roundTrips/roundTripUnit/usageMissing on session-turn, model on error rows)", () => {
+  test("#1464 → US-003: rows carry schemaVersion 5 (bumped for rates / catalogVersion on successful rows)", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -578,8 +578,8 @@ describe("attachCostSubscriber", () => {
 
     bus.emitDispatch(makeSessionTurnEvent());
 
-    expect(recorded[0].schemaVersion).toBe(4);
-    expect(COST_ROW_SCHEMA_VERSION).toBe(4);
+    expect(recorded[0].schemaVersion).toBe(5);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(5);
   });
 
   // ── US-004: producer-supplied pricingSource wins over the model-derived one ─

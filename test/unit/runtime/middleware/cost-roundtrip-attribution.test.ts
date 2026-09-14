@@ -242,10 +242,10 @@ describe("attachCostSubscriber — session-turn with token usage omits usageMiss
   });
 });
 
-// ─── AC12-13: schemaVersion 4 for both event kinds ──────────────────────────
+// ─── AC12-13: schemaVersion 5 for both event kinds ──────────────────────────
 
-describe("attachCostSubscriber — schemaVersion 4 for session-turn and error rows (AC12-13)", () => {
-  test("AC12: a session-turn event records a cost row with schemaVersion 4", () => {
+describe("attachCostSubscriber — schemaVersion 5 for session-turn and error rows (AC12-13)", () => {
+  test("AC12: a session-turn event records a cost row with schemaVersion 5", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -254,11 +254,11 @@ describe("attachCostSubscriber — schemaVersion 4 for session-turn and error ro
     bus.emitDispatch(makeSessionTurnEvent());
 
     expect(recorded).toHaveLength(1);
-    expect(recorded[0].schemaVersion).toBe(4);
-    expect(COST_ROW_SCHEMA_VERSION).toBe(4);
+    expect(recorded[0].schemaVersion).toBe(5);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(5);
   });
 
-  test("AC13: a dispatch error event records an error row with schemaVersion 4", () => {
+  test("AC13: a dispatch error event records an error row with schemaVersion 5", () => {
     const errors: CostErrorEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
     const bus = new DispatchEventBus();
@@ -267,6 +267,6 @@ describe("attachCostSubscriber — schemaVersion 4 for session-turn and error ro
     bus.emitDispatchError(makeErrorEvent());
 
     expect(errors).toHaveLength(1);
-    expect(errors[0].schemaVersion).toBe(4);
+    expect(errors[0].schemaVersion).toBe(5);
   });
 });

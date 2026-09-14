@@ -72,6 +72,15 @@ export interface DispatchEventBase {
     | "unknown-model"
     | "catalog-rates"
     | "config-override";
+  /**
+   * The four per-1M rates that priced the call — US-002. Forwarded from
+   * the producer's `CompleteResult.rates` / `TurnResult.rates`. Present
+   * only when the producer stamped them: native stamps always; ACP
+   * stamps only on a nonzero accumulator. Absent (not undefined) when
+   * the producer did not stamp, so a downstream subscriber can tell
+   * "no report" apart from "explicitly unknown".
+   */
+  readonly rates?: import("../agents/cost").ResolvedRates;
   /** Per-callOp invocation id, stamped by the operation layer. */
   readonly callId?: string;
   /** Caller-supplied region id forwarded from CallContext.scopeId. */

@@ -416,6 +416,17 @@ export interface CompleteResult {
    * only when the adapter resolved no rate card.
    */
   pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
+  /**
+   * The per-1M rates that priced this call — US-002. Stamped from
+   * `priceCall(usage, rates).resolvedRates` so the cost row can record the
+   * same numbers whose arithmetic reproduces `estimatedCostUsd`.
+   *
+   * Native path: always present (the path prices unconditionally). ACP
+   * path: present only when nonzero usage let pricing run; the
+   * nonzero-usage guard omits the field on a zeroed `cumulative_token_usage`
+   * so "priced" and "did not price" stay distinguishable on the result.
+   */
+  rates?: import("./cost").ResolvedRates;
   /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */
   adapterFailure?: AdapterFailure;
   /**

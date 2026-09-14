@@ -115,6 +115,28 @@ export interface CostEvent {
     | "unknown-model"
     | "catalog-rates"
     | "config-override";
+  /**
+   * The four post-selection, post-fallback per-1M rates that priced the call
+   * (US-003). Sourced from `DispatchEvent.rates` when the producer stamped
+   * them: native always, ACP only on a nonzero accumulator. Describes
+   * `estimatedCostUsd`, NOT `costUsd` — when a wire-exact cost overwrites
+   * the row, `rates` still records the numbers the estimate was built from,
+   * and the row's `pricingSource` becomes `"wire"` independently. Omitted
+   * (not undefined) when the producer did not stamp, so a reader can tell
+   * "no report" apart from "explicitly unknown".
+   */
+  readonly rates?: import("../agents/cost").ResolvedRates;
+  /**
+   * Version of the catalog package the row's `rates` came from (US-003).
+   * Stamped only when the producer's reported `pricingSource` was
+   * `"catalog-rates"` — `config-override` and `fallback-rates` rows omit it
+   * because their rates did not originate from the catalog, and stamping
+   * `catalogVersion` there would falsely assert that origin. Inlined at
+   * build time as the version of the pinned `@nathapp/nax-ai` dependency;
+   * omitted entirely when that pin is unreadable, so an empty or
+   * placeholder string never reaches a row.
+   */
+  readonly catalogVersion?: string;
   readonly durationMs: number;
 }
 

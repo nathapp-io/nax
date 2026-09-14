@@ -191,6 +191,14 @@ export interface TurnResult {
    */
   pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
   /**
+   * The per-1M rates that priced this turn — US-002. Stamped from
+   * `priceCall(usage, rates).resolvedRates` so the cost row can record the
+   * same numbers whose arithmetic reproduces `estimatedCostUsd`. ACP
+   * present only when nonzero usage let pricing run; absent on a zeroed
+   * accumulator so "priced" and "did not price" stay distinguishable.
+   */
+  rates?: import("./cost").ResolvedRates;
+  /**
    * Mid-turn human-in-the-loop Q&A exchanges captured during the session turn
    * (issue #1226). Each entry pairs the agent's question with the operator's
    * verbatim reply and the internal round-trip index at which it occurred.
