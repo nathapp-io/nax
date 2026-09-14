@@ -34,7 +34,7 @@ export interface UsageAuditConfig {
   enabled: boolean;
   /**
    * Directory to write usage audit files into.
-   * Absolute path, or relative to workdir. Defaults to <workdir>/.nax/usage-audit/ when absent.
+   * Absolute path or `~/path`. Defaults to `<outputDir>/usage` when absent.
    */
   dir?: string;
 }
