@@ -30,6 +30,7 @@ import {
   type ResolvedCompaction,
   shouldCompact,
 } from "./compaction";
+import { handleInvalidToolCall } from "./handle-invalid-tool-call";
 import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
@@ -465,6 +466,11 @@ export async function runNativeTurn(
             }
             interactions.push({ turnIndex: roundTrips, question, reply: answer.answer });
             messages.push({ role: "tool-result", toolCallId: call.id, content: answer.answer });
+            continue;
+          }
+          const invalid = handleInvalidToolCall(call, tools, messages);
+          if (invalid) {
+            messages = invalid.messages;
             continue;
           }
           const verdict = spinBreaker?.observe(call.name, call.input) ?? { action: "allow" as const };
