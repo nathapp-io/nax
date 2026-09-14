@@ -274,7 +274,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.usageAudit": "Usage audit — write every agent round trip's token usage to a file for auditing (nax#2045)",
   "agent.usageAudit.enabled": "Enable per-round-trip usage audit files (default: false)",
   "agent.usageAudit.dir":
-    "Directory to write usage audit files into. Absolute path or ~/path (default: <run output dir>/usage, i.e. ~/.nax/<project>/usage)",
+    "Directory to write usage audit files into. Absolute path, or relative to workdir (default: <outputDir>/usage, i.e. ~/.nax/<project>/usage unless outputDir overrides it)",
   "agent.spinBreaker": "Repetition breaker — ends a turn that repeats tool calls with no progress (nax#2013)",
   "agent.spinBreaker.enabled": "Enable the repetition breaker (default: true)",
   "agent.spinBreaker.nudgeAfterRepeats": "Repeats since the last new call before the first in-band nudge (default: 25)",
