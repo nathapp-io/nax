@@ -469,6 +469,33 @@ describe("verb denial names what is permitted (#1971)", () => {
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).toContain("no subcommands are permitted for this stage");
   });
+
+  // The run-2026-09-14T05-55-54-734Z audit: with an Exec escape hatch present
+  // (scope.argvField set), the agent still stuffed a raw shell pipeline into
+  // "command" four separate times -- "bun test foo.test.ts 2>&1 | head -200",
+  // "bun scripts/check-test-escape-hatches.ts 2>&1 | head -30", and so on --
+  // rather than ever trying "argv". A bare "permitted: <enum>" list does not
+  // rule that reading out: it reads as "these are the good ones", not as
+  // "this field can never hold a shell string, so stop trying one". RunCommand
+  // is structurally shell-free regardless of what Exec's grant allows, so the
+  // denial says so unconditionally once an argv escape hatch exists at all.
+  test("with an argv escape hatch present, the denial says the field is never a shell string", () => {
+    const scopeWithArgv: ToolScope = { ...SCOPE, argvField: "argv" };
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const verdict = policy.check("RunCommand", scopeWithArgv, {
+      command: "bun test test/unit/x.test.ts 2>&1 | head -200",
+    });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("permitted: lint, test, testScoped, coverage");
+    expect(verdict.allowed === false && verdict.reason).toContain('"command" never takes a shell string -- use "argv"');
+  });
+
+  test("with no argv escape hatch, the denial does not mention argv at all", () => {
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const verdict = policy.check("RunCommand", SCOPE, { command: "bun test foo.test.ts | head -50" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).not.toContain("argv");
+  });
 });
 
 /**

@@ -437,8 +437,12 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     const permitted =
       usableVerbs.length === 0 ? "no subcommands are permitted for this stage" : `permitted: ${usableVerbs.join(", ")}`;
 
+    // run-2026-09-14T05-55-54-734Z, Shape B: name this structural fact too.
+    const argvHint =
+      scope.argvField === undefined ? "" : ` -- "${scope.verbField}" never takes a shell string -- use "argv"`;
+
     if (scope.allowedVerbs !== undefined && !scope.allowedVerbs.includes(verb)) {
-      return deny(`"${verb}" is not a permitted ${tool} subcommand -- ${permitted}`);
+      return deny(`"${verb}" is not a permitted ${tool} subcommand -- ${permitted}${argvHint}`);
     }
     if (!grant.unconditional && !grant.raw.includes(verb)) {
       return deny(`${tool} is not granted the "${verb}" subcommand for this stage -- ${permitted}`);

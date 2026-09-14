@@ -198,17 +198,39 @@ export function substituteCommandSpec(
 // failure. Renders each declared command with the placeholders its OWN
 // template actually contains, so the model can pick values before it
 // guesses -- e.g. "test (no placeholders), testScoped ({{files}})".
-function describeDeclaredCommand(name: string, spec: QualityCommandSpec): string {
+function placeholdersOf(spec: QualityCommandSpec): Set<string> {
   const templates = typeof spec === "string" ? [spec] : spec;
-  const placeholders = [
-    ...new Set(templates.flatMap((template) => [...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string))),
-  ];
+  return new Set(templates.flatMap((template) => [...template.matchAll(PLACEHOLDER)].map((m) => m[1] as string)));
+}
+
+function describeDeclaredCommand(name: string, spec: QualityCommandSpec): string {
+  const placeholders = [...placeholdersOf(spec)];
   if (placeholders.length === 0) return `${name} (no placeholders)`;
   return `${name} (${placeholders.map((p) => `{{${p}}}`).join(", ")})`;
 }
 
 function describeDeclaredCommands(declared: ReadonlyMap<string, QualityCommandSpec>): string {
   return [...declared.entries()].map(([name, template]) => describeDeclaredCommand(name, template)).join(", ");
+}
+
+// #1924, third half (run-2026-09-14T05-55-54-734Z audit, Shape A): the
+// original error only ever named what the CHOSEN command declares, never
+// which OTHER declared command accepts the rejected key -- an agent that
+// wants scoped tests and picks "test" learns "no placeholders" and has to
+// guess a second time. Naming the real alternative ends the loop on the
+// first denial. Returns an empty array (no hint appended) when no other
+// command declares the key either, so a genuinely unrecognized value stays
+// exactly as informative as before -- never a false pointer.
+function otherCommandsDeclaring(
+  declared: ReadonlyMap<string, QualityCommandSpec>,
+  key: string,
+  currentCommand: string,
+): string[] {
+  const names: string[] = [];
+  for (const [name, spec] of declared) {
+    if (name !== currentCommand && placeholdersOf(spec).has(key)) names.push(name);
+  }
+  return names;
 }
 
 // #1937, first half: name the permitted argv forms instead of the bare "only
@@ -296,6 +318,24 @@ export function createRunCommandTool(
       if (template === undefined) return { content: `unknown command "${key}"`, isError: true };
 
       const raw = (input.values ?? {}) as Record<string, unknown>;
+
+      // Shape A of the run-2026-09-14T05-55-54-734Z audit: check every
+      // rejected key against every OTHER declared command before falling
+      // through to substituteCommandSpec's generic error, so the response
+      // can name the command that actually accepts it. Only the first
+      // rejected key with a real alternative is reported -- consistent with
+      // substituteCommandSpec, which also stops at the first offending key.
+      const templateKeys = placeholdersOf(template);
+      for (const rejectedKey of Object.keys(raw)) {
+        if (templateKeys.has(rejectedKey)) continue;
+        const alternates = otherCommandsDeclaring(declared, rejectedKey, key);
+        if (alternates.length === 0) continue;
+        return {
+          content: `value "${rejectedKey}" is not a placeholder in this command (${declaredPlaceholdersSuffix(templateKeys)}) -- "${rejectedKey}" is a placeholder in: ${alternates.join(", ")}`,
+          isError: true,
+        };
+      }
+
       const values: Record<string, string | readonly string[]> = {};
       for (const [k, v] of Object.entries(raw)) values[k] = String(v);
 

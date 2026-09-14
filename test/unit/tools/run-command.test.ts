@@ -209,6 +209,69 @@ describe("createRunCommandTool description names the Exec allowlist", () => {
   });
 });
 
+// The run-2026-09-14T05-55-54-734Z audit (Shape A): the agent picked "test"
+// (no placeholders) or "typecheck", then passed `values.files` anyway --
+// twice in one session, once per command -- and each time got back only
+// "this command declares no placeholders", with no pointer to the command
+// that DOES take `files`. Naming that command ends the loop on the first
+// denial instead of leaving the model to guess a second and third time.
+describe("run() names the declared command that accepts a rejected value key", () => {
+  test("points at the one other command declaring the rejected key", async () => {
+    const tool = createRunCommandTool(
+      new Map([
+        ["test", "bun test"],
+        ["testScoped", "bun test {{files}}"],
+      ]),
+    );
+    const result = await tool.run(
+      { command: "test", values: { files: "test/unit/a.test.ts" } },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('value "files" is not a placeholder in this command');
+    expect(result.content).toContain('"files" is a placeholder in: testScoped');
+  });
+
+  test("lists every other command declaring the key, not just the first", async () => {
+    const tool = createRunCommandTool(
+      new Map([
+        ["typecheck", "bun x tsc --noEmit"],
+        ["testScoped", "bun test {{files}}"],
+        ["lintScoped", "bun lint {{files}}"],
+      ]),
+    );
+    const result = await tool.run(
+      { command: "typecheck", values: { files: "src/a.ts" } },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.content).toContain('"files" is a placeholder in: testScoped, lintScoped');
+  });
+
+  test("no other command declares the key -- the message stays as before, with no false pointer", async () => {
+    const tool = createRunCommandTool(new Map([["test", "bun test"]]));
+    const result = await tool.run(
+      { command: "test", values: { nope: "x" } },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.content).toContain('value "nope" is not a placeholder in this command');
+    expect(result.content).not.toContain("is a placeholder in:");
+  });
+
+  test("a value the current command DOES declare is unaffected", async () => {
+    const tool = createRunCommandTool(
+      new Map([
+        ["test", "bun test"],
+        ["testScoped", "bun test {{files}}"],
+      ]),
+    );
+    const result = await tool.run(
+      { command: "testScoped", values: { files: "a.test.ts" } },
+      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBeFalsy();
+  });
+});
+
 test("a metacharacter in a value cannot run a second command", async () => {
   const tool = createRunCommandTool(new Map([["echoFiles", "echo {{files}}"]]));
   const result = await tool.run(
