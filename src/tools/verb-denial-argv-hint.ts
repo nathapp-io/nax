@@ -18,6 +18,17 @@ import { describeExecAllowlist } from "./exec-allowlist-text";
  *
  * Extracted from `policy.ts` into its own module so that file (already at
  * its 600-line limit) can carry this explanation without trimming it.
+ *
+ * The clause names `argvField` explicitly ("argv" accepts: ...) rather than
+ * appending `describeExecAllowlist`'s bare "permitted forms: ..." after the
+ * structural sentence: two unlabelled "permitted ..." lists back to back --
+ * one for `verbField`'s enum, one for argv's grant -- reads as a single
+ * list, and an agent can misread the second half as more legal values for
+ * `verbField`, denying again on the enum (the very second-denial loop this
+ * exists to prevent). `describeExecAllowlist`'s own text is unchanged: the
+ * tool description's surrounding sentence already establishes argv as the
+ * subject there, so this supplies its own framing around the same list
+ * rather than editing shared text to fit one caller.
  */
 export function argvShellHint(
   verbField: string,
@@ -25,5 +36,5 @@ export function argvShellHint(
   execPatterns: readonly string[],
 ): string {
   if (argvField === undefined) return "";
-  return ` -- "${verbField}" never takes a shell string -- ${describeExecAllowlist(execPatterns)}`;
+  return ` -- "${verbField}" never takes a shell string -- "${argvField}" accepts: ${describeExecAllowlist(execPatterns)}`;
 }

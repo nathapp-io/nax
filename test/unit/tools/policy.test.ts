@@ -500,18 +500,29 @@ describe("verb denial names what is permitted (#1971)", () => {
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).toContain("permitted: lint, test, testScoped, coverage");
     expect(verdict.allowed === false && verdict.reason).toContain('"command" never takes a shell string');
-    expect(verdict.allowed === false && verdict.reason).toContain("permitted forms: bun install, bun add*, npm ci");
+    // The field that accepts the listed forms must be named IN the same
+    // clause as the list -- "permitted forms: bun install, ..." with no
+    // named field reads as a second, unlabelled "permitted: <command
+    // values>" list, which an agent can misread as more legal `command`
+    // values (denying again on the enum, the very loop this exists to end).
+    expect(verdict.allowed === false && verdict.reason).toContain(
+      '"argv" accepts: permitted forms: bun install, bun add*, npm ci',
+    );
   });
 
-  test("with an argv escape hatch but no Exec grant at all, the denial says so rather than pointing nowhere", () => {
+  test("with an argv escape hatch but no Exec grant at all, the denial reads as a dead end, not an invitation", () => {
     const scopeWithArgv: ToolScope = { ...SCOPE, argvField: "argv" };
     const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
     const verdict = policy.check("RunCommand", scopeWithArgv, { command: "wc -l src/x.ts" });
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).toContain('"command" never takes a shell string');
-    expect(verdict.allowed === false && verdict.reason).toContain("no forms are currently granted");
+    expect(verdict.allowed === false && verdict.reason).toContain('"argv" accepts: no forms are currently granted');
   });
 
+  // A discriminating pair, not two independent assertions: the with-argv
+  // branch above must contain the literal "argv" and this branch must not,
+  // so a regression that silently dropped the hint (leaving the structural
+  // clause behind, say) fails one of the two rather than passing both.
   test("with no argv escape hatch, the denial does not mention argv at all", () => {
     const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
     const verdict = policy.check("RunCommand", SCOPE, { command: "bun test foo.test.ts | head -50" });
