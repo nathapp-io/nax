@@ -478,16 +478,38 @@ describe("verb denial names what is permitted (#1971)", () => {
   // rule that reading out: it reads as "these are the good ones", not as
   // "this field can never hold a shell string, so stop trying one". RunCommand
   // is structurally shell-free regardless of what Exec's grant allows, so the
-  // denial says so unconditionally once an argv escape hatch exists at all.
-  test("with an argv escape hatch present, the denial says the field is never a shell string", () => {
+  // denial says so unconditionally once an argv escape hatch exists at all --
+  // but a bare "use argv instead" would be dishonest whenever the compiled
+  // Exec grant cannot actually serve the request (every one of the four real
+  // denials in the audit was install-only-vs-"bun test"/"wc"), so the SAME
+  // compiled grant `describeExecAllowlist` renders into the tool description
+  // is named here too, letting the agent see in this one denial whether argv
+  // would help before spending a second turn finding out.
+  test("with an argv escape hatch present, the denial names what argv would actually accept", () => {
     const scopeWithArgv: ToolScope = { ...SCOPE, argvField: "argv" };
-    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const policy = compileToolPolicy(
+      [
+        { tool: "RunCommand", patterns: ["*"] },
+        { tool: "Exec", patterns: ["bun install", "bun add*", "npm ci"] },
+      ],
+      root,
+    );
     const verdict = policy.check("RunCommand", scopeWithArgv, {
       command: "bun test test/unit/x.test.ts 2>&1 | head -200",
     });
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).toContain("permitted: lint, test, testScoped, coverage");
-    expect(verdict.allowed === false && verdict.reason).toContain('"command" never takes a shell string -- use "argv"');
+    expect(verdict.allowed === false && verdict.reason).toContain('"command" never takes a shell string');
+    expect(verdict.allowed === false && verdict.reason).toContain("permitted forms: bun install, bun add*, npm ci");
+  });
+
+  test("with an argv escape hatch but no Exec grant at all, the denial says so rather than pointing nowhere", () => {
+    const scopeWithArgv: ToolScope = { ...SCOPE, argvField: "argv" };
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const verdict = policy.check("RunCommand", scopeWithArgv, { command: "wc -l src/x.ts" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain('"command" never takes a shell string');
+    expect(verdict.allowed === false && verdict.reason).toContain("no forms are currently granted");
   });
 
   test("with no argv escape hatch, the denial does not mention argv at all", () => {

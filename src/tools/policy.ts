@@ -31,7 +31,8 @@ import {
   matchesAny,
   matchesArgvGrant,
 } from "./policy-match";
-import type { PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
+import { EXEC_TOOL_NAME, type PolicyVerdict, type ToolGrant, type ToolPolicy, type ToolScope } from "./types";
+import { argvShellHint } from "./verb-denial-argv-hint";
 
 /**
  * Does `resolved` (already absolute and symlink-resolved) enter a `.git`
@@ -437,9 +438,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     const permitted =
       usableVerbs.length === 0 ? "no subcommands are permitted for this stage" : `permitted: ${usableVerbs.join(", ")}`;
 
-    // run-2026-09-14T05-55-54-734Z, Shape B: name this structural fact too.
-    const argvHint =
-      scope.argvField === undefined ? "" : ` -- "${scope.verbField}" never takes a shell string -- use "argv"`;
+    // See verb-denial-argv-hint.ts (run-2026-09-14T05-55-54-734Z, Shape B).
+    const argvHint = argvShellHint(scope.verbField, scope.argvField, compiled.get(EXEC_TOOL_NAME)?.raw ?? []);
 
     if (scope.allowedVerbs !== undefined && !scope.allowedVerbs.includes(verb)) {
       return deny(`"${verb}" is not a permitted ${tool} subcommand -- ${permitted}${argvHint}`);
