@@ -14,8 +14,14 @@
  * with no `additionalProperties` -- returns `undefined` (allow), so this
  * validator never breaks a tool that was previously passing.
  */
+import { describeValuesType } from "@/utils/describe-value-type";
+
 export interface ToolInputViolation {
-  readonly property: string; // "values", or "" for a top-level/required violation
+  // The offending property's name, e.g. "values" (including a missing
+  // `required` entry -- see below). validateToolInput here always names a
+  // property; "" is reserved for a top-level violation with no single
+  // property to point at, which this validator does not currently produce.
+  readonly property: string;
   readonly expected: string; // "object", "one of: a, b, c", "present"
   readonly actual: string; // "a string", "null", "an array", "absent"
   readonly message: string; // one sentence, names the property and both shapes
@@ -111,15 +117,4 @@ function typeMatches(type: string, value: unknown): boolean {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Vocabulary shared with run-command.ts (#1924): the "actual" half of a
- * violation reads exactly the way run-command.ts itself would have phrased
- * the same shape, so the gate and the tool produce the same wording.
- */
-export function describeValuesType(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "an array";
-  return `a ${typeof value}`;
 }

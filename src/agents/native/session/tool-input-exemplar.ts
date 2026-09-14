@@ -7,6 +7,11 @@ export function exemplarFor(
 ): Record<string, unknown> {
   const exemplar: Record<string, unknown> = { ...input };
 
+  // Defensive: validateToolInput never currently emits "" (every violation
+  // names the offending property), but ToolInputViolation.property is typed
+  // as `string`, not a non-empty literal, so a synthetic or future
+  // top-level violation with no single property to correct must still be
+  // handled -- return the input verbatim rather than writing to an empty key.
   if (violation.property === "") {
     return exemplar;
   }

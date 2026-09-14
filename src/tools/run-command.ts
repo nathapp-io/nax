@@ -14,9 +14,9 @@
  * command-resolver.ts already applies to {{package}}.
  */
 import { statSync } from "node:fs";
-import { describeValuesType } from "../agents/native/session/tool-input-validation";
 import type { QualityCommandSpec } from "../quality/command-spec";
 import { runQualityCommand } from "../quality/runner";
+import { describeValuesType } from "../utils/describe-value-type";
 import { shellQuoteArg } from "../verification/shell-quote";
 import { describeExecAllowlist } from "./exec-allowlist-text";
 import { pathListElements } from "./path-list";
