@@ -254,6 +254,18 @@ export interface TurnResult {
    * `turnIncomplete`, since work the model asked for was left unexecuted.
    */
   spinStopped?: true;
+  /**
+   * Transport fact: the loop returned because three identical invalid tool
+   * calls — same tool, same `stableStringify`'d input — repeated in this turn
+   * (nax#2047, Task 4). A malformed shape is a stronger signal than spin
+   * repetition: it is never going to recover by being issued again.
+   *
+   * A sibling flag rather than a value of `spinStopped` because the
+   * classification channels are distinct (the wiring layer maps each to a
+   * different policy outcome). Like `spinStopped`, a budget-stopped turn also
+   * sets `turnIncomplete`, since the third call was left unexecuted.
+   */
+  invalidCallBudgetExceeded?: true;
 }
 
 /**
