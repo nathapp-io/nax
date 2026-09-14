@@ -154,6 +154,19 @@ describe("containment is not defeated by a hiding prefix or a symlink", () => {
     },
   );
 
+  test("a flag-embedded relative escape with no slash is denied as a breach", () => {
+    // `--output-dir=..` carries no "/", so the whole word used to resolve as a
+    // literal segment under the root while the command received "..".
+    const verdict = check(policyFor(["bun test *"]), "bun test --output-dir=..");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.breach).toBe(true);
+  });
+
+  test("a `cd` to an option-shaped target is refused rather than tracked as a path", () => {
+    const verdict = check(policyFor(["cd *", "cat *"]), "cd -");
+    expect(verdict.allowed).toBe(false);
+  });
+
   test("a bare symlink token pointing outside the root is denied as a breach", () => {
     const target = join(outside, "secret.txt");
     writeFileSync(target, "outside the root");
