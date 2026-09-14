@@ -22,5 +22,6 @@ export function selectSpinBreakerSettings(config: AgentManagerConfig | undefined
     maxNudges: cfg?.maxNudges ?? DEFAULT_SPIN_BREAKER_SETTINGS.maxNudges,
     stopAfterRepeats: cfg?.stopAfterRepeats ?? DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterRepeats,
     recentKeyWindow: cfg?.recentKeyWindow ?? DEFAULT_SPIN_BREAKER_SETTINGS.recentKeyWindow,
+    stopAfterSameKeyRepeats: cfg?.stopAfterSameKeyRepeats ?? DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterSameKeyRepeats,
   };
 }

@@ -30,6 +30,15 @@ export interface ResolvedSpinBreakerSettings {
   readonly stopAfterRepeats: number;
   /** How many recent distinct keys count as "already seen". */
   readonly recentKeyWindow: number;
+  /**
+   * Cumulative repeats of the same call (counted across all interleavings)
+   * at which the turn ends. Closes the laundering hole that lets a single
+   * call shape repeat endlessly when a different key fires between
+   * occurrences — nax#2047 measured 69 identical calls and `maxRepeatRun=22`
+   * against a threshold of 25, so a 25-only check was one interleaving away
+   * from never tripping. `0` disables the cumulative check.
+   */
+  readonly stopAfterSameKeyRepeats: number;
 }
 
 export const DEFAULT_SPIN_BREAKER_SETTINGS: ResolvedSpinBreakerSettings = Object.freeze({
@@ -38,12 +47,13 @@ export const DEFAULT_SPIN_BREAKER_SETTINGS: ResolvedSpinBreakerSettings = Object
   maxNudges: 3,
   stopAfterRepeats: 50,
   recentKeyWindow: 64,
+  stopAfterSameKeyRepeats: 12,
 });
 
 export type SpinVerdict =
   | { readonly action: "allow" }
   | { readonly action: "nudge"; readonly nudgeNumber: number; readonly repeats: number; readonly text: string }
-  | { readonly action: "stop"; readonly repeats: number };
+  | { readonly action: "stop"; readonly repeats: number; readonly reason: "repeat-run" | "same-key-cumulative" };
 
 export interface SpinSummary {
   readonly totalCalls: number;
@@ -59,6 +69,15 @@ export interface SpinSummary {
    */
   readonly newKeyEvents: number;
   readonly maxRepeatRun: number;
+  /**
+   * Highest cumulative repeat count observed for a single key (nax#2047).
+   * Same windowing tradeoff as `newKeyEvents`: an evicted key loses its
+   * count, so this is the peak within the current window rather than a
+   * session-lifetime peak. The `maxRepeatRun` field above stays the
+   * instrument for #2013's 622-call varied verifier; this is the new
+   * instrument for the laundering hole — they answer different questions.
+   */
+  readonly maxSameKeyRepeats: number;
   readonly nudges: number;
 }
 
@@ -116,16 +135,22 @@ function nudgeText(nudgeNumber: number, repeats: number): string {
 export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBreaker {
   const points = nudgePoints(settings);
   // Insertion-ordered and capped: a Map's iteration order gives the eviction
-  // order for free, so the window needs no second structure.
-  const recent = new Map<string, true>();
+  // order for free, so the window needs no second structure. The value is a
+  // cumulative count, so a re-issued key reads as a continuation of its
+  // prior count — but only for keys still in the window: an evicted key is
+  // gone, and the next sighting will start fresh at 1. That is the same
+  // windowing tradeoff `newKeyEvents` already documents, just on the count
+  // axis.
+  const recent = new Map<string, number>();
   let repeatsSinceProgress = 0;
   let totalCalls = 0;
   let newKeyEvents = 0;
   let maxRepeatRun = 0;
+  let maxSameKeyRepeats = 0;
   let nudges = 0;
 
   function remember(key: string): void {
-    recent.set(key, true);
+    recent.set(key, 1);
     newKeyEvents += 1;
     if (recent.size > settings.recentKeyWindow) {
       const oldest = recent.keys().next();
@@ -161,6 +186,25 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
         return { action: "allow" };
       }
 
+      const cumulativeCount = (recent.get(key) ?? 0) + 1;
+      recent.set(key, cumulativeCount);
+      if (cumulativeCount > maxSameKeyRepeats) maxSameKeyRepeats = cumulativeCount;
+
+      // Cumulative per-key stop comes first: a freshly-laundered loop is
+      // the shape we want to catch, and this fires before any nudge can be
+      // spent. Only check when the knob is non-zero — 0 disables.
+      if (settings.stopAfterSameKeyRepeats > 0 && cumulativeCount >= settings.stopAfterSameKeyRepeats) {
+        getSafeLogger()?.error("spin-breaker", "Ending the turn — same call repeated with no progress", {
+          tool: toolName,
+          repeats: cumulativeCount,
+          reason: "same-key-cumulative",
+          newKeyEvents,
+          totalCalls,
+          nudges,
+        });
+        return { action: "stop", repeats: cumulativeCount, reason: "same-key-cumulative" };
+      }
+
       repeatsSinceProgress += 1;
       if (repeatsSinceProgress > maxRepeatRun) maxRepeatRun = repeatsSinceProgress;
 
@@ -168,11 +212,12 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
         getSafeLogger()?.error("spin-breaker", "Ending the turn — repeated calls with no progress", {
           tool: toolName,
           repeats: repeatsSinceProgress,
+          reason: "repeat-run",
           newKeyEvents,
           totalCalls,
           nudges,
         });
-        return { action: "stop", repeats: repeatsSinceProgress };
+        return { action: "stop", repeats: repeatsSinceProgress, reason: "repeat-run" };
       }
 
       const isNudgePoint = points.includes(repeatsSinceProgress);
@@ -182,7 +227,7 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
     },
 
     summary() {
-      return { totalCalls, newKeyEvents, maxRepeatRun, nudges };
+      return { totalCalls, newKeyEvents, maxRepeatRun, maxSameKeyRepeats, nudges };
     },
   };
 }

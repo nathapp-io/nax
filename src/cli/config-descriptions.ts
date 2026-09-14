@@ -282,6 +282,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.spinBreaker.maxNudges": "Nudges to spend before the hard stop (default: 3)",
   "agent.spinBreaker.stopAfterRepeats": "Repeats since the last new call at which the turn ends (default: 50)",
   "agent.spinBreaker.recentKeyWindow": "How many recent distinct calls count as already seen (default: 64)",
+  "agent.spinBreaker.stopAfterSameKeyRepeats":
+    "Cumulative repeats of the same call before the turn ends (default: 12, 0 disables) — closes the laundering hole where one interleaving call lets a loop reset (nax#2047)",
   // quality.testing (ENH-010) — per-package overridable
   "quality.testing": "Hermetic test enforcement — per-package overridable (ENH-010)",
   "quality.testing.hermetic":

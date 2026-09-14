@@ -58,6 +58,7 @@ const SENSITIVE_KEY_EXEMPTIONS = new Set([
   "emptyKeyword",
   "fallbackToKeywords",
   "recentKeyWindow",
+  "stopAfterSameKeyRepeats",
 ]);
 
 /**

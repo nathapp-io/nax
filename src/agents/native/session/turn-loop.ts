@@ -19,7 +19,7 @@ import { getSafeLogger } from "@/logger";
 // pattern as src/review/runner and src/execution/helpers. That promotion is
 // what lets this avoid widening the session -> runtime barrel import surface
 // (project-conventions.md's cycle-avoidance escape hatch).
-import { createSpinBreaker, type ResolvedSpinBreakerSettings } from "@/runtime/spin-breaker";
+import type { SpinBreaker } from "@/runtime/spin-breaker";
 import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
 import {
   applyCompaction,
@@ -30,6 +30,7 @@ import {
   type ResolvedCompaction,
   shouldCompact,
 } from "./compaction";
+import { createInvalidCallBudget } from "./handle-invalid-tool-call";
 import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
@@ -110,10 +111,9 @@ export interface TurnDeps {
    */
   sleep?: (ms: number) => Promise<void>;
   /**
-   * Resolved repetition-breaker settings (nax#2013). Absent disables the
-   * breaker — the pre-#2013 behaviour of an unbounded call count.
+   * Live repetition-breaker instance (nax#2013, session-lifetime since #2047). Absent disables the breaker.
    */
-  spinBreaker?: ResolvedSpinBreakerSettings;
+  spinBreaker?: SpinBreaker;
 }
 
 /**
@@ -211,10 +211,11 @@ export async function runNativeTurn(
   let timedOut = false;
   const interactions: InteractionExchange[] = [];
 
-  const spinBreaker = deps.spinBreaker !== undefined ? createSpinBreaker(deps.spinBreaker) : undefined;
+  const spinBreaker = deps.spinBreaker;
   // Set ONLY when the breaker ended the turn, so the wiring layer can classify
   // it as `fail-spin` rather than a generic incomplete turn.
   let spinStopped = false;
+  const invalidCallBudget = createInvalidCallBudget();
 
   const anchor = nativeSessionLastUsage.get(handle.id);
   let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
@@ -481,6 +482,14 @@ export async function runNativeTurn(
             messages.push({ role: "tool-result", toolCallId: call.id, content: answer.answer });
             continue;
           }
+          const invalid = invalidCallBudget.observe(call, tools, messages);
+          if (invalid?.kind === "stopped") {
+            break;
+          }
+          if (invalid?.kind === "rewritten") {
+            messages = invalid.messages;
+            continue;
+          }
           const verdict = spinBreaker?.observe(call.name, call.input) ?? { action: "allow" as const };
           if (verdict.action === "stop") {
             spinStopped = true;
@@ -526,6 +535,7 @@ export async function runNativeTurn(
         }
       }
       if (spinStopped) break;
+      if (invalidCallBudget.exceeded) break;
     }
   } catch (err) {
     // Best-effort, and deliberately unlike the clean-exit save: there a write
@@ -593,6 +603,7 @@ export async function runNativeTurn(
     ...(completedNormally ? {} : { turnIncomplete: true }),
     ...(timedOut ? { timedOut: true } : {}),
     ...(spinStopped ? { spinStopped: true as const } : {}),
+    ...(invalidCallBudget.exceeded ? { invalidCallBudgetExceeded: true as const } : {}),
     ...(interactions.length > 0 ? { interactions } : {}),
     ...(deps.pricingSource !== undefined ? { pricingSource: deps.pricingSource } : {}),
     ...(rates !== undefined ? { rates } : {}),

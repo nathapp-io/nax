@@ -9,7 +9,7 @@
 
 import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
 import { NaxError } from "@/errors";
-import type { ResolvedSpinBreakerSettings } from "@/runtime/spin-breaker";
+import { createSpinBreaker, type SpinBreaker } from "@/runtime/spin-breaker";
 import { NATIVE_AGENT } from "../models";
 import { nativeSessionId } from "../session-affinity";
 import type { ResolvedCompaction } from "./compaction";
@@ -85,10 +85,14 @@ export const nativeSessionCompaction = new Map<string, ResolvedCompaction>();
 export const nativeSessionTransportRetry = new Map<string, TurnRetryConfig>();
 
 /**
- * Session name -> resolved spin-breaker settings (nax#2013). Same lifecycle as
- * `nativeSessionTransportRetry`: set on open, cleared on close.
+ * Session name -> live `SpinBreaker` instance (nax#2013, lifetime extended in
+ * nax#2047). Constructed once at open so the cumulative counter survives
+ * across `runNativeTurn` calls — a fix round that opens a new turn on the
+ * same `handle.id` must inherit the prior turn's evidence rather than start
+ * fresh. Same lifecycle as `nativeSessionTransportRetry`: set on open, cleared
+ * on close.
  */
-export const nativeSessionSpinBreaker = new Map<string, ResolvedSpinBreakerSettings>();
+export const nativeSessionSpinBreaker = new Map<string, SpinBreaker>();
 
 /**
  * Session name -> the last round trip's reported input tokens and the index it
@@ -128,7 +132,7 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
   if (opts.resume !== true) await deleteTranscript(opts.transcriptDir, name);
   if (opts.compaction !== undefined) nativeSessionCompaction.set(name, opts.compaction);
   if (opts.transportRetry !== undefined) nativeSessionTransportRetry.set(name, opts.transportRetry);
-  if (opts.spinBreaker !== undefined) nativeSessionSpinBreaker.set(name, opts.spinBreaker);
+  if (opts.spinBreaker !== undefined) nativeSessionSpinBreaker.set(name, createSpinBreaker(opts.spinBreaker));
   nativeSessionStreamHooks.set(name, {
     ...(opts.onStreamActivity !== undefined ? { onStreamActivity: opts.onStreamActivity } : {}),
     ...(opts.onActiveCall !== undefined ? { onActiveCall: opts.onActiveCall } : {}),
