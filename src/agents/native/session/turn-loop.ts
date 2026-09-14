@@ -8,7 +8,7 @@
  */
 
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
-import { inputClassTokens, type TokenUsage } from "@/agents/cost";
+import { inputClassTokens, type ResolvedRates, type TokenUsage } from "@/agents/cost";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import { NaxError } from "@/errors";
@@ -42,6 +42,16 @@ export interface NativeTurnResponse {
   readonly thinking?: readonly ThinkingBlock[];
   readonly usage: TokenUsage;
   readonly costUsd: number;
+  /**
+   * US-002: the per-1M rates that priced this round-trip's `costUsd`.
+   * `runNativeTurn` stamps the LAST round-trip's `rates` on the
+   * `TurnResult` it returns — each round-trip re-prices on its own usage,
+   * and the most recent decision is what affected the user's last-mile
+   * spend. Optional so existing test fakes that build the response shape
+   * by hand keep compiling; the adapter's `complete` closure always sets
+   * it because native prices unconditionally.
+   */
+  readonly rates?: import("../../cost").ResolvedRates;
 }
 
 /** What one summarization call returns. Usage and cost are surfaced, not swallowed. */
@@ -180,6 +190,14 @@ export async function runNativeTurn(
   let cacheReadInputTokens: number | undefined;
   let cacheCreationInputTokens: number | undefined;
   let costUsd = 0;
+  // US-002: the per-1M rates that priced the most recent successful
+  // round-trip. Each round-trip re-prices on its own usage (a single tier
+  // card can pick different tiers for different round-trips if usage
+  // crosses thresholds mid-turn), and the most recent decision is what
+  // affects the user's last-mile spend — so the LAST writer wins. Stamped
+  // on the returned TurnResult.rates so the cost subscriber records the
+  // same numbers whose arithmetic reproduces the round-trip's costUsd.
+  let lastRoundTripRates: ResolvedRates | undefined;
   let output = "";
   // Reported on the result so the review guards can corroborate a reviewer's
   // self-declared inspection trail against calls it actually made.
@@ -364,6 +382,9 @@ export async function runNativeTurn(
         cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + res.usage.cacheCreationInputTokens;
       }
       costUsd += res.costUsd;
+      // US-002: last writer wins — the most recent round-trip's rates
+      // reach the result.
+      lastRoundTripRates = res.rates;
       output = res.text;
 
       // nax#1852: the anchor is the whole prompt the provider charged for, not
@@ -551,5 +572,9 @@ export async function runNativeTurn(
     ...(spinStopped ? { spinStopped: true as const } : {}),
     ...(interactions.length > 0 ? { interactions } : {}),
     ...(deps.pricingSource !== undefined ? { pricingSource: deps.pricingSource } : {}),
+    // US-002: forward the per-1M rates the most recent round-trip priced
+    // its `costUsd` on. Native prices unconditionally, so the field is
+    // always populated when at least one round-trip succeeded.
+    ...(lastRoundTripRates !== undefined ? { rates: lastRoundTripRates } : {}),
   };
 }

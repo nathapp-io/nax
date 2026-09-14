@@ -197,12 +197,17 @@ export class NativeAgentAdapter implements AgentAdapter {
       // `estimatedCostUsd`. The native path prices unconditionally — even
       // a zero-token call carries `rates`, so a downstream cost row never
       // has to guess what priced a no-spend dispatch.
-      const { resolvedRates } = priceCall(tokenUsage, rates);
+      //
+      // Single `priceCall` invocation: `costUsd` and `resolvedRates` come
+      // from the same call so they cannot diverge — the verifiability
+      // property the story names ("recorded rates reproduce recorded cost")
+      // would silently break if tier selection ever grew a side channel.
+      const { costUsd: estimatedCostUsd, resolvedRates } = priceCall(tokenUsage, rates);
 
       return {
         output: result.text,
         tokenUsage,
-        estimatedCostUsd: estimateCostUsd(tokenUsage, rates),
+        estimatedCostUsd,
         // exactCostUsd is deliberately unset: nax-ai supplies rates and
         // computes no cost, so nothing here is exact.
         // sessionId echoes the one we sent — US-002 lets downstream wiring
@@ -359,12 +364,24 @@ export class NativeAgentAdapter implements AgentAdapter {
               cacheRetention: "short",
             });
             const usage = toNaxTokenUsage(res.usage);
+            // Single `priceCall` invocation: `costUsd` and `resolvedRates`
+            // come from the same call so they cannot diverge — the
+            // verifiability property the story names ("recorded rates
+            // reproduce recorded cost") would silently break if tier
+            // selection ever grew a side channel.
+            const { costUsd, resolvedRates } = priceCall(usage, rates);
             return {
               text: res.text,
               ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
               ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
               usage,
-              costUsd: estimateCostUsd(usage, rates),
+              costUsd,
+              // US-002: thread the per-call resolved rates back to
+              // `runNativeTurn` so it can stamp them on the `TurnResult`.
+              // The last round-trip's rates win — each round-trip re-prices
+              // on its own usage, and the most recent decision is what
+              // affected the user's last-mile spend.
+              rates: resolvedRates,
             };
           } finally {
             if (timer !== undefined) clearTimeout(timer);

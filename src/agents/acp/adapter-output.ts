@@ -5,7 +5,7 @@
 
 import type { ToolDescriptor } from "@/context/engine";
 import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
-import { estimateCostUsd, priceCall } from "../cost";
+import { priceCall } from "../cost";
 import type { AgentRunOptions, InteractionExchange, TurnResult } from "../types";
 import type { AcpSessionResponse } from "./adapter-session-types";
 import type { SessionTokenUsage } from "./wire-types";
@@ -243,12 +243,18 @@ export function deriveTokenUsage(
 } {
   const tokenUsage = wire ? mapper.toInternal(wire) : { inputTokens: 0, outputTokens: 0 };
   const nonzeroUsage = tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0;
-  const estimatedCostUsd = nonzeroUsage ? estimateCostUsd(tokenUsage, rateCard.rates) : 0;
-  // US-002: same nonzero-usage guard as the cost itself. `rates` is only
-  // populated when pricing ran, so the field's absence encodes
-  // "did not price".
-  const rates = nonzeroUsage ? priceCall(tokenUsage, rateCard.rates).resolvedRates : undefined;
-  return { tokenUsage, estimatedCostUsd, rates };
+  // Single `priceCall` invocation: `costUsd` and `resolvedRates` come from
+  // the same call so they cannot diverge — same verifiability concern as
+  // `buildTurnResult` above.
+  const priced = nonzeroUsage ? priceCall(tokenUsage, rateCard.rates) : undefined;
+  return {
+    tokenUsage,
+    estimatedCostUsd: priced?.costUsd ?? 0,
+    // US-002: same nonzero-usage guard as the cost itself. `rates` is only
+    // populated when pricing ran, so the field's absence encodes
+    // "did not price".
+    rates: priced?.resolvedRates,
+  };
 }
 
 /**
@@ -275,11 +281,15 @@ export function buildTurnResult(input: BuildTurnResultInput): TurnResult {
   const { lastResponse, totalTokenUsage, totalExactCostUsd, turnCount, interactions, timedOut, rateCard } = input;
   const output = timedOut ? "" : extractOutput(lastResponse);
   const hasUsage = totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0;
-  const rates = hasUsage ? priceCall(totalTokenUsage, rateCard.rates).resolvedRates : undefined;
+  // Single `priceCall` invocation: both `costUsd` and `resolvedRates` come
+  // from the same call so they cannot diverge — the verifiability property
+  // the story names ("recorded rates reproduce recorded cost") would
+  // silently break if tier selection ever grew a side channel.
+  const priced = hasUsage ? priceCall(totalTokenUsage, rateCard.rates) : undefined;
   return {
     output,
     tokenUsage: totalTokenUsage,
-    estimatedCostUsd: hasUsage ? estimateCostUsd(totalTokenUsage, rateCard.rates) : 0,
+    estimatedCostUsd: priced?.costUsd ?? 0,
     exactCostUsd: totalExactCostUsd,
     internalRoundTrips: turnCount,
     ...(interactions.length > 0 ? { interactions } : {}),
@@ -287,6 +297,6 @@ export function buildTurnResult(input: BuildTurnResultInput): TurnResult {
     pricingSource: rateCard.source,
     // US-002: forward the four per-1M rates that priced the turn. Omitted
     // when the nonzero-usage guard skipped pricing — see comment above.
-    ...(rates !== undefined ? { rates } : {}),
+    ...(priced?.resolvedRates !== undefined ? { rates: priced.resolvedRates } : {}),
   };
 }
