@@ -332,6 +332,7 @@ export const NaxConfigSchema = z
       default: "claude",
       maxInteractionTurns: 20,
       promptAudit: { enabled: false },
+      usageAudit: { enabled: false },
       fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
       acp: { promptRetries: 0, trackedSpawnDeadlineMs: 10_000, trackedSpawnStartupDeadlineMs: 30_000 },
       native: { transportRetry: { maxAttempts: 3, baseDelayMs: 2000 }, catalogOverrides: [] },

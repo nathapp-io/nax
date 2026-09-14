@@ -17,6 +17,34 @@ describe("AgentConfigSchema", () => {
     expect(result.agent?.idleWatchdog?.mode).toBe("warn-then-cancel");
   });
 
+  // #2045: the per-round-trip usage record is the usage analogue of
+  // promptAudit — opt-in, off by default, same dir contract.
+  test("agent.usageAudit defaults to disabled with no dir", () => {
+    const result = NaxConfigSchema.parse({});
+    expect(result.agent?.usageAudit?.enabled).toBe(false);
+    expect(result.agent?.usageAudit?.dir).toBeUndefined();
+  });
+
+  test("agent.usageAudit enabled resolves to false when supplied as an empty object", () => {
+    const result = NaxConfigSchema.parse({ agent: { usageAudit: {} } });
+    expect(result.agent?.usageAudit?.enabled).toBe(false);
+  });
+
+  test("agent.usageAudit accepts enabled and an absolute dir", () => {
+    const result = NaxConfigSchema.parse({
+      agent: { usageAudit: { enabled: true, dir: "/tmp/usage-audit" } },
+    });
+    expect(result.agent?.usageAudit?.enabled).toBe(true);
+    expect(result.agent?.usageAudit?.dir).toBe("/tmp/usage-audit");
+  });
+
+  test("agent.usageAudit accepts a workdir-relative dir", () => {
+    const result = NaxConfigSchema.parse({
+      agent: { usageAudit: { enabled: true, dir: ".nax/usage" } },
+    });
+    expect(result.agent?.usageAudit?.dir).toBe(".nax/usage");
+  });
+
   test("accepts a fully populated agent block", () => {
     const raw = {
       agent: {

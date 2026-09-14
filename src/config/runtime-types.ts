@@ -571,7 +571,6 @@ export interface NaxConfig {
    */
   profileChain?: string[];
 }
-
 export interface CuratorThresholds {
   repeatedFinding: number;
   emptyKeyword: number;
@@ -597,4 +596,5 @@ export type {
   GenerateConfig,
   IdleWatchdogConfig,
   PromptAuditConfig,
+  UsageAuditConfig,
 } from "./runtime-types-agent";

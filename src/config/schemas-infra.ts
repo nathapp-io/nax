@@ -202,6 +202,16 @@ const PromptAuditConfigSchema = z.object({
   dir: z.string().optional(),
 });
 
+const UsageAuditConfigSchema = z.object({
+  /** When true, every agent round trip's usage is written to a file for auditing. Default: false. */
+  enabled: z.boolean().default(false),
+  /**
+   * Directory to write usage audit files into.
+   * Absolute path, or relative to workdir. Defaults to <workdir>/.nax/usage-audit/ when absent.
+   */
+  dir: z.string().optional(),
+});
+
 // { agent, model } mirrors ConfiguredModelObjectSchema (schemas-model.ts): `model`
 // is a tier name or a literal "provider/model" id, discriminated at runtime by
 // resolveFallbackDispatchTarget (fallback-model-identity.ts) — the schema itself
@@ -361,6 +371,7 @@ export const AgentConfigSchema = z.object({
   default: z.string().trim().min(1, "agent.default must be non-empty").default("claude"),
   maxInteractionTurns: z.number().int().min(1).max(100).default(20),
   promptAudit: PromptAuditConfigSchema.default({ enabled: false }),
+  usageAudit: UsageAuditConfigSchema.default({ enabled: false }),
   fallback: AgentFallbackConfigSchema.default({
     enabled: false,
     map: {},

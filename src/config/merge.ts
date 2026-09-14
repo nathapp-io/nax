@@ -28,7 +28,7 @@ function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig[
  * Merge a package-level partial config override into a root config.
  *
  * Mergeable sections:
- * - agent: protocol, maxInteractionTurns, promptAudit (deep)
+ * - agent: protocol, maxInteractionTurns, promptAudit (deep), usageAudit (deep)
  * - models: per-agent model tier mappings (deep)
  * - routing: strategy, llm (deep)
  * - execution: smartTestRunner, regressionGate (deep), flakeDetection (deep),
@@ -76,6 +76,14 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
                 ? { dir: packageOverride.agent.promptAudit.dir }
                 : root.agent?.promptAudit?.dir !== undefined
                   ? { dir: root.agent.promptAudit.dir }
+                  : {}),
+            },
+            usageAudit: {
+              enabled: packageOverride.agent.usageAudit?.enabled ?? root.agent?.usageAudit?.enabled ?? false,
+              ...(packageOverride.agent.usageAudit?.dir !== undefined
+                ? { dir: packageOverride.agent.usageAudit.dir }
+                : root.agent?.usageAudit?.dir !== undefined
+                  ? { dir: root.agent.usageAudit.dir }
                   : {}),
             },
           }
