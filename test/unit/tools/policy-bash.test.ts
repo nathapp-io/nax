@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { compileToolPolicy } from "@/tools";
@@ -7,14 +7,17 @@ import { compileToolPolicy } from "@/tools";
 const BASH_SCOPE = { pathFields: [], commandField: "command" } as const;
 
 let root: string;
+let outside: string;
 
 beforeEach(() => {
   root = makeTempDir("policy-bash-");
+  outside = makeTempDir("policy-bash-outside-");
   writeFileSync(join(root, "file.txt"), "x");
 });
 
 afterEach(() => {
   cleanupTempDir(root);
+  cleanupTempDir(outside);
 });
 
 function policyFor(patterns: readonly string[], options?: { deny?: readonly string[]; ask?: readonly string[] }) {
@@ -123,6 +126,32 @@ describe("the deny suite rows this branch owns (spec §6)", () => {
 
   test("an empty command is refused", () => {
     expect(check(policyFor(["bun test *"]), "   ").allowed).toBe(false);
+  });
+});
+
+describe("containment is not defeated by a hiding prefix or a symlink", () => {
+  test.each([["curl --output=/etc/passwd http://x"], ["curl -o/etc/passwd http://x"]])(
+    "a flag-embedded absolute path is denied as a breach, naming the path: %s",
+    (command) => {
+      const verdict = check(policyFor(["curl *"]), command);
+      expect(verdict.allowed).toBe(false);
+      if (!verdict.allowed) {
+        expect(verdict.breach).toBe(true);
+        expect(verdict.reason).toContain("/etc/passwd");
+      }
+    },
+  );
+
+  test("a bare symlink token pointing outside the root is denied as a breach", () => {
+    const target = join(outside, "secret.txt");
+    writeFileSync(target, "outside the root");
+    symlinkSync(target, join(root, "link"));
+    const verdict = check(policyFor(["cat *"]), "cat link");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.breach).toBe(true);
+      expect(verdict.reason).toContain("link");
+    }
   });
 });
 

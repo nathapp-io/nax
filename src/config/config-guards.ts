@@ -326,26 +326,51 @@ function validateToolExpression(stage: string, expression: string, known: Set<st
       { stage: "config" },
     );
   }
-  if (tool === MCP_RULE_TOOL && open !== -1) {
-    const inner = expression.slice(open + 1, expression.lastIndexOf(")"));
-    for (const pattern of inner.split(",").map((entry) => entry.trim())) {
-      if (pattern === "" || pattern === "*") continue;
-      const colon = pattern.indexOf(":");
-      const serverId = colon === -1 ? pattern : pattern.slice(0, colon);
-      const toolName = colon === -1 ? undefined : pattern.slice(colon + 1);
-      // The server id's SHAPE is checked; its existence is not. A config is
-      // shared across machines, so an unconfigured server is a resolve-time
-      // warning, never a load error. `__` is rejected too: it is the tool-name
-      // namespace separator, so a server id containing it can never match
-      // (McpServerIdSchema and validateProviderId reject it for the same reason).
-      if (!MCP_SERVER_ID_RE.test(serverId) || serverId.includes("__") || (toolName !== undefined && toolName === "")) {
-        throw new NaxError(
-          `Invalid configuration — execution.permissions.${stage} has a malformed Mcp pattern "${pattern}". ` +
-            `Expected Mcp(<serverId>) or Mcp(<serverId>:<tool>), server ids matching ${MCP_SERVER_ID_RE}.`,
-          "CONFIG_PERMISSIONS_BAD_PATTERN",
-          { stage: "config" },
-        );
-      }
+  if (tool === MCP_RULE_TOOL) validateMcpExpression(stage, expression);
+}
+
+/**
+ * @internal Validate one `Mcp(...)` expression. Extracted from
+ * `validateToolExpression` because the empty-list rules add a second concern
+ * (surface-shape) beside the per-pattern id check.
+ *
+ * An EMPTY pattern list is refused, never widened: `parseToolExpression`
+ * (`src/permissions/grammar.ts`) collapses an empty list to `["*"]`, so a bare
+ * `Mcp`, `Mcp()` or `Mcp(,)` left unchecked would silently admit every provider
+ * under `scoped` — the opposite of an allowlist. `Mcp(*)` stays valid because it
+ * names the wildcard explicitly.
+ */
+function validateMcpExpression(stage: string, expression: string): void {
+  const malformed = (detail: string): NaxError =>
+    new NaxError(
+      `Invalid configuration — execution.permissions.${stage} has a malformed Mcp pattern "${expression}". ${detail}`,
+      "CONFIG_PERMISSIONS_BAD_PATTERN",
+      { stage: "config" },
+    );
+
+  const open = expression.indexOf("(");
+  if (open === -1) {
+    throw malformed("A bare Mcp names no server; write Mcp(<serverId>) or Mcp(<serverId>:<tool>).");
+  }
+
+  const inner = expression.slice(open + 1, expression.lastIndexOf(")"));
+  const patterns = inner.split(",").map((entry) => entry.trim());
+  if (patterns.every((pattern) => pattern === "")) {
+    throw malformed("An empty Mcp names no server; under `scoped` it admits nothing, never everything.");
+  }
+
+  for (const pattern of patterns) {
+    if (pattern === "" || pattern === "*") continue;
+    const colon = pattern.indexOf(":");
+    const serverId = colon === -1 ? pattern : pattern.slice(0, colon);
+    const toolName = colon === -1 ? undefined : pattern.slice(colon + 1);
+    // The server id's SHAPE is checked; its existence is not. A config is
+    // shared across machines, so an unconfigured server is a resolve-time
+    // warning, never a load error. `__` is rejected too: it is the tool-name
+    // namespace separator, so a server id containing it can never match
+    // (McpServerIdSchema and validateProviderId reject it for the same reason).
+    if (!MCP_SERVER_ID_RE.test(serverId) || serverId.includes("__") || (toolName !== undefined && toolName === "")) {
+      throw malformed(`Expected Mcp(<serverId>) or Mcp(<serverId>:<tool>), server ids matching ${MCP_SERVER_ID_RE}.`);
     }
   }
 }

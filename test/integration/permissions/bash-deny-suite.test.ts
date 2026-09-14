@@ -8,7 +8,7 @@
  * A green build in which these do not run is a failed build of this feature.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
@@ -27,9 +27,11 @@ const STRUCTURED_GRANTS = [
 ] as const;
 
 let root: string;
+let outside: string;
 
 beforeEach(() => {
   root = makeTempDir("bash-deny-suite-");
+  outside = makeTempDir("bash-deny-suite-outside-");
   writeFileSync(join(root, "file.txt"), "x");
   mkdirSync(join(root, ".git"), { recursive: true });
   writeFileSync(join(root, ".git", "config"), "[core]\n");
@@ -37,6 +39,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanupTempDir(root);
+  cleanupTempDir(outside);
 });
 
 function session(options?: {
@@ -143,6 +146,32 @@ describe("deny suite (spec §6)", () => {
     const outcome = await call(session({ allow: ["*"], declared: ["Read"] }), "bun test");
     expect(outcome.kind).toBe("denied");
     if (outcome.kind === "denied") expect(outcome.reason).toContain("unknown tool");
+  });
+});
+
+describe("fix round: containment through a hiding prefix or a symlink", () => {
+  test.each([["curl --output=/etc/passwd http://x"], ["curl -o/etc/passwd http://x"]])(
+    "a flag-embedded absolute path is denied as a breach: %s",
+    async (command) => {
+      const outcome = await call(session({ allow: ["curl *"] }), command);
+      expect(outcome.kind).toBe("denied");
+      if (outcome.kind === "denied") {
+        expect(outcome.breach).toBe(true);
+        expect(outcome.reason).toContain("/etc/passwd");
+      }
+    },
+  );
+
+  test("a bare symlink token pointing outside the root is denied as a breach", async () => {
+    const target = join(outside, "secret.txt");
+    writeFileSync(target, "outside the root");
+    symlinkSync(target, join(root, "link"));
+    const outcome = await call(session({ allow: ["cat *"] }), "cat link");
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind === "denied") {
+      expect(outcome.breach).toBe(true);
+      expect(outcome.reason).toContain("link");
+    }
   });
 });
 

@@ -116,8 +116,10 @@ export function buildCodingToolSupport(args: {
   // POLICY, not by a failed name lookup: "unknown tool" carries no redirect,
   // and spec §6 row 1 requires the ungranted case to offer an alternative. So
   // the tool is constructed either way; with no grant, `grantedTools()` still
-  // excludes it (never advertised, no schema cost in the prompt) and the call
-  // denies through `policy.check`, which is where a redirect is computed.
+  // excludes it (never advertised, no schema cost in the prompt), yet the
+  // tool's EXISTENCE is what lets the call reach `policy.check` and be denied
+  // there -- and only that denial path (in `runtime.callTool`, using
+  // `denial-redirect.ts`) can attach a redirect.
   const bashGrant = grants.findLast((grant) => grant.tool === BASH_TOOL_NAME);
   const allowBash = args.declared.includes(BASH_TOOL_NAME);
 

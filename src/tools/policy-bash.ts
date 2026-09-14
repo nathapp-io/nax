@@ -86,13 +86,30 @@ function render(segment: BashSegment): string {
 }
 
 /**
- * Does this word address the filesystem? A conservative screen, not a guess at
- * the shell's own resolution: anything carrying a separator, the parent
- * directory, or a `~` that depends on expansion. Words with no separator are
- * binaries and flags, bounded by the rule match instead.
+ * The filesystem path a word can actually address, once a prefix is stripped.
+ *
+ * A word carrying a separator is not necessarily the path: `--output=/etc/passwd`
+ * and `-o/etc/passwd` both hide one behind a flag, and `resolveWithin` reads the
+ * whole word as a RELATIVE path (`<root>/--output=/etc/passwd`), so the escape
+ * lives in the embedded value while the raw word looks contained. Extract it:
+ *
+ *   --output=/etc/passwd -> /etc/passwd   (value after an `=` that precedes a separator)
+ *   -o/etc/passwd        -> /etc/passwd   (from the first separator on a `-`-led word)
+ *   ../etc/passwd        -> ../etc/passwd (no prefix: the word itself)
+ *   link                 -> link          (no prefix: a bare word can be a symlink out)
+ *
+ * The last line is why this runs on EVERY non-opaque word rather than only the
+ * separator-bearing ones: a bare `link` can be a symlink to a target outside the
+ * root, and a word that does not exist safely joins under the root because
+ * `realOrRaw` walks up to the nearest existing ancestor and never throws.
  */
-function isPathish(text: string): boolean {
-  return text.includes("/") || text === ".." || text.startsWith("~");
+function containmentTarget(text: string): string {
+  const slash = text.indexOf("/");
+  if (slash === -1) return text;
+  const equals = text.indexOf("=");
+  if (equals !== -1 && equals < slash) return text.slice(equals + 1);
+  if (text.startsWith("-")) return text.slice(slash);
+  return text;
 }
 
 function checkPayload(args: BashCheckArgs, segment: BashSegment): BashCheck | undefined {
@@ -107,12 +124,17 @@ function checkPayload(args: BashCheckArgs, segment: BashSegment): BashCheck | un
     // An opaque word has no value here, so containment cannot judge it — and it
     // already cannot satisfy a literal rule token (see matchesTokens).
     if (token.opaque) continue;
-    if (token.text.startsWith("~")) {
-      return deny(`token "${token.text}" starts with "~", which depends on expansion this gate cannot resolve`);
+    const target = containmentTarget(token.text);
+    if (target.startsWith("~")) {
+      return deny(
+        `token "${token.text}" addresses "${target}", which starts with "~" and depends on expansion this gate cannot resolve`,
+      );
     }
-    if (!isPathish(token.text)) continue;
-    if (args.resolvePath(token.text) === null) {
-      return deny(`path "${token.text}" resolves outside the permitted root, or into .git/`, true);
+    if (args.resolvePath(target) === null) {
+      return deny(
+        `token "${token.text}" addresses "${target}", which resolves outside the permitted root, or into .git/`,
+        true,
+      );
     }
   }
 

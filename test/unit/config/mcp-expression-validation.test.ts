@@ -5,10 +5,21 @@ import { validatePermissionsBlock } from "@/config/config-guards";
 const block = (permissions: Record<string, unknown>) => ({ execution: { permissions } });
 
 describe("Mcp(...) expressions at load", () => {
-  test.each([["Mcp(context7)"], ["Mcp(context7:query-docs)"], ["Mcp(context7:*)"], ["Mcp(a,b:one)"]])(
+  test.each([["Mcp(*)"], ["Mcp(context7)"], ["Mcp(context7:query-docs)"], ["Mcp(context7:*)"], ["Mcp(a,b:one)"]])(
     "%s is accepted",
     (expression) => {
       expect(() => validatePermissionsBlock(block({ run: { allow: [expression] } }))).not.toThrow();
+    },
+  );
+
+  // An empty allowlist must admit NOTHING, never everything: `parseToolExpression`
+  // collapses an empty pattern list to ["*"], so a bare/empty Mcp that reaches
+  // compilation would silently grant every provider under `scoped`. Each of
+  // these is a load error instead.
+  test.each([["Mcp"], ["Mcp()"], ["Mcp(,)"], ["Mcp(   )"]])(
+    "%s is a malformed-pattern error (an empty Mcp admits nothing)",
+    (expression) => {
+      expect(() => validatePermissionsBlock(block({ run: { allow: [expression] } }))).toThrow(/malformed Mcp pattern/i);
     },
   );
 
