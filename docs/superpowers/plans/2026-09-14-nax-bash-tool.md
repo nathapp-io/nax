@@ -18,7 +18,7 @@
 - **The gate's ability to say NO is a deliverable, not a side effect (spec R9, ADR-029 §3's standing bar).** A green build in which no test demonstrates a refusal is a failed build of this feature. Task 8's deny suite covers all 11 rows of spec §6.
 - **Safe-by-refusal, not safe-by-sandbox.** Anything the lexer cannot see through is denied with a reason naming the construct. No OS-level sandboxing (spec §7); the ADR amendment says so explicitly.
 - **`quality.commands` / `acceptance.command` are never wrapped, gated, or rewritten (spec R8 / rtk R10).** They are trusted project config. This plan only reads `quality.shell` and `quality.stripEnvVars` as the shell and env-strip list for Bash.
-- **Op declarations stay in code (spec R5).** Config never widens `op.tools`. Review ops (adversarial, semantic, debate) do not declare `Bash` in v1.
+- **Op declarations stay in code (spec R5).** Config never widens `op.tools`. Review ops (adversarial, semantic, debate) do not declare `Bash` in v1, and neither does the **verifier** (user ruling, 2026-09-14 — see Deviation 10 and Task 5).
 - Bun-native only (`Bun.file`, `Bun.spawn`, `Bun.sleep`); no Node `fs`/`child_process` in `src/`. Spawning goes through `runArgv` (`src/utils/argv-exec.ts`), never a fresh `spawn`.
 - New `src/` files: ≤600 lines, ≥0.8 per-file coverage (`bun run test:coverage` is a SEPARATE gate — run it explicitly). Test files ≤800 lines.
 - Every directory with 2+ exports gets a barrel; `src/` imports barrels only (`check:alias-internals`); tests may reach internals via `@/...`.
@@ -40,6 +40,7 @@
 7. **(US-005 lexer) `2>&1`, `&>`, here-docs and substitutions are all REFUSED with construct-naming reasons.** The spec only names substitutions and here-docs; fd duplication and `&>` are the same class (a shape the lexer does not model), and a named refusal teaches where a generic parse failure would not. Redirections `>`, `>>`, `<` and `2>file` are supported and containment-checked, per R11.
 8. **(§6 rows 1 + 11) The Bash tool is CONSTRUCTED on declaration and GATED on the grant — two different lines.** Row 11 wants an undeclared Bash unreachable; row 1 wants an ungranted Bash denied *with a redirect*. Those pull opposite ways, because `callTool` resolves a name before it consults advertisement: gating construction on the grant satisfies row 11 but turns row 1 into a bare "unknown tool" with no affordance, and gating on neither breaks row 11. So construction is gated on `args.declared.includes("Bash")` alone; the missing grant then denies inside `policy.check`, where the redirect is computed, and `grantedTools()` still withholds the tool from `advertised()` so it costs no prompt bytes. Both rows are pinned by tests (Task 4 Step 1, Task 8 rows 1/2/11).
 9. **(US-008) `denied:ask` needs no code change.** Plan A already composes `${verdict.reason} -- ${ASK_UNAVAILABLE_REASON}` (`src/tools/runtime.ts`), and the reason names the matched rule. Task 7 pins that message with a test rather than rewriting it.
+10. **(US-004 ceiling) The verifier does NOT declare `Bash`** — user ruling, 2026-09-14, overriding the spec's US-004 list. `verify.ts` carries no `Exec` precisely so a verifier cannot install packages while judging the implementer's work; a `Bash(...)` rule covering `bun add *` hands that ability straight back, and a wider one at that. Nine fix-shaped ops declare it. The verifier is pinned NEGATIVE in Task 5's test, beside the review ops, so re-adding it takes a deliberate test change. Reopen only if a real verify-stage need appears that no declared command can express — the same bar ADR-029 §3 set for the shell itself.
 
 ---
 
@@ -1455,8 +1456,15 @@ git commit -m "feat(tools): add the Bash tool, created only where an op declares
 
 ### Task 5: op declarations — who may ever hold Bash
 
+**Ruling (user, 2026-09-14): the verifier does NOT declare Bash.** The spec's US-004
+ceiling lists it; that is overridden here. `verify.ts` deliberately carries no `Exec`
+because a verifier must not be able to install packages, and a `Bash(...)` rule
+permitting `bun add *` would route straight around that — a wider hole than the one
+the missing `Exec` closes. Nine fix-shaped ops declare it; the verifier is pinned
+NEGATIVE alongside the review ops, so a later hand cannot quietly add it back.
+
 **Files:**
-- Modify: `src/operations/implement.ts:46-58`, `src/operations/write-test.ts:69-81`, `src/operations/rectify.ts:23-35`, `src/operations/autofix-implementer.ts:33-45`, `src/operations/autofix-test-writer.ts:30-42`, `src/operations/acceptance-fix.ts:34` and `:66`, `src/operations/finish-fix.ts:38`, `src/operations/full-suite-rectify-op.ts:41`, `src/operations/verify.ts:217`
+- Modify: `src/operations/implement.ts:46-58`, `src/operations/write-test.ts:69-81`, `src/operations/rectify.ts:23-35`, `src/operations/autofix-implementer.ts:33-45`, `src/operations/autofix-test-writer.ts:30-42`, `src/operations/acceptance-fix.ts:34` and `:66`, `src/operations/finish-fix.ts:38`, `src/operations/full-suite-rectify-op.ts:41`
 - Test: `test/unit/operations/bash-declarations.test.ts`
 
 **Interfaces:**
@@ -1494,6 +1502,9 @@ import {
   verifierOp,
 } from "@/operations";
 
+// The verifier is imported to be pinned NEGATIVE (see the ruling in this task's
+// header), not because it holds Bash.
+
 describe("ops that may hold Bash", () => {
   test.each([
     ["implementer", implementerOp],
@@ -1505,18 +1516,22 @@ describe("ops that may hold Bash", () => {
     ["acceptance-fix-test", acceptanceFixTestOp],
     ["finish-fix", finishFixOp],
     ["full-suite-rectify", fullSuiteRectifyOp],
-    ["verifier", verifierOp],
   ] as const)("%s declares Bash", (_name, op) => {
     expect(op.tools).toContain("Bash");
   });
 });
 
-describe("review and planning ops do not", () => {
+describe("ops that must never hold Bash", () => {
   test.each([
     ["adversarial-review", adversarialReviewOp],
     ["semantic-review", semanticReviewOp],
     ["debate-plan", planDebaterOp],
     ["plan", planInteractiveOp],
+    // The verifier judges the implementer's work. It already cannot install
+    // (no `Exec` — see test/unit/operations/op-tool-declarations.test.ts), and
+    // a Bash rule covering `bun add *` would hand back exactly that ability.
+    // Ruled out by the user on 2026-09-14, overriding the spec's US-004 list.
+    ["verifier", verifierOp],
   ] as const)("%s does not declare Bash", (_name, op) => {
     expect(op.tools ?? []).not.toContain("Bash");
   });
@@ -1532,7 +1547,7 @@ Expected: FAIL — no op declares `"Bash"` yet.
 
 - [ ] **Step 3: Add the declaration**
 
-Add `"Bash"` to each of the ten `tools:` arrays, immediately after `"Exec"` where one is present (`verify.ts` has no `Exec` by design — the verifier must not be able to install — so append `"Bash"` at the end of its list). Example, `src/operations/implement.ts`:
+Add `"Bash"` to each of the nine `tools:` arrays, immediately after `"Exec"`. Do **not** touch `src/operations/verify.ts` (see this task's ruling). Example, `src/operations/implement.ts`:
 
 ```typescript
   tools: [
@@ -1551,16 +1566,6 @@ Add `"Bash"` to each of the ten `tools:` arrays, immediately after `"Exec"` wher
   ],
 ```
 
-Add this comment once, above the `verifierOp` declaration in `src/operations/verify.ts` (it is the one that looks wrong at a glance):
-
-```typescript
-  // Bash without Exec is deliberate: the verifier may run the story's own
-  // commands but must never install packages (see
-  // test/unit/operations/op-tool-declarations.test.ts's rationale). Declaring
-  // Bash grants nothing on its own — a project must still write a
-  // `Bash(...)` allow rule for the verify stage (spec R4).
-```
-
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `bun test test/unit/operations/`
@@ -1575,7 +1580,7 @@ Expected: PASS with no baseline change (`scripts/baselines/op-tool-capability-ba
 
 ```bash
 git add src/operations/ test/unit/operations/bash-declarations.test.ts
-git commit -m "feat(operations): declare Bash on the fix and verify roles"
+git commit -m "feat(operations): declare Bash on the fix roles only"
 ```
 
 ---
@@ -2489,10 +2494,23 @@ Insert into `docs/adr/ADR-029-phase-c-native-coding-agent-scope.md` at the **END
 #### Amendment, 2026-09-14: the trigger fired, and what shipped instead of a sandbox
 
 This section deferred a shell with three named reopen triggers. One has fired:
-**an operation that cannot be expressed over declared commands** — the
-`tdd-verifier` role of nax#1800, whose work is not a fixed set of project
-commands. So a shell ships, and this amendment records the shape of the gate
-rather than reopening the question of whether to build one.
+**an operation that cannot be expressed over declared commands.** nax#1800
+raised it for the `tdd-verifier` role, and it holds more broadly for the
+fix-shaped roles — an implementer or rectifier repairing a build it has not
+seen before is not a fixed set of project commands. So a shell ships, and this
+amendment records the shape of the gate rather than reopening the question of
+whether to build one.
+
+**One deliberate asymmetry, recorded because it looks like an oversight.** The
+role that RAISED the trigger — the verifier — is the one role that does not
+declare `Bash` (ruled 2026-09-14). `verify.ts` carries no `Exec` precisely so a
+verifier cannot install packages while judging the implementer's work, and a
+`Bash(...)` rule covering an install command returns that ability by another
+route. The verifier's own inexpressibility therefore remains OPEN, and closing
+it is a separate decision with its own bar: a concrete verify-stage need that
+no declared command can express, and a gate narrower than "the verifier may run
+commands of its own". Widening the verifier's ceiling by quietly adding `Bash`
+to its `tools` array is not that decision.
 
 **What shipped.**
 
@@ -2511,8 +2529,11 @@ rather than reopening the question of whether to build one.
 - **Safe-by-refusal.** Command and process substitution, here-documents, fd
   duplication and unbalanced quotes are refused outright, by name: a payload
   the gate cannot read does not get a shell.
-- **The op ceiling stayed in code.** Only fix-shaped roles and the verifier
-  declare `Bash`; review ops do not. Config can narrow that, never widen it.
+- **The op ceiling stayed in code.** Only fix-shaped roles declare `Bash`.
+  Review ops do not, and neither does the verifier: it judges the
+  implementer's work, it already cannot install packages, and a Bash rule
+  covering an install command would return that ability by another route.
+  Config can narrow this ceiling, never widen it.
 
 **What did NOT ship, and will not on this account.** OS-level sandboxing.
 There is no namespace, seccomp or container boundary around a Bash call: a
