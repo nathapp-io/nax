@@ -3,7 +3,7 @@
   "feature": "cost-row-rate-provenance",
   "branchName": "feat/cost-row-rate-provenance",
   "createdAt": "2025-02-20T00:00:00.000Z",
-  "updatedAt": "2026-09-14T06:55:00.416Z",
+  "updatedAt": "2026-09-14T08:11:22.467Z",
   "userStories": [
     {
       "id": "US-001",
@@ -127,8 +127,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
