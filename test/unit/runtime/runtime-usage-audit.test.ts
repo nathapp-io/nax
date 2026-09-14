@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { makeNaxConfig, withTempDir } from "@test/helpers";
 import type { AgentUsageUpdateEvent, IUsageAuditor, NaxRuntime, UsageAuditEntry } from "@/runtime";
@@ -94,6 +95,31 @@ describe("createRuntime usage audit wiring (#2045)", () => {
 
       expect(await Bun.file(join(customDir, `${rt.runId}.jsonl`)).exists()).toBe(true);
       expect(() => readdirSync(join(rt.outputDir, "usage"))).toThrow();
+    });
+  });
+
+  test("resolves a relative agent.usageAudit.dir from workdir, not the process cwd", async () => {
+    await withTempDir(async (root) => {
+      const workdir = join(root, "workdir");
+      const otherCwd = join(root, "other-cwd");
+      await Promise.all([mkdir(workdir), mkdir(otherCwd)]);
+      const originalCwd = process.cwd();
+      process.chdir(otherCwd);
+      try {
+        const config = makeNaxConfig({
+          name: "probe",
+          outputDir: join(root, "output"),
+          agent: { usageAudit: { enabled: true, dir: "relative-usage" } },
+        });
+        const rt = makeRuntime(config, workdir);
+        rt.agentStreamEvents.emitAgentStream(usageEvent(rt));
+        await rt.close();
+
+        expect(await Bun.file(join(workdir, "relative-usage", `${rt.runId}.jsonl`)).exists()).toBe(true);
+        expect(await Bun.file(join(otherCwd, "relative-usage", `${rt.runId}.jsonl`)).exists()).toBe(false);
+      } finally {
+        process.chdir(originalCwd);
+      }
     });
   });
 

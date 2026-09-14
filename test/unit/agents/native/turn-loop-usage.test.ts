@@ -126,7 +126,11 @@ describe("native turn loop — usage activities (nax#2045)", () => {
       contextWindow: 8000,
       compaction: { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 },
       onActivity: (a) => activity.push(a),
-      summarize: async () => ({ text: "summary", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01 }),
+      summarize: async () => ({
+        text: "summary",
+        usage: { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+        costUsd: 0.01,
+      }),
       complete: async () => reply(),
     });
 
@@ -134,6 +138,8 @@ describe("native turn loop — usage activities (nax#2045)", () => {
     expect(beats).toHaveLength(2);
     const [summaryBeat, roundTripBeat] = beats;
     expect(summaryBeat).not.toHaveProperty("roundTrip");
+    expect(summaryBeat).toHaveProperty("cacheRead", 100);
+    expect(summaryBeat).toHaveProperty("cacheWrite", 20);
     expect("perRoundTrip" in buildNativeStreamEvent(base, summaryBeat, 1)).toBe(false);
     expect(roundTripBeat).toHaveProperty("roundTrip", 1);
     expect("perRoundTrip" in buildNativeStreamEvent(base, roundTripBeat, 2)).toBe(true);

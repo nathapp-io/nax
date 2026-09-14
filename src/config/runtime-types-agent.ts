@@ -35,8 +35,7 @@ export interface UsageAuditConfig {
   enabled: boolean;
   /**
    * Directory to write usage audit files into.
-   * Absolute path, or used as-is — a relative path resolves against the process
-   * working directory, not `workdir`. Defaults to `<outputDir>/usage` when absent.
+   * Absolute path, or relative to workdir. Defaults to `<outputDir>/usage` when absent.
    */
   dir?: string;
 }

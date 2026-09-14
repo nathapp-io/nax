@@ -90,7 +90,7 @@ export {
 export type { IUsageAuditor, UsageAuditEntry } from "./usage-auditor";
 export { _usageAuditorDeps, createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";
 
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
@@ -340,7 +340,13 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   // measuring have no feature name), and a flat `usage/<runId>.jsonl` layout
   // (matching `cost/<runId>.jsonl`), since there is no feature to nest under.
   const usageEnabled = config.agent?.usageAudit?.enabled ?? false;
-  const usageDir = config.agent?.usageAudit?.dir ?? join(outputDir, "usage");
+  const configuredUsageDir = config.agent?.usageAudit?.dir;
+  const usageDir =
+    configuredUsageDir === undefined
+      ? join(outputDir, "usage")
+      : isAbsolute(configuredUsageDir)
+        ? configuredUsageDir
+        : resolve(workdir, configuredUsageDir);
   let usageAuditor: IUsageAuditor;
   if (opts?.usageAuditor) {
     usageAuditor = opts.usageAuditor;

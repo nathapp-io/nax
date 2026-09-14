@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { COMPACTION_SUMMARY_PREFIX, type ResolvedCompaction } from "@/agents/native/session/compaction";
 import { nativeSessionLastUsage, nativeTranscriptDirs } from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
+import type { NativeTurnActivity } from "@/agents/native/session/turn-events";
 import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -465,6 +466,33 @@ describe("reactive backstop", () => {
     expect(summarizeCalls).toBe(1);
     expect(completes).toBe(2);
     expect(result.output).toBe("done");
+  });
+
+  test("preserves cache figures on the reactive compaction usage beat", async () => {
+    await seedModerateTranscript();
+    const activity: NativeTurnActivity[] = [];
+    let completes = 0;
+
+    await runNativeTurn(handle, "next", opts(), {
+      contextWindow: BACKSTOP_WINDOW,
+      compaction: cfg,
+      onActivity: (beat) => activity.push(beat),
+      summarize: async () => ({
+        text: "summary",
+        usage: { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+        costUsd: 0,
+      }),
+      complete: async () => {
+        completes += 1;
+        if (completes === 1) {
+          throw new ProtocolStreamError({ kind: "context-overflow", message: "prompt is too long" });
+        }
+        return { text: "done", usage, costUsd: 0 };
+      },
+    });
+
+    const summaryBeat = activity.find((beat) => beat.kind === "usage" && beat.roundTrip === undefined);
+    expect(summaryBeat).toMatchObject({ kind: "usage", cacheRead: 100, cacheWrite: 20 });
   });
 
   test("retries once, not repeatedly", async () => {
