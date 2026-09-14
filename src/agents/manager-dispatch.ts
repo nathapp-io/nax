@@ -115,6 +115,11 @@ export function buildSessionTurnEvent(input: {
     // absent (not undefined) and the subscriber falls back to
     // resolvePricingSource(model) — preserving pre-US-004 behaviour exactly.
     ...(result.pricingSource !== undefined ? { pricingSource: result.pricingSource } : {}),
+    // US-002: forward the four per-1M rates the producer stamped on
+    // TurnResult.rates. Same omission-not-undefined discipline as
+    // `pricingSource` above. (Stub — the implementer is responsible for
+    // wiring the forwarding rule so AC9 / AC10 pass.)
+    // ...(result.rates !== undefined ? { rates: result.rates } : {}),
     // `internalRoundTrips` counts a complete delegated agent run on ACP and a
     // single model call on native — nax owns the conversation loop there. The
     // unit travels with the number so nothing downstream has to infer it from
@@ -165,6 +170,13 @@ export function buildCompleteEvent(input: {
    * on this event.
    */
   pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
+  /**
+   * The four per-1M rates that priced the call — US-002. Forwarded from
+   * the producer's `CompleteResult.rates`. Omitted (not undefined) when the
+   * producer did not stamp them, so a downstream subscriber can distinguish
+   * "no report" from "explicitly unknown" by `in event`.
+   */
+  rates?: import("../agents/cost").ResolvedRates;
 }): CompleteDispatchEvent {
   const { options } = input;
   return {
@@ -188,6 +200,10 @@ export function buildCompleteEvent(input: {
     timestamp: Date.now(),
     ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
     ...(input.pricingSource !== undefined ? { pricingSource: input.pricingSource } : {}),
+    // US-002: stub — `rates` is declared on the input and the event but the
+    // forwarding rule is the implementer's job. The implementer must mirror
+    // the omission-not-undefined discipline used for `pricingSource` above.
+    // ...(input.rates !== undefined ? { rates: input.rates } : {}),
     ...(options.callId !== undefined ? { callId: options.callId } : {}),
     ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
   };
