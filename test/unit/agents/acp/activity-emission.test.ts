@@ -563,4 +563,47 @@ describe("AC10 — correlation metadata flows from AcpClientOptions to session s
     expect(toolCallEvent).toBeDefined();
     expect(toolCallEvent).toMatchObject({ kind: "agent.tool_call_update", toolName: "bash" });
   });
+
+  // nax#2045 Task 2: `scopeId` is the native transcript/ledger join key.
+  // ACP has no transcriptOwner (session/types.ts says ACP ignores it), so its
+  // events must never carry the key — an absent key reads as "unknown", while a
+  // present-but-wrong one would corrupt the join.
+  test("ACP stream events never carry a scopeId — it is a native-only key", async () => {
+    let callCount = 0;
+    const events: AgentStreamEvent[] = [];
+
+    _spawnClientDeps.spawn = (_cmd, _opts) => {
+      callCount++;
+      if (callCount === 1) return makeSpawnResult(0);
+      const ndjson = `${JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "x",
+          update: { sessionUpdate: "tool_call", toolName: "bash" },
+        },
+      })}\n${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
+        },
+      })}\n`;
+      return makeSpawnResult(0, ndjson);
+    };
+
+    const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp", 30, undefined, 0, undefined, {
+      onStreamActivity: (event) => events.push(event),
+    });
+
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    assertDefined(session, "loaded ACP session");
+    await session.prompt("hello");
+
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      expect("scopeId" in event).toBe(false);
+    }
+  });
 });

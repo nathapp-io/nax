@@ -36,6 +36,7 @@ import {
   nativeSessionSpinBreaker,
   nativeSessionStreamHooks,
   nativeSessionTimeouts,
+  nativeSessionTranscriptOwners,
   nativeSessionTransportRetry,
   openNativeSession,
 } from "./session/session";
@@ -273,7 +274,19 @@ export class NativeAgentAdapter implements AgentAdapter {
     // backfilled by the runtime's forwarding closure, which is the only place
     // that knows it — see runtime/index.ts.
     const callId = randomUUID();
-    const eventBase = { callId, runId: "", agentName: handle.agentName, sessionName: handle.id };
+    // The transcript/ledger join key, not a stream id. `nativeSessionTranscriptOwners`
+    // is keyed on this same `handle.id` and already holds the session's
+    // `transcriptOwner` (`scopeId ?? callId` from session-run-hop.ts). Omitted
+    // entirely when the session declared no owner, so an absent key reads as
+    // "unknown" rather than as a wrong one.
+    const owner = nativeSessionTranscriptOwners.get(handle.id);
+    const eventBase = {
+      callId,
+      runId: "",
+      agentName: handle.agentName,
+      sessionName: handle.id,
+      ...(owner !== undefined ? { scopeId: owner } : {}),
+    };
     const turnController = new AbortController();
     // The watchdog's cancel handle IS the turn controller, so an idle cancel
     // and the whole-turn deadline end the same in-flight call. Registering

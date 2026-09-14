@@ -3,6 +3,11 @@ import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 
 export interface AgentStreamEventBase {
+  /**
+   * Stream-local UUID minted per turn by the emitting adapter
+   * (`adapter.ts` `randomUUID()`, mirrored by ACP per prompt). It is the
+   * watchdog's and `onActiveCall`'s handle and is NOT a durable join key.
+   */
   readonly callId: string;
   readonly runId: string;
   readonly agentName: string;
@@ -11,6 +16,18 @@ export interface AgentStreamEventBase {
   readonly stage?: PipelineStage;
   readonly pid?: number;
   readonly timestamp: number;
+  /**
+   * The exact join key for this dispatch: the same value as the transcript's
+   * `owner` and the cost ledger's `scopeId`. Native only, because only native
+   * carries a `transcriptOwner` (ACP ignores it). It is deliberately NOT the
+   * sibling `callId`, which is a stream-local UUID — joining on `callId` is the
+   * mistake that produced nax#2045's 0-of-1,940 match rate.
+   *
+   * Absent means "unknown", never a coerced `""` and never the `callId`. An
+   * absent key must not be joined on; a present-but-wrong key would silently
+   * corrupt the join.
+   */
+  readonly scopeId?: string;
 }
 
 export interface AgentCallStartedEvent extends AgentStreamEventBase {

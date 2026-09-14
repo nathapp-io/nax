@@ -42,6 +42,13 @@ export interface NativeStreamEventBase {
   readonly sessionName: string;
   readonly storyId?: string;
   readonly stage?: import("@/config").PipelineStage;
+  /**
+   * The transcript/ledger join key (`transcript.owner` = `ledger.scopeId`),
+   * forwarded from the native session's owner map. Absent when the session was
+   * opened without a `transcriptOwner` — absent reads as "unknown". Never the
+   * stream-local `callId`.
+   */
+  readonly scopeId?: string;
 }
 
 export function buildNativeStreamEvent(
