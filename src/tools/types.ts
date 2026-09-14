@@ -15,6 +15,16 @@
  */
 export const EXEC_TOOL_NAME = "Exec";
 
+/**
+ * Policy identity of the model-authored shell tool.
+ *
+ * Unlike `Exec`, `Bash` IS a registered tool — but a session-local one
+ * (`createBashTool`), because it needs the project's shell and env-strip list.
+ * Reserved (`RESERVED_TOOL_NAMES`) so no third party can register a tool that
+ * shadows the identity the policy gates.
+ */
+export const BASH_TOOL_NAME = "Bash";
+
 /** The tools nax ships. Third parties register additional names at runtime. */
 export type CodingToolName =
   | "Read"
@@ -27,7 +37,8 @@ export type CodingToolName =
   | "GitCommit"
   | "RunCommand"
   | "RequestCapability"
-  | "Exec";
+  | "Exec"
+  | "Bash";
 
 /**
  * One declarative permission grant, as produced by resolvePermissions.
@@ -99,6 +110,13 @@ export interface ToolScope {
    * wildcard would silently cover the argv branch too.
    */
   readonly argvField?: string;
+  /**
+   * The input field holding a model-authored shell COMMAND STRING (`Bash`).
+   * A call carrying this field is evaluated per shell segment by
+   * `src/tools/policy-bash.ts` rather than by the verb or path branches; a
+   * tool declaring it must be granted explicitly, since no profile grants one.
+   */
+  readonly commandField?: string;
 }
 
 /**

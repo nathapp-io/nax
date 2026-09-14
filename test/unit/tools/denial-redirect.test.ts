@@ -155,7 +155,9 @@ describe("one table answers both entry points", () => {
 
   test("still says nothing for a shape no tool serves", () => {
     // Naming a tool that does not serve the intent is the defect this module
-    // exists to fix, so bash/mv/git restore stay unanswered on purpose.
+    // exists to fix, so mv and git restore stay unanswered on purpose. The
+    // `bash` row IS answered when, and only when, the session holds `Bash`;
+    // this fixture does not, so it returns undefined here too.
     expect(redirectForVerb("RunCommand", "bash", AVAILABLE, CMDS)).toBeUndefined();
     expect(redirectForArgv(["mv", "a.ts", "b.ts"], AVAILABLE, CMDS)).toBeUndefined();
     expect(redirectForVerb("Git", "restore", AVAILABLE, CMDS)).toBeUndefined();

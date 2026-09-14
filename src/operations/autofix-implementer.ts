@@ -41,6 +41,7 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
     "RunCommand",
     "GitCommit",
     "Exec",
+    "Bash",
     "RequestCapability",
   ],
   config: autofixConfigSelector,

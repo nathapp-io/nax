@@ -83,6 +83,10 @@ const TEST_SCOPED: Intent = {
   tool: "RunCommand:testScoped",
   how: 'RunCommand {"command":"testScoped"} runs the project test command on named files',
 };
+const BASH: Intent = {
+  tool: "Bash",
+  how: "Bash runs one shell command string, when a Bash(...) allow rule covers every segment of it",
+};
 
 /**
  * Commands whose intent the HEAD token alone decides.
@@ -96,6 +100,9 @@ const HEAD_INTENTS: ReadonlyMap<string, Intent> = new Map<string, Intent>([
   ["find", GLOB],
   ["grep", GREP],
   ["cat", READ],
+  ["bash", BASH],
+  ["sh", BASH],
+  ["zsh", BASH],
   // No tool counts lines, and Read with no offset/limit returns a byte-bounded
   // PREFIX -- so counting what it returns under-reports exactly the large files
   // the question gets asked about. Naming Read beats a bare refusal the model
@@ -217,6 +224,38 @@ export function redirectForArgv(
   if (ownedRunState !== undefined) return ownedRunState;
   const hit = intentFor(argv);
   if (hit === undefined) return taskRunnerFallback(argv, available, declaredCommands);
+  return render(hit, available, declaredCommands);
+}
+
+/**
+ * Name the tool that serves the intent behind a denied Bash COMMAND.
+ *
+ * Reads the first segment only: that is what the model reached for, and a
+ * later segment's intent is not what to teach when the call is refused. The
+ * split is deliberately its own crude one rather than the lexer's
+ * (`lexBashCommand`): a command REFUSED for an unanalysable construct must
+ * still get a redirect, and the lexer returns nothing to read in that case.
+ */
+export function redirectForCommand(
+  command: string,
+  available: ReadonlySet<string>,
+  declaredCommands: ReadonlySet<string>,
+): string | undefined {
+  const [first = ""] = command.split(/&&|\|\||;|\||\n/);
+  const tokens = first
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) return undefined;
+
+  const ownedRunState = naxOwnedRunStateExplanation(tokens);
+  if (ownedRunState !== undefined) return ownedRunState;
+
+  const hit = intentFor(tokens);
+  if (hit === undefined) return taskRunnerFallback(tokens, available, declaredCommands);
+  // Telling Bash it already has Bash reads as a contradiction of the denial —
+  // the same suppression redirectForVerb applies.
+  if (hit.tool === "Bash") return undefined;
   return render(hit, available, declaredCommands);
 }
 

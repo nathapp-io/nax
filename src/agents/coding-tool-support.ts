@@ -13,16 +13,21 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import {
   advertisedSchemaBytes,
+  BASH_TOOL_NAME,
   type CodingTool,
   type CodingToolName,
   type CodingToolRuntime,
   compileToolPolicy,
+  createBashTool,
   createCodingToolRuntime,
   createNoOpToolAuditSink,
   createRunCommandTool,
   createToolAuditSink,
   EXEC_TOOL_NAME,
+  expandMcpRuleGrants,
+  mcpRuleAdmits,
   narrowGrants,
+  partitionMcpRules,
   type ResolvedProviderTools,
   resolveProviderTools,
   type ToolAuditSink,
@@ -57,6 +62,8 @@ export function buildCodingToolSupport(args: {
   storyId?: string;
   declaredCommands?: ReadonlyMap<string, QualityCommandSpec>;
   stripEnvVars?: readonly string[];
+  /** `quality.shell` — the shell the Bash tool spawns. Defaults to /bin/sh. */
+  shell?: string;
   auditDir?: string;
   sessionName?: string;
   /** Manifest name of the member at `root`; see `resolvePackageName`. */
@@ -97,6 +104,24 @@ export function buildCodingToolSupport(args: {
   const execGrant = grants.findLast((grant) => grant.tool === EXEC_TOOL_NAME);
   const allowExec = args.declared.includes(EXEC_TOOL_NAME) && execGrant !== undefined;
   const advertised = args.declared.filter((name) => name !== EXEC_TOOL_NAME);
+
+  // Gated on DECLARATION ALONE — deliberately not on the grant.
+  //
+  // Declaration is the ceiling: a tool the runtime can LOOK UP is callable even
+  // when `advertised()` never returned it (callTool resolves the name before it
+  // consults advertisement), so a stage that grants Bash must not hand it to a
+  // reviewer op that never declared it (spec §6 row 11).
+  //
+  // But an op that DID declare it and holds no grant must be refused by the
+  // POLICY, not by a failed name lookup: "unknown tool" carries no redirect,
+  // and spec §6 row 1 requires the ungranted case to offer an alternative. So
+  // the tool is constructed either way; with no grant, `grantedTools()` still
+  // excludes it (never advertised, no schema cost in the prompt), yet the
+  // tool's EXISTENCE is what lets the call reach `policy.check` and be denied
+  // there -- and only that denial path (in `runtime.callTool`, using
+  // `denial-redirect.ts`) can attach a redirect.
+  const bashGrant = grants.findLast((grant) => grant.tool === BASH_TOOL_NAME);
+  const allowBash = args.declared.includes(BASH_TOOL_NAME);
 
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
   const sink =
@@ -147,6 +172,17 @@ export function buildCodingToolSupport(args: {
                     },
                   }
                 : {}),
+            }),
+          ]
+        : []),
+      ...(allowBash
+        ? [
+            createBashTool({
+              ...(args.shell !== undefined ? { shell: args.shell } : {}),
+              ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
+              // The compiled grant, so the description names what THIS stage
+              // may run rather than a generic sentence.
+              patterns: bashGrant?.patterns ?? [],
             }),
           ]
         : []),
@@ -219,7 +255,7 @@ export async function resolveCodingToolSupport(
   // widened locally here; the shared agentManagerConfigSelector stays untouched.
   const widenedConfig = options.config as
     | {
-        quality?: { commands?: Partial<Record<string, QualityCommandSpec>>; stripEnvVars?: unknown };
+        quality?: { commands?: Partial<Record<string, QualityCommandSpec>>; stripEnvVars?: unknown; shell?: unknown };
         // AgentManagerConfig (agentManagerConfigSelector) only picks
         // agent/execution/profile, so `install` is not in its type even
         // though both hops source this from the full NaxConfig at runtime
@@ -233,6 +269,7 @@ export async function resolveCodingToolSupport(
   const stripEnvVars = Array.isArray(quality?.stripEnvVars)
     ? quality.stripEnvVars.filter((value): value is string => typeof value === "string")
     : [];
+  const shell = typeof quality?.shell === "string" ? quality.shell : undefined;
   const allowScripts = widenedConfig?.install?.allowScripts ?? false;
   // `execution` is already in agentManagerConfigSelector's pick, so this
   // reads through the real (narrower) AgentRunOptions['config'] type -- no
@@ -270,24 +307,45 @@ export async function resolveCodingToolSupport(
   // configured provider would defeat config-only onboarding. `advertised()`
   // itself is unchanged — the names are appended to `declared` here.
   //
-  // The profile is the OTHER half, and it is not bypassed (R12): only the
-  // `unrestricted` profile (approve-all) grants provider tools. Under `safe`
-  // and `scoped` a provider contributes no tools, no grants and no map entry,
-  // so a configured — possibly untrusted `discovered` — tool can never be
-  // advertised or called outside the profile that opted into it. An
-  // empty/absent root already throws in buildCodingToolSupport, so skipping
-  // resolution there is correct; it also keeps a possibly-undefined root out of
-  // resolveProviderTools. This gate consumes the mode resolvePermissions
-  // already decided; it chooses none of it.
-  const providersPermitted = resolved.mode === "approve-all" && root !== undefined && root.trim() !== ""; // nax-permission-mode-allow: consumes the resolved mode, deciding nothing
-  const providerResult: ResolvedProviderTools = providersPermitted
-    ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root)
-    : {
-        tools: [],
-        grants: [],
-        failures: [] as readonly { providerId: string; reason: string }[],
-        providerIdByTool: new Map<string, string>(),
-      };
+  // The profile is the OTHER half, and it is not bypassed (R12): `scoped`
+  // admits exactly what the stage's `Mcp(...)` rules name — evaluated before a
+  // tool is adapted, so an unadmitted tool still contributes no tool, grant or
+  // map entry — while `safe` continues to contribute nothing at all and
+  // `unrestricted` keeps every attached provider. An empty/absent root already
+  // throws in buildCodingToolSupport, so skipping resolution there is correct;
+  // it also keeps a possibly-undefined root out of resolveProviderTools.
+  //
+  // Mcp(...) is surface syntax: partition it out BEFORE anything compiles a
+  // policy. A surviving {tool:"Mcp"} grant keys the compiled map on "Mcp",
+  // matches no advertised name and denies every call while every parser test
+  // stays green (provider-tools R3).
+  const allow = partitionMcpRules(resolved.toolGrants ?? []);
+  const denied = partitionMcpRules(resolved.denyRules ?? []);
+  const asked = partitionMcpRules(resolved.askRules ?? []);
+
+  // The root test is written inline rather than hoisted to a `hasRoot` boolean
+  // so TypeScript narrows `root` inside the branch — a hoisted flag would force
+  // an `as string` cast on a value the condition already proved.
+  const providerScope = resolved.providerScope ?? "none";
+  const providerResult: ResolvedProviderTools =
+    providerScope !== "none" && root !== undefined && root.trim() !== ""
+      ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root, {
+          // "all" keeps today's behaviour; "rules" admits only what the stage's
+          // Mcp rules name, evaluated before a tool is ever adapted.
+          ...(providerScope === "rules"
+            ? {
+                admits: (providerId: string, localName: string) =>
+                  mcpRuleAdmits(allow.mcpPatterns, providerId, localName),
+              }
+            : {}),
+        })
+      : {
+          tools: [],
+          grants: [],
+          failures: [] as readonly { providerId: string; reason: string }[],
+          providerIdByTool: new Map<string, string>(),
+          entries: [],
+        };
   const declaredWithProviders = [...declared, ...providerResult.tools.map((t) => t.name)] as readonly CodingToolName[];
   // Logged before the empty-union return: a provider-only op whose only
   // provider failed must still say so, not vanish silently. A no-op when
@@ -303,19 +361,25 @@ export async function resolveCodingToolSupport(
   // names, yet appending the provider names above is exactly what makes it a
   // real op. An empty union is the only case that yields no support.
   if (declaredWithProviders.length === 0) return undefined;
+  // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask rules are
+  // expanded even when providerScope is "all" — a deny must be able to withdraw
+  // one tool from an otherwise fully-granted provider.
+  const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
+  const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
-    grants: [...(resolved.toolGrants ?? []), ...providerResult.grants],
+    grants: [...allow.grants, ...providerResult.grants],
     declared: declaredWithProviders,
     extraTools: providerResult.tools,
     providerIdByTool: providerResult.providerIdByTool,
     ...(options.toolPatterns !== undefined ? { toolPatterns: options.toolPatterns } : {}),
-    ...(resolved.denyRules !== undefined ? { denyRules: resolved.denyRules } : {}),
-    ...(resolved.askRules !== undefined ? { askRules: resolved.askRules } : {}),
+    ...(denyRules.length > 0 ? { denyRules } : {}),
+    ...(askRules.length > 0 ? { askRules } : {}),
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     declaredCommands,
     stripEnvVars,
+    ...(shell !== undefined ? { shell } : {}),
     ...(auditDir !== undefined ? { auditDir } : {}),
     sessionName,
     ...(packageName !== undefined ? { packageName } : {}),

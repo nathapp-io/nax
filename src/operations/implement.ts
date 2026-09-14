@@ -54,6 +54,7 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
     "RunCommand",
     "GitCommit",
     "Exec",
+    "Bash",
     "RequestCapability",
   ],
   // Routing-driven: a literal profile pin selects its own agent's exact model;

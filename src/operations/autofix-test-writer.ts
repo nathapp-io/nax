@@ -38,6 +38,7 @@ export const testWriterRectifyOp: RunOperation<AutofixTestWriterInput, AutofixTe
     "RunCommand",
     "GitCommit",
     "Exec",
+    "Bash",
     "RequestCapability",
   ],
   config: autofixConfigSelector,

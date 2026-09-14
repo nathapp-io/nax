@@ -10,12 +10,13 @@
  * are one concern (reject-with-migration-hint) and change together.
  */
 
-import { RESERVED_TOOL_NAMES } from "@/tools";
+import { MCP_RULE_TOOL, RESERVED_TOOL_NAMES } from "@/tools";
 import { NaxError } from "../errors";
 // Leaf import — see config-warnings.ts's own header comment for why this must
 // not route through the `@/quality` barrel (config -> quality -> config cycle).
 import type { QualityCommandSpec } from "../quality/command-spec";
 import { collectCommandChainWarnings } from "./config-warnings";
+import { MCP_SERVER_ID_RE } from "./schemas-mcp";
 
 /**
  * @internal ADR-012 Phase 6 — reject pre-migration agent keys with a migration pointer.
@@ -325,6 +326,53 @@ function validateToolExpression(stage: string, expression: string, known: Set<st
       { stage: "config" },
     );
   }
+  if (tool === MCP_RULE_TOOL) validateMcpExpression(stage, expression);
+}
+
+/**
+ * @internal Validate one `Mcp(...)` expression. Extracted from
+ * `validateToolExpression` because the empty-list rules add a second concern
+ * (surface-shape) beside the per-pattern id check.
+ *
+ * An EMPTY pattern list is refused, never widened: `parseToolExpression`
+ * (`src/permissions/grammar.ts`) collapses an empty list to `["*"]`, so a bare
+ * `Mcp`, `Mcp()` or `Mcp(,)` left unchecked would silently admit every provider
+ * under `scoped` — the opposite of an allowlist. `Mcp(*)` stays valid because it
+ * names the wildcard explicitly.
+ */
+function validateMcpExpression(stage: string, expression: string): void {
+  const malformed = (detail: string): NaxError =>
+    new NaxError(
+      `Invalid configuration — execution.permissions.${stage} has a malformed Mcp pattern "${expression}". ${detail}`,
+      "CONFIG_PERMISSIONS_BAD_PATTERN",
+      { stage: "config" },
+    );
+
+  const open = expression.indexOf("(");
+  if (open === -1) {
+    throw malformed("A bare Mcp names no server; write Mcp(<serverId>) or Mcp(<serverId>:<tool>).");
+  }
+
+  const inner = expression.slice(open + 1, expression.lastIndexOf(")"));
+  const patterns = inner.split(",").map((entry) => entry.trim());
+  if (patterns.every((pattern) => pattern === "")) {
+    throw malformed("An empty Mcp names no server; under `scoped` it admits nothing, never everything.");
+  }
+
+  for (const pattern of patterns) {
+    if (pattern === "" || pattern === "*") continue;
+    const colon = pattern.indexOf(":");
+    const serverId = colon === -1 ? pattern : pattern.slice(0, colon);
+    const toolName = colon === -1 ? undefined : pattern.slice(colon + 1);
+    // The server id's SHAPE is checked; its existence is not. A config is
+    // shared across machines, so an unconfigured server is a resolve-time
+    // warning, never a load error. `__` is rejected too: it is the tool-name
+    // namespace separator, so a server id containing it can never match
+    // (McpServerIdSchema and validateProviderId reject it for the same reason).
+    if (!MCP_SERVER_ID_RE.test(serverId) || serverId.includes("__") || (toolName !== undefined && toolName === "")) {
+      throw malformed(`Expected Mcp(<serverId>) or Mcp(<serverId>:<tool>), server ids matching ${MCP_SERVER_ID_RE}.`);
+    }
+  }
 }
 
 /**
@@ -346,7 +394,10 @@ export function validatePermissionsBlock(conf: Record<string, unknown>): void {
     | undefined;
   if (!blocks) return;
 
-  const known = new Set<string>(RESERVED_TOOL_NAMES);
+  // `Mcp` is a PSEUDO-tool: it is expanded to concrete `<server>__<tool>`
+  // grants before compilation (src/tools/provider-grants.ts), so it is legal
+  // in a rule list even though no tool by that name is ever registered.
+  const known = new Set<string>([...RESERVED_TOOL_NAMES, MCP_RULE_TOOL]);
   for (const [stage, block] of Object.entries(blocks)) {
     if (block?.inherit !== undefined && typeof block.inherit === "string" && blocks[block.inherit] === undefined) {
       throw new NaxError(

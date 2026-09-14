@@ -39,8 +39,9 @@ validity is not activation — verify with the evidence checks below rather than
 > nax's own `.nax/config.json` is currently `"protocol": "acp"` / `"default": "claude"`.
 > Both blocks are configured there and are **dormant** until a run dispatches to native.
 
-Second gate, for MCP only: provider tools resolve **only** under the `unrestricted`
-permission profile. `safe` and `scoped` resolve no provider tools at all.
+Second gate, for MCP only: `unrestricted` resolves every attached provider; `scoped`
+resolves exactly the provider tools its stage's `Mcp(...)` rules name; `safe` resolves
+none. See the profile table in [Permissions](permissions.md#profiles).
 
 ---
 
@@ -151,7 +152,7 @@ be invoked once.
 | Server dies mid-hop | Call fails as data, not a throw; server marked dead, run continues. |
 | Call exceeds `timeoutMs` | Bounded and failed so a wedged server cannot consume the hop. |
 | Advertised tool absent from lockfile | Withheld — listed under `withheld` in the rollup. |
-| Permission profile not `unrestricted` | No provider tools resolve at all; no error. |
+| `safe` profile, or `scoped` with no matching `Mcp(...)` rule | No provider tools resolve; no error. |
 
 ---
 
@@ -280,7 +281,7 @@ them by `runId` or timestamp before comparing.
 | No `[provider] advertised` lines at all | Project dispatches to ACP | Set `agent.protocol: "hybrid"`, `agent.default: "native"` |
 | Server connects, zero tool calls | Model chose not to use it | Expected on small repos — `Grep` is cheaper there. Not a defect |
 | Tools never grantable | No lockfile, or tool absent from it | Run `nax mcp lock`, commit the result |
-| Provider tools silently absent | Permission profile not `unrestricted` | Set `execution.permissionProfile: "unrestricted"` |
+| Provider tools silently absent | `safe` profile, or `scoped` with no `Mcp(...)` rule naming them | Set `execution.permissionProfile: "unrestricted"`, or add the stage's `Mcp(...)` rule under `scoped` |
 | Server attaches to nothing | `stages: []`, or `stage:` typo | Set `stages` to real stage names or `["*"]` |
 | `rtk interceptor state` shows `version: null` | Binary not found or probe failed | `which rtk`; confirm `rtk gain` works (name collision) |
 | No state line at all | Config block missing | Add `execution.commandInterceptor` |

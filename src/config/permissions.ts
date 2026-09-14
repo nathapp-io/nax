@@ -46,6 +46,18 @@ export interface ResolvedPermissions {
   denyRules?: readonly ToolGrant[];
   /** Ask rules for the stage; resolved by an AskResolver at call time (spec R1). */
   askRules?: readonly ToolGrant[];
+  /**
+   * How far provider (MCP) tools reach for this stage (spec R7).
+   *
+   * `all` — every attached provider, as `unrestricted` has always had it.
+   * `rules` — only what the stage's `Mcp(...)` rules admit (`scoped`).
+   * `none` — no provider tools at all (`safe`, and the fail-closed arm).
+   *
+   * Decided here rather than by the consumer because `scoped` and `safe` both
+   * resolve to the same MODE, so no consumer can tell them apart — and this is
+   * a permission decision, which lives in this file by rule.
+   */
+  providerScope?: "all" | "rules" | "none";
 }
 
 /**
@@ -135,7 +147,19 @@ export const BUILT_IN_EXEC_PATTERNS: readonly string[] = [
   "cargo add*",
 ];
 
-/** Grants for a profile that imposes no per-stage policy. */
+/**
+ * Grants for a profile that imposes no per-stage policy.
+ *
+ * `Bash` is deliberately absent from every caller's tool list below, and has
+ * no built-in pattern list of its own (spec R4). `Exec` is excluded from the
+ * blanket `["*"]` and given BUILT_IN_EXEC_PATTERNS instead; Bash goes one
+ * further and is granted NOTHING anywhere — not under `unrestricted`, not
+ * derived from `quality.commands`. A model-authored shell command runs only
+ * where a human wrote a `Bash(...)` allow rule, which is the whole of
+ * ADR-029 §3's bargain. Adding "Bash" to any list here breaks that bargain
+ * and the deny suite (`test/integration/permissions/bash-deny-suite.test.ts`)
+ * fails on purpose if anyone does.
+ */
 function unconditionalGrants(tools: readonly string[]): ToolGrant[] {
   return tools.map((tool) =>
     tool === EXEC_TOOL_NAME ? { tool, patterns: BUILT_IN_EXEC_PATTERNS } : { tool, patterns: ["*"] },
@@ -207,6 +231,7 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
       return withRules(
         {
           mode: "approve-all",
+          providerScope: "all",
           toolGrants: unconditionalGrants([
             ...DEFAULT_CODING_TOOLS,
             "Write",
@@ -223,7 +248,7 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
       );
     case "safe":
       return withRules(
-        { mode: "approve-reads", toolGrants: unconditionalGrants(DEFAULT_CODING_TOOLS) },
+        { mode: "approve-reads", providerScope: "none", toolGrants: unconditionalGrants(DEFAULT_CODING_TOOLS) },
         stageRules(config, _stage),
       );
     case "scoped":
@@ -259,5 +284,5 @@ function resolveScopedPermissions(config: AgentManagerConfig | undefined, stage:
   // both a cycle and a dangling target at load, and falling through to
   // `default` remains the right failure even then -- fewer grants, never more,
   // and never a throw mid-run.
-  return withRules({ mode: "approve-reads", toolGrants: [] }, stageRules(config, stage));
+  return withRules({ mode: "approve-reads", providerScope: "rules", toolGrants: [] }, stageRules(config, stage));
 }

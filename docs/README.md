@@ -19,6 +19,7 @@ description: User guides, architecture references, and specs for nax
 | [CLI Reference](guides/cli-reference.md) | Complete `nax` CLI command reference |
 | [Configuration](guides/configuration.md) | Config file locations, key options, shell operator limitations, incl. [Autonomous Finish](guides/configuration.md#autonomous-finish-finish) (`finish.*` — review, verify and open a PR after a run) |
 | [Exec Allowlist](guides/exec-allowlist.md) | What an agent may execute via `RunCommand`'s argv branch — the default install-only list, writing an `Exec(...)` grant, and install hardening |
+| [Permissions](guides/permissions.md) | Profiles, per-stage allow/deny/ask rules, the expression grammar, Bash segment semantics, and what deliberately stays outside the permission subsystem |
 | [Hooks](guides/hooks.md) | Lifecycle hooks for notifications and CI triggers |
 | [MCP & Command Interception](guides/mcp-and-interception.md) | Attaching MCP servers as tools (`mcp`, `nax mcp lock`) and rewriting the `Git` tool through `rtk` (`execution.commandInterceptor`) — both native-agent only |
 | [Interaction Triggers](guides/triggers.md) | Interactive pause-and-prompt configuration |

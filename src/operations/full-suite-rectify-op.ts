@@ -38,7 +38,7 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
   // instructs the agent to commit. The repo-scoped strategy attributes changed
   // files via git diff itself (`_repoScopedFixDeps.captureWorkingTreeChanges`,
   // full-suite-rectify.ts) rather than trusting a self-reported commit.
-  tools: ["Read", "Glob", "Grep", "Write", "Edit", "Delete", "Git", "RunCommand", "Exec", "RequestCapability"],
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "Delete", "Git", "RunCommand", "Exec", "Bash", "RequestCapability"],
   config: autofixConfigSelector,
   // Inherit the story's rung so an escalation or a profile pin reaches the fix
   // cycle too — without this the op fell through to callOp's literal "balanced".

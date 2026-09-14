@@ -96,6 +96,7 @@ export const RESERVED_TOOL_NAMES: readonly CodingToolName[] = [
   "RunCommand",
   "RequestCapability",
   "Exec",
+  "Bash",
 ];
 
 const registry = new Map<string, CodingTool>();
