@@ -20,6 +20,11 @@
       "fast": "huggingface/MiniMaxAI/MiniMax-M2.7",
       "balanced": "huggingface/MiniMaxAI/MiniMax-M2.7",
       "powerful": "huggingface/MiniMaxAI/MiniMax-M2.7"
+    },
+    "native": {
+      "fast": "minimax/MiniMax-M2.7",
+      "balanced": "minimax/MiniMax-M3",
+      "powerful": "opencode-go/deepseek-v4-flash-0731[high]"
     }
   },
   "autoMode": {
@@ -58,13 +63,18 @@
     ]
   },
   "agent": {
-    "protocol": "acp",
-    "default": "claude",
+    "protocol": "hybrid",
+    "default": "native",
     "fallback": {
       "enabled": true,
       "map": {
         "claude": [
           "codex"
+        ],
+        "native": [
+          { "agent": "native", "model": "powerful" },
+          { "agent": "native", "model": "openrouter/z-ai/glm-5.3-flash[high]" },
+          "claude"
         ]
       },
       "maxHopsPerStory": 2,
@@ -176,7 +186,7 @@
       "codebase-memory": {
         "command": "codebase-memory-mcp",
         "stages": ["run"],
-        "allowedTools": ["search_graph", "trace_path", "get_code_snippet"]
+        "allowedTools": ["search_graph", "trace_path", "get_code_snippet", "get_architecture", "search_code", "detect_changes"]
       }
     }
   }
