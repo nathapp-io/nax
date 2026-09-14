@@ -53,6 +53,7 @@ export {
   _idleWatchdogDeps,
   attachAgentIdleWatchdog,
   attachAgentStreamLogging,
+  attachUsageAuditSubscriber,
   resolveIdleWatchdogSettings,
 } from "./middleware";
 export type { MutationOutcomeSummary, MutationStorySummary } from "./mutation-summary";
@@ -86,6 +87,8 @@ export {
   type SpinSummary,
   type SpinVerdict,
 } from "./spin-breaker";
+export type { IUsageAuditor, UsageAuditEntry } from "./usage-auditor";
+export { _usageAuditorDeps, createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";
 
 import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";

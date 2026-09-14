@@ -61,6 +61,9 @@ export function attachAgentStreamLogging(bus: IAgentStreamEventBus, runId: strin
         break;
       }
       case "agent.usage_update": {
+        // Activity counter only. The usage payload (tokens/cost/cache/roundTrip)
+        // belongs in the usage sidecar — `middleware/usage-audit.ts` — not the run
+        // log. Do not add it here; this counter is the idle watchdog's sibling.
         const state = activeCalls.get(event.callId);
         if (state) {
           state.usageUpdates++;
