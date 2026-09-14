@@ -3,7 +3,7 @@
   "feature": "cost-row-rate-provenance",
   "branchName": "feat/cost-row-rate-provenance",
   "createdAt": "2025-02-20T00:00:00.000Z",
-  "updatedAt": "2026-09-14T06:15:49.295Z",
+  "updatedAt": "2026-09-14T06:55:00.416Z",
   "userStories": [
     {
       "id": "US-001",
@@ -76,8 +76,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -134,7 +134,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "This is an additive optional-row schema change across the subscriber, aggregate type, version module, and existing configuration documentation."
+        "reasoning": "This is an additive optional-row schema change across the subscriber, aggregate type, version module, and existing configuration documentation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/middleware/cost.ts",
@@ -146,6 +149,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "1afce58b9c0955913ccd843c78c05bc6374b16f6",
       "outOfScope": [
         "US-003 only: rates and catalog version on error rows, deferred per the feature-level Out of Scope entry."
       ]
