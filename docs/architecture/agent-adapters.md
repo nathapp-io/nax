@@ -61,6 +61,8 @@ Resolution order:
 2. `execution.dangerouslySkipPermissions` → mapped: `true` → `"unrestricted"`, `false` → `"safe"`
 3. Neither set → defaults to `"safe"` (approve-reads)
 
+Per-stage `execution.permissions.<stage>` blocks now also carry `allow`, `deny`, and `ask` rule lists (tool expressions such as `Write(src/**)`), evaluated under every profile, not only `scoped`; precedence is `deny > ask > allow`, and `allowedTools` remains the legacy alias of `allow`. An `ask` match is resolved at call time through an injected `AskResolver` — a headless run refuses it, recording the ledger outcome `denied:ask`. Full design: `docs/superpowers/specs/2026-09-13-nax-native-permission-subsystem-design.md`.
+
 ### Pipeline Stages
 
 Every call to `resolvePermissions()` includes the pipeline stage:

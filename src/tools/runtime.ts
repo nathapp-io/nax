@@ -10,6 +10,8 @@
  */
 
 import { getSafeLogger } from "@/logger";
+import { ASK_UNAVAILABLE_REASON, type AskResolver, headlessAskResolver } from "@/permissions";
+import { errorMessage } from "@/utils/errors";
 import { deleteTool } from "./delete";
 import { redirectForArgv, redirectForVerb } from "./denial-redirect";
 import { editTool } from "./edit";
@@ -102,6 +104,12 @@ export function createCodingToolRuntime(opts: {
    * consults it.
    */
   denyPaths?: readonly string[];
+  /**
+   * Answers an `ask` verdict (spec R1/R6). Defaults to the headless resolver,
+   * which always denies: an unattended run has no human to approve. A runtime
+   * capability, not config — injected where the runtime is created.
+   */
+  askResolver?: AskResolver;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -111,6 +119,7 @@ export function createCodingToolRuntime(opts: {
   const sink = opts.sink ?? createNoOpToolAuditSink();
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
   const maxFileBytes = opts.maxFileBytes ?? DEFAULT_TOOL_MAX_FILE_BYTES;
+  const askResolver = opts.askResolver ?? headlessAskResolver();
   const granted = new Set(opts.policy.grantedTools());
 
   // What `advertised()` actually returned, so a denial can name only tools the
@@ -130,7 +139,7 @@ export function createCodingToolRuntime(opts: {
    */
   function log(
     tool: string,
-    outcome: CodingToolOutcome["kind"],
+    outcome: CodingToolOutcome["kind"] | "denied:ask",
     resultBytes: number,
     input: Record<string, unknown>,
     breach?: boolean,
@@ -144,7 +153,7 @@ export function createCodingToolRuntime(opts: {
     // spending an operator's attention on it. A breach is the one outcome that
     // can indicate prompt injection, so it alone reaches `error`.
     const level =
-      outcome === "denied"
+      outcome === "denied" || outcome === "denied:ask"
         ? breach === true
           ? "error"
           : "warn"
@@ -218,6 +227,68 @@ export function createCodingToolRuntime(opts: {
       const policyIdentity = hasArgv ? EXEC_TOOL_NAME : name;
 
       const verdict = opts.policy.check(policyIdentity, tool.scope, input);
+
+      /**
+       * Executes a permitted call and records its outcome. Shared by the
+       * ordinary allow path and an ask verdict an AskResolver approved, so an
+       * approved call behaves exactly as a grant would have.
+       */
+      async function runTool(
+        target: CodingTool,
+        callInput: Record<string, unknown>,
+        resolvedPaths: readonly string[],
+      ): Promise<CodingToolOutcome> {
+        try {
+          const result = await target.run(callInput, {
+            root: opts.policy.root,
+            resolvedPaths,
+            maxBytes,
+            maxFileBytes,
+            ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
+          });
+          const kind = result.isError === true ? "error" : "ok";
+          log(
+            policyIdentity,
+            kind,
+            result.content.length,
+            callInput,
+            false,
+            kind === "error" ? result.content : undefined,
+            target.routineErrors,
+            result.audit,
+            result.resultBytesPreTruncation,
+          );
+          return { kind, content: result.content };
+        } catch (err) {
+          const content = err instanceof Error ? err.message : String(err);
+          log(policyIdentity, "error", content.length, callInput, false, content, target.routineErrors);
+          return { kind: "error", content };
+        }
+      }
+
+      if (!verdict.allowed && verdict.outcome === "ask") {
+        let decision: "allow" | "deny";
+        try {
+          decision = await askResolver.resolve({
+            tool: policyIdentity,
+            stage: "unknown", // no stage in this layer; the ledger's session name carries role context
+            rule: verdict.rule ?? verdict.reason,
+            summary: `${policyIdentity} ${JSON.stringify(input).slice(0, 200)}`,
+          });
+        } catch (err) {
+          const content = errorMessage(err);
+          log(policyIdentity, "error", content.length, input, false, content);
+          return { kind: "error", content };
+        }
+        if (decision === "allow") {
+          // Approved: run with what the policy resolved for this call.
+          return runTool(tool, input, verdict.resolvedPaths ?? []);
+        }
+        const reason = `${verdict.reason} -- ${ASK_UNAVAILABLE_REASON}`;
+        log(policyIdentity, "denied:ask", reason.length, input, false, reason);
+        return { kind: "denied", reason, breach: false };
+      }
+
       if (!verdict.allowed) {
         if (verdict.breach) {
           // In band so an unattended run survives one bad path guess, but loud:
@@ -244,32 +315,7 @@ export function createCodingToolRuntime(opts: {
         return { kind: "denied", reason, breach: verdict.breach };
       }
 
-      try {
-        const result = await tool.run(input, {
-          root: opts.policy.root,
-          resolvedPaths: verdict.resolvedPaths,
-          maxBytes,
-          maxFileBytes,
-          ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
-        });
-        const kind = result.isError === true ? "error" : "ok";
-        log(
-          policyIdentity,
-          kind,
-          result.content.length,
-          input,
-          false,
-          kind === "error" ? result.content : undefined,
-          tool.routineErrors,
-          result.audit,
-          result.resultBytesPreTruncation,
-        );
-        return { kind, content: result.content };
-      } catch (err) {
-        const content = err instanceof Error ? err.message : String(err);
-        log(policyIdentity, "error", content.length, input, false, content, tool.routineErrors);
-        return { kind: "error", content };
-      }
+      return runTool(tool, input, verdict.resolvedPaths);
     },
   };
 }

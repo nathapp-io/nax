@@ -184,7 +184,12 @@ const PermissionBlockSchema = z
   .object({
     // Declares the vocabulary the SSOT resolver reads; decides nothing.
     mode: z.enum(["approve-all", "approve-reads", "scoped"]).optional(), // nax-permission-mode-allow: schema declares the field's accepted values, resolvePermissions decides
+    /** Legacy alias of `allow` (#374 shape). A block may carry one, never both. */
     allowedTools: z.array(z.string()).optional(),
+    /** Rule lists (spec 2026-09-13 §4 US-002). Precedence: deny > ask > allow. */
+    allow: z.array(z.string()).optional(),
+    deny: z.array(z.string()).optional(),
+    ask: z.array(z.string()).optional(),
     inherit: z.string().optional(),
   })
   .strict();

@@ -18,7 +18,7 @@ import { join } from "node:path";
 
 export interface ToolCallRecord {
   readonly tool: string;
-  readonly outcome: "ok" | "error" | "denied";
+  readonly outcome: "ok" | "error" | "denied" | "denied:ask";
   readonly breach?: boolean;
   readonly input: Record<string, unknown>;
   readonly resultBytes: number;

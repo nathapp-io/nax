@@ -105,10 +105,24 @@ export interface ToolScope {
  * `breach` separates "you may not write there" from "that path is not in this
  * repository at all". Both deny; only the latter is logged at warn, because a
  * path escaping the root can mean prompt injection.
+ *
+ * `outcome` makes the refusal three-state. "ask" means every OTHER gate passed
+ * and an ask rule matched -- an AskResolver may approve it (spec R1). Absent or
+ * "denied" is final. The ask shape is still `allowed: false` on purpose: any
+ * consumer that only reads `allowed` fails closed. `resolvedPaths` is present
+ * only with "ask", describing what an approval would admit.
  */
 export type PolicyVerdict =
   | { readonly allowed: true; readonly resolvedPaths: readonly string[] }
-  | { readonly allowed: false; readonly reason: string; readonly breach: boolean };
+  | {
+      readonly allowed: false;
+      readonly reason: string;
+      readonly breach: boolean;
+      readonly outcome?: "denied" | "ask";
+      readonly resolvedPaths?: readonly string[];
+      /** Present only with outcome "ask": the matching configured rule expression. */
+      readonly rule?: string;
+    };
 
 export interface ToolPolicy {
   readonly root: string;

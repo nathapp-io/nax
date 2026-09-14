@@ -414,3 +414,177 @@ describe("verb denial names what is permitted (#1971)", () => {
     expect(verdict.allowed === false && verdict.reason).toContain("no subcommands are permitted for this stage");
   });
 });
+
+/**
+ * Spec R6: deny > ask > allow, evaluated per branch. Containment is the one
+ * thing that outranks deny (a breach is not a policy decision). Nothing here
+ * consults an AskResolver yet -- `check()` only MARKS ask; Task 5 resolves it.
+ */
+describe("compileToolPolicy — deny rules (spec R6)", () => {
+  test("unconditional deny beats an unconditional allow, and de-advertises", () => {
+    const policy = compileToolPolicy([{ tool: "Delete", patterns: ["*"] }], root, {
+      denyRules: [{ tool: "Delete", patterns: ["*"] }],
+    });
+    const verdict = policy.check("Delete", PATH_SCOPE, { path: "src/x.ts" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.outcome).toBe("denied");
+    expect(policy.grantedTools()).not.toContain("Delete");
+  });
+
+  test("path-scoped deny refuses matching paths and leaves others allowed", () => {
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+      denyRules: [{ tool: "Read", patterns: [".env*"] }],
+    });
+    expect(policy.check("Read", PATH_SCOPE, { path: ".env.local" }).allowed).toBe(false);
+    expect(policy.check("Read", PATH_SCOPE, { path: "src/index.ts" }).allowed).toBe(true);
+    expect(policy.grantedTools()).toContain("Read"); // scoped deny does not de-advertise
+  });
+
+  test("verb deny refuses the verb, allows siblings", () => {
+    const verbScope: ToolScope = {
+      pathFields: [],
+      verbField: "subcommand",
+      allowedVerbs: ["diff", "log", "show"],
+    };
+    const policy = compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root, {
+      denyRules: [{ tool: "Git", patterns: ["show"] }],
+    });
+    expect(policy.check("Git", verbScope, { subcommand: "show" }).allowed).toBe(false);
+    expect(policy.check("Git", verbScope, { subcommand: "diff" }).allowed).toBe(true);
+  });
+});
+
+describe("compileToolPolicy — ask rules (spec R1/R6)", () => {
+  test("an unconditional ask gates a granted tool with no policy fields", () => {
+    const policy = compileToolPolicy([{ tool: "Glob", patterns: ["*"] }], root, {
+      askRules: [{ tool: "Glob", patterns: ["*"] }],
+    });
+
+    const verdict = policy.check("Glob", { pathFields: [] }, { pattern: "src/**" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.outcome).toBe("ask");
+  });
+
+  test("ask on a granted call yields outcome ask with resolvedPaths", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+      askRules: [{ tool: "Write", patterns: ["src/**"] }],
+    });
+    const verdict = policy.check("Write", PATH_SCOPE, { path: "src/x.ts" });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed === false) {
+      expect(verdict.outcome).toBe("ask");
+      expect(verdict.breach).toBe(false);
+      expect(verdict.resolvedPaths?.length).toBe(1);
+    }
+  });
+
+  test("deny beats ask on the same call", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+      denyRules: [{ tool: "Write", patterns: ["src/**"] }],
+      askRules: [{ tool: "Write", patterns: ["src/**"] }],
+    });
+    const verdict = policy.check("Write", PATH_SCOPE, { path: "src/x.ts" });
+    expect(verdict.allowed === false && verdict.outcome).toBe("denied");
+  });
+
+  test("ask does not grant: an ungranted tool with an ask rule stays plainly denied", () => {
+    const policy = compileToolPolicy([], root, { askRules: [{ tool: "Write", patterns: ["*"] }] });
+    const verdict = policy.check("Write", PATH_SCOPE, { path: "src/x.ts" });
+    expect(verdict.allowed === false && verdict.outcome).toBe("denied");
+  });
+
+  test("containment breach beats ask", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+      askRules: [{ tool: "Write", patterns: ["*"] }],
+    });
+    const verdict = policy.check("Write", PATH_SCOPE, { path: "../outside.ts" });
+    expect(verdict.allowed === false && verdict.breach).toBe(true);
+    expect(verdict.allowed === false && verdict.outcome).toBe("denied");
+  });
+
+  test("ask does not grant in-branch: an ungranted PATH under a granted tool stays plainly denied", () => {
+    // The tool is granted for src/** only; an ask on test/** must not widen the
+    // grant, so the allow check still rejects the path.
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root, {
+      askRules: [{ tool: "Write", patterns: ["test/**"] }],
+    });
+    const verdict = policy.check("Write", PATH_SCOPE, { path: "test/x.ts" });
+    expect(verdict.allowed === false && verdict.outcome).toBe("denied");
+    expect(policy.check("Write", PATH_SCOPE, { path: "src/x.ts" }).allowed).toBe(true);
+  });
+});
+
+/**
+ * The argv branch (Exec) has its own deny/ask evaluation, separate from the
+ * path branch: deny outranks ask and both match token-by-token. Untested before
+ * Task 7's coverage pass.
+ */
+describe("compileToolPolicy — deny/ask on the Exec argv branch (spec R6)", () => {
+  const ARGV_SCOPE: ToolScope = { pathFields: [], argvField: "argv" };
+
+  test("an argv deny refuses the matching form and allows the rest", () => {
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root, {
+      denyRules: [{ tool: "Exec", patterns: ["npm publish*"] }],
+    });
+    const denied = policy.check("Exec", ARGV_SCOPE, { argv: ["npm", "publish"] });
+    expect(denied.allowed === false && denied.outcome).toBe("denied");
+    expect(policy.check("Exec", ARGV_SCOPE, { argv: ["bun", "add", "x"] }).allowed).toBe(true);
+  });
+
+  test("an argv ask marks the call for approval with no resolved paths", () => {
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root, {
+      askRules: [{ tool: "Exec", patterns: ["npm publish*"] }],
+    });
+    const verdict = policy.check("Exec", ARGV_SCOPE, { argv: ["npm", "publish"] });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed === false) {
+      expect(verdict.outcome).toBe("ask");
+      expect(verdict.resolvedPaths).toEqual([]);
+    }
+  });
+});
+
+/**
+ * `compileRuleMap` MERGES rules for the same tool (patterns concatenated, any
+ * `"*"` making the entry unconditional). Unlike the allow compiler, it must
+ * never let a later rule silently drop an earlier one.
+ */
+describe("compileToolPolicy — deny/ask rules for one tool merge (spec Task 4)", () => {
+  test("two deny rules for one tool both keep applying", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+      denyRules: [
+        { tool: "Write", patterns: ["src/a*"] },
+        { tool: "Write", patterns: ["test/**"] },
+      ],
+    });
+    expect(policy.check("Write", PATH_SCOPE, { path: "src/a.ts" }).allowed).toBe(false);
+    expect(policy.check("Write", PATH_SCOPE, { path: "test/x.ts" }).allowed).toBe(false);
+    expect(policy.check("Write", PATH_SCOPE, { path: "docs/x.md" }).allowed).toBe(true);
+  });
+
+  test("a wildcard in ANY merged rule makes the entry unconditional", () => {
+    // Wildcard first: a last-write-wins compiler would keep the later scoped
+    // rule and leave Delete advertised. Merging must not.
+    const policy = compileToolPolicy([{ tool: "Delete", patterns: ["*"] }], root, {
+      denyRules: [
+        { tool: "Delete", patterns: ["*"] },
+        { tool: "Delete", patterns: ["src/**"] },
+      ],
+    });
+    expect(policy.grantedTools()).not.toContain("Delete");
+  });
+
+  test("reports the configured ask expression that matched", () => {
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+      askRules: [
+        { tool: "Read", patterns: ["src/**"] },
+        { tool: "Read", patterns: ["test/**"] },
+      ],
+    });
+
+    const verdict = policy.check("Read", { pathFields: ["path"] }, { path: "test/a.ts" });
+
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed === false) expect(verdict.rule).toBe("Read(test/**)");
+  });
+});
