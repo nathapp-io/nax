@@ -73,6 +73,13 @@ Notes from the loader and guards:
 
 ## The expression grammar
 
+In an **allow** list, each tool may appear once: the allow compiler is last-write-wins per
+tool, so `["Bash(a)", "Bash(b)"]` would grant only `b`. Write `Bash(a, b)`. `deny` and `ask`
+merge instead, so duplicates there are legal and additive.
+
+An **empty** pattern list is a load error for every tool: `Bash()` would otherwise read as
+`Bash(*)`. Write `Bash(*)` when that is what you mean, or a bare `Bash`.
+
 Every rule is a string. The tool name is everything before the first `(`; the parenthesised
 part is a comma-separated pattern list. Patterns match per token, not against a joined string.
 
@@ -153,8 +160,19 @@ not expressible in config and no profile widens it.
 **Refused outright — by name.** A payload the gate cannot read does not get a shell. These
 constructs are refused under any grant: command substitution `$(...)`, backtick substitution,
 here-documents `<<`, process substitution `<( )` / `>( )`, file-descriptor duplication
-(`2>&1`), the `&>` redirect form, unbalanced quotes, a trailing backslash, an empty segment,
-and a redirection with no target.
+(`2>&1`), the `&>` redirect form, subshells `( ... )`, a leading `!` negation, a `#` comment,
+an option-shaped `cd` target (`cd -`), unbalanced quotes, a trailing backslash, an empty
+segment, and a redirection with no target.
+
+Grouping and negation are on that list for a specific reason: they are shell syntax, so a
+lexer that folded them into word text would hand the policy a first token of `(rm` or `!`
+that no `Bash(rm*)` **deny** rule can match — while `/bin/sh` runs the `rm` regardless.
+
+**A deny rule matches the first token of a segment, not the process that ends up running.**
+`Bash(rm*)` refuses `rm -rf x`; it does not refuse `env rm -rf x`, `xargs rm`, or a script
+that calls `rm` itself. Deny rules narrow a broad allow rule for the cases you can name —
+they are not a containment boundary. Containment (the root, `.git/`) is, and it is not
+expressible in config.
 
 **Deny-all by default.** `Bash` is absent from the `unrestricted` blanket grant, has no
 built-in pattern list of its own, and derives nothing from `quality.commands`. A shell
@@ -199,6 +217,8 @@ dormant.
 
 ## See also
 
+- [The Bash Tool](bash-tool.md) — the task-oriented half: turning `Bash` on, writing rules,
+  what is refused and why.
 - [Exec Allowlist](exec-allowlist.md) — the `Exec` argv branch, its built-in install list and
   install hardening.
 - [MCP & Command Interception](mcp-and-interception.md) — attaching MCP servers and the `rtk`

@@ -380,6 +380,62 @@ describe("compileToolPolicy — .git/ is excluded at the resolveWithin seam", ()
   });
 });
 
+/**
+ * nax's own CONFIG files are refused to every path-bearing tool.
+ *
+ * `quality.commands` and `acceptance.command` are run by key through a shell
+ * and never pass the permission gate (spec R8) -- they are trusted because a
+ * human wrote them. That trust rests entirely on a model being unable to write
+ * them: an agent that can edit `.nax/config.json` can add a quality command and
+ * get an ungated shell on the next run, routing around every `Bash(...)` rule,
+ * the lexer's refusals and containment itself.
+ *
+ * Deliberately NARROW -- the config files only, not `.nax/` wholesale. The rest
+ * of `.nax/` is run state, specs and PRDs the agent legitimately reads, and
+ * refusing all of it would break ordinary work to close one hole.
+ */
+describe("compileToolPolicy — nax config files are excluded at the resolveWithin seam", () => {
+  test.each([".nax/config.json", ".nax/mono/api/config.json", ".nax/mono/web-app/config.json"])(
+    "resolveWithin denies %s even though it is inside root",
+    (candidate) => {
+      expect(resolveWithin(root, candidate)).toBeNull();
+    },
+  );
+
+  test.each([
+    ".nax/features/x/prd.json",
+    ".nax/features/x/spec.md",
+    ".nax/rules/project-conventions.md",
+    ".nax/context.md",
+    ".nax/mono/api/notes.md",
+    ".naxignore",
+    "src/.nax-helper.ts",
+    "docs/nax/config.json",
+  ])("resolveWithin still permits %s", (candidate) => {
+    expect(resolveWithin(root, candidate)).not.toBeNull();
+  });
+
+  test("check() denies .nax/config.json even under an unconditional '*' grant", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/config.json" }).allowed).toBe(false);
+  });
+
+  test("the denial names nax config, not a generic 'outside the root' claim", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    const verdict = policy.check("Write", PATH_SCOPE, { path: ".nax/config.json" });
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.reason).toContain("nax");
+      expect(verdict.reason).not.toContain("resolves outside the permitted root");
+    }
+  });
+
+  test("reads are refused too -- the file names what a later run will execute", () => {
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
+    expect(policy.check("Read", PATH_SCOPE, { path: ".nax/config.json" }).allowed).toBe(false);
+  });
+});
+
 describe("verb denial names what is permitted (#1971)", () => {
   const SCOPE: ToolScope = {
     pathFields: [],

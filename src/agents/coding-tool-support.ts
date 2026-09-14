@@ -78,6 +78,8 @@ export function buildCodingToolSupport(args: {
   denyRules?: readonly ToolGrant[];
   /** Stage ask rules (spec R1/R6); forwarded to `compileToolPolicy`. Bypasses `narrowGrants`. */
   askRules?: readonly ToolGrant[];
+  /** PipelineStage this support is built for; carried into every `AskRequest`. */
+  pipelineStage?: string;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -120,7 +122,12 @@ export function buildCodingToolSupport(args: {
   // tool's EXISTENCE is what lets the call reach `policy.check` and be denied
   // there -- and only that denial path (in `runtime.callTool`, using
   // `denial-redirect.ts`) can attach a redirect.
-  const bashGrant = grants.findLast((grant) => grant.tool === BASH_TOOL_NAME);
+  // Narrowed, not raw: `narrowGrants` is what the POLICY compiles, so reading
+  // the raw list here would name forms in the tool's description that the
+  // policy then refuses -- the wasted turn the `patterns` option exists to
+  // prevent, inverted.
+  const narrowedGrants = narrowGrants(grants, args.toolPatterns);
+  const bashGrant = narrowedGrants.findLast((grant) => grant.tool === BASH_TOOL_NAME);
   const allowBash = args.declared.includes(BASH_TOOL_NAME);
 
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
@@ -138,12 +145,13 @@ export function buildCodingToolSupport(args: {
   // stages from the git root) as its backstop -- see task-10-report.md.
   const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
-    policy: compileToolPolicy(narrowGrants(grants, args.toolPatterns), args.root, {
+    policy: compileToolPolicy(narrowedGrants, args.root, {
       execTouchedPaths,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
     }),
     declaredCommands: new Set(declaredCommands.keys()),
+    ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.denyPaths !== undefined ? { denyPaths: args.denyPaths } : {}),
     sink,
@@ -368,6 +376,7 @@ export async function resolveCodingToolSupport(
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
   return buildCodingToolSupport({
     root: options.codingToolRoot,
+    pipelineStage: options.pipelineStage ?? "run",
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
     grants: [...allow.grants, ...providerResult.grants],
     declared: declaredWithProviders,

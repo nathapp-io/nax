@@ -326,6 +326,29 @@ function validateToolExpression(stage: string, expression: string, known: Set<st
       { stage: "config" },
     );
   }
+  // An EMPTY list is refused for EVERY tool, never widened. `parseToolExpression`
+  // (`src/permissions/grammar.ts`) collapses an empty list to ["*"], so a typo'd
+  // `Bash()` loads clean and grants every shell command -- the exact widening
+  // validateMcpExpression already refuses, and Bash is where it costs most. A
+  // bare `Bash` with no parentheses stays valid: that names the wildcard by
+  // omitting the list, which is a thing a human writes on purpose. `Mcp` is
+  // excluded because validateMcpExpression owns its whole surface shape,
+  // including a bare `Mcp`, and says so in the vocabulary of servers.
+  if (
+    tool !== MCP_RULE_TOOL &&
+    open !== -1 &&
+    expression
+      .slice(open + 1, expression.lastIndexOf(")"))
+      .split(",")
+      .every((p) => p.trim() === "")
+  ) {
+    throw new NaxError(
+      `Invalid configuration — execution.permissions.${stage} has "${expression}", which names no pattern. ` +
+        `An empty list is read as every pattern; write ${tool}(*) if that is what you meant, or name the patterns.`,
+      "CONFIG_PERMISSIONS_BAD_PATTERN",
+      { stage: "config" },
+    );
+  }
   if (tool === MCP_RULE_TOOL) validateMcpExpression(stage, expression);
 }
 
@@ -451,6 +474,33 @@ export function validatePermissionsBlock(conf: Record<string, unknown>): void {
     for (const key of ["allowedTools", "allow", "deny", "ask"] as const) {
       const list = block?.[key];
       if (list === undefined || !Array.isArray(list)) continue;
+      // ALLOW only. `compileToolPolicy` is last-write-wins per tool, so two
+      // allow expressions naming one tool silently discard the first -- a live
+      // run granting `Bash(bun test *)` and `Bash(echo *)` reported "granted
+      // forms: echo *" and denied the test command. Deny and ask MERGE
+      // (`compileRuleMap`), so duplicates there are legal and mean what they say.
+      //
+      // Refused rather than merged: merging would change the verdict for any
+      // config already carrying two expressions for one tool, which the
+      // byte-identity regression gate pins. An error names the one-expression
+      // form instead, and loses no grant anyone can currently rely on.
+      if (key === "allow" || key === "allowedTools") {
+        const seenTools = new Set<string>();
+        for (const expression of list) {
+          if (typeof expression !== "string") continue;
+          const open = expression.indexOf("(");
+          const tool = (open === -1 ? expression : expression.slice(0, open)).trim();
+          if (seenTools.has(tool)) {
+            throw new NaxError(
+              `Invalid configuration — execution.permissions.${stage}.${key} names "${tool}" more than once. ` +
+                `Only the last expression would take effect; combine the patterns into one, e.g. ${tool}(a, b).`,
+              "CONFIG_PERMISSIONS_DUPLICATE_TOOL",
+              { stage: "config", tool },
+            );
+          }
+          seenTools.add(tool);
+        }
+      }
       for (const expression of list) {
         if (typeof expression !== "string") continue;
         validateToolExpression(stage, expression, known);

@@ -141,6 +141,37 @@ describe("validatePermissionsBlock — allow/deny/ask lists", () => {
     expect(() => validatePermissionsBlock(conf({ [key]: ["Write(src/**"] }))).toThrow(/unclosed pattern list/);
   });
 
+  test.each(["allow", "deny", "ask"] as const)("rejects an empty pattern list in %s", (key) => {
+    // `parseToolExpression` collapses an empty list to ["*"], so `Bash()` left
+    // unchecked is `Bash(*)` — the widening the Mcp validator already refuses.
+    expect(() => validatePermissionsBlock(conf({ [key]: ["Bash()"] }))).toThrow(/names no pattern/);
+  });
+
+  test.each(["Bash( )", "Bash(,)", "Write(,,)"])("rejects the whitespace-only pattern list %s", (expression) => {
+    expect(() => validatePermissionsBlock(conf({ allow: [expression] }))).toThrow(/names no pattern/);
+  });
+
+  test.each(["allow", "allowedTools"] as const)("rejects two %s expressions naming the same tool", (key) => {
+    // compileToolPolicy is last-write-wins per tool, so the FIRST expression is
+    // silently discarded. Caught by a live run: a config granting
+    // `Bash(bun test *)` and `Bash(echo *)` reported "granted forms: echo *".
+    expect(() => validatePermissionsBlock(conf({ [key]: ["Bash(bun test *)", "Bash(echo *)"] }))).toThrow(
+      /names "Bash" more than once/,
+    );
+  });
+
+  test("the merged single-expression form is accepted", () => {
+    expect(() => validatePermissionsBlock(conf({ allow: ["Bash(bun test *, echo *)"] }))).not.toThrow();
+  });
+
+  test.each(["deny", "ask"] as const)("still accepts duplicate %s expressions, which MERGE", (key) => {
+    expect(() => validatePermissionsBlock(conf({ [key]: ["Bash(rm *)", "Bash(curl *)"] }))).not.toThrow();
+  });
+
+  test("keeps accepting an explicit wildcard", () => {
+    expect(() => validatePermissionsBlock(conf({ allow: ["Bash(*)"] }))).not.toThrow();
+  });
+
   test("still validates the legacy allowedTools list", () => {
     expect(() => validatePermissionsBlock(conf({ allowedTools: ["Nope"] }))).toThrow(/unknown tool "Nope"/);
   });

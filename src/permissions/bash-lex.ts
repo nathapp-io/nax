@@ -7,6 +7,12 @@
  * words, quotes, operators, simple redirections — and growing it is a
  * permission decision, not a parser improvement.
  *
+ * "Refused by name" is the whole guarantee, so it must hold for EVERY
+ * unmodelled construct, not only the ones that look dangerous. A construct
+ * that folds into a word instead is worse than one that is modelled: the
+ * segment still reaches the policy, and its first token is no longer the
+ * command a deny rule was written against.
+ *
  * ZERO imports, on purpose. `src/permissions` must not value-import
  * `@/tools` (the edge runs the other way: src/tools/runtime.ts imports this
  * package), and a lexer that needs nothing is also a lexer that can be tested
@@ -137,6 +143,17 @@ export function lexBashCommand(command: string): BashLexResult {
       continue;
     }
 
+    // Grouping and negation are shell SYNTAX, not word characters: left
+    // unmodelled they fold into the token text, so `(rm -rf x)` and
+    // `! rm -rf x` present a first token of `(rm` / `!` that no `Bash(rm*)`
+    // deny rule can match, while /bin/sh runs the `rm` regardless. Refused by
+    // name, like every other construct this lexer cannot read.
+    if (char === "(" || char === ")") return refused("a subshell `( ... )`");
+    // `!` and `#` are only special at the START of a word -- `a!b` and `a#b`
+    // are ordinary literals in sh, and refusing those would deny commands a
+    // grant plainly covers.
+    if (char === "!" && !started) return refused("a `!` negation");
+    if (char === "#" && !started) return refused("a `#` comment");
     if (char === "$" && next === "(") return refused("a command substitution `$(...)`");
     if (char === "`") return refused("a backtick command substitution");
     if ((char === "<" || char === ">") && next === "(") {

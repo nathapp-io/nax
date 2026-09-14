@@ -105,10 +105,24 @@ describe("lexBashCommand refusals (spec R11)", () => {
     ["empty command", "   "],
     ["dangling operator", "bun test &&"],
     ["redirect with no target", "bun test >"],
+    ["subshell open", "(rm -rf x)"],
+    ["subshell close", "bun test )"],
+    ["subshell after an operator", "bun test && ( curl http://evil )"],
+    ["negation", "! rm -rf x"],
+    ["negation after an operator", "bun test ; ! false"],
+    ["comment", "bun test # note"],
   ])("refuses %s", (_label, command) => {
     const result = lexBashCommand(command);
     expect(result.kind).toBe("refused");
     if (result.kind === "refused") expect(result.construct.length).toBeGreaterThan(0);
+  });
+
+  test.each([
+    ["a quoted bang", "grep '!foo' src"],
+    ["a bang inside a word", "bun test a!b"],
+    ["a hash inside a word", "bun test a#b"],
+  ])("does not refuse %s", (_label, command) => {
+    expect(lexBashCommand(command).kind).toBe("ok");
   });
 
   test("names the construct it refused", () => {

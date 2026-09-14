@@ -23,11 +23,14 @@ import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
-import { EXEC_TOOL_NAME, type ToolPolicy } from "./types";
+import { EXEC_TOOL_NAME, type ToolPolicy, type ToolScope } from "./types";
 import { writeTool } from "./write";
 
 /** Per-call output ceiling, mirroring ToolDescriptor.maxTokensPerCall in spirit. */
 export const DEFAULT_TOOL_MAX_BYTES = 40_000;
+
+/** Ceiling for the one-line call description an AskResolver receives. */
+const MAX_ASK_SUMMARY_CHARS = 200;
 
 /**
  * Largest file a tool will read whole or write at all.
@@ -83,6 +86,27 @@ export function _resetBuiltinsForTest(): void {
   builtinsRegistered = false;
 }
 
+/**
+ * One human-readable line describing the call an `ask` rule matched.
+ *
+ * Built from the scope's DECLARED fields rather than from `JSON.stringify` of
+ * the whole input: the input carries a tool's full payload -- file contents on
+ * a Write, a commit message, whatever a provider tool takes -- and an
+ * AskResolver is by definition an outbound channel to a human. A summary is
+ * what approval needs; the payload is what the audit sink already holds.
+ */
+function askSummary(tool: string, scope: ToolScope, input: Record<string, unknown>): string {
+  const fields = [scope.commandField, scope.argvField, scope.verbField, ...scope.pathFields];
+  const parts: string[] = [];
+  for (const field of fields) {
+    if (field === undefined) continue;
+    const value = input[field];
+    if (typeof value === "string") parts.push(`${field}=${value}`);
+    else if (Array.isArray(value)) parts.push(`${field}=${value.filter((v) => typeof v === "string").join(" ")}`);
+  }
+  return `${tool} ${parts.join(" ")}`.trim().slice(0, MAX_ASK_SUMMARY_CHARS);
+}
+
 export function createCodingToolRuntime(opts: {
   policy: ToolPolicy;
   maxBytes?: number;
@@ -110,6 +134,13 @@ export function createCodingToolRuntime(opts: {
    * capability, not config — injected where the runtime is created.
    */
   askResolver?: AskResolver;
+  /**
+   * PipelineStage this runtime serves, carried verbatim into every
+   * `AskRequest`. A resolver decides on the stage as much as on the tool --
+   * "yes during rectification, no during review" is the first policy anyone
+   * writes -- so it is threaded in rather than defaulted at the call site.
+   */
+  pipelineStage?: string;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -271,9 +302,9 @@ export function createCodingToolRuntime(opts: {
         try {
           decision = await askResolver.resolve({
             tool: policyIdentity,
-            stage: "unknown", // no stage in this layer; the ledger's session name carries role context
+            stage: opts.pipelineStage ?? "unknown",
             rule: verdict.rule ?? verdict.reason,
-            summary: `${policyIdentity} ${JSON.stringify(input).slice(0, 200)}`,
+            summary: askSummary(policyIdentity, tool.scope, input),
           });
         } catch (err) {
           const content = errorMessage(err);

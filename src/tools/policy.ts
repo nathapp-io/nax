@@ -56,8 +56,38 @@ function entersGitMetadata(root: string, resolved: string): boolean {
 }
 
 /**
- * Absolute, symlink-resolved form of `candidate` if it lies inside `root`
- * and is not itself, or does not lie under, `.git/`.
+ * Is `resolved` one of nax's own CONFIG files, relative to `root`?
+ *
+ * `.nax/config.json`, and `.nax/mono/<package>/config.json` in a monorepo.
+ * Nothing else under `.nax/`: specs, PRDs, rules, context and run state are
+ * things an agent legitimately reads, and refusing them wholesale would break
+ * ordinary work to close one hole.
+ *
+ * Why these two at all: `quality.commands` and `acceptance.command` are run by
+ * key through a shell and never pass the permission gate (spec R8) -- they are
+ * trusted because a HUMAN wrote them. That trust rests entirely on a model
+ * being unable to write them. An agent holding `Write` under the default
+ * `unrestricted` profile could otherwise add a quality command and receive an
+ * ungated shell on the next run, routing around every `Bash(...)` rule, the
+ * lexer's construct refusals and containment itself.
+ *
+ * Segment-exact, never a prefix or substring match, for the same reason
+ * `entersGitMetadata` is: `.naxignore`, `docs/nax/config.json` and
+ * `.nax/mono/api/notes.md` are ordinary paths a tool must still reach.
+ */
+function isNaxConfigFile(root: string, resolved: string): boolean {
+  const rel = relative(realOrRaw(root), resolved);
+  if (rel === "" || rel.startsWith("..")) return false;
+  const segments = rel.split(sep);
+  if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
+  // `.nax/config.json` (2) or `.nax/mono/<package>/config.json` (4).
+  return segments.length === 2 || (segments.length === 4 && segments[1] === "mono");
+}
+
+/**
+ * Absolute, symlink-resolved form of `candidate` if it lies inside `root`,
+ * is not itself (and does not lie under) `.git/`, and is not one of nax's own
+ * config files.
  *
  * The single containment seam. Multi-root support (a future configurable
  * extension) changes this function and nothing else, which is why every tool
@@ -92,7 +122,8 @@ export function resolveWithin(root: string, candidate: string, execTouchedPaths?
   const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
   if (isInside(root, absolute)) {
     const resolved = realOrRaw(absolute);
-    return entersGitMetadata(root, resolved) ? null : resolved;
+    if (entersGitMetadata(root, resolved) || isNaxConfigFile(root, resolved)) return null;
+    return resolved;
   }
   const resolved = realOrRaw(absolute);
   if (execTouchedPaths?.some((touched) => realOrRaw(touched) === resolved)) return resolved;
@@ -248,6 +279,14 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    */
   function outOfRootReason(tool: string, root: string, candidate: string): string {
     const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
+    if (isInside(root, absolute) && isNaxConfigFile(root, realOrRaw(absolute))) {
+      return (
+        "is one of nax's own config files, which every tool is refused regardless of grant -- " +
+        "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
+        "permission gate because a human wrote them, so editing this file is a route to running " +
+        "an ungated command on the next run"
+      );
+    }
     if (isInside(root, absolute) && entersGitMetadata(root, realOrRaw(absolute))) {
       return (
         "targets git metadata under .git/, which every tool is refused regardless of grant -- " +

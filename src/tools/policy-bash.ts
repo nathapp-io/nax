@@ -107,10 +107,14 @@ function render(segment: BashSegment): string {
  * `realOrRaw` walks up to the nearest existing ancestor and never throws.
  */
 function containmentTarget(text: string): string {
-  const slash = text.indexOf("/");
-  if (slash === -1) return text;
+  // The value after `=` is the target whether or not it contains a separator:
+  // `--output-dir=..` escapes just as `--output-dir=../x` does, and reading the
+  // whole word instead resolves `<root>/--output-dir=..` -- a literal segment
+  // that is trivially inside the root while the command receives `..`.
   const equals = text.indexOf("=");
-  if (equals !== -1 && equals < slash) return text.slice(equals + 1);
+  const slash = text.indexOf("/");
+  if (equals !== -1 && (slash === -1 || equals < slash)) return text.slice(equals + 1);
+  if (slash === -1) return text;
   if (text.startsWith("-")) return text.slice(slash);
   return text;
 }
@@ -164,6 +168,14 @@ function checkPayload(
   if (words[0] === "cd") {
     const target = segment.tokens[1];
     if (target === undefined) return { refusal: deny("`cd` with no target is refused") };
+    // `cd -` returns to $OLDPWD and `cd -P x` puts the path in a later slot:
+    // both leave this branch tracking `<root>/-` as the new frame of reference
+    // while the shell is somewhere else. An option-shaped target is refused
+    // rather than modelled, for the same reason the lexer refuses a construct
+    // it cannot read.
+    if (target.text.startsWith("-")) {
+      return { refusal: deny(`cd target "${target.text}" is option-shaped, and this gate does not model it`) };
+    }
     const targets = resolveAll(args, target.text, cwd);
     if (target.opaque || targets === undefined)
       return { refusal: deny(`cd target "${target.text}" is not inside the permitted root`, true) };
