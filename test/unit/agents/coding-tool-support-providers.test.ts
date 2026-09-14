@@ -65,7 +65,9 @@ describe("resolveCodingToolSupport — provider gate (R12)", () => {
     expect(names(support)).not.toContain("acme__probe");
   });
 
-  test("does not advertise a provider tool under scoped", async () => {
+  test("does not advertise a provider tool under scoped with no Mcp rule", async () => {
+    // A stage WITH an Mcp(...) rule DOES get its provider tools under scoped —
+    // see test/unit/agents/mcp-under-scoped.test.ts.
     const support = await resolveCodingToolSupport({
       declaredTools: ["Read"],
       providers: [staticProvider()],

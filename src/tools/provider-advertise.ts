@@ -7,7 +7,7 @@
  */
 import type { PipelineStage } from "@/config/permissions";
 import { adaptProviderTool } from "./provider-adapt";
-import { expandProviderGrants } from "./provider-grants";
+import { expandProviderGrants, type ProviderGrantEntry } from "./provider-grants";
 import { sanitizeProviderTools } from "./provider-sanitize";
 import { providerAttachesTo, type ToolProvider } from "./provider-types";
 import type { CodingTool } from "./registry";
@@ -23,12 +23,27 @@ export interface ResolvedProviderTools {
    * convention change would otherwise break telemetry silently).
    */
   readonly providerIdByTool: ReadonlyMap<string, string>;
+  /**
+   * (providerId, localNames) pairs for the tools that survived sanitisation,
+   * the lock and `allowedTools`. Exposed because `Mcp(server:tool)` rules must
+   * be matched against the LOCAL name, and `<id>__<local>` is never parsed
+   * back apart (src/tools/provider-adapt.ts's header).
+   */
+  readonly entries: readonly ProviderGrantEntry[];
 }
 
 export async function resolveProviderTools(
   providers: readonly ToolProvider[],
   stage: PipelineStage,
   workdir: string,
+  options?: {
+    /**
+     * Narrows which discovered tools are advertised at all. Applied HERE, not
+     * after the fact: a tool a scoped stage did not admit must never be
+     * adapted, advertised or granted (spec US-006).
+     */
+    readonly admits?: (providerId: string, localName: string) => boolean;
+  },
 ): Promise<ResolvedProviderTools> {
   const tools: CodingTool[] = [];
   const entries: { providerId: string; localNames: string[] }[] = [];
@@ -41,6 +56,7 @@ export async function resolveProviderTools(
       const sanitized = sanitizeProviderTools(provider.kind, await provider.tools(workdir));
       const localNames: string[] = [];
       for (const tool of sanitized) {
+        if (options?.admits !== undefined && !options.admits(provider.id, tool.localName)) continue;
         const adapted = adaptProviderTool(provider.id, tool);
         tools.push(adapted);
         providerIdByTool.set(adapted.name, provider.id);
@@ -52,7 +68,7 @@ export async function resolveProviderTools(
     }
   }
 
-  return { tools, grants: expandProviderGrants(entries), failures, providerIdByTool };
+  return { tools, grants: expandProviderGrants(entries), failures, providerIdByTool, entries };
 }
 
 /**
