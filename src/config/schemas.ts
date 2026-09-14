@@ -343,6 +343,7 @@ export const NaxConfigSchema = z
         maxNudges: 3,
         stopAfterRepeats: 50,
         recentKeyWindow: 64,
+        stopAfterSameKeyRepeats: 12,
       },
     }),
     precheck: PrecheckConfigSchema.optional().default({

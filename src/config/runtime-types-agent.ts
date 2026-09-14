@@ -126,6 +126,12 @@ export interface AgentSpinBreakerConfig {
   stopAfterRepeats?: number;
   /** How many recent distinct keys count as already seen (default: 64) */
   recentKeyWindow?: number;
+  /**
+   * Cumulative repeats of the same call (counted across all interleavings)
+   * at which the turn ends (nax#2047). 0 disables the cumulative check.
+   * @default 12
+   */
+  stopAfterSameKeyRepeats?: number;
 }
 
 /** Agent protocol configuration (ACP-003) */

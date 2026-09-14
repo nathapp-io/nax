@@ -11,6 +11,7 @@ describe("selectSpinBreakerSettings", () => {
       maxNudges: 3,
       stopAfterRepeats: 50,
       recentKeyWindow: 64,
+      stopAfterSameKeyRepeats: 12,
     });
   });
 

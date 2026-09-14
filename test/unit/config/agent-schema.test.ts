@@ -319,7 +319,7 @@ describe("AgentConfigSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  test("agent.spinBreaker applies all five documented defaults from an empty config", () => {
+  test("agent.spinBreaker applies all six documented defaults from an empty config", () => {
     const result = NaxConfigSchema.parse({});
     expect(result.agent?.spinBreaker).toEqual({
       enabled: true,
@@ -327,6 +327,7 @@ describe("AgentConfigSchema", () => {
       maxNudges: 3,
       stopAfterRepeats: 50,
       recentKeyWindow: 64,
+      stopAfterSameKeyRepeats: 12,
     });
   });
 });

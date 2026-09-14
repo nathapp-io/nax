@@ -265,12 +265,14 @@ export const DEFAULT_AGENT_SPIN_BREAKER_CONFIG: {
   maxNudges: number;
   stopAfterRepeats: number;
   recentKeyWindow: number;
+  stopAfterSameKeyRepeats: number;
 } = {
   enabled: true,
   nudgeAfterRepeats: 25,
   maxNudges: 3,
   stopAfterRepeats: 50,
   recentKeyWindow: 64,
+  stopAfterSameKeyRepeats: 12,
 };
 
 const AgentSpinBreakerConfigSchema = z
@@ -280,6 +282,12 @@ const AgentSpinBreakerConfigSchema = z
     maxNudges: z.number().int().min(1).max(10).default(3),
     stopAfterRepeats: z.number().int().min(3).max(1000).default(50),
     recentKeyWindow: z.number().int().min(2).max(1024).default(64),
+    /**
+     * nax#2047: cumulative per-key repeat threshold. Closes the laundering
+     * hole where one interleaving call resets `repeatsSinceProgress` and
+     * lets the same shape run forever. 0 disables the cumulative check.
+     */
+    stopAfterSameKeyRepeats: z.number().int().min(0).max(1000).default(12),
   })
   // A stop at or below the first nudge point would end turns with no warning
   // ever reaching the model, which is the opposite of the breaker's contract.
