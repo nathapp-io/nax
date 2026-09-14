@@ -19,7 +19,7 @@ import { getSafeLogger } from "@/logger";
 // pattern as src/review/runner and src/execution/helpers. That promotion is
 // what lets this avoid widening the session -> runtime barrel import surface
 // (project-conventions.md's cycle-avoidance escape hatch).
-import { createSpinBreaker, type ResolvedSpinBreakerSettings } from "@/runtime/spin-breaker";
+import type { SpinBreaker } from "@/runtime/spin-breaker";
 import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
 import {
   applyCompaction,
@@ -111,10 +111,9 @@ export interface TurnDeps {
    */
   sleep?: (ms: number) => Promise<void>;
   /**
-   * Resolved repetition-breaker settings (nax#2013). Absent disables the
-   * breaker — the pre-#2013 behaviour of an unbounded call count.
+   * Live repetition-breaker instance (nax#2013, session-lifetime since #2047). Absent disables the breaker.
    */
-  spinBreaker?: ResolvedSpinBreakerSettings;
+  spinBreaker?: SpinBreaker;
 }
 
 /**
@@ -206,7 +205,7 @@ export async function runNativeTurn(
   let timedOut = false;
   const interactions: InteractionExchange[] = [];
 
-  const spinBreaker = deps.spinBreaker !== undefined ? createSpinBreaker(deps.spinBreaker) : undefined;
+  const spinBreaker = deps.spinBreaker;
   // Set ONLY when the breaker ended the turn, so the wiring layer can classify
   // it as `fail-spin` rather than a generic incomplete turn.
   let spinStopped = false;

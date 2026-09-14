@@ -6,7 +6,7 @@ import { nativeTranscriptDirs } from "@/agents/native/session/session";
 import { loadTranscript } from "@/agents/native/session/transcript-store";
 import { runNativeTurn, type TurnDeps } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
-import { DEFAULT_SPIN_BREAKER_SETTINGS } from "@/runtime/spin-breaker";
+import { createSpinBreaker, DEFAULT_SPIN_BREAKER_SETTINGS } from "@/runtime/spin-breaker";
 
 let dir: string;
 const handle = { id: "sess-spin", agentName: "native" } as const;
@@ -69,7 +69,12 @@ describe("runNativeTurn — spin breaker", () => {
 
     const result = await runTurnWithSpin({
       complete,
-      spinBreaker: { ...DEFAULT_SPIN_BREAKER_SETTINGS, nudgeAfterRepeats: 3, stopAfterRepeats: 6, maxNudges: 1 },
+      spinBreaker: createSpinBreaker({
+        ...DEFAULT_SPIN_BREAKER_SETTINGS,
+        nudgeAfterRepeats: 3,
+        stopAfterRepeats: 6,
+        maxNudges: 1,
+      }),
     });
 
     expect(result.spinStopped).toBe(true);
@@ -87,7 +92,12 @@ describe("runNativeTurn — spin breaker", () => {
         costUsd: 0,
       }),
       onToolResult: (content: string) => toolResults.push(content),
-      spinBreaker: { ...DEFAULT_SPIN_BREAKER_SETTINGS, nudgeAfterRepeats: 2, stopAfterRepeats: 5, maxNudges: 1 },
+      spinBreaker: createSpinBreaker({
+        ...DEFAULT_SPIN_BREAKER_SETTINGS,
+        nudgeAfterRepeats: 2,
+        stopAfterRepeats: 5,
+        maxNudges: 1,
+      }),
     });
 
     const nudged = toolResults.find((content) => content.includes("repeating work already done"));
@@ -109,7 +119,12 @@ describe("runNativeTurn — spin breaker", () => {
           costUsd: 0,
         };
       },
-      spinBreaker: { ...DEFAULT_SPIN_BREAKER_SETTINGS, nudgeAfterRepeats: 2, stopAfterRepeats: 4, maxNudges: 1 },
+      spinBreaker: createSpinBreaker({
+        ...DEFAULT_SPIN_BREAKER_SETTINGS,
+        nudgeAfterRepeats: 2,
+        stopAfterRepeats: 4,
+        maxNudges: 1,
+      }),
     });
 
     expect(result.spinStopped).toBeUndefined();
