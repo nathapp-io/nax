@@ -3,7 +3,7 @@
   "feature": "cost-row-rate-provenance",
   "branchName": "feat/cost-row-rate-provenance",
   "createdAt": "2025-02-20T00:00:00.000Z",
-  "updatedAt": "2026-09-14T05:58:34.847Z",
+  "updatedAt": "2026-09-14T06:15:49.295Z",
   "userStories": [
     {
       "id": "US-001",
@@ -27,8 +27,8 @@
         "api"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -83,7 +83,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "This spans two adapter implementations, session output construction, public result types, and dispatch transport, with tiered production-path seams rather than mock injection."
+        "reasoning": "This spans two adapter implementations, session output construction, public result types, and dispatch transport, with tiered production-path seams rather than mock injection.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/session-types.ts",
@@ -94,7 +97,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "eed7041d19557b497ff526dd50b1b9c7212a5059"
     },
     {
       "id": "US-003",
