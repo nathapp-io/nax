@@ -19,9 +19,30 @@
 
 import type { Catalog, RawProvider } from "@nathapp/nax-ai";
 import { defaultProviders, normaliseCatalog } from "@nathapp/nax-ai";
+import catalogPkg from "@nathapp/nax-ai/package.json";
 import type { TokenPricing } from "@/config/schema-types";
 
 export type { TokenPricing };
+
+/**
+ * Version of the pinned `@nathapp/nax-ai` catalog package, inlined at
+ * build time from its `package.json`. Re-exported via `src/version.ts`
+ * because `scripts/check-nax-ai-imports.ts` forbids the catalog's package
+ * import outside `src/agents/catalog/` (the `exports` map on nax-ai
+ * declares only the package root, so this read is the only path; the
+ * bundler inlines the file as a constant).
+ *
+ * `undefined` when the catalog pin is unreadable at build time — the
+ * dependency's `package.json` is missing, the file cannot be parsed, or
+ * its `version` field is empty/missing/non-string. A cost row omits
+ * `catalogVersion` in that case rather than recording an empty or
+ * placeholder string (`catalogVersion: ""` would falsely imply a catalog
+ * origin). US-003 AC12.
+ */
+export const CATALOG_VERSION: string | undefined = (() => {
+  const v = (catalogPkg as { version?: unknown }).version;
+  return typeof v === "string" && v.length > 0 ? v : undefined;
+})();
 
 /** Injectable seams — tests replace these to drive `lookupPricing` deterministically. */
 export interface CatalogDeps {

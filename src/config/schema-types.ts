@@ -61,6 +61,17 @@ export interface TokenPricingTier {
 export interface ModelDef {
   provider: string;
   model: string;
+  /**
+   * Per-1M rate override applied wholesale when this `ModelDef` is the
+   * resolved model for a call. The override is treated as time-invariant:
+   * every dispatch resolves to the same `TokenPricing`, and a `costUsd`
+   * computed from it stays valid for the row's lifetime. A provider whose
+   * real rate card varies by time of day, weekday, or any other predicate
+   * (peak/off-peak, etc.) cannot be expressed here — that work is out of
+   * scope for US-003 (#2021's active half stays open). Operators needing a
+   * time-varying rate must reconstruct the post-hoc spend from the
+   * recorded token totals rather than rely on `costUsd`.
+   */
   pricing?: TokenPricing;
   /**
    * Overrides nax-ai's `ResolvedModel.contextWindow` (nax#1848). Never sent
