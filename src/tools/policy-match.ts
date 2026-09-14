@@ -70,6 +70,8 @@ export interface CompiledEntry {
   readonly matchers: CompiledPattern[];
   readonly argvPatterns: readonly (readonly CompiledPattern[])[];
   readonly raw: readonly string[];
+  /** Patterns grouped by their original rule expression for ask telemetry. */
+  readonly rulePatterns?: readonly (readonly string[])[];
 }
 
 export function matchesAny(patterns: readonly CompiledPattern[], value: string): boolean {
@@ -130,9 +132,15 @@ export function compileRuleMap(rules: readonly ToolGrant[] | undefined): Map<str
       matchers: nonWildcard.map((source) => ({ source, re: globToRegExp(source) })),
       argvPatterns: nonWildcard.map((source) => compileArgvPattern(source)),
       raw: patterns,
+      rulePatterns: [...(existing?.rulePatterns ?? []), rule.patterns],
     });
   }
   return map;
+}
+
+/** The configured expression-group containing a matched pattern, if any. */
+export function matchedRulePatterns(entry: CompiledEntry, source: string): readonly string[] {
+  return entry.rulePatterns?.find((patterns) => patterns.includes(source)) ?? entry.raw;
 }
 
 /** The original pattern whose tokens matched `argv`, for naming an ask rule. */

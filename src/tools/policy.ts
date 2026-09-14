@@ -24,6 +24,9 @@ import {
   compileArgvPattern,
   compileRuleMap,
   globToRegExp,
+  matchedArgvSource,
+  matchedGlobSource,
+  matchedRulePatterns,
   matchesAny,
   matchesArgvGrant,
 } from "./policy-match";
@@ -205,8 +208,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
   }
 
   /** `Tool` for an unconditional entry, else `Tool(pattern, ...)`. */
-  function ruleExpr(tool: string, entry: CompiledEntry): string {
-    return entry.unconditional ? tool : `${tool}(${entry.raw.join(", ")})`;
+  function ruleExpr(tool: string, entry: CompiledEntry, source?: string): string {
+    const patterns = source === undefined ? entry.raw : matchedRulePatterns(entry, source);
+    return patterns.includes("*") ? tool : `${tool}(${patterns.join(", ")})`;
   }
 
   /**
@@ -277,7 +281,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       return deny(`${tool} path "${rel}" is denied for this stage`);
     }
     if (askEntry !== undefined && (askEntry.unconditional || matchesAny(askEntry.matchers, rel))) {
-      state.ask = ruleExpr(tool, askEntry);
+      state.ask = ruleExpr(tool, askEntry, askEntry.unconditional ? "*" : matchedGlobSource(askEntry.matchers, rel));
     }
     return undefined;
   }
@@ -320,7 +324,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     }
     const askEntry = askBy.get(tool);
     if (askEntry !== undefined && (askEntry.unconditional || matchesArgvGrant(askEntry.argvPatterns, argv))) {
-      return askVerdict([], ruleExpr(tool, askEntry));
+      return askVerdict([], ruleExpr(tool, askEntry, askEntry.unconditional ? "*" : matchedArgvSource(askEntry, argv)));
     }
     return { allowed: true, resolvedPaths: [] };
   }
@@ -372,7 +376,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
     const askEntry = askBy.get(tool);
     if (askEntry !== undefined && (askEntry.unconditional || askEntry.raw.includes(verb))) {
-      state.ask = ruleExpr(tool, askEntry);
+      state.ask = ruleExpr(tool, askEntry, askEntry.unconditional ? "*" : verb);
     }
     return undefined;
   }

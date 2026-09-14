@@ -11,6 +11,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { ASK_UNAVAILABLE_REASON, type AskResolver, headlessAskResolver } from "@/permissions";
+import { errorMessage } from "@/utils/errors";
 import { deleteTool } from "./delete";
 import { redirectForArgv, redirectForVerb } from "./denial-redirect";
 import { editTool } from "./edit";
@@ -266,12 +267,19 @@ export function createCodingToolRuntime(opts: {
       }
 
       if (!verdict.allowed && verdict.outcome === "ask") {
-        const decision = await askResolver.resolve({
-          tool: policyIdentity,
-          stage: "unknown", // no stage in this layer; the ledger's session name carries role context
-          rule: verdict.rule ?? verdict.reason,
-          summary: `${policyIdentity} ${JSON.stringify(input).slice(0, 200)}`,
-        });
+        let decision: "allow" | "deny";
+        try {
+          decision = await askResolver.resolve({
+            tool: policyIdentity,
+            stage: "unknown", // no stage in this layer; the ledger's session name carries role context
+            rule: verdict.rule ?? verdict.reason,
+            summary: `${policyIdentity} ${JSON.stringify(input).slice(0, 200)}`,
+          });
+        } catch (err) {
+          const content = errorMessage(err);
+          log(policyIdentity, "error", content.length, input, false, content);
+          return { kind: "error", content };
+        }
         if (decision === "allow") {
           // Approved: run with what the policy resolved for this call.
           return runTool(tool, input, verdict.resolvedPaths ?? []);

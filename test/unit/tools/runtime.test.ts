@@ -142,6 +142,19 @@ describe("callTool — ask resolution (spec US-007)", () => {
     expect(request?.rule).toBe("Read(file.txt)");
   });
 
+  test("contains a rejecting ask resolver as a tool error", async () => {
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Read", patterns: ["*"] }],
+      }),
+      askResolver: { resolve: () => Promise.reject(new Error("approval backend offline")) },
+    });
+
+    const outcome = await runtime.callTool("Read", { path: "file.txt" });
+
+    expect(outcome).toEqual({ kind: "error", content: "approval backend offline" });
+  });
+
   test("plain denials never consult the resolver", async () => {
     let consulted = 0;
     const counting: AskResolver = {

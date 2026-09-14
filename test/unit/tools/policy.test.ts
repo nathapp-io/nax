@@ -573,4 +573,18 @@ describe("compileToolPolicy — deny/ask rules for one tool merge (spec Task 4)"
     });
     expect(policy.grantedTools()).not.toContain("Delete");
   });
+
+  test("reports the configured ask expression that matched", () => {
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+      askRules: [
+        { tool: "Read", patterns: ["src/**"] },
+        { tool: "Read", patterns: ["test/**"] },
+      ],
+    });
+
+    const verdict = policy.check("Read", { pathFields: ["path"] }, { path: "test/a.ts" });
+
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed === false) expect(verdict.rule).toBe("Read(test/**)");
+  });
 });
