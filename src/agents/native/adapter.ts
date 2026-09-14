@@ -9,7 +9,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { estimateCostUsd } from "@/agents/cost";
+import { estimateCostUsd, priceCall } from "@/agents/cost";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
@@ -192,6 +192,12 @@ export class NativeAgentAdapter implements AgentAdapter {
       const tokenUsage = toNaxTokenUsage(result.usage);
       const catalog = client.pricing(resolved);
       const { rates, source: pricingSource } = buildRateCard(catalog, options.modelDef.pricing);
+      // US-002: stamp the effective `priceCall`-resolved rates so the cost
+      // subscriber can record the same numbers whose arithmetic reproduces
+      // `estimatedCostUsd`. The native path prices unconditionally — even
+      // a zero-token call carries `rates`, so a downstream cost row never
+      // has to guess what priced a no-spend dispatch.
+      const { resolvedRates } = priceCall(tokenUsage, rates);
 
       return {
         output: result.text,
@@ -208,6 +214,9 @@ export class NativeAgentAdapter implements AgentAdapter {
         // truth — the same override !== undefined predicate the rate card was
         // chosen on, reported rather than re-derived by the cost subscriber.
         pricingSource,
+        // US-002: the four per-1M rates that priced this call. See
+        // CompleteResult.rates above.
+        rates: resolvedRates,
       };
     } catch (err) {
       // Returned, not rethrown: rethrowing routes through

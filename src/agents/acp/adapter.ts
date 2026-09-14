@@ -11,10 +11,9 @@
  * See: docs/specs/acp-session-mode.md
  */
 
-import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { ProtocolIds } from "@/runtime/protocol-types";
-import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
+import type { ITokenUsageMapper, TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostUsd } from "../cost";
 import { createTurnDeadline } from "../turn-deadline";
 import type {
@@ -28,14 +27,13 @@ import type {
   SessionHandle,
   TurnResult,
 } from "../types";
-import { CompleteError, SessionTurnError } from "../types";
+import { SessionTurnError } from "../types";
 import { closePhysicalSession as closePhysicalSessionImpl } from "./adapter-close-physical";
+import { runCompleteFlow } from "./adapter-complete-flow";
 import {
   _acpAdapterDeps,
-  _fallbackDeps,
   AcpSessionHandleImpl,
   closeAcpSession,
-  computeAcpHandle,
   ensureAcpSession,
   raceWithAbort,
   runSessionPrompt,
@@ -44,7 +42,6 @@ import {
 } from "./adapter-lifecycle";
 import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
 import { resolveRegistryEntry } from "./agent-entries";
-import { classifyCompleteError, classifyParsedAgentError } from "./parse-agent-error";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";
 import type { SessionTokenUsage } from "./wire-types";
 
@@ -62,7 +59,12 @@ export {
   runSessionPrompt,
 } from "./adapter-lifecycle";
 export type { BuildTurnResultInput } from "./adapter-output";
-export { buildContextToolPreamble, buildRunInteractionHandler, buildTurnResult } from "./adapter-output";
+export {
+  buildContextToolPreamble,
+  buildRunInteractionHandler,
+  buildTurnResult,
+  deriveTokenUsage,
+} from "./adapter-output";
 export type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,165 +115,20 @@ export class AcpAgentAdapter implements AgentAdapter {
     return {};
   }
 
-  /**
-   * Token/cost math shared by complete()'s success and cancelled-but-billable
-   * paths. US-002: prices from the resolved rate card rather than the model
-   * string, so both paths bill on the card `complete()` resolved once.
-   */
-  private deriveTokenUsage(
-    wire: SessionTokenUsage | undefined,
-    rateCard: RateCard,
-  ): { tokenUsage: TokenUsage; estimatedCostUsd: number } {
-    const tokenUsage = wire ? this._mapper.toInternal(wire) : { inputTokens: 0, outputTokens: 0 };
-    const estimatedCostUsd =
-      tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 ? estimateCostUsd(tokenUsage, rateCard.rates) : 0;
-    return { tokenUsage, estimatedCostUsd };
-  }
-
-  async complete(prompt: string, _options: ResolvedCompleteOptions): Promise<CompleteResult> {
-    const timeoutMs = _options.timeoutMs ?? 120_000;
-    const permissionMode = _options.resolvedPermissions.mode;
-    const workdir = _options.workdir;
+  async complete(prompt: string, options: ResolvedCompleteOptions): Promise<CompleteResult> {
     // US-002: resolve the rate card ONCE per complete() call. Both the success
     // and the cancelled-but-billable path price from it, and its `source`
-    // becomes CompleteResult.pricingSource.
-    const rateCard = await _acpAdapterDeps.resolveRateCard(_options.modelDef.model);
-
-    // Attempt one call with the given agent; throws on any error
-    const tryOneAgent = async (agentName: string): Promise<CompleteResult> => {
-      const cmdStr = `acpx --model ${_options.modelDef.model} ${agentName}`;
-      const timeoutSeconds = Math.ceil(timeoutMs / 1000);
-      const client = _acpAdapterDeps.createClient(
-        cmdStr,
-        workdir,
-        timeoutSeconds,
-        _options.onPidSpawned,
-        _options.promptRetries,
-        _options.onPidExited,
-        {
-          onStreamActivity: _options.onStreamActivity,
-          onActiveCall: _options.onActiveCall,
-          trackedSpawnDeadlineMs: _options.trackedSpawnDeadlineMs,
-          trackedSpawnStartupDeadlineMs: _options.trackedSpawnStartupDeadlineMs,
-          env: _options.modelDef.env,
-        },
-      );
-      await client.start();
-
-      let session: import("./adapter-session-types").AcpSession | null = null;
-      try {
-        const completeSessionName =
-          _options.sessionName ??
-          computeAcpHandle(workdir, _options.featureName, _options.storyId, _options.sessionRole);
-        session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
-
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new NaxError("complete() timed out", "AGENT_TIMEOUT", { stage: "acp", timeoutMs })),
-            timeoutMs,
-          );
-        });
-        timeoutPromise.catch(() => {});
-
-        let response: import("./adapter-session-types").AcpSessionResponse;
-        try {
-          const promptPromise = session.prompt(prompt);
-          promptPromise.catch(() => {});
-          response = await Promise.race([promptPromise, timeoutPromise]);
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-        if (response.stopReason === "error") {
-          if (response.cancelled) {
-            // BUG-57: still count tokens burned before the cancel, not zero.
-            const usage = this.deriveTokenUsage(response.cumulative_token_usage, rateCard);
-            return {
-              output: "",
-              ...usage,
-              exactCostUsd: response.exactCostUsd,
-              cancelled: true,
-              pricingSource: rateCard.source,
-            };
-          }
-          // BUG-1: surface parsed error text (retryable preserved as-is). LOW: truncate to 500 chars.
-          const errSuffix = response.error ? `: ${response.error.slice(0, 500)}` : "";
-          throw new CompleteError(`complete() failed: stop reason is error${errSuffix}`, undefined, response.retryable);
-        }
-
-        const text = response.messages
-          .filter((m) => m.role === "assistant")
-          .map((m) => m.content)
-          .join("\n")
-          .trim();
-
-        let unwrapped = text;
-        try {
-          const envelope = JSON.parse(text) as Record<string, unknown>;
-          if (envelope?.type === "result" && typeof envelope?.result === "string") {
-            unwrapped = envelope.result;
-          }
-        } catch {
-          // Not an envelope — use text as-is
-        }
-
-        if (!unwrapped) {
-          throw new CompleteError("complete() returned empty output");
-        }
-
-        const { tokenUsage, estimatedCostUsd } = this.deriveTokenUsage(response.cumulative_token_usage, rateCard);
-        const exactCostUsd = response.exactCostUsd;
-
-        if (exactCostUsd !== undefined) {
-          getSafeLogger()?.info("acp-adapter", "complete() cost", {
-            costUsd: exactCostUsd,
-            model: _options.modelDef.model,
-          });
-        }
-
-        return {
-          output: unwrapped,
-          tokenUsage,
-          estimatedCostUsd,
-          exactCostUsd,
-          // US-002: the card's branch, reported rather than re-derived from the
-          // model string. A wire-exact cost still outranks it at the cost-row
-          // level (the middleware's "wire" branch); the producer does not strip
-          // the field.
-          pricingSource: rateCard.source,
-        };
-      } finally {
-        if (session) {
-          // Always force-terminate on the complete-path: each complete() opens its
-          // own session and never reuses it, so the queue-owner has no work to amortize.
-          // Graceful close leaves the queue-owner alive until TTL — long enough to be
-          // orphaned if the user quits nax (or hits Ctrl+C) before the TTL elapses.
-          await session.close({ forceTerminate: true }).catch(() => {});
-        }
-        await client.close().catch(() => {});
-      }
-    };
-
-    try {
-      return await tryOneAgent(this.name);
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      // US-002: both degraded paths carry the card resolved above — zero cost,
-      // but still the card this call would have billed on. Without it the cost
-      // row falls back to resolvePricingSource(model), a different card.
-      if (error instanceof CompleteError) {
-        const classified = classifyCompleteError(error, rateCard.source);
-        if (classified) return classified;
-      }
-      const degraded = classifyParsedAgentError(
-        _fallbackDeps.parseAgentError(error.message),
-        error.message,
-        rateCard.source,
-      );
-      if (degraded) return degraded;
-      throw err;
-    }
+    // becomes CompleteResult.pricingSource. The flow itself lives in
+    // `adapter-complete-flow.ts` (file-size split, see project conventions).
+    const rateCard = await _acpAdapterDeps.resolveRateCard(options.modelDef.model);
+    return runCompleteFlow({
+      adapter: this,
+      prompt,
+      options,
+      mapper: this._mapper,
+      rateCard,
+      createClient: _acpAdapterDeps.createClient,
+    });
   }
 
   async closePhysicalSession(

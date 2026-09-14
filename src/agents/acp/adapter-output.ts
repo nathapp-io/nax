@@ -4,10 +4,11 @@
  */
 
 import type { ToolDescriptor } from "@/context/engine";
-import type { RateCard, TokenUsage } from "../cost";
-import { estimateCostUsd } from "../cost";
+import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
+import { estimateCostUsd, priceCall } from "../cost";
 import type { AgentRunOptions, InteractionExchange, TurnResult } from "../types";
 import type { AcpSessionResponse } from "./adapter-session-types";
+import type { SessionTokenUsage } from "./wire-types";
 
 const CONTEXT_TOOL_CALL_PATTERN = /<nax_tool_call\s+name="([^"]+)">\s*([\s\S]*?)\s*<\/nax_tool_call>/i;
 
@@ -218,6 +219,39 @@ export interface BuildTurnResultInput {
 }
 
 /**
+ * Token/cost math shared by complete()'s success and cancelled-but-billable
+ * paths. US-002: prices from the resolved rate card rather than the model
+ * string, so both paths bill on the card `complete()` resolved once.
+ *
+ * US-002: also stamps `rates` (the post-tier, post-fallback
+ * `ResolvedRates`) onto the returned shape whenever nonzero usage let
+ * `priceCall` run. Zero usage skips pricing entirely — the field is
+ * omitted (not set to undefined, not zeroed) so the nonzero-usage guard
+ * stays visible to the downstream cost subscriber.
+ *
+ * Extracted from `adapter.ts` so the body of `complete()` could move under
+ * the file-size cap — the helper has no `this` dependency.
+ */
+export function deriveTokenUsage(
+  wire: SessionTokenUsage | undefined,
+  rateCard: RateCard,
+  mapper: ITokenUsageMapper<SessionTokenUsage>,
+): {
+  tokenUsage: TokenUsage;
+  estimatedCostUsd: number;
+  rates: ReturnType<typeof priceCall>["resolvedRates"] | undefined;
+} {
+  const tokenUsage = wire ? mapper.toInternal(wire) : { inputTokens: 0, outputTokens: 0 };
+  const nonzeroUsage = tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0;
+  const estimatedCostUsd = nonzeroUsage ? estimateCostUsd(tokenUsage, rateCard.rates) : 0;
+  // US-002: same nonzero-usage guard as the cost itself. `rates` is only
+  // populated when pricing ran, so the field's absence encodes
+  // "did not price".
+  const rates = nonzeroUsage ? priceCall(tokenUsage, rateCard.rates).resolvedRates : undefined;
+  return { tokenUsage, estimatedCostUsd, rates };
+}
+
+/**
  * Build a `TurnResult` from the accumulated session-turn bookkeeping.
  * Extracted from `AcpAgentAdapter.sendTurn()` so the timeout transport fact
  * (`timedOut`) is set in exactly one place (US-001 AC1/AC2/AC3).
@@ -230,11 +264,18 @@ export interface BuildTurnResultInput {
  * `pricingSource` reports `rateCard.source`. `exactCostUsd` is untouched by
  * the card — a wire-reported cost passes through unchanged, and the cost
  * middleware is what decides "wire" wins over the card's source.
+ *
+ * US-002: `rates` is the post-tier, post-fallback `ResolvedRates` returned
+ * by `priceCall`. The field is OMITTED (not undefined, not zeroed) when
+ * the accumulated tokens are zero, so the nonzero-usage guard stays visible
+ * to the cost subscriber — "did not price" and "priced at zero" stay
+ * distinguishable on the result.
  */
 export function buildTurnResult(input: BuildTurnResultInput): TurnResult {
   const { lastResponse, totalTokenUsage, totalExactCostUsd, turnCount, interactions, timedOut, rateCard } = input;
   const output = timedOut ? "" : extractOutput(lastResponse);
   const hasUsage = totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0;
+  const rates = hasUsage ? priceCall(totalTokenUsage, rateCard.rates).resolvedRates : undefined;
   return {
     output,
     tokenUsage: totalTokenUsage,
@@ -244,5 +285,8 @@ export function buildTurnResult(input: BuildTurnResultInput): TurnResult {
     ...(interactions.length > 0 ? { interactions } : {}),
     timedOut,
     pricingSource: rateCard.source,
+    // US-002: forward the four per-1M rates that priced the turn. Omitted
+    // when the nonzero-usage guard skipped pricing — see comment above.
+    ...(rates !== undefined ? { rates } : {}),
   };
 }
