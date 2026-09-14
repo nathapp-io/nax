@@ -20,7 +20,19 @@ import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
 export type NativeTurnActivity =
   | { kind: "message"; bytes: number }
   | { kind: "thinking"; bytes: number }
-  | { kind: "usage"; inputTokens: number; outputTokens: number; costUsd: number }
+  | {
+      kind: "usage";
+      inputTokens: number;
+      outputTokens: number;
+      costUsd: number;
+      /** Absent when the round trip reported no cache data — never coerced to 0. */
+      cacheRead?: number;
+      /** Absent when the round trip reported no cache data — never coerced to 0. */
+      cacheWrite?: number;
+      /** 1-based ordinal of the round trip this beat covers. Absent on a
+       *  compaction-summary or retry beat, which are not round-trip boundaries. */
+      roundTrip?: number;
+    }
   | { kind: "tool"; toolName: string };
 
 export interface NativeStreamEventBase {
@@ -30,6 +42,13 @@ export interface NativeStreamEventBase {
   readonly sessionName: string;
   readonly storyId?: string;
   readonly stage?: import("@/config").PipelineStage;
+  /**
+   * The transcript/ledger join key (`transcript.owner` = `ledger.scopeId`),
+   * forwarded from the native session's owner map. Absent when the session was
+   * opened without a `transcriptOwner` — absent reads as "unknown". Never the
+   * stream-local `callId`.
+   */
+  readonly scopeId?: string;
 }
 
 export function buildNativeStreamEvent(
@@ -50,10 +69,14 @@ export function buildNativeStreamEvent(
         inputTokens: activity.inputTokens,
         outputTokens: activity.outputTokens,
         costUsd: activity.costUsd,
-        // Native emits exactly one usage report per round trip, so this event
-        // is a round-trip marker, not semantic progress — see the field's doc
-        // comment on AgentUsageUpdateEvent (nax#2013).
-        perRoundTrip: true,
+        ...(activity.cacheRead !== undefined ? { cacheRead: activity.cacheRead } : {}),
+        ...(activity.cacheWrite !== undefined ? { cacheWrite: activity.cacheWrite } : {}),
+        // Only a real round-trip boundary may claim `perRoundTrip` and an
+        // ordinal: the compaction-summary and transport-retry beats are usage
+        // events too, but they are not round trips (nax#2013, nax#2045). The
+        // cadence is still nax's own loop even on those beats.
+        ...(activity.roundTrip !== undefined ? { roundTrip: activity.roundTrip, perRoundTrip: true as const } : {}),
+        cadence: "round-trip",
       };
     case "tool":
       return { ...common, kind: "agent.tool_call_update", toolName: activity.toolName };

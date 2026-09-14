@@ -292,4 +292,45 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
       detach();
     }
   });
+
+  test("a native compaction/retry usage beat (no perRoundTrip) resets the semantic clock", async () => {
+    // nax#2045: buildNativeStreamEvent now sets perRoundTrip only on real
+    // round-trip beats. A compaction-summary (turn-loop.ts:288-293, :372-377)
+    // or transport-retry zero-beat (:349) is emitted with no flag, so the
+    // watchdog must read it as semantic progress and push the tool-call-only
+    // cap out — not as a round-trip boundary.
+    const eventBus = new AgentStreamEventBus();
+    const { registry, count } = makeCountingRegistry();
+    const detach = attachAgentIdleWatchdog(
+      eventBus,
+      registry,
+      makeWatchdogConfig({ idleTimeoutSeconds: 0.2, toolCallOnlyIdleTimeoutSeconds: 0.6 }),
+    );
+
+    try {
+      eventBus.emitAgentStream(makeCallStartedEvent());
+      // 250ms of tool-call-only activity: the semantic clock stays at 0, so the
+      // 600ms cap would fire at t=600ms if nothing ever reset it.
+      for (let elapsed = 0; elapsed < 250; elapsed += 25) {
+        eventBus.emitAgentStream(makeToolCallUpdateEvent());
+        await clock.advance(25);
+      }
+
+      // The compaction/retry beat: no perRoundTrip -> semantic progress. It
+      // resets lastNonToolCallActivityAt to t=250, moving the cap to t=850ms.
+      eventBus.emitAgentStream(makeUsageUpdateEvent());
+      for (let elapsed = 0; elapsed < 450; elapsed += 25) {
+        eventBus.emitAgentStream(makeToolCallUpdateEvent());
+        await clock.advance(25);
+      }
+
+      // t=700ms: past the un-reset 600ms cap, inside the reset 850ms window.
+      expect(count()).toBe(0);
+      await getLogger().flush();
+      const entries = await parseAllEntries(logFile);
+      expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(false);
+    } finally {
+      detach();
+    }
+  });
 });

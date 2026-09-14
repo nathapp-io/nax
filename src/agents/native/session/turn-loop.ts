@@ -148,6 +148,12 @@ function isContextOverflow(err: unknown): boolean {
   const { protocolError } = err as { protocolError?: { kind?: unknown } };
   return protocolError?.kind === "context-overflow";
 }
+function cacheUsageFields(usage: TokenUsage): { cacheRead?: number; cacheWrite?: number } {
+  return {
+    ...(usage.cacheReadInputTokens !== undefined ? { cacheRead: usage.cacheReadInputTokens } : {}),
+    ...(usage.cacheCreationInputTokens !== undefined ? { cacheWrite: usage.cacheCreationInputTokens } : {}),
+  };
+}
 
 export async function runNativeTurn(
   handle: SessionHandle,
@@ -290,6 +296,7 @@ export async function runNativeTurn(
               inputTokens: summary.usage.inputTokens,
               outputTokens: summary.usage.outputTokens,
               costUsd: summary.costUsd,
+              ...cacheUsageFields(summary.usage),
             });
             // The anchor described the pre-compaction array; it is meaningless now.
             lastUsage = undefined;
@@ -374,6 +381,7 @@ export async function runNativeTurn(
             inputTokens: summary.usage.inputTokens,
             outputTokens: summary.usage.outputTokens,
             costUsd: summary.costUsd,
+            ...cacheUsageFields(summary.usage),
           });
           lastUsage = undefined;
           anchorIndex = undefined;
@@ -409,6 +417,12 @@ export async function runNativeTurn(
         inputTokens: res.usage.inputTokens,
         outputTokens: res.usage.outputTokens,
         costUsd: res.costUsd,
+        // Absent stays absent (never 0): `cacheReadInputTokens` stays
+        // `number | undefined` so "no cache data" and "zero cache tokens"
+        // remain distinguishable downstream (nax#2045).
+        ...cacheUsageFields(res.usage),
+        // 1-based; `roundTrips` is incremented above, before this beat fires.
+        roundTrip: roundTrips,
       });
       if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
       if (res.thinking !== undefined && res.thinking.length > 0) {

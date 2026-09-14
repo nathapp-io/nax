@@ -68,6 +68,32 @@ describe("mergePackageConfig — agent section", () => {
     expect(result.agent?.promptAudit?.dir).toBe("/root/audit"); // root dir preserved
   });
 
+  test("deep-merges agent.usageAudit: enables usage audit for a package (#2045)", () => {
+    const root = makeRoot();
+    const result = mergePackageConfig(root, {
+      agent: { usageAudit: { enabled: true, dir: "/tmp/usage" } },
+    });
+    expect(result.agent?.usageAudit?.enabled).toBe(true);
+    expect(result.agent?.usageAudit?.dir).toBe("/tmp/usage");
+  });
+
+  test("deep-merges agent.usageAudit: override enabled only, dir fallback from root (#2045)", () => {
+    const root = {
+      ...makeRoot(),
+      agent: {
+        protocol: "acp" as const,
+        maxInteractionTurns: 10,
+        promptAudit: { enabled: false },
+        usageAudit: { enabled: false, dir: "/root/usage" },
+      },
+    };
+    const result = mergePackageConfig(root, {
+      agent: { usageAudit: { enabled: true } },
+    });
+    expect(result.agent?.usageAudit?.enabled).toBe(true);
+    expect(result.agent?.usageAudit?.dir).toBe("/root/usage"); // root dir preserved
+  });
+
   test("returns root.agent unchanged when packageOverride has no agent field", () => {
     const root = makeRoot();
     const result = mergePackageConfig(root, { quality: { commands: { test: "npm test" } } } as Partial<NaxConfig>);

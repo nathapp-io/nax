@@ -11,3 +11,4 @@ export {
 } from "./idle-watchdog";
 export { attachLoggingSubscriber } from "./logging";
 export { attachReviewAuditSubscriber } from "./review-audit";
+export { attachUsageAuditSubscriber } from "./usage-audit";

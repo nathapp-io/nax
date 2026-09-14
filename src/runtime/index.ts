@@ -53,6 +53,7 @@ export {
   _idleWatchdogDeps,
   attachAgentIdleWatchdog,
   attachAgentStreamLogging,
+  attachUsageAuditSubscriber,
   resolveIdleWatchdogSettings,
 } from "./middleware";
 export type { MutationOutcomeSummary, MutationStorySummary } from "./mutation-summary";
@@ -86,8 +87,10 @@ export {
   type SpinSummary,
   type SpinVerdict,
 } from "./spin-breaker";
+export type { IUsageAuditor, UsageAuditEntry } from "./usage-auditor";
+export { _usageAuditorDeps, createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";
 
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
@@ -122,6 +125,7 @@ import {
   attachCostSubscriber,
   attachLoggingSubscriber,
   attachReviewAuditSubscriber,
+  attachUsageAuditSubscriber,
   cancellationMiddleware,
 } from "./middleware";
 import type { MutationStorySummary } from "./mutation-summary";
@@ -131,6 +135,8 @@ import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
 import { createSessionRunHop } from "./session-run-hop";
+import type { IUsageAuditor } from "./usage-auditor";
+import { createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";
 
 export interface NaxRuntime {
   readonly runId: string;
@@ -145,6 +151,7 @@ export interface NaxRuntime {
   readonly sessionManager: ISessionManager;
   readonly costAggregator: ICostAggregator;
   readonly promptAuditor: IPromptAuditor;
+  readonly usageAuditor: IUsageAuditor;
   readonly reviewAuditor: IReviewAuditor;
   readonly dispatchEvents: IDispatchEventBus;
   readonly agentStreamEvents: IAgentStreamEventBus;
@@ -268,6 +275,7 @@ export interface CreateRuntimeOptions {
   agentManager?: IAgentManager;
   costAggregator?: ICostAggregator;
   promptAuditor?: IPromptAuditor;
+  usageAuditor?: IUsageAuditor;
   reviewAuditor?: IReviewAuditor;
   /**
    * Feature name — used as a subdirectory under the audit dir so each feature
@@ -326,6 +334,27 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const reviewAuditor =
     opts?.reviewAuditor ??
     (config.review?.audit?.enabled ? new ReviewAuditor(runId, outputDir) : createNoOpReviewAuditor());
+
+  // Usage sidecar. Two deliberate departures from promptAudit above: no
+  // `featureName` gate (enabled is enough — the ad-hoc runs most worth
+  // measuring have no feature name), and a flat `usage/<runId>.jsonl` layout
+  // (matching `cost/<runId>.jsonl`), since there is no feature to nest under.
+  const usageEnabled = config.agent?.usageAudit?.enabled ?? false;
+  const configuredUsageDir = config.agent?.usageAudit?.dir;
+  const usageDir =
+    configuredUsageDir === undefined
+      ? join(outputDir, "usage")
+      : isAbsolute(configuredUsageDir)
+        ? configuredUsageDir
+        : resolve(workdir, configuredUsageDir);
+  let usageAuditor: IUsageAuditor;
+  if (opts?.usageAuditor) {
+    usageAuditor = opts.usageAuditor;
+  } else if (usageEnabled) {
+    usageAuditor = new UsageAuditor(runId, usageDir);
+  } else {
+    usageAuditor = createNoOpUsageAuditor();
+  }
 
   const pidRegistry = opts?.pidRegistry ?? new PidRegistry(workdir);
 
@@ -389,6 +418,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const offCost = attachCostSubscriber(dispatchEvents, costAggregator, runId, getProjectKey(config, workdir));
   const offAudit = attachAuditSubscriber(dispatchEvents, promptAuditor, runId);
   const offReviewAudit = attachReviewAuditSubscriber(dispatchEvents, reviewAuditor, runId);
+  const offUsageAudit = attachUsageAuditSubscriber(agentStreamEvents, usageAuditor, runId);
   const offAgentStreamLogging = attachAgentStreamLogging(agentStreamEvents, runId);
   const offWatchdog = attachAgentIdleWatchdog(agentStreamEvents, watchdogControllerRegistry, config);
 
@@ -423,6 +453,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     sessionManager,
     costAggregator,
     promptAuditor,
+    usageAuditor,
     reviewAuditor,
     dispatchEvents,
     agentStreamEvents,
@@ -457,6 +488,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       offCost();
       offAudit();
       offReviewAudit();
+      offUsageAudit();
       offAgentStreamLogging();
       offWatchdog();
       if (opts?.parentSignal && parentAbortHandler) {
@@ -468,7 +500,12 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       await writeMcpRollup(outputDir, buildMcpRollup({ runId, events: mcpPool.events(), withheld: mcpWithheld })).catch(
         (error: unknown) => logger.warn("runtime", "mcp rollup write failed", { error: String(error) }),
       );
-      const results = await Promise.allSettled([promptAuditor.flush(), reviewAuditor.flush(), costAggregator.drain()]);
+      const results = await Promise.allSettled([
+        promptAuditor.flush(),
+        usageAuditor.flush(),
+        reviewAuditor.flush(),
+        costAggregator.drain(),
+      ]);
       for (const r of results) {
         if (r.status === "rejected") {
           logger.warn("runtime", "close() flush/drain error", { error: String(r.reason) });

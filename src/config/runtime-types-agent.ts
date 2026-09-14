@@ -28,6 +28,18 @@ export interface PromptAuditConfig {
   dir?: string;
 }
 
+/** Usage audit configuration — opt-in file-based per-round-trip usage records (nax#2045).
+ *  `scopeId` is populated on the native transport only; ACP rows carry no exact ledger/transcript join. */
+export interface UsageAuditConfig {
+  /** When true, every agent round trip's usage is written to a file for auditing. */
+  enabled: boolean;
+  /**
+   * Directory to write usage audit files into.
+   * Absolute path, or relative to workdir. Defaults to `<outputDir>/usage` when absent.
+   */
+  dir?: string;
+}
+
 /** Agent fallback configuration */
 export interface AgentFallbackConfig {
   /** Whether agent fallback is enabled (default: false) */
@@ -138,6 +150,8 @@ export interface AgentConfig {
   maxInteractionTurns?: number;
   /** Prompt audit — write every ACP-bound prompt to a file for auditing. */
   promptAudit?: PromptAuditConfig;
+  /** Usage audit — write every agent round trip's usage to a file for auditing (nax#2045). */
+  usageAudit?: UsageAuditConfig;
   /** Agent fallback configuration */
   fallback?: AgentFallbackConfig;
   /** ACP-specific settings */

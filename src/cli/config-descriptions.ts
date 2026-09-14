@@ -271,6 +271,11 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Provider-wide extra request headers. REPLACES the provider's headers rather than merging; omit the key to leave them unchanged. May carry credentials, so values are masked in this output.",
   "agent.maxInteractionTurns":
     "Max turns in multi-turn interaction loop when interactionBridge is active (default: 10)",
+  "agent.usageAudit":
+    "Usage audit — write every agent round trip's token usage to a file for auditing (nax#2045). The scopeId join key is populated on the native transport only; ACP rows carry no exact ledger/transcript join.",
+  "agent.usageAudit.enabled": "Enable per-round-trip usage audit files (default: false)",
+  "agent.usageAudit.dir":
+    "Directory to write usage audit files into. Absolute path, or relative to workdir (default: <outputDir>/usage, i.e. ~/.nax/<project>/usage unless outputDir overrides it)",
   "agent.spinBreaker": "Repetition breaker — ends a turn that repeats tool calls with no progress (nax#2013)",
   "agent.spinBreaker.enabled": "Enable the repetition breaker (default: true)",
   "agent.spinBreaker.nudgeAfterRepeats": "Repeats since the last new call before the first in-band nudge (default: 25)",

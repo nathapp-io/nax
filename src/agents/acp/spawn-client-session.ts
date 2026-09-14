@@ -228,6 +228,12 @@ export class SpawnAcpSession implements AcpSession {
                 inputTokens: activity.inputTokens,
                 outputTokens: activity.outputTokens,
                 costUsd: activity.costUsd,
+                ...(activity.cacheRead !== undefined ? { cacheRead: activity.cacheRead } : {}),
+                ...(activity.cacheWrite !== undefined ? { cacheWrite: activity.cacheWrite } : {}),
+                // ACP emits on the delegated agent's cadence, not nax's own
+                // round-trip loop, so it carries the label but never the
+                // native-only `perRoundTrip`/`roundTrip` markers (nax#2045).
+                cadence: "agent",
                 timestamp: now(),
               });
             } else if (activity.kind === "tool_call_update") {

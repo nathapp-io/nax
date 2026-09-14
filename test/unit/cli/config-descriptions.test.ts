@@ -68,6 +68,19 @@ describe("FIELD_DESCRIPTIONS.precheck.storySizeGate action and maxReplanAttempts
   });
 });
 
+describe("FIELD_DESCRIPTIONS agent.usageAudit (#2045)", () => {
+  const KEYS = ["agent.usageAudit", "agent.usageAudit.enabled", "agent.usageAudit.dir"];
+
+  test.each(KEYS)("%s has a non-empty description", (key) => {
+    expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
+    expect(FIELD_DESCRIPTIONS[key].length).toBeGreaterThan(0);
+  });
+
+  test("enabled description records the opt-in default", () => {
+    expect(FIELD_DESCRIPTIONS["agent.usageAudit.enabled"]).toContain("false");
+  });
+});
+
 describe("FIELD_DESCRIPTIONS.execution.mutationCheck", () => {
   const KEYS = [
     "execution.mutationCheck",
