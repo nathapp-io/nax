@@ -110,6 +110,17 @@ through `src/agents/cost/index.ts` (US-001)
   `cacheCreationPer1M`. All four required, distinguishing it from the module's
   existing internal tier-selection shape whose cache fields are optional.
 
+**`deriveTokenUsage`** — `src/agents/acp/adapter.ts:121` (US-002)
+- Baseline: `private deriveTokenUsage(wire, rateCard): { tokenUsage: TokenUsage; estimatedCostUsd: number }`
+- Target: the same, plus `rates?: ResolvedRates` on the returned object, absent when the
+  nonzero-usage guard skipped pricing.
+
+**`buildTurnResult` / `BuildTurnResultInput`** — `src/agents/acp/adapter-output.ts:234` (US-002)
+- Baseline: `buildTurnResult(input: BuildTurnResultInput): TurnResult`, pricing behind a
+  `hasUsage` guard at `:241`.
+- Target: the same signature; the returned `TurnResult` additionally carries
+  `rates` when the guard let pricing run.
+
 **`CompleteResult` / `TurnResult`** — `src/agents/session-types.ts` (US-002)
 - Baseline: both carry `pricingSource?: "catalog-rates" | "config-override" | "fallback-rates"`
   (`:192`) alongside `estimatedCostUsd` / `exactCostUsd`.
@@ -153,6 +164,7 @@ Patterns to follow:
 | Producer's reported source was not the catalog | Row omits `catalogVersion`. No false origin is asserted. |
 | Dispatch failed (error row) | Row carries neither field. See Out of Scope. |
 | Session turn carried no token usage (`usageMissing`) | Row omits `rates`; nothing was multiplied. |
+| Call had zero input and zero output tokens | Adapter-dependent, deliberately: the ACP path's nonzero-usage guard skips pricing, so no rates are produced; the native path prices unconditionally and produces rates for a zero-cost call. Both are recorded as they occur rather than normalised. |
 | Catalog pin string unreadable at build time | `catalogVersion` is omitted rather than recorded as an empty or placeholder string; the row stays valid. |
 
 ## Out of Scope
@@ -200,7 +212,7 @@ Depends on: US-001.
 - `src/agents/session-types.ts` — `CompleteResult` / `TurnResult`, `pricingSource` at `:192`
 - `src/runtime/dispatch-events.ts` — `DispatchEvent`, `pricingSource` at `:68`
 - `src/agents/native/adapter.ts` — native pricing call site at `:199`
-- `src/agents/acp/adapter.ts` — ACP pricing call sites at `:127` and `:570`
+- `src/agents/acp/adapter.ts` — ACP pricing inside `deriveTokenUsage` at `:127`, reached from `complete()` at `:131`; the `:570` site prices a thrown `SessionTurnError` and is out of scope
 - `src/agents/acp/adapter-output.ts` — ACP result construction at `:241`
 
 ### US-003 — The cost row records rates and catalog version
@@ -222,8 +234,15 @@ Depends on: US-002.
 
 ### Seams
 
-- [unit] stub `priceCall`; invoke the native adapter's `complete()`; assert `priceCall` was called once with the turn's token usage and the resolved rate card
-- [unit] stub `priceCall`; invoke the ACP adapter's `complete()`; assert `priceCall` was called once with the accumulated token usage and the resolved rate card
+The project forbids `mock.module()`, and neither the pricing module nor the native
+adapter exposes a `_deps` injection seam, so these seams are proven by observable
+propagation through the real production path rather than by a spy. The discriminating
+fixture is a **tiered** rate card whose usage crosses the tier threshold: the effective
+rates then differ from the card's base rates, so a result carrying the base rates proves
+the adapter bypassed `priceCall`, and a result carrying the tier's rates proves it did not.
+
+- [unit] invoke the native adapter's `complete()` with a tiered rate card and usage crossing the tier threshold; assert the returned `CompleteResult.rates` equals the tier's rates, not the card's base rates
+- [unit] invoke the ACP adapter's `complete()` with a tiered rate card and nonzero usage crossing the tier threshold; assert the returned `CompleteResult.rates` equals the tier's rates, not the card's base rates
 - [integration] emit a dispatch event carrying `rates`; assert the recorded cost row carries the same four rate values
 
 ## Acceptance Criteria
@@ -246,9 +265,11 @@ Depends on: US-002.
 - [unit] The `CompleteResult` returned by the native adapter's `complete()` carries a `rates` object whose four fields equal the effective rates used to price that call.
 - [unit] The `CompleteResult` returned by the ACP adapter's `complete()` carries a `rates` object whose four fields equal the effective rates used to price that call.
 - [unit] The `TurnResult` returned by the ACP adapter's `sendTurn()` carries a `rates` object whose four fields equal the effective rates used to price that turn.
-- [unit] stub `priceCall`; invoke the native adapter's `complete()`; assert `priceCall` was called once with that call's token usage and the resolved rate card.
-- [unit] stub `priceCall`; invoke the ACP adapter's `complete()`; assert `priceCall` was called once with that call's accumulated token usage and the resolved rate card.
-- [unit] A `CompleteResult` produced for a call whose token usage was absent carries no `rates` field.
+- [unit] The native adapter's `complete()`, called with a tiered rate card and usage crossing the tier threshold, returns a `CompleteResult` whose `rates` equal the winning tier's rates and not the card's base rates.
+- [unit] The ACP adapter's `complete()`, called with a tiered rate card and nonzero usage crossing the tier threshold, returns a `CompleteResult` whose `rates` equal the winning tier's rates and not the card's base rates.
+- [unit] The native adapter's `complete()`, called with token usage of zero input and zero output tokens, returns a `CompleteResult` that carries `rates`, because the native path prices unconditionally.
+- [unit] The ACP adapter's `complete()`, called with token usage of zero input and zero output tokens, returns a `CompleteResult` that carries no `rates` field, because its nonzero-usage guard skips pricing entirely.
+- [unit] The `TurnResult` returned by the ACP adapter's `sendTurn()` for a turn with zero accumulated token usage carries no `rates` field.
 - [integration] A `DispatchEvent` built from a result carrying `rates` exposes the same four rate values on its own `rates` field.
 - [integration] A `DispatchEvent` built from a result carrying no `rates` omits the field rather than exposing it as undefined.
 
@@ -269,4 +290,4 @@ Depends on: US-002.
 **Out of scope:**
 - US-003 only: rates and catalog version on error rows, deferred per the feature-level Out of Scope entry.
 
-<!-- spec-writing: completed-through-phase-5 -->
+<!-- spec-writing: completed-through-phase-6 -->
