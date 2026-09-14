@@ -179,6 +179,30 @@ describe("native turn loop", () => {
     expect(result.tokenUsage.outputTokens).toBe(7);
   });
 
+  test("returns aggregate effective rates that reproduce the whole turn's estimated cost", async () => {
+    let round = 0;
+    const result = await runNativeTurn(handle, "hi", opts(), {
+      complete: async () => {
+        round += 1;
+        return round === 1
+          ? reply({
+              toolCalls: [{ id: "c1", name: "t", input: {} }],
+              usage: { inputTokens: 1_000_000, outputTokens: 0 },
+              costUsd: 2,
+              rates: { inputPer1M: 2, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 },
+            })
+          : reply({
+              usage: { inputTokens: 1_000_000, outputTokens: 0 },
+              costUsd: 4,
+              rates: { inputPer1M: 4, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 },
+            });
+      },
+    });
+
+    expect(result.estimatedCostUsd).toBe(6);
+    expect(result.rates).toEqual({ inputPer1M: 3, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 });
+  });
+
   test("a tool failure comes back as an error result and the turn continues", async () => {
     let round = 0;
     const result = await runNativeTurn(

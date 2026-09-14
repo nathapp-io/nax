@@ -30,6 +30,7 @@ import {
   type ResolvedCompaction,
   shouldCompact,
 } from "./compaction";
+import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript } from "./transcript-store";
@@ -59,6 +60,8 @@ export interface NativeSummaryResponse {
   readonly text: string;
   readonly usage: TokenUsage;
   readonly costUsd: number;
+  /** Per-1M rates that priced this summary call, when known. */
+  readonly rates?: ResolvedRates;
 }
 
 export interface TurnDeps {
@@ -190,14 +193,7 @@ export async function runNativeTurn(
   let cacheReadInputTokens: number | undefined;
   let cacheCreationInputTokens: number | undefined;
   let costUsd = 0;
-  // US-002: the per-1M rates that priced the most recent successful
-  // round-trip. Each round-trip re-prices on its own usage (a single tier
-  // card can pick different tiers for different round-trips if usage
-  // crosses thresholds mid-turn), and the most recent decision is what
-  // affects the user's last-mile spend — so the LAST writer wins. Stamped
-  // on the returned TurnResult.rates so the cost subscriber records the
-  // same numbers whose arithmetic reproduces the round-trip's costUsd.
-  let lastRoundTripRates: ResolvedRates | undefined;
+  const rateTotals = createRateTotals();
   let output = "";
   // Reported on the result so the review guards can corroborate a reviewer's
   // self-declared inspection trail against calls it actually made.
@@ -279,7 +275,14 @@ export async function runNativeTurn(
             });
             inputTokens += summary.usage.inputTokens;
             outputTokens += summary.usage.outputTokens;
+            if (summary.usage.cacheReadInputTokens !== undefined) {
+              cacheReadInputTokens = (cacheReadInputTokens ?? 0) + summary.usage.cacheReadInputTokens;
+            }
+            if (summary.usage.cacheCreationInputTokens !== undefined) {
+              cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + summary.usage.cacheCreationInputTokens;
+            }
             costUsd += summary.costUsd;
+            addRateTotals(rateTotals, summary.usage, summary.rates);
             // Resets the watchdog's lastActivityAt between the summary and the
             // round trip, so the two silent spans do not add up against one budget.
             deps.onActivity?.({
@@ -358,7 +361,14 @@ export async function runNativeTurn(
           messages = applyCompaction(messages, plan, summary.text);
           inputTokens += summary.usage.inputTokens;
           outputTokens += summary.usage.outputTokens;
+          if (summary.usage.cacheReadInputTokens !== undefined) {
+            cacheReadInputTokens = (cacheReadInputTokens ?? 0) + summary.usage.cacheReadInputTokens;
+          }
+          if (summary.usage.cacheCreationInputTokens !== undefined) {
+            cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + summary.usage.cacheCreationInputTokens;
+          }
           costUsd += summary.costUsd;
+          addRateTotals(rateTotals, summary.usage, summary.rates);
           deps.onActivity?.({
             kind: "usage",
             inputTokens: summary.usage.inputTokens,
@@ -382,9 +392,7 @@ export async function runNativeTurn(
         cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + res.usage.cacheCreationInputTokens;
       }
       costUsd += res.costUsd;
-      // US-002: last writer wins — the most recent round-trip's rates
-      // reach the result.
-      lastRoundTripRates = res.rates;
+      addRateTotals(rateTotals, res.usage, res.rates);
       output = res.text;
 
       // nax#1852: the anchor is the whole prompt the provider charged for, not
@@ -556,6 +564,7 @@ export async function runNativeTurn(
   // removed from the pipeline (ADR-028 s4).
   await saveTranscript(dir, handle.id, messages, transcriptOwner);
 
+  const rates = aggregateRates(rateTotals);
   return {
     output,
     tokenUsage: {
@@ -572,9 +581,6 @@ export async function runNativeTurn(
     ...(spinStopped ? { spinStopped: true as const } : {}),
     ...(interactions.length > 0 ? { interactions } : {}),
     ...(deps.pricingSource !== undefined ? { pricingSource: deps.pricingSource } : {}),
-    // US-002: forward the per-1M rates the most recent round-trip priced
-    // its `costUsd` on. Native prices unconditionally, so the field is
-    // always populated when at least one round-trip succeeded.
-    ...(lastRoundTripRates !== undefined ? { rates: lastRoundTripRates } : {}),
+    ...(rates !== undefined ? { rates } : {}),
   };
 }

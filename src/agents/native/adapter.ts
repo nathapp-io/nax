@@ -9,7 +9,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { estimateCostUsd, priceCall } from "@/agents/cost";
+import { priceCall } from "@/agents/cost";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
@@ -325,7 +325,8 @@ export class NativeAgentAdapter implements AgentAdapter {
               signal,
             });
             const summaryUsage = toNaxTokenUsage(res.usage);
-            return { text: res.text, usage: summaryUsage, costUsd: estimateCostUsd(summaryUsage, rates) };
+            const { costUsd, resolvedRates } = priceCall(summaryUsage, rates);
+            return { text: res.text, usage: summaryUsage, costUsd, rates: resolvedRates };
           } finally {
             if (timer !== undefined) clearTimeout(timer);
           }

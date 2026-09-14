@@ -189,6 +189,30 @@ describe("proactive compaction", () => {
     expect(result.tokenUsage.inputTokens).toBe(501);
   });
 
+  test("includes summary pricing in the aggregate effective rates", async () => {
+    await seedOversizedTranscript();
+
+    const result = await runNativeTurn(handle, "next", opts(), {
+      contextWindow: 8000,
+      compaction: cfg,
+      summarize: async () => ({
+        text: "summary",
+        usage: { inputTokens: 1_000_000, outputTokens: 0 },
+        costUsd: 2,
+        rates: { inputPer1M: 2, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 },
+      }),
+      complete: async () => ({
+        text: "done",
+        usage: { inputTokens: 1_000_000, outputTokens: 0 },
+        costUsd: 4,
+        rates: { inputPer1M: 4, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 },
+      }),
+    });
+
+    expect(result.estimatedCostUsd).toBe(6);
+    expect(result.rates).toEqual({ inputPer1M: 3, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 });
+  });
+
   test("emits a usage activity for the summary, so the idle watchdog sees it", async () => {
     await seedOversizedTranscript();
     const activity: string[] = [];
