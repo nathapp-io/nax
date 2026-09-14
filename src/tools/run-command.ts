@@ -14,6 +14,7 @@
  * command-resolver.ts already applies to {{package}}.
  */
 import { statSync } from "node:fs";
+import { describeValuesType } from "../agents/native/session/tool-input-validation";
 import type { QualityCommandSpec } from "../quality/command-spec";
 import { runQualityCommand } from "../quality/runner";
 import { shellQuoteArg } from "../verification/shell-quote";
@@ -224,12 +225,6 @@ function describeDeclaredCommands(declared: ReadonlyMap<string, QualityCommandSp
 // model could not escape because neither message ever said "values" itself
 // was the wrong type. Checked before "raw" is derived, so a malformed shape
 // can never reach Object.keys/Object.entries below.
-function describeValuesType(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "an array";
-  return `a ${typeof value}`;
-}
-
 function isPlainValuesObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
