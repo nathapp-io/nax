@@ -170,6 +170,15 @@ to do.
 Grant accordingly: name the command forms you want, rather than writing `Bash(*)` and relying
 on deny rules to claw scope back.
 
+**Not the only way a command runs.** `quality.commands` and `acceptance.command` are run by key
+through a shell and never pass this gate at all (spec R8) — they are trusted because a human
+wrote them in config. So a `Bash(...)` deny rule does not constrain them, and a construct this
+gate refuses by name still runs there.
+
+That trust is enforced, not assumed: `.nax/config.json` and `.nax/mono/<package>/config.json`
+are refused to every path-bearing tool, reads included, so an agent cannot add a quality command
+and collect an ungated shell on the next run. The rest of `.nax/` stays readable.
+
 ## See also
 
 - [Permissions](permissions.md) — profiles, per-stage blocks, the grammar, precedence, `ask`.
