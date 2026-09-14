@@ -110,6 +110,13 @@ export interface ToolScope {
    * wildcard would silently cover the argv branch too.
    */
   readonly argvField?: string;
+  /**
+   * The input field holding a model-authored shell COMMAND STRING (`Bash`).
+   * A call carrying this field is evaluated per shell segment by
+   * `src/tools/policy-bash.ts` rather than by the verb or path branches; a
+   * tool declaring it must be granted explicitly, since no profile grants one.
+   */
+  readonly commandField?: string;
 }
 
 /**

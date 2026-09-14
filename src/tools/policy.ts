@@ -18,6 +18,7 @@ import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
 import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
 import { pathListElements } from "./path-list";
+import { checkBashCommand } from "./policy-bash";
 import {
   type CompiledEntry,
   type CompiledPattern,
@@ -139,6 +140,7 @@ export interface ToolPolicyOptions {
 function isFieldlessScope(scope: ToolScope): boolean {
   return (
     scope.argvField === undefined &&
+    scope.commandField === undefined &&
     scope.verbField === undefined &&
     scope.pathFields.length === 0 &&
     (scope.listPathFields?.length ?? 0) === 0 &&
@@ -330,6 +332,34 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
   }
 
   /**
+   * The Bash branch. Checked entirely in policy-bash.ts and never falling
+   * through: a command string is not a verb and not a path, so neither of the
+   * other branches can judge it. Containment is handed over as a callback
+   * because policy-bash.ts may not import this module back.
+   */
+  function commandBranch(
+    tool: string,
+    scope: ToolScope,
+    input: Record<string, unknown>,
+    grant: CompiledEntry,
+  ): PolicyVerdict | undefined {
+    if (scope.commandField === undefined) return undefined;
+    const denyEntry = denyBy.get(tool);
+    const askEntry = askBy.get(tool);
+    const result = checkBashCommand({
+      tool,
+      command: input[scope.commandField],
+      grant,
+      ...(denyEntry !== undefined ? { denyEntry } : {}),
+      ...(askEntry !== undefined ? { askEntry } : {}),
+      resolvePath: (candidate) => resolveWithin(resolvedRoot, candidate, execTouchedPaths),
+    });
+    if (result.kind === "deny") return deny(result.reason, result.breach);
+    if (result.kind === "ask") return askVerdict([], result.rule);
+    return { allowed: true, resolvedPaths: [] };
+  }
+
+  /**
    * Verb gating: the tool's own allowedVerbs bound what config can grant, so a
    * "*" grant can never reach a mutating subcommand. A deny/ask rule names a
    * verb directly here -- unlike the allow path (`pathMatchers`), these are not
@@ -515,6 +545,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
       const state: RuleState = {};
       return (
+        commandBranch(tool, scope, input, grant) ??
         argvBranch(tool, scope, input, grant) ??
         verbBranch(tool, scope, input, grant, state) ??
         pathsBranch(tool, scope, input, grant, state)
