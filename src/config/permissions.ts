@@ -135,7 +135,19 @@ export const BUILT_IN_EXEC_PATTERNS: readonly string[] = [
   "cargo add*",
 ];
 
-/** Grants for a profile that imposes no per-stage policy. */
+/**
+ * Grants for a profile that imposes no per-stage policy.
+ *
+ * `Bash` is deliberately absent from every caller's tool list below, and has
+ * no built-in pattern list of its own (spec R4). `Exec` is excluded from the
+ * blanket `["*"]` and given BUILT_IN_EXEC_PATTERNS instead; Bash goes one
+ * further and is granted NOTHING anywhere — not under `unrestricted`, not
+ * derived from `quality.commands`. A model-authored shell command runs only
+ * where a human wrote a `Bash(...)` allow rule, which is the whole of
+ * ADR-029 §3's bargain. Adding "Bash" to any list here breaks that bargain
+ * and the deny suite (`test/integration/permissions/bash-deny-suite.test.ts`)
+ * fails on purpose if anyone does.
+ */
 function unconditionalGrants(tools: readonly string[]): ToolGrant[] {
   return tools.map((tool) =>
     tool === EXEC_TOOL_NAME ? { tool, patterns: BUILT_IN_EXEC_PATTERNS } : { tool, patterns: ["*"] },

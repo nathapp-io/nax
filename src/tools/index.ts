@@ -50,5 +50,5 @@ export {
 export type { ToolAuditSink, ToolCallRecord } from "./tool-audit";
 export { createNoOpToolAuditSink, createToolAuditSink } from "./tool-audit";
 export type { CodingToolName, PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
-export { EXEC_TOOL_NAME } from "./types";
+export { BASH_TOOL_NAME, EXEC_TOOL_NAME } from "./types";
 export { writeTool } from "./write";
