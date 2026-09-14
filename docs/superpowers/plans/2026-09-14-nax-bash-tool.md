@@ -1466,7 +1466,7 @@ import {
   acceptanceFixSourceOp,
   acceptanceFixTestOp,
   adversarialReviewOp,
-  debatePlanOp,
+  planDebaterOp,
   finishFixOp,
   fullSuiteRectifyOp,
   implementerOp,
@@ -1500,7 +1500,7 @@ describe("review and planning ops do not", () => {
   test.each([
     ["adversarial-review", adversarialReviewOp],
     ["semantic-review", semanticReviewOp],
-    ["debate-plan", debatePlanOp],
+    ["debate-plan", planDebaterOp],
     ["plan", planInteractiveOp],
   ] as const)("%s does not declare Bash", (_name, op) => {
     expect(op.tools ?? []).not.toContain("Bash");
