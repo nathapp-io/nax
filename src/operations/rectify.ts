@@ -31,6 +31,7 @@ export const rectifyOp: RunOperation<RectifyInput, RectifyOutput, RectifyConfig>
     "RunCommand",
     "GitCommit",
     "Exec",
+    "Bash",
     "RequestCapability",
   ],
   config: rectifyConfigSelector,

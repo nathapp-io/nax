@@ -77,6 +77,7 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
     "RunCommand",
     "GitCommit",
     "Exec",
+    "Bash",
     "RequestCapability",
   ],
   // Test-writing is a cheap scoped task — follows the configured per-role tier.
