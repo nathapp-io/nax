@@ -369,6 +369,72 @@ recorded here as a known sharp edge, not solved: a project that wants a wider
 `Exec` allowlist today accepts a stricter default posture on every other tool
 as a side effect of asking for it.
 
+#### Amendment, 2026-09-14: the trigger fired, and what shipped instead of a sandbox
+
+This section deferred a shell with three named reopen triggers. One has fired:
+**an operation that cannot be expressed over declared commands.** nax#1800
+raised it for the `tdd-verifier` role, and it holds more broadly for the
+fix-shaped roles — an implementer or rectifier repairing a build it has not
+seen before is not a fixed set of project commands. So a shell ships, and this
+amendment records the shape of the gate rather than reopening the question of
+whether to build one.
+
+**One deliberate asymmetry, recorded because it looks like an oversight.** The
+role that RAISED the trigger — the verifier — is the one role that does not
+declare `Bash` (ruled 2026-09-14). `verify.ts` carries no `Exec` precisely so a
+verifier cannot install packages while judging the implementer's work, and a
+`Bash(...)` rule covering an install command returns that ability by another
+route. The verifier's own inexpressibility therefore remains OPEN, and closing
+it is a separate decision with its own bar: a concrete verify-stage need that
+no declared command can express, and a gate narrower than "the verifier may run
+commands of its own". Widening the verifier's ceiling by quietly adding `Bash`
+to its `tools` array is not that decision.
+
+**What shipped.**
+
+- A `Bash` tool taking a model-authored command string, executed as
+  `[quality.shell, "-c", command]` through the existing `runArgv` seam
+  (deadline, `detached`, process-group SIGKILL, `stripEnvVars`).
+- **Deny-all by default in every profile.** `Bash` is absent from
+  `unrestricted`'s blanket grant, has no built-in pattern list of its own
+  (where `Exec` at least has `BUILT_IN_EXEC_PATTERNS`), and derives nothing
+  from `quality.commands`. A command runs only where a human wrote a
+  `Bash(...)` allow rule for that stage.
+- **Per-segment analysis.** The command is lexed and split on `&&`, `||`, `;`,
+  `|`, `&` and newline; every segment must match an allow rule, no segment may
+  match a deny rule, and `DENIED_FLAGS`, root containment, `.git/` refusal,
+  redirect targets and `cd` targets are checked per segment.
+- **Safe-by-refusal.** Command and process substitution, here-documents, fd
+  duplication and unbalanced quotes are refused outright, by name: a payload
+  the gate cannot read does not get a shell.
+- **The op ceiling stayed in code.** Only fix-shaped roles declare `Bash`.
+  Review ops do not, and neither does the verifier: it judges the
+  implementer's work, it already cannot install packages, and a Bash rule
+  covering an install command would return that ability by another route.
+  Config can narrow this ceiling, never widen it.
+
+**What did NOT ship, and will not on this account.** OS-level sandboxing.
+There is no namespace, seccomp or container boundary around a Bash call: a
+granted command runs with the privileges of the nax process, inside the
+permitted root. The gate bounds WHICH commands run and WHERE their paths may
+point; it does not contain what a granted command then does. Anyone reading
+this section for a containment guarantee should read that sentence twice.
+Sandboxing remains out of scope and unclaimed.
+
+**Refusal is a tested deliverable.** `test/integration/permissions/bash-deny-suite.test.ts`
+is this feature's acceptance spine: eleven rows, each a call that must be
+refused, exercised through the dispatch seam. This section's standing bar —
+"whatever gate is designed must be able to say no, and must be tested on its
+ability to say no" — is met by that file, and a build in which it does not run
+is a failed build of the feature.
+
+**Reopen condition for the interactive channel.** The three-state verdict ships
+with an `AskResolver` seam whose only v1 implementation denies, recording the
+ledger outcome `denied:ask` with the matched rule. A material rate of those
+rows justifies building an interactive approval channel; zero rows means the
+seam stays dormant. Metering first, mechanism later — the discipline this ADR
+already applied to `RequestCapability`.
+
 ### 4. Permission policy stays in nax
 
 nax-ai executes nothing and holds no policy — its own scope statement excludes
