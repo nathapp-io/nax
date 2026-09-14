@@ -5,23 +5,22 @@
  * When running from source (bin/nax.ts), falls back to runtime git rev-parse.
  *
  * `NAX_AI_VERSION` is the version of the pinned `@nathapp/nax-ai` catalog
- * package. The catalog's `exports` map declares only the package root (no
- * `./package.json` subpath), so a runtime read of the catalog's manifest
- * via a normal package import is not available. The read lives in
- * `src/agents/catalog/` (the only directory permitted by
- * `scripts/check-nax-ai-imports.ts`) and goes through `Bun.file()` on
- * `node_modules/@nathapp/nax-ai/package.json` so a missing or unparsable
- * manifest cannot crash module loading — that satisfies US-003 AC12.
- * The read is re-exported here as `NAX_AI_VERSION` for consumer
- * convenience.
+ * package, re-exported from `src/agents/catalog`. The catalog's `exports`
+ * map declares only the package root (no `./package.json` subpath), so a
+ * runtime read of the catalog's own manifest via a normal package import
+ * is unavailable. The pin is read from nax's own `package.json`
+ * `dependencies` block (the only place it is declared), and the bundler
+ * inlines that read as a constant — exactly like `NAX_VERSION` — so a
+ * published `dist/nax.js` build carries the version without resolving
+ * the catalog at runtime.
  *
- * If the catalog pin is unreadable at build time — the dependency's
- * `package.json` is missing, the file cannot be parsed, or its `version`
- * field is empty/missing/non-string — `NAX_AI_VERSION` is `undefined`. A
- * cost row omits `catalogVersion` in that case rather than recording an
- * empty or placeholder string (`catalogVersion: ""` would falsely imply a
- * catalog origin). Detection of an installed package that differs from the
- * declared pin is out of scope.
+ * `undefined` when the declared pin is unreadable at build time — the
+ * `package.json` cannot be imported (covered by the bundler), the
+ * `dependencies` block is missing the catalog key, or the value is empty
+ * / non-string. A cost row omits `catalogVersion` in that case rather
+ * than recording an empty or placeholder string (`catalogVersion: ""`
+ * would falsely imply a catalog origin). Detection of an installed
+ * package that differs from the declared pin is out of scope.
  */
 
 import { CATALOG_VERSION } from "@/agents/catalog";
@@ -33,9 +32,9 @@ export const NAX_VERSION: string = pkg.version;
 
 /**
  * Version of the pinned `@nathapp/nax-ai` catalog package, inlined at
- * build time from its `package.json` via `src/agents/catalog`. `undefined`
- * when the catalog pin is unreadable at build time (US-003 AC12) — never
- * an empty string.
+ * build time from nax's own `package.json` via `src/agents/catalog`.
+ * `undefined` when the pin is unreadable at build time (US-003 AC12) —
+ * never an empty string.
  */
 export const NAX_AI_VERSION: string | undefined = CATALOG_VERSION;
 

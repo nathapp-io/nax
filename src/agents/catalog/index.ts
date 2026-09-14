@@ -15,65 +15,42 @@
  * This module exports nax's own `TokenPricing` so callers do not import
  * nax-ai types. It depends on neither `cost/` nor `native/`, so adding it
  * as a third nax-ai importer does not close any cycle.
+ *
+ * `CATALOG_VERSION` is computed locally from nax's own `package.json`,
+ * not the catalog's manifest (the catalog's `exports` map declares only
+ * the package root). The dependency pin is the build-time truth; the
+ * bundler inlines the read as a constant, exactly like `NAX_VERSION`, so
+ * a published `dist/nax.js` build carries the version without resolving
+ * the catalog at runtime. `import pkg from "@/_pkg"` keeps the deep
+ * `../../` relative import inside `src/_pkg.ts` where it stays one
+ * level up (`../package.json`) and biome's `noRestrictedImports`
+ * (`../../*` and `../../**`) does not flag it.
  */
 
-import { existsSync, readFileSync } from "node:fs";
 import type { Catalog, RawProvider } from "@nathapp/nax-ai";
 import { defaultProviders, normaliseCatalog } from "@nathapp/nax-ai";
+import pkg from "@/_pkg";
 import type { TokenPricing } from "@/config/schema-types";
 
 export type { TokenPricing };
 
 /**
- * Version of the pinned `@nathapp/nax-ai` catalog package, read at module
- * load time from its `package.json`. Re-exported via `src/version.ts`
- * because `scripts/check-nax-ai-imports.ts` forbids the catalog's package
- * import outside `src/agents/catalog/` (the `exports` map on nax-ai
- * declares only the package root, so a static import of
- * `./package.json` cannot resolve through normal module resolution).
+ * Version of the pinned `@nathapp/nax-ai` catalog package, read at build
+ * time from nax's own `package.json` `dependencies["@nathapp/nax-ai"]`.
+ * The bundler inlines this as a constant — exactly like `NAX_VERSION` —
+ * so a published `dist/nax.js` build carries the version without
+ * resolving the catalog at runtime.
  *
- * `undefined` when the catalog pin is unreadable at build time — the
- * dependency's `package.json` is missing, the file cannot be parsed, or
- * its `version` field is empty/missing/non-string. A cost row omits
- * `catalogVersion` in that case rather than recording an empty or
- * placeholder string (`catalogVersion: ""` would falsely imply a catalog
- * origin). US-003 AC12.
- *
- * `node:fs` is used (not `Bun.file`) because the read must happen
- * synchronously at module-load time — `Bun.file().exists()` /
- * `Bun.file().json()` are async, and an async initializer cannot produce
- * a module-level constant. The project's `forbidden-patterns-source.md`
- * bans `fs.readFileSync` in favour of `Bun.file()` for ordinary I/O,
- * but `existsSync` / `readFileSync` for a one-shot module-load probe
- * follows the precedent set by `src/cli/init-detect.ts` ("Bun has no
- * native sync equivalent for existsSync"). AC12's whole point is that
- * this read must not crash the process — a missing file (`existsSync`
- * returning false, caught) and a malformed JSON payload
- * (`JSON.parse` throwing, caught) both resolve to `undefined`.
+ * `undefined` when the declared pin is unreadable at build time — the
+ * `package.json` cannot be imported (the bundler covers this), the
+ * `dependencies` block is missing the catalog key, or the value is empty
+ * / non-string. A cost row omits `catalogVersion` in that case rather
+ * than recording an empty or placeholder string (`catalogVersion: ""`
+ * would falsely imply a catalog origin). US-003 AC12.
  */
 export const CATALOG_VERSION: string | undefined = (() => {
-  // The catalog's manifest sits at a fixed location under the project's
-  // `node_modules` tree regardless of which package manager hoisted it.
-  // Resolving it as a relative path off `import.meta.dir` keeps the read
-  // self-contained and avoids `require.resolve`'s ESM/Bun friction.
-  // `src/agents/catalog/index.ts` → `import.meta.dir` is
-  // `src/agents/catalog/`, so `../../../` walks back to the repo root.
-  const pkgPath = `${import.meta.dir}/../../../node_modules/@nathapp/nax-ai/package.json`;
-  let text: string;
-  try {
-    if (!existsSync(pkgPath)) return undefined;
-    text = readFileSync(pkgPath, "utf8");
-  } catch {
-    return undefined;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-  const v = (parsed as { version?: unknown }).version;
-  return typeof v === "string" && v.length > 0 ? v : undefined;
+  const dep = (pkg as { dependencies?: Record<string, unknown> }).dependencies?.["@nathapp/nax-ai"];
+  return typeof dep === "string" && dep.length > 0 ? dep : undefined;
 })();
 
 /** Injectable seams — tests replace these to drive `lookupPricing` deterministically. */

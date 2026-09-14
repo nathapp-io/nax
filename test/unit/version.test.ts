@@ -7,10 +7,12 @@
  *     non-empty string matching the dotted numeric form
  *     `<major>.<minor>.<patch>`.
  *
- * The constant is read at module-load time from `@nathapp/nax-ai`'s
- * package.json via `existsSync` / `readFileSync`. A runtime read of the
- * catalog's manifest through a normal package import is unavailable
- * because the catalog's `exports` map declares only the package root.
+ * The constant is read at build time from nax's own `package.json`
+ * `dependencies["@nathapp/nax-ai"]` (the catalog's own manifest declares
+ * only the package root in its `exports` map, so a runtime read of the
+ * catalog's own version is unavailable). The bundler inlines the read
+ * as a constant, so a published `dist/nax.js` build carries the version
+ * without resolving the catalog at runtime.
  */
 
 import { describe, expect, test } from "bun:test";
