@@ -96,4 +96,100 @@ describe("exemplarFor", () => {
     exemplarFor(schema, input, violation);
     expect(JSON.stringify(input)).toBe(snapshot);
   });
+
+  test('property preservation: violation.property === "" returns the input verbatim', () => {
+    const schema = RUN_COMMAND_SCHEMA;
+    const input: Record<string, unknown> = { command: "testScoped", values: { a: 1 } };
+    const exemplar = exemplarFor(schema, input, {
+      property: "",
+      expected: "object",
+      actual: "a string",
+      message: "synthetic top-level violation",
+    });
+    expect(exemplar).toEqual({ command: "testScoped", values: { a: 1 } });
+  });
+
+  test("non-object property schema returns a placeholder FILL IN", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        // non-object property entry: the validator would skip this in
+        // practice, but exemplarFor defends against a schema where the
+        // schema entry is not a plain object.
+        values: true,
+      },
+    };
+    const input: Record<string, unknown> = { values: "anything" };
+    const exemplar = exemplarFor(schema, input, {
+      property: "values",
+      expected: "object",
+      actual: "a string",
+      message: "synthetic",
+    });
+    expect(exemplar.values).toBe("<FILL IN>");
+  });
+
+  test("number/integer property: exemplar uses 0", () => {
+    const schema = { type: "object", properties: { count: { type: "integer" } } };
+    const input: Record<string, unknown> = { count: "five" };
+    const violation = requireViolation(validateToolInput(schema, input));
+    expect(violation.property).toBe("count");
+    const exemplar = exemplarFor(schema, input, violation);
+    expect(exemplar.count).toBe(0);
+  });
+
+  test("boolean property: exemplar uses false", () => {
+    const schema = { type: "object", properties: { enabled: { type: "boolean" } } };
+    const input: Record<string, unknown> = { enabled: "yes" };
+    const violation = requireViolation(validateToolInput(schema, input));
+    expect(violation.property).toBe("enabled");
+    const exemplar = exemplarFor(schema, input, violation);
+    expect(exemplar.enabled).toBe(false);
+  });
+
+  test("null property: exemplar uses null", () => {
+    const schema = { type: "object", properties: { empty: { type: "null" } } };
+    const input: Record<string, unknown> = { empty: "x" };
+    const violation = requireViolation(validateToolInput(schema, input));
+    expect(violation.property).toBe("empty");
+    const exemplar = exemplarFor(schema, input, violation);
+    expect(exemplar.empty).toBeNull();
+  });
+
+  test("object property with declared sub-properties: exemplar fills each with <FILL IN>", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        payload: {
+          type: "object",
+          properties: { name: { type: "string" }, age: { type: "number" } },
+        },
+      },
+    };
+    const input: Record<string, unknown> = { payload: "nope" };
+    const violation = requireViolation(validateToolInput(schema, input));
+    expect(violation.property).toBe("payload");
+    const exemplar = exemplarFor(schema, input, violation);
+    expect(exemplar.payload).toEqual({ name: "<FILL IN>", age: "<FILL IN>" });
+  });
+
+  test("property with neither type nor enum falls back to <FILL IN>", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        // declared property with neither `type` nor `enum` — the validator
+        // returns undefined for this and skips it, so call exemplarFor with
+        // a synthetic violation to exercise the fallback branch.
+        anything: {},
+      },
+    };
+    const input: Record<string, unknown> = { anything: 1 };
+    const exemplar = exemplarFor(schema, input, {
+      property: "anything",
+      expected: "anything",
+      actual: "a number",
+      message: "synthetic",
+    });
+    expect(exemplar.anything).toBe("<FILL IN>");
+  });
 });
