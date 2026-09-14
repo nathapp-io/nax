@@ -27,6 +27,54 @@ import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 
+/**
+ * Can this process spawn a subprocess at all?
+ *
+ * The test below is a REAL, unmocked `bun add` (see the header for why it must
+ * stay that way). A strict local sandbox may forbid process execution outright,
+ * and that arrives as an opaque `expected "ok", received "error"` on the tool
+ * outcome -- a failure about the environment wearing the costume of a failure
+ * about the code.
+ *
+ * So the capability is probed rather than assumed. What this must NOT become is
+ * a quiet retirement: `assertSpawnableWhereItMatters` below is the other half.
+ */
+async function canSpawnSubprocess(): Promise<boolean> {
+  try {
+    // Probed BY NAME, exactly as the call under test spawns it. Probing
+    // `process.execPath` instead would resolve an absolute path that succeeds
+    // in a sandbox where the by-name lookup the test actually performs fails --
+    // a probe that answers a question nobody asked.
+    const proc = Bun.spawn(["bun", "--version"], { stdout: "ignore", stderr: "ignore" });
+    return (await proc.exited) === 0;
+  } catch {
+    return false;
+  }
+}
+
+const SPAWNABLE = await canSpawnSubprocess();
+
+/**
+ * A skip is legitimate in a sandboxed working copy and NEVER legitimate in CI.
+ *
+ * CI is `ubuntu-latest` running `bun test test/integration/`, where spawning
+ * always works -- so a skip there does not mean "environment differs", it means
+ * this guard silently stopped running while the suite stayed green. That is the
+ * failure mode the 2026-09-06 defect had in the first place: something passing
+ * while doing nothing. Fail loudly instead.
+ */
+function assertSpawnableWhereItMatters(): void {
+  // An EMPTY `CI` counts as unset: a shell that exports `CI=` has not put us in
+  // CI, and reading that as "in CI" would turn the tripwire into a false alarm
+  // on exactly the sandboxed working copy the skip exists for.
+  if (SPAWNABLE || (process.env.CI ?? "") === "") return;
+  throw new Error(
+    "exec-install cannot spawn a subprocess under CI. This test is the only proof that the " +
+      "Exec install path works end to end; skipping it here would retire that proof silently. " +
+      "Fix the runner rather than the gate.",
+  );
+}
+
 interface LedgerRow {
   readonly tool: string;
   readonly outcome: string;
@@ -69,7 +117,11 @@ async function seedRepo(root: string): Promise<{ auditDir: string }> {
 }
 
 describe("Exec installs a missing dependency", () => {
-  test("the manifest gains the dependency and the ledger proves Exec ran", async () => {
+  test("a sandbox that cannot spawn must not silently retire this guard in CI", () => {
+    expect(assertSpawnableWhereItMatters).not.toThrow();
+  });
+
+  test.skipIf(!SPAWNABLE)("the manifest gains the dependency and the ledger proves Exec ran", async () => {
     await withTempDir(async (root) => {
       const { auditDir } = await seedRepo(root);
 
@@ -92,7 +144,14 @@ describe("Exec installs a missing dependency", () => {
         argv: ["bun", "add", "-d", "./vendor/local-types"],
         target: "package",
       });
-      expect(outcome?.kind).toBe("ok");
+      // The reason is carried into the assertion, not dropped: without it a
+      // blocked spawn reports only `expected "ok", received "error"`, which
+      // sends the reader to the policy rather than to their sandbox. The two
+      // refusal variants name it differently -- `reason` when the policy said
+      // no, `content` when the spawn did.
+      const detail =
+        outcome === undefined ? "no support" : outcome.kind === "denied" ? outcome.reason : outcome.content;
+      expect(`${outcome?.kind ?? "none"}: ${detail}`).toStartWith("ok:");
 
       // Property 3: the manifest must actually change. A passing tool call
       // that installed nothing is exactly the failure this test exists to
