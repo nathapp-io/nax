@@ -102,6 +102,13 @@ export function attachCostSubscriber(
     const tu = event.tokenUsage;
     const wireExactCostUsd = event.exactCostUsd;
     const estimatedCostUsd = event.estimatedCostUsd ?? 0;
+    // Read the catalog version exactly once per event. `_costSubscriberDeps`
+    // is reassigned by the AC12 test (it owns the catalog-pin-unreadable
+    // branch); reading twice meant the guard and the value could observe
+    // different returns and persist `catalogVersion: undefined` for the
+    // narrow window between them. The guard now short-circuits on a single
+    // resolved string.
+    const catalogVersion = getCatalogVersion();
 
     const hasWireExactCost = typeof wireExactCostUsd === "number" && Number.isFinite(wireExactCostUsd);
     const exactCostUsd = hasWireExactCost ? wireExactCostUsd : estimatedCostUsd;
@@ -190,16 +197,23 @@ export function attachCostSubscriber(
       // (not undefined) when the producer did not stamp.
       ...(event.rates !== undefined ? { rates: event.rates } : {}),
       // US-003: catalogVersion stamps only when the producer's own reported
-      // source was the catalog. The wire branch above may have overwritten
-      // `pricingSource` to `"wire"` by this point, so we read the
-      // producer-supplied stamp directly off the event. A config-override
-      // row's rates came from operator config, and a fallback-rates row's
-      // rates from the generic card; stamping `catalogVersion` on either
-      // would falsely assert a catalog origin. When the catalog pin is
-      // unreadable at build time the stamp is dropped entirely — an empty
-      // or placeholder string would be a lie.
-      ...(event.pricingSource === "catalog-rates" && getCatalogVersion() !== undefined
-        ? { catalogVersion: getCatalogVersion() as string }
+      // source was the catalog AND `rates` is actually present. The wire
+      // branch above may have overwritten `pricingSource` to `"wire"` by
+      // this point, so we read the producer-supplied stamp directly off the
+      // event. A config-override row's rates came from operator config, and
+      // a fallback-rates row's rates from the generic card; stamping
+      // `catalogVersion` on either would falsely assert a catalog origin.
+      // The ACP producer stamps `pricingSource: rateCard.source`
+      // unconditionally but `rates` only when nonzero usage let `priceCall`
+      // run — without the `rates !== undefined` half of the guard, a
+      // zero-usage row would persist `catalogVersion` for a catalog
+      // origin whose rates are absent, which contradicts the field's
+      // documented meaning ("the version of the catalog package those
+      // rates came from"). When the catalog pin is unreadable at build
+      // time the stamp is dropped entirely — an empty or placeholder
+      // string would be a lie.
+      ...(event.pricingSource === "catalog-rates" && event.rates !== undefined && catalogVersion !== undefined
+        ? { catalogVersion }
         : {}),
       durationMs: event.durationMs,
     };

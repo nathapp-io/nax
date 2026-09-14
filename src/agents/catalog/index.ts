@@ -41,16 +41,29 @@ export type { TokenPricing };
  * so a published `dist/nax.js` build carries the version without
  * resolving the catalog at runtime.
  *
+ * The story pins the dependency exactly (no range). A maintainer who
+ * ever wrote `"@nathapp/nax-ai": "^0.1.11"` or `"latest"` would
+ * silently corrupt every persisted catalog-rates row's `catalogVersion`
+ * — the field exists to record provenance, and recording `"^0.1.11"`
+ * (or any non-conforming string) breaks both AC9 (dotted numeric form)
+ * and the field's stated meaning. The strict-numeric guard here makes
+ * the invariant observable: a range, a workspace reference, or any
+ * other non-conforming value produces `undefined`, and a
+ * successful catalog-priced row then omits `catalogVersion` rather than
+ * persisting a malformed string.
+ *
  * `undefined` when the declared pin is unreadable at build time — the
  * `package.json` cannot be imported (the bundler covers this), the
- * `dependencies` block is missing the catalog key, or the value is empty
- * / non-string. A cost row omits `catalogVersion` in that case rather
- * than recording an empty or placeholder string (`catalogVersion: ""`
- * would falsely imply a catalog origin). US-003 AC12.
+ * `dependencies` block is missing the catalog key, the value is empty
+ * or non-string, or the value is not a strict `<major>.<minor>.<patch>`
+ * numeric version. A cost row omits `catalogVersion` in that case
+ * rather than recording an empty or placeholder string
+ * (`catalogVersion: ""` would falsely imply a catalog origin). US-003
+ * AC9 + AC12.
  */
 export const CATALOG_VERSION: string | undefined = (() => {
   const dep = (pkg as { dependencies?: Record<string, unknown> }).dependencies?.["@nathapp/nax-ai"];
-  return typeof dep === "string" && dep.length > 0 ? dep : undefined;
+  return typeof dep === "string" && /^\d+\.\d+\.\d+$/.test(dep) ? dep : undefined;
 })();
 
 /** Injectable seams — tests replace these to drive `lookupPricing` deterministically. */

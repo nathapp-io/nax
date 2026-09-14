@@ -325,6 +325,40 @@ describe("attachCostSubscriber — catalogVersion stamping (US-003 AC5/AC6/AC7)"
     expect(row.pricingSource).toBe("wire");
     expect(row.catalogVersion).toBe(NAX_AI_VERSION);
   });
+
+  // The catalogVersion field is documented as "the version of the catalog
+  // package those rates came from" — without `rates` present, no catalog
+  // origin can be asserted, even if `pricingSource: "catalog-rates"` is
+  // stamped unconditionally by the producer (the ACP path stamps
+  // `pricingSource` but not `rates` when zero usage skips `priceCall`).
+  // A row with `catalogVersion` and no `rates` would be a self-contradicting
+  // record.
+  test("a catalog-rates dispatch with no rates omits catalogVersion even when NAX_AI_VERSION is defined", () => {
+    const agg = makeRecordingAggregator();
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    // A session-turn event with non-zero tokens, an estimatedCostUsd (so
+    // the row is recorded) but NO exactCostUsd (so the wire-exact branch
+    // doesn't overwrite pricingSource). The ACP producer stamps
+    // `pricingSource: rateCard.source` unconditionally but only stamps
+    // `rates` when nonzero usage let `priceCall` run — that's the
+    // divergent case the guard catches.
+    bus.emitDispatch(
+      makeSessionTurnEvent({
+        exactCostUsd: undefined,
+        estimatedCostUsd: 0.018,
+        pricingSource: "catalog-rates",
+        rates: undefined,
+      }),
+    );
+
+    expect(agg.recordedCost).toHaveLength(1);
+    const row = agg.recordedCost[0];
+    expect(row.pricingSource).toBe("catalog-rates");
+    // catalogVersion must NOT be present — there are no rates to version.
+    expect("catalogVersion" in row).toBe(false);
+  });
 });
 
 // ─── AC10: error rows carry neither rates nor catalogVersion ───────────────
