@@ -31,6 +31,15 @@ const STRUCTURED_GRANTS = [
   { tool: "Grep", patterns: ["*"] },
 ] as const;
 
+/**
+ * `root` is nested one level inside `container` rather than being a temp dir
+ * itself, so that `..` — which the escaping-redirect rows aim at — resolves to
+ * a directory this file OWNS and cleans. With `root` created directly under
+ * `os.tmpdir()`, a regression that let `echo pwned > ../escape.txt` through
+ * would leave a stray file in the system temp dir that no afterEach removes:
+ * the assertion would catch the regression, and the litter would outlive it.
+ */
+let container: string;
 let root: string;
 let outside: string;
 
@@ -38,7 +47,9 @@ let outside: string;
 const CANARY = "canary.txt";
 
 beforeEach(() => {
-  root = makeTempDir("bash-live-shell-");
+  container = makeTempDir("bash-live-shell-");
+  root = join(container, "repo");
+  mkdirSync(root, { recursive: true });
   outside = makeTempDir("bash-live-shell-outside-");
   writeFileSync(join(root, CANARY), "ALIVE");
   writeFileSync(join(outside, "secret.txt"), "OUTSIDE-THE-ROOT");
@@ -47,7 +58,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  cleanupTempDir(root);
+  cleanupTempDir(container);
   cleanupTempDir(outside);
 });
 
@@ -72,8 +83,9 @@ const call = async (allow: readonly string[], command: string, deny?: readonly s
 
 const canaryAlive = () => existsSync(join(root, CANARY));
 
-/** Anywhere an escaping redirect in these rows could plausibly land. */
-const escaped = () => existsSync(join(outside, "escape.txt")) || existsSync(join(root, "..", "escape.txt"));
+/** Anywhere an escaping redirect in these rows could plausibly land — both
+ * inside `container`, so a regression leaves nothing behind after cleanup. */
+const escaped = () => existsSync(join(outside, "escape.txt")) || existsSync(join(container, "escape.txt"));
 
 describe("live shell: a denied command never reaches /bin/sh", () => {
   test.each([
