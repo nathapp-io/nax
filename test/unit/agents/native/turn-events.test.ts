@@ -23,4 +23,44 @@ describe("native stream events", () => {
     const ev = buildNativeStreamEvent(base, { kind: "thinking", bytes: 7 }, 4000);
     expect(ev).toMatchObject({ kind: "agent.thinking_update", deltaBytes: 7 });
   });
+
+  test("forwards cacheRead and cacheWrite when the usage activity carries them", () => {
+    const ev = buildNativeStreamEvent(
+      base,
+      { kind: "usage", inputTokens: 10, outputTokens: 3, costUsd: 0.5, cacheRead: 100, cacheWrite: 20 },
+      3000,
+    );
+    expect(ev).toMatchObject({ kind: "agent.usage_update", cacheRead: 100, cacheWrite: 20 });
+  });
+
+  test("leaves cacheRead and cacheWrite absent, not 0, when the activity carries no cache data", () => {
+    const ev = buildNativeStreamEvent(base, { kind: "usage", inputTokens: 10, outputTokens: 3, costUsd: 0.5 }, 3000);
+    expect("cacheRead" in ev).toBe(false);
+    expect("cacheWrite" in ev).toBe(false);
+  });
+
+  test("keeps an explicit zero cacheRead distinct from an absent one", () => {
+    const ev = buildNativeStreamEvent(
+      base,
+      { kind: "usage", inputTokens: 10, outputTokens: 3, costUsd: 0.5, cacheRead: 0 },
+      3000,
+    );
+    expect(ev).toHaveProperty("cacheRead", 0);
+  });
+
+  test("forwards the round-trip ordinal and marks the event a round-trip boundary", () => {
+    const ev = buildNativeStreamEvent(
+      base,
+      { kind: "usage", inputTokens: 10, outputTokens: 3, costUsd: 0.5, roundTrip: 1 },
+      3000,
+    );
+    expect(ev).toMatchObject({ kind: "agent.usage_update", roundTrip: 1, perRoundTrip: true, cadence: "round-trip" });
+  });
+
+  test("a usage activity with no round-trip ordinal is not a round-trip boundary", () => {
+    const ev = buildNativeStreamEvent(base, { kind: "usage", inputTokens: 0, outputTokens: 0, costUsd: 0 }, 3000);
+    expect("roundTrip" in ev).toBe(false);
+    expect("perRoundTrip" in ev).toBe(false);
+    expect(ev).toMatchObject({ kind: "agent.usage_update", cadence: "round-trip" });
+  });
 });

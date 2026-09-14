@@ -409,6 +409,13 @@ export async function runNativeTurn(
         inputTokens: res.usage.inputTokens,
         outputTokens: res.usage.outputTokens,
         costUsd: res.costUsd,
+        // Absent stays absent (never 0): `cacheReadInputTokens` stays
+        // `number | undefined` so "no cache data" and "zero cache tokens"
+        // remain distinguishable downstream (nax#2045).
+        ...(res.usage.cacheReadInputTokens !== undefined ? { cacheRead: res.usage.cacheReadInputTokens } : {}),
+        ...(res.usage.cacheCreationInputTokens !== undefined ? { cacheWrite: res.usage.cacheCreationInputTokens } : {}),
+        // 1-based; `roundTrips` is incremented above, before this beat fires.
+        roundTrip: roundTrips,
       });
       if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
       if (res.thinking !== undefined && res.thinking.length > 0) {

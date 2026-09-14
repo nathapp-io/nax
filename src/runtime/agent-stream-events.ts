@@ -48,6 +48,19 @@ export interface AgentUsageUpdateEvent extends AgentStreamEventBase {
    * whose usage cadence is the agent's, not nax's.
    */
   readonly perRoundTrip?: true;
+  /** Cache-read tokens the provider served from its prompt cache. Absent when
+   *  the round trip reported no cache data — never coerced to 0, so "no cache
+   *  data" and "zero cache tokens" stay distinguishable. */
+  readonly cacheRead?: number;
+  /** Cache-creation (write) tokens the round trip billed. Absent when unknown,
+   *  for the same reason as `cacheRead`. */
+  readonly cacheWrite?: number;
+  /** Native only: 1-based index of the round trip this usage covers, within the turn.
+   *  Absent on a compaction-summary or retry beat, which are not round-trip boundaries. */
+  readonly roundTrip?: number;
+  /** Whose cadence this report follows. "round-trip" is nax's own loop (native);
+   *  "agent" is the delegated agent's, which is not a nax turn marker (ACP). */
+  readonly cadence?: "round-trip" | "agent";
 }
 
 export interface AgentToolCallUpdateEvent extends AgentStreamEventBase {
