@@ -213,6 +213,8 @@ dormant.
 
 ## See also
 
+- [The Bash Tool](bash-tool.md) — the task-oriented half: turning `Bash` on, writing rules,
+  what is refused and why.
 - [Exec Allowlist](exec-allowlist.md) — the `Exec` argv branch, its built-in install list and
   install hardening.
 - [MCP & Command Interception](mcp-and-interception.md) — attaching MCP servers and the `rtk`
