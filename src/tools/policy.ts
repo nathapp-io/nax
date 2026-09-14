@@ -352,7 +352,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       grant,
       ...(denyEntry !== undefined ? { denyEntry } : {}),
       ...(askEntry !== undefined ? { askEntry } : {}),
-      resolvePath: (candidate) => resolveWithin(resolvedRoot, candidate, execTouchedPaths),
+      initialPath: resolvedRoot,
+      resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate), execTouchedPaths),
     });
     if (result.kind === "deny") return deny(result.reason, result.breach);
     if (result.kind === "ask") return askVerdict([], result.rule);

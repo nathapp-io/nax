@@ -403,10 +403,12 @@ to its `tools` array is not that decision.
 - **Per-segment analysis.** The command is lexed and split on `&&`, `||`, `;`,
   `|`, `&` and newline; every segment must match an allow rule, no segment may
   match a deny rule, and `DENIED_FLAGS`, root containment, `.git/` refusal,
-  redirect targets and `cd` targets are checked per segment.
+  redirect targets and `cd` targets are checked per segment; a successful
+  `cd` changes the containment base for later sequential segments.
 - **Safe-by-refusal.** Command and process substitution, here-documents, fd
-  duplication and unbalanced quotes are refused outright, by name: a payload
-  the gate cannot read does not get a shell.
+  duplication, unbalanced quotes, and parameter, tilde, glob, or brace
+  expansions are refused outright, by name: a payload the gate cannot read
+  does not get a shell.
 - **The op ceiling stayed in code.** Only fix-shaped roles declare `Bash`.
   Review ops do not, and neither does the verifier: it judges the
   implementer's work, it already cannot install packages, and a Bash rule

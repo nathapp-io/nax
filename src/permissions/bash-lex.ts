@@ -14,8 +14,7 @@
  */
 
 /** One word of a segment. `opaque` means it contained `$`-expansion, so its
- * RUNTIME value is unknown here: it can never satisfy a containment check and
- * can only be matched by a bare `*` rule token (see policy-bash.ts). */
+ * RUNTIME value is unknown here and policy-bash.ts refuses it before execution. */
 export interface BashToken {
   readonly text: string;
   readonly opaque: boolean;
@@ -28,10 +27,14 @@ export interface BashRedirect {
   readonly opaque: boolean;
 }
 
+/** The control operator that follows a command segment, when any. */
+export type BashSegmentSeparator = ";" | "&&" | "||" | "|" | "&";
+
 /** One command between control operators. */
 export interface BashSegment {
   readonly tokens: readonly BashToken[];
   readonly redirects: readonly BashRedirect[];
+  readonly separator?: BashSegmentSeparator;
 }
 
 export type BashLexResult =
@@ -87,11 +90,11 @@ export function lexBashCommand(command: string): BashLexResult {
    * leaves an empty segment, which is refused rather than silently dropped:
    * `bun test &&` is a truncated command, and guessing at intent here would
    * approve something nobody wrote. */
-  function flushSegment(): string | undefined {
+  function flushSegment(separator?: BashSegmentSeparator): string | undefined {
     flushWord();
     if (pendingRedirect !== undefined) return "a redirection with no target";
     if (tokens.length === 0 && redirects.length === 0) return "an empty command segment";
-    segments.push({ tokens, redirects });
+    segments.push({ tokens, redirects, ...(separator === undefined ? {} : { separator }) });
     tokens = [];
     redirects = [];
     return undefined;
@@ -160,19 +163,19 @@ export function lexBashCommand(command: string): BashLexResult {
     }
 
     if (char === "\n" || char === ";") {
-      const error = flushSegment();
+      const error = flushSegment(";");
       if (error !== undefined) return refused(error);
       i += 1;
       continue;
     }
     if ((char === "&" && next === "&") || (char === "|" && next === "|")) {
-      const error = flushSegment();
+      const error = flushSegment(char === "&" ? "&&" : "||");
       if (error !== undefined) return refused(error);
       i += 2;
       continue;
     }
     if (char === "|" || char === "&") {
-      const error = flushSegment();
+      const error = flushSegment(char);
       if (error !== undefined) return refused(error);
       i += 1;
       continue;

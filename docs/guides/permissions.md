@@ -139,16 +139,16 @@ other, never both**: a merge would silently decide which list wins, so carrying 
 - **Payload checks run per segment**, after the match: `DENIED_FLAGS` (the install-hardening
   list from [Exec Allowlist](exec-allowlist.md) — `--registry`, `--index-url`, `--proxy`,
   `--prefix`, and the rest), path containment, `.git/` refusal, redirect targets, and the
-  target of a `cd`.
+  target of a `cd`; a successful `cd` changes the containment base for later
+  `&&` and sequential segments.
 - **A rule pattern is a token prefix with an optional trailing `*`.** `Bash(bun test *)`
   admits bare `bun test` and `bun test src/x.test.ts`; a trailing `*` means "and any
-  arguments". A token containing `$`-expansion is *opaque*: only a bare `*` pattern can match
-  it, never a literal rule token.
+  arguments".
 
 **Containment is always on.** Any path-like token, any redirect target, and any `cd` target
-must resolve **inside the permitted root** and outside `.git/`; a target depending on `~`
-expansion is refused because this gate cannot resolve it. Containment is not expressible in
-config and no profile widens it.
+must resolve **inside the permitted root** and outside `.git/`. Parameter, tilde, glob, and
+brace expansions are refused because this gate cannot resolve their final paths. Containment is
+not expressible in config and no profile widens it.
 
 **Refused outright — by name.** A payload the gate cannot read does not get a shell. These
 constructs are refused under any grant: command substitution `$(...)`, backtick substitution,

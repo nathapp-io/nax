@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { compileToolPolicy } from "@/tools";
@@ -124,6 +124,18 @@ describe("the deny suite rows this branch owns (spec §6)", () => {
     expect(check(policyFor(["bun run $CMD"]), "bun run $CMD").allowed).toBe(false);
   });
 
+  test("an opaque token that could expand into git metadata is refused under a wildcard grant", () => {
+    const verdict = check(policyFor(["cat *"]), "cat $PWD/.git/config");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toContain("expansion");
+  });
+
+  test.each(["cat link*", "cat file{a,b}"])("an unmodelled path expansion is refused: %s", (command) => {
+    const verdict = check(policyFor(["cat *"]), command);
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toContain("expansion");
+  });
+
   test("an empty command is refused", () => {
     expect(check(policyFor(["bun test *"]), "   ").allowed).toBe(false);
   });
@@ -152,6 +164,18 @@ describe("containment is not defeated by a hiding prefix or a symlink", () => {
       expect(verdict.breach).toBe(true);
       expect(verdict.reason).toContain("link");
     }
+  });
+
+  test("a later segment resolves relative paths from a preceding cd", () => {
+    const target = join(outside, "secret.txt");
+    const nested = join(root, "subdir");
+    mkdirSync(nested);
+    writeFileSync(target, "outside the root");
+    symlinkSync(target, join(nested, "link"));
+
+    const verdict = check(policyFor(["cd *", "cat *"]), "cd subdir && cat link");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.breach).toBe(true);
   });
 });
 
