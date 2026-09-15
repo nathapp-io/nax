@@ -7,12 +7,14 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Canonical rules delivery
  */
 
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { globToRegex, normalizePath } from "../context/engine";
 import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { discoverWorkspacePackages } from "../test-runners";
+import { isRelativeAndSafe } from "../utils/path-security";
 import { byCodePoint } from "../utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,27 +59,66 @@ export const DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS = ["/node_modules/", "/.git/", "/di
 export type GlobMatchResult = "match" | "no-match" | "unknown";
 
 /**
- * Returns the glob pattern's leading literal path segments (before the first
- * segment containing a wildcard character) — e.g. "bin" for "bin/*.ts", or
- * "test" for "test/**\/*.test.ts". Returns `[]` when the pattern has no
- * literal prefix (starts with a wildcard segment) or is a single fully-
- * literal segment with nothing to narrow.
+ * How a normalized `appliesTo` pattern was classified for #1471's scan
+ * narrowing. A pattern with **no** wildcard segment anywhere is a literal
+ * path, not a glob — it must be checked by direct existence, never walked.
+ * Collapsing that case into "no literal prefix" (as an earlier version of
+ * this fix did) sent it to the capped whole-tree fallback instead, which
+ * both cannot ever assert a dead literal path (only "unknown") and costs a
+ * full-repo walk for a live one — the exact fragility this fix removes for
+ * every other case. `retry-strategy.md`'s `src/config/schemas-review.ts` and
+ * `src/session/session-keeper.ts` are live examples of this shape.
+ */
+type PatternShape =
+  | { kind: "literal-path"; path: string }
+  | { kind: "prefixed"; prefix: string }
+  | { kind: "no-prefix" };
+
+/**
+ * Classifies a normalized glob pattern by its leading literal path segments
+ * (before the first segment containing a wildcard character) — e.g. `bin`
+ * for `bin/*.ts`, `test` for `test/**\/*.test.ts`, and the whole pattern
+ * as a literal path when it has no wildcard segment at all (e.g.
+ * `src/config/schemas-review.ts`).
  *
  * Only `*` and `?` are wildcards under this repo's `globToRegex` — every
  * other character (including `[`, `]`, `{`, `}`) is matched literally, so
  * those don't end the prefix.
  */
-function literalPrefixSegments(normalizedPattern: string): string[] {
+function classifyPattern(normalizedPattern: string): PatternShape {
   const segments = normalizedPattern.split("/");
   const literal: string[] = [];
   for (const segment of segments) {
     if (/[*?]/.test(segment)) break;
     literal.push(segment);
   }
-  // A pattern with no wildcard segment at all has nothing to narrow against —
-  // fall back to the general scan rather than treating the whole pattern as
-  // a directory to walk.
-  return literal.length < segments.length ? literal : [];
+  if (literal.length === segments.length) return { kind: "literal-path", path: normalizedPattern };
+  if (literal.length === 0) return { kind: "no-prefix" };
+  return { kind: "prefixed", prefix: literal.join("/") };
+}
+
+/**
+ * Resolves a fully-literal `appliesTo` pattern (no wildcard anywhere) by
+ * direct existence check — no walk, no cap, so the result is always
+ * definitive ("match"/"no-match"), never "unknown". `isRelativeAndSafe`
+ * guards against a `..`-escaping or absolute pattern before it is joined
+ * onto `cwd`; such a pattern can never legitimately match a repo-relative
+ * scope file, so it is reported as "no-match" rather than resolved.
+ *
+ * Must accept only a regular file, not a directory: `scanTreeForMatch`'s
+ * `Bun.Glob` walk defaults to `onlyFiles: true` and never yields a directory
+ * entry, so a literal pattern naming a directory can never match a real
+ * scope file at runtime either — reporting "match" on directory existence
+ * would break the one-directional "lints as match ⇒ matches at runtime"
+ * contract this module documents above `globHasMatch`.
+ */
+function matchLiteralPath(literalPath: string, cwd: string): GlobMatchResult {
+  if (!isRelativeAndSafe(literalPath)) return "no-match";
+  try {
+    return statSync(join(cwd, literalPath)).isFile() ? "match" : "no-match";
+  } catch {
+    return "no-match";
+  }
 }
 
 /**
@@ -129,20 +170,19 @@ export const _rulesLintDeps = {
   // at runtime — so a pattern that lints as "has matches" is guaranteed to
   // actually match at runtime.
   //
-  // #1471: scans the pattern's own literal prefix directory (e.g. "bin/" for
-  // "bin/*.ts") when it has one, so the walk is bounded by that subtree
-  // instead of the whole repository — exact and cheap, with the cap never
-  // binding in the common case. Falls back to the capped whole-tree walk
-  // (backstop, not the primary mechanism) only when no literal prefix exists.
+  // #1471: a fully-literal pattern (no wildcard anywhere) is checked by
+  // direct existence — no walk, no cap, always definitive. A pattern with a
+  // literal prefix directory (e.g. "bin/" for "bin/*.ts") scans only that
+  // subtree, bounded and exact, with the cap never binding in the common
+  // case. Only a pattern with no literal prefix at all (e.g. "*.md") falls
+  // back to the capped whole-tree walk (backstop, not the primary mechanism).
   globHasMatch: (pattern: string, cwd: string): GlobMatchResult => {
     try {
       const normalizedPattern = normalizePath(pattern);
+      const shape = classifyPattern(normalizedPattern);
+      if (shape.kind === "literal-path") return matchLiteralPath(shape.path, cwd);
       const regex = globToRegex(normalizedPattern);
-      const prefixSegments = literalPrefixSegments(normalizedPattern);
-      if (prefixSegments.length > 0) {
-        const prefix = prefixSegments.join("/");
-        return scanTreeForMatch(join(cwd, prefix), prefix, regex);
-      }
+      if (shape.kind === "prefixed") return scanTreeForMatch(join(cwd, shape.prefix), shape.prefix, regex);
       return scanTreeForMatch(cwd, "", regex);
     } catch {
       return "no-match";

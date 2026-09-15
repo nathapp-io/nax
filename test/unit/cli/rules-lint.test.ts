@@ -288,6 +288,49 @@ describe("globHasMatch — #1471 scan-cap false negative", () => {
 
     expect(_rulesLintDeps.globHasMatch("*.doesnotexist", tempDir)).toBe("unknown");
   });
+
+  test("a fully-literal pattern (no wildcard anywhere) that exists returns 'match', with no walk", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+
+    // A pattern with no wildcard segment at all — e.g. retry-strategy.md's
+    // "src/config/schemas-review.ts" on the real repo — is a path, not a
+    // glob. Plant enough non-excluded noise elsewhere to exceed the cap, so
+    // a regression back to the capped fallback would flip this to "unknown"
+    // (or fail depending on scan order) instead of a definitive "match".
+    const noiseDir = join(tempDir, "unrelated-noise");
+    await mkdir(noiseDir, { recursive: true });
+    const noiseCount = MAX_DEAD_GLOB_SCAN_FILES + 500;
+    for (let i = 0; i < noiseCount; i++) {
+      await writeFile(join(noiseDir, `file-${i}.ts`), "");
+    }
+
+    const configDir = join(tempDir, "src", "config");
+    await mkdir(configDir, { recursive: true });
+    await writeFile(join(configDir, "schemas-review.ts"), "");
+
+    expect(_rulesLintDeps.globHasMatch("src/config/schemas-review.ts", tempDir)).toBe("match");
+  });
+
+  test("a fully-literal pattern (no wildcard anywhere) that does not exist returns 'no-match', never 'unknown'", () => {
+    // The defect this guards: collapsing "fully literal" into "no literal
+    // prefix" sent it to the capped whole-tree fallback, where it could only
+    // ever report "unknown" — permanently inert for the exact case dead-glob
+    // detection exists to catch.
+    expect(_rulesLintDeps.globHasMatch("src/does/not/exist.ts", tempDir)).toBe("no-match");
+  });
+
+  test("a fully-literal pattern naming a directory (not a file) returns 'no-match'", async () => {
+    const { mkdir } = await import("node:fs/promises");
+
+    // The capped walk this falls back to for every other pattern shape
+    // defaults to onlyFiles: true and never yields a directory entry, so a
+    // literal directory path can never match a real scope file at runtime.
+    // The direct-existence check must agree, not report "match" on
+    // directory presence alone.
+    await mkdir(join(tempDir, "src", "session"), { recursive: true });
+
+    expect(_rulesLintDeps.globHasMatch("src/session", tempDir)).toBe("no-match");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
