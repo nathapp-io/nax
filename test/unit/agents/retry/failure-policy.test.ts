@@ -14,6 +14,7 @@ const ALL_OUTCOMES: ReadonlyArray<AdapterFailure["outcome"]> = [
   "fail-quality",
   "fail-unknown",
   "fail-spin",
+  "fail-incomplete",
 ];
 
 describe("failurePolicyFor", () => {
@@ -36,6 +37,15 @@ describe("failurePolicyFor", () => {
 
   test("fail-spin retries on the same agent with a fresh session, then swaps", () => {
     const policy = failurePolicyFor("fail-spin");
+
+    expect(policy.sameAgentRetry).toBe("timeout");
+    expect(policy.swap).toBe("after-retry-lane");
+    expect(policy.cooldown).toBe("none");
+    expect(policy.terminalBackoff).toBe(false);
+  });
+
+  test("fail-incomplete retries on the same agent with a fresh session, then swaps", () => {
+    const policy = failurePolicyFor("fail-incomplete");
 
     expect(policy.sameAgentRetry).toBe("timeout");
     expect(policy.swap).toBe("after-retry-lane");
