@@ -89,6 +89,8 @@ export interface PackResult {
   floorPackedIds: string[];
   /** IDs of floor-kind chunks that caused the budget to be exceeded (subset of floorPackedIds) */
   floorOverageIds: string[];
+  /** Sum of the `tokens` of the chunks listed in `floorOverageIds` (Ruling 11) */
+  floorOverageTokens: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,15 +189,15 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
   const packed: PackedChunk[] = [];
   const floorPackedIds: string[] = [];
   const floorOverageIds: string[] = [];
+  let floorOverageTokens = 0;
   let usedTokens = 0;
 
   // Determine whether the floor pass collectively overflows the effective
-  // budget. When it does, every packed floor chunk is reported as overage
-  // (matching the cumulative semantic — see US-003 AC-5, AC-17 acceptance
-  // test: "manifest.floorOverageItems lists exactly the overflowing floor
-  // chunk IDs"). When the cumulative floor fits, no chunk is reported as
-  // overage regardless of how any individual chunk lines up against the
-  // budget on its own.
+  // budget. This gates the non-floor guarantee (Pass 0) only. Overage
+  // ATTRIBUTION is per-chunk and cumulative (Ruling 11): a floor chunk is
+  // overage iff `usedTokens + chunk.tokens > effectiveBudget` at the point it
+  // is packed — so a floor chunk that fits before a later one pushes the
+  // bundle over is NOT itself overage.
   const totalFloorTokens = floorChunks.reduce((sum, c) => sum + c.tokens, 0);
   const floorCollectivelyOverflows = totalFloorTokens > effectiveBudget;
 
@@ -215,13 +217,16 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     }
   }
 
-  // Pass 1: floor items — always include, regardless of budget
+  // Pass 1: floor items — always include, regardless of budget. Overage is
+  // attributed cumulatively: only the chunk that crosses the ceiling at the
+  // point it is packed is overage.
   for (const chunk of floorChunks) {
-    const overflows = floorCollectivelyOverflows || usedTokens + chunk.tokens > effectiveBudget;
+    const overflows = usedTokens + chunk.tokens > effectiveBudget;
     const packedChunk: PackedChunk = { ...chunk };
     if (overflows) {
       packedChunk.reason = "budget-exceeded-by-floor";
       floorOverageIds.push(chunk.id);
+      floorOverageTokens += chunk.tokens;
     }
     floorPackedIds.push(chunk.id);
     packed.push(packedChunk);
@@ -244,5 +249,6 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     effectiveBudget,
     floorPackedIds,
     floorOverageIds,
+    floorOverageTokens,
   };
 }

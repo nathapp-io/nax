@@ -327,6 +327,44 @@ describe("packChunks — budget floor", () => {
     expect(result.floorOverageIds).toContain("tc:1");
     expect(result.packed[0].reason).toBe("budget-exceeded-by-floor");
   });
+
+  // Ruling 11 (#2061 Finding 5): overage is attributed to the floor chunk that
+  // cumulatively crosses the ceiling at the point it is packed — not to every
+  // floor chunk whenever the floor total happens to exceed the ceiling.
+  test("only the floor chunk that cumulatively crosses the ceiling is marked overage", () => {
+    const chunks = [
+      makeScored({ id: "rules:small", kind: "static", tokens: 300, score: 1.0 }),
+      makeScored({ id: "feat:big", kind: "feature", tokens: 600, score: 1.0 }),
+    ];
+    // Budget 800. Walk order: rules:small (0 + 300 <= 800) fits; feat:big then
+    // lands at 300 + 600 = 900 > 800 and is the only crossing chunk. The old
+    // collective semantic would have listed both.
+    const result = packChunks(chunks, 800);
+    expect(result.floorPackedIds).toEqual(["rules:small", "feat:big"]);
+    expect(result.floorOverageIds).toEqual(["feat:big"]);
+    expect(result.floorOverageTokens).toBe(600);
+    expect(result.packed.find((c) => c.id === "rules:small")?.reason).toBeUndefined();
+    expect(result.packed.find((c) => c.id === "feat:big")?.reason).toBe("budget-exceeded-by-floor");
+  });
+
+  test("floorOverageTokens sums the tokens of every overage floor chunk", () => {
+    const chunks = [
+      makeScored({ id: "rules:1", kind: "static", tokens: 500, score: 1.0 }),
+      makeScored({ id: "feat:1", kind: "feature", tokens: 400, score: 1.0 }),
+      makeScored({ id: "tc:1", kind: "test-coverage", tokens: 300, score: 1.0 }),
+    ];
+    // Ceiling 400: each successive floor chunk lands above the ceiling, so all
+    // three cross → 500 + 400 + 300 = 1200.
+    const result = packChunks(chunks, 400);
+    expect(result.floorOverageIds).toEqual(["rules:1", "feat:1", "tc:1"]);
+    expect(result.floorOverageTokens).toBe(1200);
+  });
+
+  test("floorOverageTokens is 0 when no floor chunk crosses the ceiling", () => {
+    const result = packChunks([makeScored({ id: "rules:1", kind: "static", tokens: 100, score: 1.0 })], 1000);
+    expect(result.floorOverageIds).toEqual([]);
+    expect(result.floorOverageTokens).toBe(0);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

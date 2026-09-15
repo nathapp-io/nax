@@ -87,7 +87,7 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     expect(data.heaviestFloorItems).toContainEqual({ id: "static-rules:big-rule", tokens: 22_000 });
   });
 
-  test("debug-logs and caps the enumerated floor items at 10, heaviest first, but counts them all", async () => {
+  test("debug-logs and caps the enumerated overage floor items at 10, heaviest first, but counts them all", async () => {
     // The overage condition holds on nearly every stage of every story and the
     // floor routinely runs to 60+ chunks, so the debug log must not dump the lot.
     const provider: IContextProvider = {
@@ -108,13 +108,18 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     };
     const orch = new ContextOrchestrator([provider]);
 
-    await orch.assemble(BASE_REQUEST);
+    const bundle = await orch.assemble(BASE_REQUEST);
 
     const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === WARN_MESSAGE);
     assertDefined(call, "floor-budget-exceeded debug log call");
     const data = call.data ?? {};
-    expect(data.floorOverageCount).toBe(25);
-    // Exactly the 10 heaviest, heaviest first — rule-24 (1024) down to rule-15 (1015).
+    // Ruling 11 attributes overage cumulatively: with budget 8,000 (minus
+    // reserves) the walk crosses during the 8th chunk (rule-07, cumulative
+    // 8,028), so the overage set is rule-07..rule-24 = 18 chunks — not all 25.
+    expect(bundle.manifest.floorOverageItems).toHaveLength(18);
+    expect(data.floorOverageCount).toBe(18);
+    // Exactly the 10 heaviest of the overage set, heaviest first — rule-24
+    // (1024) down to rule-15 (1015).
     expect(data.heaviestFloorItems).toEqual([
       { id: "static-rules:rule-24", tokens: 1024 },
       { id: "static-rules:rule-23", tokens: 1023 },

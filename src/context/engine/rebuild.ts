@@ -222,11 +222,13 @@ export function rebuild(
     effectiveBudget,
     // US-003 AC5: floorOverageItems from the rebuild's own pack result, not the
     // prior bundle's. The packer's `floorOverageIds` IS the set of floor chunks
-    // that overflowed (cumulatively) — pass it through whole, exactly as
-    // `manifest-builder.ts` does on the primary build path, so the two paths
-    // report overage identically. No overflow -> undefined, likewise.
+    // that crossed the ceiling in its cumulative walk order (Ruling 11) — pass
+    // it through whole, exactly as `manifest-builder.ts` does on the primary
+    // build path, so the two paths report overage identically. No overflow ->
+    // undefined, likewise.
     floorItems: packResult.floorPackedIds,
     floorOverageItems: packResult.floorOverageIds.length > 0 ? packResult.floorOverageIds : undefined,
+    floorOverageTokens: packResult.floorOverageIds.length > 0 ? packResult.floorOverageTokens : undefined,
     chunkSummaries: Object.keys(chunkSummaries).length > 0 ? chunkSummaries : undefined,
     staleChunks: orderedChunks.some((c) => c.staleCandidate)
       ? orderedChunks.filter((c) => c.staleCandidate).map((c) => c.id)

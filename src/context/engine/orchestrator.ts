@@ -389,10 +389,15 @@ export class ContextOrchestrator {
     // Step 7: greedy pack. availableBudgetTokens is already folded into effectiveBudgetTokens
     // above (before the reserve subtractions), so no third ceiling argument is passed here —
     // passing it separately would let it bypass the reserves via packChunks' own Math.min.
-    const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds, effectiveBudget } = packChunks(
-      kept,
-      effectiveBudgetTokens,
-    );
+    const {
+      packed,
+      budgetExcludedIds,
+      usedTokens,
+      floorPackedIds,
+      floorOverageIds,
+      floorOverageTokens,
+      effectiveBudget,
+    } = packChunks(kept, effectiveBudgetTokens);
 
     // US-003 AC-4: surface floor overage observability. Floor-kind chunks still
     // pack even when they overflow the effective budget; this warn makes the
@@ -421,6 +426,12 @@ export class ContextOrchestrator {
 
     const buildMs = _orchestratorDeps.now() - startMs;
 
+    // Finding 5 (#2061): every scored chunk's token cost, so the manifest can
+    // account for evicted chunks (role-filter, below-min, dedupe, budget) and
+    // not only the packed ones. `scored` is a superset of every chunk that
+    // reaches the exclusion lists.
+    const chunkTokenLookup = new Map<string, number>(scored.map((c) => [c.id, c.tokens]));
+
     const manifest = buildManifest({
       requestId,
       request,
@@ -433,8 +444,10 @@ export class ContextOrchestrator {
       belowMin,
       dedupeDropped,
       budgetExcludedIds,
+      chunkTokenLookup,
       floorPackedIds,
       floorOverageIds,
+      floorOverageTokens,
       effectiveBudget,
     });
 
@@ -444,6 +457,10 @@ export class ContextOrchestrator {
     // manifest field nobody reads at runtime. Name the floor items and their
     // token cost so this is visible without a manifest diff.
     if (manifest.usedTokens > manifest.totalBudgetTokens) {
+      // Ruling 11 attributes overage cumulatively, so `floorOverageItems` is
+      // empty whenever no single floor chunk crossed even though the bundle
+      // ended up over budget (e.g. non-floor chunks pushed it over). Fall back
+      // to the full floor list so the log still names the heaviest floor items.
       const overageIds = manifest.floorOverageItems ?? manifest.floorItems;
       // This condition holds on nearly every stage of every story, and the
       // floor routinely runs to 60+ chunks — log the heaviest few plus a

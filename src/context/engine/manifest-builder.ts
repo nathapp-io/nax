@@ -24,8 +24,17 @@ export interface ManifestInputs {
   belowMin: Array<{ id: string }>;
   dedupeDropped: string[];
   budgetExcludedIds: string[];
+  /**
+   * Token cost by chunk ID for every scored chunk, included or excluded.
+   * buildManifest only receives IDs for the exclusion classes, so this carries
+   * their costs onto `chunkTokens` — the evicted-token accounting Finding 5
+   * requires. IDs absent from the lookup leave no key.
+   */
+  chunkTokenLookup: ReadonlyMap<string, number>;
   floorPackedIds: string[];
   floorOverageIds: string[];
+  /** Sum of the `tokens` of the chunks in `floorOverageIds` (Ruling 11). */
+  floorOverageTokens: number;
   /** Effective ceiling actually used by `packChunks` (US-003). */
   effectiveBudget: number;
 }
@@ -50,8 +59,10 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     belowMin,
     dedupeDropped,
     budgetExcludedIds,
+    chunkTokenLookup,
     floorPackedIds,
     floorOverageIds,
+    floorOverageTokens,
     effectiveBudget,
   } = inputs;
 
@@ -92,6 +103,23 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     }
   }
 
+  const excludedChunks: ContextManifest["excludedChunks"] = [
+    ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const })),
+    ...belowMin.map((c) => ({ id: c.id, reason: "below-min-score" as const })),
+    ...dedupeDropped.map((id) => ({ id, reason: "dedupe" as const })),
+    ...budgetExcludedIds.map((id) => ({ id, reason: "budget" as const })),
+  ];
+
+  // Finding 5 (#2061): record excluded chunks' token costs too, so the manifest
+  // can answer "how many tokens did the budget evict". Only fills keys the
+  // lookup knows; included chunks keep the cost from their own PackedChunk.
+  for (const { id } of excludedChunks) {
+    const tokens = chunkTokenLookup.get(id);
+    if (tokens !== undefined && chunkTokens[id] === undefined) {
+      chunkTokens[id] = tokens;
+    }
+  }
+
   // US-001: manifest.usedTokens accounts the digest actually carried in the
   // rendered prompt (request.priorStageDigest). The produced digest is recorded
   // separately in `digestTokens` and threaded forward to the next stage.
@@ -107,14 +135,10 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     effectiveBudget,
     usedTokens: usedTokens + priorStageDigestTokens,
     includedChunks: packed.map((c) => c.id),
-    excludedChunks: [
-      ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const })),
-      ...belowMin.map((c) => ({ id: c.id, reason: "below-min-score" as const })),
-      ...dedupeDropped.map((id) => ({ id, reason: "dedupe" as const })),
-      ...budgetExcludedIds.map((id) => ({ id, reason: "budget" as const })),
-    ],
+    excludedChunks,
     floorItems: floorPackedIds,
     floorOverageItems: floorOverageIds.length > 0 ? floorOverageIds : undefined,
+    floorOverageTokens: floorOverageIds.length > 0 ? floorOverageTokens : undefined,
     digestTokens,
     buildMs,
     providerResults,
