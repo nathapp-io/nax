@@ -159,8 +159,8 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
     const loader = createConfigLoader(minConfig);
     const registry = createPackageRegistry(loader, "/repo");
 
-    // hydrate with an empty list — sufficient to set the hydrated flag
-    await registry.hydrate([], async () => null);
+    // hydrate a known package that has no override — sufficient to set the hydrated flag
+    await registry.hydrate(["packages/app"], async () => null);
     registry.resolve("packages/app");
 
     expect(mockLogger.calls.filter((c) => c.level === "warn" && c.stage === "packages")).toHaveLength(0);
@@ -247,5 +247,46 @@ describe("PackageRegistry — worktree paths resolve the package override (#2069
     );
     const view = registry.resolve("/repo/.nax-wtx/pkg");
     expect(view.config.quality?.commands?.lint).toBe("decoy-lint");
+  });
+});
+
+describe("PackageRegistry — unknown package key is loud (#2069)", () => {
+  const originalLogger = _packagesDeps.getSafeLogger;
+  afterEach(() => {
+    _packagesDeps.getSafeLogger = originalLogger;
+  });
+
+  function captureWarnings(): string[] {
+    const warnings: string[] = [];
+    const logger = makeLogger();
+    logger.warn = mock((_channel: string, message: string) => {
+      warnings.push(message);
+    });
+    _packagesDeps.getSafeLogger = () => logger;
+    return warnings;
+  }
+
+  test("warns when a non-empty key matches no hydrated package", async () => {
+    const warnings = captureWarnings();
+    const registry = createPackageRegistry(createConfigLoader(minConfig), "/repo");
+    await registry.hydrate(["apps/web-ui"], async () => null);
+    registry.resolve("/repo/apps/does-not-exist");
+    expect(warnings.some((w) => w.includes("unknown package"))).toBe(true);
+  });
+
+  test("stays quiet for a known package that simply has no override", async () => {
+    const warnings = captureWarnings();
+    const registry = createPackageRegistry(createConfigLoader(minConfig), "/repo");
+    await registry.hydrate(["apps/web-ui"], async () => null);
+    registry.resolve("/repo/apps/web-ui");
+    expect(warnings).toEqual([]);
+  });
+
+  test("stays quiet for the repo-root view", async () => {
+    const warnings = captureWarnings();
+    const registry = createPackageRegistry(createConfigLoader(minConfig), "/repo");
+    await registry.hydrate(["apps/web-ui"], async () => null);
+    registry.resolve(undefined);
+    expect(warnings).toEqual([]);
   });
 });

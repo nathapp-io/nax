@@ -82,6 +82,7 @@ function stripLeadingSlash(p: string): string {
 export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): PackageRegistry {
   const cache = new Map<string, PackageView>();
   const mergedConfigs = new Map<string, NaxConfig>();
+  const knownPackages = new Set<string>();
   let hydrated = false;
 
   // Normalize to relative so cache and mergedConfigs keys are consistent with
@@ -122,19 +123,30 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       return cached;
     }
     // Use merged config if hydration pre-loaded one for this package; otherwise root config.
-    const overrideConfig = mergedConfigs.get(toOverrideKey(key));
+    const overrideKey = toOverrideKey(key);
+    const overrideConfig = mergedConfigs.get(overrideKey);
     const hasOverride = overrideConfig !== undefined;
     // Warn when a caller resolves a non-root package before hydrate() has run — the
     // returned view silently uses root config instead of per-package overrides.  This
     // catches entry points (CLI one-off commands, plugins) that skip runSetupPhase.
-    if (!hasOverride && key && !hydrated) {
-      _packagesDeps
-        .getSafeLogger()
-        ?.warn(
-          "packages",
-          "resolve() called for non-root package before hydrate(); returning root config (per-package overrides not applied)",
-          { packageDir: key },
-        );
+    if (!hasOverride && key) {
+      if (!hydrated) {
+        _packagesDeps
+          .getSafeLogger()
+          ?.warn(
+            "packages",
+            "resolve() called for non-root package before hydrate(); returning root config (per-package overrides not applied)",
+            { packageDir: key },
+          );
+      } else if (overrideKey && !knownPackages.has(overrideKey)) {
+        _packagesDeps
+          .getSafeLogger()
+          ?.warn(
+            "packages",
+            "resolve() got an unknown package key after hydrate(); returning root config (per-package overrides not applied)",
+            { packageDir: key, overrideKey },
+          );
+      }
     }
     const config = overrideConfig ?? loader.current();
     const view = createPackageView(config, key, repoRoot, hasOverride);
@@ -149,6 +161,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       if (!dir) {
         continue;
       }
+      knownPackages.add(dir);
       if (mergedConfigs.has(dir)) {
         continue;
       }
