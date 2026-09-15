@@ -318,6 +318,18 @@ export function createRunCommandTool(
       }
       if (hasArgv) return runExecBranch(input, ctx, opts);
 
+      // #2066: `target` is read only on the argv branch (run-command-exec.ts).
+      // 48 of 136 declared-command calls in one audited run carried a `target`
+      // that was silently discarded, and the transcript shows the model
+      // reasoning about it while trying to fix a failure. Silently ignoring it
+      // is the one option that teaches nothing.
+      if (input.target !== undefined) {
+        return {
+          content: `"target" applies only to "argv" calls; a declared command runs in the directory its configuration declares. Remove "target" and call "${typeof input.command === "string" ? input.command : ""}" on its own.`,
+          isError: true,
+        };
+      }
+
       const key = typeof input.command === "string" ? input.command : "";
       const template = declared.get(key);
       if (template === undefined) return { content: `unknown command "${key}"`, isError: true };
