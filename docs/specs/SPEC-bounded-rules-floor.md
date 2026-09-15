@@ -39,11 +39,17 @@ the overage is reported, not capped." Capping rules while packing stays unbounde
 only moves the cliff. Section granularity is what makes a cap survivable, because
 truncation lands mid-file instead of destroying the highest-priority rule.
 
-The eviction policy itself is already correct and is not changed by this spec:
-`priority: <n>` means lower number = more important
-(`SPEC-context-engine-canonical-rules.md:121`), the sort at
-`canonical-loader.ts:450` is ascending, and enforced mode keeps the longest
-leading run that fits.
+The eviction policy's ordering is already correct and is not changed by this
+spec: `priority: <n>` means lower number = more important
+(`SPEC-context-engine-canonical-rules.md:121`), and the sort at
+`canonical-loader.ts:450` is ascending. Its truncation contract has since been
+amended by #2061 proposal (b). The spec originally kept a single global leading
+run — "longest leading run that fits", everything after dropped, mirroring
+`applyCanonicalRulesBudget` at file granularity. That global stop was
+intentional, not an accident, but it is superseded: under the old contract an
+oversized high-priority rule starved every rule behind it, so the shipped
+default delivered one rule of thirteen (#2061 Finding 2). The amended contract
+is contiguous within a rule and continues across rules; see §Approach.
 
 ## Design
 
@@ -104,9 +110,25 @@ ordinal-0 preamble section. H3 and deeper headings stay inside their parent
 section. A file with no H2 yields exactly one section, preserving today's
 behaviour for simple rule files.
 
-Truncation retains the contiguous-tail contract — longest leading run that fits,
-everything after dropped — with one refinement sections make possible: the
-boundary file contributes its leading sections instead of being dropped whole.
+Truncation is per-rule contiguous-tail. Sections are walked in ascending
+`priority`, then by owning rule, then ascending `ordinal`. A rule contributes
+its longest leading run of sections that fits the tokens left at the point it is
+reached: when a section would push the running total past `budgetTokens`, that
+section is dropped and **its owning rule is closed** — the rule's remaining
+sections are dropped — but the walk continues with the next rule's sections,
+which may still fit the remaining budget. A rule is contiguous within itself and
+the walk skips forward across rules; a gap is never filled with a later section.
+
+This supersedes the spec's original global stop, under which the first
+non-fitting section ended the entire walk and everything after it was dropped.
+The original behaviour was intentional — it mirrored `applyCanonicalRulesBudget`'s
+file-level "longest leading run that fits" — but it is superseded: an oversized
+high-priority rule starved every rule behind it (#2061 Finding 2). The amendment
+removes that cliff; it does not create budget, and the corpus still exceeds the
+shipped cap. The earlier refinement still holds: the boundary file contributes
+its leading sections instead of being dropped whole. As before, the first section
+overall is admitted whole even when it exceeds the budget on its own (fail-open —
+a rule section is never gutted).
 
 The provider's budget becomes
 `min(rulesShare * request.budgetTokens, rules.budgetTokens)`, where
@@ -142,7 +164,7 @@ stale contract. Do not re-sign it as evidence that the default must stay `false`
 | Rule content has no `## ` heading | Yields exactly one section containing the whole content. No error. |
 | `.nax/rules/` directory absent | Existing behaviour preserved: no canonical chunks emitted, no throw. |
 | `rulesShare` outside the range 0 to 1 | Rejected at config load by the schema. |
-| A single section alone exceeds the budget | Admitted whole and reported as overage. Fail-open: a rule is never gutted mid-sentence. |
+| The first section overall alone exceeds the budget | Admitted whole and reported as overage. Fail-open: a rule is never gutted mid-sentence. A later rule's oversized first section is dropped and closes that rule, and the walk continues. |
 | `budgetTokens` zero, negative, or non-finite | Empty section list returned, `overageTokens` mirrors `totalTokens`, matching the existing `applyCanonicalRulesBudget` contract. |
 
 ## Out of Scope
@@ -177,8 +199,11 @@ inheriting the rule's frontmatter.
 
 ### US-002 — Section-aware budget with boundary truncation
 
-Introduces a budget function over sections that preserves the contiguous-tail
-contract while allowing the boundary file to contribute its leading sections.
+Introduces a budget function over sections that applies the contiguous-tail
+contract per rule: a rule whose next section does not fit is closed out and the
+walk continues across the remaining rules, while the boundary file still
+contributes its leading sections. This supersedes the original global stop; see
+§Approach and #2061 Finding 2.
 
 - Depends on: US-001
 - Context Files:

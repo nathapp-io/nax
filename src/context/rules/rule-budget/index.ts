@@ -17,13 +17,15 @@
  * cuts every rule at the same ordinal instead of dropping one boundary file's
  * tail, so each rule arrives shredded and no rule is contiguous.
  *
- * Truncation: longest leading run whose cumulative tokens fit inside
- * `budgetTokens`. The first section is admitted whole even if it exceeds the
- * budget on its own (fail-open — a rule section is never gutted). A section
- * that would push the running total past the budget closes its owning rule:
- * that rule's remaining sections are dropped, and the walk continues with the
- * next rule's sections, which may still fit the tokens left over. Contiguous
- * within a rule; never a hole.
+ * Truncation is per-rule contiguous-tail: sections are walked in sorted order,
+ * and a rule contributes its longest leading run of sections that fits the
+ * tokens left when the walk reaches it. A section that would push the running
+ * total past the budget closes its owning rule — that rule's remaining sections
+ * are dropped — and the walk continues with the next rule's sections, which may
+ * still fit the tokens left over. Contiguous within a rule; the walk skips
+ * forward across rules; never a hole. The first section overall is admitted
+ * whole even if it exceeds the budget on its own (fail-open — a rule section is
+ * never gutted).
  *
  * Invalid budgets (zero, negative, or non-finite) return an empty section
  * list and an `overageTokens` that mirrors the supplied total so callers
@@ -65,10 +67,13 @@ export interface SectionBudgetResult {
 }
 
 /**
- * Identity of the rule a section belongs to, for the sort tiebreaker.
+ * Identity of the rule a section belongs to.
  *
- * Matches the key `StaticRulesProvider` sorts its rules by, so the section
- * order this module produces agrees with the rule order the provider computed.
+ * Serves two purposes: the sort tiebreaker that groups a rule's sections
+ * together, and the key of the closed-owner set that drops a rule's remaining
+ * sections once one of them fails to fit. Matches the key
+ * `StaticRulesProvider` sorts its rules by, so the section order this module
+ * produces agrees with the rule order the provider computed.
  */
 function ownerIdentifier(section: RuleSection): string {
   return section.ruleId ?? section.rulePath ?? "";
