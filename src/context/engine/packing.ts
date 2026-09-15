@@ -202,13 +202,21 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
   const floorOverageIds: string[] = [];
   let floorOverageTokens = 0;
   let usedTokens = 0;
+  // Floor-only token tally used for overage attribution. The non-floor
+  // guarantee (Pass 0) pre-admits chunks ahead of the floor walk, so the
+  // bundle-wide `usedTokens` is not the floor's own running total — judging a
+  // floor chunk against it would make the overage telemetry move with
+  // unrelated non-floor candidates.
+  let floorWalkTokens = 0;
 
   // Determine whether the floor pass collectively overflows the effective
   // budget. This gates the non-floor guarantee (Pass 0) only. Overage
-  // ATTRIBUTION is per-chunk and cumulative (Ruling 11): a floor chunk is
-  // overage iff `usedTokens + chunk.tokens > effectiveBudget` at the point it
-  // is packed — so a floor chunk that fits before a later one pushes the
-  // bundle over is NOT itself overage.
+  // ATTRIBUTION is per-chunk and cumulative against the floor's own walk
+  // (Ruling 11): a floor chunk is overage iff
+  // `floorWalkTokens + chunk.tokens > effectiveBudget` at the point it is
+  // packed — so a floor chunk that fits before a later one pushes the bundle
+  // over is NOT itself overage, and the guarantee's pre-admitted tokens never
+  // shift the floor's attributable overshoot.
   const totalFloorTokens = floorChunks.reduce((sum, c) => sum + c.tokens, 0);
   const floorCollectivelyOverflows = totalFloorTokens > effectiveBudget;
 
@@ -229,10 +237,11 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
   }
 
   // Pass 1: floor items — always include, regardless of budget. Overage is
-  // attributed cumulatively: only the chunk that crosses the ceiling at the
+  // attributed against the floor-only walk (not the bundle total, so the
+  // guarantee cannot move it): only the chunk that crosses the ceiling at the
   // point it is packed is overage.
   for (const chunk of floorChunks) {
-    const overflows = usedTokens + chunk.tokens > effectiveBudget;
+    const overflows = floorWalkTokens + chunk.tokens > effectiveBudget;
     const packedChunk: PackedChunk = { ...chunk };
     if (overflows) {
       packedChunk.reason = "budget-exceeded-by-floor";
@@ -242,6 +251,7 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     floorPackedIds.push(chunk.id);
     packed.push(packedChunk);
     usedTokens += chunk.tokens;
+    floorWalkTokens += chunk.tokens;
   }
 
   // Pass 2: remaining non-floor items — best-of(greedy, largest single) repair

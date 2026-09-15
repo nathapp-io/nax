@@ -33,9 +33,11 @@
  *
  * Scoring: `priorityToRawScore` maps an authored frontmatter `priority` to a
  * raw score in `(0, 1]`, pivoting at `FRONTMATTER_PRIORITY_DEFAULT` (100 →
- * 0.5). The mapping is bounded on purpose. An unbounded `DEFAULT / priority`
- * would preserve 1.0 at the default, but once floor chunks compete with
- * non-floor chunks an unbounded score lets a single high-priority rule
+ * 0.5). Non-positive priorities clamp up to 1 (they sort above priority 1, so
+ * they must rank above it too); `undefined` and non-finite score as the
+ * default. The mapping is bounded on purpose. An unbounded `DEFAULT /
+ * priority` would preserve 1.0 at the default, but once floor chunks compete
+ * with non-floor chunks an unbounded score lets a single high-priority rule
  * dominate every code chunk in the pool. Keeping rules inside `(0, 1]` lets
  * that rules-vs-code weighting be set explicitly via `KIND_WEIGHTS` instead
  * of being inherited from this mapping. The cost — all static scores halve
@@ -94,13 +96,17 @@ function sectionIdentifier(section: RuleSection): string {
  * Map an authored rule `priority` to a bounded raw score in `(0, 1]`.
  *
  * Lower `priority` numbers mean "more important" and return higher scores.
- * `undefined`, non-finite, zero, and negative inputs fall back to
- * `FRONTMATTER_PRIORITY_DEFAULT`, so a rule that declares nothing scores as
- * though it declared the default. See the module docstring for why the
- * mapping is bounded rather than `DEFAULT / priority`.
+ * `undefined` and non-finite values fall back to `FRONTMATTER_PRIORITY_DEFAULT`,
+ * so a rule that declares nothing scores as though it declared the default.
+ * Zero and negative priorities sort ABOVE priority 1 (the budget walk uses the
+ * authored value, see `applySectionBudget`), so they clamp up to `1` and score
+ * as the most important possible rule — keeping the scorer ordering aligned
+ * with the sort ordering for every value the frontmatter parser admits. See
+ * the module docstring for why the mapping is bounded rather than
+ * `DEFAULT / priority`.
  */
 export function priorityToRawScore(priority?: number): number {
-  const p = Number.isFinite(priority) && (priority as number) > 0 ? (priority as number) : FRONTMATTER_PRIORITY_DEFAULT;
+  const p = Number.isFinite(priority) ? Math.max(1, priority as number) : FRONTMATTER_PRIORITY_DEFAULT;
   return FRONTMATTER_PRIORITY_DEFAULT / (FRONTMATTER_PRIORITY_DEFAULT + p);
 }
 

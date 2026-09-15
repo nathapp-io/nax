@@ -94,6 +94,17 @@ const PROVIDER_FETCH_TIMEOUT_MS = 5_000;
 /** #1776: cap on how many floor items the budget-exceeded warn enumerates. */
 const FLOOR_OVERAGE_LOG_LIMIT = 10;
 
+/**
+ * Per-(story, stage) occurrence ledger for the floor-budget-exceeded debug
+ * line. Task 10 (#2061(c)) downgraded the warnOnce to an expected-state debug
+ * metric "plus a counter"; the counter survives here in the same shape as the
+ * `occurrence` ordinal `warnOnce`'s repeat path emits (logger.ts), so the
+ * JSONL keeps a tally of how often the condition fires while assembling one
+ * story's stage. Keyed by story id, which is unique within a run, so the
+ * ledger holds at most one small integer per story-stage and needs no reset.
+ */
+const floorOverageOccurrences = new Map<string, number>();
+
 export async function fetchWithTimeout(
   provider: IContextProvider,
   request: ContextRequest,
@@ -468,9 +479,13 @@ export class ContextOrchestrator {
       const byCost = overageIds
         .map((id) => ({ id, tokens: manifest.chunkTokens?.[id] ?? 0 }))
         .sort((a, b) => b.tokens - a.tokens || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const ledgerKey = `${request.storyId}|${request.stage}`;
+      const occurrence = (floorOverageOccurrences.get(ledgerKey) ?? 0) + 1;
+      floorOverageOccurrences.set(ledgerKey, occurrence);
       logger.debug("context-v2", "Stage budget exceeded by floor items", {
         storyId: request.storyId,
         stage: request.stage,
+        occurrence,
         usedTokens: manifest.usedTokens,
         totalBudgetTokens: manifest.totalBudgetTokens,
         floorOverageCount: byCost.length,

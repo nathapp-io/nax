@@ -134,6 +134,20 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     ]);
   });
 
+  test("debug log carries an occurrence ordinal that tallies repeats for the same story-stage", async () => {
+    // Unique story id so the module-level ledger starts fresh for this key —
+    // earlier tests reuse "US-001|tdd-test-writer" without asserting the tally.
+    const orch = new ContextOrchestrator([makeRulesProvider()]);
+
+    await orch.assemble({ ...BASE_REQUEST, storyId: "US-001-tally" });
+    await orch.assemble({ ...BASE_REQUEST, storyId: "US-001-tally" });
+
+    const calls = mockLogger.calls.filter((c) => c.level === "debug" && c.message === FLOOR_OVERAGE_MESSAGE);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].data?.occurrence).toBe(1);
+    expect(calls[1].data?.occurrence).toBe(2);
+  });
+
   test("does not debug-log when floor items fit within totalBudgetTokens", async () => {
     const orch = new ContextOrchestrator([
       {

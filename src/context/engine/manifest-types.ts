@@ -159,9 +159,12 @@ export interface ContextManifest {
   /**
    * Subset of floorItems that crossed the effective ceiling at the point each
    * was packed (Ruling 11, #2061 Finding 5): a floor chunk is listed iff
-   * `usedTokens + chunk.tokens > effectiveBudget` in the packer's actual walk
-   * order. Guaranteed non-floor chunks (Ruling 8) are admitted before the
-   * floor, so `usedTokens` at that point includes their tokens.
+   * `floorWalkTokens + chunk.tokens > effectiveBudget` in the packer's
+   * floor-only walk — i.e. the floor's own running total, NOT the bundle
+   * total. Non-floor chunks that the guarantee (Ruling 8) pre-admits before
+   * the floor walk therefore never shift the attribution: the overage set
+   * measures the floor's own overshoot, independent of which unrelated
+   * non-floor candidates happen to be in the pool.
    *
    * Absent when no floor chunk crossed. With the corrected semantics this is
    * the normal case — a floor chunk that fit before a later one pushed the

@@ -345,12 +345,6 @@ describe("applySectionBudget — cross-rule ordering", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("priorityToRawScore", () => {
-  test("exports priorityToRawScore from @/context/rules/rule-budget", async () => {
-    const modulePath = "@/context/rules/rule-budget" as string;
-    const mod = (await import(modulePath)) as { priorityToRawScore?: unknown };
-    expect(typeof mod.priorityToRawScore).toBe("function");
-  });
-
   test("is strictly decreasing — a numerically lower priority returns a strictly higher score", () => {
     const scores = [1, 5, 20, 55, 100, 500].map((priority) => priorityToRawScore(priority));
     for (let i = 1; i < scores.length; i++) {
@@ -374,11 +368,23 @@ describe("priorityToRawScore", () => {
     }
   });
 
-  test("clamps non-finite, zero, and negative priorities to the default instead of producing Infinity/NaN", () => {
+  test("zero and negative priorities clamp to the top of the range, matching the sort order", () => {
+    // `priority: 0` / negatives are legal frontmatter and sort ABOVE priority
+    // 1 (applySectionBudget compares authored values), so they must rank above
+    // every positive priority here too — not at the default, which would
+    // silently rank the most important rule as an undeclared one.
+    expect(priorityToRawScore(0)).toBe(priorityToRawScore(1));
+    expect(priorityToRawScore(-100)).toBe(priorityToRawScore(1));
+    expect(priorityToRawScore(0)).toBeGreaterThan(priorityToRawScore(2));
+    expect(priorityToRawScore(1)).toBeGreaterThan(priorityToRawScore(2));
+  });
+
+  test("non-finite priorities fall back to the default instead of producing Infinity/NaN", () => {
     const defaultScore = priorityToRawScore(FRONTMATTER_PRIORITY_DEFAULT);
-    const clamped = [0, -1, -100, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
-    for (const priority of clamped) {
-      expect(priorityToRawScore(priority)).toBe(defaultScore);
+    for (const priority of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const score = priorityToRawScore(priority);
+      expect(Number.isFinite(score)).toBe(true);
+      expect(score).toBe(defaultScore);
     }
   });
 

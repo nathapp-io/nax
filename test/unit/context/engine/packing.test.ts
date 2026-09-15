@@ -448,6 +448,28 @@ describe("packChunks — non-floor guarantee", () => {
     expect(result.budgetExcludedIds.sort(byCodePoint)).toEqual(["n:3", "n:4"]);
     expect(result.usedTokens).toBe(1000);
   });
+
+  test("guarantee pre-admission never shifts floor-overage attribution (floor-only baseline)", () => {
+    const floorChunks = [
+      makeScored({ id: "rules:1", kind: "static", tokens: 600, score: 1.0 }),
+      makeScored({ id: "feat:1", kind: "feature", tokens: 450, score: 1.0 }),
+    ];
+    const nonFloor = [0, 1, 2].map((i) =>
+      makeScored({ id: `sess:${i}`, kind: "session", tokens: 400, score: 0.9 - i * 0.1 }),
+    );
+    // Budget 1000: the floor alone overflows, so the guarantee fires and
+    // pre-admits the three 400-token session chunks. The overage set must
+    // still be the floor's own walk — rules:1 (600) fits, feat:1 lands at
+    // 1050 — NOT [rules:1, feat:1] with 1050 tokens, which would only be
+    // overage because the guarantee's 1200 tokens were counted first.
+    const withGuarantee = packChunks([...floorChunks, ...nonFloor], 1000);
+    const floorOnly = packChunks(floorChunks, 1000);
+    expect(withGuarantee.packed.map((c) => c.id)).toEqual(["sess:0", "sess:1", "sess:2", "rules:1", "feat:1"]);
+    expect(withGuarantee.floorOverageIds).toEqual(["feat:1"]);
+    expect(withGuarantee.floorOverageTokens).toBe(450);
+    expect(floorOnly.floorOverageIds).toEqual(["feat:1"]);
+    expect(withGuarantee.usedTokens).toBe(600 + 450 + 3 * 400);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
