@@ -2,10 +2,10 @@
  * Context Engine v2 — section-aware budget (US-002)
  *
  * Applies a token budget across a flat list of `RuleSection` values produced
- * by `splitRuleIntoSections`. Preserves the priority/ordinal contiguous-tail
- * contract used by `applyCanonicalRulesBudget`, with one refinement sections
- * make possible: the boundary file contributes its leading sections instead
- * of being dropped whole.
+ * by `splitRuleIntoSections`. Preserves the priority/ordinal ordering used by
+ * `applyCanonicalRulesBudget`, with one refinement sections make possible: a
+ * rule contributes a contiguous leading run of its sections instead of being
+ * dropped whole.
  *
  * Sorting: ascending by `priority` (lower number = more important), then by
  * owning rule, then ascending by `ordinal` within that rule.
@@ -19,10 +19,11 @@
  *
  * Truncation: longest leading run whose cumulative tokens fit inside
  * `budgetTokens`. The first section is admitted whole even if it exceeds the
- * budget on its own (fail-open — a rule section is never gutted). Any later
- * section that would push the running total past the budget starts a dropped
- * tail; every following section is dropped as well, even when it would fit
- * in the remaining space.
+ * budget on its own (fail-open — a rule section is never gutted). A section
+ * that would push the running total past the budget closes its owning rule:
+ * that rule's remaining sections are dropped, and the walk continues with the
+ * next rule's sections, which may still fit the tokens left over. Contiguous
+ * within a rule; never a hole.
  *
  * Invalid budgets (zero, negative, or non-finite) return an empty section
  * list and an `overageTokens` that mirrors the supplied total so callers
@@ -102,9 +103,9 @@ export function priorityToRawScore(priority?: number): number {
  * Apply a token budget to a priority-ordered list of rule sections.
  *
  * Sections are sorted ascending by `priority`, then ascending by `ordinal`
- * within a rule — matching the sort used by `loadCanonicalRules`. The
- * returned list is the longest leading run of that sorted order whose
- * cumulative tokens fit inside `budgetTokens`.
+ * within a rule — matching the sort used by `loadCanonicalRules`. A section
+ * that does not fit closes its owning rule; the walk then continues into the
+ * next rule's sections rather than stopping outright.
  */
 export function applySectionBudget(sections: RuleSection[], budgetTokens: number): SectionBudgetResult {
   const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0);
@@ -128,11 +129,12 @@ export function applySectionBudget(sections: RuleSection[], budgetTokens: number
 
   const kept: RuleSection[] = [];
   const droppedIds: string[] = [];
+  const closedOwners = new Set<string>();
   let usedTokens = 0;
-  let stopped = false;
 
   for (const section of sorted) {
-    if (stopped) {
+    const owner = ownerIdentifier(section);
+    if (closedOwners.has(owner)) {
       droppedIds.push(sectionIdentifier(section));
       continue;
     }
@@ -141,13 +143,13 @@ export function applySectionBudget(sections: RuleSection[], budgetTokens: number
       usedTokens += section.tokens;
     } else if (kept.length === 0) {
       // First section alone exceeds the budget — admit whole (fail-open) and
-      // stop; nothing else can fit behind it.
+      // close its rule; nothing else can fit behind it.
       kept.push(section);
       usedTokens += section.tokens;
-      stopped = true;
+      closedOwners.add(owner);
     } else {
       droppedIds.push(sectionIdentifier(section));
-      stopped = true;
+      closedOwners.add(owner);
     }
   }
 
