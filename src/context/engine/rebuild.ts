@@ -204,6 +204,18 @@ export function rebuild(
     .filter((id) => !includedChunkIds.has(id))
     .map((id) => ({ id, reason: "budget" as const }));
 
+  // #1421: `chunkTokens` must cover every chunk that reached packing, included
+  // and excluded alike (manifest-types.ts). The excluded entries have no chunk
+  // object of their own, so resolve their cost from the packer's input
+  // (`packedChunks` also carries the injected failure note).
+  const packedTokensById = new Map(packedChunks.map((c) => [c.id, c.tokens]));
+  const chunkTokens: Record<string, number> = {};
+  for (const chunk of orderedChunks) chunkTokens[chunk.id] = chunk.tokens;
+  for (const excluded of excludedChunks) {
+    const tokens = packedTokensById.get(excluded.id);
+    if (tokens !== undefined) chunkTokens[excluded.id] = tokens;
+  }
+
   const manifest: ContextManifest = {
     ...prior.manifest,
     requestId: deps.uuid(),
@@ -211,7 +223,7 @@ export function rebuild(
     excludedChunks,
     // Recomputed chunk tokens — a rebuild can add a chunk (the failure note)
     // that the prior map has no entry for, which would record tokens:0 (#1421).
-    chunkTokens: Object.fromEntries(orderedChunks.map((c) => [c.id, c.tokens])),
+    chunkTokens,
     // US-004: recompute per-chunk scores alongside tokens so a rebuild that
     // adds a chunk (the failure note) carries a truthful score entry.
     chunkScores: Object.fromEntries(orderedChunks.map((c) => [c.id, c.score])),

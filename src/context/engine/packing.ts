@@ -16,7 +16,11 @@
  *   When the floor alone overflows the effective budget, up to
  *   NON_FLOOR_GUARANTEE (3) non-floor chunks by density are admitted first —
  *   skipping any candidate whose tokens exceed the effective budget — and the
- *   floor then packs unconditionally.
+ *   floor then packs unconditionally. The guarantee is count-based, so in the
+ *   worst case it adds up to NON_FLOOR_GUARANTEE chunks each sized just under
+ *   effectiveBudget — roughly `NON_FLOOR_GUARANTEE × effectiveBudget` tokens on
+ *   top of an already-over-budget floor. See the constant for why that bound
+ *   (not a token share) is the revisit condition.
  *
  * Non-floor optimality repair (spec §AC-7, US-004):
  *   Density-greedy is the standard heuristic for fractional knapsack, but
@@ -55,6 +59,13 @@ export const FLOOR_KINDS: ChunkKind[] = ["static", "feature", "test-coverage"];
  * exemption concedes the whole budget, so this guarantees repo-derived
  * (non-floor) context a slot. Exported so the ruling's revisit condition can
  * tune it.
+ *
+ * Worst-case token bound: each admitted chunk's tokens are <= effectiveBudget
+ * (candidates larger than the budget are skipped), so the guarantee can add up
+ * to roughly `NON_FLOOR_GUARANTEE × effectiveBudget` tokens on top of an
+ * already-over-budget floor. That is why the guarantee is count-based: a
+ * token-share alternative is unevidenced (Finding 5, #2061). This bound is the
+ * revisit condition once eviction is measurable.
  */
 export const NON_FLOOR_GUARANTEE = 3;
 

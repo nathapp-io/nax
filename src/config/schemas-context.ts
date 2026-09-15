@@ -100,11 +100,13 @@ const ContextV2RulesConfigSchema = z
      */
     allowLegacyClaudeMd: z.boolean().default(false),
     /**
-     * Token ceiling for canonical rules. When the total exceeds this threshold
-     * and `enforceBudget` is true (default), the section budget closes each rule
-     * once it no longer fits and the walk continues with later rules (contiguous
-     * within a rule, skip across rules). When `enforceBudget` is false, every
-     * rule is preserved and the gap is reported through pressure metrics.
+     * Absolute token ceiling for canonical rules, and the upper bound of the
+     * provider's effective budget `min(rulesShare * request.budgetTokens, budgetTokens)`.
+     * When that effective budget is exceeded and `enforceBudget` is true
+     * (default), the section budget closes each rule once it no longer fits and
+     * the walk continues with later rules (contiguous within a rule, skip across
+     * rules). When `enforceBudget` is false, every rule is preserved and the gap
+     * is reported through pressure metrics.
      */
     budgetTokens: z.number().int().min(512).default(8192),
     /**

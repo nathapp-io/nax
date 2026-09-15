@@ -169,9 +169,9 @@ export interface ContextManifest {
    */
   floorOverageItems?: string[];
   /**
-   * Sum of `tokens` of the chunks listed in `floorOverageItems`. Absent
-   * whenever `floorOverageItems` is. This is the number the floor-overage
-   * report wants: how many tokens the floor pushed past the ceiling.
+   * Sum of `tokens` of the chunks listed in `floorOverageItems` — the TOTAL
+   * tokens of the floor chunks that crossed the ceiling, not the excess over
+   * it (e.g. 1200, not 800). Absent whenever `floorOverageItems` is.
    */
   floorOverageTokens?: number;
   /**

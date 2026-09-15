@@ -142,9 +142,13 @@ higher score, and the default priority (`100`, used when a rule declares none)
 maps to `0.5`. Differential scoring via the effectiveness classifier remains out
 of scope.
 
-The mapping is **inert for selection and inclusion today** — static/floor chunks
-bypass the `minScore` filter and packing's budget — so its only visible effect is
-the `chunkScores` values in the manifest. It exists so a future #2061 (c) ruling
+The mapping is **near-inert for selection and inclusion today** — static/floor
+chunks bypass the `minScore` filter and packing's budget, so it does not rank or
+bound the floor. It can still influence `dedupeChunks`' choice among
+near-duplicate chunks, because dedupe keeps the highest-score representative
+from a score-descending list, so lowering a static chunk's `rawScore` can change
+which of two near-duplicates survives. Otherwise its visible effect is the
+`chunkScores` values in the manifest. It exists so a future #2061 (c) ruling
 *can* rank rules; it neither activates ranking nor bounds the budget overrun.
 
 **Schema default and constructor default are separate, and only the schema

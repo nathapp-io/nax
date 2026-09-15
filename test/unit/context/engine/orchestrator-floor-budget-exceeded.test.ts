@@ -30,7 +30,7 @@ const BASE_REQUEST: ContextRequest = {
   providerIds: ["rules-provider"],
 };
 
-const WARN_MESSAGE = "Stage budget exceeded by floor items";
+const FLOOR_OVERAGE_MESSAGE = "Stage budget exceeded by floor items";
 
 function makeRulesProvider(): IContextProvider {
   return {
@@ -74,7 +74,7 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
 
     expect(bundle.manifest.usedTokens).toBeGreaterThan(bundle.manifest.totalBudgetTokens);
 
-    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === WARN_MESSAGE);
+    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === FLOOR_OVERAGE_MESSAGE);
     assertDefined(call, "floor-budget-exceeded debug log call");
     const data = call.data ?? {};
     expect(Object.keys(data)[0]).toBe("storyId");
@@ -110,7 +110,7 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
 
     const bundle = await orch.assemble(BASE_REQUEST);
 
-    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === WARN_MESSAGE);
+    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === FLOOR_OVERAGE_MESSAGE);
     assertDefined(call, "floor-budget-exceeded debug log call");
     const data = call.data ?? {};
     // Ruling 11 attributes overage cumulatively: with budget 8,000 (minus
@@ -159,7 +159,7 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     const bundle = await orch.assemble(BASE_REQUEST);
 
     expect(bundle.manifest.usedTokens).toBeLessThanOrEqual(bundle.manifest.totalBudgetTokens);
-    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === WARN_MESSAGE);
+    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === FLOOR_OVERAGE_MESSAGE);
     expect(call).toBeUndefined();
   });
 });
