@@ -73,7 +73,8 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
 
   test("emits warn-level log with storyId/stage/effectiveBudget/excludedNonFloorChunkCount when floor overage occurs", async () => {
     // A 9k feature chunk overflows the conservative 8k ceiling, pushing the bundle past budget.
-    // One 200-token session chunk competes with the floor and is excluded as a non-floor chunk.
+    // The non-floor guarantee (Ruling 8, #2061c) admits the single 200-token session chunk, so no
+    // non-floor chunk is excluded.
     const orch = new ContextOrchestrator([
       makeProvider("test-provider", {
         chunks: [
@@ -120,7 +121,8 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
     expect(typeof data.effectiveBudget).toBe("number");
     expect(data.effectiveBudget).toBeGreaterThanOrEqual(0);
     expect(typeof data.excludedNonFloorChunkCount).toBe("number");
-    expect(data.excludedNonFloorChunkCount).toBe(1);
+    // The guarantee admits the only non-floor candidate, so nothing is excluded.
+    expect(data.excludedNonFloorChunkCount).toBe(0);
   });
 
   test("does NOT emit a floor-overage warn log when floor fits within budget", async () => {

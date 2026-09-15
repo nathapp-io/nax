@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { packChunks } from "@/context/engine/packing";
+import { NON_FLOOR_GUARANTEE, packChunks } from "@/context/engine/packing";
 import type { ScoredChunk } from "@/context/engine/scoring";
 import { byCodePoint } from "@/utils/sort";
 
@@ -326,6 +326,89 @@ describe("packChunks — budget floor", () => {
     expect(result.floorPackedIds).toContain("tc:1");
     expect(result.floorOverageIds).toContain("tc:1");
     expect(result.packed[0].reason).toBe("budget-exceeded-by-floor");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Non-floor guarantee (Ruling 8, #2061(c))
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("packChunks — non-floor guarantee", () => {
+  test("floor alone over budget: top-N non-floor chunks by density are admitted first", () => {
+    const chunks = [
+      makeScored({ id: "rules:1", kind: "static", tokens: 600, score: 1.0 }),
+      makeScored({ id: "sess:a", kind: "session", tokens: 100, score: 0.9 }),
+      makeScored({ id: "sess:b", kind: "session", tokens: 100, score: 0.7 }),
+      makeScored({ id: "sess:c", kind: "session", tokens: 100, score: 0.5 }),
+      makeScored({ id: "sess:d", kind: "session", tokens: 100, score: 0.3 }),
+    ];
+    // Floor 600 > budget 500, so the guarantee fires: guaranteed non-floor
+    // chunks are admitted first, then the floor chunk, then nothing is left.
+    const result = packChunks(chunks, 500);
+    expect(result.packed.map((c) => c.id)).toEqual(["sess:a", "sess:b", "sess:c", "rules:1"]);
+    expect(result.budgetExcludedIds).toEqual(["sess:d"]);
+    expect(result.usedTokens).toBe(900);
+  });
+
+  test("N defaults to 3: more than three candidates admit exactly the top three by density", () => {
+    expect(NON_FLOOR_GUARANTEE).toBe(3);
+    const chunks = [
+      makeScored({ id: "floor:1", kind: "static", tokens: 700, score: 1.0 }),
+      makeScored({ id: "n:1", kind: "session", tokens: 100, score: 0.1 }),
+      makeScored({ id: "n:2", kind: "session", tokens: 100, score: 0.9 }),
+      makeScored({ id: "n:3", kind: "session", tokens: 100, score: 0.5 }),
+      makeScored({ id: "n:4", kind: "session", tokens: 100, score: 0.8 }),
+      makeScored({ id: "n:5", kind: "session", tokens: 100, score: 0.4 }),
+    ];
+    const result = packChunks(chunks, 500);
+    const packedIds = result.packed.map((c) => c.id);
+    // Top three by density: n:2 (0.9), n:4 (0.8), n:3 (0.5).
+    expect(packedIds.slice(0, 3)).toEqual(["n:2", "n:4", "n:3"]);
+    expect(packedIds).toContain("floor:1");
+    expect(result.budgetExcludedIds.sort(byCodePoint)).toEqual(["n:1", "n:5"]);
+  });
+
+  test("fewer than N candidates: all are admitted", () => {
+    const chunks = [
+      makeScored({ id: "floor:1", kind: "static", tokens: 700, score: 1.0 }),
+      makeScored({ id: "n:1", kind: "session", tokens: 100, score: 0.9 }),
+      makeScored({ id: "n:2", kind: "session", tokens: 100, score: 0.7 }),
+    ];
+    const result = packChunks(chunks, 500);
+    expect(result.packed.map((c) => c.id)).toEqual(["n:1", "n:2", "floor:1"]);
+    expect(result.budgetExcludedIds).toEqual([]);
+  });
+
+  test("a guaranteed candidate larger than the budget is skipped in favour of the next by density", () => {
+    const chunks = [
+      makeScored({ id: "floor:1", kind: "static", tokens: 600, score: 1.0 }),
+      // Highest density (9/900), but its own tokens exceed effectiveBudget 500.
+      makeScored({ id: "huge:1", kind: "session", tokens: 900, score: 9.0 }),
+      makeScored({ id: "n:1", kind: "session", tokens: 100, score: 0.9 }),
+      makeScored({ id: "n:2", kind: "session", tokens: 100, score: 0.7 }),
+      makeScored({ id: "n:3", kind: "session", tokens: 100, score: 0.5 }),
+    ];
+    const result = packChunks(chunks, 500);
+    expect(result.packed.map((c) => c.id)).toEqual(["n:1", "n:2", "n:3", "floor:1"]);
+    expect(result.packed.map((c) => c.id)).not.toContain("huge:1");
+    expect(result.budgetExcludedIds).toContain("huge:1");
+  });
+
+  test("regression: when the floor fits, the guarantee does not fire", () => {
+    const chunks = [
+      makeScored({ id: "floor:1", kind: "static", tokens: 400, score: 1.0 }),
+      makeScored({ id: "n:1", kind: "session", tokens: 300, score: 0.9 }),
+      makeScored({ id: "n:2", kind: "session", tokens: 300, score: 0.8 }),
+      makeScored({ id: "n:3", kind: "session", tokens: 300, score: 0.7 }),
+      makeScored({ id: "n:4", kind: "session", tokens: 300, score: 0.6 }),
+    ];
+    // Floor 400 fits in 1000, so the guarantee stays off: only the
+    // density-greedy fill (n:1 + n:2 = 600) is admitted. An always-on
+    // guarantee would have force-admitted n:3 as well.
+    const result = packChunks(chunks, 1000);
+    expect(result.packed.map((c) => c.id)).toEqual(["floor:1", "n:1", "n:2"]);
+    expect(result.budgetExcludedIds.sort(byCodePoint)).toEqual(["n:3", "n:4"]);
+    expect(result.usedTokens).toBe(1000);
   });
 });
 

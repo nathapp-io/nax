@@ -44,6 +44,15 @@ import type { ChunkKind } from "./types";
 export const FLOOR_KINDS: ChunkKind[] = ["static", "feature", "test-coverage"];
 
 /**
+ * Maximum number of non-floor chunks force-admitted when the budget floor
+ * alone overflows the effective budget (Ruling 8, #2061(c)). The floor
+ * exemption concedes the whole budget, so this guarantees repo-derived
+ * (non-floor) context a slot. Exported so the ruling's revisit condition can
+ * tune it.
+ */
+export const NON_FLOOR_GUARANTEE = 3;
+
+/**
  * Score per token — the packing priority metric (spec §AC-7). A zero-token
  * chunk has no cost, so it is ranked as maximally dense rather than
  * producing NaN/Infinity from a bare division.
@@ -184,6 +193,22 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
   const totalFloorTokens = floorChunks.reduce((sum, c) => sum + c.tokens, 0);
   const floorCollectivelyOverflows = totalFloorTokens > effectiveBudget;
 
+  // Pass 0: non-floor guarantee — only when the floor alone overflows the
+  // budget. Admit the highest-density non-floor chunks first (skipping any
+  // chunk too large to ever fit) so repo-derived context cannot be starved by
+  // the conceded floor exemption.
+  const guaranteedIds = new Set<string>();
+  if (floorCollectivelyOverflows) {
+    const byDensity = [...nonFloorChunks].sort((a, b) => scoreDensity(b) - scoreDensity(a));
+    for (const chunk of byDensity) {
+      if (guaranteedIds.size >= NON_FLOOR_GUARANTEE) break;
+      if (chunk.tokens > effectiveBudget) continue;
+      guaranteedIds.add(chunk.id);
+      packed.push({ ...chunk });
+      usedTokens += chunk.tokens;
+    }
+  }
+
   // Pass 1: floor items — always include, regardless of budget
   for (const chunk of floorChunks) {
     const overflows = floorCollectivelyOverflows || usedTokens + chunk.tokens > effectiveBudget;
@@ -197,9 +222,10 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     usedTokens += chunk.tokens;
   }
 
-  // Pass 2: non-floor items — best-of(greedy, largest single) repair
+  // Pass 2: remaining non-floor items — best-of(greedy, largest single) repair
+  const remainingNonFloor = nonFloorChunks.filter((c) => !guaranteedIds.has(c.id));
   const remainingBudget = Math.max(0, effectiveBudget - usedTokens);
-  const { selected, excludedIds } = repairNonFloor(nonFloorChunks, remainingBudget);
+  const { selected, excludedIds } = repairNonFloor(remainingNonFloor, remainingBudget);
   for (const chunk of selected) {
     packed.push({ ...chunk });
     usedTokens += chunk.tokens;
