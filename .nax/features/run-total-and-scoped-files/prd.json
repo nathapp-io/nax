@@ -3,7 +3,7 @@
   "feature": "run-total-and-scoped-files",
   "branchName": "feat/run-total-and-scoped-files",
   "createdAt": "2026-09-14T17:00:20.930Z",
-  "updatedAt": "2026-09-15T03:32:58.762Z",
+  "updatedAt": "2026-09-15T03:47:04.118Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,7 +32,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A narrowly scoped value-propagation change crosses completion, runner return, and cleanup consumers but introduces no new abstraction or dependency."
+        "reasoning": "A narrowly scoped value-propagation change crosses completion, runner return, and cleanup consumers but introduces no new abstraction or dependency.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/runner-completion.ts",
@@ -44,11 +47,11 @@
       "expectedFiles": [
         "test/unit/execution/runner-completion-reported-total.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "431d060a36b966fa22754f36451702b5b48e8992",
       "outOfScope": [
-        "Adding a fallback for an empty cost-aggregator snapshot, including any `Math.max` between the reconciled total and the execution-phase accumulator.",
-        "Any change to `reporter.onRunEnd`'s or `PostRunContext`'s shape; only the value passed for `totalCost` changes.",
-        "Changing the TUI's own run summary, which renders independently of the headless footer.",
-        "Backfilling, re-reporting or migrating the totals of runs that already completed.",
         "US-002's `{{files}}` splitting and tool-description work."
       ]
     },
@@ -96,12 +99,10 @@
       "expectedFiles": [
         "test/unit/tools/path-list.test.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
-        "Changing `substituteCommand`'s quoting rule, including how an array value is quoted per element and a string value quoted whole.",
-        "Changing which project-declared commands declare a `{{files}}` placeholder, or the contents of any `quality.commands` entry.",
-        "Making the `{{files}}` evidence rule depend on a language-specific test-file naming convention such as `*.test.ts` or `test_*.py`.",
-        "Changing `pathListElements`' single-token contract or its empty/whitespace-only contract.",
-        "Changing the positional-pairing length-mismatch fail-safe in `RunCommand`, which falls back to the raw single-argument value when the policy and the tool disagree on element count. It stays exactly as it is, including its fail-safe direction.",
         "US-001's run-total propagation."
       ]
     }
