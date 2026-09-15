@@ -107,30 +107,51 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.chunkTokens).toEqual({ "c:1": 412, "c:2": 1180 });
   });
 
-  test("chunkTokens covers exactly the included chunks and sums to usedTokens minus the prior-stage digest", async () => {
-    // US-001 corrected accounting:
-    //   manifest.usedTokens = packed chunk tokens + priorStageDigest tokens
-    //   manifest.digestTokens = produced digest (this stage, threaded forward)
-    // BASE_REQUEST supplies no priorStageDigest, so the prior-digest token count is 0.
+  test("chunkTokens covers every chunk that reached packing — included and excluded — and included keys sum to usedTokens minus the prior-stage digest", async () => {
+    // US-001 corrected accounting, scoped to the INCLUDED keys:
+    //   manifest.usedTokens = sum(tokens of included chunks) + priorStageDigest tokens
+    // Finding 5 (#2061) extends chunkTokens to carry excluded chunks' costs too,
+    // so "the budget evicted X tokens" is answerable from the manifest itself.
     const orch = new ContextOrchestrator([
       makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 300, content: "alpha content" })),
       makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 700, content: "beta content" })),
+      // Session (non-floor) below minScore 0.1 → below-min-score excluded.
+      makeProvider(
+        "p3",
+        makeChunkResult({ id: "c:3", kind: "session", tokens: 50, content: "gamma content", rawScore: 0.01 }),
+      ),
     ]);
-    const bundle = await orch.assemble(BASE_REQUEST);
+    const bundle = await orch.assemble({ ...BASE_REQUEST, minScore: 0.1, providerIds: ["p1", "p2", "p3"] });
     const tokenMap = bundle.manifest.chunkTokens ?? {};
     expect(bundle.manifest.includedChunks).toHaveLength(2);
-    expect(Object.keys(tokenMap).sort()).toEqual([...bundle.manifest.includedChunks].sort());
-    const summed = Object.values(tokenMap).reduce((a, b) => a + b, 0);
-    // The new invariant: summed = usedTokens - priorDigestTokens. BASE_REQUEST
-    // has no priorStageDigest, so priorDigestTokens = 0 and summed === usedTokens.
-    const priorDigestTokens = 0;
-    expect(summed).toBe(bundle.manifest.usedTokens - priorDigestTokens);
+    // The excluded chunk's token cost is recorded (Finding 5)...
+    expect(bundle.manifest.excludedChunks.map((c) => c.id)).toContain("c:3");
+    expect(tokenMap["c:3"]).toBe(50);
+    // ...while the accounting invariant holds over the INCLUDED keys only.
+    const includedSum = bundle.manifest.includedChunks.reduce((sum, id) => sum + (tokenMap[id] ?? 0), 0);
+    const priorDigestTokens = 0; // BASE_REQUEST supplies no priorStageDigest
+    expect(includedSum).toBe(bundle.manifest.usedTokens - priorDigestTokens);
   });
 
   test("manifest omits chunkTokens when nothing was packed", async () => {
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble(BASE_REQUEST);
     expect(bundle.manifest.chunkTokens).toBeUndefined();
+  });
+
+  test("manifest.floorOverageTokens sums the token costs of floorOverageItems (Finding 5)", async () => {
+    // Two floor chunks whose combined 9,000 tokens exceed the effective budget,
+    // with small reserves so at least one crosses cumulatively.
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 5_000, content: "big rules" })),
+      makeProvider("p2", makeChunkResult({ id: "floor:2", kind: "feature", tokens: 4_000, content: "big feature" })),
+    ]);
+    const bundle = await orch.assemble({ ...BASE_REQUEST, budgetTokens: 8_000, providerIds: ["p1", "p2"] });
+    const overage = bundle.manifest.floorOverageItems ?? [];
+    expect(overage.length).toBeGreaterThan(0);
+    const expected = overage.reduce((sum, id) => sum + (bundle.manifest.chunkTokens?.[id] ?? 0), 0);
+    expect(bundle.manifest.floorOverageTokens).toBe(expected);
+    expect(bundle.manifest.floorOverageTokens).toBeGreaterThan(0);
   });
 
   test("role-filtered chunks excluded and recorded in manifest", async () => {

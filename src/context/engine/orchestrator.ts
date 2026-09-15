@@ -94,6 +94,17 @@ const PROVIDER_FETCH_TIMEOUT_MS = 5_000;
 /** #1776: cap on how many floor items the budget-exceeded warn enumerates. */
 const FLOOR_OVERAGE_LOG_LIMIT = 10;
 
+/**
+ * Per-(story, stage) occurrence ledger for the floor-budget-exceeded debug
+ * line. Task 10 (#2061(c)) downgraded the warnOnce to an expected-state debug
+ * metric "plus a counter"; the counter survives here in the same shape as the
+ * `occurrence` ordinal `warnOnce`'s repeat path emits (logger.ts), so the
+ * JSONL keeps a tally of how often the condition fires while assembling one
+ * story's stage. Keyed by story id, which is unique within a run, so the
+ * ledger holds at most one small integer per story-stage and needs no reset.
+ */
+const floorOverageOccurrences = new Map<string, number>();
+
 export async function fetchWithTimeout(
   provider: IContextProvider,
   request: ContextRequest,
@@ -389,10 +400,15 @@ export class ContextOrchestrator {
     // Step 7: greedy pack. availableBudgetTokens is already folded into effectiveBudgetTokens
     // above (before the reserve subtractions), so no third ceiling argument is passed here —
     // passing it separately would let it bypass the reserves via packChunks' own Math.min.
-    const { packed, budgetExcludedIds, usedTokens, floorPackedIds, floorOverageIds, effectiveBudget } = packChunks(
-      kept,
-      effectiveBudgetTokens,
-    );
+    const {
+      packed,
+      budgetExcludedIds,
+      usedTokens,
+      floorPackedIds,
+      floorOverageIds,
+      floorOverageTokens,
+      effectiveBudget,
+    } = packChunks(kept, effectiveBudgetTokens);
 
     // US-003 AC-4: surface floor overage observability. Floor-kind chunks still
     // pack even when they overflow the effective budget; this warn makes the
@@ -421,6 +437,12 @@ export class ContextOrchestrator {
 
     const buildMs = _orchestratorDeps.now() - startMs;
 
+    // Finding 5 (#2061): every scored chunk's token cost, so the manifest can
+    // account for evicted chunks (role-filter, below-min, dedupe, budget) and
+    // not only the packed ones. `scored` is a superset of every chunk that
+    // reaches the exclusion lists.
+    const chunkTokenLookup = new Map<string, number>(scored.map((c) => [c.id, c.tokens]));
+
     const manifest = buildManifest({
       requestId,
       request,
@@ -433,8 +455,10 @@ export class ContextOrchestrator {
       belowMin,
       dedupeDropped,
       budgetExcludedIds,
+      chunkTokenLookup,
       floorPackedIds,
       floorOverageIds,
+      floorOverageTokens,
       effectiveBudget,
     });
 
@@ -444,16 +468,24 @@ export class ContextOrchestrator {
     // manifest field nobody reads at runtime. Name the floor items and their
     // token cost so this is visible without a manifest diff.
     if (manifest.usedTokens > manifest.totalBudgetTokens) {
+      // Defensive fallback: with cumulative attribution a bundle over
+      // `totalBudgetTokens` always has at least one crossing floor chunk, so
+      // `floorOverageItems` should be present here; fall back to the full floor
+      // list only as a guard.
       const overageIds = manifest.floorOverageItems ?? manifest.floorItems;
       // This condition holds on nearly every stage of every story, and the
       // floor routinely runs to 60+ chunks — log the heaviest few plus a
-      // count rather than the whole list, so the warn stays readable.
+      // count rather than the whole list, so the log stays readable.
       const byCost = overageIds
         .map((id) => ({ id, tokens: manifest.chunkTokens?.[id] ?? 0 }))
         .sort((a, b) => b.tokens - a.tokens || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      logger.warnOnce("context-v2", "Stage budget exceeded by floor items", {
+      const ledgerKey = `${request.storyId}|${request.stage}`;
+      const occurrence = (floorOverageOccurrences.get(ledgerKey) ?? 0) + 1;
+      floorOverageOccurrences.set(ledgerKey, occurrence);
+      logger.debug("context-v2", "Stage budget exceeded by floor items", {
         storyId: request.storyId,
         stage: request.stage,
+        occurrence,
         usedTokens: manifest.usedTokens,
         totalBudgetTokens: manifest.totalBudgetTokens,
         floorOverageCount: byCost.length,

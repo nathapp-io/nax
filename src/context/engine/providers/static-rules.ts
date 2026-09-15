@@ -16,7 +16,7 @@
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 import { type CanonicalRule, DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "@/context/rules/canonical-loader";
-import { applySectionBudget } from "@/context/rules/rule-budget";
+import { applySectionBudget, priorityToRawScore } from "@/context/rules/rule-budget";
 import type { RuleSection } from "@/context/rules/rule-sections";
 import { splitRuleIntoSections } from "@/context/rules/rule-sections";
 import { getLogger } from "@/logger";
@@ -83,13 +83,13 @@ export interface StaticRulesProviderOptions {
    */
   rulesShare?: number;
   /**
-   * When true, enforce the budget via contiguous-tail truncation (legacy
-   * behaviour) — rules that don't fit are dropped and reported as pressure.
-   * When false (default), every rule is preserved and the gap over the
-   * budget is reported as `overageTokens` pressure only.
+   * When true, enforce the effective budget via the per-rule section walk:
+   * a rule that no longer fits is closed, and the walk continues into later
+   * rules (contiguous within a rule, skip across rules). When false (default),
+   * every rule is preserved; the gap is reported on the result's
+   * `budgetPressure` (`overageTokens`, `droppedCount`, `droppedTokens`, `droppedIds`).
    *
-   * Wired from `config.context.v2.rules.enforceBudget` by the default
-   * orchestrator. See US-003.
+   * Wired from `config.context.v2.rules.enforceBudget` by the default orchestrator. See US-003.
    */
   enforceBudget?: boolean;
 }
@@ -445,7 +445,7 @@ export class StaticRulesProvider implements IContextProvider {
             role: ["all"] as ["all"],
             content,
             tokens,
-            rawScore: 1.0,
+            rawScore: priorityToRawScore(section.priority),
             ...(scopePaths && { scopePaths }),
           } satisfies RawChunk;
         });

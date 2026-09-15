@@ -4,7 +4,7 @@
  * Floor chunks (`static`, `feature`, `test-coverage` kinds — see
  * `FLOOR_KINDS`) bypass packing's budget check entirely, so
  * `manifest.usedTokens` can land 2-3x over `manifest.totalBudgetTokens` with
- * nothing surfacing it. This pins the `logger.warn` that names the
+ * nothing surfacing it. This pins the `logger.debug` that names the
  * responsible floor items and their token cost when that happens.
  *
  * Distinct from `orchestrator-floor-overage.test.ts`'s AC-4 warn, which
@@ -30,7 +30,7 @@ const BASE_REQUEST: ContextRequest = {
   providerIds: ["rules-provider"],
 };
 
-const WARN_MESSAGE = "Stage budget exceeded by floor items";
+const FLOOR_OVERAGE_MESSAGE = "Stage budget exceeded by floor items";
 
 function makeRulesProvider(): IContextProvider {
   return {
@@ -67,15 +67,15 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     _orchestratorDeps.getLogger = origGetLogger;
   });
 
-  test("warns, naming the floor item and its token cost, when usedTokens exceeds totalBudgetTokens", async () => {
+  test("debug-logs, naming the floor item and its token cost, when usedTokens exceeds totalBudgetTokens", async () => {
     const orch = new ContextOrchestrator([makeRulesProvider()]);
 
     const bundle = await orch.assemble(BASE_REQUEST);
 
     expect(bundle.manifest.usedTokens).toBeGreaterThan(bundle.manifest.totalBudgetTokens);
 
-    const call = mockLogger.calls.find((c) => c.level === "warn" && c.message === WARN_MESSAGE);
-    assertDefined(call, "floor-budget-exceeded warn log call");
+    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === FLOOR_OVERAGE_MESSAGE);
+    assertDefined(call, "floor-budget-exceeded debug log call");
     const data = call.data ?? {};
     expect(Object.keys(data)[0]).toBe("storyId");
     expect(data.storyId).toBe("US-001");
@@ -87,9 +87,9 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     expect(data.heaviestFloorItems).toContainEqual({ id: "static-rules:big-rule", tokens: 22_000 });
   });
 
-  test("caps the enumerated floor items at 10, heaviest first, but counts them all", async () => {
+  test("debug-logs and caps the enumerated overage floor items at 10, heaviest first, but counts them all", async () => {
     // The overage condition holds on nearly every stage of every story and the
-    // floor routinely runs to 60+ chunks, so the warn must not dump the lot.
+    // floor routinely runs to 60+ chunks, so the debug log must not dump the lot.
     const provider: IContextProvider = {
       id: "rules-provider",
       kind: "static",
@@ -108,13 +108,18 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     };
     const orch = new ContextOrchestrator([provider]);
 
-    await orch.assemble(BASE_REQUEST);
+    const bundle = await orch.assemble(BASE_REQUEST);
 
-    const call = mockLogger.calls.find((c) => c.level === "warn" && c.message === WARN_MESSAGE);
-    assertDefined(call, "floor-budget-exceeded warn log call");
+    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === FLOOR_OVERAGE_MESSAGE);
+    assertDefined(call, "floor-budget-exceeded debug log call");
     const data = call.data ?? {};
-    expect(data.floorOverageCount).toBe(25);
-    // Exactly the 10 heaviest, heaviest first — rule-24 (1024) down to rule-15 (1015).
+    // Ruling 11 attributes overage cumulatively: with budget 8,000 (minus
+    // reserves) the walk crosses during the 8th chunk (rule-07, cumulative
+    // 8,028), so the overage set is rule-07..rule-24 = 18 chunks — not all 25.
+    expect(bundle.manifest.floorOverageItems).toHaveLength(18);
+    expect(data.floorOverageCount).toBe(18);
+    // Exactly the 10 heaviest of the overage set, heaviest first — rule-24
+    // (1024) down to rule-15 (1015).
     expect(data.heaviestFloorItems).toEqual([
       { id: "static-rules:rule-24", tokens: 1024 },
       { id: "static-rules:rule-23", tokens: 1023 },
@@ -129,7 +134,21 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     ]);
   });
 
-  test("does not warn when floor items fit within totalBudgetTokens", async () => {
+  test("debug log carries an occurrence ordinal that tallies repeats for the same story-stage", async () => {
+    // Unique story id so the module-level ledger starts fresh for this key —
+    // earlier tests reuse "US-001|tdd-test-writer" without asserting the tally.
+    const orch = new ContextOrchestrator([makeRulesProvider()]);
+
+    await orch.assemble({ ...BASE_REQUEST, storyId: "US-001-tally" });
+    await orch.assemble({ ...BASE_REQUEST, storyId: "US-001-tally" });
+
+    const calls = mockLogger.calls.filter((c) => c.level === "debug" && c.message === FLOOR_OVERAGE_MESSAGE);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].data?.occurrence).toBe(1);
+    expect(calls[1].data?.occurrence).toBe(2);
+  });
+
+  test("does not debug-log when floor items fit within totalBudgetTokens", async () => {
     const orch = new ContextOrchestrator([
       {
         id: "rules-provider",
@@ -154,7 +173,7 @@ describe("ContextOrchestrator.assemble() — floor items exceeding totalBudgetTo
     const bundle = await orch.assemble(BASE_REQUEST);
 
     expect(bundle.manifest.usedTokens).toBeLessThanOrEqual(bundle.manifest.totalBudgetTokens);
-    const call = mockLogger.calls.find((c) => c.level === "warn" && c.message === WARN_MESSAGE);
+    const call = mockLogger.calls.find((c) => c.level === "debug" && c.message === FLOOR_OVERAGE_MESSAGE);
     expect(call).toBeUndefined();
   });
 });

@@ -59,8 +59,9 @@ export class TokenUsage {
  *
  * `overageTokens` is, per stage, `max(0, sum(tokens of ALL floor-kind chunks in
  * ContextManifest.floorItems) - effectiveBudget)`, summed across every persisted
- * stage manifest — not merely the tokens of `floorOverageItems` (the subset that
- * individually caused the overflow); see `computeFloorOverage` in
+ * stage manifest — not merely the tokens of `floorOverageItems` (the floor
+ * chunks that crossed the ceiling cumulatively, per Ruling 11); see
+ * `computeFloorOverage` in
  * `src/metrics/tracker.ts` for the exact computation. Zero when the floor fit
  * within the effective budget for every stage this story ran.
  */

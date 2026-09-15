@@ -539,7 +539,7 @@ describe("US-003 — repack to target ceiling", () => {
     expect(resultIds).toContain("tc-1");
   });
 
-  test("AC5: floorOverageItems lists overflowed floor chunks from rebuild, not prior", () => {
+  test("AC5: floorOverageItems lists the floor chunks from rebuild that crossed the ceiling, not prior", () => {
     // Set prior floorOverageItems to a stale value to prove it's overwritten.
     const prior = makeTestBundle(
       [
@@ -553,12 +553,13 @@ describe("US-003 — repack to target ceiling", () => {
 
     const result = rebuild(prior, {});
 
-    // EffectiveBudget = min(16000, 8000) = 8000.
-    // Cumulative floor (static-1 5000 + feat-1 4000 = 9000) exceeds the 8_000
-    // ceiling, so every floor chunk that participates in the overage is
-    // reported — matches the cumulative-overflow semantic the acceptance test
-    // (US-003 AC-17) anchors.
-    expect(result.manifest.floorOverageItems?.sort()).toEqual(["feat-1", "static-1"]);
+    // EffectiveBudget = min(16000, 8000) = 8000. Ruling 11 attributes overage
+    // to the chunk that crosses cumulatively in the packer's walk order:
+    // static-1 (0 + 5000 <= 8000) fits, feat-1 then lands at 5000 + 4000 =
+    // 9000 > 8000 — so feat-1 alone is overage. (The old collective semantic
+    // listed both whenever the floor total exceeded the ceiling.)
+    expect(result.manifest.floorOverageItems).toEqual(["feat-1"]);
+    expect(result.manifest.floorOverageTokens).toBe(4000);
     // Must not carry the stale value forward.
     expect(result.manifest.floorOverageItems).not.toContain("stale-overage-id");
   });

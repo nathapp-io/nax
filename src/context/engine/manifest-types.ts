@@ -124,7 +124,13 @@ export interface ContextManifest {
   requestId: string;
   /** Pipeline stage that requested context */
   stage: string;
-  /** Total token budget passed in ContextRequest.budgetTokens */
+  /**
+   * Floor-driven minimum, not a ceiling. Carried in from
+   * ContextRequest.budgetTokens, but the floor kinds (`static`, `feature`,
+   * `test-coverage` — `FLOOR_KINDS` in packing.ts) bypass it by design, so
+   * `usedTokens` can exceed it. Ruling #2061 (c), ruled 2026-09-15: concede
+   * the floor exemption and guarantee repo-derived context a slot.
+   */
   totalBudgetTokens: number;
   /**
    * Effective token ceiling actually used by `packChunks` — i.e.
@@ -151,19 +157,37 @@ export interface ContextManifest {
    */
   floorItems: string[];
   /**
-   * Subset of floorItems whose inclusion pushed usedTokens past budgetTokens.
-   * Empty when the floor fit comfortably within budget.
+   * Subset of floorItems that crossed the effective ceiling at the point each
+   * was packed (Ruling 11, #2061 Finding 5): a floor chunk is listed iff
+   * `floorWalkTokens + chunk.tokens > effectiveBudget` in the packer's
+   * floor-only walk — i.e. the floor's own running total, NOT the bundle
+   * total. Non-floor chunks that the guarantee (Ruling 8) pre-admits before
+   * the floor walk therefore never shift the attribution: the overage set
+   * measures the floor's own overshoot, independent of which unrelated
+   * non-floor candidates happen to be in the pool.
+   *
+   * Absent when no floor chunk crossed. With the corrected semantics this is
+   * the normal case — a floor chunk that fit before a later one pushed the
+   * bundle over is not itself overage.
    */
   floorOverageItems?: string[];
   /**
-   * Per-chunk token cost, keyed by chunk ID, for every chunk in
-   * `includedChunks`. Absent when nothing was packed.
+   * Sum of `tokens` of the chunks listed in `floorOverageItems` — the TOTAL
+   * tokens of the floor chunks that crossed the ceiling, not the excess over
+   * it (e.g. 1200, not 800). Absent whenever `floorOverageItems` is.
+   */
+  floorOverageTokens?: number;
+  /**
+   * Per-chunk token cost, keyed by chunk ID, for every chunk that reached
+   * packing — `includedChunks` and `excludedChunks` alike (Finding 5, #2061).
+   * Absent when no chunk with a known cost was seen.
    *
    * Written so downstream consumers (curator `chunk-included` observations)
-   * can report a real token cost per chunk instead of a placeholder. Without
-   * it the context budget cannot be tuned against measured data — see #1421.
-   * A sibling map rather than a shape change to `includedChunks`, which is a
-   * persisted schema other readers index by ID.
+   * can report a real token cost per chunk instead of a placeholder, and so
+   * "the budget evicted X tokens of context" is answerable from the manifest.
+   * Without it the context budget cannot be tuned against measured data — see
+   * #1421. A sibling map rather than a shape change to `includedChunks`, which
+   * is a persisted schema other readers index by ID.
    */
   chunkTokens?: Record<string, number>;
   /**

@@ -3,14 +3,24 @@
  *
  * Selects which chunks fit within the token budget.
  *
- * Phase 0-2: Greedy algorithm — sort by score/tokens (density) descending,
- * always include floor items (static + feature + test-coverage kinds) first
- * regardless of budget.
+ * Phase 0-2: Greedy algorithm — sort by score/tokens (density) descending and
+ * pack floor items (static + feature + test-coverage kinds) regardless of
+ * budget. Exception: when the non-floor guarantee fires (below), guaranteed
+ * non-floor chunks are packed before the floor, so floor items are not always
+ * first.
  *
  * Budget floor rule (spec §AC-6):
  *   "static", "feature", and "test-coverage" chunks are always included
  *   even when their total tokens exceed budgetTokens. The manifest records
  *   reason: "budget-exceeded-by-floor" for any chunk that causes an overflow.
+ *   When the floor alone overflows the effective budget, up to
+ *   NON_FLOOR_GUARANTEE (3) non-floor chunks by density are admitted first —
+ *   skipping any candidate whose tokens exceed the effective budget — and the
+ *   floor then packs unconditionally. The guarantee is count-based, so in the
+ *   worst case it adds up to NON_FLOOR_GUARANTEE chunks each sized just under
+ *   effectiveBudget — roughly `NON_FLOOR_GUARANTEE × effectiveBudget` tokens on
+ *   top of an already-over-budget floor. See the constant for why that bound
+ *   (not a token share) is the revisit condition.
  *
  * Non-floor optimality repair (spec §AC-7, US-004):
  *   Density-greedy is the standard heuristic for fractional knapsack, but
@@ -44,6 +54,22 @@ import type { ChunkKind } from "./types";
 export const FLOOR_KINDS: ChunkKind[] = ["static", "feature", "test-coverage"];
 
 /**
+ * Maximum number of non-floor chunks force-admitted when the budget floor
+ * alone overflows the effective budget (Ruling 8, #2061(c)). The floor
+ * exemption concedes the whole budget, so this guarantees repo-derived
+ * (non-floor) context a slot. Exported so the ruling's revisit condition can
+ * tune it.
+ *
+ * Worst-case token bound: each admitted chunk's tokens are <= effectiveBudget
+ * (candidates larger than the budget are skipped), so the guarantee can add up
+ * to roughly `NON_FLOOR_GUARANTEE × effectiveBudget` tokens on top of an
+ * already-over-budget floor. That is why the guarantee is count-based: a
+ * token-share alternative is unevidenced (Finding 5, #2061). This bound is the
+ * revisit condition once eviction is measurable.
+ */
+export const NON_FLOOR_GUARANTEE = 3;
+
+/**
  * Score per token — the packing priority metric (spec §AC-7). A zero-token
  * chunk has no cost, so it is ranked as maximally dense rather than
  * producing NaN/Infinity from a bare division.
@@ -74,6 +100,8 @@ export interface PackResult {
   floorPackedIds: string[];
   /** IDs of floor-kind chunks that caused the budget to be exceeded (subset of floorPackedIds) */
   floorOverageIds: string[];
+  /** Sum of the `tokens` of the chunks listed in `floorOverageIds` (Ruling 11) */
+  floorOverageTokens: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,34 +200,64 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
   const packed: PackedChunk[] = [];
   const floorPackedIds: string[] = [];
   const floorOverageIds: string[] = [];
+  let floorOverageTokens = 0;
   let usedTokens = 0;
+  // Floor-only token tally used for overage attribution. The non-floor
+  // guarantee (Pass 0) pre-admits chunks ahead of the floor walk, so the
+  // bundle-wide `usedTokens` is not the floor's own running total — judging a
+  // floor chunk against it would make the overage telemetry move with
+  // unrelated non-floor candidates.
+  let floorWalkTokens = 0;
 
   // Determine whether the floor pass collectively overflows the effective
-  // budget. When it does, every packed floor chunk is reported as overage
-  // (matching the cumulative semantic — see US-003 AC-5, AC-17 acceptance
-  // test: "manifest.floorOverageItems lists exactly the overflowing floor
-  // chunk IDs"). When the cumulative floor fits, no chunk is reported as
-  // overage regardless of how any individual chunk lines up against the
-  // budget on its own.
+  // budget. This gates the non-floor guarantee (Pass 0) only. Overage
+  // ATTRIBUTION is per-chunk and cumulative against the floor's own walk
+  // (Ruling 11): a floor chunk is overage iff
+  // `floorWalkTokens + chunk.tokens > effectiveBudget` at the point it is
+  // packed — so a floor chunk that fits before a later one pushes the bundle
+  // over is NOT itself overage, and the guarantee's pre-admitted tokens never
+  // shift the floor's attributable overshoot.
   const totalFloorTokens = floorChunks.reduce((sum, c) => sum + c.tokens, 0);
   const floorCollectivelyOverflows = totalFloorTokens > effectiveBudget;
 
-  // Pass 1: floor items — always include, regardless of budget
+  // Pass 0: non-floor guarantee — only when the floor alone overflows the
+  // budget. Admit the highest-density non-floor chunks first (skipping any
+  // chunk too large to ever fit) so repo-derived context cannot be starved by
+  // the conceded floor exemption.
+  const guaranteedIds = new Set<string>();
+  if (floorCollectivelyOverflows) {
+    const byDensity = [...nonFloorChunks].sort((a, b) => scoreDensity(b) - scoreDensity(a));
+    for (const chunk of byDensity) {
+      if (guaranteedIds.size >= NON_FLOOR_GUARANTEE) break;
+      if (chunk.tokens > effectiveBudget) continue;
+      guaranteedIds.add(chunk.id);
+      packed.push({ ...chunk });
+      usedTokens += chunk.tokens;
+    }
+  }
+
+  // Pass 1: floor items — always include, regardless of budget. Overage is
+  // attributed against the floor-only walk (not the bundle total, so the
+  // guarantee cannot move it): only the chunk that crosses the ceiling at the
+  // point it is packed is overage.
   for (const chunk of floorChunks) {
-    const overflows = floorCollectivelyOverflows || usedTokens + chunk.tokens > effectiveBudget;
+    const overflows = floorWalkTokens + chunk.tokens > effectiveBudget;
     const packedChunk: PackedChunk = { ...chunk };
     if (overflows) {
       packedChunk.reason = "budget-exceeded-by-floor";
       floorOverageIds.push(chunk.id);
+      floorOverageTokens += chunk.tokens;
     }
     floorPackedIds.push(chunk.id);
     packed.push(packedChunk);
     usedTokens += chunk.tokens;
+    floorWalkTokens += chunk.tokens;
   }
 
-  // Pass 2: non-floor items — best-of(greedy, largest single) repair
+  // Pass 2: remaining non-floor items — best-of(greedy, largest single) repair
+  const remainingNonFloor = nonFloorChunks.filter((c) => !guaranteedIds.has(c.id));
   const remainingBudget = Math.max(0, effectiveBudget - usedTokens);
-  const { selected, excludedIds } = repairNonFloor(nonFloorChunks, remainingBudget);
+  const { selected, excludedIds } = repairNonFloor(remainingNonFloor, remainingBudget);
   for (const chunk of selected) {
     packed.push({ ...chunk });
     usedTokens += chunk.tokens;
@@ -212,5 +270,6 @@ export function packChunks(chunks: ScoredChunk[], budgetTokens: number, availabl
     effectiveBudget,
     floorPackedIds,
     floorOverageIds,
+    floorOverageTokens,
   };
 }

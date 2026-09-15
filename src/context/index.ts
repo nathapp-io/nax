@@ -52,7 +52,7 @@ export {
   NeutralityLintError,
 } from "./rules/canonical-loader";
 export type { SectionBudgetResult } from "./rules/rule-budget";
-export { applySectionBudget } from "./rules/rule-budget";
+export { applySectionBudget, priorityToRawScore } from "./rules/rule-budget";
 export type { RuleSection } from "./rules/rule-sections";
 export { splitRuleIntoSections } from "./rules/rule-sections";
 export {

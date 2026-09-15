@@ -60,10 +60,11 @@ export interface ContextV2RulesConfig {
    */
   rulesShare: number;
   /**
-   * When true (default), `applyCanonicalRulesBudget` enforces the ceiling via
-   * contiguous-tail truncation. When false, the ceiling is reported
-   * as pressure and every rule is preserved so the packer downstream still
-   * sees the full corpus.
+   * When true (default), `StaticRulesProvider` enforces the ceiling via the
+   * section budget: a rule that no longer fits is closed and the walk continues
+   * to later rules — contiguous within a rule, skip across rules. When false, the
+   * ceiling is reported as pressure and every rule is preserved so the packer
+   * downstream still sees the full corpus.
    */
   enforceBudget: boolean;
 }

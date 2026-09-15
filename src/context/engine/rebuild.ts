@@ -204,6 +204,18 @@ export function rebuild(
     .filter((id) => !includedChunkIds.has(id))
     .map((id) => ({ id, reason: "budget" as const }));
 
+  // #1421: `chunkTokens` must cover every chunk that reached packing, included
+  // and excluded alike (manifest-types.ts). The excluded entries have no chunk
+  // object of their own, so resolve their cost from the packer's input
+  // (`packedChunks` also carries the injected failure note).
+  const packedTokensById = new Map(packedChunks.map((c) => [c.id, c.tokens]));
+  const chunkTokens: Record<string, number> = {};
+  for (const chunk of orderedChunks) chunkTokens[chunk.id] = chunk.tokens;
+  for (const excluded of excludedChunks) {
+    const tokens = packedTokensById.get(excluded.id);
+    if (tokens !== undefined) chunkTokens[excluded.id] = tokens;
+  }
+
   const manifest: ContextManifest = {
     ...prior.manifest,
     requestId: deps.uuid(),
@@ -211,7 +223,7 @@ export function rebuild(
     excludedChunks,
     // Recomputed chunk tokens — a rebuild can add a chunk (the failure note)
     // that the prior map has no entry for, which would record tokens:0 (#1421).
-    chunkTokens: Object.fromEntries(orderedChunks.map((c) => [c.id, c.tokens])),
+    chunkTokens,
     // US-004: recompute per-chunk scores alongside tokens so a rebuild that
     // adds a chunk (the failure note) carries a truthful score entry.
     chunkScores: Object.fromEntries(orderedChunks.map((c) => [c.id, c.score])),
@@ -222,11 +234,13 @@ export function rebuild(
     effectiveBudget,
     // US-003 AC5: floorOverageItems from the rebuild's own pack result, not the
     // prior bundle's. The packer's `floorOverageIds` IS the set of floor chunks
-    // that overflowed (cumulatively) — pass it through whole, exactly as
-    // `manifest-builder.ts` does on the primary build path, so the two paths
-    // report overage identically. No overflow -> undefined, likewise.
+    // that crossed the ceiling in its cumulative walk order (Ruling 11) — pass
+    // it through whole, exactly as `manifest-builder.ts` does on the primary
+    // build path, so the two paths report overage identically. No overflow ->
+    // undefined, likewise.
     floorItems: packResult.floorPackedIds,
     floorOverageItems: packResult.floorOverageIds.length > 0 ? packResult.floorOverageIds : undefined,
+    floorOverageTokens: packResult.floorOverageIds.length > 0 ? packResult.floorOverageTokens : undefined,
     chunkSummaries: Object.keys(chunkSummaries).length > 0 ? chunkSummaries : undefined,
     staleChunks: orderedChunks.some((c) => c.staleCandidate)
       ? orderedChunks.filter((c) => c.staleCandidate).map((c) => c.id)

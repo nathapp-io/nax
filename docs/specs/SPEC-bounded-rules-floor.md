@@ -39,11 +39,17 @@ the overage is reported, not capped." Capping rules while packing stays unbounde
 only moves the cliff. Section granularity is what makes a cap survivable, because
 truncation lands mid-file instead of destroying the highest-priority rule.
 
-The eviction policy itself is already correct and is not changed by this spec:
-`priority: <n>` means lower number = more important
-(`SPEC-context-engine-canonical-rules.md:121`), the sort at
-`canonical-loader.ts:450` is ascending, and enforced mode keeps the longest
-leading run that fits.
+The eviction policy's ordering is already correct and is not changed by this
+spec: `priority: <n>` means lower number = more important
+(`SPEC-context-engine-canonical-rules.md:121`), and the sort at
+`canonical-loader.ts:450` is ascending. Its truncation contract has since been
+amended by #2061 proposal (b). The spec originally kept a single global leading
+run — "longest leading run that fits", everything after dropped, mirroring
+`applyCanonicalRulesBudget` at file granularity. That global stop was
+intentional, not an accident, but it is superseded: under the old contract an
+oversized high-priority rule starved every rule behind it, so the shipped
+default delivered one rule of thirteen (#2061 Finding 2). The amended contract
+is contiguous within a rule and continues across rules; see §Approach.
 
 ## Design
 
@@ -104,9 +110,25 @@ ordinal-0 preamble section. H3 and deeper headings stay inside their parent
 section. A file with no H2 yields exactly one section, preserving today's
 behaviour for simple rule files.
 
-Truncation retains the contiguous-tail contract — longest leading run that fits,
-everything after dropped — with one refinement sections make possible: the
-boundary file contributes its leading sections instead of being dropped whole.
+Truncation is per-rule contiguous-tail. Sections are walked in ascending
+`priority`, then by owning rule, then ascending `ordinal`. A rule contributes
+its longest leading run of sections that fits the tokens left at the point it is
+reached: when a section would push the running total past `budgetTokens`, that
+section is dropped and **its owning rule is closed** — the rule's remaining
+sections are dropped — but the walk continues with the next rule's sections,
+which may still fit the remaining budget. A rule is contiguous within itself and
+the walk skips forward across rules; a gap is never filled with a later section.
+
+This supersedes the spec's original global stop, under which the first
+non-fitting section ended the entire walk and everything after it was dropped.
+The original behaviour was intentional — it mirrored `applyCanonicalRulesBudget`'s
+file-level "longest leading run that fits" — but it is superseded: an oversized
+high-priority rule starved every rule behind it (#2061 Finding 2). The amendment
+removes that cliff; it does not create budget, and the corpus still exceeds the
+shipped cap. The earlier refinement still holds: the boundary file contributes
+its leading sections instead of being dropped whole. As before, the first section
+overall is admitted whole even when it exceeds the budget on its own (fail-open —
+a rule section is never gutted).
 
 The provider's budget becomes
 `min(rulesShare * request.budgetTokens, rules.budgetTokens)`, where
@@ -114,8 +136,20 @@ The provider's budget becomes
 `rules.budgetTokens` becomes an absolute upper bound so current configuration
 keeps its meaning.
 
-`rawScore` stays flat at `1.0` for every emitted rule chunk. Differential scoring
-depends on the effectiveness classifier, which is out of scope.
+A canonical rule chunk now carries a **priority-derived** `rawScore` from
+`priorityToRawScore()`, bounded in `(0, 1]`: a lower `priority` number yields a
+higher score, and the default priority (`100`, used when a rule declares none)
+maps to `0.5`. Differential scoring via the effectiveness classifier remains out
+of scope.
+
+The mapping is **near-inert for selection and inclusion today** — static/floor
+chunks bypass the `minScore` filter and packing's budget, so it does not rank or
+bound the floor. It can still influence `dedupeChunks`' choice among
+near-duplicate chunks, because dedupe keeps the highest-score representative
+from a score-descending list, so lowering a static chunk's `rawScore` can change
+which of two near-duplicates survives. Otherwise its visible effect is the
+`chunkScores` values in the manifest. It exists so a future #2061 (c) ruling
+*can* rank rules; it neither activates ranking nor bounds the budget overrun.
 
 **Schema default and constructor default are separate, and only the schema
 flips.** `ContextV2RulesConfigSchema.enforceBudget` changes from `false` to
@@ -142,14 +176,14 @@ stale contract. Do not re-sign it as evidence that the default must stay `false`
 | Rule content has no `## ` heading | Yields exactly one section containing the whole content. No error. |
 | `.nax/rules/` directory absent | Existing behaviour preserved: no canonical chunks emitted, no throw. |
 | `rulesShare` outside the range 0 to 1 | Rejected at config load by the schema. |
-| A single section alone exceeds the budget | Admitted whole and reported as overage. Fail-open: a rule is never gutted mid-sentence. |
+| The first section overall alone exceeds the budget | Admitted whole and reported as overage. Fail-open: a rule is never gutted mid-sentence. A later rule's oversized first section is dropped and closes that rule, and the walk continues. |
 | `budgetTokens` zero, negative, or non-finite | Empty section list returned, `overageTokens` mirrors `totalTokens`, matching the existing `applyCanonicalRulesBudget` contract. |
 
 ## Out of Scope
 
 - Implementing `roles:` frontmatter filtering (the remaining half of issue #822) is not part of this spec; only `appliesTo:`, `stages:`, and `paths:` scoping are used.
 - Bounding the `feature` and `test-coverage` floor kinds inside `packChunks` is not part of this spec; only the `static` kind is bounded, and it is bounded at the provider rather than in packing.
-- Differential scoring of rule chunks is not part of this spec; every emitted rule chunk keeps `rawScore: 1.0`.
+- Differential/effectiveness-based scoring of rule chunks is not part of this spec. The authored-priority mapping **is** in scope (#2061 proposal item (a)): every canonical rule chunk carries `priorityToRawScore(rule.priority)`. What remains out of scope is scoring that depends on the effectiveness classifier.
 - Modifying the context-engine effectiveness classifier or its `pollutionRatio` computation is not part of this spec.
 - Implementing the context-engine v2 write path (capture, extract, summarize, promote) or the `query_scratch` pull tool is not part of this spec.
 - Updating the `rules-setup` skill in the `nax-toolkit-skills` repository is not part of this spec; it is a follow-on change in a separate repository.
@@ -177,8 +211,11 @@ inheriting the rule's frontmatter.
 
 ### US-002 — Section-aware budget with boundary truncation
 
-Introduces a budget function over sections that preserves the contiguous-tail
-contract while allowing the boundary file to contribute its leading sections.
+Introduces a budget function over sections that applies the contiguous-tail
+contract per rule: a rule whose next section does not fit is closed out and the
+walk continues across the remaining rules, while the boundary file still
+contributes its leading sections. This supersedes the original global stop; see
+§Approach and #2061 Finding 2.
 
 - Depends on: US-001
 - Context Files:
@@ -284,7 +321,7 @@ is one this spec creates rather than one that must already reach them.
 1. `[unit]` `applySectionBudget` is importable from `src/context/rules/rule-budget.ts` and, called with sections whose total tokens are below the budget, returns every supplied section.
 2. `[unit]` Called with sections from two rules whose combined tokens fit the budget, `applySectionBudget` returns them ordered by ascending `priority`, then ascending `ordinal`.
 3. `[unit]` Called with a budget that accommodates only the first two of a rule's four sections, `applySectionBudget` returns those two sections and omits the rule's remaining two.
-4. `[unit]` Called with a budget exhausted partway through the first rule, `applySectionBudget` omits every section belonging to any lower-priority rule, even when one of those sections would fit in the remaining space.
+4. `[unit]` Called with a budget exhausted partway through the first rule, `applySectionBudget` applies the budget per rule: it closes the first rule and omits its remaining sections, then continues the walk, retaining those later-rule sections that fit the remaining budget.
 5. `[unit]` Called with a single section whose tokens exceed the budget on its own, `applySectionBudget` returns that section and reports `overageTokens` greater than zero.
 6. `[unit]` Called with sections that do not all fit, `applySectionBudget` returns a `droppedIds` array containing the identifier of every omitted section.
 7. `[unit]` Called with an empty section array, `applySectionBudget` returns an empty section list and `overageTokens` of zero.
@@ -309,7 +346,7 @@ is one this spec creates rather than one that must already reach them.
 3. `[unit]` Calling `StaticRulesProvider.fetch` against a corpus holding one rule file with two `## ` sections returns two chunks with different `id` values.
 4. `[unit]` Calling `StaticRulesProvider.fetch` returns chunks whose `id` values each incorporate the owning section's slug.
 5. `[unit]` Calling `StaticRulesProvider.fetch` returns chunks each having a `kind` of `static`.
-6. `[unit]` Calling `StaticRulesProvider.fetch` returns chunks each having a `rawScore` of `1.0`.
+6. `[unit]` Calling `StaticRulesProvider.fetch` returns canonical rule chunks whose `rawScore` equals `priorityToRawScore(rule.priority)`, so a rule declaring no `priority` yields `0.5`.
 7. `[unit]` Calling `StaticRulesProvider.fetch` with a corpus exceeding the effective budget returns a `budgetPressure` whose `droppedCount` equals the number of omitted sections.
 8. `[unit]` Calling `StaticRulesProvider.fetch` with a corpus exceeding the effective budget returns a `budgetPressure` whose `droppedTokens` equals the summed tokens of the omitted sections.
 9. `[unit]` Calling `StaticRulesProvider.fetch` returns a `scopingReport` whose `sectionCount` equals the number of sections remaining after stage and `appliesTo` filtering.

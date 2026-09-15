@@ -374,7 +374,10 @@ describe("US-003 — rebuild AC4: floor-kind chunks are all retained when they o
     const rebuiltIds = rebuilt.chunks.map((c) => c.id);
     expect(rebuiltIds).toContain("p1:feat-a");
     expect(rebuiltIds).toContain("p1:feat-b");
-    expect(rebuiltIds).not.toContain("p1:sess");
+    // Ruling 8 (#2061c): the floor overflows the ceiling, so the non-floor
+    // guarantee admits the highest-density non-floor chunk rather than
+    // starving it.
+    expect(rebuiltIds).toContain("p1:sess");
   });
 
   test("static + feature + test-coverage floor chunks all retained on overage", async () => {
@@ -399,7 +402,10 @@ describe("US-003 — rebuild AC4: floor-kind chunks are all retained when they o
     expect(rebuiltIds).toContain("p1:rules");
     expect(rebuiltIds).toContain("p1:feat");
     expect(rebuiltIds).toContain("p1:tc");
-    expect(rebuiltIds).not.toContain("p1:sess");
+    // Ruling 8 (#2061c): the floor overflows the ceiling, so the non-floor
+    // guarantee admits the highest-density non-floor chunk rather than
+    // starving it.
+    expect(rebuiltIds).toContain("p1:sess");
   });
 });
 
@@ -475,12 +481,13 @@ describe("US-003 — rebuild AC5: floorOverageItems reflects the rebuild's own p
     });
 
     const overflow = rebuilt.manifest.floorOverageItems ?? [];
-    // Overflow is cumulative, matching the packer's own rule
-    // (`usedTokens + chunk.tokens > effectiveBudget`) and `manifest-builder`
-    // on the primary build path: p1:feat-huge (9_000) clears the 8_000 ceiling
-    // by itself, and p1:feat-small lands on top of it at 9_100, so BOTH are
-    // over-budget floor chunks. The spec asks for "exactly the floor chunk ids
-    // that overflowed that ceiling" — that is the whole set, not just the first.
+    // Overflow is cumulative against the floor's own walk, matching the
+    // packer's rule (`floorWalkTokens + chunk.tokens > effectiveBudget`) and
+    // `manifest-builder` on the primary build path: p1:feat-huge (9_000)
+    // clears the 8_000 ceiling by itself, and p1:feat-small lands on top of
+    // it at 9_100, so BOTH are over-budget floor chunks. The spec asks for
+    // "exactly the floor chunk ids that overflowed that ceiling" — that is
+    // the whole set, not just the first.
     expect(overflow).toContain("p1:feat-huge");
     expect(overflow).toContain("p1:feat-small");
     // The non-floor chunk must not be in floorOverageItems.

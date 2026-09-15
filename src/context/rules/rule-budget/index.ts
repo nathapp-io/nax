@@ -2,10 +2,10 @@
  * Context Engine v2 — section-aware budget (US-002)
  *
  * Applies a token budget across a flat list of `RuleSection` values produced
- * by `splitRuleIntoSections`. Preserves the priority/ordinal contiguous-tail
- * contract used by `applyCanonicalRulesBudget`, with one refinement sections
- * make possible: the boundary file contributes its leading sections instead
- * of being dropped whole.
+ * by `splitRuleIntoSections`. Preserves the priority/ordinal ordering used by
+ * `applyCanonicalRulesBudget`, with one refinement sections make possible: a
+ * rule contributes a contiguous leading run of its sections instead of being
+ * dropped whole.
  *
  * Sorting: ascending by `priority` (lower number = more important), then by
  * owning rule, then ascending by `ordinal` within that rule.
@@ -17,16 +17,32 @@
  * cuts every rule at the same ordinal instead of dropping one boundary file's
  * tail, so each rule arrives shredded and no rule is contiguous.
  *
- * Truncation: longest leading run whose cumulative tokens fit inside
- * `budgetTokens`. The first section is admitted whole even if it exceeds the
- * budget on its own (fail-open — a rule section is never gutted). Any later
- * section that would push the running total past the budget starts a dropped
- * tail; every following section is dropped as well, even when it would fit
- * in the remaining space.
+ * Truncation is per-rule contiguous-tail: sections are walked in sorted order,
+ * and a rule contributes its longest leading run of sections that fits the
+ * tokens left when the walk reaches it. A section that would push the running
+ * total past the budget closes its owning rule — that rule's remaining sections
+ * are dropped — and the walk continues with the next rule's sections, which may
+ * still fit the tokens left over. Contiguous within a rule; the walk skips
+ * forward across rules; never a hole. The first section overall is admitted
+ * whole even if it exceeds the budget on its own (fail-open — a rule section is
+ * never gutted).
  *
  * Invalid budgets (zero, negative, or non-finite) return an empty section
  * list and an `overageTokens` that mirrors the supplied total so callers
  * can still report pressure.
+ *
+ * Scoring: `priorityToRawScore` maps an authored frontmatter `priority` to a
+ * raw score in `(0, 1]`, pivoting at `FRONTMATTER_PRIORITY_DEFAULT` (100 →
+ * 0.5). Non-positive priorities clamp up to 1 (they sort above priority 1, so
+ * they must rank above it too); `undefined` and non-finite score as the
+ * default. The mapping is bounded on purpose. An unbounded `DEFAULT /
+ * priority` would preserve 1.0 at the default, but once floor chunks compete
+ * with non-floor chunks an unbounded score lets a single high-priority rule
+ * dominate every code chunk in the pool. Keeping rules inside `(0, 1]` lets
+ * that rules-vs-code weighting be set explicitly via `KIND_WEIGHTS` instead
+ * of being inherited from this mapping. The cost — all static scores halve
+ * relative to today — is inert, because floor chunks are exempt from both
+ * `minScore` and packing.
  *
  * See: docs/specs/SPEC-bounded-rules-floor.md §US-002
  */
@@ -53,10 +69,13 @@ export interface SectionBudgetResult {
 }
 
 /**
- * Identity of the rule a section belongs to, for the sort tiebreaker.
+ * Identity of the rule a section belongs to.
  *
- * Matches the key `StaticRulesProvider` sorts its rules by, so the section
- * order this module produces agrees with the rule order the provider computed.
+ * Serves two purposes: the sort tiebreaker that groups a rule's sections
+ * together, and the key of the closed-owner set that drops a rule's remaining
+ * sections once one of them fails to fit. Matches the key
+ * `StaticRulesProvider` sorts its rules by, so the section order this module
+ * produces agrees with the rule order the provider computed.
  */
 function ownerIdentifier(section: RuleSection): string {
   return section.ruleId ?? section.rulePath ?? "";
@@ -74,12 +93,30 @@ function sectionIdentifier(section: RuleSection): string {
 }
 
 /**
+ * Map an authored rule `priority` to a bounded raw score in `(0, 1]`.
+ *
+ * Lower `priority` numbers mean "more important" and return higher scores.
+ * `undefined` and non-finite values fall back to `FRONTMATTER_PRIORITY_DEFAULT`,
+ * so a rule that declares nothing scores as though it declared the default.
+ * Zero and negative priorities sort ABOVE priority 1 (the budget walk uses the
+ * authored value, see `applySectionBudget`), so they clamp up to `1` and score
+ * as the most important possible rule — keeping the scorer ordering aligned
+ * with the sort ordering for every value the frontmatter parser admits. See
+ * the module docstring for why the mapping is bounded rather than
+ * `DEFAULT / priority`.
+ */
+export function priorityToRawScore(priority?: number): number {
+  const p = Number.isFinite(priority) ? Math.max(1, priority as number) : FRONTMATTER_PRIORITY_DEFAULT;
+  return FRONTMATTER_PRIORITY_DEFAULT / (FRONTMATTER_PRIORITY_DEFAULT + p);
+}
+
+/**
  * Apply a token budget to a priority-ordered list of rule sections.
  *
  * Sections are sorted ascending by `priority`, then ascending by `ordinal`
- * within a rule — matching the sort used by `loadCanonicalRules`. The
- * returned list is the longest leading run of that sorted order whose
- * cumulative tokens fit inside `budgetTokens`.
+ * within a rule — matching the sort used by `loadCanonicalRules`. A section
+ * that does not fit closes its owning rule; the walk then continues into the
+ * next rule's sections rather than stopping outright.
  */
 export function applySectionBudget(sections: RuleSection[], budgetTokens: number): SectionBudgetResult {
   const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0);
@@ -103,11 +140,12 @@ export function applySectionBudget(sections: RuleSection[], budgetTokens: number
 
   const kept: RuleSection[] = [];
   const droppedIds: string[] = [];
+  const closedOwners = new Set<string>();
   let usedTokens = 0;
-  let stopped = false;
 
   for (const section of sorted) {
-    if (stopped) {
+    const owner = ownerIdentifier(section);
+    if (closedOwners.has(owner)) {
       droppedIds.push(sectionIdentifier(section));
       continue;
     }
@@ -116,13 +154,13 @@ export function applySectionBudget(sections: RuleSection[], budgetTokens: number
       usedTokens += section.tokens;
     } else if (kept.length === 0) {
       // First section alone exceeds the budget — admit whole (fail-open) and
-      // stop; nothing else can fit behind it.
+      // close its rule; nothing else can fit behind it.
       kept.push(section);
       usedTokens += section.tokens;
-      stopped = true;
+      closedOwners.add(owner);
     } else {
       droppedIds.push(sectionIdentifier(section));
-      stopped = true;
+      closedOwners.add(owner);
     }
   }
 
