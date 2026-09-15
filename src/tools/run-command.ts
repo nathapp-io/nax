@@ -272,7 +272,7 @@ export function createRunCommandTool(
         values: {
           type: "object",
           description:
-            'Values for the command\'s placeholders, e.g. { files: "a.test.ts" }. A path placeholder takes several paths separated by spaces, e.g. { files: "a.test.ts b.test.ts" } -- one call, not one per file.',
+            'Values for the command\'s placeholders, e.g. { files: "a.test.ts" }. A path placeholder takes several paths separated by spaces, e.g. { files: "a.test.ts b.test.ts" }, or as an array of paths, e.g. { files: ["test/a.test.ts", "test/b.test.ts"] } -- one call, not one per file.',
         },
         ...(hasExec
           ? {
