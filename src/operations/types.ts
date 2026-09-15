@@ -23,6 +23,20 @@ export interface CallContext {
   readonly packageView: PackageView;
   readonly packageDir: string;
   /**
+   * The per-story EFFECTIVE config — `PipelineContext.config`, which
+   * `loadConfigForWorkdir(root, story.workdir)` already merged from
+   * `.nax/mono/<pkg>/config.json`. `callOp` forwards it as
+   * `runOptions.config`, so the declared-command map, `resolvePermissions`
+   * and dispatch model resolution all see the package's own values (nax#2066).
+   *
+   * Absent for callers with no pipeline (plan strategies, one-off CLI ops);
+   * `callOp` then falls back to the runtime's root config. Prefer this over
+   * `packageView.config`: `packages.resolve()` is keyed on the absolute
+   * workdir and this value is keyed on `story.workdir`, so it stays correct
+   * under worktree and parallel isolation (nax#2069).
+   */
+  readonly config?: NaxConfig;
+  /**
    * Pull-tool counter for this story attempt, created by the context stage.
    * Threaded so `pull.maxCallsPerRun` stops resetting on every hop, and so
    * AC-18's per-invocation records survive to metrics. The ceiling is per

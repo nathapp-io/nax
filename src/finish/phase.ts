@@ -212,6 +212,10 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       runtime: ctx.runtime,
       packageView: ctx.runtime.packages.resolve(ctx.workdir),
       packageDir: ctx.workdir,
+      // Root run config (nax#2066). `FinishPhaseContext.config` is typed
+      // `unknown`; the runtime was created from that same config, so the
+      // loader's typed view is the identical value without a silent cast.
+      config: ctx.runtime.configLoader.current(),
       agentName: ctx.agentName,
       featureName: ctx.feature,
       signal,

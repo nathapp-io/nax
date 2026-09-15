@@ -199,6 +199,31 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     expect(result.verdict).toBe("source_bug");
   });
 
+  test("normal path dispatches diagnosis with the failed package context", async () => {
+    let capturedCtx: Parameters<typeof _diagnosisDeps.callOp>[0] | undefined;
+    _diagnosisDeps.callOp = async (callCtx) => {
+      capturedCtx = callCtx;
+      return makeDiagnoseOutput({ verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 });
+    };
+    const packageConfig = makeNaxConfig({ execution: { permissionProfile: "safe" } });
+
+    await resolveAcceptanceDiagnosis({
+      ctx: makeAcceptanceCtx(true),
+      failures: { failedACs: ["AC-1", "AC-2"], testOutput: "failure" },
+      totalACs: 3,
+      strategy: "diagnose-first",
+      semanticVerdicts: [{ storyId: "US-001", passed: false, timestamp: "2026-01-01", acCount: 1, findings: [] }],
+      diagnosisOpts: {
+        ...makeDiagnosisOpts(),
+        workdir: "/tmp/workdir/packages/web",
+        config: packageConfig,
+      },
+    });
+
+    expect(capturedCtx?.packageDir).toBe("/tmp/workdir/packages/web");
+    expect(capturedCtx?.config?.execution?.permissionProfile).toBe("safe");
+  });
+
   test("normal path passes semanticVerdicts to callOp input", async () => {
     let capturedInput: AcceptanceDiagnoseInput | undefined;
     _diagnosisDeps.callOp = async (_callCtx, _op, input) => {

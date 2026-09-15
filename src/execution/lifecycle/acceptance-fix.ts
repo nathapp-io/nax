@@ -10,6 +10,7 @@
 
 import { loadSourceFilesForDiagnosis } from "@/acceptance";
 import type { DiagnosisResult, SemanticVerdict } from "@/acceptance/types";
+import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceDiagnoseOp } from "@/operations";
@@ -20,14 +21,16 @@ import type { AcceptanceLoopContext } from "./acceptance-loop";
 
 // ─── CallContext builder ─────────────────────────────────────────────────────
 
-function fixCallCtx(ctx: AcceptanceLoopContext): CallContext {
+function fixCallCtx(ctx: AcceptanceLoopContext, packageDir: string, config?: NaxConfig): CallContext {
   if (!ctx.runtime) {
     throw new NaxError("runtime required for acceptance fix callOp", "CALL_OP_NO_RUNTIME", { stage: "acceptance" });
   }
+  const packageView = ctx.runtime.packages.resolve(packageDir);
   return {
     runtime: ctx.runtime,
-    packageView: ctx.runtime.packages.resolve(ctx.workdir),
-    packageDir: ctx.workdir,
+    packageView,
+    packageDir,
+    config: config ?? (packageView.hasOverride ? packageView.config : ctx.config),
     storyId: ctx.prd.userStories[0]?.id,
     featureName: ctx.feature,
     agentName: ctx.agentManager?.getDefault() ?? "claude",
@@ -47,6 +50,7 @@ export interface ResolveAcceptanceDiagnosisOptions {
     testFileContent: string;
     acceptanceTestPath?: string;
     workdir: string;
+    config?: NaxConfig;
     storyId?: string;
   };
 }
@@ -129,13 +133,17 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
     packageDir: diagnosisOpts.workdir,
     testFilePath: diagnosisOpts.acceptanceTestPath,
   });
-  return await _diagnosisDeps.callOp(fixCallCtx(ctx), acceptanceDiagnoseOp, {
-    testOutput: diagnosisOpts.testOutput,
-    testFileContent: diagnosisOpts.testFileContent,
-    acceptanceTestPath: diagnosisOpts.acceptanceTestPath,
-    sourceFiles,
-    semanticVerdicts,
-  });
+  return await _diagnosisDeps.callOp(
+    fixCallCtx(ctx, diagnosisOpts.workdir, diagnosisOpts.config),
+    acceptanceDiagnoseOp,
+    {
+      testOutput: diagnosisOpts.testOutput,
+      testFileContent: diagnosisOpts.testFileContent,
+      acceptanceTestPath: diagnosisOpts.acceptanceTestPath,
+      sourceFiles,
+      semanticVerdicts,
+    },
+  );
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────

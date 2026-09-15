@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import type { LogEntry } from "@/logger/types";
 import { verifierOp } from "@/operations";
 import { VERDICT_FILE } from "@/tdd";
 import { _codingToolDeps } from "@/tools";
@@ -381,5 +383,39 @@ describe("buildCodingToolSupport — Exec grant selection (findLast)", () => {
     });
     const runCommand = support?.tools.find((tool) => tool.name === "RunCommand");
     expect(runCommand?.description).toContain("permitted forms: bun x tsc*");
+  });
+});
+
+describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
+  let logCalls: LogEntry[];
+
+  beforeEach(() => {
+    resetLogger();
+    logCalls = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logCalls.push(entry));
+  });
+
+  afterEach(() => {
+    resetLogger();
+  });
+
+  test("logs the declared command keys and the resolved permission profile", async () => {
+    const root = makeTempDir("nax-dispatch-log-");
+    await resolveCodingToolSupport({
+      declaredTools: ["Read"],
+      codingToolRoot: root,
+      pipelineStage: "run",
+      storyId: "US-005",
+      config: makeNaxConfig({ quality: { commands: { testScoped: "pkg-runner {{files}}" } } }),
+    });
+
+    const entry = logCalls.find((l) => l.message.includes("Declared commands resolved"));
+    expect(entry).toBeDefined();
+    expect(entry?.data?.commands).toEqual(["testScoped"]);
+    expect(entry?.data?.storyId).toBe("US-005");
+    // DEFAULT_CONFIG.execution.permissionProfile is "unrestricted"; the test's
+    // quality override leaves it untouched, so that is the resolved value.
+    expect(entry?.data?.permissionProfile).toBe("unrestricted");
   });
 });

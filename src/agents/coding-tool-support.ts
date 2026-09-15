@@ -288,6 +288,15 @@ export async function resolveCodingToolSupport(
       (e): e is [string, QualityCommandSpec] => typeof e[1] === "string" || Array.isArray(e[1]),
     ),
   );
+  // nax#2066: the declared-command map came from the ROOT config for a package
+  // story, and nothing in the run artifacts said so — it took a transcript audit
+  // to find. Name what the agent was actually given, once per dispatch.
+  getSafeLogger()?.debug("tools", "Declared commands resolved for dispatch", {
+    storyId: options.storyId ?? "_dispatch",
+    commands: [...declaredCommands.keys()],
+    permissionProfile: options.config?.execution?.permissionProfile ?? "unrestricted",
+    codingToolRoot: options.codingToolRoot,
+  });
   const root = options.codingToolRoot;
   const auditDir =
     root !== undefined && root.trim() !== ""

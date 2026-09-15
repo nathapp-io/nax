@@ -179,6 +179,7 @@ export const _acceptanceSetupDeps = {
     // biome-ignore lint/suspicious/noExplicitAny: generic operation dispatcher
     input: any,
     storyId?: string,
+    config?: NaxConfig,
     // biome-ignore lint/suspicious/noExplicitAny: generic operation dispatcher
   ): Promise<any> => {
     if (!pipelineCtx.runtime) {
@@ -186,11 +187,13 @@ export const _acceptanceSetupDeps = {
         stage: "acceptance-setup",
       });
     }
+    const packageView = pipelineCtx.runtime.packages.resolve(packageDir);
     return _callOp(
       {
         runtime: pipelineCtx.runtime,
-        packageView: pipelineCtx.runtime.packages.resolve(packageDir),
+        packageView,
         packageDir,
+        config: config ?? packageView.config,
         featureName: pipelineCtx.prd.feature,
         storyId,
         agentName: pipelineCtx.agentManager?.getDefault() ?? "claude",
@@ -243,17 +246,26 @@ async function runAcceptanceSetup(
   const testPathConfig = ctx.config.acceptance.testPath;
   const metaPath = path.join(featureDir, "acceptance-meta.json");
 
-  // Criteria from in-scope stories only, so the fingerprint stays stable: a
-  // decomposed parent's ACs are already counted via its children, and a legacy
-  // US-FIX-* story is not the feature's own acceptance surface. See
-  // src/prd/acceptance-scope.ts for why the latter guard still exists.
+  // In-scope criteria avoid counting decomposed parents and legacy fix stories twice.
   const allCriteria: string[] = ctx.prd.userStories.filter(isInAcceptanceScope).flatMap((s) => s.acceptanceCriteria);
 
-  // US-001: Group non-fix, non-decomposed stories by story.workdir — one test file per package.
-  // groupStoriesByPackage handles workdir grouping, path computation, and root fallback.
+  // One test file per workdir group; the helper handles root fallback.
   const featureName = ctx.prd.feature ?? (ctx.prd as unknown as Record<string, string>).featureName;
   const groups = await groupStoriesByPackage(ctx.prd, ctx.workdir, featureName, testPathConfig, language);
   const nonFixStories = groups.flatMap((g) => g.stories);
+  const groupConfigs = new Map<string, NaxConfig>();
+  for (const group of groups) {
+    const relativeWorkdir = path.relative(ctx.projectDir, group.packageDir);
+    let config = ctx.config;
+    if (relativeWorkdir && relativeWorkdir !== ".") {
+      try {
+        config = await _acceptanceSetupDeps.loadGroupConfig(ctx.projectDir, relativeWorkdir);
+      } catch {
+        config = ctx.config;
+      }
+    }
+    groupConfigs.set(group.packageDir, config);
+  }
 
   let totalCriteria = 0;
   let testableCount = 0;
@@ -261,10 +273,7 @@ async function runAcceptanceSetup(
   // below is not stamped for a suite that was never written to disk.
   let sawDispatchFailure = false;
 
-  // P2-A: Staleness detection — regenerate if ACs or the output layout changed.
-  // Fingerprints are the source of truth; file existence is secondary.
-  // If fingerprint matches the stored meta, reuse existing tests even if the file
-  // was lost (e.g., after a crash). If fingerprint mismatches, regenerate with .bak backup.
+  // Regenerate whenever the criteria or output layout fingerprint changes.
   const fingerprint = computeACFingerprint(allCriteria);
   const layoutFingerprint = computeAcceptanceLayoutFingerprint(ctx.workdir, groups);
   const meta = await _acceptanceSetupDeps.readMeta(metaPath);
@@ -321,21 +330,24 @@ async function runAcceptanceSetup(
 
       for (let i = 0; i < nonFixStories.length; i++) {
         const story = nonFixStories[i];
+        const packageDir = story.workdir ? path.join(ctx.workdir, story.workdir) : ctx.workdir;
+        const config = groupConfigs.get(packageDir) ?? ctx.config;
         const task = (
           _acceptanceSetupDeps.callOp(
             ctx,
-            ctx.workdir,
+            packageDir,
             acceptanceRefineOp,
             {
               criteria: story.acceptanceCriteria,
               codebaseContext: "",
               storyId: story.id,
-              testStrategy: ctx.config.acceptance.testStrategy,
-              testFramework: ctx.config.acceptance.testFramework,
+              testStrategy: config.acceptance.testStrategy,
+              testFramework: config.acceptance.testFramework,
               storyTitle: story.title,
               storyDescription: story.description,
             },
             story.id,
+            config,
           ) as Promise<RefinedCriterion[]>
         )
           .then((refined) => {
@@ -384,10 +396,11 @@ async function runAcceptanceSetup(
       // Filter refined criteria to this group's stories
       const groupStoryIds = new Set(group.stories.map((s) => s.id));
       const groupRefined = allRefinedCriteria.filter((r) => groupStoryIds.has(r.storyId));
+      const config = groupConfigs.get(packageDir) ?? ctx.config;
 
       const criteriaList = groupRefined.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
-      const frameworkOverrideLine = ctx.config.acceptance.testFramework
-        ? `\n[FRAMEWORK OVERRIDE: Use ${ctx.config.acceptance.testFramework} as the test framework regardless of what you detect.]`
+      const frameworkOverrideLine = config.acceptance.testFramework
+        ? `\n[FRAMEWORK OVERRIDE: Use ${config.acceptance.testFramework} as the test framework regardless of what you detect.]`
         : "";
 
       const groupStoryId = group.stories[0]?.id;
@@ -405,6 +418,7 @@ async function runAcceptanceSetup(
             : {}),
         },
         groupStoryId,
+        config,
       )) as { testCode: string | null; adapterFailure?: AdapterFailure };
 
       // verify+recover already ran inside callOp (ADR-020 Wave 3).
@@ -494,11 +508,7 @@ async function runAcceptanceSetup(
       });
     }
 
-    // Commit the generated acceptance test file(s) and meta before any story's
-    // storyGitRef is captured. Without this commit, the acceptance test file lands
-    // in the working tree as untracked, the implementer agent may stage it with
-    // "git add .", and it then appears in git diff storyGitRef..HEAD — causing the
-    // adversarial reviewer to flag future-story ACs as abandonment findings.
+    // Commit generated files before storyGitRef capture keeps future-story ACs out of story diffs.
     await _acceptanceSetupDeps.autoCommitIfDirty(
       ctx.workdir,
       "acceptance-setup",
@@ -514,15 +524,7 @@ async function runAcceptanceSetup(
   // correct test framework for each package in a monorepo.
   const acceptanceTestPaths: NonNullable<typeof ctx.acceptanceTestPaths> = [];
   for (const g of groups) {
-    const relativeWorkdir = path.relative(ctx.projectDir, g.packageDir);
-    let groupConfig = ctx.config;
-    if (relativeWorkdir && relativeWorkdir !== ".") {
-      try {
-        groupConfig = await _acceptanceSetupDeps.loadGroupConfig(ctx.projectDir, relativeWorkdir);
-      } catch {
-        groupConfig = ctx.config;
-      }
-    }
+    const groupConfig = groupConfigs.get(g.packageDir) ?? ctx.config;
     acceptanceTestPaths.push({
       testPath: g.testPath,
       packageDir: g.packageDir,

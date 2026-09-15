@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **watchdog:** Count ACP `tool_call` / `tool_call_update` stream activity by default, and add `agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds` (default 1800s) so long-running tool-only sessions stay alive without masking runaway tool loops.
+- **Monorepo: the agent loop now uses per-package config.** `callOp` resolved its config from the repo
+  root, so a story with a `workdir` was given the ROOT `quality.commands` and `RunCommand` ran the wrong
+  toolchain (#2066). The registry also missed every override under worktree and parallel isolation, where
+  a package resolved through `.nax-wt/<storyId>/` (#2069).
+
+  **Behaviour change:** `execution.permissionProfile` and `execution.permissions` declared in
+  `.nax/mono/<pkg>/config.json` were previously inert at every dispatch site and now apply, completing the
+  SEC-3 fix. Per-package `execution.denyPaths`, `models`, `agent.native.transportRetry` and
+  `execution.compaction` likewise now take effect. If an overlay in your repo sets any of these, review it
+  before upgrading — the resolved profile is now logged once per dispatch.
+  - **RunCommand:** `target` supplied with a declared `command` is now rejected (previously the `target`
+    was silently discarded); `target` remains valid only for the `argv` branch (#2066).
+  - **Review diff paths are now package-relative.** `collectDiff`, `collectDiffStat` and
+    `computeTestInventory` ran git without `--relative`, so a monorepo story's reviewer — whose file
+    tools are rooted at the package dir — was shown repo-rooted paths like `packages/lib/src/util.ts`.
+    Reading one resolved to `<pkg>/packages/lib/...` and failed, costing a round trip per file before
+    the model retried. `computeTestInventory` also gained the `-- .` pathspec its siblings already had,
+    so the adversarial prompt's test-gap inventory no longer lists files from other packages (#2066).
 - **Fixed** — a same-agent fallback hop dispatched the previous model, because
   `SessionManager` reused a live session whenever the agent name matched and
   discarded the requested endpoint. Same-agent ladder rungs and sticky endpoints
