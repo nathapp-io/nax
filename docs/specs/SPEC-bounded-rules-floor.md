@@ -136,8 +136,16 @@ The provider's budget becomes
 `rules.budgetTokens` becomes an absolute upper bound so current configuration
 keeps its meaning.
 
-`rawScore` stays flat at `1.0` for every emitted rule chunk. Differential scoring
-depends on the effectiveness classifier, which is out of scope.
+A canonical rule chunk now carries a **priority-derived** `rawScore` from
+`priorityToRawScore()`, bounded in `(0, 1]`: a lower `priority` number yields a
+higher score, and the default priority (`100`, used when a rule declares none)
+maps to `0.5`. Differential scoring via the effectiveness classifier remains out
+of scope.
+
+The mapping is **inert for selection and inclusion today** — static/floor chunks
+bypass the `minScore` filter and packing's budget — so its only visible effect is
+the `chunkScores` values in the manifest. It exists so a future #2061 (c) ruling
+*can* rank rules; it neither activates ranking nor bounds the budget overrun.
 
 **Schema default and constructor default are separate, and only the schema
 flips.** `ContextV2RulesConfigSchema.enforceBudget` changes from `false` to
@@ -171,7 +179,7 @@ stale contract. Do not re-sign it as evidence that the default must stay `false`
 
 - Implementing `roles:` frontmatter filtering (the remaining half of issue #822) is not part of this spec; only `appliesTo:`, `stages:`, and `paths:` scoping are used.
 - Bounding the `feature` and `test-coverage` floor kinds inside `packChunks` is not part of this spec; only the `static` kind is bounded, and it is bounded at the provider rather than in packing.
-- Differential scoring of rule chunks is not part of this spec; every emitted rule chunk keeps `rawScore: 1.0`.
+- Differential/effectiveness-based scoring of rule chunks is not part of this spec. The authored-priority mapping **is** in scope (#2061 proposal item (a)): every canonical rule chunk carries `priorityToRawScore(rule.priority)`. What remains out of scope is scoring that depends on the effectiveness classifier.
 - Modifying the context-engine effectiveness classifier or its `pollutionRatio` computation is not part of this spec.
 - Implementing the context-engine v2 write path (capture, extract, summarize, promote) or the `query_scratch` pull tool is not part of this spec.
 - Updating the `rules-setup` skill in the `nax-toolkit-skills` repository is not part of this spec; it is a follow-on change in a separate repository.
@@ -334,7 +342,7 @@ is one this spec creates rather than one that must already reach them.
 3. `[unit]` Calling `StaticRulesProvider.fetch` against a corpus holding one rule file with two `## ` sections returns two chunks with different `id` values.
 4. `[unit]` Calling `StaticRulesProvider.fetch` returns chunks whose `id` values each incorporate the owning section's slug.
 5. `[unit]` Calling `StaticRulesProvider.fetch` returns chunks each having a `kind` of `static`.
-6. `[unit]` Calling `StaticRulesProvider.fetch` returns chunks each having a `rawScore` of `1.0`.
+6. `[unit]` Calling `StaticRulesProvider.fetch` returns canonical rule chunks whose `rawScore` equals `priorityToRawScore(rule.priority)`, so a rule declaring no `priority` yields `0.5`.
 7. `[unit]` Calling `StaticRulesProvider.fetch` with a corpus exceeding the effective budget returns a `budgetPressure` whose `droppedCount` equals the number of omitted sections.
 8. `[unit]` Calling `StaticRulesProvider.fetch` with a corpus exceeding the effective budget returns a `budgetPressure` whose `droppedTokens` equals the summed tokens of the omitted sections.
 9. `[unit]` Calling `StaticRulesProvider.fetch` returns a `scopingReport` whose `sectionCount` equals the number of sections remaining after stage and `appliesTo` filtering.
