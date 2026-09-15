@@ -91,6 +91,10 @@ export interface RunnerCompletionResult {
   acceptancePassed: boolean;
   /** True when a gating-mode deferred plugin reviewer failed. Factored into RunResult.success. */
   pluginGateFailed: boolean;
+  /** Cost-aggregator-reconciled total for the whole run (successful plus failed-dispatch spend).
+   *  Carried out of the completion phase so the returned RunResult.totalCost, the post-run
+   *  context and reporter.onRunEnd all report the figure status.json already does. */
+  reportedTotal: number;
 }
 
 /**
@@ -474,6 +478,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     runCompletedAt,
     acceptancePassed,
     pluginGateFailed,
+    reportedTotal,
   };
 }
 

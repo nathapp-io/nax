@@ -139,6 +139,16 @@ describe("buildPostRunContext", () => {
     expect(ctx.runStartedAt).toBe(startTime);
   });
 
+  test("US-001 AC6: post-run context carries the reconciled totalCost handed to cleanupRun", async () => {
+    // The runner hands cleanupRun the completion phase's reportedTotal; the
+    // post-run context built for plugins must surface that figure (5.8042) —
+    // not the pre-completion execution accumulator (5.6995).
+    const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
+    const ctx = buildPostRunContext(makeCleanupOptions({ totalCost: 5.8042 }), 1000, makePluginLogger());
+    expect(ctx.totalCost).toBe(5.8042);
+    expect(ctx.totalCost).not.toBe(5.6995);
+  });
+
   test("storySummary reflects prd story counts", async () => {
     const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
 
@@ -261,6 +271,28 @@ describe("cleanupRun — post-run action loop", () => {
     expect(reporterIdx).toBeGreaterThanOrEqual(0);
     expect(actionIdx).toBeGreaterThan(reporterIdx);
     expect(teardownIdx).toBeGreaterThan(actionIdx);
+  });
+
+  test("US-001 AC5: reporter.onRunEnd receives the reconciled totalCost, not the pre-completion accumulator", async () => {
+    // On the abnormal-exit path (runCompleted false) cleanupRun invokes the
+    // registered reporters' onRunEnd directly with its totalCost option — the
+    // value the runner now hands it is the completion phase's reportedTotal.
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
+
+    let onRunEndTotalCost: number | undefined;
+    const reporter = {
+      name: "total-reporter",
+      onRunEnd: mock(async (event: { totalCost: number }) => {
+        onRunEndTotalCost = event.totalCost;
+      }),
+    };
+    const registry = makePluginRegistry([], [reporter]);
+
+    await cleanupRun(makeCleanupOptions({ totalCost: 5.8042, pluginRegistry: registry }));
+
+    expect(reporter.onRunEnd).toHaveBeenCalledTimes(1);
+    expect(onRunEndTotalCost).toBe(5.8042);
+    expect(onRunEndTotalCost).not.toBe(5.6995);
   });
 });
 
