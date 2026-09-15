@@ -10,10 +10,46 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-15-per-package-config-in-the-agent-loop-design.md`
 
+## Handover — start here
+
+This plan was written in, and is meant to be executed in, an existing worktree. Nothing has been
+implemented yet; only this plan and its spec are committed.
+
+| | |
+|---|---|
+| Worktree | `<repo>/.claude/worktrees/fix-2066-per-package-config` |
+| Branch | `worktree-fix-2066-per-package-config` |
+| Based on | `origin/main` @ `63c4c3363` (`v0.82.0-canary.14`) |
+| Commits so far | `0e07a3712` — this plan + spec, docs only |
+| Baseline | `bun run test` green (unit 45s, integration 13s, ui 4s); full pre-commit gate green |
+
+Working notes for this repo:
+
+- **`git` commands must be prefixed `RTK_DISABLED=1`** in a worktree. An `rtk` hook rewrites `git` to
+  `rtk git`, and the worktree guard refuses the rewritten form: `RTK_DISABLED=1 git add …`.
+- Run everything from the worktree directory. Do not `cd` to the main checkout.
+- **Never bare `bun test …` for a whole-suite run** — use `bun run test`. (Single-file
+  `bun test <path> --timeout=60000` during a TDD cycle is fine and is what each task's steps use.)
+- The pre-commit hook runs typecheck plus 25 static checks on every commit, so a task that commits
+  cleanly has already passed most of the final gate.
+- Before opening a PR, confirm `RTK_DISABLED=1 git log origin/main..HEAD` contains only this plan's
+  commits. The worktree was branched from a local HEAD and reset onto `origin/main`; if you create
+  another worktree, check its base rather than assuming.
+
 ## Global Constraints
 
 - `src/operations/call.ts` is at **597/600 lines**. `SRC_LIMIT = 600` in `scripts/check-file-sizes.ts`. The `call.ts` edit must be **net-zero lines** — a substitution, no added comment.
-- Every `logger.{info,warn,error,debug}` call inside scoped dirs must pass a data object whose **first key is `storyId`** — `scripts/check-logger-storyid.ts` is a ratchet that fails when the violation count increases.
+- `scripts/check-logger-storyid.ts` (data object's **first key must be `storyId`**) scans only
+  `SCOPED_DIRS = ["src/pipeline/stages", "src/debate", "src/review"]`. **No file this plan touches is in
+  scope**, so it constrains nothing here — do not restructure existing log calls for it. Baseline is 0
+  violations; keep it there by not adding a log to those three dirs.
+- 🚨 **`scripts/check-test-escape-hatches.ts` counts `looseCast` = `/\bas\s+[A-Z]\w*/` in `test/` and
+  fails on ANY growth** (current baseline 1593). Every test in this plan is written cast-free for that
+  reason. If you find yourself reaching for `as SomeType` in a test, restructure the assertion instead —
+  typically by asserting on a field that is actually present in the declared type. `bun run lint` runs
+  this check.
+- `test/` typecheck is a hard gate at 0 errors (`bun run typecheck` covers `tsconfig.test.json`), so a
+  test cannot be made to compile with a suppression either.
 - Test commands are `bun run test`, `bun run lint`, `bun run typecheck`. **Never** bare `bun test` — it gives confident false signals in this repo.
 - Do not change `PackageView.repoRoot` to point into a worktree. It is the registry construction argument and is out of scope; see "Out of scope" in the spec.
 - Do not implement working-directory provenance for declared commands. Explicitly out of scope.
@@ -107,9 +143,19 @@ describe("PackageRegistry — worktree paths resolve the package override (#2069
 
 Run: `bun test test/unit/runtime/packages.test.ts --timeout=60000`
 
-Expected: the first three tests FAIL (`hasOverride` is `false`, `lint` is `"root-lint"`, and the two
-worktree views are already distinct but override-less). The last two PASS already — they are the
-regression guards.
+Expected, per test — check each one, because three of the five pass before the fix and are there as
+regression guards:
+
+| Test | Before the fix |
+|---|---|
+| "a worktree package path finds the hydrated override" | **FAIL** — `hasOverride` is `false`, `lint` is `"root-lint"` |
+| "packageDir still addresses the worktree, not the main checkout" | PASS (guard — must still pass after) |
+| "two worktrees of the same package get distinct views" | **FAIL** — on the two `hasOverride` assertions only; the identity assertions already pass |
+| "a bare worktree root resolves to the repo-level view" | PASS (guard) |
+| "a package named like the worktree dir is not mistaken for one" | PASS (guard) |
+
+If "packageDir still addresses the worktree" ever fails after your change, you have shortened the key
+itself — that is the regression this task exists to avoid. Revert and re-read Step 3.
 
 - [ ] **Step 3: Implement the override-key derivation**
 
@@ -241,10 +287,11 @@ In `hydrate()`, record every discovered package — including ones with no overr
       knownPackages.add(dir);
 ```
 
-In `resolve()`, replace the existing warn branch with:
+In `resolve()`, replace the existing warn branch with the following. **Leave the existing warning's
+message and data object exactly as they are** — only the surrounding condition changes and a second
+branch is added:
 
 ```ts
-    const overrideKey = toOverrideKey(key);
     if (!hasOverride && key) {
       if (!hydrated) {
         _packagesDeps
@@ -252,7 +299,7 @@ In `resolve()`, replace the existing warn branch with:
           ?.warn(
             "packages",
             "resolve() called for non-root package before hydrate(); returning root config (per-package overrides not applied)",
-            { storyId: "_runtime", packageDir: key },
+            { packageDir: key },
           );
       } else if (overrideKey && !knownPackages.has(overrideKey)) {
         _packagesDeps
@@ -260,27 +307,23 @@ In `resolve()`, replace the existing warn branch with:
           ?.warn(
             "packages",
             "resolve() got an unknown package key after hydrate(); returning root config (per-package overrides not applied)",
-            { storyId: "_runtime", packageDir: key, overrideKey },
+            { packageDir: key, overrideKey },
           );
       }
     }
 ```
 
 Hoist `const overrideKey = toOverrideKey(key);` above the `mergedConfigs` lookup from Task 1 and reuse it
-there, so the derivation happens once.
+in both places, so the derivation happens once.
 
-Note the `storyId` first key — `scripts/check-logger-storyid.ts` requires it and the pre-existing call
-above is already a ratchet entry; adding a second violation would fail the gate.
+The data shape matches the existing neighbouring call. `src/runtime/` is **not** in
+`check-logger-storyid`'s `SCOPED_DIRS`, so do not add a `storyId` key here — it would diverge from the
+file's own convention for no gate benefit.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `bun test test/unit/runtime/packages.test.ts --timeout=60000`
-Expected: PASS.
-
-Then confirm the ratchet did not regress:
-
-Run: `bun run check:logger-storyid`
-Expected: exit 0.
+Expected: PASS — including every test from Task 1, which must not have regressed.
 
 - [ ] **Step 5: Commit**
 
@@ -325,6 +368,13 @@ import { type DEFAULT_CONFIG, type NaxConfig, pickSelector } from "@/config";
 import type { BuildHopCallbackContext, RunOperation } from "@/operations";
 import { _callOpDeps, callOp } from "@/operations";
 
+// The assertion field is `execution.permissionProfile`, not `quality.commands`,
+// for two reasons. (1) `AgentRunOptions["config"]` is the narrow
+// agentManagerConfigSelector Pick — `agent` / `execution` / `profile` — so
+// reading `quality` off it would need a cast, and the looseCast ratchet fails
+// on growth. (2) It is the field with the real consequence: it is what
+// resolvePermissions reads, so this test pins the SEC-3 half of the change.
+
 const testSel = pickSelector("effective-config-test", "routing");
 
 const runEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
@@ -340,15 +390,17 @@ const runEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONF
   parse: (output) => output.trim(),
 };
 
-async function captureRunOptionsConfig(ctxConfig: NaxConfig | undefined): Promise<NaxConfig | undefined> {
+async function captureRunOptionsConfig(
+  ctxConfig: NaxConfig | undefined,
+): Promise<AgentRunOptions["config"]> {
   const orig = _callOpDeps.buildHopCallback;
-  let seen: NaxConfig | undefined;
+  let seen: AgentRunOptions["config"];
   _callOpDeps.buildHopCallback = (
     _hopCtx: BuildHopCallbackContext,
     _sessionId: string | undefined,
     runOptions: AgentRunOptions,
   ) => {
-    seen = runOptions.config as NaxConfig | undefined;
+    seen = runOptions.config;
     return async () => ({
       result: {
         success: true,
@@ -362,7 +414,10 @@ async function captureRunOptionsConfig(ctxConfig: NaxConfig | undefined): Promis
     });
   };
 
-  const rootConfig = makeNaxConfig({ quality: { commands: { testScoped: "root-runner {{files}}" } } });
+  // "scoped" — deliberately NOT the schema default ("unrestricted"), so the
+  // fallback test proves the value came from the runtime's root config rather
+  // than from DEFAULT_CONFIG by coincidence.
+  const rootConfig = makeNaxConfig({ execution: { permissionProfile: "scoped" } });
   const runtime = makeTestRuntime({
     config: rootConfig,
     agentManager: makeMockAgentManager({}),
@@ -389,14 +444,14 @@ async function captureRunOptionsConfig(ctxConfig: NaxConfig | undefined): Promis
 
 describe("callOp — effective config reaches run options (#2066)", () => {
   test("ctx.config wins over the runtime's root config", async () => {
-    const effective = makeNaxConfig({ quality: { commands: { testScoped: "pkg-runner {{files}}" } } });
+    const effective = makeNaxConfig({ execution: { permissionProfile: "safe" } });
     const seen = await captureRunOptionsConfig(effective);
-    expect(seen?.quality?.commands?.testScoped).toBe("pkg-runner {{files}}");
+    expect(seen?.execution?.permissionProfile).toBe("safe");
   });
 
   test("without ctx.config it still falls back to the root config", async () => {
     const seen = await captureRunOptionsConfig(undefined);
-    expect(seen?.quality?.commands?.testScoped).toBe("root-runner {{files}}");
+    expect(seen?.execution?.permissionProfile).toBe("scoped");
   });
 });
 ```
@@ -404,8 +459,9 @@ describe("callOp — effective config reaches run options (#2066)", () => {
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/unit/operations/call-effective-config.test.ts --timeout=60000`
-Expected: the first test FAILS — `testScoped` is `"root-runner {{files}}"`. It may also fail to typecheck
-on `config:` not existing on `CallContext`; that is the same failure.
+Expected: the first test FAILS — `permissionProfile` comes back `"scoped"` (the root value) instead of
+`"safe"`. The second test passes already; it is the fallback guard. The file may also fail to typecheck on
+`config:` not existing on `CallContext` yet; that is the same failure, resolved by Step 3.
 
 - [ ] **Step 3: Add the field**
 
@@ -485,33 +541,53 @@ Create `test/unit/pipeline/execution-stage-effective-config.test.ts`:
 
 ```ts
 /**
- * The execution stage must hand callOp the per-story effective config.
- * Without this the field added for nax#2066 is never set in production and the
- * fix is inert — declared-but-unreachable.
+ * Every CallContext built from a PipelineContext must forward the per-story
+ * effective config (nax#2066). Without it the `CallContext.config` field is
+ * never set in production and the fix is inert — the declared-but-unreachable
+ * failure mode this change exists to close.
+ *
+ * A convention check rather than a behavioural one: each of these sites needs a
+ * large pipeline fixture to drive, and the behavioural half (callOp honouring
+ * the field) is pinned by call-effective-config.test.ts. This test guards the
+ * wiring itself, which is the half that silently rots.
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
-import { executionStage } from "@/pipeline/stages/execution";
 
-describe("execution stage — CallContext carries the effective config (#2066)", () => {
-  test("the stage source sets `config` on the CallContext literal", async () => {
-    // Structural assertion: the callCtx literal must forward ctx.config.
-    // A behavioural assertion here would need a full pipeline context; the
-    // end-to-end path is covered by call-effective-config.test.ts.
-    const source = await Bun.file("src/pipeline/stages/execution.ts").text();
-    const callCtxBlock = source.slice(source.indexOf("const callCtx: CallContext = {"));
-    expect(callCtxBlock.slice(0, 400)).toContain("config: ctx.config");
-    expect(typeof executionStage.execute).toBe("function");
-    expect(makeNaxConfig().version).toBe(1);
+// Each entry: the file, and the literal that must carry a `config:` entry.
+const SITES: readonly { file: string; marker: string }[] = [
+  { file: "src/pipeline/stages/execution.ts", marker: "const callCtx: CallContext = {" },
+  { file: "src/pipeline/stages/acceptance-setup.ts", marker: "packageView: pipelineCtx.runtime.packages.resolve(packageDir)," },
+  { file: "src/execution/lifecycle/acceptance-fix.ts", marker: "packageView: ctx.runtime.packages.resolve(ctx.workdir)," },
+  { file: "src/execution/lifecycle/acceptance-loop.ts", marker: "packageView: runtime.packages.resolve(packageDir)," },
+  { file: "src/finish/phase.ts", marker: "packageView: ctx.runtime.packages.resolve(ctx.workdir)," },
+];
+
+describe("pipeline CallContext sites forward the effective config (#2066)", () => {
+  for (const site of SITES) {
+    test(`${site.file} sets config on its CallContext literal`, async () => {
+      const source = await Bun.file(site.file).text();
+      const at = source.indexOf(site.marker);
+      expect(at).toBeGreaterThan(-1); // marker drifted — re-anchor this entry
+      // Scan a window past the marker, not the whole file, so an unrelated
+      // `config:` elsewhere cannot make this pass.
+      expect(source.slice(at, at + 600)).toContain("config:");
+    });
+  }
+
+  test("hardening.ts sets config on both of its CallContext literals", async () => {
+    const source = await Bun.file("src/acceptance/hardening.ts").text();
+    const occurrences = source.split("packageView: ctx.runtime.packages.resolve(packageDir),");
+    expect(occurrences.length).toBe(3); // two sites => three fragments
+    for (const fragment of occurrences.slice(1)) {
+      expect(fragment.slice(0, 600)).toContain("config:");
+    }
   });
 });
 ```
 
-> If the reviewer objects to a source-text assertion, replace it with a behavioural test that builds a
-> full `PipelineContext` and spies on `_executionDeps`. The structural form is here because the
-> execution stage's `execute` needs a large fixture, and the behavioural half of this wiring is already
-> covered by Task 3's test.
+If a marker string has drifted, the `toBeGreaterThan(-1)` assertion fails first and names the file — fix
+the marker, do not delete the entry.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -580,23 +656,34 @@ mistake; honouring it is out of scope (see the spec).
 
 Append to `test/unit/tools/run-command.test.ts`, following the file's existing tool-construction helper:
 
+Use the same `ToolRunContext` literal the rest of this file already uses (see the `run() names the
+declared command...` describe block) — a plain object, no cast.
+
+⚠️ The declared command is `"true"` (the shell builtin) deliberately. In the RED phase the first test
+runs **before** the guard exists, so the call falls through and actually executes the declared command.
+`true` exits 0 instantly and touches nothing; a command like `bun test` would re-enter the test suite.
+
 ```ts
 describe("RunCommand — target is argv-only", () => {
+  const ctx = { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 };
+
   test("a declared command with target is rejected, naming why", async () => {
-    const tool = createRunCommandTool(new Map([["test", "echo hi"]]));
-    const result = await tool.run(
-      { command: "test", target: "repoRoot" },
-      { root: "/repo", resolvedPaths: [] } as never,
-    );
+    const tool = createRunCommandTool(new Map([["noop", "true"]]));
+    const result = await tool.run({ command: "noop", target: "repoRoot" }, ctx);
     expect(result.isError).toBe(true);
     expect(result.content).toContain("target");
     expect(result.content).toContain("argv");
   });
 
-  test("a declared command without target still runs", async () => {
-    const tool = createRunCommandTool(new Map([["test", "echo hi"]]));
-    const result = await tool.run({ command: "test" }, { root: "/repo", resolvedPaths: [] } as never);
-    expect(result.isError).toBeFalsy();
+  // Control: without `target` the guard must be inert. An undeclared command
+  // name proves we reached the NEXT check rather than the new one, and returns
+  // without executing anything.
+  test("the guard is inert when target is absent", async () => {
+    const tool = createRunCommandTool(new Map([["noop", "true"]]));
+    const result = await tool.run({ command: "definitely-not-declared" }, ctx);
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("unknown command");
+    expect(result.content).not.toContain("target");
   });
 });
 ```
@@ -604,7 +691,8 @@ describe("RunCommand — target is argv-only", () => {
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/unit/tools/run-command.test.ts --timeout=60000`
-Expected: the first test FAILS — `isError` is falsy because `target` is ignored.
+Expected: the first test FAILS — `target` is ignored today, so the call falls through, runs `true`,
+succeeds, and `isError` is falsy. The control test passes already.
 
 - [ ] **Step 3: Implement**
 
@@ -660,6 +748,10 @@ add a seam; capture the entry with a log sink, the pattern used in
 
 Append to `test/unit/agents/coding-tool-support.test.ts`:
 
+`codingToolRoot` must be a real directory — the neighbouring tests in this file already use
+`makeTempDir` for that. The options object is a plain literal with no cast, exactly as the existing
+`resolveCodingToolSupport` calls in this file are written.
+
 ```ts
 describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
   let logCalls: LogEntry[];
@@ -672,14 +764,14 @@ describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
   });
 
   test("logs the declared command keys and the resolved permission profile", async () => {
+    const root = makeTempDir("nax-dispatch-log-");
     await resolveCodingToolSupport({
       declaredTools: ["Read"],
-      codingToolRoot: "/repo/apps/web-ui",
-      codingToolRepoRoot: "/repo",
+      codingToolRoot: root,
       pipelineStage: "run",
       storyId: "US-005",
       config: makeNaxConfig({ quality: { commands: { testScoped: "pkg-runner {{files}}" } } }),
-    } as never);
+    });
 
     const entry = logCalls.find((l) => l.message.includes("Declared commands resolved"));
     expect(entry).toBeDefined();
@@ -689,6 +781,10 @@ describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
 });
 ```
 
+`makeNaxConfig()` returns a full `NaxConfig`, which is structurally assignable to the narrower
+`AgentRunOptions["config"]` the parameter declares — that is why no cast is needed, and it is how the
+existing calls in this file already pass `config: makeNaxConfig()`.
+
 Add to the file's imports:
 
 ```ts
@@ -696,7 +792,8 @@ import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 ```
 
-and `beforeEach` to the existing `bun:test` import.
+and `beforeEach` to the existing `bun:test` import. `makeTempDir` and `makeNaxConfig` are already
+imported by this file.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -724,8 +821,9 @@ In `src/agents/coding-tool-support.ts`, after the `declaredCommands` map is cons
 Run: `bun test test/unit/agents/coding-tool-support.test.ts --timeout=60000`
 Expected: PASS.
 
-Run: `bun run check:logger-storyid`
-Expected: exit 0 — the data object's first key is `storyId`.
+`storyId` leads the data object by convention and because it is what makes the line greppable per story
+in run artifacts — `src/agents/` is not in `check-logger-storyid`'s `SCOPED_DIRS`, so no gate enforces it
+here.
 
 - [ ] **Step 5: Commit**
 
