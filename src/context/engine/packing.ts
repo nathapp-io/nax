@@ -3,14 +3,20 @@
  *
  * Selects which chunks fit within the token budget.
  *
- * Phase 0-2: Greedy algorithm — sort by score/tokens (density) descending,
- * always include floor items (static + feature + test-coverage kinds) first
- * regardless of budget.
+ * Phase 0-2: Greedy algorithm — sort by score/tokens (density) descending and
+ * pack floor items (static + feature + test-coverage kinds) regardless of
+ * budget. Exception: when the non-floor guarantee fires (below), guaranteed
+ * non-floor chunks are packed before the floor, so floor items are not always
+ * first.
  *
  * Budget floor rule (spec §AC-6):
  *   "static", "feature", and "test-coverage" chunks are always included
  *   even when their total tokens exceed budgetTokens. The manifest records
  *   reason: "budget-exceeded-by-floor" for any chunk that causes an overflow.
+ *   When the floor alone overflows the effective budget, up to
+ *   NON_FLOOR_GUARANTEE (3) non-floor chunks by density are admitted first —
+ *   skipping any candidate whose tokens exceed the effective budget — and the
+ *   floor then packs unconditionally.
  *
  * Non-floor optimality repair (spec §AC-7, US-004):
  *   Density-greedy is the standard heuristic for fractional knapsack, but

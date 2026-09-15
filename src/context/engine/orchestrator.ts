@@ -447,11 +447,11 @@ export class ContextOrchestrator {
       const overageIds = manifest.floorOverageItems ?? manifest.floorItems;
       // This condition holds on nearly every stage of every story, and the
       // floor routinely runs to 60+ chunks — log the heaviest few plus a
-      // count rather than the whole list, so the warn stays readable.
+      // count rather than the whole list, so the log stays readable.
       const byCost = overageIds
         .map((id) => ({ id, tokens: manifest.chunkTokens?.[id] ?? 0 }))
         .sort((a, b) => b.tokens - a.tokens || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      logger.warnOnce("context-v2", "Stage budget exceeded by floor items", {
+      logger.debug("context-v2", "Stage budget exceeded by floor items", {
         storyId: request.storyId,
         stage: request.stage,
         usedTokens: manifest.usedTokens,

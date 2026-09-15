@@ -124,7 +124,13 @@ export interface ContextManifest {
   requestId: string;
   /** Pipeline stage that requested context */
   stage: string;
-  /** Total token budget passed in ContextRequest.budgetTokens */
+  /**
+   * Floor-driven minimum, not a ceiling. Carried in from
+   * ContextRequest.budgetTokens, but the floor kinds (`static`, `feature`,
+   * `test-coverage` — `FLOOR_KINDS` in packing.ts) bypass it by design, so
+   * `usedTokens` can exceed it. Ruling #2061 (c), ruled 2026-09-15: concede
+   * the floor exemption and guarantee repo-derived context a slot.
+   */
   totalBudgetTokens: number;
   /**
    * Effective token ceiling actually used by `packChunks` — i.e.
