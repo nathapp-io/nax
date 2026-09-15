@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before upgrading — the resolved profile is now logged once per dispatch.
   - **RunCommand:** `target` supplied with a declared `command` is now rejected (previously the `target`
     was silently discarded); `target` remains valid only for the `argv` branch (#2066).
+  - **Review diff paths are now package-relative.** `collectDiff`, `collectDiffStat` and
+    `computeTestInventory` ran git without `--relative`, so a monorepo story's reviewer — whose file
+    tools are rooted at the package dir — was shown repo-rooted paths like `packages/lib/src/util.ts`.
+    Reading one resolved to `<pkg>/packages/lib/...` and failed, costing a round trip per file before
+    the model retried. `computeTestInventory` also gained the `-- .` pathspec its siblings already had,
+    so the adversarial prompt's test-gap inventory no longer lists files from other packages (#2066).
 - **Fixed** — a same-agent fallback hop dispatched the previous model, because
   `SessionManager` reused a live session whenever the agent name matched and
   discarded the requested endpoint. Same-agent ladder rungs and sticky endpoints
