@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **watchdog:** Count ACP `tool_call` / `tool_call_update` stream activity by default, and add `agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds` (default 1800s) so long-running tool-only sessions stay alive without masking runaway tool loops.
+- **Story fragments no longer name nax's own artifacts.** The fragment collector (`## Files touched`) ran
+  `git diff --name-only` with no exclusions, so git-tracked run state such as
+  `<pkg>/.nax/cache/test-patterns.json` was recorded as a changed file and then offered to a dependent
+  story as something worth reading. Excludes are anchored at the repository root, so the same fragment is
+  produced whether the story's workdir is the repo root or a package (#2072).
 - **Fixed** — a same-agent fallback hop dispatched the previous model, because
   `SessionManager` reused a live session whenever the agent name matched and
   discarded the requested endpoint. Same-agent ladder rungs and sticky endpoints

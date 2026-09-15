@@ -25,6 +25,7 @@ import { countStories, markStoryPassed, savePRD } from "@/prd";
 import { storySpendUsd } from "@/runtime";
 import { errorMessage } from "@/utils/errors";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
+import { NAX_OWNED_TOP_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -351,11 +352,20 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
 async function getDiffFilePaths(workdir: string, baseRef: string | undefined): Promise<Set<string>> {
   if (!baseRef) return new Set();
   try {
-    const proc = _completionDeps.spawn(["git", "diff", "--name-only", `${baseRef}..HEAD`], {
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    // #2072: nax's own run artifacts are git-tracked mid-run, so without these
+    // a generated cache file lands in "Files touched" and is then offered to a
+    // dependent story as something worth reading. Anchored at the repo root
+    // (not cwd) because `workdir` is the repo root for a single-package repo
+    // and a package dir for a monorepo story, while the output is repo-rooted
+    // either way.
+    const proc = _completionDeps.spawn(
+      ["git", "diff", "--name-only", `${baseRef}..HEAD`, "--", ...NAX_OWNED_TOP_EXCLUDE_PATHSPECS],
+      {
+        cwd: workdir,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
 
     let timedOut = false;
     const timerId = setTimeout(() => {
