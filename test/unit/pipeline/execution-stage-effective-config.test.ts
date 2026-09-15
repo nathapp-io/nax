@@ -19,15 +19,15 @@ const SITES: readonly { file: string; marker: string; window?: number }[] = [
   { file: "src/pipeline/stages/execution.ts", marker: "const callCtx: CallContext = {" },
   {
     file: "src/pipeline/stages/acceptance-setup.ts",
-    marker: "packageView: pipelineCtx.runtime.packages.resolve(packageDir),",
+    marker: "const packageView = pipelineCtx.runtime.packages.resolve(packageDir);",
   },
   {
     file: "src/execution/lifecycle/acceptance-fix.ts",
-    marker: "packageView: ctx.runtime.packages.resolve(ctx.workdir),",
+    marker: "const packageView = ctx.runtime.packages.resolve(packageDir);",
   },
   {
     file: "src/execution/lifecycle/acceptance-loop.ts",
-    marker: "packageView: runtime.packages.resolve(packageDir),",
+    marker: "const packageView = runtime.packages.resolve(packageDir);",
     // `buildAcceptanceContext`'s unrelated `config:` follows ~446 chars past
     // this marker; the default 600-char window would reach it and pass even if
     // `buildFixCycleCtx` itself were unwired. 200 > 71 (this site's own
@@ -49,12 +49,8 @@ describe("pipeline CallContext sites forward the effective config (#2066)", () =
     });
   }
 
-  test("hardening.ts sets config on both of its CallContext literals", async () => {
+  test("hardening.ts reuses the package config for both CallContext literals", async () => {
     const source = await Bun.file("src/acceptance/hardening.ts").text();
-    const occurrences = source.split("packageView: ctx.runtime.packages.resolve(packageDir),");
-    expect(occurrences.length).toBe(3); // two sites => three fragments
-    for (const fragment of occurrences.slice(1)) {
-      expect(fragment.slice(0, 600)).toContain("config:");
-    }
+    expect(source.match(/config: packageView\.config,/g)?.length).toBe(2);
   });
 });

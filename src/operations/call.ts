@@ -70,7 +70,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   }
 
   const selector = normalizeSelector(op.config, op.name);
-  const slicedConfig = ctx.packageView.select(selector);
+  const config = ctx.config ?? ctx.runtime.configLoader.current();
+  const slicedConfig = selector.select(config);
   const buildCtx = { packageView: ctx.packageView, config: slicedConfig };
   const sections = composeSections(op.build(input, buildCtx));
   const prompt = join(sections);
@@ -80,7 +81,6 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // The caller's deadline wins over the run's; see CallContext.signal.
   const abortSignal = ctx.signal ?? ctx.runtime.signal;
 
-  const config = ctx.config ?? ctx.runtime.configLoader.current();
   const defaultAgent = ctx.runtime.agentManager.getDefault();
   const opModel: ConfiguredModel = resolveOpModel(op, input, buildCtx) ?? "balanced";
   // resolved.agent honors `{ agent, model }` pin; resolved.modelTier is undefined when a

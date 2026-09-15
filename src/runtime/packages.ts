@@ -172,8 +172,12 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       const override = await load(repoRoot, dir);
       if (override !== null) {
         mergedConfigs.set(dir, mergePackageConfig(loader.current(), override));
-        // Invalidate any stale root-config view so the next resolve() picks up the merge.
-        cache.delete(dir);
+        // A pre-hydration resolve can have cached the same package through a
+        // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity
+        // key that maps to this override, while preserving unrelated views.
+        for (const key of cache.keys()) {
+          if (toOverrideKey(key) === dir) cache.delete(key);
+        }
       }
     }
     hydrated = true;

@@ -210,6 +210,21 @@ describe("PackageRegistry — worktree paths resolve the package override (#2069
     expect(view.config.quality?.commands?.lint).toBe("pkg-lint");
   });
 
+  test("refreshes a worktree view that was resolved before hydration", async () => {
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } }));
+    const registry = createPackageRegistry(loader, "/repo");
+    const before = registry.resolve("/repo/.nax-wt/US-005/apps/web-ui");
+
+    await registry.hydrate(["apps/web-ui"], async (_root, dir) =>
+      dir === "apps/web-ui" ? makeNaxConfig({ quality: { commands: { lint: "pkg-lint" } } }) : null,
+    );
+
+    const after = registry.resolve("/repo/.nax-wt/US-005/apps/web-ui");
+    expect(after).not.toBe(before);
+    expect(after.hasOverride).toBe(true);
+    expect(after.config.quality?.commands?.lint).toBe("pkg-lint");
+  });
+
   // The identity invariant: packageWorkdir(view) joins packageDir onto repoRoot,
   // so shortening packageDir would repoint file tools at the MAIN checkout.
   test("packageDir still addresses the worktree, not the main checkout", async () => {

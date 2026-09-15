@@ -130,6 +130,41 @@ function makeCallOpDeps(writtenFiles: Array<{ path: string; content: string }>, 
 // ---------------------------------------------------------------------------
 
 describe("acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)", () => {
+  test("forwards the loader-resolved package config to refinement and generation", async () => {
+    const writtenFiles: Array<{ path: string; content: string }> = [];
+    const packageConfig = {
+      ...DEFAULT_CONFIG,
+      execution: { ...DEFAULT_CONFIG.execution, permissionProfile: "safe" as const },
+    };
+    const seen: Array<{ packageDir: string; permissionProfile: string | undefined }> = [];
+    makeCallOpDeps(writtenFiles, REAL_ACCEPTANCE_TEST);
+    const originalCallOp = _acceptanceSetupDeps.callOp;
+    _acceptanceSetupDeps.loadGroupConfig = async () => packageConfig;
+    _acceptanceSetupDeps.callOp = async (ctx, packageDir, op, input, storyId, config) => {
+      seen.push({ packageDir, permissionProfile: config?.execution?.permissionProfile });
+      return originalCallOp(ctx, packageDir, op, input, storyId, config);
+    };
+    const story = makeStory({ id: "US-001", workdir: "apps/web", acceptanceCriteria: ["AC-1: package config"] });
+    const prd = makePRD({ feature: "test-feature", userStories: [story] });
+
+    await acceptanceSetupStage.execute(
+      makeCtx({
+        prd,
+        story,
+        stories: [story],
+        workdir: "/repo",
+        projectDir: "/repo",
+        featureDir: "/repo/.nax/features/test-feature",
+        config: { ...packageConfig, acceptance: { ...packageConfig.acceptance, refinement: true } },
+      }),
+    );
+
+    expect(seen).toEqual([
+      { packageDir: "/repo/apps/web", permissionProfile: "safe" },
+      { packageDir: "/repo/apps/web", permissionProfile: "safe" },
+    ]);
+  });
+
   test("callOp returns real test code (verify extracted it); written directly, no backup", async () => {
     const writtenFiles: Array<{ path: string; content: string }> = [];
     // Simulate: verify hook extracted code from agent-written file and returned it via callOp.
