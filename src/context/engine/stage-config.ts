@@ -49,6 +49,17 @@ export interface StageContextConfig {
    * Default: absent (treated as 1.0, raw markdown rendering used).
    */
   planDigestBoost?: number;
+  /**
+   * Declares that this stage authors test files that do not exist on disk yet
+   * (nax#2060). When true, providers that scope rules/content against
+   * `request.scopeFiles` (the resolved evidence set — story source files)
+   * should also consider the prospective test paths the stage is about to
+   * produce, derived from `request.resolvedTestPatterns` via
+   * `deriveSiblingTestCandidates()`. Keying off this stage-declared field
+   * rather than the stage's role/id keeps "which stages author tests" a
+   * single explicit fact instead of an inferred one.
+   */
+  producesTestFiles?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,6 +155,10 @@ export const STAGE_CONTEXT_MAP = {
     budgetTokens: 8_000,
     providerIds: PHASE_3_TDD_TEST_WRITER,
     pullToolNames: ["query_neighbor"],
+    // nax#2060: this is the one stage whose entire job is to author test
+    // files that do not exist yet — StaticRulesProvider extends its
+    // appliesTo match set with prospective test paths.
+    producesTestFiles: true,
   },
   "tdd-implementer": {
     role: "implementer",

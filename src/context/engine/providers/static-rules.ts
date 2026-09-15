@@ -29,6 +29,7 @@ import type { ProviderScopingReport } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
 import { buildBudgetNoticeChunk, buildSectionBudgetPressure } from "./static-rules-budget-notice";
+import { buildEffectiveScopeFiles, warnOnAppliesToStageContradiction } from "./static-rules-scoping";
 
 export { _resetCanonicalRulesCache } from "./canonical-rules-cache";
 
@@ -302,22 +303,24 @@ export class StaticRulesProvider implements IContextProvider {
           return false;
         });
 
+        // nax#2060: authoring stages match appliesTo against prospective outputs too.
+        const effectiveScopeFiles = buildEffectiveScopeFiles(request);
         const appliesToFilteredIds: string[] = [];
         let appliesToInertCount = 0;
+        const scopeIsEmpty = !effectiveScopeFiles || effectiveScopeFiles.length === 0;
         const scopedRules = stageMatchedRules.filter((rule) => {
-          if (rule.appliesTo && rule.appliesTo.length > 0 && (!request.scopeFiles || request.scopeFiles.length === 0)) {
-            appliesToInertCount++;
-          }
-          if (ruleMatchesScopeFiles(rule.appliesTo, request.scopeFiles)) return true;
+          if (rule.appliesTo && rule.appliesTo.length > 0 && scopeIsEmpty) appliesToInertCount++;
+          if (ruleMatchesScopeFiles(rule.appliesTo, effectiveScopeFiles)) return true;
           appliesToFilteredIds.push(canonicalRuleId(rule));
           return false;
         });
+        warnOnAppliesToStageContradiction(logger, request, stageMatchedRules, appliesToFilteredIds, canonicalRuleId);
 
         const scopingReport: ProviderScopingReport = {
           stageFilteredIds,
           appliesToFilteredIds,
           appliesToInertCount,
-          scopeFileCount: request.scopeFiles?.length ?? 0,
+          scopeFileCount: effectiveScopeFiles?.length ?? 0,
           sectionCount: 0,
         };
 
