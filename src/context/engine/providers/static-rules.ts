@@ -29,7 +29,7 @@ import type { ProviderScopingReport } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
 import { buildBudgetNoticeChunk, buildSectionBudgetPressure } from "./static-rules-budget-notice";
-import { buildEffectiveScopeFiles, warnOnAppliesToStageContradiction } from "./static-rules-scoping";
+import { ruleTargetsAuthoredTests, warnOnAppliesToStageContradiction } from "./static-rules-scoping";
 
 export { _resetCanonicalRulesCache } from "./canonical-rules-cache";
 
@@ -303,14 +303,15 @@ export class StaticRulesProvider implements IContextProvider {
           return false;
         });
 
-        // nax#2060: authoring stages match appliesTo against prospective outputs too.
-        const effectiveScopeFiles = buildEffectiveScopeFiles(request);
         const appliesToFilteredIds: string[] = [];
         let appliesToInertCount = 0;
-        const scopeIsEmpty = !effectiveScopeFiles || effectiveScopeFiles.length === 0;
+        const scopeIsEmpty = !request.scopeFiles || request.scopeFiles.length === 0;
+        // nax#2060: authoring stages also admit an appliesTo that itself denotes test output.
+        const admits = (appliesTo?: string[]) =>
+          ruleMatchesScopeFiles(appliesTo, request.scopeFiles) || ruleTargetsAuthoredTests(appliesTo, request);
         const scopedRules = stageMatchedRules.filter((rule) => {
           if (rule.appliesTo && rule.appliesTo.length > 0 && scopeIsEmpty) appliesToInertCount++;
-          if (ruleMatchesScopeFiles(rule.appliesTo, effectiveScopeFiles)) return true;
+          if (admits(rule.appliesTo)) return true;
           appliesToFilteredIds.push(canonicalRuleId(rule));
           return false;
         });
@@ -320,7 +321,7 @@ export class StaticRulesProvider implements IContextProvider {
           stageFilteredIds,
           appliesToFilteredIds,
           appliesToInertCount,
-          scopeFileCount: effectiveScopeFiles?.length ?? 0,
+          scopeFileCount: request.scopeFiles?.length ?? 0,
           sectionCount: 0,
         };
 

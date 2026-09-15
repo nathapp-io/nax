@@ -255,6 +255,10 @@ export const STAGE_CONTEXT_MAP = {
     // verify-result / tool-diagnostics record on retry without flooding
     // push context. Shared query_neighbor for cross-package import lookups.
     pullToolNames: ["query_neighbor", "query_scratch"],
+    // nax#2060: merges the test-writer and implementer roles into one
+    // session, so — like tdd-test-writer — it authors test files that
+    // don't exist yet at assembly time.
+    producesTestFiles: true,
   },
 
   // TDD-simple strategy — same as single-session (simplified TDD with merged roles)
@@ -268,6 +272,8 @@ export const STAGE_CONTEXT_MAP = {
     // query_scratch: see the US-005 AC12 rationale on "single-session" above.
     pullToolNames: ["query_neighbor", "query_scratch"],
     planDigestBoost: 1.5,
+    // nax#2060: merged test-writer + implementer roles — see "single-session" above.
+    producesTestFiles: true,
   },
 
   // No-test strategy — implementer role, moderate budget
@@ -292,6 +298,8 @@ export const STAGE_CONTEXT_MAP = {
     providerIds: PHASE_3_IMPLEMENTATION,
     // query_scratch: see the US-005 AC12 rationale on "single-session" above.
     pullToolNames: ["query_neighbor", "query_scratch"],
+    // nax#2060: merged test-writer + implementer roles — see "single-session" above.
+    producesTestFiles: true,
   },
 
   // Route — lightweight context for routing/classification; static rules only

@@ -106,3 +106,27 @@ describe("stage-config — test-coverage provider registration (AC3, AC4, AC5, A
     });
   });
 });
+
+describe("stage-config — producesTestFiles declaration (nax#2060)", () => {
+  describe("authoring stages declare producesTestFiles: true", () => {
+    test.each(["tdd-test-writer", "single-session", "tdd-simple", "batch"])(
+      "%s stage declares producesTestFiles: true",
+      (stage) => {
+        expect(getStageContextConfig(stage).producesTestFiles).toBe(true);
+      },
+    );
+  });
+
+  describe("non-authoring stages leave producesTestFiles unset", () => {
+    // no-test: never writes tests, by design.
+    // tdd-implementer/rectify/autofix: run after an authoring stage in the
+    // same story, so their scopeFiles (git-diff based) already include any
+    // real test files that stage wrote — no prospective-path gap to bridge.
+    test.each(["no-test", "tdd-implementer", "rectify", "autofix"])(
+      "%s stage does NOT declare producesTestFiles",
+      (stage) => {
+        expect(getStageContextConfig(stage).producesTestFiles).toBeUndefined();
+      },
+    );
+  });
+});

@@ -7,18 +7,33 @@
  * `request.scopeFiles` (the resolved evidence set of files the story
  * already touches, which at test-writing time contains only source files).
  *
+ * The decisive block below runs against the REAL config loader and the
+ * REAL `resolveTestFilePatterns()` resolver — no stubbed `ResolvedTestPatterns`.
+ * A prior version of this fix passed a unit test that stubbed
+ * `resolvedTestPatterns` with a directory-prefixed glob
+ * (`test/unit/**\/*.test.ts`), but nax's own real config resolves to
+ * extension-only globs (`**\/*.test.ts`) with `testDirs: []` — the stub
+ * hid the actual defect (see `isTestShapedPattern` in
+ * `static-rules-scoping.ts` for why a directory-scoped rule like
+ * `test/**\/*.ts` needs a second check beyond regex classification).
+ *
  * Split from static-rules-scoping.test.ts per test-architecture.md — that
  * file already covers the general stages:/appliesTo: filter behaviour;
  * this file is scoped to the authoring-stage extension on top of it.
  */
 
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _clearRootConfigCache, loadConfig } from "@/config/loader";
 import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
 import type { Logger } from "@/logger";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";
+import { resolveTestFilePatterns } from "@/test-runners/resolver";
 
 /** Mirrors resolveTestFilePatterns() output via buildResolved() (ADR-009). */
 function makePatterns(globs: readonly string[]): ResolvedTestPatterns {
@@ -50,36 +65,55 @@ function setupCanonical(rules: CanonicalRule[]) {
   };
 }
 
-describe("StaticRulesProvider — authoring-stage appliesTo scoping (nax#2060)", () => {
-  test("admits a rule declaring stages:[tdd-test-writer] + appliesTo:[test/**] when scopeFiles are all under src/", async () => {
-    const restore = setupCanonical([
-      {
-        fileName: "test-writing.md",
-        content: "Test-authoring rule.",
-        stages: ["tdd-test-writer"],
-        appliesTo: ["test/**/*.test.ts"],
-      },
-    ]);
-    try {
-      const provider = new StaticRulesProvider();
-      const result = await provider.fetch({
-        ...BASE_REQUEST,
-        scopeFiles: ["src/cost-row-rate-provenance.ts"],
-        resolvedTestPatterns: TEST_PATTERNS,
-      });
+// ─────────────────────────────────────────────────────────────────────────────
+// Decisive check — REAL loadConfig + REAL resolveTestFilePatterns
+// ─────────────────────────────────────────────────────────────────────────────
 
-      expect(result.chunks).toHaveLength(1);
-      expect(result.chunks[0]?.content).toContain("Test-authoring rule.");
-      expect(result.scopingReport?.appliesToFilteredIds).not.toContain("test-writing");
-    } finally {
-      restore();
-    }
+describe("StaticRulesProvider — real resolver output (nax#2060 decisive check)", () => {
+  const tempDirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    _clearRootConfigCache();
   });
 
-  test("still filters a rule genuinely unrelated to the story's prospective test paths", async () => {
+  /** A root config mirroring nax's own — extension-only testFilePatterns, no directory prefix. */
+  async function makeExtensionOnlyConfigRoot(): Promise<string> {
+    const root = makeTempDir("nax-2060-real-resolver-");
+    tempDirs.push(root);
+    await mkdir(join(root, ".nax"), { recursive: true });
+    const config = { execution: { smartTestRunner: { testFilePatterns: ["**/*.test.ts", "**/*.spec.ts"] } } };
+    await Bun.write(join(root, ".nax", "config.json"), JSON.stringify(config, null, 2));
+    return root;
+  }
+
+  test("admits both an extension-shaped and a directory-shaped test rule; still filters an unrelated rule", async () => {
+    const root = await makeExtensionOnlyConfigRoot();
+    const config = await loadConfig(root);
+    const resolvedTestPatterns = await resolveTestFilePatterns(config, root, undefined);
+
+    // Confirms the real defect precondition: no directory prefix in the resolved globs.
+    expect(resolvedTestPatterns.testDirs).toEqual([]);
+    expect(resolvedTestPatterns.resolution).toBe("root-config");
+
     const restore = setupCanonical([
       {
-        fileName: "unrelated.md",
+        id: "test-writing",
+        fileName: "test-writing.md",
+        content: "Extension-shaped test rule.",
+        stages: ["tdd-test-writer"],
+        appliesTo: ["**/*.test.ts"],
+      },
+      {
+        id: "test-ratchets",
+        fileName: "test-ratchets.md",
+        content: "Directory-shaped test rule.",
+        stages: ["tdd-test-writer"],
+        appliesTo: ["test/**/*.ts"],
+      },
+      {
+        id: "unrelated-docs",
+        fileName: "unrelated-docs.md",
         content: "Unrelated docs rule.",
         stages: ["tdd-test-writer"],
         appliesTo: ["docs/**/*.md"],
@@ -89,18 +123,35 @@ describe("StaticRulesProvider — authoring-stage appliesTo scoping (nax#2060)",
       const provider = new StaticRulesProvider();
       const result = await provider.fetch({
         ...BASE_REQUEST,
-        scopeFiles: ["src/cost-row-rate-provenance.ts"],
-        resolvedTestPatterns: TEST_PATTERNS,
+        repoRoot: root,
+        packageDir: root,
+        scopeFiles: ["src/agents/acp/adapter.ts", "src/session/session-keeper.ts"],
+        resolvedTestPatterns,
       });
 
-      expect(result.chunks).toHaveLength(0);
-      expect(result.scopingReport?.appliesToFilteredIds).toContain("unrelated");
+      expect(result.scopingReport?.appliesToFilteredIds).not.toContain("test-writing");
+      expect(result.scopingReport?.appliesToFilteredIds).not.toContain("test-ratchets");
+      expect(result.scopingReport?.appliesToFilteredIds).toContain("unrelated-docs");
+      // scopeFileCount stays the real evidence-set size — no fabricated candidate paths added.
+      expect(result.scopingReport?.scopeFileCount).toBe(2);
+
+      const contents = result.chunks.map((c) => c.content).join("\n");
+      expect(contents).toContain("Extension-shaped test rule.");
+      expect(contents).toContain("Directory-shaped test rule.");
+      expect(contents).not.toContain("Unrelated docs rule.");
     } finally {
       restore();
     }
   });
+});
 
-  test("does not extend scope for non-authoring stages (e.g. tdd-implementer)", async () => {
+// ─────────────────────────────────────────────────────────────────────────────
+// Guard-condition coverage (stubbed resolvedTestPatterns — mechanism edges,
+// not the appliesTo-matching defect itself, which the block above covers)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("StaticRulesProvider — authoring-stage appliesTo scoping guard conditions (nax#2060)", () => {
+  test("does not extend matching for non-authoring stages (e.g. tdd-implementer)", async () => {
     const restore = setupCanonical([
       {
         fileName: "test-writing.md",
@@ -125,7 +176,7 @@ describe("StaticRulesProvider — authoring-stage appliesTo scoping (nax#2060)",
     }
   });
 
-  test("does not extend scope when resolvedTestPatterns is absent (fail-open)", async () => {
+  test("does not extend matching when resolvedTestPatterns is absent (fail-open)", async () => {
     const restore = setupCanonical([
       {
         fileName: "test-writing.md",
