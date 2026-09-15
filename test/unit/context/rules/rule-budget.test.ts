@@ -8,7 +8,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { RuleSection } from "@/context";
-import { applySectionBudget } from "@/context";
+import { applySectionBudget, priorityToRawScore } from "@/context";
+import { FRONTMATTER_PRIORITY_DEFAULT } from "@/context/rules/rules-frontmatter";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -244,5 +245,54 @@ describe("applySectionBudget — cross-rule ordering", () => {
     const result = applySectionBudget(sections, 1000);
 
     expect(result.retainedSections.map((s) => s.ruleId)).toEqual(["zulu", "zulu", "zulu", "alpha", "alpha", "alpha"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// priorityToRawScore: authored priority → bounded raw score
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("priorityToRawScore", () => {
+  test("exports priorityToRawScore from @/context/rules/rule-budget", async () => {
+    const modulePath = "@/context/rules/rule-budget" as string;
+    const mod = (await import(modulePath)) as { priorityToRawScore?: unknown };
+    expect(typeof mod.priorityToRawScore).toBe("function");
+  });
+
+  test("is strictly decreasing — a numerically lower priority returns a strictly higher score", () => {
+    const scores = [1, 5, 20, 55, 100, 500].map((priority) => priorityToRawScore(priority));
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeLessThan(scores[i - 1]);
+    }
+  });
+
+  test("undefined matches FRONTMATTER_PRIORITY_DEFAULT so an undeclared priority reads as the default", () => {
+    expect(FRONTMATTER_PRIORITY_DEFAULT).toBe(100);
+    expect(priorityToRawScore(undefined)).toBe(priorityToRawScore(FRONTMATTER_PRIORITY_DEFAULT));
+    expect(priorityToRawScore()).toBe(priorityToRawScore(FRONTMATTER_PRIORITY_DEFAULT));
+  });
+
+  test("always returns a score in (0, 1] — bounded, never zero, never negative", () => {
+    const inputs = [undefined, 0, -100, 5, 100, 10_000, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    for (const priority of inputs) {
+      const score = priorityToRawScore(priority);
+      expect(Number.isFinite(score)).toBe(true);
+      expect(score).toBeGreaterThan(0);
+      expect(score).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("clamps non-finite, zero, and negative priorities to the default instead of producing Infinity/NaN", () => {
+    const defaultScore = priorityToRawScore(FRONTMATTER_PRIORITY_DEFAULT);
+    const clamped = [0, -1, -100, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    for (const priority of clamped) {
+      expect(priorityToRawScore(priority)).toBe(defaultScore);
+    }
+  });
+
+  test("orders this repo's real corpus correctly — priority 5 outranks priority 55", () => {
+    expect(priorityToRawScore(5)).toBeCloseTo(0.952, 3);
+    expect(priorityToRawScore(55)).toBeCloseTo(0.645, 3);
+    expect(priorityToRawScore(5)).toBeGreaterThan(priorityToRawScore(55));
   });
 });

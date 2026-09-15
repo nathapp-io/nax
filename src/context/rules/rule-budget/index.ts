@@ -28,6 +28,17 @@
  * list and an `overageTokens` that mirrors the supplied total so callers
  * can still report pressure.
  *
+ * Scoring: `priorityToRawScore` maps an authored frontmatter `priority` to a
+ * raw score in `(0, 1]`, pivoting at `FRONTMATTER_PRIORITY_DEFAULT` (100 →
+ * 0.5). The mapping is bounded on purpose. An unbounded `DEFAULT / priority`
+ * would preserve 1.0 at the default, but once floor chunks compete with
+ * non-floor chunks an unbounded score lets a single high-priority rule
+ * dominate every code chunk in the pool. Keeping rules inside `(0, 1]` lets
+ * that rules-vs-code weighting be set explicitly via `KIND_WEIGHTS` instead
+ * of being inherited from this mapping. The cost — all static scores halve
+ * relative to today — is inert, because floor chunks are exempt from both
+ * `minScore` and packing.
+ *
  * See: docs/specs/SPEC-bounded-rules-floor.md §US-002
  */
 
@@ -71,6 +82,20 @@ function sectionIdentifier(section: RuleSection): string {
   if (sectionId) return sectionId;
   const owner = section.ruleId ?? section.rulePath ?? "";
   return `${owner}#${section.slug}`;
+}
+
+/**
+ * Map an authored rule `priority` to a bounded raw score in `(0, 1]`.
+ *
+ * Lower `priority` numbers mean "more important" and return higher scores.
+ * `undefined`, non-finite, zero, and negative inputs fall back to
+ * `FRONTMATTER_PRIORITY_DEFAULT`, so a rule that declares nothing scores as
+ * though it declared the default. See the module docstring for why the
+ * mapping is bounded rather than `DEFAULT / priority`.
+ */
+export function priorityToRawScore(priority?: number): number {
+  const p = Number.isFinite(priority) && (priority as number) > 0 ? (priority as number) : FRONTMATTER_PRIORITY_DEFAULT;
+  return FRONTMATTER_PRIORITY_DEFAULT / (FRONTMATTER_PRIORITY_DEFAULT + p);
 }
 
 /**
