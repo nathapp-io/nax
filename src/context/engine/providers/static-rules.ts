@@ -83,10 +83,10 @@ export interface StaticRulesProviderOptions {
    */
   rulesShare?: number;
   /**
-   * When true, enforce the budget via contiguous-tail truncation (legacy
-   * behaviour) — rules that don't fit are dropped and reported as pressure.
-   * When false (default), every rule is preserved and the gap over the
-   * budget is reported as `overageTokens` pressure only.
+   * When true, enforce the effective budget via the per-rule section walk:
+   * a rule that no longer fits is closed and the walk continues into later
+   * rules (contiguous within a rule, skip across rules). When false (default),
+   * every rule is preserved and the gap over the budget is reported as pressure.
    *
    * Wired from `config.context.v2.rules.enforceBudget` by the default
    * orchestrator. See US-003.

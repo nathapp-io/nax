@@ -100,11 +100,11 @@ const ContextV2RulesConfigSchema = z
      */
     allowLegacyClaudeMd: z.boolean().default(false),
     /**
-     * Token ceiling for canonical rules. Soft-by-default: when the total exceeds
-     * this threshold and `enforceBudget` is false, every rule is preserved and
-     * the gap is reported through pressure metrics instead of being silently
-     * truncated. Set `enforceBudget: true` to restore the legacy contiguous-tail
-     * truncation behaviour.
+     * Token ceiling for canonical rules. When the total exceeds this threshold
+     * and `enforceBudget` is true (default), the section budget closes each rule
+     * once it no longer fits and the walk continues with later rules (contiguous
+     * within a rule, skip across rules). When `enforceBudget` is false, every
+     * rule is preserved and the gap is reported through pressure metrics.
      */
     budgetTokens: z.number().int().min(512).default(8192),
     /**
@@ -114,9 +114,10 @@ const ContextV2RulesConfigSchema = z
      */
     rulesShare: z.number().min(0).max(1).default(0.4),
     /**
-     * When true (default), `applyCanonicalRulesBudget` enforces the ceiling via
-     * contiguous-tail truncation (legacy behaviour). When false,
-     * the ceiling is reported as pressure and every rule is preserved.
+     * When true (default), `StaticRulesProvider` enforces the ceiling via the
+     * section budget: a rule that no longer fits is closed and the walk continues
+     * to later rules — contiguous within a rule, skip across rules. When false,
+     * every rule is preserved and the ceiling is reported as pressure instead.
      * Resolved by the default orchestrator and wired into `StaticRulesProvider`.
      */
     enforceBudget: z.boolean().default(true),
