@@ -17,7 +17,8 @@ This plan is a **correctness prerequisite, not the relief.** Do not describe it 
 - **(a) is behaviourally inert on its own.** Floor-kind chunks bypass the `minScore` filter (`orchestrator.ts:385-386`) and bypass packing's budget entirely (`packing.ts:169-198`). Nothing today ranks `static` chunks. (a) exists so that the #2061 (c) ruling *can* rank them; until that ruling lands, its only visible effect is the `chunkScores` values in the manifest. Ship it anyway — without it, any ranking-based floor policy ranks rules by `1/tokens`, i.e. by shortness, which is inverted against author intent.
   Inertness was verified, not assumed, on all three paths a score could leak into: the `minScore` drop exempts floor kinds; packing's floor pass admits them before any budget check; and `dedupeChunks` (`dedupe.ts:81-110`) picks the first-seen chunk by iteration order, never by score. No existing test asserts a static chunk's `rawScore`.
 - **(b)'s benefit is real but modest.** It removes a cliff; it does not create budget. At the shipped default (`0.4 x 8000 = 3200`) against this repo's ~25k-token corpus, the first rule alone is 2,758 tokens, so continuing the walk recovers only the ~442-token remainder. The gain is larger at mid-list boundaries and at the larger configured budgets, and the behaviour becomes explainable in all cases, but the corpus/budget mismatch is untouched.
-- **The mismatch is addressed elsewhere** — by stage-scoped selection (#822, #2060) and by the #2061 (c) floor-policy ruling. Do not attempt either here.
+- **The mismatch is addressed elsewhere** — by stage-scoped selection (#822, #2060). Do not attempt that here.
+- **(c) was ruled on 2026-09-15** ([issue comment](https://github.com/nathapp-io/nax/issues/2061#issuecomment-5678255394)) and is now tasks 9-12 below. The ruling does **not** make (a) live: under concede-and-reserve the floor still packs unconditionally, so nothing ranks static chunks. (a) stays inert for selection and earns its place as manifest telemetry. Do not describe the ruling as activating it.
 - **This repo runs with `enforceBudget: false` globally and that stays** (`~/.nax/config.json`). So (b) changes nothing on this machine's own runs. It changes the shipped default path, which is what other repos get. Verification in Task 7 must therefore be done with enforcement explicitly enabled for the measurement only, never by editing the global config.
 
 ## Global Constraints
@@ -38,6 +39,10 @@ This plan is a **correctness prerequisite, not the relief.** Do not describe it 
 | `test/unit/context/rules/rule-budget.test.ts` | New `priorityToRawScore` cases; rewrite AC5; add the cross-rule continuation cases. |
 | `test/unit/context/engine/providers/static-rules*.test.ts` | Assert emitted chunks carry distinct, priority-ordered `rawScore`. |
 | `docs/specs/SPEC-bounded-rules-floor.md` §US-002 | Amend the contiguous-tail contract (lines ~46, ~107, ~180). |
+| `src/context/engine/packing.ts` | **(c)** — non-floor guarantee ahead of the floor pass. 216 lines, room to grow. |
+| `src/context/engine/manifest-types.ts` | **(c)** — `totalBudgetTokens` redocumented as a floor-driven minimum; `floorOverageItems` replaced by an overage scalar. 296 lines. |
+| `src/context/engine/manifest-builder.ts:106` | **(c)** — record `chunkTokens` for excluded chunks. 130 lines. |
+| `src/context/engine/orchestrator.ts:446-463` | **(c)** — downgrade the floor-overage warn to an expected-state metric. **508 lines — watch the 600 gate.** |
 
 ---
 
@@ -124,3 +129,41 @@ Yields `priority 5 -> 0.952`, `20 -> 0.833`, `55 -> 0.645`, `100 (default) -> 0.
 
 - [ ] Code review **before** opening the PR, not after. Do not trust a subagent's "all green" — re-run the Task 7 harness yourself and confirm the numbers in the PR body match what the code actually produces.
 - [ ] PR body: link #2061, state that this implements proposal items (a) and (b) only, and that item (c) — the floor-policy ruling — remains open and is what actually bounds the bundle.
+
+---
+
+## Item (c) — floor policy, ruled 2026-09-15
+
+**Ruling:** concede the floor exemption explicitly and guarantee repo-derived context a slot; defer option 1 (floor items rank). Full rationale in the [issue comment](https://github.com/nathapp-io/nax/issues/2061#issuecomment-5678255394). The load-bearing argument: a dropped code chunk costs one tool call, a dropped rule costs a gate-fix cycle — the agent cannot discover a rule it was never shown.
+
+### Task 9: Non-floor guarantee in `packChunks`
+
+- [ ] Tests first, in the existing packing suite: with a floor that alone exceeds the budget, the top-N non-floor chunks by density are still admitted; N defaults to 3; fewer than N candidates admits all of them; a guaranteed candidate whose own `tokens` exceed `effectiveBudget` is skipped in favour of the next rather than admitted.
+- [ ] Implement in `src/context/engine/packing.ts`: select guaranteed non-floor chunks by density **before** the floor pass and admit them first, so their tokens are counted and they cannot be starved. Floor packs unconditionally as today. Remaining non-floor competes for whatever is left via the existing `repairNonFloor`.
+- [ ] Export the constant (`NON_FLOOR_GUARANTEE = 3`) rather than inlining it — the ruling's revisit condition depends on being able to tune it.
+- [ ] Do not change `FLOOR_KINDS`. The exemption is now intended behaviour.
+
+**Why count and not token share:** Finding 5 means an evicted chunk's token cost is not recorded anywhere, so no percentage or fixed-token reserve could be chosen from evidence. Revisit once Task 11 makes eviction measurable.
+
+### Task 10: Redocument the budget as a minimum, downgrade the warn
+
+- [ ] `manifest-types.ts` — `totalBudgetTokens` doc becomes a floor-driven minimum, not a ceiling. Say plainly that floor kinds bypass it by design and name the ruling.
+- [ ] `orchestrator.ts:446-463` — downgrade `logger.warnOnce("Stage budget exceeded by floor items")` to an expected-state metric (debug plus a counter, not a warn). The comment at `:448` already concedes the condition holds on nearly every stage; the log level should agree with it.
+- [ ] **`orchestrator.ts` is 508/600.** Keep this edit net-neutral or shrinking; do not add a helper to that file.
+- [ ] `packing.ts` module docstring — the "Budget floor rule (spec §AC-6)" paragraph must state the guarantee that now precedes it.
+
+### Task 11: Make eviction measurable (Finding 5)
+
+- [ ] `manifest-builder.ts:106` — record `chunkTokens` for excluded chunks, not only included ones. Today `excludedChunks` names ids whose token cost appears nowhere, so "the budget evicted X tokens of context" is unanswerable from the artefact that exists to answer it.
+- [ ] **Do not remove `floorOverageItems`.** It has 53 references across 12 files including `src/metrics/types.ts` and `src/cli/context.ts` — replacing it is a migration, not a fix, and would swamp this change. Instead:
+  - fix its semantics in place so it carries only chunks that **individually** crossed the line (`packing.ts:185` currently sets `floorCollectivelyOverflows` once and attributes all 58);
+  - **add** a `floorOverageTokens` scalar alongside it, which is the number anyone actually wants;
+  - update `manifest-types.ts:154`'s doc comment, which today documents the subset semantic the code does not implement.
+- [ ] `orchestrator.ts:447` falls back to `floorItems` when `floorOverageItems` is absent — that path must keep working, and with the corrected semantics it will now fire more often (an empty overage list is the normal case). Check the fallback still produces a sensible `heaviestFloorItems`.
+- [ ] Re-run `grep -rn "floorOverageItems" src/ test/` after the semantic change: tests that assert "every floor item is listed" encode the old behaviour and will need rewriting with the same care as AC5.
+
+### Task 12: Confirm `enforceBudget` stays true
+
+- [ ] No code change — the shipped default at `schemas-context.ts:122` stays `true`. This task is a verification and a note in the PR body.
+- [ ] Confirm (b) has made enforcement non-destructive before claiming this: re-run the Task 7 harness with the shipped `rulesShare: 0.4`, and report how many rules survive at 3,200 before and after. If the answer is still "one of thirteen", say so — the default should then be reopened rather than quietly kept.
+- [ ] Do **not** touch `~/.nax/config.json`. The local `enforceBudget: false` override is a standing choice and stays; it also means none of this repo's own runs exercise the path Task 12 is verifying.
