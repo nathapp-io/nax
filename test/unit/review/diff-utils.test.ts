@@ -117,6 +117,21 @@ describe("collectDiff()", () => {
     expect(captured.value).toContain(":!.nax-pids");
   });
 
+  // nax#2066 follow-on: git reports paths relative to the REPO ROOT, but a
+  // monorepo story's reviewer has its file tools rooted at the PACKAGE dir.
+  // Without --relative the prompt says "packages/lib/src/util.ts", the agent
+  // resolves it under its own root and reads <pkg>/packages/lib/src/util.ts —
+  // ENOENT, one wasted round trip per file. Observed live in a monorepo-tiny
+  // run (both shared and worktree isolation).
+  test("passes --relative so emitted paths match the cwd's containment root", async () => {
+    const captured: { value?: string[] } = {};
+    _diffUtilsDeps.spawn = makeCapturingSpawnMock("diff output", captured);
+
+    await collectDiff("/repo/packages/lib", "abc123", []);
+
+    expect(captured.value).toContain("--relative");
+  });
+
   test("returns stdout string on exit code 0; null on non-zero", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("diff content");
     expect(await collectDiff("/repo", "abc123", [])).toBe("diff content");
@@ -138,6 +153,15 @@ describe("collectDiffStat()", () => {
     expect(captured.value).toBeDefined();
     expect(captured.value).toContain("--stat");
     expect(captured.value).toContain("abc123..HEAD");
+  });
+
+  test("passes --relative so emitted paths match the cwd's containment root", async () => {
+    const captured: { value?: string[] } = {};
+    _diffUtilsDeps.spawn = makeCapturingSpawnMock("stat output", captured);
+
+    await collectDiffStat("/repo/packages/lib", "abc123");
+
+    expect(captured.value).toContain("--relative");
   });
 
   test("returns trimmed stdout on success; empty string on non-zero exit code", async () => {
