@@ -186,6 +186,7 @@ function buildFixCycleCtx(
     runtime,
     packageView: runtime.packages.resolve(packageDir),
     packageDir,
+    config: ctx.config,
     storyId,
     featureName: ctx.feature,
     // agentName captured once at cycle construction time; fallback changes not reflected mid-cycle

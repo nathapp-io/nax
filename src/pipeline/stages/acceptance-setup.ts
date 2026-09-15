@@ -191,6 +191,7 @@ export const _acceptanceSetupDeps = {
         runtime: pipelineCtx.runtime,
         packageView: pipelineCtx.runtime.packages.resolve(packageDir),
         packageDir,
+        config: pipelineCtx.config,
         featureName: pipelineCtx.prd.feature,
         storyId,
         agentName: pipelineCtx.agentManager?.getDefault() ?? "claude",

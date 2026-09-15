@@ -28,6 +28,7 @@ function fixCallCtx(ctx: AcceptanceLoopContext): CallContext {
     runtime: ctx.runtime,
     packageView: ctx.runtime.packages.resolve(ctx.workdir),
     packageDir: ctx.workdir,
+    config: ctx.config,
     storyId: ctx.prd.userStories[0]?.id,
     featureName: ctx.feature,
     agentName: ctx.agentManager?.getDefault() ?? "claude",
