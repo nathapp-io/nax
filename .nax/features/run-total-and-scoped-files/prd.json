@@ -3,7 +3,7 @@
   "feature": "run-total-and-scoped-files",
   "branchName": "feat/run-total-and-scoped-files",
   "createdAt": "2026-09-14T17:00:20.930Z",
-  "updatedAt": "2026-09-15T04:21:01.739Z",
+  "updatedAt": "2026-09-15T04:41:22.825Z",
   "userStories": [
     {
       "id": "US-001",
@@ -81,8 +81,8 @@
         "path-policy"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
