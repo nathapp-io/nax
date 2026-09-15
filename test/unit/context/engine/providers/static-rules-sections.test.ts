@@ -234,7 +234,7 @@ describe("StaticRulesProvider — US-004 AC3/AC4/AC5/AC6: section chunk shape", 
     }
   });
 
-  test("AC6: every section chunk has rawScore 1.0", async () => {
+  test("AC6: every section chunk has the priority-derived rawScore", async () => {
     setupCanonical([{ fileName: "multi.md", id: "multi", content: "## A\nbody\n## B\nbody" }]);
     const rule = { fileName: "multi.md", id: "multi" } as CanonicalRule;
     const sections: RuleSection[] = [
@@ -253,7 +253,7 @@ describe("StaticRulesProvider — US-004 AC3/AC4/AC5/AC6: section chunk shape", 
     const provider = new StaticRulesProvider();
     const result = await provider.fetch(BASE_REQUEST);
     for (const chunk of result.chunks) {
-      expect(chunk.rawScore).toBe(1.0);
+      expect(chunk.rawScore).toBe(0.5);
     }
   });
 });

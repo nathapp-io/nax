@@ -97,14 +97,14 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     expect(result.chunks).toHaveLength(2);
   });
 
-  test("canonical chunk has static kind, project scope, role all, score 1.0, and ### fileName prefix", async () => {
+  test("canonical chunk has static kind, project scope, role all, score 0.5, and ### fileName prefix", async () => {
     setupCanonical([{ fileName: "coding-style.md", content: "Use async/await." }]);
     const provider = new StaticRulesProvider();
     const result = await provider.fetch(BASE_REQUEST);
     expect(result.chunks[0]?.kind).toBe("static");
     expect(result.chunks[0]?.scope).toBe("project");
     expect(result.chunks[0]?.role).toContain("all");
-    expect(result.chunks[0]?.rawScore).toBe(1.0);
+    expect(result.chunks[0]?.rawScore).toBe(0.5);
     expect(result.chunks[0]?.content).toMatch(/### coding-style\.md/);
     expect(result.chunks[0]?.content).toContain("Use async/await.");
   });

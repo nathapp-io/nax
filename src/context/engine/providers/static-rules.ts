@@ -16,7 +16,7 @@
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 import { type CanonicalRule, DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "@/context/rules/canonical-loader";
-import { applySectionBudget } from "@/context/rules/rule-budget";
+import { applySectionBudget, priorityToRawScore } from "@/context/rules/rule-budget";
 import type { RuleSection } from "@/context/rules/rule-sections";
 import { splitRuleIntoSections } from "@/context/rules/rule-sections";
 import { getLogger } from "@/logger";
@@ -445,7 +445,7 @@ export class StaticRulesProvider implements IContextProvider {
             role: ["all"] as ["all"],
             content,
             tokens,
-            rawScore: 1.0,
+            rawScore: priorityToRawScore(section.priority),
             ...(scopePaths && { scopePaths }),
           } satisfies RawChunk;
         });
