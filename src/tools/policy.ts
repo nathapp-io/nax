@@ -19,6 +19,7 @@ import { validateArgv } from "./exec-guard";
 import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
 import { pathListElements } from "./path-list";
 import { checkBashCommand } from "./policy-bash";
+import { pathFieldValue } from "./policy-input";
 import {
   type CompiledEntry,
   type CompiledPattern,
@@ -134,16 +135,6 @@ export function resolveWithin(root: string, candidate: string, execTouchedPaths?
 /** Mutable scratch shared by `check()`'s branch helpers: first ask rule matched. */
 interface RuleState {
   ask?: string;
-}
-
-/** Read a top-level or dot-addressed path-bearing input field. */
-function pathFieldValue(input: Record<string, unknown>, field: string): unknown {
-  let value: unknown = input;
-  for (const part of field.split(".")) {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-    value = (value as Record<string, unknown>)[part];
-  }
-  return value;
 }
 
 export interface ToolPolicyOptions {
@@ -496,9 +487,15 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     for (const field of scope.listPathFields ?? []) {
       const value = pathFieldValue(input, field);
       if (value === undefined) continue;
-      if (typeof value !== "string") return deny(`"${field}" must be a string path`);
+      const elements =
+        typeof value === "string"
+          ? pathListElements(value, resolvedRoot)
+          : Array.isArray(value) && value.every((element) => typeof element === "string")
+            ? value
+            : null;
+      if (elements === null) return deny(`"${field}" must be a string path or an array of string paths`);
 
-      for (const element of pathListElements(value, resolvedRoot)) {
+      for (const element of elements) {
         const resolved = resolveWithin(resolvedRoot, element, execTouchedPaths);
         if (resolved === null) {
           return deny(`path "${element}" ${outOfRootReason(tool, resolvedRoot, element)}`, true);

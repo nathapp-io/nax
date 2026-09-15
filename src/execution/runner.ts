@@ -28,6 +28,7 @@ import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
 import { applyRecordGreenDeps, applyResumeModeDeps } from "./checkpoint";
 import { stopHeartbeat } from "./crash-recovery";
+import type { RunCleanupOptions } from "./lifecycle/run-cleanup";
 import { sumReviewsFailedOpen } from "./post-run-review-summary";
 import { liveRunTotalCost } from "./run-cost-reconcile";
 import { runCompletionPhase } from "./runner-completion";
@@ -42,6 +43,15 @@ import { _storyOrchestratorDeps } from "./story-orchestrator";
 export const _runnerDeps = {
   fireHook,
   runSetupPhase,
+  runExecutionPhase,
+  runCompletionPhase,
+  // Dynamic import (matching _runnerCompletionDeps' pattern) rather than a static
+  // one in the finally block: run-cleanup pulls in the plugins barrel, and a
+  // static import would add a load-time edge back into this module's own tree.
+  async cleanupRun(opts: RunCleanupOptions): Promise<void> {
+    const { cleanupRun } = await import("./lifecycle/run-cleanup");
+    return cleanupRun(opts);
+  },
 };
 
 // Re-export for backward compatibility
@@ -259,7 +269,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   try {
     // ── Phase 2: Execution ──────────────────────────────────────────────────────
-    const executionResult = await runExecutionPhase(
+    const executionResult = await _runnerDeps.runExecutionPhase(
       {
         prdPath,
         workdir,
@@ -299,7 +309,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     allStoryMetrics.push(...executionResult.allStoryMetrics);
 
     // ── Phase 3: Completion ────────────────────────────────────────────────────
-    const completionResult = await runCompletionPhase({
+    const completionResult = await _runnerDeps.runCompletionPhase({
       config,
       hooks,
       feature,
@@ -333,8 +343,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
       abortSignal: shutdownController.signal,
     });
 
-    const { durationMs, acceptancePassed, pluginGateFailed } = completionResult;
+    const { durationMs, acceptancePassed, pluginGateFailed, reportedTotal } = completionResult;
     runCompleted = true;
+    // The completion phase's cost-aggregator-reconciled total is the authority
+    // (status.json, the headless footer and the exit summary already use it).
+    // Adopt it for the returned RunResult.totalCost AND the cleanupRun handoff
+    // below — both read this same binding (the finally block included).
+    totalCost = reportedTotal;
 
     const reviewsFailedOpen = sumReviewsFailedOpen(allStoryMetrics);
 
@@ -377,8 +392,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
       // Execute cleanup operations
       logger?.debug("execution", "Runner finally — running cleanupRun");
-      const { cleanupRun } = await import("./lifecycle/run-cleanup");
-      await cleanupRun({
+      await _runnerDeps.cleanupRun({
         runId,
         startTime,
         totalCost,

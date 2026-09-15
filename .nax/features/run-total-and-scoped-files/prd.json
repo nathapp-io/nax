@@ -1,0 +1,131 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "run-total-and-scoped-files",
+  "branchName": "feat/run-total-and-scoped-files",
+  "createdAt": "2026-09-14T17:00:20.930Z",
+  "updatedAt": "2026-09-15T04:41:22.825Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Carry reconciled run total to runner consumers",
+      "description": "**Goal** — Carry the cost-aggregator-reconciled total out of the completion phase so the returned run result, the headless `── Summary ──` line, `PostRunContext.totalCost` and `reporter.onRunEnd` all report the same figure `status.json` already does.\n\n**Motivation** — The reconciled total the completion phase computes never reaches the runner — so the printed footer, every post-run plugin and every reporter see a pre-completion accumulator that omits post-execution rectification spend and failed-dispatch spend.\n\n**Approach** — Read-only, verified on `db7fa2b64`:\n\n- `totalSpendUsd(snap)` (`src/runtime/cost-aggregator.ts:222`) returns `snap.totalCostUsd + snap.totalErrorCostUsd`.\n- `reportedTotal` is computed at `src/execution/lifecycle/run-completion.ts:363` as `totalSpendUsd(aggSnap)`, and is already the authority for `status.json` (`runner-completion.ts:378`), the headless footer (`:419`) and the exit summary (`:429`).\n- `bin/nax.ts:707` prints `result.totalCost` in the headless `── Summary ──` block.\n- `cleanupRun` (`src/execution/lifecycle/run-cleanup.ts:149, :213`) forwards its `totalCost` option to `PostRunContext.totalCost` and to `reporter.onRunEnd`.\n\nMutated symbols — the baseline is stated only to locate the code and is never the interface to implement:\n\n**`RunnerCompletionResult`** (`src/execution/runner-completion.ts:85`)\n\n- Baseline: `{ durationMs, runCompletedAt, acceptancePassed, pluginGateFailed }`.\n- Target: the same four fields plus `reportedTotal: number` — the cost-aggregator-reconciled total for the whole run, successful plus failed-dispatch spend.\n\n**`runCompletionPhase`** (`src/execution/runner-completion.ts:130`, returning at `:472`)\n\n- Baseline: destructures `reportedTotal` from its inner completion result at `:358`, uses it locally, and returns the four fields above.\n- Target: returns `reportedTotal` alongside them. This is the actual seam — the field never reaches `runner.ts`, so nothing there can be \"dropping\" it.\n\n**`run`'s completion handoff** (`src/execution/runner.ts:130`, handoff at `:336`)\n\n- Baseline: `const { durationMs, acceptancePassed, pluginGateFailed } = completionResult;` and the execution-phase accumulator assigned at `:298` (`totalCost = executionResult.totalCost`) is what `:345` returns and what the `finally` block hands `cleanupRun` at `:384`.\n- Target: the reconciled total is what every consumer downstream of the completion phase reports — the returned `RunResult.totalCost`, and the value `cleanupRun` receives. Both read the same `totalCost` binding (the `finally` block included), so one assignment after the completion phase can satisfy both; the acceptance criteria pin the observable values, not the mechanism.\n\n**No fallback.** When the aggregator snapshot is empty, `reportedTotal` is `0`, and that is left as-is. It is already the number written to `status.json` and printed in `RUN SUMMARY`, so trusting it in one more place adds no new failure mode, while a `Math.max`-style guard would invent a divergence between the two surfaces this feature exists to make agree.\n\n**Scope** — In: extend the completion result and propagate its reconciled total through the runner's return and cleanup handoff. Out: US-002's `{{files}}` splitting and tool-description work; adding a fallback for an empty cost-aggregator snapshot, including any `Math.max` between the reconciled total and the execution-phase accumulator; any change to `reporter.onRunEnd`'s or `PostRunContext`'s shape; only the value passed for `totalCost` changes.\n\n**Interface**\n```typescript\nexport interface RunnerCompletionResult {\n  durationMs: number;\n  runCompletedAt: string;\n  acceptancePassed: boolean;\n  pluginGateFailed: boolean;\n  reportedTotal: number;\n}\n```",
+      "acceptanceCriteria": [
+        "When `runCompletionPhase` receives a cost-aggregator snapshot with `totalCostUsd` 5.6995 and `totalErrorCostUsd` 0.1047, then its result's `reportedTotal` is 5.8042.",
+        "When `runCompletionPhase` receives a cost-aggregator snapshot with `totalCostUsd` 5.6995 and `totalErrorCostUsd` 0, then its result's `reportedTotal` is 5.6995.",
+        "Given an execution phase that accumulated 5.6995 and a cost-aggregator snapshot totalling 5.8042, when `run` completes, then its returned `RunResult.totalCost` is 5.8042.",
+        "Given a run whose execution accumulator and completion snapshot total differ, when `run` completes, then its returned `totalCost` equals the `reportedTotal` produced by its completion phase.",
+        "Given an execution accumulator of 5.6995 and a cost-aggregator snapshot totalling 5.8042, when the registered reporter's `onRunEnd` is invoked, then its `totalCost` is 5.8042, not 5.6995.",
+        "Given an execution accumulator of 5.6995 and a cost-aggregator snapshot totalling 5.8042, when the post-run context is built for plugins, then its `totalCost` is 5.8042.",
+        "When the execution accumulator and cost-aggregator snapshot total are equal, then the returned `RunResult.totalCost` equals that shared value, so a run with no post-execution spend reports the same figure as before this change.",
+        "When the cost-aggregator snapshot is empty, then `runCompletionPhase` returns `reportedTotal` 0 and the returned run result's `totalCost` is 0."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "cost-reporting"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A narrowly scoped value-propagation change crosses completion, runner return, and cleanup consumers but introduces no new abstraction or dependency.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/runner-completion.ts",
+        "src/execution/runner.ts",
+        "src/execution/lifecycle/run-completion.ts",
+        "src/execution/lifecycle/run-cleanup.ts",
+        "src/runtime/cost-aggregator.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/execution/runner-completion-reported-total.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "431d060a36b966fa22754f36451702b5b48e8992",
+      "outOfScope": [
+        "US-002's `{{files}}` splitting and tool-description work."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Split scoped files for directories and future paths",
+      "description": "**Goal** — Widen `pathListElements`' evidence rule so a list of directories, and a list of not-yet-created path-shaped tokens, split into separate shell arguments, while a multi-token name filter and a single path containing spaces keep today's whole-value behaviour. Document the array form the tool already accepts.\n\n**Motivation** — A multi-path `{{files}}` value reaches the shell as one quoted argument whenever no token happens to be an existing file, so the value matches nothing and the agent is told its files do not exist.\n\n**Approach** — Read-only, verified on `db7fa2b64`:\n\n- `src/tools/policy.ts:496-514` iterates `scope.listPathFields`, calls `pathListElements(value, resolvedRoot)`, and for **every** returned element resolves it within the root, applies path rules, and grant-checks it before pushing to `resolvedPaths`. Returning more elements therefore grant-checks more paths — containment tightens, never loosens.\n- `src/tools/run-command.ts:307` declares `scope.listPathFields: [\"values.files\"]`, and `:374` onward pairs `pathListElements`' output positionally against `ctx.resolvedPaths`, with a length-mismatch fail-safe that falls back to the raw single-argument value.\n- `substituteCommand` (`src/tools/run-command.ts:124`) quotes an array value per element and a string value whole. Unchanged by this feature.\n- Inside that positional pairing, an element is swapped for its resolved absolute path **only when it is an existing file**; every other element keeps the raw token it arrived as. Directories and not-yet-created paths therefore stay relative, which is what the test runner expects, so widening the split does not require widening absolutisation. Unchanged by this feature.\n\nMutated symbol:\n\n**`pathListElements(value, root)`** (`src/tools/path-list.ts:26`)\n\n- Baseline: splits on whitespace; returns `[value]` when there are ≤1 tokens or when no token is an existing file.\n- Target: the same signature, deciding by ordered evidence tiers:\n\n  1. ≤1 token → `[value]`.\n  2. The **whole value** resolves to an existing file → `[value]`. This is the space-in-path guard nax#1998 introduced and it must be checked before any token-level test.\n  3. **Any** token is an existing file **or an existing directory** → the tokens.\n  4. **Every** token looks like a path — contains a path separator, or ends in a file extension → the tokens. This is what admits a not-yet-created test path.\n  5. Otherwise → `[value]`. A multi-token name filter (`pytest -k`, `jest -t`) lands here.\n\n  Tier 4 is deliberately language-neutral: it keys on path *syntax*, not on a test-file naming convention, so it works for `test_foo.py`, `foo_test.go` and `Foo.test.ts` alike without nax knowing the host project's language. Tier 4 requires **every** token to qualify, so a mixed name-filter-plus-path value where nothing exists keeps today's whole-value behaviour rather than guessing.\n\nBecause both the policy layer and the tool call this one function, the two layers continue to agree by construction — that agreement is nax#1998's invariant and the reason the function exists.\n\nThe `values` parameter description (`src/tools/run-command.ts:272`) currently tells the agent *\"A path placeholder takes several paths separated by spaces … one call, not one per file.\"* That is true for existing files and silently wrong for the two shapes above, and the array form the tool already accepts is undocumented. The description gains the array form as an explicitly accepted shape.\n\n**Scope** — In: implement the ordered shared path-evidence tiers and document the accepted array value shape. Out: US-001's run-total propagation; changing `substituteCommand`'s quoting rule, including how an array value is quoted per element and a string value quoted whole; changing the positional-pairing length-mismatch fail-safe in `RunCommand`, which falls back to the raw single-argument value when the policy and the tool disagree on element count. It stays exactly as it is, including its fail-safe direction; changing `pathListElements`' single-token contract or its empty/whitespace-only contract.\n\n**Interface**\n```typescript\nexport function pathListElements(value: string, root: string): string[]\n```",
+      "acceptanceCriteria": [
+        "When `pathListElements` receives two existing directory paths separated by a space, then it returns two elements, one per directory.",
+        "When `pathListElements` receives two existing directory paths that each carry a trailing path separator, then it returns two elements.",
+        "When `pathListElements` receives two non-existent path-shaped tokens that each contain a path separator and a file extension, then it returns two elements.",
+        "When `pathListElements` receives one existing directory and one non-existent path-shaped token, then it returns two elements.",
+        "When `pathListElements` receives two tokens with no path separator and no file extension, then it returns one element equal to the whole input value, so a multi-token name filter is not split.",
+        "When `pathListElements` receives the path of a single existing file whose own name contains a space, then it returns one element equal to that whole path.",
+        "When `pathListElements` receives a one-token value, then it returns one element equal to that value.",
+        "When `pathListElements` receives a whitespace-only value, then it returns exactly one element rather than an empty list.",
+        "When `pathListElements` receives a mixed value in which one token has no path separator and no extension and the other is a non-existent path-shaped token, with neither existing on disk, then it returns one element equal to the whole value.",
+        "Given a declared command template containing `{{files}}` and `values.files` of two existing directories, when `RunCommand` runs the command, then each directory is its own quoted argument.",
+        "Given `values.files` of two existing directories where one resolves outside the tool's root, when `RunCommand` is invoked, then the call is denied and the denial names the out-of-root element.",
+        "When `createRunCommandTool` returns its tool schema, then the `values` parameter description names an array of paths as an accepted shape for a path placeholder.",
+        "When `substituteCommand` receives a `files` value that is an array of two paths, then it produces a command in which each path is a separate quoted argument.",
+        "When policy and `RunCommand` disagree on the element count for one `values.files` value, then the shell receives the raw value as one argument, preserving the existing length-mismatch fail-safe."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "path-policy"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change is a small ordered classifier plus tool documentation, but its shared policy/tool security boundary and integration behavior require coordinated regression tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/tools/path-list.ts",
+        "src/tools/run-command.ts",
+        "src/tools/policy.ts",
+        "test/unit/tools/run-command.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/tools/path-list.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4364d75b9314dce156ea2c75b8e7e276f3c6b261",
+      "outOfScope": [
+        "US-001's run-total propagation."
+      ]
+    }
+  ],
+  "analysis": "This is a two-story bug-fix feature with deliberately disjoint execution and tool modules; no dependency or shared seam exists between the stories. US-001: `totalSpendUsd(snap)` already returns successful plus failed-dispatch spend in `src/runtime/cost-aggregator.ts:222-223`. `handleRunCompletion` computes `reportedTotal` from that snapshot at `src/execution/lifecycle/run-completion.ts:342-348`, and already uses it for status updates, metrics, run-completed events, the headless footer, and exit summary (`src/execution/runner-completion.ts:358-429`). The actual loss is at the outer completion seam: `RunnerCompletionResult` lacks `reportedTotal` and `runCompletionPhase` returns only duration/timestamps/gate fields (`src/execution/runner-completion.ts:85-94,472-477`). `runner.ts` retains executionResult.totalCost, returns it, and supplies the same binding to cleanup in finally (`src/execution/runner.ts:298,336-350,384-411`). `cleanupRun` forwards this option to abnormal-exit reporters and to `buildPostRunContext`, then post-run actions (`src/execution/lifecycle/run-cleanup.ts:149-176,184-249`); normal successful reporter delivery is through the `run:completed` event already emitted with `reportedTotal` (`src/execution/lifecycle/run-completion.ts:421-434`). The safe implementation is to extend the completion result and assign the runner's single `totalCost` binding to `completionResult.reportedTotal` after completion, so both its return and finally cleanup agree. Do not fall back to or max against the accumulator: zero from an empty aggregator is intentional and is already the status/footer authority. This changes values only, not public reporter/context shapes or persisted historical data. Existing completion tests are split across `test/unit/execution/runner-completion-*.test.ts`; the specified new focused test should use injectable completion dependencies and mocks to cover aggregator totals and outer consumer propagation.\n\nUS-002: `pathListElements` is a 36-line shared policy/tool seam in `src/tools/path-list.ts:1-36`; it currently splits only when any token is an existing file. Policy iterates every returned element, resolves it within root, applies rules and grant checks, and appends its resolved path (`src/tools/policy.ts:496-514`). RunCommand declares `values.files` as its only list path field (`src/tools/run-command.ts:307-314`) and positional-pairs the same helper result with `ctx.resolvedPaths`; a count mismatch deliberately reverts to the raw single string, while only existing files are converted to absolute paths (`src/tools/run-command.ts:374-397`). `substituteCommand` already emits arrays as separately shell-quoted arguments and strings as one quoted argument (`src/tools/run-command.ts:124-143`), so its behavior must remain unchanged. Update only the shared helper to preserve the whole-existing-file space guard, accept existing directories, and accept only all-token path syntax for nonexistent paths. This retains containment because widened splitting makes policy check more elements; it never permits an out-of-root token. `createRunCommandTool`'s values description at `src/tools/run-command.ts:270-273` needs to explicitly state the already-supported array shape. `test/unit/tools/run-command.test.ts` already covers array quoting, description, runtime/policy integration, raw fallbacks, and is 640 lines; place helper-tier tests in the new `test/unit/tools/path-list.test.ts` to respect the stated 800-line cap. No migration is needed: behavior applies to future tool calls and no command declarations or stored data change. Main compatibility risks are accidentally splitting multiword name filters or a single existing path that contains spaces, accidentally absolutizing directories/nonexistent paths, or policy/tool helper drift; the ordered tiers, shared function, and mismatch fallback mitigate these risks.",
+  "outOfScope": [
+    "Changing `substituteCommand`'s quoting rule, including how an array value is quoted per element and a string value quoted whole.",
+    "Changing which project-declared commands declare a `{{files}}` placeholder, or the contents of any `quality.commands` entry.",
+    "Adding a fallback for an empty cost-aggregator snapshot, including any `Math.max` between the reconciled total and the execution-phase accumulator.",
+    "Changing how `costUsd`, `estimatedCostUsd`, `exactCostUsd` or `confidence` are computed, and any budget gate or spend cap that reads them.",
+    "Changing the TUI's own run summary, which renders independently of the headless footer.",
+    "Backfilling, re-reporting or migrating the totals of runs that already completed.",
+    "Changing the `Exec` allowlist or the denial messages an `Exec` escalation produces — the denied escalations in nax#2055's evidence belong to nax#2010 and nax#2044.",
+    "Changing the 40 KiB tool-result cap or any carry-cost work; result size and its re-read multiplier are nax#2056.",
+    "Making the `{{files}}` evidence rule depend on a language-specific test-file naming convention such as `*.test.ts` or `test_*.py`.",
+    "Changing `pathListElements`' single-token contract or its empty/whitespace-only contract.",
+    "Any change to `reporter.onRunEnd`'s or `PostRunContext`'s shape; only the value passed for `totalCost` changes.",
+    "Changing the positional-pairing length-mismatch fail-safe in `RunCommand`, which falls back to the raw single-argument value when the policy and the tool disagree on element count. It stays exactly as it is, including its fail-safe direction.",
+    "Detecting or reporting that the two figures disagreed in a past run."
+  ],
+  "routingProfile": "native-ds"
+}

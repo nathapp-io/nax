@@ -140,6 +140,16 @@ describe("createRunCommandTool description names each command's placeholders", (
     expect(values.description).toContain("a.test.ts b.test.ts");
   });
 
+  test("US-002 AC12: the values schema names an array of paths as an accepted shape", () => {
+    // The array form the tool already accepts was undocumented; a path
+    // placeholder may be several space-separated strings OR an array of
+    // paths. Both are explicitly accepted shapes.
+    const tool = createRunCommandTool(new Map([["testScoped", "bun test {{files}}"]]));
+    const values = (tool.inputSchema as { properties: { values: { description: string } } }).properties.values;
+    expect(values.description).toContain("array of paths");
+    expect(values.description).toContain('["test/a.test.ts", "test/b.test.ts"]');
+  });
+
   test("a command with no placeholders reads naturally rather than printing empty parens", () => {
     const tool = createRunCommandTool(new Map([["test", "bun test"]]));
     expect(tool.description).toContain("test (no placeholders)");
@@ -636,5 +646,99 @@ describe("RunCommand substitutes the policy-resolved path (#1936)", () => {
       if (result.kind !== "ok") throw new Error("expected ok");
       expect(result.content).toContain("./not-a-real-path.txt");
     });
+  });
+});
+
+// US-002: `pathListElements` now also splits existing DIRECTORY paths and
+// not-yet-created path-shaped tokens into their own shell arguments (the
+// evidence rule widens from file-only). Directory elements keep the raw token
+// through substitution — only existing FILES are absolutised — so a directory
+// value reaches the shell as one quoted argument per directory, while still
+// passing through the policy's per-element containment and grant checks.
+describe("RunCommand splits directories and future paths into separate arguments (US-002)", () => {
+  async function runFilesBracketed(root: string, files: string): Promise<string> {
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root),
+      extraTools: [createRunCommandTool(new Map([["bracketFiles", "printf @%s@ {{files}}"]]))],
+    });
+    const result = await runtime.callTool("RunCommand", { command: "bracketFiles", values: { files } });
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    return result.content;
+  }
+
+  test("US-002 AC10: two existing directories each become their own quoted argument", async () => {
+    await withTempDir(async (root) => {
+      await mkdir(join(root, "test", "unit"), { recursive: true });
+      await mkdir(join(root, "test", "integration"), { recursive: true });
+
+      const content = await runFilesBracketed(root, "test/unit test/integration");
+
+      // printf brackets each argument. Two quoted arguments print back-to-back
+      // as @test/unit@@test/integration@ — the `@@` in the middle is two
+      // adjacent closing/opening brackets, the signature of two SEPARATE
+      // arguments. One joined argument would read @test/unit test/integration@.
+      expect(content).toContain("@test/unit@@test/integration@");
+      expect(content).not.toContain("@test/unit test/integration@");
+    });
+  });
+
+  test("runs an array of paths as separate policy-validated arguments", async () => {
+    // This fails if array values are rejected by the policy or coerced to one
+    // comma-joined string before substitution.
+    await withTempDir(async (root) => {
+      await mkdir(join(root, "test", "unit"), { recursive: true });
+      await mkdir(join(root, "test", "integration"), { recursive: true });
+      const runtime = createCodingToolRuntime({
+        policy: compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root),
+        extraTools: [createRunCommandTool(new Map([["bracketFiles", "printf @%s@ {{files}}"]]))],
+      });
+
+      const result = await runtime.callTool("RunCommand", {
+        command: "bracketFiles",
+        values: { files: ["test/unit", "test/integration"] },
+      });
+
+      expect(result.kind).toBe("ok");
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(result.content).toContain("@test/unit@@test/integration@");
+    });
+  });
+
+  test("US-002 AC11: a directory resolving outside the root is denied, naming that element", async () => {
+    await withTempDir(async (parent) => {
+      const root = join(parent, "repo");
+      await mkdir(join(parent, "outside"), { recursive: true });
+      const runtime = createCodingToolRuntime({
+        policy: compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root),
+        extraTools: [createRunCommandTool(new Map([["bracketFiles", "printf @%s@ {{files}}"]]))],
+      });
+
+      const result = await runtime.callTool("RunCommand", {
+        command: "bracketFiles",
+        values: { files: "../outside test/unit" },
+      });
+
+      expect(result.kind).toBe("denied");
+      if (result.kind !== "denied") throw new Error("expected denial");
+      // The denial names the out-of-root element on its own, after the split —
+      // never the joined whole value.
+      expect(result.reason).toContain('path "../outside" resolves outside the permitted root');
+      expect(result.reason).not.toContain("test/unit");
+    });
+  });
+
+  test("US-002 AC14: an element-count disagreement falls back to the raw single-argument value", async () => {
+    // The policy resolved three elements (`ctx.resolvedPaths`) for a value
+    // `pathListElements` sees as one, so run() must NOT do positional
+    // substitution — it falls back to the raw value, which the shell receives
+    // as one whole-quoted argument. printf brackets each argument, so a single
+    // argument prints back-to-back brackets with the spaces inside.
+    const tool = createRunCommandTool(new Map([["bracketFiles", "printf @%s@ {{files}}"]]));
+    const result = await tool.run(
+      { command: "bracketFiles", values: { files: "a b c" } },
+      { root: process.cwd(), resolvedPaths: ["/x/1", "/x/2", "/x/3"], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toContain("@a b c@");
   });
 });
