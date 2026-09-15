@@ -317,7 +317,7 @@ is one this spec creates rather than one that must already reach them.
 1. `[unit]` `applySectionBudget` is importable from `src/context/rules/rule-budget.ts` and, called with sections whose total tokens are below the budget, returns every supplied section.
 2. `[unit]` Called with sections from two rules whose combined tokens fit the budget, `applySectionBudget` returns them ordered by ascending `priority`, then ascending `ordinal`.
 3. `[unit]` Called with a budget that accommodates only the first two of a rule's four sections, `applySectionBudget` returns those two sections and omits the rule's remaining two.
-4. `[unit]` Called with a budget exhausted partway through the first rule, `applySectionBudget` omits every section belonging to any lower-priority rule, even when one of those sections would fit in the remaining space.
+4. `[unit]` Called with a budget exhausted partway through the first rule, `applySectionBudget` applies the budget per rule: it closes the first rule and omits its remaining sections, then continues the walk, retaining those later-rule sections that fit the remaining budget.
 5. `[unit]` Called with a single section whose tokens exceed the budget on its own, `applySectionBudget` returns that section and reports `overageTokens` greater than zero.
 6. `[unit]` Called with sections that do not all fit, `applySectionBudget` returns a `droppedIds` array containing the identifier of every omitted section.
 7. `[unit]` Called with an empty section array, `applySectionBudget` returns an empty section list and `overageTokens` of zero.
