@@ -3,9 +3,8 @@ priority: 45
 appliesTo:
   - "src/agents/**/*.ts"
   - "src/operations/**/*.ts"
-  - "src/routing/**/*.ts"
-  - "src/pipeline/**/*.ts"
-  - "src/execution/**/*.ts"
+  - "src/config/schemas-review.ts"
+  - "src/session/session-keeper.ts"
 stages:
   - "context"
   - "execution"

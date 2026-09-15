@@ -204,26 +204,4 @@ Consolidate. Every new concept gets one resolver/registry and only one:
 | Workspace packages | `discoverWorkspacePackages()` |
 | Permissions profile | `resolvePermissions()` |
 
-If a new file needs to answer "X?", search for an existing resolver before writing `COMMON_X = [...]` constants. The second inline constant is a bug waiting to happen.
-
-## Current Known Violations
-
-All violations from the 2026-04-18 audit have been resolved:
-
-| Site | Violation | Tracking | Status |
-|:---|:---|:---|:---|
-| `src/context/test-scanner.ts:121,148-150,189` | `COMMON_TEST_DIRS` + `.spec.ts` literals — ADR-009 | [#533](https://github.com/nathapp-io/nax/issues/533) |  Resolved |
-| `src/verification/smart-runner.ts:199,336-337` | Hardcoded `test/unit/` + `test/integration/` layout | [#534](https://github.com/nathapp-io/nax/issues/534) |  Resolved |
-| `src/context/builder.ts:265` | `workdir \|\| process.cwd()` fallback | [#535](https://github.com/nathapp-io/nax/issues/535) |  Resolved |
-| `src/prompts/sections/role-task.ts:24-28` | Language detection by `cmd.startsWith("bun test")` | [#536](https://github.com/nathapp-io/nax/issues/536) |  Resolved |
-
-Do not add new violations to this table — open a GitHub issue and reference it in the code instead.
-
-## References
-
-- ADR-009 — Test-file pattern SSOT (`docs/adr/ADR-009-test-file-pattern-ssot.md`)
-- Amendment C AC-54 — Dual workdir scoping (`docs/specs/SPEC-context-engine-v2.md`)
-- [forbidden-patterns-source.md](./forbidden-patterns-source.md) / [forbidden-patterns-tests.md](./forbidden-patterns-tests.md) — Full banned-pattern list
-- [config-patterns.md](./config-patterns.md) — Per-package config layering
-- Resolver: `src/test-runners/resolver.ts`
-- Detectors: `src/project/detector.ts`, `src/test-runners/detect/`
+If a new file needs to answer "X?", search for an existing resolver before writing `COMMON_X = [...]` constants. The second inline constant is a bug waiting to happen. If you find an existing violation, do not catalogue it here — open a GitHub issue and reference it from the code instead.
