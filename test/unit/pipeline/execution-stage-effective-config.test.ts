@@ -12,8 +12,10 @@
 
 import { describe, expect, test } from "bun:test";
 
-// Each entry: the file, and the literal that must carry a `config:` entry.
-const SITES: readonly { file: string; marker: string }[] = [
+// Each entry: the file, the literal that must carry a `config:` entry, and an
+// optional scan window (default 600) narrow enough to exclude unrelated
+// `config:` entries further down the file.
+const SITES: readonly { file: string; marker: string; window?: number }[] = [
   { file: "src/pipeline/stages/execution.ts", marker: "const callCtx: CallContext = {" },
   {
     file: "src/pipeline/stages/acceptance-setup.ts",
@@ -23,7 +25,15 @@ const SITES: readonly { file: string; marker: string }[] = [
     file: "src/execution/lifecycle/acceptance-fix.ts",
     marker: "packageView: ctx.runtime.packages.resolve(ctx.workdir),",
   },
-  { file: "src/execution/lifecycle/acceptance-loop.ts", marker: "packageView: runtime.packages.resolve(packageDir)," },
+  {
+    file: "src/execution/lifecycle/acceptance-loop.ts",
+    marker: "packageView: runtime.packages.resolve(packageDir),",
+    // `buildAcceptanceContext`'s unrelated `config:` follows ~446 chars past
+    // this marker; the default 600-char window would reach it and pass even if
+    // `buildFixCycleCtx` itself were unwired. 200 > 71 (this site's own
+    // `config:`) and < 446 (the spurious one).
+    window: 200,
+  },
   { file: "src/finish/phase.ts", marker: "packageView: ctx.runtime.packages.resolve(ctx.workdir)," },
 ];
 
@@ -35,7 +45,7 @@ describe("pipeline CallContext sites forward the effective config (#2066)", () =
       expect(at).toBeGreaterThan(-1); // marker drifted — re-anchor this entry
       // Scan a window past the marker, not the whole file, so an unrelated
       // `config:` elsewhere cannot make this pass.
-      expect(source.slice(at, at + 600)).toContain("config:");
+      expect(source.slice(at, at + (site.window ?? 600))).toContain("config:");
     });
   }
 
