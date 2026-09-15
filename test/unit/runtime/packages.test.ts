@@ -153,7 +153,7 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
     expect(mockLogger.calls.filter((c) => c.level === "warn")).toHaveLength(0);
   });
 
-  test("does not warn after hydrate() has run", async () => {
+  test("does not warn for a known package after hydrate() has run", async () => {
     const mockLogger = makeLogger();
     _packagesDeps.getSafeLogger = mock(() => mockLogger);
     const loader = createConfigLoader(minConfig);
@@ -256,11 +256,16 @@ describe("PackageRegistry — unknown package key is loud (#2069)", () => {
     _packagesDeps.getSafeLogger = originalLogger;
   });
 
-  function captureWarnings(): string[] {
-    const warnings: string[] = [];
+  interface CapturedWarning {
+    readonly message: string;
+    readonly data: Record<string, unknown> | undefined;
+  }
+
+  function captureWarnings(): CapturedWarning[] {
+    const warnings: CapturedWarning[] = [];
     const logger = makeLogger();
-    logger.warn = mock((_channel: string, message: string) => {
-      warnings.push(message);
+    logger.warn = mock((_channel: string, message: string, data?: Record<string, unknown>) => {
+      warnings.push({ message, data });
     });
     _packagesDeps.getSafeLogger = () => logger;
     return warnings;
@@ -271,7 +276,21 @@ describe("PackageRegistry — unknown package key is loud (#2069)", () => {
     const registry = createPackageRegistry(createConfigLoader(minConfig), "/repo");
     await registry.hydrate(["apps/web-ui"], async () => null);
     registry.resolve("/repo/apps/does-not-exist");
-    expect(warnings.some((w) => w.includes("unknown package"))).toBe(true);
+    expect(warnings.some((w) => w.message.includes("unknown package"))).toBe(true);
+    const unknown = warnings.find((w) => w.message.includes("unknown package"));
+    expect(unknown?.data?.overrideKey).toBe("apps/does-not-exist");
+  });
+
+  test("reports the worktree-stripped overrideKey for an unknown worktree package", async () => {
+    const warnings = captureWarnings();
+    const registry = createPackageRegistry(createConfigLoader(minConfig), "/repo");
+    await registry.hydrate(["apps/web-ui"], async () => null);
+    registry.resolve("/repo/.nax-wt/US-009/apps/gone");
+    const unknown = warnings.find((w) => w.message.includes("unknown package"));
+    // The override lookup key is stripped of the worktree prefix...
+    expect(unknown?.data?.overrideKey).toBe("apps/gone");
+    // ...while packageDir still addresses the worktree itself.
+    expect(unknown?.data?.packageDir).toBe(".nax-wt/US-009/apps/gone");
   });
 
   test("stays quiet for a known package that simply has no override", async () => {

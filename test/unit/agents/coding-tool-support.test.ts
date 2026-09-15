@@ -396,6 +396,10 @@ describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
     addSink((entry) => logCalls.push(entry));
   });
 
+  afterEach(() => {
+    resetLogger();
+  });
+
   test("logs the declared command keys and the resolved permission profile", async () => {
     const root = makeTempDir("nax-dispatch-log-");
     await resolveCodingToolSupport({
@@ -410,5 +414,8 @@ describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
     expect(entry).toBeDefined();
     expect(entry?.data?.commands).toEqual(["testScoped"]);
     expect(entry?.data?.storyId).toBe("US-005");
+    // DEFAULT_CONFIG.execution.permissionProfile is "unrestricted"; the test's
+    // quality override leaves it untouched, so that is the resolved value.
+    expect(entry?.data?.permissionProfile).toBe("unrestricted");
   });
 });

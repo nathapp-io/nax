@@ -109,6 +109,10 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
    * stays as-is: resolve() passes it to createPackageView as `packageDir`, and
    * packageWorkdir() joins that onto repoRoot — shortening it would point every
    * file tool at the main checkout instead of the worktree.
+   *
+   * The guard rests on `.nax-wt` being a reserved nax worktree directory
+   * (gitignored, hidden, and never a workspace package path), so a first path
+   * segment of `.nax-wt` is treated as the worktree prefix.
    */
   function toOverrideKey(relativeKey: string): string {
     const segments = relativeKey.split("/");

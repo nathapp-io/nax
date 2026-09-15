@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SEC-3 fix. Per-package `execution.denyPaths`, `models`, `agent.native.transportRetry` and
   `execution.compaction` likewise now take effect. If an overlay in your repo sets any of these, review it
   before upgrading — the resolved profile is now logged once per dispatch.
+  - **RunCommand:** `target` supplied with a declared `command` is now rejected (previously the `target`
+    was silently discarded); `target` remains valid only for the `argv` branch (#2066).
 - **Fixed** — a same-agent fallback hop dispatched the previous model, because
   `SessionManager` reused a live session whenever the agent name matched and
   discarded the requested endpoint. Same-agent ladder rungs and sticky endpoints
