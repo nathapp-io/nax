@@ -108,6 +108,25 @@ const POLICIES: Readonly<Record<AdapterFailure["outcome"], FailurePolicy>> = Obj
     cooldownScope: "model",
     terminalBackoff: false,
   },
+  /**
+   * Reuses the `timeout` lane, same reasoning as `fail-spin` immediately above:
+   * same agent, FRESH session (so the incomplete transcript is dropped rather
+   * than carried into a retry), then a swap once the lane is spent.
+   * `trySameAgentRetry` dispatches on the lane, not the outcome, so this needs
+   * no new retry machinery (nax#2054).
+   *
+   * Two inherited details, noted rather than changed: the timeout lane applies
+   * a reduced budget via `extractTimeoutRetryConfig`, and `timeoutRetryAttempts`
+   * is a counter shared with `fail-timeout` and `fail-spin`, so mixed causes
+   * consume one budget — `fail-spin` already accepts both.
+   */
+  "fail-incomplete": {
+    sameAgentRetry: "timeout",
+    swap: "after-retry-lane",
+    cooldown: "none",
+    cooldownScope: "model",
+    terminalBackoff: false,
+  },
   "fail-adapter-error": {
     sameAgentRetry: "adapter-error",
     swap: "quality-gated",

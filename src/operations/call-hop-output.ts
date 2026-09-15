@@ -7,10 +7,14 @@
  *   - `op.fileOutput`: when the op names a path the agent wrote to instead of
  *     replying in text, swap the turn's `output` for that file's content
  *     before anything downstream inspects it.
- *   - Failure classification: an empty/whitespace turn, or ordinary-looking
+ *   - Failure classification: a spun/timed-out/truncated turn (regardless of
+ *     whether it carries prose), an empty/whitespace turn, or ordinary-looking
  *     output that is actually a provider refusal, is attached as an
  *     `AdapterFailure` so manager-tier retry/swap (spec §B1) handles it
- *     uniformly instead of it reaching `op.parse` as a verdict.
+ *     uniformly instead of it reaching `op.parse` as a verdict. The transport
+ *     facts are consulted unconditionally (nax#2054) — they must not be gated
+ *     behind output emptiness, since a spun/truncated/timed-out turn almost
+ *     always has prose.
  */
 
 import type { TurnResult } from "../agents/types";
@@ -59,10 +63,14 @@ export async function normalizeHopOutput(
       },
     };
   }
-  if (!effective.output?.trim()) {
-    const failure = classifyEmptyOutputFailure(effective);
-    if (failure) return { ...effective, adapterFailure: failure };
-  } else if (!effective.adapterFailure) {
+  // classifyEmptyOutputFailure is called unconditionally (nax#2054): it already
+  // consults the transport facts (timedOut, turnIncomplete) before checking
+  // output emptiness and returns null for a clean non-empty turn, so gating it
+  // behind `!output?.trim()` made a truncated/timed-out turn WITH prose
+  // unreachable — exactly the case nax#1819 reordered the classifier for.
+  const transportFailure = classifyEmptyOutputFailure(effective);
+  if (transportFailure) return { ...effective, adapterFailure: transportFailure };
+  if (effective.output?.trim() && !effective.adapterFailure) {
     const refusal = classifyProviderRefusalFailure(effective.output);
     if (refusal) {
       getSafeLogger()?.warn("callop", "Provider refusal classified as infra failure", {

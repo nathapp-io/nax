@@ -42,9 +42,14 @@ export function classifyEmptyOutputFailure(turn: TurnResult): AdapterFailure | n
   }
 
   if (turn.turnIncomplete) {
+    // fail-incomplete, not fail-quality (nax#2054): fail-quality's policy row
+    // is sameAgentRetry "none" + swap "quality-gated", and a repo that disables
+    // agent.fallback.onQualityFailure would hard-fail with no retry and no
+    // swap — turning a truncated turn into a story failure instead of the
+    // retry this case calls for.
     return {
       category: "quality",
-      outcome: "fail-quality",
+      outcome: "fail-incomplete",
       retriable: true,
       message: "[callOp] agent turn ended with tool calls outstanding",
       reason: "turn-incomplete",

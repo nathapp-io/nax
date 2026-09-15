@@ -106,12 +106,14 @@ describe("classifyEmptyOutputFailure — transport facts outrank non-empty outpu
     expect(failure?.reason).toBe("wall-clock-timeout");
   });
 
-  test("an incomplete turn WITH prose classifies as quality, never fail-stale", () => {
+  test("an incomplete turn WITH prose classifies as quality/fail-incomplete, never fail-stale", () => {
+    // nax#2054: fail-incomplete (not fail-quality) so the failure lands on the
+    // timeout retry lane instead of hard-failing with no retry/swap available.
     const failure = classifyEmptyOutputFailure(
       makeTurnResult({ output: "still working on it", internalRoundTrips: 10, turnIncomplete: true }),
     );
     expect(failure?.category).toBe("quality");
-    expect(failure?.outcome).toBe("fail-quality");
+    expect(failure?.outcome).toBe("fail-incomplete");
     expect(failure?.reason).toBe("turn-incomplete");
   });
 
