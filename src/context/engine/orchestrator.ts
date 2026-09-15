@@ -457,10 +457,10 @@ export class ContextOrchestrator {
     // manifest field nobody reads at runtime. Name the floor items and their
     // token cost so this is visible without a manifest diff.
     if (manifest.usedTokens > manifest.totalBudgetTokens) {
-      // Ruling 11 attributes overage cumulatively, so `floorOverageItems` is
-      // empty whenever no single floor chunk crossed even though the bundle
-      // ended up over budget (e.g. non-floor chunks pushed it over). Fall back
-      // to the full floor list so the log still names the heaviest floor items.
+      // Defensive fallback: with cumulative attribution a bundle over
+      // `totalBudgetTokens` always has at least one crossing floor chunk, so
+      // `floorOverageItems` should be present here; fall back to the full floor
+      // list only as a guard.
       const overageIds = manifest.floorOverageItems ?? manifest.floorItems;
       // This condition holds on nearly every stage of every story, and the
       // floor routinely runs to 60+ chunks — log the heaviest few plus a
