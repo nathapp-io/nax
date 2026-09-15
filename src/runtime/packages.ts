@@ -99,6 +99,22 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     return packageDir;
   }
 
+  /**
+   * Worktrees live at `<repoRoot>/.nax-wt/<storyId>/` (worktree/manager.ts), so a
+   * story's package resolves to `.nax-wt/<storyId>/<pkg>` — which never matches the
+   * plain `<pkg>` keys hydrate() stored, silently yielding root config (nax#2069).
+   *
+   * This strips the worktree prefix for the OVERRIDE LOOKUP ONLY. The key itself
+   * stays as-is: resolve() passes it to createPackageView as `packageDir`, and
+   * packageWorkdir() joins that onto repoRoot — shortening it would point every
+   * file tool at the main checkout instead of the worktree.
+   */
+  function toOverrideKey(relativeKey: string): string {
+    const segments = relativeKey.split("/");
+    if (segments[0] !== ".nax-wt") return relativeKey;
+    return segments.slice(2).join("/");
+  }
+
   function resolve(packageDir?: string): PackageView {
     const key = toRelativeKey(packageDir);
     const cached = cache.get(key);
@@ -106,7 +122,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       return cached;
     }
     // Use merged config if hydration pre-loaded one for this package; otherwise root config.
-    const overrideConfig = mergedConfigs.get(key);
+    const overrideConfig = mergedConfigs.get(toOverrideKey(key));
     const hasOverride = overrideConfig !== undefined;
     // Warn when a caller resolves a non-root package before hydrate() has run — the
     // returned view silently uses root config instead of per-package overrides.  This

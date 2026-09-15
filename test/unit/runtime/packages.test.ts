@@ -192,3 +192,60 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
     expect(mockLogger.calls.filter((c) => c.level === "warn" && c.stage === "packages")).toHaveLength(1);
   });
 });
+
+describe("PackageRegistry — worktree paths resolve the package override (#2069)", () => {
+  async function registryWithOverride() {
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } }));
+    const registry = createPackageRegistry(loader, "/repo");
+    await registry.hydrate(["apps/web-ui"], async (_root, dir) =>
+      dir === "apps/web-ui" ? makeNaxConfig({ quality: { commands: { lint: "pkg-lint" } } }) : null,
+    );
+    return registry;
+  }
+
+  test("a worktree package path finds the hydrated override", async () => {
+    const registry = await registryWithOverride();
+    const view = registry.resolve("/repo/.nax-wt/US-005/apps/web-ui");
+    expect(view.hasOverride).toBe(true);
+    expect(view.config.quality?.commands?.lint).toBe("pkg-lint");
+  });
+
+  // The identity invariant: packageWorkdir(view) joins packageDir onto repoRoot,
+  // so shortening packageDir would repoint file tools at the MAIN checkout.
+  test("packageDir still addresses the worktree, not the main checkout", async () => {
+    const registry = await registryWithOverride();
+    const view = registry.resolve("/repo/.nax-wt/US-005/apps/web-ui");
+    expect(view.packageDir).toBe(".nax-wt/US-005/apps/web-ui");
+  });
+
+  // Two parallel stories on the SAME package must not share one view.
+  test("two worktrees of the same package get distinct views", async () => {
+    const registry = await registryWithOverride();
+    const a = registry.resolve("/repo/.nax-wt/US-001/apps/web-ui");
+    const b = registry.resolve("/repo/.nax-wt/US-002/apps/web-ui");
+    expect(a).not.toBe(b);
+    expect(a.packageDir).toBe(".nax-wt/US-001/apps/web-ui");
+    expect(b.packageDir).toBe(".nax-wt/US-002/apps/web-ui");
+    expect(a.hasOverride).toBe(true);
+    expect(b.hasOverride).toBe(true);
+  });
+
+  // A story with no package workdir: the worktree ROOT is the repo package.
+  test("a bare worktree root resolves to the repo-level view", async () => {
+    const registry = await registryWithOverride();
+    const view = registry.resolve("/repo/.nax-wt/US-005");
+    expect(view.hasOverride).toBe(false);
+    expect(view.config.quality?.commands?.lint).toBe("root-lint");
+  });
+
+  // A real directory that merely starts with the same characters must not match.
+  test("a package named like the worktree dir is not mistaken for one", async () => {
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } }));
+    const registry = createPackageRegistry(loader, "/repo");
+    await registry.hydrate([".nax-wtx/pkg"], async (_root, dir) =>
+      dir === ".nax-wtx/pkg" ? makeNaxConfig({ quality: { commands: { lint: "decoy-lint" } } }) : null,
+    );
+    const view = registry.resolve("/repo/.nax-wtx/pkg");
+    expect(view.config.quality?.commands?.lint).toBe("decoy-lint");
+  });
+});
