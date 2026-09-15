@@ -742,3 +742,26 @@ describe("RunCommand splits directories and future paths into separate arguments
     expect(result.content).toContain("@a b c@");
   });
 });
+
+describe("RunCommand — target is argv-only", () => {
+  const ctx = { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 };
+
+  test("a declared command with target is rejected, naming why", async () => {
+    const tool = createRunCommandTool(new Map([["noop", "true"]]));
+    const result = await tool.run({ command: "noop", target: "repoRoot" }, ctx);
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("target");
+    expect(result.content).toContain("argv");
+  });
+
+  // Control: without `target` the guard must be inert. An undeclared command
+  // name proves we reached the NEXT check rather than the new one, and returns
+  // without executing anything.
+  test("the guard is inert when target is absent", async () => {
+    const tool = createRunCommandTool(new Map([["noop", "true"]]));
+    const result = await tool.run({ command: "definitely-not-declared" }, ctx);
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("unknown command");
+    expect(result.content).not.toContain("target");
+  });
+});

@@ -105,6 +105,10 @@ export const executionStage: PipelineStage = {
       runtime: ctx.runtime,
       packageView,
       packageDir: ctx.workdir,
+      // nax#2066: the per-story effective config (loadConfigForWorkdir over
+      // story.workdir). callOp forwards it to both dispatch hops, so the
+      // declared-command map and resolvePermissions see the package's values.
+      config: ctx.config,
       ...(ctx.contextToolRunCounter ? { contextToolRunCounter: ctx.contextToolRunCounter } : {}),
       // nax#1737: hand the assembled bundle to callOp -> runWithFallback, which
       // gates both the cross-agent rebuildForAgent + swap-handoff prompt rewrite

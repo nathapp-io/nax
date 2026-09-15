@@ -82,6 +82,7 @@ function stripLeadingSlash(p: string): string {
 export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): PackageRegistry {
   const cache = new Map<string, PackageView>();
   const mergedConfigs = new Map<string, NaxConfig>();
+  const knownPackages = new Set<string>();
   let hydrated = false;
 
   // Normalize to relative so cache and mergedConfigs keys are consistent with
@@ -99,6 +100,26 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     return packageDir;
   }
 
+  /**
+   * Worktrees live at `<repoRoot>/.nax-wt/<storyId>/` (worktree/manager.ts), so a
+   * story's package resolves to `.nax-wt/<storyId>/<pkg>` — which never matches the
+   * plain `<pkg>` keys hydrate() stored, silently yielding root config (nax#2069).
+   *
+   * This strips the worktree prefix for the OVERRIDE LOOKUP ONLY. The key itself
+   * stays as-is: resolve() passes it to createPackageView as `packageDir`, and
+   * packageWorkdir() joins that onto repoRoot — shortening it would point every
+   * file tool at the main checkout instead of the worktree.
+   *
+   * The guard rests on `.nax-wt` being a reserved nax worktree directory
+   * (gitignored, hidden, and never a workspace package path), so a first path
+   * segment of `.nax-wt` is treated as the worktree prefix.
+   */
+  function toOverrideKey(relativeKey: string): string {
+    const segments = relativeKey.split("/");
+    if (segments[0] !== ".nax-wt") return relativeKey;
+    return segments.slice(2).join("/");
+  }
+
   function resolve(packageDir?: string): PackageView {
     const key = toRelativeKey(packageDir);
     const cached = cache.get(key);
@@ -106,19 +127,30 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       return cached;
     }
     // Use merged config if hydration pre-loaded one for this package; otherwise root config.
-    const overrideConfig = mergedConfigs.get(key);
+    const overrideKey = toOverrideKey(key);
+    const overrideConfig = mergedConfigs.get(overrideKey);
     const hasOverride = overrideConfig !== undefined;
     // Warn when a caller resolves a non-root package before hydrate() has run — the
     // returned view silently uses root config instead of per-package overrides.  This
     // catches entry points (CLI one-off commands, plugins) that skip runSetupPhase.
-    if (!hasOverride && key && !hydrated) {
-      _packagesDeps
-        .getSafeLogger()
-        ?.warn(
-          "packages",
-          "resolve() called for non-root package before hydrate(); returning root config (per-package overrides not applied)",
-          { packageDir: key },
-        );
+    if (!hasOverride && key) {
+      if (!hydrated) {
+        _packagesDeps
+          .getSafeLogger()
+          ?.warn(
+            "packages",
+            "resolve() called for non-root package before hydrate(); returning root config (per-package overrides not applied)",
+            { packageDir: key },
+          );
+      } else if (overrideKey && !knownPackages.has(overrideKey)) {
+        _packagesDeps
+          .getSafeLogger()
+          ?.warn(
+            "packages",
+            "resolve() got an unknown package key after hydrate(); returning root config (per-package overrides not applied)",
+            { packageDir: key, overrideKey },
+          );
+      }
     }
     const config = overrideConfig ?? loader.current();
     const view = createPackageView(config, key, repoRoot, hasOverride);
@@ -133,14 +165,19 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       if (!dir) {
         continue;
       }
+      knownPackages.add(dir);
       if (mergedConfigs.has(dir)) {
         continue;
       }
       const override = await load(repoRoot, dir);
       if (override !== null) {
         mergedConfigs.set(dir, mergePackageConfig(loader.current(), override));
-        // Invalidate any stale root-config view so the next resolve() picks up the merge.
-        cache.delete(dir);
+        // A pre-hydration resolve can have cached the same package through a
+        // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity
+        // key that maps to this override, while preserving unrelated views.
+        for (const key of cache.keys()) {
+          if (toOverrideKey(key) === dir) cache.delete(key);
+        }
       }
     }
     hydrated = true;

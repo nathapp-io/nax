@@ -77,11 +77,14 @@ async function processPackageGroup(
 
   // Refine suggested criteria for this group
   const groupRefined: RefinedCriterion[] = [];
+  const packageView = ctx.runtime.packages.resolve(packageDir);
+  const config = packageView.hasOverride ? packageView.config : ctx.config;
   for (const story of groupStories) {
     const callCtx: CallContext = {
       runtime: ctx.runtime,
-      packageView: ctx.runtime.packages.resolve(packageDir),
+      packageView,
       packageDir,
+      config: packageView.config,
       storyId: story.id,
       featureName: ctx.prd.feature,
       agentName: ctx.agentManager.getDefault(),
@@ -92,8 +95,8 @@ async function processPackageGroup(
         criteria: story.suggestedCriteria ?? [],
         codebaseContext: "",
         storyId: story.id,
-        testStrategy: ctx.config.acceptance?.testStrategy,
-        testFramework: ctx.config.acceptance?.testFramework,
+        testStrategy: config.acceptance?.testStrategy,
+        testFramework: config.acceptance?.testFramework,
         storyTitle: story.title,
         storyDescription: story.description,
       });
@@ -115,20 +118,21 @@ async function processPackageGroup(
   const suggestedTestPath = resolveSuggestedPackageFeatureTestPath(
     packageDir,
     ctx.prd.feature,
-    ctx.config.acceptance?.suggestedTestPath,
+    config.acceptance?.suggestedTestPath,
     language,
   );
 
   // Generate test file via acceptanceGenerateOp
   const criteriaList = groupRefined.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
-  const frameworkOverrideLine = ctx.config.acceptance?.testFramework
-    ? `\n[FRAMEWORK OVERRIDE: Use ${ctx.config.acceptance.testFramework} as the test framework regardless of what you detect.]`
+  const frameworkOverrideLine = config.acceptance?.testFramework
+    ? `\n[FRAMEWORK OVERRIDE: Use ${config.acceptance.testFramework} as the test framework regardless of what you detect.]`
     : "";
 
   const genCallCtx: CallContext = {
     runtime: ctx.runtime,
-    packageView: ctx.runtime.packages.resolve(packageDir),
+    packageView,
     packageDir,
+    config: packageView.config,
     storyId: groupStories[0]?.id,
     featureName: ctx.prd.feature,
     agentName: ctx.agentManager.getDefault(),
@@ -148,7 +152,7 @@ async function processPackageGroup(
       text: c.refined,
       lineNumber: i + 1,
     }));
-    testCode = generateSkeletonTests(ctx.prd.feature, skeletonCriteria, ctx.config.acceptance?.testFramework, language);
+    testCode = generateSkeletonTests(ctx.prd.feature, skeletonCriteria, config.acceptance?.testFramework, language);
     logger?.warn("acceptance", "Hardening generate op returned no test code — using skeleton", {
       storyIds: groupStories.map((s) => s.id),
       storiesProcessed: groupStories.length,
@@ -159,8 +163,8 @@ async function processPackageGroup(
   // Run tests scoped to the package dir
   const testCmd = buildAcceptanceRunCommand(
     suggestedTestPath,
-    ctx.config.project?.testFramework,
-    ctx.config.acceptance?.command,
+    config.project?.testFramework,
+    config.acceptance?.command,
     packageDir,
   );
   // detached: true so killProcessGroup(-pid) below reaches the real test-runner
@@ -179,7 +183,7 @@ async function processPackageGroup(
       exitedBeforeSigkill = true;
     })
     .catch(() => {});
-  const timeoutMs = ctx.config.acceptance?.timeoutMs ?? DEFAULT_HARDENING_TIMEOUT_MS;
+  const timeoutMs = config.acceptance?.timeoutMs ?? DEFAULT_HARDENING_TIMEOUT_MS;
   const killTimer = setTimeout(() => {
     killProcessGroup(proc.pid, "SIGTERM");
     sigkillTimer = setTimeout(() => {

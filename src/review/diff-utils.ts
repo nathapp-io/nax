@@ -121,8 +121,13 @@ export async function collectDiff(
   const merged = [...new Set([...excludePatterns, ...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
   // BUG-31: route through runGitWithTimeout — a wedged git (NFS / lock
   // contention) must not stall the review stage indefinitely.
+  // `--relative` makes git emit paths relative to `workdir` instead of the repo
+  // root. A monorepo story's reviewer has its file tools rooted at the package
+  // dir, so a repo-rooted "packages/lib/src/util.ts" resolves to
+  // <pkg>/packages/lib/... and ENOENTs — one wasted round trip per file
+  // (nax#2066 follow-on). At the repo root it is a no-op.
   const { stdout, stderr, exitCode } = await runGitWithTimeout(
-    ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged],
+    ["git", "diff", "--relative", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged],
     workdir,
   );
 
@@ -146,8 +151,9 @@ export async function collectDiffStat(
   const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
   const merged = [...new Set([...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
   // BUG-31: route through runGitWithTimeout — same convention as collectDiff.
+  // --relative: same convention as collectDiff above.
   const { stdout, exitCode } = await runGitWithTimeout(
-    ["git", "diff", "--stat", `${storyGitRef}..HEAD`, "--", ".", ...merged],
+    ["git", "diff", "--relative", "--stat", `${storyGitRef}..HEAD`, "--", ".", ...merged],
     workdir,
   );
 
@@ -253,7 +259,7 @@ export async function computeTestInventory(
   options?: DiffIgnoreOptions,
 ): Promise<TestInventory> {
   const { stdout, exitCode } = await runGitWithTimeout(
-    ["git", "diff", "--name-only", "--diff-filter=A", `${storyGitRef}..HEAD`],
+    ["git", "diff", "--relative", "--name-only", "--diff-filter=A", `${storyGitRef}..HEAD`, "--", "."],
     workdir,
   );
 

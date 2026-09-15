@@ -182,10 +182,12 @@ function buildFixCycleCtx(
   storyId: string,
   packageDir: string,
 ): FixCycleContext {
+  const packageView = runtime.packages.resolve(packageDir);
   return {
     runtime,
-    packageView: runtime.packages.resolve(packageDir),
+    packageView,
     packageDir,
+    config: packageView.hasOverride ? packageView.config : ctx.config,
     storyId,
     featureName: ctx.feature,
     // agentName captured once at cycle construction time; fallback changes not reflected mid-cycle
@@ -517,10 +519,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     const remainingFindings: Finding[] = [];
     let totalInternalIterations = 0;
     for (const pkg of failedPkgs) {
+      const packageView = ctx.runtime.packages.resolve(pkg.packageDir);
+      const packageConfig = packageView.hasOverride ? packageView.config : ctx.config;
       const { acceptanceTestPath, testCommand, scopedCommandName } = resolveAcceptanceFixTarget(
         ctx.acceptanceTestPaths,
         pkg,
-        ctx.config,
+        packageConfig,
       );
       const effectivePath = acceptanceTestPath || pkg.testPath || testEntries[0]?.testPath || "";
       const testFileContent = testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? "";
@@ -537,6 +541,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
           testFileContent,
           acceptanceTestPath: effectivePath,
           workdir: pkg.packageDir,
+          config: packageConfig,
           storyId: firstStory?.id,
         },
       });
