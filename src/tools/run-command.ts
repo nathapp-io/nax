@@ -348,7 +348,9 @@ export function createRunCommandTool(
       }
 
       const values: Record<string, string | readonly string[]> = {};
-      for (const [k, v] of Object.entries(raw)) values[k] = String(v);
+      for (const [k, v] of Object.entries(raw)) {
+        values[k] = Array.isArray(v) && v.every((element) => typeof element === "string") ? v : String(v);
+      }
 
       // `scope.listPathFields: ["values.files"]` means the policy split this
       // value on whitespace and resolved EACH element into ctx.resolvedPaths --
@@ -372,8 +374,19 @@ export function createRunCommandTool(
       // at all, and what makes this path agree with scoped-selection.ts
       // (nax#1998). One stat per element against a process spawn is free.
       const rawFiles = raw.files;
-      if (typeof rawFiles === "string") {
-        const elements = pathListElements(rawFiles, ctx.root);
+      const rawFilesValue =
+        typeof rawFiles === "string"
+          ? rawFiles
+          : Array.isArray(rawFiles) && rawFiles.every((element) => typeof element === "string")
+            ? rawFiles
+            : undefined;
+      const elements =
+        typeof rawFilesValue === "string"
+          ? pathListElements(rawFilesValue, ctx.root)
+          : Array.isArray(rawFilesValue)
+            ? rawFilesValue
+            : undefined;
+      if (elements !== undefined && rawFilesValue !== undefined) {
         // The pairing is positional, and sound because `values.files` is this
         // tool's only path field, so the policy appended exactly these
         // elements in exactly this order (pinned by a test on `scope`).
@@ -391,7 +404,7 @@ export function createRunCommandTool(
                   resolved !== undefined && statSync(resolved, { throwIfNoEntry: false })?.isFile() === true;
                 return isFile ? resolved : element;
               })
-            : rawFiles;
+            : rawFilesValue;
       }
 
       const command = substituteCommandSpec(template, values);

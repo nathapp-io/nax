@@ -38,6 +38,12 @@ describe("pathListElements", () => {
     });
   });
 
+  test("splits extensionless future paths written with backslashes", async () => {
+    await withTempDir(async (root) => {
+      expect(pathListElements("test\\generated lib\\generated", root)).toEqual(["test\\generated", "lib\\generated"]);
+    });
+  });
+
   test("US-002 AC4: an existing directory and a non-existent path-shaped token split", async () => {
     await withTempDir(async (root) => {
       await mkdir(join(root, "src"), { recursive: true });

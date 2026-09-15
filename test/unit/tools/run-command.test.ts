@@ -682,6 +682,28 @@ describe("RunCommand splits directories and future paths into separate arguments
     });
   });
 
+  test("runs an array of paths as separate policy-validated arguments", async () => {
+    // This fails if array values are rejected by the policy or coerced to one
+    // comma-joined string before substitution.
+    await withTempDir(async (root) => {
+      await mkdir(join(root, "test", "unit"), { recursive: true });
+      await mkdir(join(root, "test", "integration"), { recursive: true });
+      const runtime = createCodingToolRuntime({
+        policy: compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root),
+        extraTools: [createRunCommandTool(new Map([["bracketFiles", "printf @%s@ {{files}}"]]))],
+      });
+
+      const result = await runtime.callTool("RunCommand", {
+        command: "bracketFiles",
+        values: { files: ["test/unit", "test/integration"] },
+      });
+
+      expect(result.kind).toBe("ok");
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(result.content).toContain("@test/unit@@test/integration@");
+    });
+  });
+
   test("US-002 AC11: a directory resolving outside the root is denied, naming that element", async () => {
     await withTempDir(async (parent) => {
       const root = join(parent, "repo");

@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 /**
  * Split one string field into the path elements it really names.
@@ -28,7 +28,9 @@ import { isAbsolute, resolve, sep } from "node:path";
  *      The directory case is what gives `test/unit test/integration` two
  *      arguments today.
  *   4. EVERY token looks like a path -- contains a path separator, or ends in
- *      a file extension -> the tokens. This is deliberately language-neutral:
+ *      a file extension -> the tokens. Both slash spellings count, so a path
+ *      list keeps its meaning across operating systems. This is deliberately
+ *      language-neutral:
  *      it keys on path SYNTAX, never on a test-file naming convention, so it
  *      admits not-yet-created `test_foo.py` / `foo_test.go` / `Foo.test.ts`
  *      equally, without nax knowing the host project's language. It requires
@@ -56,5 +58,5 @@ function isExistingDir(candidate: string, root: string): boolean {
 }
 
 function looksLikePath(token: string): boolean {
-  return token.includes(sep) || /\.[A-Za-z0-9]+$/.test(token);
+  return /[\\/]/.test(token) || /\.[A-Za-z0-9]+$/.test(token);
 }
