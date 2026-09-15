@@ -3,7 +3,7 @@
   "feature": "run-total-and-scoped-files",
   "branchName": "feat/run-total-and-scoped-files",
   "createdAt": "2026-09-14T17:00:20.930Z",
-  "updatedAt": "2026-09-15T03:47:04.118Z",
+  "updatedAt": "2026-09-15T04:21:01.739Z",
   "userStories": [
     {
       "id": "US-001",
@@ -25,8 +25,8 @@
         "cost-reporting"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -88,7 +88,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The change is a small ordered classifier plus tool documentation, but its shared policy/tool security boundary and integration behavior require coordinated regression tests."
+        "reasoning": "The change is a small ordered classifier plus tool documentation, but its shared policy/tool security boundary and integration behavior require coordinated regression tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/tools/path-list.ts",
@@ -102,6 +105,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "4364d75b9314dce156ea2c75b8e7e276f3c6b261",
       "outOfScope": [
         "US-001's run-total propagation."
       ]
