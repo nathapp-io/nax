@@ -45,6 +45,70 @@ export const CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS = ["/node_modules/", "/.git/"]
  */
 export const DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS = ["/node_modules/", "/.git/", "/dist/", "/build/", "/.nax/"];
 
+/**
+ * Tri-state result of a dead-glob scan (#1471 follow-up).
+ *
+ * A capped scan that is truncated before completion cannot tell "no file
+ * anywhere matches" from "no match found among the files examined so far" —
+ * collapsing those two into a single `false` is exactly the false-positive
+ * defect #1471 reopened against. `"unknown"` keeps them apart so the caller
+ * never asserts a glob is dead on incomplete evidence.
+ */
+export type GlobMatchResult = "match" | "no-match" | "unknown";
+
+/**
+ * Returns the glob pattern's leading literal path segments (before the first
+ * segment containing a wildcard character) — e.g. "bin" for "bin/*.ts", or
+ * "test" for "test/**\/*.test.ts". Returns `[]` when the pattern has no
+ * literal prefix (starts with a wildcard segment) or is a single fully-
+ * literal segment with nothing to narrow.
+ *
+ * Only `*` and `?` are wildcards under this repo's `globToRegex` — every
+ * other character (including `[`, `]`, `{`, `}`) is matched literally, so
+ * those don't end the prefix.
+ */
+function literalPrefixSegments(normalizedPattern: string): string[] {
+  const segments = normalizedPattern.split("/");
+  const literal: string[] = [];
+  for (const segment of segments) {
+    if (/[*?]/.test(segment)) break;
+    literal.push(segment);
+  }
+  // A pattern with no wildcard segment at all has nothing to narrow against —
+  // fall back to the general scan rather than treating the whole pattern as
+  // a directory to walk.
+  return literal.length < segments.length ? literal : [];
+}
+
+/**
+ * Walks `scanRoot` (a subtree of `cwd`, or `cwd` itself when there is no
+ * literal prefix) testing `regex` against each entry's path relative to
+ * `cwd` (i.e. `prefix` re-joined onto the walked entry). Distinguishes a
+ * scan that completed and found nothing ("no-match") from one truncated by
+ * either cap before it could ("unknown") — see `GlobMatchResult`.
+ */
+function scanTreeForMatch(scanRoot: string, prefix: string, regex: RegExp): GlobMatchResult {
+  let scanned = 0;
+  let examined = 0;
+  try {
+    for (const file of new Bun.Glob("**/*").scanSync({ cwd: scanRoot, absolute: false, dot: true })) {
+      if (examined >= MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES) return "unknown";
+      examined++;
+      const relPath = prefix ? `${prefix}/${file}` : file;
+      const normalized = `/${normalizePath(relPath)}/`;
+      if (DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
+      if (scanned >= MAX_DEAD_GLOB_SCAN_FILES) return "unknown";
+      scanned++;
+      if (regex.test(normalizePath(relPath))) return "match";
+    }
+    return "no-match";
+  } catch {
+    // The scan root doesn't exist (or can't be opened) — a literal-prefix
+    // directory that isn't there genuinely has no matches under it.
+    return "no-match";
+  }
+}
+
 export const _rulesLintDeps = {
   globCanonicalRuleFiles: (workdir: string): string[] => {
     try {
@@ -64,23 +128,24 @@ export const _rulesLintDeps = {
   // ruleMatchesScopeFiles (src/context/engine/providers/static-rules.ts) uses
   // at runtime — so a pattern that lints as "has matches" is guaranteed to
   // actually match at runtime.
-  globHasMatch: (pattern: string, cwd: string): boolean => {
+  //
+  // #1471: scans the pattern's own literal prefix directory (e.g. "bin/" for
+  // "bin/*.ts") when it has one, so the walk is bounded by that subtree
+  // instead of the whole repository — exact and cheap, with the cap never
+  // binding in the common case. Falls back to the capped whole-tree walk
+  // (backstop, not the primary mechanism) only when no literal prefix exists.
+  globHasMatch: (pattern: string, cwd: string): GlobMatchResult => {
     try {
-      const regex = globToRegex(normalizePath(pattern));
-      let scanned = 0;
-      let examined = 0;
-      for (const file of new Bun.Glob("**/*").scanSync({ cwd, absolute: false, dot: true })) {
-        if (examined >= MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES) break;
-        examined++;
-        const normalized = `/${normalizePath(file)}/`;
-        if (DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
-        if (scanned >= MAX_DEAD_GLOB_SCAN_FILES) break;
-        scanned++;
-        if (regex.test(normalizePath(file))) return true;
+      const normalizedPattern = normalizePath(pattern);
+      const regex = globToRegex(normalizedPattern);
+      const prefixSegments = literalPrefixSegments(normalizedPattern);
+      if (prefixSegments.length > 0) {
+        const prefix = prefixSegments.join("/");
+        return scanTreeForMatch(join(cwd, prefix), prefix, regex);
       }
-      return false;
+      return scanTreeForMatch(cwd, "", regex);
     } catch {
-      return false;
+      return "no-match";
     }
   },
   loadCanonicalRules,
@@ -127,7 +192,7 @@ export interface RulesLintOptions {
 export interface RulesLintDeps {
   globCanonicalRuleFiles: (workdir: string) => string[];
   loadCanonicalRules: typeof loadCanonicalRules;
-  globHasMatch: (pattern: string, cwd: string) => boolean;
+  globHasMatch: (pattern: string, cwd: string) => GlobMatchResult;
   getLogger: typeof getLogger;
   discoverWorkspacePackages: (workdir: string) => Promise<string[]>;
 }
@@ -180,8 +245,21 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
         });
       }
       for (const pattern of rule.appliesTo ?? []) {
-        if (deps.globHasMatch(pattern, root)) continue;
+        const globResult = deps.globHasMatch(pattern, root);
+        if (globResult === "match") continue;
         warningCount++;
+        if (globResult === "unknown") {
+          // #1471: cap-exhaustion is NOT evidence of a dead glob — it means
+          // the scan gave up before finishing. Never fold this into the
+          // dead-glob assertion below; that collapse is the bug this
+          // tri-state exists to prevent.
+          logger.warn(
+            "rules-lint",
+            "Canonical rule appliesTo glob could not be verified within the dead-glob scan cap",
+            { file: rule.path ?? rule.fileName, pattern, root, code: "GLOB_SCAN_UNKNOWN" },
+          );
+          continue;
+        }
         logger.warn("rules-lint", "Canonical rule appliesTo glob matches no files in the linted repository", {
           file: rule.path ?? rule.fileName,
           pattern,

@@ -11,6 +11,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { loadCanonicalRules } from "../context/rules/canonical-loader";
 import { getLogger } from "../logger";
+import type { GlobMatchResult } from "./rules-lint";
 import { _rulesLintDeps } from "./rules-lint";
 
 export const _rulesCLIDeps = {
@@ -33,7 +34,7 @@ export const _rulesCLIDeps = {
   // observed here too — a plain field copy at module-eval time would silently
   // diverge from whatever `nax rules lint` actually runs.
   globCanonicalRuleFiles: (workdir: string): string[] => _rulesLintDeps.globCanonicalRuleFiles(workdir),
-  globHasMatch: (pattern: string, cwd: string): boolean => _rulesLintDeps.globHasMatch(pattern, cwd),
+  globHasMatch: (pattern: string, cwd: string): GlobMatchResult => _rulesLintDeps.globHasMatch(pattern, cwd),
   loadCanonicalRules,
   getLogger,
   // US-002: forward the workspace resolver so the `nax rules lint` entry
