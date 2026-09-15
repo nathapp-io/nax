@@ -206,7 +206,7 @@ describe("globHasMatch — #1471 scan-cap false negative", () => {
     await mkdir(binDir, { recursive: true });
     await writeFile(join(binDir, "nax.ts"), "");
 
-    expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe(true);
+    expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe("match");
   });
 
   test("finds a match under bin/ even when node_modules/ and .git/ are nested inside package subdirectories", async () => {
@@ -230,13 +230,106 @@ describe("globHasMatch — #1471 scan-cap false negative", () => {
     await mkdir(binDir, { recursive: true });
     await writeFile(join(binDir, "nax.ts"), "");
 
-    expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe(true);
+    expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe("match");
   });
 
   test("MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES bounds worst-case wall time for exclude-heavy trees", () => {
     // Documents the safety-valve relationship rather than re-running a
     // 50k+-file scan (already exercised at smaller scale by the tests above).
     expect(MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES).toBe(MAX_DEAD_GLOB_SCAN_FILES * 25);
+  });
+
+  test("literal-prefix scan finds a match confined to the glob's own leading directory, bypassing the cap without needing exclude segments", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+
+    // Plant non-excluded noise OUTSIDE bin/ that alone exceeds the cap. A
+    // full-tree walk (even with DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS applied)
+    // would exhaust MAX_DEAD_GLOB_SCAN_FILES on this noise before reaching
+    // bin/ if it visited entries in this order. Scanning only the glob's
+    // literal prefix ("bin/") never walks this noise at all.
+    const noiseDir = join(tempDir, "src", "generated-noise");
+    await mkdir(noiseDir, { recursive: true });
+    const noiseCount = MAX_DEAD_GLOB_SCAN_FILES + 500;
+    for (let i = 0; i < noiseCount; i++) {
+      await writeFile(join(noiseDir, `file-${i}.ts`), "");
+    }
+
+    const binDir = join(tempDir, "bin");
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, "nax.ts"), "");
+
+    expect(_rulesLintDeps.globHasMatch("bin/*.ts", tempDir)).toBe("match");
+  });
+
+  test("reports a genuinely dead glob as no-match", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+
+    const binDir = join(tempDir, "bin");
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, "nax.ts"), "");
+
+    expect(_rulesLintDeps.globHasMatch("src/does-not-exist/**", tempDir)).toBe("no-match");
+    expect(_rulesLintDeps.globHasMatch("bin/*.md", tempDir)).toBe("no-match");
+  });
+
+  test("cap-exhaustion on a pattern with no literal prefix produces 'unknown', never a dead-glob assertion", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+
+    // No literal prefix segment exists for a leading-wildcard pattern, so
+    // this falls back to the capped full-tree walk. Plant enough
+    // non-excluded, non-matching files to exhaust the cap before the walk
+    // can complete.
+    const noiseDir = join(tempDir, "src", "generated-noise");
+    await mkdir(noiseDir, { recursive: true });
+    const noiseCount = MAX_DEAD_GLOB_SCAN_FILES + 500;
+    for (let i = 0; i < noiseCount; i++) {
+      await writeFile(join(noiseDir, `file-${i}.ts`), "");
+    }
+
+    expect(_rulesLintDeps.globHasMatch("*.doesnotexist", tempDir)).toBe("unknown");
+  });
+
+  test("a fully-literal pattern (no wildcard anywhere) that exists returns 'match', with no walk", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+
+    // A pattern with no wildcard segment at all — e.g. retry-strategy.md's
+    // "src/config/schemas-review.ts" on the real repo — is a path, not a
+    // glob. Plant enough non-excluded noise elsewhere to exceed the cap, so
+    // a regression back to the capped fallback would flip this to "unknown"
+    // (or fail depending on scan order) instead of a definitive "match".
+    const noiseDir = join(tempDir, "unrelated-noise");
+    await mkdir(noiseDir, { recursive: true });
+    const noiseCount = MAX_DEAD_GLOB_SCAN_FILES + 500;
+    for (let i = 0; i < noiseCount; i++) {
+      await writeFile(join(noiseDir, `file-${i}.ts`), "");
+    }
+
+    const configDir = join(tempDir, "src", "config");
+    await mkdir(configDir, { recursive: true });
+    await writeFile(join(configDir, "schemas-review.ts"), "");
+
+    expect(_rulesLintDeps.globHasMatch("src/config/schemas-review.ts", tempDir)).toBe("match");
+  });
+
+  test("a fully-literal pattern (no wildcard anywhere) that does not exist returns 'no-match', never 'unknown'", () => {
+    // The defect this guards: collapsing "fully literal" into "no literal
+    // prefix" sent it to the capped whole-tree fallback, where it could only
+    // ever report "unknown" — permanently inert for the exact case dead-glob
+    // detection exists to catch.
+    expect(_rulesLintDeps.globHasMatch("src/does/not/exist.ts", tempDir)).toBe("no-match");
+  });
+
+  test("a fully-literal pattern naming a directory (not a file) returns 'no-match'", async () => {
+    const { mkdir } = await import("node:fs/promises");
+
+    // The capped walk this falls back to for every other pattern shape
+    // defaults to onlyFiles: true and never yields a directory entry, so a
+    // literal directory path can never match a real scope file at runtime.
+    // The direct-existence check must agree, not report "match" on
+    // directory presence alone.
+    await mkdir(join(tempDir, "src", "session"), { recursive: true });
+
+    expect(_rulesLintDeps.globHasMatch("src/session", tempDir)).toBe("no-match");
   });
 });
 
@@ -391,7 +484,7 @@ describe("rulesLintCommand — AC5 dead-glob warning preserved", () => {
         warnings: [],
       }),
     ];
-    _rulesCLIDeps.globHasMatch = () => false;
+    _rulesCLIDeps.globHasMatch = () => "no-match";
 
     const spy = captureLoggerCalls();
 
@@ -462,7 +555,7 @@ function captureInertScopingLogger(): MockLogger {
 function stubInertScopingDeps(rules: CanonicalRule[]): void {
   _rulesCLIDeps.globCanonicalRuleFiles = () => [];
   _rulesCLIDeps.loadCanonicalRules = async () => rules;
-  _rulesCLIDeps.globHasMatch = () => true;
+  _rulesCLIDeps.globHasMatch = () => "match";
 }
 
 describe("US-002 rulesLintCommand — AC1 displaced-frontmatter text surfaced", () => {
@@ -478,7 +571,7 @@ describe("US-002 rulesLintCommand — AC1 displaced-frontmatter text surfaced", 
     _rulesCLIDeps.globCanonicalRuleFiles = () => [];
     _rulesCLIDeps.loadCanonicalRules = async (workdir: string) =>
       (await loadCanonicalRulesImpl(workdir)) as CanonicalRule[];
-    _rulesCLIDeps.globHasMatch = () => true;
+    _rulesCLIDeps.globHasMatch = () => "match";
     _rulesCLIDeps.discoverWorkspacePackages = async () => [];
     const { calls } = captureInertScopingLogger();
 
@@ -667,7 +760,7 @@ describe("US-002 rulesLintCommandDirect — dep forwarding", () => {
     _rulesCLIDeps.loadCanonicalRules = async () => [
       makeRule({ path: "scoped.md", fileName: "scoped.md", paths: ["src/**/*.ts"] }),
     ];
-    _rulesCLIDeps.globHasMatch = () => true;
+    _rulesCLIDeps.globHasMatch = () => "match";
 
     const logger = makeLogger();
 

@@ -100,7 +100,7 @@ describe("US-002 rulesLintCommand — AC1 first root rejects, healthy root still
       }
       return [];
     };
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => ["packages/api"];
 
     const calls = captureLogger();
@@ -143,7 +143,7 @@ describe("US-002 rulesLintCommand — AC2 reject with NaxError RULES_LINT_ROOT_F
       }
       return [];
     };
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => ["packages/api"];
 
     captureLogger();
@@ -181,7 +181,7 @@ describe("US-002 rulesLintCommand — AC3 two-of-three failure context names bot
       }
       return [];
     };
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => ["packages/api", "packages/web"];
 
     captureLogger();
@@ -220,7 +220,7 @@ describe("US-002 rulesLintCommand — AC4 all roots load with warnings, resolves
         warnings: ["stub warning"],
       }),
     ];
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => ["packages/api"];
 
     captureLogger();
@@ -253,7 +253,7 @@ describe("US-002 rulesLintCommand — AC5 all roots load with warnings, [WARN] s
         warnings: ["stub warning"],
       }),
     ];
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => ["packages/api"];
 
     captureLogger();
@@ -278,7 +278,7 @@ describe("US-002 rulesLintCommand — AC6 empty canonical store emits logger war
   test("[AC6] emits an empty-store warning through the injected logger when no root yields any rule file", async () => {
     _rulesLintDeps.globCanonicalRuleFiles = () => [];
     _rulesLintDeps.loadCanonicalRules = async () => [];
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => [];
 
     const calls = captureLogger();
@@ -303,7 +303,7 @@ describe("US-002 rulesLintCommand — AC7 empty canonical store resolves", () =>
   test("[AC7] resolves without rejecting when no root yields any rule file", async () => {
     _rulesLintDeps.globCanonicalRuleFiles = () => [];
     _rulesLintDeps.loadCanonicalRules = async () => [];
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => [];
 
     captureLogger();
@@ -330,7 +330,7 @@ describe("US-002 rulesLintCommand — AC8 empty canonical store emits [WARN] sum
   test("[AC8] emits the [WARN] summary line when no rule root yields any rule file", async () => {
     _rulesLintDeps.globCanonicalRuleFiles = () => [];
     _rulesLintDeps.loadCanonicalRules = async () => [];
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => [];
 
     captureLogger();
@@ -355,7 +355,7 @@ describe("US-002 rulesLintCommand — AC9 empty canonical store does NOT emit [O
   test("[AC9] does not emit the [OK] summary line when no root yields any rule file", async () => {
     _rulesLintDeps.globCanonicalRuleFiles = () => [];
     _rulesLintDeps.loadCanonicalRules = async () => [];
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => [];
 
     captureLogger();
@@ -386,7 +386,7 @@ describe("US-002 rulesLintCommand — AC10 at least one rule file: no empty-stor
         warnings: [],
       }),
     ];
-    _rulesLintDeps.globHasMatch = () => true;
+    _rulesLintDeps.globHasMatch = () => "match";
     _rulesLintDeps.discoverWorkspacePackages = async () => [];
 
     const calls = captureLogger();
