@@ -201,6 +201,23 @@ describe("truncateDiff()", () => {
 
 // ─── computeTestInventory ─────────────────────────────────────────────────────
 
+describe("computeTestInventory() path convention", () => {
+  // Its output is rendered next to the (package-relative) embedded diff in the
+  // adversarial prompt, as paths the agent is told to inspect. Repo-rooted
+  // entries there are unreadable from a package-contained root, and without a
+  // pathspec it also reports files from OTHER packages entirely.
+  test("scopes to the workdir and emits workdir-relative paths", async () => {
+    const captured: { value?: string[] } = {};
+    _diffUtilsDeps.spawn = makeCapturingSpawnMock("", captured);
+
+    await computeTestInventory("/repo/packages/lib", "abc123");
+
+    expect(captured.value).toContain("--relative");
+    expect(captured.value).toContain("--");
+    expect(captured.value).toContain(".");
+  });
+});
+
 describe("computeTestInventory()", () => {
   test("classifies .test.ts and .spec.ts files as addedTestFiles", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("src/foo/bar.ts\ntest/unit/foo/bar.test.ts\n");

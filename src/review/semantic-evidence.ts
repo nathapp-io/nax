@@ -144,10 +144,11 @@ export function downgradeUnsubstantiatedFinding<F extends FindingWithEvidence>(o
 
 async function readSafeFile(roots: string[], file: string): Promise<string | null> {
   // Relative paths: try each candidate root, return the first that actually
-  // reads. git emits repo-root-relative paths (e.g. "apps/api/src/x.ts"), so a
-  // package-scoped workdir alone double-prefixes and misses. Trying [repoRoot,
-  // workdir] resolves both repo-relative and package-relative findings without
-  // assuming which style the reviewer used. validateModulePath checks
+  // reads. The reviewer is now shown workdir-relative paths (git runs with
+  // --relative), but findings persisted by earlier runs — and any the model
+  // spells repo-rooted anyway — still arrive in the old style. Trying
+  // [repoRoot, workdir] resolves both without assuming which style the
+  // reviewer used. validateModulePath checks
   // containment (not existence), so the Bun.file read is what disambiguates.
   for (const root of roots) {
     const validated = validateModulePath(file, [root]);
