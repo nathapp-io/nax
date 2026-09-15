@@ -13,6 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { priorityToRawScore } from "@/context";
 import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
@@ -255,6 +256,70 @@ describe("StaticRulesProvider — US-004 AC3/AC4/AC5/AC6: section chunk shape", 
     for (const chunk of result.chunks) {
       expect(chunk.rawScore).toBe(0.5);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #2061: priority-derived raw scores reach the emitted canonical chunks
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("StaticRulesProvider — #2061: priority-derived rawScore", () => {
+  // Two rules with explicitly declared DISTINCT priorities. `sectionOf` forwards
+  // `rule.priority`, so the emitted chunks must carry distinct scores ordered
+  // by priority (lower number = more important = higher score). The default
+  // priority case is covered by AC6 above; this fixture deliberately declares
+  // its own so the mapping from declared priority to emitted score is pinned.
+  const priorityRules = [
+    { id: "high", priority: 5 },
+    { id: "low", priority: 55 },
+  ];
+
+  function setupPriorityRules() {
+    setupCanonical(
+      priorityRules.map(({ id, priority }) => ({
+        fileName: `${id}.md`,
+        id,
+        content: `## ${id}\nbody`,
+        priority,
+      })),
+    );
+    _staticRulesDeps.splitRuleIntoSections = ((rule: CanonicalRule) => [
+      sectionOf(rule, {
+        slug: rule.id ?? "section",
+        content: rule.content ?? "",
+        heading: rule.id,
+        ordinal: 0,
+      }),
+    ]) as typeof _staticRulesDeps.splitRuleIntoSections;
+    _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
+      retainedSections: s,
+      totalTokens: s.reduce((sum, x) => sum + x.tokens, 0),
+      usedTokens: s.reduce((sum, x) => sum + x.tokens, 0),
+      droppedIds: [],
+      overageTokens: 0,
+    })) as typeof _staticRulesDeps.applySectionBudget;
+  }
+
+  test("declared priorities emit distinct rawScores strictly ordered by priority", async () => {
+    setupPriorityRules();
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(BASE_REQUEST);
+
+    const scoresByRule = new Map(result.chunks.map((chunk) => [chunk.id.split(":")[1] ?? "", chunk.rawScore]));
+    expect(scoresByRule.get("high")).toBe(priorityToRawScore(5));
+    expect(scoresByRule.get("low")).toBe(priorityToRawScore(55));
+    // Lower priority number (5) is more important and must score strictly higher.
+    expect(scoresByRule.get("high")).toBeGreaterThan(scoresByRule.get("low") ?? 0);
+  });
+
+  test("emitted rawScores are not uniform across distinct priorities", async () => {
+    setupPriorityRules();
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(BASE_REQUEST);
+
+    const distinct = [...new Set(result.chunks.map((chunk) => chunk.rawScore))].sort((a, b) => a - b);
+    expect(distinct.length).toBeGreaterThan(1);
+    expect(distinct).toEqual([priorityToRawScore(55), priorityToRawScore(5)]);
   });
 });
 
