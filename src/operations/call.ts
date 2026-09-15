@@ -80,7 +80,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // The caller's deadline wins over the run's; see CallContext.signal.
   const abortSignal = ctx.signal ?? ctx.runtime.signal;
 
-  const config = ctx.runtime.configLoader.current();
+  const config = ctx.config ?? ctx.runtime.configLoader.current();
   const defaultAgent = ctx.runtime.agentManager.getDefault();
   const opModel: ConfiguredModel = resolveOpModel(op, input, buildCtx) ?? "balanced";
   // resolved.agent honors `{ agent, model }` pin; resolved.modelTier is undefined when a
