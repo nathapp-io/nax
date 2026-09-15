@@ -49,6 +49,17 @@ export interface StageContextConfig {
    * Default: absent (treated as 1.0, raw markdown rendering used).
    */
   planDigestBoost?: number;
+  /**
+   * Declares that this stage authors test files that do not exist on disk yet
+   * (nax#2060). When true, providers that scope rules/content against
+   * `request.scopeFiles` (the resolved evidence set — story source files)
+   * should also consider the prospective test paths the stage is about to
+   * produce, derived from `request.resolvedTestPatterns` via
+   * `deriveSiblingTestCandidates()`. Keying off this stage-declared field
+   * rather than the stage's role/id keeps "which stages author tests" a
+   * single explicit fact instead of an inferred one.
+   */
+  producesTestFiles?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,6 +155,10 @@ export const STAGE_CONTEXT_MAP = {
     budgetTokens: 8_000,
     providerIds: PHASE_3_TDD_TEST_WRITER,
     pullToolNames: ["query_neighbor"],
+    // nax#2060: this is the one stage whose entire job is to author test
+    // files that do not exist yet — StaticRulesProvider extends its
+    // appliesTo match set with prospective test paths.
+    producesTestFiles: true,
   },
   "tdd-implementer": {
     role: "implementer",
@@ -240,6 +255,10 @@ export const STAGE_CONTEXT_MAP = {
     // verify-result / tool-diagnostics record on retry without flooding
     // push context. Shared query_neighbor for cross-package import lookups.
     pullToolNames: ["query_neighbor", "query_scratch"],
+    // nax#2060: merges the test-writer and implementer roles into one
+    // session, so — like tdd-test-writer — it authors test files that
+    // don't exist yet at assembly time.
+    producesTestFiles: true,
   },
 
   // TDD-simple strategy — same as single-session (simplified TDD with merged roles)
@@ -253,6 +272,8 @@ export const STAGE_CONTEXT_MAP = {
     // query_scratch: see the US-005 AC12 rationale on "single-session" above.
     pullToolNames: ["query_neighbor", "query_scratch"],
     planDigestBoost: 1.5,
+    // nax#2060: merged test-writer + implementer roles — see "single-session" above.
+    producesTestFiles: true,
   },
 
   // No-test strategy — implementer role, moderate budget
@@ -277,6 +298,8 @@ export const STAGE_CONTEXT_MAP = {
     providerIds: PHASE_3_IMPLEMENTATION,
     // query_scratch: see the US-005 AC12 rationale on "single-session" above.
     pullToolNames: ["query_neighbor", "query_scratch"],
+    // nax#2060: merged test-writer + implementer roles — see "single-session" above.
+    producesTestFiles: true,
   },
 
   // Route — lightweight context for routing/classification; static rules only

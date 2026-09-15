@@ -29,6 +29,7 @@ import type { ProviderScopingReport } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
 import { buildBudgetNoticeChunk, buildSectionBudgetPressure } from "./static-rules-budget-notice";
+import { ruleTargetsAuthoredTests, warnOnAppliesToStageContradiction } from "./static-rules-scoping";
 
 export { _resetCanonicalRulesCache } from "./canonical-rules-cache";
 
@@ -304,14 +305,17 @@ export class StaticRulesProvider implements IContextProvider {
 
         const appliesToFilteredIds: string[] = [];
         let appliesToInertCount = 0;
+        const scopeIsEmpty = !request.scopeFiles || request.scopeFiles.length === 0;
+        // nax#2060: authoring stages also admit an appliesTo that itself denotes test output.
+        const admits = (appliesTo?: string[]) =>
+          ruleMatchesScopeFiles(appliesTo, request.scopeFiles) || ruleTargetsAuthoredTests(appliesTo, request);
         const scopedRules = stageMatchedRules.filter((rule) => {
-          if (rule.appliesTo && rule.appliesTo.length > 0 && (!request.scopeFiles || request.scopeFiles.length === 0)) {
-            appliesToInertCount++;
-          }
-          if (ruleMatchesScopeFiles(rule.appliesTo, request.scopeFiles)) return true;
+          if (rule.appliesTo && rule.appliesTo.length > 0 && scopeIsEmpty) appliesToInertCount++;
+          if (admits(rule.appliesTo)) return true;
           appliesToFilteredIds.push(canonicalRuleId(rule));
           return false;
         });
+        warnOnAppliesToStageContradiction(logger, request, stageMatchedRules, appliesToFilteredIds, canonicalRuleId);
 
         const scopingReport: ProviderScopingReport = {
           stageFilteredIds,

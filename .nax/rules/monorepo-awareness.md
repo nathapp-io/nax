@@ -90,7 +90,7 @@ A fallback string (`?? "bun test"`) is permitted **only** at the outermost pipel
 | `filePath.startsWith("src/")` | Strip via `relative(packageDir, absolutePath)` first; source location varies per language (`src/` for TS, no convention for Go/Python) |
 | `path.match(/^src\//)` for classification | Use `packageDir` as the anchor; grep for imports, not paths |
 
-**Permitted exception:** mirror-layout rewrites where a glob of the form `test/unit/**/*.test.ts` and a source of the form `<pkg>/src/<inner>` need to be composed — the `src/` anchor is semantically required. Document this at the call site. Current permitted site: `deriveSiblingTestCandidates()` in `src/context/engine/providers/code-neighbor.ts` (mirrored TS-style layouts only).
+**Permitted exception:** mirror-layout rewrites where a glob of the form `test/unit/**/*.test.ts` and a source of the form `<pkg>/src/<inner>` need to be composed — the `src/` anchor is semantically required. Document this at the call site. Current permitted site: `deriveSiblingTestCandidates()` in `src/context/engine/providers/test-path-derivation.ts` (mirrored TS-style layouts only; shared by `code-neighbor.ts` and `static-rules-scoping.ts` — nax#2060).
 
 ### 5. Package detection goes through one resolver
 
