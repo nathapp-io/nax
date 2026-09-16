@@ -37,7 +37,6 @@ function makeLintConfigFactoryConfig() {
         providers: {
           historyScope: "package",
           neighborScope: "package",
-          crossPackageDepth: 1,
         },
       },
     },

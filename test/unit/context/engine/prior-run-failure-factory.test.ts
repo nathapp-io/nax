@@ -53,7 +53,6 @@ function makeConfig(): NaxConfig {
         providers: {
           historyScope: "package",
           neighborScope: "package",
-          crossPackageDepth: 1,
         },
       },
     },

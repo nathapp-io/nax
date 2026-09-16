@@ -164,6 +164,39 @@ export function _applyRemovedOptimizerKeysShim(
 }
 
 /**
+ * @internal Drop the removed `context.v2.providers.crossPackageDepth` (nax#2074).
+ *
+ * Its only consumer was CodeNeighborProvider's sibling reverse scan, which was
+ * removed because `parseImportSpecifiers` never collects bare specifiers: the
+ * scan could not find a true cross-package dependent, only false ones. The key
+ * now controls nothing.
+ *
+ * Dropped with a warning rather than rejected so an existing config keeps
+ * loading. Returns a new object (immutable -- does not mutate the input).
+ */
+export function _applyRemovedCrossPackageDepthShim(
+  conf: Record<string, unknown>,
+  warn: (msg: string) => void = defaultConfigWarn,
+): Record<string, unknown> {
+  const context = conf.context as Record<string, unknown> | undefined;
+  const v2 = context?.v2 as Record<string, unknown> | undefined;
+  const providers = v2?.providers as Record<string, unknown> | undefined;
+  if (!providers || typeof providers !== "object" || !("crossPackageDepth" in providers)) return conf;
+
+  warn(
+    "context.v2.providers.crossPackageDepth was removed (nax#2074) and has no effect. " +
+      "Cross-package reverse-dependency scanning is unsupported: only relative import specifiers are parsed, " +
+      "so the scan could never find a true cross-package dependent. Remove the key; use neighborScope to widen the scan root.",
+  );
+
+  const { crossPackageDepth: _removed, ...restProviders } = providers;
+  return {
+    ...conf,
+    context: { ...context, v2: { ...v2, providers: restProviders } },
+  };
+}
+
+/**
  * @internal Map the removed `execution.worktreeDependencies.mode: "inherit"` to `"off"`.
  *
  * `inherit` never inherited anything: it returned the same cwd as `off`, and threw
@@ -504,5 +537,6 @@ export function applyConfigCompatShims(
   out = _applyRemovedWorktreeInheritShim(out, warn);
   out = _applyFinishAutoFlowShim(out, warn);
   out = _applyRemovedOptimizerKeysShim(out, warn);
+  out = _applyRemovedCrossPackageDepthShim(out, warn);
   return out;
 }

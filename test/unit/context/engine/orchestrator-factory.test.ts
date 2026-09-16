@@ -1,5 +1,5 @@
 /**
- * #507 — historyScope / neighborScope / crossPackageDepth not in config schema.
+ * #507 — historyScope / neighborScope not in config schema.
  *
  * createDefaultOrchestrator() always constructed GitHistoryProvider and
  * CodeNeighborProvider with their hardcoded defaults, ignoring any operator
@@ -51,11 +51,7 @@ const V2_OVERRIDE: DeepPartial<ContextV2Config> = {
 };
 
 function makeConfig(
-  providerOverrides: {
-    historyScope?: "repo" | "package";
-    neighborScope?: "repo" | "package";
-    crossPackageDepth?: number;
-  } = {},
+  providerOverrides: { historyScope?: "repo" | "package"; neighborScope?: "repo" | "package" } = {},
 ): NaxConfig {
   return makeNaxConfig({
     context: {
@@ -64,7 +60,6 @@ function makeConfig(
         providers: {
           historyScope: providerOverrides.historyScope ?? "package",
           neighborScope: providerOverrides.neighborScope ?? "package",
-          crossPackageDepth: providerOverrides.crossPackageDepth ?? 1,
         },
       },
     },
@@ -132,7 +127,7 @@ describe("createDefaultOrchestrator — #508-M7 optional chaining on rules", () 
       context: {
         v2: {
           ...V2_OVERRIDE,
-          providers: { historyScope: "package", neighborScope: "package", crossPackageDepth: 1 },
+          providers: { historyScope: "package", neighborScope: "package" },
           rules: undefined,
         },
       },
@@ -250,7 +245,6 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
           providers: {
             historyScope: "package",
             neighborScope: "package",
-            crossPackageDepth: 1,
           },
         },
         testCoverage: {
