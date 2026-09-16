@@ -255,6 +255,22 @@ git commit -m "fix(context): drop out-of-package parent files instead of injecti
 
 ---
 
+## PR body
+
+Include these lines so the issue closes on merge:
+
+```
+Closes #2089
+```
+
+Also record in the body:
+
+- **What the fix is:** `toPackageFrameFiles`'s `?? file` passthrough emitted a path that resolved to a real but WRONG file under the consumer's root — the exact outcome `toPackageFrame`'s docblock tells callers to avoid. `partitionPackageFrame` returns the classification instead of encoding it in the string.
+- **Scope note:** `toPackageFrameFiles` is deliberately left in place with its two remaining call sites (`pipeline/stages/context.ts`, `context/engine/stage-assembler.ts`). Those build `ContextRequest.touchedFiles`, which becomes git pathspecs and glob inputs; PR 2 settles that frame. Say so, or a reviewer will ask why the helper was not simply fixed.
+- **Any moved test expectations**, naming each one and why the old expectation encoded the bug.
+
+---
+
 ## Done when
 
 - A repo-root parent output no longer resolves to the consuming package's same-named file.

@@ -150,6 +150,30 @@ git commit -m "fix(prompts): frame prompt-embedded git output for package-contai
 
 ---
 
+## PR body
+
+Include this line so the issue closes on merge:
+
+```
+Closes #2090
+```
+
+And this one, which must **not** be a `Closes`:
+
+```
+Refs #2096
+```
+
+This PR performs part 1 of #2096's direction — retiring the byte-freeze premise and rewriting the header to pin the invariants the file genuinely protects. Part 2 (assert at the dispatch seam, if a frozen-arm guarantee is wanted at all) stays open. Do not close #2096 here.
+
+Also record in the body:
+
+- **The ACP arm moved in #2095, not in this PR.** `buildAgentScopeSection` is prepended to both arms at `src/agents/tool-preamble.ts:33-37`, and `diff-access-acp-parity.test.ts` stayed green because it asserts on builder output. This PR makes that movement explicit and deliberate rather than introducing it.
+- **The snapshot diff was read line by line before acceptance** — say which lines changed and confirm they are all intended command strings. An unread `-u` is precisely how the premise died quietly the first time.
+- **`--relative` is appended after `..HEAD`** so the three `toContain` prefix assertions keep passing; the flag position is deliberate, not incidental.
+
+---
+
 ## Done when
 
 - Every `diff`/`log` in the three builders carries `--relative`, and every diff carries a pathspec.

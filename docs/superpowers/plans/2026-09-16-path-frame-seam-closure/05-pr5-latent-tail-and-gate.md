@@ -201,6 +201,25 @@ git commit -m "fix(execution,review,scripts): close the latent path-frame tail a
 
 ---
 
+## PR body
+
+Include these lines so all three issues close on merge:
+
+```
+Closes #2083
+Closes #2087
+Closes #2084
+```
+
+Also record in the body:
+
+- **Nothing in this PR is a user-visible fix.** All three are contract defects — #2083's join is frame-correct on today's only call path, #2087's false-green is doubly unreachable, and #2084 has zero live violations. Do not write a body implying a behavioural bug was fixed; the value is that the next change cannot reintroduce the class silently.
+- **#2087 was narrowed, not reframed.** `runAutofixLint` had zero production callers and was deleted; the frame contradiction at `scoped-lint.ts:120-125` survives behind a pointer comment and a test pinning the `runReview` degraded-path contract. Comment on the issue to the same effect so it closes with an accurate record.
+- **What the hardened gate found.** List every site the AST walk flagged that the regex missed, and for each: converted, or added to `ALLOWED` with a reason. `EXEMPT` must still be empty — if it is not, say why.
+- **The two issue-body corrections** (#2083(e), #2084(e)) are already applied upstream as appended correction blocks.
+
+---
+
 ## Done when
 
 - Acceptance regeneration resolves against the repo root, scopes its diff, and logs skips with a count.

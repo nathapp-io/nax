@@ -79,19 +79,34 @@ PR 6 is unrelated to path frames and can ship at any time — it is last by ruli
 - **Rules live in `.nax/rules/`;** `.claude/rules/` is a generated mirror (`nax generate`, guarded by `check:rules-drift`). No PR here should need to touch either.
 - **Verification discipline:** paste the actual command output. A green you did not read is not a green.
 
-## Corrections to carry back into the issue bodies
+## Issue closure
 
-Verification found four claims in the filed issues that do not hold on `71071a035`. Fix the issue text so the next reader is not misled.
+Each PR file carries a **PR body** section with the exact `Closes #NNNN` lines to include:
+
+| PR | Closes |
+|---|---|
+| 1 | #2089 |
+| 2 | #2088, #2091 |
+| 3 | #2086, #2085 |
+| 4 | #2090 — plus `Refs #2096`, which it must **not** close |
+| 5 | #2083, #2087, #2084 |
+| 6 | #2093 |
+
+All ten issues in the bundle are accounted for. **#2096 stays open** — PR 4 performs part 1 of its direction (retiring the byte-freeze premise); part 2, asserting at the dispatch seam if a frozen-arm guarantee is wanted at all, is a separate decision.
+
+## Corrections — ALREADY APPLIED upstream (2026-09-16)
+
+Verification found four claims in the filed issues that do not hold on `71071a035`. **These have been appended to the issue bodies on GitHub as marked correction blocks** — you do not need to apply them. They are listed here because the plans argue from the corrected facts, and a reader comparing the plan against the *original* issue prose will otherwise see a contradiction.
 
 - **#2083(e)** — the per-package acceptance fan-out does **not** construct a `PipelineContext` with `workdir: pkg.packageDir`. `acceptance-loop.ts:543` is a `diagnosisOpts` bag; the fan-out otherwise names that value `packageDir` (`:509`, `:521`, `:292`). The substance survives, the cited reachability path does not.
 - **#2084(e)** — there are **zero** live `?.workdir` / `["workdir"]` story reads in `src/`. The nearest real bypass is `src/context/builder.ts:282` `const { workdir } = storyContext`, which reads the *context* workdir, not the raw story field.
 - **#2088(b)** — the package-framed contract for `touchedFiles` is documented in the **`scopeFiles`** docblock at `src/context/engine/types.ts:329-334`, not the `touchedFiles` docblock at `:312-315`.
 - **#2091(f)** — the scoring hop is `src/context/engine/orchestrator.ts:378` + `src/context/engine/scoring.ts:113`. The issue names `context.ts`; that file does not exist.
 
-## Follow-ups worth filing separately
+## Follow-ups
 
-- **The parity test pinned the wrong layer.** It asserts on *builder* output while the prompt the agent receives is assembled at dispatch (`tool-preamble.ts:33-37`). #2095 changed the delivered ACP arm and the test stayed green. Any future frozen control arm must assert on dispatch output. This is a testing-strategy defect independent of #2090.
-- **`ContextRequest.touchedFiles` has no declared frame of its own** — its contract is documented in a neighbouring field's docblock. PR 2 settles it; the docs should follow.
+- **#2096 — FILED.** The parity test asserts on *builder* output while the prompt the agent receives is assembled at dispatch (`tool-preamble.ts:33-37`). #2095 changed the delivered ACP arm and the test stayed green. A testing-strategy defect independent of #2090. PR 4 does part 1 of its direction; part 2 stays open.
+- **`ContextRequest.touchedFiles` has no declared frame of its own** — its contract survives only in the neighbouring `scopeFiles` docblock. Not separately filed: **PR 2 fixes it** by giving the field its own docblock, and the correction is recorded on #2088.
 
 ## Adjacent, deliberately NOT in this bundle
 

@@ -221,6 +221,24 @@ git commit -m "fix(context): canonicalize scopePaths and anchor literal matches 
 
 ---
 
+## PR body
+
+Include these lines so both issues close on merge:
+
+```
+Closes #2088
+Closes #2091
+```
+
+Also record in the body:
+
+- **`src/context/engine/providers/static-rules.ts` is byte-identical.** It sits at exactly 600/600 lines. Paste `git diff --stat` showing it absent.
+- **`ContextRequest.touchedFiles` gained its own docblock.** Its frame contract previously survived only in the neighbouring `scopeFiles` docblock — see the correction appended to #2088.
+- **No migration was needed** for `chunkScopePaths` / `chunkEffectiveness`: gitignored local run state, never read across features, not rehydrated. Stale verdicts age out with the feature directory; only an in-flight feature keeps old values.
+- **GitHistoryProvider gained a logger.** Previously the file imported none, which is why the defect was undiagnosable.
+
+---
+
 ## Done when
 
 - `git log` runs in `repoRoot` against repo-rooted pathspecs regardless of `historyScope`, and an empty result is logged.

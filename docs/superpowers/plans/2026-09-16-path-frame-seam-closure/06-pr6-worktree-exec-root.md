@@ -244,6 +244,22 @@ git commit -m "fix(tools): resolve Exec target repoRoot inside the story worktre
 
 ---
 
+## PR body
+
+Include this line so the issue closes on merge:
+
+```
+Closes #2093
+```
+
+Also record in the body:
+
+- **This is the damaging one.** Under `storyIsolation: "worktree"`, a repo-scoped `Exec` wrote the user's real working tree — manifest, lockfile, `node_modules` — on their real branch, and the story's own tree never received the install. Lead with the blast radius, not the mechanism.
+- **`src/operations/call.ts` is still at 597 lines** and `test/unit/operations/call.test.ts` is untouched. Paste `bun run check:file-sizes` output.
+- **Both directions of the hazard now hold together.** `src/runtime/packages.ts:103-116` already guards the inverse mistake (nax#2069: shortening the package key would point every file tool at the main checkout). `storyExecRoot` sits beside `toOverrideKey` so the two invariants are stated in one place — one strips the `.nax-wt/<storyId>` prefix for override lookup, the other keeps it because a repo-scoped command must run inside the story's tree.
+
+---
+
 ## Done when
 
 - A worktree story issuing `Exec` with `target: "repoRoot"` resolves its cwd inside `.nax-wt/<storyId>/`.

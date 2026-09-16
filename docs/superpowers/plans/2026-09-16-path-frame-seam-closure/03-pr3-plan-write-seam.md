@@ -165,6 +165,23 @@ git commit -m "fix(plan): probe declared paths in both frames and reframe modifi
 
 ---
 
+## PR body
+
+Include these lines so both issues close on merge:
+
+```
+Closes #2086
+Closes #2085
+```
+
+Also record in the body:
+
+- **`persist-prd.ts` is unchanged.** The fidelity-before-canonicalization order at `:61-77` is a deliberate deviation from an earlier PR and was not disturbed — `modifiedFiles` is reframed at the prompt boundary instead. Paste `git diff src/plan/strategies/persist-prd.ts` showing it empty.
+- **Any pre-existing test whose expectation moved.** A test asserting the spurious `major` encoded the bug; name it and say so explicitly rather than letting it look like a silent expectation change.
+- **`src/prompts/sections/modified-files.ts` stays a pure renderer** — the frame decision lives in `story.ts`, which knows the story. Its own suite should be green unchanged.
+
+---
+
 ## Done when
 
 - A monorepo story with real, existing package-relative `contextFiles` draws **zero** findings at plan time.
