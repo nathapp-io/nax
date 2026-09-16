@@ -92,7 +92,6 @@ export function createDefaultOrchestrator(
   providers.push(
     new CodeNeighborProvider({
       neighborScope: providerConfig?.neighborScope ?? "package",
-      crossPackageDepth: providerConfig?.crossPackageDepth ?? 1,
       sourceGlob: providerConfig?.sourceGlob,
       maxGlobFiles: providerConfig?.maxGlobFiles,
     }),
