@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- **Branch:** create `fix/2067-workdir-canonicalization` from `main` @ `0e4113d23`. Do not commit to `main`.
+- **Branch:** `fix/2067-workdir-canonicalization` **already exists** at `340da16f2` (this plan doc, committed on top of `main` @ `0e4113d23`). Check it out; do NOT try to create it. Do not commit to `main`.
 - **Never run bare `bun test`, and never `bun run nax`.** Both give confident false signals. Use `bun run test` for the full suite; for a fast single-file loop use `bun test ./path/to/file.test.ts --timeout=60000` (a path argument is always present).
 - **`bun run test:coverage` is NOT part of `check:all`.** This plan adds files under `src/`, so it must be run before the final commit.
 - **File-size gate: 600 lines per `src/` file, 800 per `test/` file** (`scripts/check-file-sizes.ts`), with a baseline that recorded files may not exceed. See *Size budget* below — two files in this plan are close to a cap.
@@ -28,7 +28,22 @@
 
 ## State at handover
 
-`main` is at `0e4113d23` with the path-frame foundation and #2071 merged. Nothing for #2067 has been written — no branch, no code.
+`main` is at `0e4113d23` with the path-frame foundation and #2071 merged.
+
+Branch `fix/2067-workdir-canonicalization` exists and holds **one docs-only commit** — this plan:
+
+```
+340da16f2  docs: implementation plan for workdir canonicalization (#2067)
+0e4113d23  fix(pipeline): frame declared scope files into the repo frame (#2071) (#2078)
+```
+
+**Nothing under `src/` or `test/` has been touched.** `grep -rn workdirSource src/ test/` returns nothing. `bun run test` and `bun run check:all` both pass on this branch as of handover, so any failure you see after Task 1 is yours.
+
+**The issue text**, which this plan repeatedly appeals to, is public:
+
+```bash
+gh issue view 2067 -R nathapp-io/nax
+```
 
 What already exists and must be reused, not rebuilt:
 
@@ -39,9 +54,9 @@ What already exists and must be reused, not rebuilt:
 | `storyPackageDir(story)` | `src/utils/path-frame.ts:126` | `undefined` at root. Use for "the package, if any" APIs. |
 | `finalizeAndWritePrd(args)` | `src/plan/strategies/persist-prd.ts:43` | **The single plan-write seam.** |
 | `persistPrd(ctx, prd)` | `src/plan/strategies/persist-prd.ts:57` | Thin wrapper used by the four strategies. |
-| `discoverWorkspacePackages(repoRoot)` | `src/context/generator/index.ts:201` | Returns relative package dirs, sorted. |
-| `checkFilesExist(prd, workdir, deps?)` | `src/debate/verifiers/checks.ts:26` | Joins `contextFiles` against `workdir`. |
-| `getContextFiles` / `getExpectedFiles` | `src/prd/types.ts:274` / `:288` | Normalize to plain strings. |
+| `discoverWorkspacePackages(repoRoot)` | `src/context/generator/index.ts:201` | Returns relative package dirs, sorted. ⚠ **A second, unrelated `discoverWorkspacePackages` exists** at `src/test-runners/detect/workspace.ts:205`. Import the generator one, via `@/context/generator`. |
+| `checkFilesExist(prd, workdir, deps?)` | `src/debate/verifiers/checks.ts:18` | Joins `contextFiles` against `workdir`. Unchanged by this plan. The spec says `:26`; the spec is wrong. |
+| `getContextFiles` / `getExpectedFiles` | `src/prd/types.ts:277` / `:288` | Normalize to plain strings. |
 
 ## Orientation: read this before Task 1
 
@@ -49,11 +64,28 @@ Facts verified against `main` @ `0e4113d23`. Do not re-derive them.
 
 **`savePRD` is the wrong seam.** It has ~20 callers across `pipeline/stages/`, `execution/`, `acceptance/` and `cli/accept.ts`, most of them mid-run status updates. Filesystem probing only has ground truth at plan time. Canonicalize in `finalizeAndWritePrd` and nowhere else; the `path-frame.ts` accessors already normalize defensively at read time, so PRDs written before this change keep working.
 
-**Every `nax plan` write reaches `finalizeAndWritePrd`.** Two entry points, both verified: `src/cli/plan-command.ts:254` (the pipeline path) and `persistPrd` (`persist-prd.ts:57`), which the four strategies call from `plan/strategies/{pipeline,single,write-prd}.ts`. `plan-decompose.ts:222` writes directly via `_planDeps.writeFile` — **it is out of scope**, see *What this plan does NOT do*.
+**Every `nax plan` write reaches `finalizeAndWritePrd`.** Two entry points, both verified: `src/cli/plan-command.ts:254` (the pipeline path) and `persistPrd` (`persist-prd.ts:57`), which the four strategies call from `plan/strategies/{pipeline,single,write-prd}.ts`. `src/cli/plan-decompose.ts:222` writes directly via `_planDeps.writeFile` — **it is out of scope**, see *What this plan does NOT do*.
 
-**`contextFiles` entries are `string | ContextFileEntry`** (`src/prd/types.ts:201`, entry interface at `:11`). The canonicalizer rewrites paths and **must preserve the object form and its `factId`**, or `checkFilesExist`'s blocker/major distinction (`checks.ts:31-38`) silently degrades to `major` for every cited entry.
+**`contextFiles` entries are `string | ContextFileEntry`** (`src/prd/types.ts:201`, entry interface at `:11`). The canonicalizer rewrites paths and **must preserve the object form and its `factId`**, or `checkFilesExist`'s blocker/major distinction (`checks.ts:23-30`) silently degrades to `major` for every cited entry.
 
 **`PlanModeContext` already carries what the probe needs:** `workdir` at `src/plan/strategies/types.ts:35` and `deps: PlanDeps` at `:54`. `plan-command.ts` has `workdir` in scope at its `finalizeAndWritePrd` call site.
+
+**RULING — where the `defaulted` warning fires, and why not as a verifier.** The obvious design is a
+new plan-checklist verifier beside `checkFilesExist`. **It cannot work.** Both verifier call sites run
+strictly BEFORE the PRD is written:
+
+- `src/plan/critic.ts:64` runs on the *draft* PRD; `src/cli/plan-command.ts` calls `runPlanCritic` at
+  `:238` and only reaches `finalizeAndWritePrd` at `:254`, inside `if (verdict.outcome === "passed")`.
+- `src/debate/verifiers/plan-checklist.ts:94` runs on the debate selector's raw agent output.
+
+`workdirSource` is stamped inside `canonicalizePrdWorkdirs`, which runs only at write. So at both
+verifier sites every story has `workdirSource === undefined` and the check would return `[]` forever
+— green unit tests, feature never fires. That is the declared-but-unreachable class this very arc
+keeps hitting, and the repo's `post-impl-review` has a `Wiring` dimension specifically to catch it.
+
+**The warning therefore fires from `finalizeAndWritePrd`, at the canonicalization site**, which has
+the stamped PRD, the probe and a logger already in hand. It is a log line, not a `VerifierFinding`.
+The issue asks only to "warn at plan time"; a warning that fires beats a finding that cannot.
 
 **The four-way probe outcome is from the spec and is not negotiable:**
 
@@ -72,9 +104,8 @@ Note that `toRepoFrame` already returns `P` unchanged when `P` starts with `W/` 
 
 | File | Lines now | Cap | Headroom after this plan |
 |---|---|---|---|
-| `src/prompts/builders/plan-builder.ts` | 561 | 600 | ~33 after Task 6's ~6 lines. Tight — do not add anything else there. |
+| `src/prompts/builders/plan-builder.ts` | 561 | 600 | 39. Task 6 is a **substitution**, not an insertion: both `workdirField` sites stay 3 lines and the shared rule gains no line. Net change should be 0. |
 | `src/prd/schema-story.ts` | 494 | 600 | ample |
-| `src/debate/verifiers/checks.ts` | 142 | 600 | ample |
 | `src/plan/strategies/persist-prd.ts` | 70 | 600 | ample |
 | `src/prd/types.ts` | 445 | 600 | ample |
 | **`test/unit/prd/schema.test.ts`** | **791** | **800** | **9 lines. Do NOT add cases here** — Task 1 uses a new file. |
@@ -91,8 +122,6 @@ Note that `toRepoFrame` already returns `P` unchanged when `P` starts with `W/` 
 | `test/unit/prd/schema-workdir-source.test.ts` **(create)** | Schema cases. Separate file because `schema.test.ts` is 9 lines from its cap. |
 | `src/plan/strategies/persist-prd.ts` **(modify)** | Runs the pass before `applyPlanFidelity`; gains `repoRoot` and a `_persistPrdDeps` probe. |
 | `src/cli/plan-command.ts` **(modify, 1 line)** | Passes `repoRoot`. |
-| `src/debate/verifiers/checks.ts` **(modify)** | New `checkWorkdirDefaulted`. |
-| `src/debate/verifiers/plan-checklist.ts`, `src/plan/critic.ts` **(modify, 1 line each)** | Wire the new check in. |
 | `src/prompts/builders/plan-builder.ts` **(modify)** | Both `workdirField` sites state the frame. |
 
 ---
@@ -132,30 +161,42 @@ function baseStory(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * validateStory takes FOUR arguments: (raw, index, allIds, seenIds).
+ *
+ * `seenIds` is MUTATED — schema-story.ts:103 does `seenIds.add(id)` after a
+ * duplicate check at :92. Sharing one Set across calls therefore makes the
+ * second call with the same story id throw "duplicate id". Every call below
+ * gets its own pair of Sets.
+ */
+function validate(raw: Record<string, unknown>) {
+  return validateStory(raw, 0, new Set<string>(["US-001"]), new Set<string>());
+}
+
 describe("validateStory — workdirSource (nax#2067)", () => {
   test("passes through each of the three legal values", () => {
     for (const source of ["stated", "derived", "defaulted"] as const) {
-      const story = validateStory(baseStory({ workdir: "packages/app", workdirSource: source }), 0);
+      const story = validate(baseStory({ workdir: "packages/app", workdirSource: source }));
       expect(story.workdirSource).toBe(source);
     }
   });
 
   test("omits the field entirely when absent", () => {
-    const story = validateStory(baseStory(), 0);
+    const story = validate(baseStory());
     expect(story.workdirSource).toBeUndefined();
     expect("workdirSource" in story).toBe(false);
   });
 
   test("rejects a value outside the three", () => {
-    expect(() => validateStory(baseStory({ workdirSource: "guessed" }), 0)).toThrow(/workdirSource/);
+    expect(() => validate(baseStory({ workdirSource: "guessed" }))).toThrow(/workdirSource/);
   });
 
   test("rejects a non-string value", () => {
-    expect(() => validateStory(baseStory({ workdirSource: 3 }), 0)).toThrow(/workdirSource/);
+    expect(() => validate(baseStory({ workdirSource: 3 }))).toThrow(/workdirSource/);
   });
 
   test("a defaulted story may carry no workdir", () => {
-    const story = validateStory(baseStory({ workdirSource: "defaulted" }), 0);
+    const story = validate(baseStory({ workdirSource: "defaulted" }));
     expect(story.workdirSource).toBe("defaulted");
     expect(story.workdir).toBeUndefined();
   });
@@ -186,7 +227,8 @@ In `src/prd/types.ts`, immediately after the `workdir?: string;` field (currentl
   workdirSource?: WorkdirSource;
 ```
 
-And near the other exported unions at the top of the file, add:
+And add the union beside the other exported story unions — insert it directly **after** the line
+`export type VerificationStage =` block ends at `src/prd/types.ts:40`, before the next `export`:
 
 ```typescript
 /** How a story's `workdir` was decided (nax#2067). */
@@ -213,16 +255,24 @@ In `src/prd/schema-story.ts`, immediately after the `workdir` block (which ends 
   }
 ```
 
-Add near the top of the same file, beside the other module constants:
+Add to the constants block in the same file (the `// Constants` banner at `src/prd/schema-story.ts:15-17`,
+where `VALID_COMPLEXITY` sits at `:19`):
 
 ```typescript
 const WORKDIR_SOURCES: readonly WorkdirSource[] = ["stated", "derived", "defaulted"];
 ```
 
-Import the type alongside the existing `src/prd/types` import in that file:
+Extend the file's existing type import rather than adding a second one. `src/prd/schema-story.ts:12`
+currently reads:
 
 ```typescript
-import type { WorkdirSource } from "./types";
+import type { ContextFileEntry, ModifiedFileEntry, UserStory } from "./types";
+```
+
+Change it to:
+
+```typescript
+import type { ContextFileEntry, ModifiedFileEntry, UserStory, WorkdirSource } from "./types";
 ```
 
 And in the returned story object, immediately after the existing `...(workdir !== undefined ? { workdir } : {}),` line (currently 485), add:
@@ -257,7 +307,7 @@ git commit -m "feat(prd): record how a story's workdir was decided (#2067)"
 - Test: `test/unit/prd/workdir-canonical.test.ts` (create)
 
 **Interfaces:**
-- Consumes: `toRepoFrame` from `@/utils/path-frame`; `WorkdirSource` from `./types`.
+- Consumes: `toRepoFrame` from `@/utils/path-frame`. (`WorkdirSource` is NOT used until Task 3 — do not import it here.)
 - Produces:
   - `type ExistsProbe = (absPath: string) => boolean`
   - `resolvePathOwners(path: string, repoRoot: string, packages: readonly string[], exists: ExistsProbe): string[]`
@@ -520,7 +570,7 @@ git commit -m "feat(prd): pure workdir derivation and declared-path canonicaliza
 
 **Interfaces:**
 - Consumes: Task 2's three functions; `UserStory`, `PRD`, `WorkdirSource` from `./types`; `getContextFiles`/`getExpectedFiles` are **not** used here — the raw arrays must be rewritten in place-preserving form.
-- Produces: `canonicalizePrdWorkdirs(prd: PRD, repoRoot: string, packages: readonly string[], exists: ExistsProbe): { prd: PRD; collisions: string[] }`
+- Produces: `canonicalizePrdWorkdirs(prd: PRD, repoRoot: string, packages: readonly string[], exists: ExistsProbe): { prd: PRD; collisions: string[]; defaulted: string[] }`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -528,19 +578,15 @@ Append to `test/unit/prd/workdir-canonical.test.ts`:
 
 ```typescript
 describe("canonicalizePrdWorkdirs", () => {
-  function prdOf(stories: Array<Record<string, unknown>>) {
-    return {
-      project: "p",
-      feature: "f",
-      branchName: "b",
-      userStories: stories,
-    } as unknown as import("@/prd/types").PRD;
-  }
+  // Use the shared factories: the double-cast escape hatch is ratcheted at ZERO
+  // in test/ (scripts/baselines/test-as-unknown-as-baseline.json), and hand-rolled
+  // PRD fixtures are what .nax/rules/test-helpers.md forbids anyway.
+  const prdOf = (stories: UserStory[]) => makePRD({ userStories: stories });
 
   test("derives a workdir and re-spells the story's declared paths", () => {
     const exists = probeOf("packages/app/src/a.ts");
     const { prd } = canonicalizePrdWorkdirs(
-      prdOf([{ id: "US-001", contextFiles: ["src/a.ts"], expectedFiles: ["src/b.ts"] }]),
+      prdOf([makeStory({ contextFiles: ["src/a.ts"], expectedFiles: ["src/b.ts"] })]),
       REPO,
       PACKAGES,
       exists,
@@ -556,7 +602,7 @@ describe("canonicalizePrdWorkdirs", () => {
   test("keeps a stated workdir and stamps it stated", () => {
     const exists = probeOf("packages/lib/src/a.ts");
     const { prd } = canonicalizePrdWorkdirs(
-      prdOf([{ id: "US-001", workdir: "packages/lib", contextFiles: ["src/a.ts"] }]),
+      prdOf([makeStory({ workdir: "packages/lib", contextFiles: ["src/a.ts"] })]),
       REPO,
       PACKAGES,
       exists,
@@ -569,7 +615,7 @@ describe("canonicalizePrdWorkdirs", () => {
   test("defaults to root and omits workdir entirely", () => {
     const exists = probeOf("packages/app/src/a.ts", "packages/lib/src/b.ts");
     const { prd } = canonicalizePrdWorkdirs(
-      prdOf([{ id: "US-001", contextFiles: ["src/a.ts", "src/b.ts"] }]),
+      prdOf([makeStory({ contextFiles: ["src/a.ts", "src/b.ts"] })]),
       REPO,
       PACKAGES,
       exists,
@@ -581,7 +627,7 @@ describe("canonicalizePrdWorkdirs", () => {
   test("preserves ContextFileEntry objects and their factId", () => {
     const exists = probeOf("packages/app/src/a.ts");
     const { prd } = canonicalizePrdWorkdirs(
-      prdOf([{ id: "US-001", contextFiles: [{ path: "src/a.ts", factId: "F-1" }] }]),
+      prdOf([makeStory({ contextFiles: [{ path: "src/a.ts", factId: "F-1" }] })]),
       REPO,
       PACKAGES,
       exists,
@@ -592,7 +638,7 @@ describe("canonicalizePrdWorkdirs", () => {
   test("reports a collision without failing", () => {
     const exists = probeOf("src/a.ts", "packages/app/src/a.ts");
     const { prd, collisions } = canonicalizePrdWorkdirs(
-      prdOf([{ id: "US-001", workdir: "packages/app", contextFiles: ["src/a.ts"] }]),
+      prdOf([makeStory({ workdir: "packages/app", contextFiles: ["src/a.ts"] })]),
       REPO,
       PACKAGES,
       exists,
@@ -604,7 +650,7 @@ describe("canonicalizePrdWorkdirs", () => {
   test("is a no-op for a single-package repo (no workspace packages)", () => {
     const exists = probeOf("src/a.ts");
     const { prd } = canonicalizePrdWorkdirs(
-      prdOf([{ id: "US-001", contextFiles: ["src/a.ts"] }]),
+      prdOf([makeStory({ contextFiles: ["src/a.ts"] })]),
       REPO,
       [],
       exists,
@@ -614,8 +660,20 @@ describe("canonicalizePrdWorkdirs", () => {
     expect(prd.userStories[0]?.contextFiles).toEqual(["src/a.ts"]);
   });
 
+  test("an explicitly stated \".\" is treated as root, not as a package", () => {
+    const exists = probeOf("src/a.ts");
+    const { prd } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ workdir: ".", contextFiles: ["src/a.ts"] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+    expect(prd.userStories[0]?.workdir).toBeUndefined();
+    expect(prd.userStories[0]?.workdirSource).toBe("defaulted");
+  });
+
   test("does not mutate the input PRD", () => {
-    const input = prdOf([{ id: "US-001", contextFiles: ["src/a.ts"] }]);
+    const input = prdOf([makeStory({ contextFiles: ["src/a.ts"] })]);
     const snapshot = JSON.stringify(input);
     canonicalizePrdWorkdirs(input, REPO, PACKAGES, probeOf("packages/app/src/a.ts"));
     expect(JSON.stringify(input)).toBe(snapshot);
@@ -626,8 +684,16 @@ describe("canonicalizePrdWorkdirs", () => {
 Add the import at the top of the file:
 
 ```typescript
+import { makePRD, makeStory } from "@test/helpers";
+import type { UserStory } from "@/prd/types";
 import { canonicalizeDeclaredPath, canonicalizePrdWorkdirs, deriveWorkdir, resolvePathOwners } from "@/prd/workdir-canonical";
 ```
+
+**This REPLACES Task 2's three-symbol import line, it does not join it** — one `import ... from
+"@/prd/workdir-canonical"` statement only, or Biome's organize-imports assist fails the build.
+
+The deep import `@/prd/workdir-canonical` is legal **here** because `check:alias-internals` exempts
+`test/`. It is NOT legal from `src/` — see Task 4.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -648,7 +714,10 @@ Append to `src/prd/workdir-canonical.ts`:
  * on-disk shape for every single-package repo. `workdirSource` carries the
  * information instead.
  *
- * Collisions are returned as "storyId:path" strings for the caller to log.
+ * Collisions are returned as "storyId:path" strings, and `defaulted` lists the ids of stories that
+ * fell back to root, both for the caller to log. They are RETURNED rather than logged here so this
+ * module stays pure -- and, for `defaulted`, because this is the only point in `nax plan` where that
+ * fact is known (see the RULING in the plan's Orientation section).
  */
 export function canonicalizePrdWorkdirs(
   prd: PRD,
@@ -657,6 +726,7 @@ export function canonicalizePrdWorkdirs(
   exists: ExistsProbe,
 ): { prd: PRD; collisions: string[] } {
   const collisions: string[] = [];
+  const defaulted: string[] = [];
 
   const userStories = prd.userStories.map((story) => {
     const declared = [
@@ -664,10 +734,16 @@ export function canonicalizePrdWorkdirs(
       ...(story.expectedFiles ?? []),
     ];
 
-    const stated = typeof story.workdir === "string" && story.workdir.trim().length > 0;
+    // normalizeWorkdir collapses "", ".", "./" and absent to "." so a planner that
+    // literally emits "." is treated as root, not as a stated package. Without this
+    // the "." survives the spread below and lands in the written PRD, contradicting
+    // the omit-at-root contract.
+    const statedWorkdir = normalizeWorkdir(story.workdir);
+    const stated = statedWorkdir !== ".";
     const { workdir, source }: { workdir: string; source: WorkdirSource } = stated
-      ? { workdir: story.workdir as string, source: "stated" }
+      ? { workdir: statedWorkdir, source: "stated" }
       : deriveWorkdir(declared, repoRoot, packages, exists);
+    if (source === "defaulted") defaulted.push(story.id);
 
     const reframe = (path: string): string => {
       const result = canonicalizeDeclaredPath(path, workdir, repoRoot, exists);
@@ -689,7 +765,7 @@ export function canonicalizePrdWorkdirs(
     };
   });
 
-  return { prd: { ...prd, userStories }, collisions };
+  return { prd: { ...prd, userStories }, collisions, defaulted };
 }
 ```
 
@@ -699,17 +775,47 @@ Extend the imports at the top of the file:
 import type { PRD, WorkdirSource } from "./types";
 ```
 
+and extend the existing `@/utils/path-frame` import to bring in the normalizer:
+
+```typescript
+import { normalizeWorkdir, toRepoFrame } from "@/utils/path-frame";
+```
+
+**Note:** `story.workdir` is read raw here. That is legitimate — this module is the plan-time
+*writer* — but it trips `scripts/check-story-workdir-access.ts`. See Step 5.
+
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `bun test ./test/unit/prd/workdir-canonical.test.ts --timeout=60000`
-Expected: PASS, 22 tests.
+Expected: PASS, 23 tests.
 
 - [ ] **Step 5: Verify the workdir gate still passes**
 
 Run: `bun run scripts/check-story-workdir-access.ts`
 Expected: `check-story-workdir-access: clean (0 exemption(s) still pending)`.
 
-If it fails naming `workdir-canonical.ts`, the raw `story.workdir` read in `canonicalizePrdWorkdirs` tripped it. That read is legitimate — this module is the writer. **Do not add an EXEMPT entry.** Add `join("src", "prd", "workdir-canonical.ts")` to `ALLOWED` in `scripts/check-story-workdir-access.ts`, alongside the existing `schema-story.ts` entry, with a comment saying it is the plan-time writer.
+**It WILL fail on the first run, and that is expected** — not a conditional. The gate's regex
+(`scripts/check-story-workdir-access.ts:46`) matches any receiver ending in `story` followed by
+`.workdir`, and `normalizeWorkdir(story.workdir)` in `canonicalizePrdWorkdirs` matches. That read is
+legitimate: this module is the plan-time *writer*, the same reason `schema-story.ts` is allowed.
+
+**Do not add an EXEMPT entry** — exemptions are for temporary debt and the list must stay empty. Add
+to `ALLOWED` instead:
+
+```typescript
+const ALLOWED = [
+  join("src", "prd", "types.ts"),
+  join("src", "utils", "path-frame.ts"),
+  join("src", "prd", "schema-story.ts"),
+  // nax#2067: the plan-time writer -- it decides the value the accessors later read.
+  join("src", "prd", "workdir-canonical.ts"),
+];
+```
+
+Then re-run the gate and expect `clean (0 exemption(s) still pending)`.
+
+(For contrast, the `story.workdirSource === "defaulted"` read added in Task 5 does **not** trip the
+gate: the regex requires a word boundary after `workdir`, which the following `S` defeats.)
 
 - [ ] **Step 6: Commit**
 
@@ -744,6 +850,8 @@ Create `test/unit/plan/strategies/persist-prd-workdir.test.ts`:
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import type { ModelsConfig } from "@/config";
 import { _persistPrdDeps, finalizeAndWritePrd } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
 
@@ -760,24 +868,18 @@ afterEach(() => {
   _persistPrdDeps.discoverWorkspacePackages = origDiscover;
 });
 
+// Shared factories, not hand-rolled literals: the double-cast escape hatch is
+// ratcheted at ZERO in test/ and would fail check:test-as-unknown-as.
 function makePrd(): PRD {
-  return {
-    project: "p",
-    feature: "f",
-    branchName: "feat/f",
-    userStories: [
-      {
-        id: "US-001",
-        title: "t",
-        description: "d",
-        acceptanceCriteria: ["When x, then y"],
-        contextFiles: ["src/a.ts"],
-        status: "pending",
-        passes: false,
-      },
-    ],
-  } as unknown as PRD;
+  return makePRD({ userStories: [makeStory({ contextFiles: ["src/a.ts"] })] });
 }
+
+/**
+ * A real ModelsConfig. Do NOT reach for the bottom-type cast here: that shape is
+ * banned repo-wide by biome-plugins/no-as-never.grit, registered at biome.json's
+ * ROOT `plugins` key so it covers test/ too. There are zero occurrences in the repo.
+ */
+const MODELS: ModelsConfig = makeNaxConfig().models;
 
 describe("finalizeAndWritePrd — workdir canonicalization (nax#2067)", () => {
   test("writes a derived workdir and repo-framed contextFiles", async () => {
@@ -792,7 +894,7 @@ describe("finalizeAndWritePrd — workdir canonicalization (nax#2067)", () => {
       projectName: "p",
       agentRouting: undefined,
       profileName: undefined,
-      models: {} as never,
+      models: MODELS,
       defaultAgent: "claude",
       outputPath: "/repo/.nax/features/f/prd.json",
       repoRoot: "/repo",
@@ -819,7 +921,7 @@ describe("finalizeAndWritePrd — workdir canonicalization (nax#2067)", () => {
       projectName: "p",
       agentRouting: undefined,
       profileName: undefined,
-      models: {} as never,
+      models: MODELS,
       defaultAgent: "claude",
       outputPath: "/repo/.nax/features/f/prd.json",
       repoRoot: "/repo",
@@ -849,7 +951,7 @@ describe("finalizeAndWritePrd — workdir canonicalization (nax#2067)", () => {
         projectName: "p",
         agentRouting: undefined,
         profileName: undefined,
-        models: {} as never,
+        models: MODELS,
         defaultAgent: "claude",
         outputPath: "/repo/.nax/features/f/prd.json",
         repoRoot: "/repo",
@@ -876,10 +978,22 @@ Add to the imports:
 
 ```typescript
 import { existsSync as defaultExistsSync } from "node:fs";
+import { join } from "node:path";
 import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
 import { getLogger } from "@/logger";
-import { canonicalizePrdWorkdirs } from "@/prd/workdir-canonical";
+import { canonicalizePrdWorkdirs } from "@/prd";
 ```
+
+**Import from the `@/prd` barrel, NOT `@/prd/workdir-canonical`.** `scripts/check-alias-internals.ts`
+fails CI on a value-level `@/<dir>/<internal>` import whenever `src/<dir>/index.ts` exists, and
+`src/prd/index.ts` does. There are currently **zero** such imports from `src/`, so there is no
+precedent to copy — do not create one. (The existing `import type { PRD } from "@/prd/types"` in this
+file is legal only because type-only imports are exempt.)
+
+`@/context/generator` **is** legal: `src/context/generator/index.ts` is itself a nested barrel, so
+that is an exact barrel match, not an internal path.
+
+**This requires a barrel export first** — see the next step.
 
 Add the dep object below the imports:
 
@@ -919,6 +1033,16 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
         collisions: result.collisions,
       });
     }
+    // nax#2067: the only point in `nax plan` where "this story will be root-scoped"
+    // is known. Both consequences are named because both are silent at every later
+    // stage -- plan output, run log, and the completed run's artifacts.
+    if (result.defaulted.length > 0 && _persistPrdDeps.existsSync(join(args.repoRoot, ".nax", "mono"))) {
+      getLogger().warn(
+        "plan",
+        "stories have no resolved workdir in a monorepo: they will receive the WHOLE rule corpus and the ROOT quality.commands, not their package's",
+        { storyIds: result.defaulted },
+      );
+    }
   } catch (err) {
     getLogger().warn("plan", "workdir canonicalization skipped", { error: errorMessage(err) });
   }
@@ -946,7 +1070,20 @@ In `persistPrd`, pass the root through:
     writeFile: ctx.deps.writeFile,
 ```
 
-- [ ] **Step 4: Export the dep object**
+- [ ] **Step 4: Export the canonicalizer from the prd barrel**
+
+`persist-prd.ts` cannot reach `workdir-canonical.ts` directly (previous step). Add to
+`src/prd/index.ts`, beside the other submodule re-exports (the block at `:13-51`, kept alphabetical
+by module path):
+
+```typescript
+export { canonicalizePrdWorkdirs } from "./workdir-canonical";
+```
+
+No cycle risk: `src/prd/index.ts` imports only `node:fs`, `../errors`, `../tdd/types`,
+`../utils/json-file` and its own submodules — nothing from `src/plan/`. Verify anyway in Step 8.
+
+- [ ] **Step 5: Export the dep object**
 
 In `src/plan/strategies/index.ts`, extend the existing re-export line:
 
@@ -954,7 +1091,7 @@ In `src/plan/strategies/index.ts`, extend the existing re-export line:
 export { _persistPrdDeps, finalizeAndWritePrd, persistPrd } from "./persist-prd";
 ```
 
-- [ ] **Step 5: Pass `repoRoot` at the other call site**
+- [ ] **Step 6: Pass `repoRoot` at the other call site**
 
 In `src/cli/plan-command.ts`, in the `finalizeAndWritePrd({ ... })` object (currently ending `outputPath,` then `writeFile: _planDeps.writeFile,` at line 264), add:
 
@@ -962,97 +1099,178 @@ In `src/cli/plan-command.ts`, in the `finalizeAndWritePrd({ ... })` object (curr
         repoRoot: workdir,
 ```
 
-- [ ] **Step 6: Run the test to verify it passes**
+- [ ] **Step 7: Run the test to verify it passes**
 
 Run: `bun test ./test/unit/plan/strategies/persist-prd-workdir.test.ts --timeout=60000`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 7: Run the whole plan and strategy suites**
+- [ ] **Step 8: Run the whole plan and strategy suites**
 
-Run: `bun test ./test/unit/plan/ ./test/unit/cli/ --timeout=60000`
-Expected: PASS. A type error at a `finalizeAndWritePrd` or `persistPrd` call site means a caller is missing `repoRoot` — add it rather than making the field optional. **An optional `repoRoot` would silently skip canonicalization for whichever caller forgot it, which is exactly the class of bug #2067 is.**
+Run: `bun test ./test/unit/plan/ ./test/unit/cli/ ./test/integration/plan/ --timeout=60000`
+Expected: PASS.
 
-- [ ] **Step 8: Check for import cycles**
+**The integration suite is not optional here.** This task makes every PRD `nax plan` writes gain a
+new field and makes `persistPrd` do real filesystem work. `test/integration/plan/plan-prd-preservation.test.ts`
+asserts PRD fields survive a write, and `test/unit/cli/plan.test.ts` is 1201 lines of exact-shape
+assertions. Those are the tests most likely to break, and neither is in `test/unit/plan/`. A type error at a `finalizeAndWritePrd` or `persistPrd` call site means a caller is missing `repoRoot` — add it rather than making the field optional. **An optional `repoRoot` would silently skip canonicalization for whichever caller forgot it, which is exactly the class of bug #2067 is.**
 
-Run: `bun run check:import-cycles`
-Expected: `[OK] 0 modules in runtime import cycles (baseline: 0).`
+- [ ] **Step 9: Check for import cycles**
+
+Run: `bun run check:import-cycles && bun run check:alias-internals`
+Expected: `[OK] 0 modules in runtime import cycles (baseline: 0).` and
+`[OK] no alias-into-internal imports (N barrels checked)`.
+
+**Both must be run here.** `check:alias-internals` is the gate the barrel export in Step 4 exists to
+satisfy; if it is deferred to Task 7 you discover the problem three commits later.
 
 If it reports a cycle, `@/context/generator` is reaching back into `@/plan`. Break it by moving the `discoverWorkspacePackages` default into the caller: drop the dep's default, make `discoverWorkspacePackages` a required field of `PersistPrdArgs`, and have `plan-command.ts` and `persistPrd` supply it from `_planDeps`.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add src/plan/strategies/persist-prd.ts src/plan/strategies/index.ts src/cli/plan-command.ts test/unit/plan/strategies/persist-prd-workdir.test.ts
+git add src/plan/strategies/persist-prd.ts src/plan/strategies/index.ts src/prd/index.ts src/cli/plan-command.ts test/unit/plan/strategies/persist-prd-workdir.test.ts
 git commit -m "feat(plan): canonicalize story workdirs at the single PRD write seam (#2067)"
 ```
 
 ---
 
-### Task 5: Warn when a story lands `defaulted` in a monorepo
+### Task 5: Pin the warning, and close spec seam 3
 
 **Files:**
-- Modify: `src/debate/verifiers/checks.ts` (append a function)
-- Modify: `src/debate/verifiers/plan-checklist.ts:94`
-- Modify: `src/plan/critic.ts:64`
+- Test: `test/unit/plan/strategies/persist-prd-workdir.test.ts` (append)
 - Test: `test/unit/debate/verifiers/checks.test.ts` (append)
 
-**Also closes spec seam 3.** `checkFilesExist` (`checks.ts:26`) joins `contextFiles`
-against the repo root, so before this arc every monorepo story collected a spurious
-`major` for every declared path. Task 4's canonicalization fixes that upstream;
-this task pins it.
+**No `src/` changes.** The warning itself was implemented in Task 4 Step 3, at the only site where it
+can fire — see the RULING in Orientation. This task proves it fires, and pins the seam-3 improvement
+that canonicalization delivers for free.
 
 **Interfaces:**
-- Consumes: `WorkdirSource` from `@/prd/types`; the existing `CheckDeps` shape in `checks.ts:22`.
-- Produces: `checkWorkdirDefaulted(prd: PRD, workdir: string, deps?: CheckDeps): VerifierFinding[]`
+- Consumes: `_persistPrdDeps` and `finalizeAndWritePrd` from Task 4; the existing `makeStory`/`makePrd`
+  fixtures in each test file.
+- Produces: nothing importable.
 
-- [ ] **Step 1: Write the failing test**
+**Why there is no `checkWorkdirDefaulted` verifier.** An earlier revision of this plan added one to
+`src/debate/verifiers/checks.ts` and wired it into `plan-checklist.ts:94` and `critic.ts:64`. Both run
+on a pre-write PRD, so `workdirSource` is always `undefined` there and the check returns `[]`
+unconditionally. Do not re-add it. If you want the warning surfaced as a `VerifierFinding` rather than
+a log, that requires moving canonicalization ahead of the critic, which contradicts "canonicalize at
+write" and is a spec change, not an implementation choice.
 
-Append to `test/unit/debate/verifiers/checks.test.ts`:
+- [ ] **Step 1: Write the failing test for the warning**
+
+Append to `test/unit/plan/strategies/persist-prd-workdir.test.ts`:
 
 ```typescript
-// nax#2067: a defaulted workdir in a repo with per-package overlays means
-// whole-corpus rules and root quality.commands, both silent today.
-describe("checkWorkdirDefaulted (nax#2067)", () => {
-  const monoRepo = { existsSync: (p: string) => p.endsWith("/.nax/mono") };
+describe("finalizeAndWritePrd — defaulted-workdir warning (nax#2067)", () => {
+  /**
+   * Capture what the plan logger was told.
+   *
+   * Types match Logger.warn exactly (src/logger/types.ts:59) so no cast is
+   * needed -- and none is allowed: the bottom-type cast is plugin-banned and
+   * the double cast is ratcheted at zero.
+   */
+  function captureWarnings() {
+    const calls: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const logger = getLogger();
+    const original = logger.warn.bind(logger);
+    logger.warn = (stage: string, message: string, data?: Record<string, unknown>): void => {
+      if (stage === "plan") calls.push({ message, data });
+      original(stage, message, data);
+    };
+    return {
+      calls,
+      restore: () => {
+        logger.warn = original;
+      },
+    };
+  }
 
-  test("warns for a defaulted story when .nax/mono exists", () => {
-    const prd = makePrd([makeStory({ id: "US-001", workdirSource: "defaulted" })]);
-    const findings = checkWorkdirDefaulted(prd, "/workdir", monoRepo);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.severity).toBe("minor");
-    expect(findings[0]?.storyId).toBe("US-001");
-    expect(findings[0]?.message).toMatch(/whole-corpus/);
-    expect(findings[0]?.message).toMatch(/quality\.commands/);
+  async function persist(overrides: Partial<Parameters<typeof finalizeAndWritePrd>[0]> = {}) {
+    return finalizeAndWritePrd({
+      prd: makePrd(),
+      specContent: "",
+      featureName: "f",
+      projectName: "p",
+      agentRouting: undefined,
+      profileName: undefined,
+      models: MODELS,
+      defaultAgent: "claude",
+      outputPath: "/repo/.nax/features/f/prd.json",
+      repoRoot: "/repo",
+      writeFile: async () => {},
+      ...overrides,
+    });
+  }
+
+  test("warns, naming both consequences, when a story defaults in a .nax/mono repo", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app", "packages/lib"];
+    // Spans two packages -> defaulted. And .nax/mono exists.
+    _persistPrdDeps.existsSync = (p: string) =>
+      p === "/repo/packages/app/src/a.ts" || p === "/repo/packages/lib/src/b.ts" || p === "/repo/.nax/mono";
+
+    const cap = captureWarnings();
+    try {
+      await persist({ prd: makePRD({ userStories: [makeStory({ contextFiles: ["src/a.ts", "src/b.ts"] })] }) });
+    } finally {
+      cap.restore();
+    }
+
+    const warning = cap.calls.find((c) => c.message.includes("no resolved workdir"));
+    expect(warning).toBeDefined();
+    expect(warning?.message).toMatch(/WHOLE rule corpus/);
+    expect(warning?.message).toMatch(/ROOT quality\.commands/);
+    expect(warning?.data).toMatchObject({ storyIds: ["US-001"] });
   });
 
-  test("is silent when the repo has no per-package overlays", () => {
-    const prd = makePrd([makeStory({ id: "US-001", workdirSource: "defaulted" })]);
-    expect(checkWorkdirDefaulted(prd, "/workdir", { existsSync: () => false })).toHaveLength(0);
+  test("is silent in a repo with no per-package overlays", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => [];
+    _persistPrdDeps.existsSync = (p: string) => p === "/repo/src/a.ts"; // no /repo/.nax/mono
+
+    const cap = captureWarnings();
+    try {
+      await persist();
+    } finally {
+      cap.restore();
+    }
+
+    expect(cap.calls.find((c) => c.message.includes("no resolved workdir"))).toBeUndefined();
   });
 
-  test("is silent for derived and stated stories", () => {
-    const prd = makePrd([
-      makeStory({ id: "US-001", workdirSource: "derived", workdir: "packages/app" }),
-      makeStory({ id: "US-002", workdirSource: "stated", workdir: "packages/lib" }),
-    ]);
-    expect(checkWorkdirDefaulted(prd, "/workdir", monoRepo)).toHaveLength(0);
-  });
+  test("is silent when every story resolved to a package", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = (p: string) => p === "/repo/packages/app/src/a.ts" || p === "/repo/.nax/mono";
 
-  test("is silent on a pre-nax#2067 PRD that has no provenance at all", () => {
-    const prd = makePrd([makeStory({ id: "US-001" })]);
-    expect(checkWorkdirDefaulted(prd, "/workdir", monoRepo)).toHaveLength(0);
+    const cap = captureWarnings();
+    try {
+      await persist();
+    } finally {
+      cap.restore();
+    }
+
+    expect(cap.calls.find((c) => c.message.includes("no resolved workdir"))).toBeUndefined();
   });
 });
 ```
 
-Also append the seam-3 regression the spec calls out — canonicalization is what
-stops `checkFilesExist` emitting a spurious `major` for every monorepo story,
-because it joins `contextFiles` against the repo root:
+Add `import { getLogger } from "@/logger";` to that file's imports.
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `bun test ./test/unit/plan/strategies/persist-prd-workdir.test.ts --timeout=60000`
+
+Expected: the first test FAILS (`warning` is `undefined`) **only if Task 4 Step 3 was not completed**.
+If Task 4 was done correctly these pass immediately — that is fine and expected; they are
+characterization for a `src/` change already made, and the RED for this behaviour was Task 4's own
+test. Do not "fix" anything to force a failure.
+
+- [ ] **Step 3: Write the seam-3 tests**
+
+Append to `test/unit/debate/verifiers/checks.test.ts`:
 
 ```typescript
-// nax#2067 seam 3: before canonicalization, a monorepo story's contextFiles were
-// package-relative and checkFilesExist joined them against the REPO ROOT, so every
-// entry missed and every monorepo story collected a spurious `major`.
+// nax#2067 seam 3: checkFilesExist joins contextFiles against the REPO ROOT, so
+// before this arc every monorepo story collected a spurious `major` for every
+// declared path. Canonicalization fixes that upstream; checkFilesExist is unchanged.
 describe("checkFilesExist — repo-framed contextFiles (nax#2067 seam 3)", () => {
   const onDisk = (...rel: string[]) => {
     const set = new Set(rel.map((r) => `/workdir/${r}`));
@@ -1073,84 +1291,21 @@ describe("checkFilesExist — repo-framed contextFiles (nax#2067 seam 3)", () =>
 });
 ```
 
-The second test pins the OLD behaviour deliberately: `checkFilesExist` is unchanged
-by this plan, and the point is that canonicalization upstream is what stops that
-input from ever reaching it. Do not "fix" `checkFilesExist` to probe both frames —
-that would re-introduce two-frame tolerance at a consumer, which is what the whole
-arc exists to remove.
+The second test pins the OLD behaviour deliberately: `checkFilesExist` is unchanged by this plan, and
+the point is that canonicalization upstream stops that input ever reaching it. **Do not "fix"
+`checkFilesExist` to probe both frames** — two-frame tolerance at a consumer is exactly what this arc
+exists to remove.
 
-Add `checkWorkdirDefaulted` to the existing `@/debate` import at the top of that file.
+- [ ] **Step 4: Run both suites**
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `bun test ./test/unit/debate/verifiers/checks.test.ts --timeout=60000`
-Expected: FAIL — `checkWorkdirDefaulted` is not exported.
-
-- [ ] **Step 3: Implement the check**
-
-Append to `src/debate/verifiers/checks.ts`:
-
-```typescript
-/**
- * Warn when a story's workdir was DEFAULTED in a repo that carries per-package
- * overlays (nax#2067).
- *
- * A defaulted workdir is not inert: rule selection falls back to the whole
- * corpus and `quality.commands` falls back to the root config. Both are
- * invisible in the plan output, the run log and the run's artifacts, which is
- * why this is surfaced at plan time.
- *
- * `minor`, deliberately: a genuinely root-spanning story is legitimate and must
- * not be blocked. Provenance is what makes the warning precise enough to be
- * non-annoying — a story with no `workdirSource` at all predates nax#2067 and
- * says nothing, so it is skipped rather than assumed.
- */
-export function checkWorkdirDefaulted(prd: PRD, workdir: string, deps?: CheckDeps): VerifierFinding[] {
-  const existsSync = deps?.existsSync ?? defaultExistsSync;
-  if (!existsSync(join(workdir, ".nax", "mono"))) return [];
-
-  return prd.userStories
-    .filter((story) => story.workdirSource === "defaulted")
-    .map((story) => ({
-      checklistItem: "workdir-defaulted",
-      severity: "minor" as const,
-      message: `Story has no resolved workdir in a monorepo: it will receive the whole rule corpus and the ROOT quality.commands, not its package's. Set "workdir" if this story is package-scoped.`,
-      storyId: story.id,
-    }));
-}
-```
-
-- [ ] **Step 4: Run the test to verify it passes**
-
-Run: `bun test ./test/unit/debate/verifiers/checks.test.ts --timeout=60000`
+Run: `bun test ./test/unit/plan/ ./test/unit/debate/ --timeout=60000`
 Expected: PASS.
 
-- [ ] **Step 5: Wire it into both consumers**
-
-In `src/debate/verifiers/plan-checklist.ts`, after the `checkFilesExist(...)` spread at line 94:
-
-```typescript
-    ...checkWorkdirDefaulted(prd, ctx.workdir, { existsSync: _planChecklistDeps.existsSync }),
-```
-
-In `src/plan/critic.ts`, after the `checkFilesExist(prd, workdir)` spread at line 64:
-
-```typescript
-    ...checkWorkdirDefaulted(prd, workdir),
-```
-
-Extend the `checkX` import list at the top of each file, and add `checkWorkdirDefaulted` to the barrel re-exports in `src/debate/verifiers/index.ts:5` and `src/debate/index.ts:66`.
-
-- [ ] **Step 6: Run the debate and plan suites**
-
-Run: `bun test ./test/unit/debate/ ./test/unit/plan/ --timeout=60000`
-Expected: PASS.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/debate/ src/plan/critic.ts test/unit/debate/verifiers/checks.test.ts
-git commit -m "feat(plan): warn when a story's workdir defaults in a monorepo (#2067)"
+git add test/unit/plan/strategies/persist-prd-workdir.test.ts test/unit/debate/verifiers/checks.test.ts
+git commit -m "test(plan): pin the defaulted-workdir warning and seam-3 improvement (#2067)"
 ```
 
 ---
@@ -1183,6 +1338,15 @@ grep -n "const workdirField" src/prompts/builders/plan-builder.ts
 Expected: two hits, at roughly lines 325 and 460. **Both must change identically** — one serves `build()`, the other `buildDraft()`, and the two prompts drifting is the failure mode `CONTEXT_VS_EXPECTED_FILES_RULE` was extracted to prevent.
 
 - [ ] **Step 2: Replace both declarations**
+
+**Both sites are byte-identical**, so a single-match edit will fail as non-unique:
+
+```bash
+grep -c 'optional, relative path to package' src/prompts/builders/plan-builder.ts   # -> 2
+```
+
+Use `replace_all: true` (or `sed -i ''` over both). The replacement text is the same for both —
+they must not diverge.
 
 Each currently reads:
 
@@ -1233,7 +1397,8 @@ Expected: `2`.
 - [ ] **Step 5: Check the size gate**
 
 Run: `bun run check:file-sizes`
-Expected: OK. `plan-builder.ts` was 561/600 before this task; if it now exceeds, the replacement was pasted rather than substituted — each site must remain three lines.
+Expected: OK, and `wc -l src/prompts/builders/plan-builder.ts` should still read **561**. Task 6 is
+pure substitution — if the count moved, text was pasted rather than replaced.
 
 - [ ] **Step 6: Commit**
 
@@ -1271,24 +1436,53 @@ Expected: at or above floor, `0 files below floor (baseline 0)`.
 
 The new tests must fail without the change, or they are not regression tests:
 
-```bash
-git stash
-bun test ./test/unit/prd/workdir-canonical.test.ts --timeout=60000   # expect: module not found
-git stash pop
-```
-
-For the wiring, temporarily restore main's `persist-prd.ts` and confirm `persist-prd-workdir.test.ts` fails:
+**`git stash` will NOT work here** — every task ended in a commit, so there is nothing unstaged to
+stash and `git stash pop` errors with "No stash entries found". Swap in main's file instead. Use your
+session scratchpad, not `/tmp`:
 
 ```bash
-cp src/plan/strategies/persist-prd.ts /tmp/pp-fixed.ts
+SCRATCH="${TMPDIR:-/tmp}/2067-verify"; mkdir -p "$SCRATCH"
+
+# The wiring: main's persist-prd.ts has no canonicalization.
+cp src/plan/strategies/persist-prd.ts "$SCRATCH/persist-prd.ts"
 git show origin/main:src/plan/strategies/persist-prd.ts > src/plan/strategies/persist-prd.ts
 bun test ./test/unit/plan/strategies/persist-prd-workdir.test.ts --timeout=60000   # expect: FAIL
-cp /tmp/pp-fixed.ts src/plan/strategies/persist-prd.ts
+cp "$SCRATCH/persist-prd.ts" src/plan/strategies/persist-prd.ts
+
+# The seam-3 regression: main's checks.ts predates nothing, so instead assert the
+# canonicalizer is what moves it -- run the seam-3 block against a PRD that was NOT
+# canonicalized. It is already written that way (the second test pins the old spelling),
+# so simply confirm both tests in that describe block pass and that removing the
+# canonicalize call from persist-prd.ts flips the persist test above.
+bun test ./test/unit/debate/verifiers/checks.test.ts --timeout=60000   # expect: PASS
 ```
+
+`src/prd/workdir-canonical.ts` does not exist on `origin/main` at all, so its unit tests are
+regression tests by construction — no swap needed to prove that.
 
 - [ ] **Step 5: Update the arc's sequencing table**
 
-In `docs/superpowers/specs/2026-09-16-path-frame-convention-design.md`, mark PR 4 done in the *Sequencing* table, leaving PR 5 (#2074) as the only open row.
+Two tables, and they behave differently. Read both before editing.
+
+**1. The *Sequencing* table** (`docs/superpowers/specs/2026-09-16-path-frame-convention-design.md:339`)
+is `| PR | Contents | Shape |` — **no status column, no "done" convention.** Do not invent one
+per-row. Add a single line immediately above the table:
+
+```markdown
+> Status: PRs 1-4 merged. PR 5 (#2074) is the only open row.
+```
+
+If a status line is already there from PR 3, edit its numbers rather than adding a second.
+
+**2. The *ten seams* table** (`:30-42`) DOES have a `Status here` column — and it is **written
+aspirationally**. Seams 3 and 4 already read `**fixed** (#2067 PR)` and `**fixed** (#2067)` although
+nothing was fixed when the spec was authored. (Seam 2 likewise claims `**fixed** (#2074)`, which is
+still untrue — PR 5 has not started. **Leave seam 2 alone**; it is not yours to correct, and the
+#2074 plan should fix it.)
+
+So for seams 3 and 4 there is nothing to change — this PR simply makes those two rows true. Do not
+add a duplicate marker. Do correct seam 3's citation while you are there: it says
+`debate/verifiers/checks.ts:26`, and `checkFilesExist` is at `:18`.
 
 - [ ] **Step 6: Commit and open the PR**
 
@@ -1303,7 +1497,7 @@ git push -u origin fix/2067-workdir-canonicalization
 PR body must record:
 - That `workdir: "."` is deliberately omitted from the PRD rather than written, with `workdirSource` carrying the information.
 - That canonicalization is fail-open: a probe or discovery failure degrades to the raw PRD, because a PRD with an underived workdir is the status quo and a lost plan is not.
-- That `plan-decompose.ts:222` writes directly and is **not** covered — see below.
+- That `src/cli/plan-decompose.ts:222` writes directly and is **not** covered — see below.
 - The residual from #2071: a declared path naming a sibling package is still prefixed by `toRepoFrame`. This plan narrows it (a repo-rooted sibling path that exists now canonicalizes to itself and is then passed through), but does not close it.
 
 ---
@@ -1312,8 +1506,11 @@ PR body must record:
 
 - `bun run test`, `bun run check:all` and `bun run test:coverage` all pass.
 - A monorepo PRD written by `nax plan` has `workdir` set on every story whose declared files resolve to one package, and `workdirSource` on every story.
-- Declared paths in a written PRD are repo-rooted.
-- A `defaulted` story in a repo with `.nax/mono/` produces a `minor` plan-checklist finding naming both consequences.
+- The `monorepo-tiny` end-to-end metric is **explicitly out of scope** (see below) — do not tick it, and do not claim it in the PR.
+- Declared paths **that exist on disk** in a written PRD are repo-rooted. Paths that exist at neither
+  location stay as authored — that is the spec's `neither -> P unchanged` row, and it is how a file
+  the story creates is represented. Task 3's first test pins exactly this asymmetry.
+- A `defaulted` story in a repo with `.nax/mono/` produces a plan-time **log warning** naming both consequences, emitted from `finalizeAndWritePrd`. It is deliberately NOT a `VerifierFinding` — see the RULING in Orientation.
 - Both planner prompts state the frame, and the shared files rule says what paths are relative to — verified by rendering, not by reading the template.
 - Spec seam 3 is closed: `checkFilesExist` no longer fires spuriously on a monorepo story.
 - `scripts/check-story-workdir-access.ts` reports 0 exemptions pending.
@@ -1321,7 +1518,20 @@ PR body must record:
 ## What this plan does NOT do
 
 - **PR 5 (#2074)** — sibling-frame neighbours, `crossPackageDepth` retirement, ADR-010. Separate plan.
-- **`plan-decompose.ts:222`.** `planDecomposeCommand` writes the PRD directly via `_planDeps.writeFile`, bypassing `finalizeAndWritePrd`. Sub-stories inherit the parent's package via `storyPackageDir(targetStory)` (`plan-decompose.ts:199`), so they are not *wrong* — they simply do not get `workdirSource` stamped, and their declared paths are not re-probed. Routing decompose through the same seam means making `finalizeAndWritePrd` idempotent over an already-canonical PRD and re-running fidelity repairs on a partially-executed PRD, which is a different blast radius. **File it as a follow-up issue citing this plan; do not fix it here.**
+- **`src/cli/plan-decompose.ts:222`.** `planDecomposeCommand` writes the PRD directly via `_planDeps.writeFile`, bypassing `finalizeAndWritePrd`. Sub-stories inherit the parent's package via `storyPackageDir(targetStory)` (`src/cli/plan-decompose.ts:199`), so they are not *wrong* — they simply do not get `workdirSource` stamped, and their declared paths are not re-probed. Routing decompose through the same seam means making `finalizeAndWritePrd` idempotent over an already-canonical PRD and re-running fidelity repairs on a partially-executed PRD, which is a different blast radius. **File it as a follow-up issue citing this plan; do not fix it here.**
 - **Retiring #2071's sibling-package residual.** Canonicalization narrows it but cannot close it: a path that exists at neither location is returned unchanged by design, because that is how a file the story creates is represented.
+- **The spec's `monorepo-tiny` end-to-end metric.** The spec's *Testing* section asks for "a
+  `monorepo-tiny` run asserting zero failed `Read` calls", calling the 6 failures #2072 measured
+  "the regression metric". **There is no `monorepo-tiny` fixture in this repo** — `find . -name
+  "*monorepo-tiny*"` returns nothing; it is an external scratch repo the arc's author ran against.
+  This plan therefore verifies at the unit level only, and that is a real gap: **nothing here proves
+  canonicalization reduces failed reads in a live run.**
+
+  This is a declared descope, not an oversight. Before merging, run `nax plan` once against a real
+  monorepo and diff the written `prd.json` against the same plan on `main` — every story should gain
+  `workdirSource`, and package-scoped stories should gain `workdir` plus repo-framed `contextFiles`.
+  Record the before/after in the PR body. If no monorepo is to hand, say so in the PR rather than
+  implying the metric was taken.
+
 - **Migrating existing PRDs.** The `path-frame.ts` accessors normalize defensively at read time; PRDs written before this change keep working and simply carry no `workdirSource`.
 - **Seams 5 through 10** in the design spec's table. Each is filed as its own issue.
