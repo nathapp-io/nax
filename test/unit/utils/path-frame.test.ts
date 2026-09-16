@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   isRootWorkdir,
   normalizeWorkdir,
+  partitionPackageFrame,
   storyAbsWorkdir,
   storyPackageDir,
   storyWorkdir,
@@ -148,5 +149,50 @@ describe("storyAbsWorkdir", () => {
 
   test.each([[{}], [{ workdir: "." }]])("returns the root unchanged for %p", (story) => {
     expect(storyAbsWorkdir("/repo", story)).toBe("/repo");
+  });
+});
+
+describe("partitionPackageFrame (nax#2089)", () => {
+  test("re-spells an in-package path into readable", () => {
+    expect(partitionPackageFrame(["packages/api/src/client.ts"], "packages/api", { canonical: true })).toEqual({
+      readable: ["src/client.ts"],
+      unreachable: [],
+    });
+  });
+
+  test("routes a repo-root path to unreachable instead of emitting a wrong path", () => {
+    expect(partitionPackageFrame(["package.json"], "packages/api", { canonical: true })).toEqual({
+      readable: [],
+      unreachable: ["package.json"],
+    });
+  });
+
+  test("routes a sibling-package path to unreachable", () => {
+    expect(partitionPackageFrame(["packages/web/src/x.ts"], "packages/api", { canonical: true })).toEqual({
+      readable: [],
+      unreachable: ["packages/web/src/x.ts"],
+    });
+  });
+
+  test("preserves input order within readable", () => {
+    expect(
+      partitionPackageFrame(["packages/api/b.ts", "package.json", "packages/api/a.ts"], "packages/api", {
+        canonical: true,
+      }),
+    ).toEqual({ readable: ["b.ts", "a.ts"], unreachable: ["package.json"] });
+  });
+
+  test("root workdir is identity and never routes to unreachable", () => {
+    expect(partitionPackageFrame(["package.json"], ".", { canonical: true })).toEqual({
+      readable: ["package.json"],
+      unreachable: [],
+    });
+  });
+
+  test("non-canonical mode keeps the legacy passthrough", () => {
+    expect(partitionPackageFrame(["package.json"], "packages/api")).toEqual({
+      readable: ["package.json"],
+      unreachable: [],
+    });
   });
 });

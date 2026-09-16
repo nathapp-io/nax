@@ -5,7 +5,7 @@
  */
 
 import path from "node:path";
-import { storyWorkdir, toPackageFrameFiles } from "@/utils/path-frame";
+import { partitionPackageFrame, storyWorkdir } from "@/utils/path-frame";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
@@ -285,14 +285,26 @@ async function addFileElements(
     return;
   }
 
-  // nax#2067: the on-disk PRD now holds repo-rooted declared paths, but the
+  // nax#2067/#2089: the on-disk PRD holds repo-rooted declared paths, but the
   // agent's file tools are contained at the package dir (`codingToolRoot`), so
   // each path is re-spelled into the package frame before it is resolved or
-  // emitted. `toPackageFrame` returns null when the path is already
-  // package-relative (a pre-canonicalization PRD) or lies outside the package,
-  // so such a path is left unchanged.
-  const framedContextFiles = toPackageFrameFiles(contextFiles, storyWorkdir(story));
-  const framedExpectedFiles = toPackageFrameFiles(expectedFiles, storyWorkdir(story));
+  // emitted. When `workdirSource` is stamped, `canonicalizePrdWorkdirs` has
+  // proven every path is repo-rooted, so a path outside this package is genuinely
+  // unreachable: it is dropped rather than passed through as a path that would
+  // resolve to a real but WRONG file under this package (#2089).
+  const canonical = story.workdirSource !== undefined;
+  const { readable: framedContextFiles, unreachable } = partitionPackageFrame(contextFiles, storyWorkdir(story), {
+    canonical,
+  });
+  const { readable: framedExpectedFiles } = partitionPackageFrame(expectedFiles, storyWorkdir(story), { canonical });
+
+  if (unreachable.length > 0) {
+    getLogger().warn("context", "Parent context files outside this story's package were dropped", {
+      storyId: story.id,
+      count: unreachable.length,
+      files: unreachable.slice(0, 5),
+    });
+  }
 
   const expectedSet = new Set(framedExpectedFiles);
   // Tracks paths already surfaced (read or create-intent) so the expectedFiles

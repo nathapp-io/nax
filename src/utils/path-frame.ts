@@ -108,6 +108,47 @@ export function toPackageFrame(path: string, workdir: string | null | undefined)
 }
 
 /**
+ * Split a declared-path list into what a package-contained consumer can read
+ * and what it cannot.
+ *
+ * `canonical: true` asserts the caller's paths came through the plan-time write
+ * seam (story.workdirSource is stamped, src/prd/workdir-canonical.ts), so they
+ * are provably repo-rooted. A toPackageFrame miss is then a REAL out-of-package
+ * path and goes to `unreachable` rather than being passed through -- passing it
+ * through emitted a path that resolved to a real but WRONG file under the
+ * consumer's root (nax#2089), exactly what toPackageFrame's docblock forbids.
+ *
+ * Without the flag every entry lands in `readable` unchanged: a pre-#2067 PRD
+ * may hold package-relative paths, and `src/x.ts` is genuinely ambiguous between
+ * "already package-framed" and "a repo-root file" with no way to tell from the
+ * string alone.
+ *
+ * The classification is RETURNED, not encoded into the strings. A caller that
+ * wants the marker applies UNREADABLE_MARKER itself; a caller that wants to drop
+ * uses the other list. Encoding it in the path is what splits one file into two
+ * identities downstream (see providers/code-neighbor-chunk.ts).
+ */
+export function partitionPackageFrame(
+  files: readonly string[],
+  workdir: string | null | undefined,
+  opts?: { readonly canonical?: boolean },
+): { readable: string[]; unreachable: string[] } {
+  const readable: string[] = [];
+  const unreachable: string[] = [];
+  for (const file of files) {
+    const framed = toPackageFrame(file, workdir);
+    if (framed !== null) {
+      readable.push(framed);
+    } else if (opts?.canonical) {
+      unreachable.push(file);
+    } else {
+      readable.push(file);
+    }
+  }
+  return { readable, unreachable };
+}
+
+/**
  * Structural shape of the one field these accessors read.
  *
  * Deliberately NOT `UserStory` from @/prd/types: src/utils/ must not
