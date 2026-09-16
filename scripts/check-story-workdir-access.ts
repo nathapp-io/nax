@@ -55,6 +55,14 @@ export function isStoryReceiver(receiver: string): boolean {
   return last === "s" || /story$/i.test(last);
 }
 
+/**
+ * Exemptions that matched no read. A stale exemption fails the gate: it is what
+ * keeps the list temporary rather than letting it become a baseline.
+ */
+export function findStaleExemptions(exempt: readonly string[], used: ReadonlySet<string>): string[] {
+  return exempt.filter((entry) => !used.has(entry));
+}
+
 export interface Violation {
   readonly file: string;
   readonly line: number;
@@ -112,7 +120,7 @@ async function main(): Promise<void> {
     violations.push(...found);
   }
 
-  const stale = EXEMPT.filter((entry) => !exemptionsUsed.has(entry));
+  const stale = findStaleExemptions(EXEMPT, exemptionsUsed);
 
   if (violations.length > 0) {
     console.error("Read a story's workdir through src/utils/path-frame.ts, not the raw field:");

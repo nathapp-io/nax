@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { findViolations, isStoryReceiver } from "@scripts/check-story-workdir-access";
+import { findStaleExemptions, findViolations, isStoryReceiver } from "@scripts/check-story-workdir-access";
 
 describe("isStoryReceiver", () => {
   test.each([["story"], ["this.story"], ["input.story"], ["ctx.story"], ["completedStory"], ["s"]])(
@@ -11,6 +11,18 @@ describe("isStoryReceiver", () => {
 
   test.each([["ctx"], ["input"], ["request"], ["gateCtx"], ["existing"], ["data"]])("does not flag %p", (receiver) => {
     expect(isStoryReceiver(receiver)).toBe(false);
+  });
+});
+
+describe("findStaleExemptions", () => {
+  test("reports an exemption that matched no read", () => {
+    expect(findStaleExemptions(["a.ts"], new Set())).toEqual(["a.ts"]);
+  });
+  test("does not report a used exemption", () => {
+    expect(findStaleExemptions(["a.ts"], new Set(["a.ts"]))).toEqual([]);
+  });
+  test("is empty when there are no exemptions", () => {
+    expect(findStaleExemptions([], new Set(["a.ts"]))).toEqual([]);
   });
 });
 

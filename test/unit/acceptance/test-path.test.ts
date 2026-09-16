@@ -165,6 +165,44 @@ describe("groupStoriesByPackage()", () => {
     });
   });
 
+  describe("root probe argument", () => {
+    let origReadPkg: typeof _groupDeps.readPackageTestPath;
+    let origDetect: typeof _groupDeps.detectLanguage;
+
+    beforeEach(() => {
+      origReadPkg = _groupDeps.readPackageTestPath;
+      origDetect = _groupDeps.detectLanguage;
+      _groupDeps.detectLanguage = async () => undefined;
+    });
+
+    afterEach(() => {
+      _groupDeps.readPackageTestPath = origReadPkg;
+      _groupDeps.detectLanguage = origDetect;
+    });
+
+    test("root story probes with undefined, not '.'", async () => {
+      const calls: Array<string | undefined> = [];
+      _groupDeps.readPackageTestPath = async (_workdir, relativeDir) => {
+        calls.push(relativeDir);
+        return undefined;
+      };
+      const prd = makePRD([makeStory("US-001")]);
+      await groupStoriesByPackage(prd, WORKDIR, "my-feature");
+      expect(calls).toEqual([undefined]);
+    });
+
+    test("package story probes with its relative workdir", async () => {
+      const calls: Array<string | undefined> = [];
+      _groupDeps.readPackageTestPath = async (_workdir, relativeDir) => {
+        calls.push(relativeDir);
+        return undefined;
+      };
+      const prd = makePRD([makeStory("US-001", "packages/app")]);
+      await groupStoriesByPackage(prd, WORKDIR, "my-feature");
+      expect(calls).toEqual(["packages/app"]);
+    });
+  });
+
   describe("per-package language detection", () => {
     let origDetect: typeof _groupDeps.detectLanguage;
 

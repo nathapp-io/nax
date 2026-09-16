@@ -6,7 +6,7 @@ import { storyWorkdir } from "@/utils/path-frame";
 import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
 
-async function _readPackageTestPath(workdir: string, relativeDir: string): Promise<string | undefined> {
+async function _readPackageTestPath(workdir: string, relativeDir: string | undefined): Promise<string | undefined> {
   if (!relativeDir) return undefined;
   if (path.isAbsolute(relativeDir) || relativeDir.split(path.sep).includes("..")) return undefined;
   const cfgPath = path.join(workdir, ".nax", "mono", relativeDir, "config.json");
@@ -162,8 +162,10 @@ export async function groupStoriesByPackage(
   return Promise.all(
     Array.from(groupMap.entries()).map(async ([wd, { stories, criteria }]) => {
       const packageDir = wd ? path.join(workdir, wd) : workdir;
+      // A "." key is the repo root: it has no per-package overlay to consult.
+      const packageDirRel = wd === "." ? undefined : wd;
       // Per-package config acceptance.testPath takes precedence over root config and language detection.
-      const pkgTestPath = await _groupDeps.readPackageTestPath(workdir, wd);
+      const pkgTestPath = await _groupDeps.readPackageTestPath(workdir, packageDirRel);
       const detectedLang = await _groupDeps.detectLanguage(packageDir);
       const resolvedLang = detectedLang ?? language;
       const resolvedTestPathConfig = pkgTestPath ?? testPathConfig;
