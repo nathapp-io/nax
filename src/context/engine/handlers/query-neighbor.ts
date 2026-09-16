@@ -69,9 +69,9 @@ export async function handleQueryNeighbor(
   // packageDir redirects the cross-package scan at the main checkout under
   // storyIsolation: "worktree". Do not "fix" this without a worktree test.
   //
-  // Frame (nax#2088): touchedFiles is built here as `[input.filePath]` from a
-  // caller-validated repo-relative path (:55), and packageDir === repoRoot, so
-  // the repo-framed contract already holds and fetch()'s partition is identity.
+  // Frame (nax#2088): chunks here are returned to the tool runtime, never
+  // persisted to manifests, so their scopePaths never reach effectiveness
+  // attribution; package-as-repoRoot makes the frame distinction moot.
   const request: ContextRequest = {
     storyId: storyId ?? "_pull-tool",
     repoRoot,
