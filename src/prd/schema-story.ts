@@ -9,7 +9,7 @@ import type { Complexity, TestStrategy } from "../config";
 import { resolveTestStrategy } from "../config/test-strategy";
 import { NaxError } from "../errors";
 import { normalizeOutOfScopeList } from "./out-of-scope";
-import type { ContextFileEntry, ModifiedFileEntry, UserStory } from "./types";
+import type { ContextFileEntry, ModifiedFileEntry, UserStory, WorkdirSource } from "./types";
 import { validateStoryId } from "./validate";
 
 // ---------------------------------------------------------------------------
@@ -17,6 +17,8 @@ import { validateStoryId } from "./validate";
 // ---------------------------------------------------------------------------
 
 const VALID_COMPLEXITY: Complexity[] = ["simple", "medium", "complex", "expert"];
+
+const WORKDIR_SOURCES: readonly WorkdirSource[] = ["stated", "derived", "defaulted"];
 
 /** Pattern matching ST001 → ST-001 style IDs (prefix letters + digits, no separator) */
 const STORY_ID_NO_SEPARATOR = /^([A-Za-z]+)(\d+)$/;
@@ -323,6 +325,20 @@ export function validateStory(raw: unknown, index: number, allIds: Set<string>, 
     workdir = rawWorkdir;
   }
 
+  // workdirSource — optional provenance for the workdir above (nax#2067)
+  const rawWorkdirSource = s.workdirSource;
+  let workdirSource: WorkdirSource | undefined;
+  if (rawWorkdirSource !== undefined && rawWorkdirSource !== null) {
+    if (typeof rawWorkdirSource !== "string" || !WORKDIR_SOURCES.includes(rawWorkdirSource as WorkdirSource)) {
+      throw new NaxError(
+        `[schema] story[${index}].workdirSource must be one of ${WORKDIR_SOURCES.join(" | ")}: ${JSON.stringify(rawWorkdirSource)}`,
+        "SCHEMA_VALIDATION_FAILED",
+        { stage: "schema", index },
+      );
+    }
+    workdirSource = rawWorkdirSource as WorkdirSource;
+  }
+
   // contextFiles — optional array of relative file paths (string or {path, factId?} objects)
   const rawContextFiles = s.contextFiles;
   const contextFiles: Array<string | ContextFileEntry> = [];
@@ -483,6 +499,7 @@ export function validateStory(raw: unknown, index: number, allIds: Set<string>, 
         : {}),
     },
     ...(workdir !== undefined ? { workdir } : {}),
+    ...(workdirSource !== undefined ? { workdirSource } : {}),
     ...(contextFiles.length > 0 ? { contextFiles } : {}),
     ...(expectedFiles.length > 0 ? { expectedFiles } : {}),
     ...(modifiedFiles.length > 0 ? { modifiedFiles } : {}),
