@@ -10,6 +10,10 @@
  * that value-imported from `src/review/` to reach `collectDiffFileList`
  * would close a circular import.
  *
+ * The returned set is repo-rooted (nax#2071). Declared sources arrive
+ * package-relative and are mapped through `toRepoFrame`; `collectDiffFileList`
+ * output is repo-rooted already.
+ *
  * Composition reuses `getContextFiles(story)`, `getExpectedFiles(story)`,
  * `resolveEffectiveRef(workdir, story.storyGitRef, story.id)`, and
  * `collectDiffFileList(workdir, ref)`. The union is deduped and sorted
@@ -22,6 +26,7 @@ import { getLogger } from "../logger";
 import { getContextFiles, getExpectedFiles } from "../prd/types";
 import { collectDiffFileList, resolveEffectiveRef } from "../review/diff-utils";
 import { errorMessage } from "../utils/errors";
+import { storyWorkdir, toRepoFrame } from "../utils/path-frame";
 import type { PipelineContext } from "./types";
 
 export const _scopeFilesDeps = {
@@ -31,7 +36,11 @@ export const _scopeFilesDeps = {
 };
 
 export async function resolveScopeFiles(ctx: PipelineContext): Promise<string[]> {
-  const declared = [...getContextFiles(ctx.story), ...getExpectedFiles(ctx.story)];
+  // nax#2071: declared paths are package-relative; collectDiffFileList is
+  // repo-rooted. Frame the declared side so the union speaks one convention.
+  const declared = [...getContextFiles(ctx.story), ...getExpectedFiles(ctx.story)].map((file) =>
+    toRepoFrame(file, storyWorkdir(ctx.story)),
+  );
 
   let ref: string | undefined;
   try {

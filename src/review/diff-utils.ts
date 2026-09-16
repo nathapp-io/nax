@@ -301,6 +301,15 @@ export async function computeTestInventory(
  * Live caller: `pipeline/scope-files.ts`, which unions the diff with the story's
  * declared sources. Returns `undefined` on git failure so callers can degrade
  * rather than treat "git failed" as "nothing changed".
+ *
+ * DELIBERATELY WITHOUT `--relative`, unlike its three siblings above. Those feed
+ * the AGENT, whose file tools are contained at the package, so they must emit
+ * package-relative paths. This one feeds `scopeFiles`, which is repo-rooted by
+ * the path-frame convention (nax#2071), so repo-rooted output is the correct
+ * spelling and the caller frames the declared side to match. Adding `--relative`
+ * here to "fix the inconsistency" re-introduces the mixed-frame union. The `-- .`
+ * pathspec already restricts output to the cwd subtree, so `--relative` would
+ * change the spelling only, never the file set.
  */
 export async function collectDiffFileList(
   workdir: string,

@@ -63,6 +63,9 @@ export interface StageAssembleOptions {
    * Complete evidence-set of files a story touches for SCOPING only.
    * Resolved by `resolveScopeFiles(ctx)` upstream and threaded through
    * unchanged — `assembleForStage()` does not resolve this itself.
+   *
+   * Repo-rooted, per the path-frame convention (nax#2071) -- see
+   * `src/utils/path-frame.ts`.
    */
   scopeFiles?: string[];
 }
