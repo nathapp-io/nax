@@ -10,7 +10,6 @@
 import { join, relative, resolve } from "node:path";
 import { getLogger } from "@/logger";
 import { detectLanguage } from "@/project";
-import { discoverWorkspacePackages } from "@/test-runners/detect";
 import type { NaxIgnoreMatcher } from "@/utils/path-filters";
 import { UNREADABLE_MARKER } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
@@ -34,13 +33,6 @@ export interface CodeNeighborProviderOptions {
    */
   neighborScope?: "repo" | "package";
   /**
-   * Maximum neighbor traversal depth across the package boundary (AC-62).
-   * Only applies when neighborScope is "package".
-   * 0 — no cross-package scanning.
-   * 1 (default) — additionally scans repoRoot for cross-package reverse deps.
-   */
-  crossPackageDepth?: number;
-  /**
    * Override the source-file glob for reverse-dep scanning (#895).
    * When omitted, derived from detectLanguage(packageDir) via SOURCE_GLOB_BY_LANGUAGE.
    */
@@ -48,8 +40,7 @@ export interface CodeNeighborProviderOptions {
   /**
    * Maximum files scanned per directory during reverse-dep glob (#895).
    * Default: 500 (raised from 200; language-aware glob reduces noise).
-   * Applied per-directory: with crossPackageDepth > 0, each workspace package
-   * dir counts separately, so effective total can be N × maxGlobFiles.
+   * One scan root per fetch since nax#2074, so this is also the per-fetch cap.
    */
   maxGlobFiles?: number;
 }
@@ -105,7 +96,6 @@ export const _codeNeighborDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   fileSize: async (path: string): Promise<number> => (await Bun.file(path).stat()).size,
-  discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
   detectLanguage: (packageDir: string) => detectLanguage(packageDir),
   getLogger,
   glob: (
@@ -366,40 +356,6 @@ async function collectNeighbors(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC-62 workspace detection helper
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Resolve the extra glob workdirs for cross-package scanning (AC-62).
- *
- * When neighborScope is "package" and crossPackageDepth > 0 in a monorepo,
- * detects workspace packages (pnpm-workspace.yaml, package.json#workspaces, etc.)
- * and returns their absolute paths as scan roots (excluding the current packageDir).
- * Falls back to [repoRoot] when workspace detection finds nothing — this scans
- * the whole repo as a safe fallback for non-standard monorepo layouts.
- *
- * Returns undefined when cross-package scanning is not needed.
- */
-async function resolveExtraGlobWorkdirs(
-  neighborScope: "repo" | "package",
-  crossPackageDepth: number,
-  repoRoot: string,
-  packageDir: string,
-): Promise<string[] | undefined> {
-  if (neighborScope !== "package" || crossPackageDepth <= 0 || packageDir === repoRoot) {
-    return undefined;
-  }
-  try {
-    const relPkgDirs = await _codeNeighborDeps.discoverWorkspacePackages(repoRoot);
-    if (relPkgDirs.length === 0) return [repoRoot];
-    // Convert relative workspace dirs to absolute, excluding the current package
-    return relPkgDirs.map((rel) => join(repoRoot, rel)).filter((abs) => abs !== packageDir);
-  } catch {
-    return [repoRoot];
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -412,13 +368,11 @@ export class CodeNeighborProvider implements IContextProvider {
   readonly kind = "neighbor" as const;
 
   private readonly neighborScope: "repo" | "package";
-  private readonly crossPackageDepth: number;
   private readonly sourceGlobOverride: string | undefined;
   private readonly maxGlobFiles: number;
 
   constructor(options: CodeNeighborProviderOptions = {}) {
     this.neighborScope = options.neighborScope ?? "package";
-    this.crossPackageDepth = options.crossPackageDepth ?? 1;
     this.sourceGlobOverride = options.sourceGlob;
     this.maxGlobFiles = options.maxGlobFiles ?? MAX_GLOB_FILES_DEFAULT;
   }
@@ -429,15 +383,6 @@ export class CodeNeighborProvider implements IContextProvider {
     // files are in — those are package-framed (types.ts:329) and resolved
     // against request.packageDir inside collectNeighbors (nax#2074).
     const scanRoot = this.neighborScope === "package" ? request.packageDir : request.repoRoot;
-    // AC-62: cross-package scanning — detect shared workspace dirs instead of scanning full repoRoot.
-    // Only active when neighborScope "package", crossPackageDepth > 0, and this is a monorepo
-    // (packageDir !== repoRoot). Falls back to [repoRoot] when no workspace packages are found.
-    const extraGlobWorkdirs = await resolveExtraGlobWorkdirs(
-      this.neighborScope,
-      this.crossPackageDepth,
-      request.repoRoot,
-      request.packageDir,
-    );
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }
@@ -465,12 +410,11 @@ export class CodeNeighborProvider implements IContextProvider {
     // re-glob the same directory N times (once per touched file). A shared
     // content cache further ensures each candidate file is read at most once
     // across all touched files in this fetch() call.
+    // One scan root. A sibling-package scan was removed in nax#2074: bare
+    // specifiers are never parsed (parseImportSpecifiers, above), so a true
+    // cross-package dependent was never findable, and the only cross-package
+    // matches the scan could produce were false ones.
     const scannedDirs: ScannedDir[] = [scanDirectory(sourceGlob, scanRoot, ignoreMatchers, this.maxGlobFiles, globCtx)];
-    if (extraGlobWorkdirs) {
-      for (const extraDir of extraGlobWorkdirs) {
-        scannedDirs.push(scanDirectory(sourceGlob, extraDir, ignoreMatchers, this.maxGlobFiles, globCtx));
-      }
-    }
     const contentCacheState = createContentCacheState();
 
     const sections: NeighborSection[] = [];

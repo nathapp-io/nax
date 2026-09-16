@@ -9,7 +9,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
-import type { CodeNeighborProviderOptions } from "@/context/engine/providers/code-neighbor";
 import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
@@ -41,24 +40,19 @@ const DEFAULT_TEST_PATTERNS = makePatterns(["test/unit/**/*.test.ts"]);
 let origFileExists: typeof _codeNeighborDeps.fileExists;
 let origReadFile: typeof _codeNeighborDeps.readFile;
 let origGlob: typeof _codeNeighborDeps.glob;
-let origDiscoverWorkspacePackages: typeof _codeNeighborDeps.discoverWorkspacePackages;
 let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
 
 beforeEach(() => {
   origFileExists = _codeNeighborDeps.fileExists;
   origReadFile = _codeNeighborDeps.readFile;
   origGlob = _codeNeighborDeps.glob;
-  origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
   origDetectLanguage = _codeNeighborDeps.detectLanguage;
-  // Default: no workspace packages (non-monorepo fallback)
-  _codeNeighborDeps.discoverWorkspacePackages = async () => [];
 });
 
 afterEach(() => {
   _codeNeighborDeps.fileExists = origFileExists;
   _codeNeighborDeps.readFile = origReadFile;
   _codeNeighborDeps.glob = origGlob;
-  _codeNeighborDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
   _codeNeighborDeps.detectLanguage = origDetectLanguage;
 });
 
@@ -388,10 +382,10 @@ describe("CodeNeighborProvider", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC-56 + AC-62: neighborScope and crossPackageDepth options
+// AC-56: neighborScope
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth", () => {
+describe("CodeNeighborProvider — AC-56 neighborScope", () => {
   const MONOREPO_REQUEST: ContextRequest = {
     storyId: "US-002",
     repoRoot: "/repo",
@@ -414,65 +408,16 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     return captured;
   }
 
-  test("neighborScope controls which dirs glob runs in (default, repo, package+crossPackageDepth=0)", async () => {
-    // default: package scope with crossPackageDepth=1 → runs in packageDir AND repoRoot
+  test("neighborScope selects the single scan root: package (default) vs repo", async () => {
+    // default: package scope → the story's own packageDir only
     const cwds1 = captureGlobCwds();
     await new CodeNeighborProvider().fetch(MONOREPO_REQUEST);
-    expect(cwds1).toContain("/repo/packages/api");
-    expect(cwds1).toContain("/repo");
+    expect(cwds1).toEqual(["/repo/packages/api"]);
 
-    // repo scope → only repoRoot
+    // repo scope → repoRoot only
     const cwds2 = captureGlobCwds();
-    await new CodeNeighborProvider({ neighborScope: "repo" } as CodeNeighborProviderOptions).fetch(MONOREPO_REQUEST);
-    expect(cwds2).toContain("/repo");
-    expect(cwds2).not.toContain("/repo/packages/api");
-
-    // package scope crossPackageDepth=0 → only packageDir
-    const cwds3 = captureGlobCwds();
-    await new CodeNeighborProvider({
-      neighborScope: "package",
-      crossPackageDepth: 0,
-    } as CodeNeighborProviderOptions).fetch(MONOREPO_REQUEST);
-    expect(cwds3).toContain("/repo/packages/api");
-    expect(cwds3.filter((c) => c === "/repo/packages/api")).toHaveLength(1);
-    expect(cwds3).not.toContain("/repo");
-  });
-
-  test("non-monorepo (packageDir === repoRoot): default scope uses repoRoot; crossPackageDepth 1 does not duplicate cross-package scan", async () => {
-    const cwds1 = captureGlobCwds();
-    const p1 = new CodeNeighborProvider({ neighborScope: "package" } as CodeNeighborProviderOptions);
-    await p1.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
-    expect(cwds1).toContain("/repo");
-
-    const cwds2 = captureGlobCwds();
-    const p2 = new CodeNeighborProvider({
-      neighborScope: "package",
-      crossPackageDepth: 1,
-    } as CodeNeighborProviderOptions);
-    await p2.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
-    expect(cwds2.filter((c) => c === "/repo")).toHaveLength(1);
-  });
-
-  test("crossPackageDepth 1: falls back to repoRoot when no workspace; scans detected packages otherwise", async () => {
-    const cwds1 = captureGlobCwds();
-    const p1 = new CodeNeighborProvider({
-      neighborScope: "package",
-      crossPackageDepth: 1,
-    } as CodeNeighborProviderOptions);
-    await p1.fetch(MONOREPO_REQUEST);
-    expect(cwds1).toContain("/repo/packages/api");
-    expect(cwds1).toContain("/repo");
-
-    const cwds2 = captureGlobCwds();
-    _codeNeighborDeps.discoverWorkspacePackages = async () => ["packages/api", "packages/web"];
-    const p2 = new CodeNeighborProvider({
-      neighborScope: "package",
-      crossPackageDepth: 1,
-    } as CodeNeighborProviderOptions);
-    await p2.fetch(MONOREPO_REQUEST);
-    expect(cwds2).toContain("/repo/packages/api");
-    expect(cwds2).toContain("/repo/packages/web");
-    expect(cwds2).not.toContain("/repo");
+    await new CodeNeighborProvider({ neighborScope: "repo" }).fetch(MONOREPO_REQUEST);
+    expect(cwds2).toEqual(["/repo"]);
   });
 });
 
