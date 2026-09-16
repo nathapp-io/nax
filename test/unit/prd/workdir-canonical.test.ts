@@ -5,7 +5,14 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { canonicalizeDeclaredPath, deriveWorkdir, resolvePathOwners } from "@/prd/workdir-canonical";
+import { makePRD, makeStory } from "@test/helpers";
+import type { UserStory } from "@/prd/types";
+import {
+  canonicalizeDeclaredPath,
+  canonicalizePrdWorkdirs,
+  deriveWorkdir,
+  resolvePathOwners,
+} from "@/prd/workdir-canonical";
 
 const REPO = "/repo";
 const PACKAGES = ["packages/app", "packages/lib"];
@@ -118,5 +125,103 @@ describe("canonicalizeDeclaredPath", () => {
       path: "src/a.ts",
       collided: false,
     });
+  });
+});
+
+describe("canonicalizePrdWorkdirs", () => {
+  // Use the shared factories: the double-cast escape hatch is ratcheted at ZERO
+  // in test/ (scripts/baselines/test-as-unknown-as-baseline.json), and hand-rolled
+  // PRD fixtures are what .nax/rules/test-helpers.md forbids anyway.
+  const prdOf = (stories: UserStory[]) => makePRD({ userStories: stories });
+
+  test("derives a workdir and re-spells the story's declared paths", () => {
+    const exists = probeOf("packages/app/src/a.ts");
+    const { prd } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ contextFiles: ["src/a.ts"], expectedFiles: ["src/b.ts"] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+    const story = prd.userStories[0];
+    expect(story?.workdir).toBe("packages/app");
+    expect(story?.workdirSource).toBe("derived");
+    expect(story?.contextFiles).toEqual(["packages/app/src/a.ts"]);
+    // expectedFiles does not exist yet, so it stays as authored.
+    expect(story?.expectedFiles).toEqual(["src/b.ts"]);
+  });
+
+  test("keeps a stated workdir and stamps it stated", () => {
+    const exists = probeOf("packages/lib/src/a.ts");
+    const { prd } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ workdir: "packages/lib", contextFiles: ["src/a.ts"] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+    expect(prd.userStories[0]?.workdir).toBe("packages/lib");
+    expect(prd.userStories[0]?.workdirSource).toBe("stated");
+    expect(prd.userStories[0]?.contextFiles).toEqual(["packages/lib/src/a.ts"]);
+  });
+
+  test("defaults to root and omits workdir entirely", () => {
+    const exists = probeOf("packages/app/src/a.ts", "packages/lib/src/b.ts");
+    const { prd } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ contextFiles: ["src/a.ts", "src/b.ts"] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+    expect(prd.userStories[0]?.workdir).toBeUndefined();
+    expect(prd.userStories[0]?.workdirSource).toBe("defaulted");
+  });
+
+  test("preserves ContextFileEntry objects and their factId", () => {
+    const exists = probeOf("packages/app/src/a.ts");
+    const { prd } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ contextFiles: [{ path: "src/a.ts", factId: "F-1" }] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+    expect(prd.userStories[0]?.contextFiles).toEqual([{ path: "packages/app/src/a.ts", factId: "F-1" }]);
+  });
+
+  test("reports a collision without failing", () => {
+    const exists = probeOf("src/a.ts", "packages/app/src/a.ts");
+    const { prd, collisions } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ workdir: "packages/app", contextFiles: ["src/a.ts"] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+    expect(prd.userStories[0]?.contextFiles).toEqual(["packages/app/src/a.ts"]);
+    expect(collisions).toEqual(["US-001:src/a.ts"]);
+  });
+
+  test("is a no-op for a single-package repo (no workspace packages)", () => {
+    const exists = probeOf("src/a.ts");
+    const { prd } = canonicalizePrdWorkdirs(prdOf([makeStory({ contextFiles: ["src/a.ts"] })]), REPO, [], exists);
+    expect(prd.userStories[0]?.workdir).toBeUndefined();
+    expect(prd.userStories[0]?.workdirSource).toBe("defaulted");
+    expect(prd.userStories[0]?.contextFiles).toEqual(["src/a.ts"]);
+  });
+
+  test('an explicitly stated "." is treated as root, not as a package', () => {
+    const exists = probeOf("src/a.ts");
+    const { prd } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ workdir: ".", contextFiles: ["src/a.ts"] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+    expect(prd.userStories[0]?.workdir).toBeUndefined();
+    expect(prd.userStories[0]?.workdirSource).toBe("defaulted");
+  });
+
+  test("does not mutate the input PRD", () => {
+    const input = prdOf([makeStory({ contextFiles: ["src/a.ts"] })]);
+    const snapshot = JSON.stringify(input);
+    canonicalizePrdWorkdirs(input, REPO, PACKAGES, probeOf("packages/app/src/a.ts"));
+    expect(JSON.stringify(input)).toBe(snapshot);
   });
 });

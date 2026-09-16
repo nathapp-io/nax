@@ -34,6 +34,8 @@ const ALLOWED = [
   join("src", "prd", "types.ts"),
   join("src", "utils", "path-frame.ts"),
   join("src", "prd", "schema-story.ts"),
+  // nax#2067: the plan-time writer -- it decides the value the accessors later read.
+  join("src", "prd", "workdir-canonical.ts"),
 ];
 
 /**

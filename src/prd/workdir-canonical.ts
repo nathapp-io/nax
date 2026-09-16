@@ -13,7 +13,8 @@
  */
 
 import { join } from "node:path";
-import { toRepoFrame } from "@/utils/path-frame";
+import { normalizeWorkdir, toRepoFrame } from "@/utils/path-frame";
+import type { PRD, WorkdirSource } from "./types";
 
 /** Synchronous existence probe over ABSOLUTE paths. */
 export type ExistsProbe = (absPath: string) => boolean;
@@ -90,4 +91,72 @@ export function canonicalizeDeclaredPath(
   const atRoot = exists(join(repoRoot, path));
   if (atPackage) return { path: toRepoFrame(path, workdir), collided: atRoot };
   return { path, collided: false };
+}
+
+/**
+ * Canonicalize every story in a PRD: decide the workdir, stamp its provenance,
+ * and re-spell declared paths into the repo frame.
+ *
+ * `workdir` is OMITTED rather than written as "." for a root story: "." is the
+ * accessors' internal spelling, and writing it into the PRD would change the
+ * on-disk shape for every single-package repo. `workdirSource` carries the
+ * information instead.
+ *
+ * Collisions are returned as "storyId:path" strings, and `defaulted` lists the ids of stories that
+ * fell back to root, both for the caller to log. They are RETURNED rather than logged here so this
+ * module stays pure -- and, for `defaulted`, because this is the only point in `nax plan` where that
+ * fact is known (see the RULING in the plan's Orientation section).
+ */
+export function canonicalizePrdWorkdirs(
+  prd: PRD,
+  repoRoot: string,
+  packages: readonly string[],
+  exists: ExistsProbe,
+): { prd: PRD; collisions: string[]; defaulted: string[] } {
+  const collisions: string[] = [];
+  const defaulted: string[] = [];
+
+  const userStories = prd.userStories.map((story) => {
+    // `workdir` is destructured off `rest` rather than left to the conditional
+    // spread below: spreading `...story` would re-introduce the raw value (a
+    // literal ".", "" or "./") that normalizeWorkdir collapsed, landing it in the
+    // written PRD and contradicting the omit-at-root contract. The raw field is
+    // still read directly -- this module is the plan-time writer -- which is why
+    // it is ALLOWED in scripts/check-story-workdir-access.ts.
+    const { workdir: _rawWorkdir, ...rest } = story;
+    const declared = [
+      ...(story.contextFiles ?? []).map((f) => (typeof f === "string" ? f : f.path)),
+      ...(story.expectedFiles ?? []),
+    ];
+
+    // normalizeWorkdir collapses "", ".", "./" and absent to "." so a planner that
+    // literally emits "." is treated as root, not as a stated package.
+    const statedWorkdir = normalizeWorkdir(story.workdir);
+    const stated = statedWorkdir !== ".";
+    const { workdir, source }: { workdir: string; source: WorkdirSource } = stated
+      ? { workdir: statedWorkdir, source: "stated" }
+      : deriveWorkdir(declared, repoRoot, packages, exists);
+    if (source === "defaulted") defaulted.push(story.id);
+
+    const reframe = (path: string): string => {
+      const result = canonicalizeDeclaredPath(path, workdir, repoRoot, exists);
+      if (result.collided) collisions.push(`${story.id}:${path}`);
+      return result.path;
+    };
+
+    const contextFiles = story.contextFiles?.map((entry) =>
+      typeof entry === "string" ? reframe(entry) : { ...entry, path: reframe(entry.path) },
+    );
+    const expectedFiles = story.expectedFiles?.map(reframe);
+
+    return {
+      ...rest,
+      ...(workdir === "." ? {} : { workdir }),
+      workdirSource: source,
+      ...(contextFiles !== undefined ? { contextFiles } : {}),
+      ...(expectedFiles !== undefined ? { expectedFiles } : {}),
+    };
+  });
+
+  return { prd: { ...prd, userStories }, collisions, defaulted };
 }
