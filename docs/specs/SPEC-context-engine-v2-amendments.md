@@ -477,7 +477,7 @@ Non-monorepo projects (where `story.workdir` is undefined) see zero behavioral c
 
 55. **GitHistoryProvider package scope.** With `historyScope: "package"`, git history is limited to `packageDir` paths. With `historyScope: "repo"`, full repo history is used. Default: `"package"`.
 
-56. **CodeNeighborProvider package scope.** With `neighborScope: "package"`, import tracing stops at the package boundary except for shared packages (depth 1 by default). With `neighborScope: "repo"`, full repo tracing. Default: `"package"`.
+56. **CodeNeighborProvider package scope.** With `neighborScope: "package"`, import tracing stops at the package boundary. With `neighborScope: "repo"`, full repo tracing. Default: `"package"`.
 
 57. **Per-package rules overlay.** `StaticRulesProvider` loads `<repoRoot>/.nax/rules/*.md`, then overlays `<packageDir>/.nax/rules/*.md`. Same-name files: package wins. Unique files: both included.
 
