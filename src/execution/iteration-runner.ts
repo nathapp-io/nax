@@ -17,6 +17,7 @@ import { markStoryFailed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
+import { storyAbsWorkdir, storyPackageDir } from "../utils/path-frame";
 import { prepareWorktreeDependencies } from "../worktree/dependencies";
 import { WorktreeManager } from "../worktree/manager";
 import { handleDryRun } from "./dry-run";
@@ -121,10 +122,15 @@ export async function runIteration(
   // Thread the CLI profile override through so --profile flags apply to per-package configs.
   // Use profileOverrideFromConfig (passes the round-trippable chain array, not the "a+b" composite).
   const profileOverride = profileOverrideFromConfig(ctx.config);
-  const effectiveConfig = story.workdir
+  // nax#2067: storyPackageDir, never the raw field. "." is truthy, so the raw
+  // field would send a ROOT story into loadConfigForWorkdir, which then misses
+  // .nax/mono/./config.json and falls back to the root config anyway -- same
+  // result, one wasted read and a misleading log line per story.
+  const storyPkg = storyPackageDir(story);
+  const effectiveConfig = storyPkg
     ? await _iterationRunnerDeps.loadConfigForWorkdir(
         join(ctx.workdir, ".nax", "config.json"),
-        story.workdir,
+        storyPkg,
         profileOverride,
       )
     : ctx.config;
@@ -136,7 +142,7 @@ export async function runIteration(
         projectRoot: ctx.workdir,
         worktreeRoot: effectiveWorkdir,
         storyId: story.id,
-        storyWorkdir: story.workdir,
+        storyWorkdir: storyPkg,
         config: effectiveConfig,
       });
     } catch (error) {
@@ -158,18 +164,11 @@ export async function runIteration(
     }
   }
 
-  // EXEC-002: In worktree mode, effectiveWorkdir is the worktree root.
-  // Monorepo subpackages (story.workdir) are resolved relative to the worktree root so
-  // the agent operates in the correct package directory within the isolated worktree.
-  const resolvedWorkdir = dependencyContext?.cwd
-    ? dependencyContext.cwd
-    : ctx.config.execution.storyIsolation === "worktree"
-      ? story.workdir
-        ? join(effectiveWorkdir, story.workdir)
-        : effectiveWorkdir
-      : story.workdir
-        ? join(ctx.workdir, story.workdir)
-        : ctx.workdir;
+  // EXEC-002: in worktree mode effectiveWorkdir is the worktree root, so a
+  // monorepo subpackage resolves beneath it rather than beneath the main
+  // checkout. storyAbsWorkdir returns the base unchanged for a root story.
+  const isolationRoot = ctx.config.execution.storyIsolation === "worktree" ? effectiveWorkdir : ctx.workdir;
+  const resolvedWorkdir = dependencyContext?.cwd ?? storyAbsWorkdir(isolationRoot, story);
 
   const pipelineContext: PipelineContext = {
     config: effectiveConfig,
