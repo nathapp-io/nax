@@ -31,7 +31,7 @@ issues are instances, not the whole class.
 |---|---|---|---|
 | 1 | `pipeline/scope-files.ts:34,50,61` | declared (package) unioned with diff (repo) in one list | **fixed** (#2071) |
 | 2 | `context/engine/providers/code-neighbor.ts:257,262` | sibling-rooted `srcFile` compared and emitted against consumer-rooted `filePath` | **fixed** (#2074) |
-| 3 | `debate/verifiers/checks.ts:18` | `contextFiles` resolved repo-rooted at plan time, package-relative at runtime (`context/builder.ts:299`) | **fixed** (#2067 PR) |
+| 3 | `debate/verifiers/checks.ts:18` | `contextFiles` resolved repo-rooted at plan time, package-relative at runtime (`context/builder.ts:299`) | **runtime consumer fixed** (#2067 PR); plan-time verifier path intentionally not (both verifier sites run pre-write — see §2067 RULING) |
 | 4 | `prd` / `story.workdir` null | no frame at all; rules fall back to the whole corpus and `quality.commands` to the root config | **fixed** (#2067) |
 | 5 | `execution/lifecycle/acceptance-helpers.ts:225` → `:302` | repo-framed diff output fed to `join(workdir, file)`; failure swallowed by `catch {}` at `:307` | filed |
 | 6 | `utils/git.ts:491` → `context/builder.ts:299` | `captureOutputFiles` emits repo-framed parent outputs, resolved against the package dir | filed |

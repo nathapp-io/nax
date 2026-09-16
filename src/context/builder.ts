@@ -5,7 +5,7 @@
  */
 
 import path from "node:path";
-import { storyWorkdir, toPackageFrame } from "@/utils/path-frame";
+import { storyWorkdir, toPackageFrameFiles } from "@/utils/path-frame";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
@@ -291,10 +291,8 @@ async function addFileElements(
   // emitted. `toPackageFrame` returns null when the path is already
   // package-relative (a pre-canonicalization PRD) or lies outside the package,
   // so such a path is left unchanged.
-  const storyFrame = storyWorkdir(story);
-  const reframe = (file: string): string => toPackageFrame(file, storyFrame) ?? file;
-  const framedContextFiles = contextFiles.map(reframe);
-  const framedExpectedFiles = expectedFiles.map(reframe);
+  const framedContextFiles = toPackageFrameFiles(contextFiles, storyWorkdir(story));
+  const framedExpectedFiles = toPackageFrameFiles(expectedFiles, storyWorkdir(story));
 
   const expectedSet = new Set(framedExpectedFiles);
   // Tracks paths already surfaced (read or create-intent) so the expectedFiles

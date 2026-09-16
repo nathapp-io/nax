@@ -73,24 +73,37 @@ export function deriveWorkdir(
 /**
  * Re-spell one declared path into the repo frame, per the spec's four outcomes:
  *
- *   exists(repoRoot/P)   -> P             (already repo-rooted)
- *   exists(repoRoot/W/P) -> W + "/" + P   (re-spell)
- *   neither              -> P unchanged   (a file the story creates)
- *   both                 -> W + "/" + P   (story-local wins), collision reported
+ *   exists(repoRoot/P)   -> P unchanged        (already repo-rooted)
+ *   exists(repoRoot/W/P) -> W + "/" + P        (re-spell)
+ *   neither              -> P unchanged        (a file the story creates)
+ *   both                 -> W + "/" + P        (story-local wins), collision reported
  *
  * `collided` is returned rather than logged so this stays pure; the caller logs.
+ *
+ * `rootOnly` is the same spelling as "already repo-rooted", but it is reported
+ * distinctly because it is a guess: a planner working workdir-relative (the
+ * plan-builder prompt's frame) wrote `P` meaning W/P, and the path resolves only
+ * at the repo root. Package-contained consumers (v1 addFileElements,
+ * GitHistoryProvider, CodeNeighborProvider) resolve against the package dir, so
+ * such a declared file never surfaces at runtime. The caller warns at plan time,
+ * where the author can still act (move the file under the package, or root the
+ * story). A path already spelled repo-rooted (prefixed by `${workdir}/` on a
+ * segment boundary) is NOT rootOnly — consumers can frame it back and read it.
+ * For workdir "." the branch is unreachable — every path is reachable from the
+ * root consumer.
  */
 export function canonicalizeDeclaredPath(
   path: string,
   workdir: string,
   repoRoot: string,
   exists: ExistsProbe,
-): { path: string; collided: boolean } {
-  if (workdir === ".") return { path, collided: false };
+): { path: string; collided: boolean; rootOnly: boolean } {
+  if (workdir === ".") return { path, collided: false, rootOnly: false };
+  const alreadyRepoRooted = path === workdir || path.startsWith(`${workdir}/`);
   const atPackage = exists(join(repoRoot, workdir, path));
   const atRoot = exists(join(repoRoot, path));
-  if (atPackage) return { path: toRepoFrame(path, workdir), collided: atRoot };
-  return { path, collided: false };
+  if (atPackage) return { path: toRepoFrame(path, workdir), collided: atRoot, rootOnly: false };
+  return { path, collided: false, rootOnly: atRoot && !alreadyRepoRooted };
 }
 
 /**
@@ -102,8 +115,9 @@ export function canonicalizeDeclaredPath(
  * on-disk shape for every single-package repo. `workdirSource` carries the
  * information instead.
  *
- * Collisions are returned as "storyId:path" strings, and `defaulted` lists the ids of stories that
- * fell back to root, both for the caller to log. They are RETURNED rather than logged here so this
+ * Collisions are returned as "storyId:path" strings, `defaulted` lists the ids of stories that
+ * fell back to root, and `rootOnly` lists "storyId:path" entries that resolved only at the repo
+ * root (see `canonicalizeDeclaredPath`). All three are RETURNED rather than logged here so this
  * module stays pure -- and, for `defaulted`, because this is the only point in `nax plan` where that
  * fact is known (see the RULING in the plan's Orientation section).
  */
@@ -112,9 +126,10 @@ export function canonicalizePrdWorkdirs(
   repoRoot: string,
   packages: readonly string[],
   exists: ExistsProbe,
-): { prd: PRD; collisions: string[]; defaulted: string[] } {
+): { prd: PRD; collisions: string[]; defaulted: string[]; rootOnly: string[] } {
   const collisions: string[] = [];
   const defaulted: string[] = [];
+  const rootOnly: string[] = [];
 
   const userStories = prd.userStories.map((story) => {
     // `workdir` is destructured off `rest` rather than left to the conditional
@@ -141,6 +156,7 @@ export function canonicalizePrdWorkdirs(
     const reframe = (path: string): string => {
       const result = canonicalizeDeclaredPath(path, workdir, repoRoot, exists);
       if (result.collided) collisions.push(`${story.id}:${path}`);
+      if (result.rootOnly) rootOnly.push(`${story.id}:${path}`);
       return result.path;
     };
 
@@ -158,5 +174,5 @@ export function canonicalizePrdWorkdirs(
     };
   });
 
-  return { prd: { ...prd, userStories }, collisions, defaulted };
+  return { prd: { ...prd, userStories }, collisions, defaulted, rootOnly };
 }

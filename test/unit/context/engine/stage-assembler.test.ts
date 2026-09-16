@@ -16,6 +16,7 @@ import {
   makeStory,
   makeTestContext,
 } from "@test/helpers";
+import type { ContextOrchestrator } from "@/context/engine/orchestrator";
 import {
   _stageAssemblerDeps,
   assembleForStage,
@@ -238,6 +239,8 @@ function makeCtx(
     projectDir?: string;
     /** Override story.workdir (relative sub-package path). */
     storyWorkdir?: string;
+    /** Declared contextFiles on the story (nax#2067 canonicalized / pre-canonicalized). */
+    storyContextFiles?: string[];
     /** ADR-009 resolved test-file patterns carried on the pipeline context. */
     resolvedTestPatterns?: ResolvedTestPatterns;
     /** Pre-built .naxignore index carried on the pipeline context. */
@@ -259,6 +262,7 @@ function makeCtx(
   const story = makeStory({
     id: "US-001",
     ...(overrides.storyWorkdir && { workdir: overrides.storyWorkdir }),
+    ...(overrides.storyContextFiles && { contextFiles: overrides.storyContextFiles }),
   });
   return makeTestContext({
     config,
@@ -275,8 +279,14 @@ function makeCtx(
   });
 }
 
-/** Mock orchestrator that captures the last assemble() request via a mutable ref. */
-function makeMockOrchestrator() {
+/**
+ * Mock orchestrator that captures the last assemble() request via a mutable ref.
+ *
+ * `ContextOrchestrator`'s `providers` field is private, so a plain object can
+ * never satisfy it structurally — the single cast lives here, and call sites
+ * assign the already-typed value directly (no per-site casts).
+ */
+function makeMockOrchestrator(): { ref: { captured: ContextRequest | null }; orchestrator: ContextOrchestrator } {
   const ref: { captured: ContextRequest | null } = { captured: null };
   const orchestrator = {
     assemble: async (r: ContextRequest): Promise<ContextBundle> => {
@@ -297,7 +307,7 @@ function makeMockOrchestrator() {
         },
       });
     },
-  };
+  } as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
   return { ref, orchestrator };
 }
 
@@ -325,8 +335,7 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-24: passes deterministic:true when config flag is set", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     await assembleForStage(makeCtx({ deterministic: true }), "execution");
 
@@ -335,8 +344,7 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-24: passes deterministic:false when config flag is unset", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     await assembleForStage(makeCtx({ deterministic: false }), "execution");
 
@@ -345,8 +353,7 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-51: passes planDigestBoost from routing testStrategy (tdd-simple → 1.5)", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     await assembleForStage(makeCtx({ testStrategy: "tdd-simple" }), "execution");
 
@@ -355,8 +362,7 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-51: planDigestBoost is undefined for three-session-tdd (uses multi-session digest)", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     await assembleForStage(makeCtx({ testStrategy: "three-session-tdd" }), "tdd-implementer");
 
@@ -365,8 +371,7 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("AC-51: planDigestBoost 1.5 for no-test strategy", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     await assembleForStage(makeCtx({ testStrategy: "no-test" }), "execution");
 
@@ -375,8 +380,7 @@ describe("assembleForStage — AC-24/AC-51 ContextRequest propagation", () => {
 
   test("threads availableBudgetTokens from stage assembly call site", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     await assembleForStage(makeCtx({ testStrategy: "tdd-simple" }), "execution");
 
@@ -399,8 +403,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("threads the engine-wide providerTimeoutMs from config into the request", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     const ctx = makeCtx();
     ctx.config.context.v2.providerTimeoutMs = 9000;
@@ -411,8 +414,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("a per-stage providerTimeoutMs override wins over the engine-wide value", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     const ctx = makeCtx({ stages: { execution: { providerTimeoutMs: 2000 } } });
     ctx.config.context.v2.providerTimeoutMs = 9000;
@@ -423,8 +425,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("threads resolvedTestPatterns from the pipeline context into the request", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
     const patterns = {
       regex: [/\.test\.ts$/],
       globs: ["test/**/*.test.ts"],
@@ -440,8 +441,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("threads naxIgnoreIndex from the pipeline context into the request", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
     const index = {
       repoRoot: "/repo",
       getMatchers: () => [],
@@ -456,8 +456,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("leaves both undefined when the pipeline context carries neither", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     await assembleForStage(makeCtx(), "execution");
 
@@ -498,8 +497,7 @@ describe("assembleForStage — Issue #556 monorepo workdir contamination", () =>
 
   test("repoRoot is ctx.projectDir and packageDir is ctx.workdir in monorepo mode", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     // Simulate what iteration-runner.ts sets on PipelineContext for a monorepo story:
     //   projectDir = repo root (stable), workdir = join(repoRoot, story.workdir)
@@ -518,8 +516,7 @@ describe("assembleForStage — Issue #556 monorepo workdir contamination", () =>
 
   test("repoRoot and packageDir are equal for single-package repos", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     // Single-package: iteration-runner sets workdir === projectDir, story.workdir unset
     await assembleForStage(
@@ -573,8 +570,7 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
 
   test("threads deriveProviderWeights' result into the request as providerWeights", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
     _stageAssemblerDeps.loadFeatureManifests = (async () => []) as typeof _stageAssemblerDeps.loadFeatureManifests;
     const weights = { "static-rules": 1.0, "code-neighbor": 0.4 };
     _stageAssemblerDeps.deriveProviderWeights = (() => weights) as typeof _stageAssemblerDeps.deriveProviderWeights;
@@ -586,8 +582,7 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
 
   test("calls loadFeatureManifests with the request's featureId and projectDir", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
     let capturedArgs: { featureId?: string; projectDir?: string } = {};
     _stageAssemblerDeps.loadFeatureManifests = (async (opts?: { featureId?: string; projectDir?: string }) => {
       capturedArgs = { featureId: opts?.featureId, projectDir: opts?.projectDir };
@@ -603,8 +598,7 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
 
   test("falls back to the '_unattached' sentinel when the pipeline context has no feature id", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
     let capturedFeatureId: string | undefined;
     _stageAssemblerDeps.loadFeatureManifests = (async (opts?: { featureId?: string }) => {
       capturedFeatureId = opts?.featureId;
@@ -626,8 +620,7 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
 
   test("degrades to no providerWeights when deriveProviderWeights throws", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
     _stageAssemblerDeps.loadFeatureManifests = (async () => []) as typeof _stageAssemblerDeps.loadFeatureManifests;
     _stageAssemblerDeps.deriveProviderWeights = (() => {
       throw new Error("boom");
@@ -670,8 +663,7 @@ describe("assembleForStage — publishes storyScratchDirs (US-005)", () => {
 
   test("publishes the resolved storyScratchDirs onto the pipeline context and the request", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () =>
-      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
 
     const ctx = makeCtx();
     ctx.sessionScratchDir = "/tmp/nax-sessions/sess-1";
@@ -683,5 +675,66 @@ describe("assembleForStage — publishes storyScratchDirs (US-005)", () => {
     expect(ctx.storyScratchDirs).toEqual(["/tmp/nax-sessions/sess-1"]);
     // The push providers receive the same dirs via the assembled request.
     expect(mock.ref.captured?.storyScratchDirs).toEqual(["/tmp/nax-sessions/sess-1"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// nax#2067: the on-disk PRD holds repo-rooted declared paths, but the
+// history/neighbor providers resolve request.touchedFiles against packageDir.
+// assembleForStage must re-frame the declared files into the package frame,
+// mirroring v1 addFileElements (src/context/builder.ts).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembleForStage — nax#2067 touchedFiles package-frame", () => {
+  const origCreate = _stageAssemblerDeps.createOrchestrator;
+  afterEach(() => {
+    _stageAssemblerDeps.createOrchestrator = origCreate;
+  });
+
+  function capture(): { ref: { captured: ContextRequest | null } } {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
+    return mock;
+  }
+
+  test("re-frames a canonicalized story's repo-rooted contextFiles into the package frame", async () => {
+    const mock = capture();
+    const ctx = makeCtx({
+      storyWorkdir: "packages/app",
+      storyContextFiles: ["packages/app/src/service.ts"],
+      workdir: "/repo/packages/app",
+      projectDir: "/repo",
+    });
+
+    await assembleForStage(ctx, "execution");
+
+    expect(mock.ref.captured?.touchedFiles).toEqual(["src/service.ts"]);
+  });
+
+  test("leaves a pre-canonicalization package-relative contextFile unchanged", async () => {
+    const mock = capture();
+    const ctx = makeCtx({
+      storyWorkdir: "packages/app",
+      storyContextFiles: ["src/service.ts"],
+      workdir: "/repo/packages/app",
+      projectDir: "/repo",
+    });
+
+    await assembleForStage(ctx, "execution");
+
+    expect(mock.ref.captured?.touchedFiles).toEqual(["src/service.ts"]);
+  });
+
+  test("leaves a root story's repo-rooted contextFiles unchanged", async () => {
+    const mock = capture();
+    const ctx = makeCtx({
+      storyContextFiles: ["src/service.ts"],
+      workdir: "/repo",
+      projectDir: "/repo",
+    });
+
+    await assembleForStage(ctx, "execution");
+
+    expect(mock.ref.captured?.touchedFiles).toEqual(["src/service.ts"]);
   });
 });

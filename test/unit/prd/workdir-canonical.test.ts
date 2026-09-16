@@ -93,6 +93,7 @@ describe("canonicalizeDeclaredPath", () => {
     expect(canonicalizeDeclaredPath("src/a.ts", "packages/app", REPO, exists)).toEqual({
       path: "packages/app/src/a.ts",
       collided: false,
+      rootOnly: false,
     });
   });
 
@@ -101,6 +102,7 @@ describe("canonicalizeDeclaredPath", () => {
     expect(canonicalizeDeclaredPath("packages/app/src/a.ts", "packages/app", REPO, exists)).toEqual({
       path: "packages/app/src/a.ts",
       collided: false,
+      rootOnly: false,
     });
   });
 
@@ -108,6 +110,7 @@ describe("canonicalizeDeclaredPath", () => {
     expect(canonicalizeDeclaredPath("src/new.ts", "packages/app", REPO, probeOf())).toEqual({
       path: "src/new.ts",
       collided: false,
+      rootOnly: false,
     });
   });
 
@@ -116,6 +119,16 @@ describe("canonicalizeDeclaredPath", () => {
     expect(canonicalizeDeclaredPath("src/a.ts", "packages/app", REPO, exists)).toEqual({
       path: "packages/app/src/a.ts",
       collided: true,
+      rootOnly: false,
+    });
+  });
+
+  test("flags a path that exists only at the repo root as rootOnly", () => {
+    const exists = probeOf("tsconfig.base.json");
+    expect(canonicalizeDeclaredPath("tsconfig.base.json", "packages/app", REPO, exists)).toEqual({
+      path: "tsconfig.base.json",
+      collided: false,
+      rootOnly: true,
     });
   });
 
@@ -124,6 +137,7 @@ describe("canonicalizeDeclaredPath", () => {
     expect(canonicalizeDeclaredPath("src/a.ts", ".", REPO, exists)).toEqual({
       path: "src/a.ts",
       collided: false,
+      rootOnly: false,
     });
   });
 });
@@ -196,6 +210,19 @@ describe("canonicalizePrdWorkdirs", () => {
     );
     expect(prd.userStories[0]?.contextFiles).toEqual(["packages/app/src/a.ts"]);
     expect(collisions).toEqual(["US-001:src/a.ts"]);
+  });
+
+  test("reports a root-only declared path so the plan can warn", () => {
+    const exists = probeOf("tsconfig.base.json");
+    const { prd, rootOnly } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ workdir: "packages/app", contextFiles: ["tsconfig.base.json"] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+    // The path stays as-authored (repo-rooted spelling); the caller warns on rootOnly.
+    expect(prd.userStories[0]?.contextFiles).toEqual(["tsconfig.base.json"]);
+    expect(rootOnly).toEqual(["US-001:tsconfig.base.json"]);
   });
 
   test("is a no-op for a single-package repo (no workspace packages)", () => {

@@ -326,9 +326,11 @@ export interface ContextRequest {
    * never read (the identically-named `scopeFiles` on the mechanical-fix
    * strategies is an unrelated field that IS shell-interpolated).
    *
-   * Note that its neighbour `touchedFiles` is NOT yet framed: it comes from the
-   * same PRD `contextFiles` and is still package-relative (seams 6 and 8 in the
-   * path-frame design spec, both filed).
+   * Its neighbour `touchedFiles` is package-framed: both ContextRequest build
+   * sites (src/pipeline/stages/context.ts and stage-assembler.ts) re-spell the
+   * PRD's repo-rooted `contextFiles` into the package frame via
+   * `toPackageFrameFiles`, because GitHistoryProvider / CodeNeighborProvider
+   * resolve them against `request.packageDir`.
    */
   scopeFiles?: string[];
   /**

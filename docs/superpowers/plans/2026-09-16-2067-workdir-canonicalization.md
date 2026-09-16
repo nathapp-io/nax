@@ -1527,7 +1527,11 @@ PR body must record:
   the story creates is represented. Task 3's first test pins exactly this asymmetry.
 - A `defaulted` story in a repo with `.nax/mono/` produces a plan-time **log warning** naming both consequences, emitted from `finalizeAndWritePrd`. It is deliberately NOT a `VerifierFinding` — see the RULING in Orientation.
 - Both planner prompts state the frame, and the shared files rule says what paths are relative to — verified by rendering, not by reading the template.
-- Spec seam 3 is closed: `checkFilesExist` no longer fires spuriously on a monorepo story.
+- Spec seam 3's runtime consumer is closed: the written PRD's repo-rooted `contextFiles` resolve
+  against the repo root without a spurious `major` finding. The plan-time verifier path is
+  intentionally NOT closed — `critic.ts:64` and `plan-checklist.ts:94` both run on the PRE-write
+  draft (see the RULING), so a monorepo draft still collects a spurious `major` for a workdir-relative
+  `contextFiles` entry until canonicalization runs at write time.
 - `scripts/check-story-workdir-access.ts` reports 0 exemptions pending.
 
 ## What this plan does NOT do

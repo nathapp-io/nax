@@ -173,6 +173,52 @@ describe("CodeNeighborProvider", () => {
     expect(content).toContain("src/consumer.ts");
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // nax#2067: CodeNeighborProvider resolves touchedFiles against packageDir
+  // (package scope). A repo-rooted path from a canonicalized PRD is joined onto
+  // the package dir and never matches; the request builders re-frame via
+  // toPackageFrameFiles before the request is built.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe("nax#2067 touchedFiles frame contract", () => {
+    // No resolvedTestPatterns: skips sibling-test hinting so the assertion
+    // isolates forward/reverse neighbor resolution — the frame that a
+    // repo-rooted touchedFile breaks.
+    const MONOREPO_REQUEST: ContextRequest = {
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/packages/app",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8_000,
+    };
+
+    test("a repo-rooted touchedFile from a canonicalized PRD yields no neighbors", async () => {
+      setupDeps({
+        files: { "packages/app/src/service.ts": 'import { helper } from "./utils/helper"' },
+        globFiles: ["packages/app/src/utils/helper.ts"],
+      });
+      const result = await provider.fetch({
+        ...MONOREPO_REQUEST,
+        touchedFiles: ["packages/app/src/service.ts"],
+      });
+      expect(result.chunks).toHaveLength(0);
+    });
+
+    test("the package-framed spelling (what request builders now send) emits neighbors", async () => {
+      setupDeps({
+        files: { "packages/app/src/service.ts": 'import { helper } from "./utils/helper"' },
+        globFiles: ["packages/app/src/utils/helper.ts"],
+      });
+      const result = await provider.fetch({
+        ...MONOREPO_REQUEST,
+        touchedFiles: ["src/service.ts"],
+      });
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0]?.content).toContain("utils/helper");
+    });
+  });
+
   test("reverse deps backfill unused forward slots past their guaranteed minimum (#1611)", async () => {
     // 1 forward dep leaves 7 slots free; 6 reverse-dep consumers should all
     // appear, not just the 4-slot minimum reserved for reverse deps.

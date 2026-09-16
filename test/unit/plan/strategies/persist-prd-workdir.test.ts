@@ -253,3 +253,52 @@ describe("finalizeAndWritePrd — defaulted-workdir warning (nax#2067)", () => {
     expect(cap.calls.find((c) => c.message.includes("no resolved workdir"))).toBeUndefined();
   });
 });
+
+describe("finalizeAndWritePrd — root-only declared paths (nax#2067)", () => {
+  async function persist(overrides: Partial<Parameters<typeof finalizeAndWritePrd>[0]> = {}) {
+    return finalizeAndWritePrd({
+      prd: makePRD({ userStories: [makeStory({ workdir: "packages/app", contextFiles: ["tsconfig.base.json"] })] }),
+      specContent: "",
+      featureName: "f",
+      projectName: "p",
+      agentRouting: undefined,
+      profileName: undefined,
+      models: MODELS,
+      defaultAgent: "claude",
+      outputPath: "/repo/.nax/features/f/prd.json",
+      repoRoot: "/repo",
+      writeFile: async () => {},
+      ...overrides,
+    });
+  }
+
+  test("warns when a declared path resolves only at the repo root", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = (p: string) => p === "/repo/tsconfig.base.json"; // root-only
+
+    const cap = captureWarnings();
+    try {
+      await persist();
+    } finally {
+      cap.restore();
+    }
+
+    const warning = cap.calls.find((c) => c.message.includes("resolve only at the repo root"));
+    expect(warning).toBeDefined();
+    expect(warning?.data).toMatchObject({ rootOnly: ["US-001:tsconfig.base.json"] });
+  });
+
+  test("is silent when the declared path resolves under the story package", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = (p: string) => p === "/repo/packages/app/tsconfig.base.json"; // in-package
+
+    const cap = captureWarnings();
+    try {
+      await persist();
+    } finally {
+      cap.restore();
+    }
+
+    expect(cap.calls.find((c) => c.message.includes("resolve only at the repo root"))).toBeUndefined();
+  });
+});

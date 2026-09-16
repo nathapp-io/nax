@@ -234,6 +234,51 @@ describe("GitHistoryProvider — AC-55 historyScope", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// nax#2067: GitHistoryProvider resolves touchedFiles against packageDir (package
+// scope). A repo-rooted path from a canonicalized PRD yields empty history; the
+// request builders re-frame via toPackageFrameFiles before the request is built,
+// so the provider must only ever receive the package-relative spelling.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("GitHistoryProvider — nax#2067 touchedFiles frame contract", () => {
+  const p = new GitHistoryProvider(); // package scope (default)
+
+  test("a repo-rooted touchedFile from a canonicalized PRD yields no chunk", async () => {
+    mockGit(
+      new Map([
+        // `git -C <packageDir> log -- packages/app/src/service.ts` matches nothing.
+        ["packages/app/src/service.ts", { stdout: "", exitCode: 0 }],
+      ]),
+    );
+    const result = await p.fetch({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/packages/app",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8_000,
+      touchedFiles: ["packages/app/src/service.ts"],
+    });
+    expect(result.chunks).toHaveLength(0);
+  });
+
+  test("the package-framed spelling (what request builders now send) emits a chunk", async () => {
+    mockGit(new Map([["src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
+    const result = await p.fetch({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/packages/app",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8_000,
+      touchedFiles: ["src/service.ts"],
+    });
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("src/service.ts");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // US-001 — scope attribution: chunk.scopePaths lists only files that
 // actually contributed a history section (filtered by fetchFileHistory
 // returning null). Out-of-scope files are NOT attributed to the chunk.
