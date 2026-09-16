@@ -137,7 +137,8 @@ Every context provider and verification strategy must declare which anchor it us
 |:---|:---|:---|
 | `repo-scoped` | `repoRoot` | `StaticRulesProvider`, `FeatureContextProvider` |
 | `package-scoped` | `packageDir` | `GitHistoryProvider`, `CodeNeighborProvider`, `SessionScratchProvider` |
-| `cross-package` | `extraGlobWorkdirs` via `resolveExtraGlobWorkdirs()` | `CodeNeighborProvider` when `crossPackageDepth > 0` |
+
+There is no `cross-package` scope. `CodeNeighborProvider`'s sibling scan was removed in nax#2074: it parsed only relative import specifiers, so it could not find a true cross-package dependent, and it compared paths across two roots. A provider that must see another package sets its scan root to `repoRoot` and re-spells every emitted path for the consumer (`src/utils/path-frame.ts`).
 
 Declare scope in the file header comment. Add a one-line justification for anything cross-package.
 
@@ -155,14 +156,13 @@ When a subsystem handles multiple packages, every `logger.*` call must include b
 
 ```typescript
 // Correct — parallel-mode correlation works
-logger.debug("provider", "Scanning cross-package reverse deps", {
+logger.debug("provider", "Scanning reverse deps", {
   storyId: ctx.story.id,
   packageDir,
-  extraDirs: extraGlobWorkdirs,
 });
 
 // Wrong — cannot attribute across concurrent stories in the same JSONL file
-logger.debug("provider", "Scanning", { extraDirs });
+logger.debug("provider", "Scanning", { packageDir });
 ```
 
 ## Design Rules

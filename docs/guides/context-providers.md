@@ -8,7 +8,6 @@ These keys live under `context.v2.providers` in `.nax/config.json` (or per-packa
 |:----|:-----|:--------|:------------|
 | `historyScope` | `"repo" \| "package"` | `"package"` | Working directory scope for `GitHistoryProvider`. `"package"` runs `git log` in `packageDir` (monorepo-safe). |
 | `neighborScope` | `"repo" \| "package"` | `"package"` | Working directory scope for `CodeNeighborProvider`. `"package"` scans from `packageDir`. |
-| `crossPackageDepth` | `number` | `1` | Cross-package scan depth for `CodeNeighborProvider`. `0` disables; `1` additionally scans workspace siblings. |
 | `sourceGlob` | `string?` | _(derived)_ | Override the source-file glob used for reverse-dep scanning. When omitted, derived from `detectLanguage(packageDir)` (TypeScript, Go, Python, Rust each get a narrow glob; unknown packages get the wide fallback). |
 | `maxGlobFiles` | `number` | `500` | Maximum files scanned per directory during reverse-dep glob. Truncation logs at `warn` level and appends a note to the context chunk. |
 

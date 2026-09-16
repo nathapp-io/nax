@@ -412,8 +412,7 @@ In a monorepo, context scope matters. By default, per-package providers only sca
     "v2": {
       "providers": {
         "historyScope": "package",
-        "neighborScope": "package",
-        "crossPackageDepth": 1
+        "neighborScope": "package"
       }
     }
   }
@@ -424,7 +423,8 @@ In a monorepo, context scope matters. By default, per-package providers only sca
 |:----|:--------|:-------|
 | `providers.historyScope` | `"package"` | `git log` runs in `packageDir` only. Set `"repo"` for full-repo history when stories commonly touch root-level files. |
 | `providers.neighborScope` | `"package"` | Import graph scans only within `packageDir`. Set `"repo"` when packages tightly share imports. |
-| `providers.crossPackageDepth` | `1` | How many package boundaries the neighbor provider may cross. `0` disables cross-package scans. |
+
+> Cross-package reverse-dependency scanning is unsupported. `CodeNeighborProvider` parses only relative import specifiers, so a dependent in another package that imports by package name is invisible to it. The `providers.crossPackageDepth` key was removed in nax#2074; a config that still sets it loads with a deprecation warning and the key is ignored. To widen the scan root, set `providers.neighborScope: "repo"`.
 
 Per-package overrides live in `.nax/mono/<packageDir>/config.json` — use them when one package needs a different budget or scope than the repo default.
 
@@ -472,7 +472,6 @@ Every `context.v2.*` key:
 | `staleness.scoreMultiplier` | 0–1 | `0.4` | Score multiplier applied to stale chunks |
 | `providers.historyScope` | `"package" \| "repo"` | `"package"` | Git log scope |
 | `providers.neighborScope` | `"package" \| "repo"` | `"package"` | Neighbor scan scope |
-| `providers.crossPackageDepth` | int | `1` | Cross-package neighbor traversal depth |
 
 ---
 

@@ -467,7 +467,7 @@ Non-monorepo projects (where `story.workdir` is undefined) see zero behavioral c
 
 **Per-package rules drift.** Package-level rule files may diverge from repo-level over time. **Mitigation:** `nax rules lint` validates both levels; `nax status` warns when package rules shadow repo rules.
 
-**Neighbor scope too narrow.** A story in `packages/api` may need to see imports from `packages/shared`, but `neighborScope: "package"` stops at the package boundary. **Mitigation:** CodeNeighborProvider resolves cross-package imports transitively up to depth 1 for packages in the workspace's `packages/` directory. Configurable via `options.crossPackageDepth: 0 | 1 | 2` (default: 1).
+**Neighbor scope too narrow.** A story in `packages/api` may need to see imports from `packages/shared`, but `neighborScope: "package"` stops at the package boundary. **Mitigation:** CodeNeighborProvider resolves cross-package imports transitively up to depth 1 for packages in the workspace's `packages/` directory. Configurable via `options.crossPackageDepth: 0 | 1 | 2` (default: 1). **Superseded (nax#2074):** the cross-package scan was removed. Only relative import specifiers are parsed, so cross-package reverse-deps were never findable and the scan produced only false matches. Widen with neighborScope: "repo" instead.
 
 **Git history scope too narrow.** A commit touching both `packages/api` and `packages/shared` would be shown for `packages/api` stories but the diff would be filtered to `packages/api` paths only, potentially hiding relevant changes in shared code. **Mitigation:** commits that touch `packageDir` AND a known shared package are shown in full; shared packages detected from workspace config.
 
@@ -489,7 +489,7 @@ Non-monorepo projects (where `story.workdir` is undefined) see zero behavioral c
 
 61. **Non-monorepo no-op.** When `story.workdir` is undefined, behavior is identical to pre-amendment. No config change required.
 
-62. **Cross-package neighbor resolution.** CodeNeighborProvider resolves imports from shared packages (e.g., `packages/shared/`) up to `crossPackageDepth` (default 1), even when `neighborScope: "package"`.
+62. **Cross-package neighbor resolution.** ~~CodeNeighborProvider resolves imports from shared packages (e.g., `packages/shared/`) up to `crossPackageDepth` (default 1), even when `neighborScope: "package"`.~~ **Withdrawn (nax#2074)** — unimplementable as written: bare package-name specifiers are never parsed.
 
 ---
 
