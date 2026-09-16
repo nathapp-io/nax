@@ -13,6 +13,7 @@ import type { CallContext } from "@/operations";
 import { renderCommandSpec } from "@/quality";
 import { detectFramework } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
+import { storyPackageDir } from "@/utils/path-frame";
 import {
   type FlakeTriageScope,
   logFlakeTriageSkip,
@@ -110,9 +111,9 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
     // as its contract above promises — a malformed context must skip triage
     // with a counter, not throw past the seam.
     const workdir = ctx.runtime.workdir;
-    const storyWorkdir = ctx.story?.workdir;
+    const storyPkg = ctx.story ? storyPackageDir(ctx.story) : undefined;
     const { resolveQualityTestCommands } = await import("@/quality");
-    const { testCommand } = await resolveQualityTestCommands(config, workdir, storyWorkdir);
+    const { testCommand } = await resolveQualityTestCommands(config, workdir, storyPkg);
     const baseCommand = testCommand ?? config.quality?.commands?.test;
     if (!baseCommand) {
       logFlakeTriageSkip({
@@ -125,7 +126,7 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
       return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
     }
 
-    const diff = await resolveFlakeBaselineDiff(config, workdir, storyWorkdir);
+    const diff = await resolveFlakeBaselineDiff(config, workdir, storyPkg);
     if (diff === null) {
       logFlakeTriageSkip({
         reason: "baseline-diff-unresolved",

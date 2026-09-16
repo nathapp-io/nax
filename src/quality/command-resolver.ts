@@ -57,7 +57,10 @@ export const _commandResolverDeps = {
  *
  * @param config       - Project config
  * @param workdir      - Resolved package directory (already resolved per MW-006)
- * @param storyWorkdir - story.workdir — set for monorepo stories, undefined for single-package
+ * @param storyWorkdir - storyPackageDir(story) — the package for a monorepo story,
+ *                       undefined at the repo root. Never pass the raw field: it is
+ *                       "." at the root, which is truthy, and the branches below would
+ *                       then promote a root story to the monorepo orchestrator path.
  */
 export async function resolveQualityTestCommands(
   config: Pick<NaxConfig, "review" | "quality">,
