@@ -75,6 +75,15 @@ describe("compileToolPolicy — containment is the hard boundary", () => {
     if (!verdict.allowed) expect(verdict.breach).toBe(true);
   });
 
+  test("an out-of-root refusal names the root the agent is actually confined to", () => {
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
+    const verdict = policy.check("Read", PATH_SCOPE, { path: "../elsewhere/secret.txt" });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed) throw new Error("unreachable");
+    expect(verdict.reason).toContain(policy.root);
+    expect(verdict.reason).toContain("permitted root");
+  });
+
   test("denies a symlink pointing outside the root", () => {
     const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
     const verdict = policy.check("Read", PATH_SCOPE, { path: "escape-link/secret.txt" });

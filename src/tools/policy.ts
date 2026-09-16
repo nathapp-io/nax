@@ -240,6 +240,13 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * plain message. This must never get chattier for ordinary containment
    * denials, and must never reveal repository structure for a path the model
    * never touched.
+   *
+   * The root itself IS named, deliberately. The rule above -- never reveal
+   * repository structure -- is about paths the model never touched; this path is
+   * one the model just passed, and telling it where the boundary is is the
+   * difference between "adapt" and "work around". The same root is stated in the
+   * dispatch preamble (src/prompts/sections/agent-scope.ts), so this discloses
+   * nothing the agent was not already told.
    */
   function outOfRootReason(tool: string, root: string, candidate: string): string {
     const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
@@ -269,7 +276,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
         );
       }
     }
-    return "resolves outside the permitted root";
+    return `resolves outside the permitted root (${root}), which is the only directory this tool can reach`;
   }
 
   /**

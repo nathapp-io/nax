@@ -72,7 +72,9 @@ describe("GitCommit denial messages (fix round 1, Task 10)", () => {
     );
     expect(denied.allowed).toBe(false);
     if (denied.allowed) throw new Error("unreachable");
-    expect(denied.reason).toBe('"paths" entry "/repo/packages/bar/src/index.ts" resolves outside the permitted root');
+    expect(denied.reason).toBe(
+      '"paths" entry "/repo/packages/bar/src/index.ts" resolves outside the permitted root (/repo/packages/foo), which is the only directory this tool can reach',
+    );
   });
 
   test("a known-manifest path stays on the plain denial for a tool other than GitCommit", () => {
@@ -86,6 +88,8 @@ describe("GitCommit denial messages (fix round 1, Task 10)", () => {
     );
     expect(denied.allowed).toBe(false);
     if (denied.allowed) throw new Error("unreachable");
-    expect(denied.reason).toBe('path "/repo/package.json" resolves outside the permitted root');
+    expect(denied.reason).toBe(
+      'path "/repo/package.json" resolves outside the permitted root (/repo/packages/foo), which is the only directory this tool can reach',
+    );
   });
 });
