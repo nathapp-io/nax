@@ -8,7 +8,6 @@
  * 4. Initial PRD analysis
  */
 
-import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
@@ -25,6 +24,7 @@ import { runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 import { spawn } from "@/utils/bun-deps";
 import { hasCommitsForStory } from "@/utils/git";
+import { storyAbsWorkdir } from "@/utils/path-frame";
 
 /**
  * Injectable dependencies for reconcileState — allows tests to mock
@@ -90,7 +90,7 @@ async function reconcileState(prd: PRD, prdPath: string, workdir: string, config
     }
 
     // Re-run review to confirm the quality issues were actually fixed
-    const effectiveWorkdir = story.workdir ? join(workdir, story.workdir) : workdir;
+    const effectiveWorkdir = storyAbsWorkdir(workdir, story);
     try {
       const reviewResult = await _reconcileDeps.runReview(config.review, effectiveWorkdir, config.execution);
       if (!reviewResult.success) {

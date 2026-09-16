@@ -1,9 +1,9 @@
 {
-  "updatedAt": "2026-09-16T04:13:22.644Z",
+  "updatedAt": "2026-09-16T04:40:17.559Z",
   "byFile": {
-    "src/execution/unified-executor.ts": 703,
+    "src/execution/unified-executor.ts": 704,
     "src/interaction/plugins/telegram.ts": 602,
-    "src/prompts/builders/rectifier-builder.ts": 902,
+    "src/prompts/builders/rectifier-builder.ts": 907,
     "src/session/manager.ts": 679,
     "test/unit/agents/acp/spawn-client.test.ts": 810,
     "test/unit/cli/plan.test.ts": 1201,

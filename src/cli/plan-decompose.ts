@@ -8,6 +8,7 @@
 import { join } from "node:path";
 import { featureDir } from "@/config";
 import { buildDecomposePromptAsync } from "@/prompts";
+import { storyPackageDir } from "@/utils/path-frame";
 import { resolveDefaultAgent } from "../agents";
 import { parseDecomposeOutput } from "../agents/shared/decompose";
 import type { DecomposedStory } from "../agents/shared/types-extended";
@@ -195,7 +196,7 @@ export async function planDecomposeCommand(
     // biome-ignore lint/style/noNonNullAssertion: loop guarantees decompStories is set
     decompStories!,
     options.storyId,
-    targetStory.workdir,
+    storyPackageDir(targetStory),
     // ADR-025: sub-stories inherit the parent story's agent assignment, not re-selected
     targetStory.routing,
   );

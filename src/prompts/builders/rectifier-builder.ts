@@ -19,6 +19,7 @@ import type { UserStory } from "@/prd";
 import type { ReviewCheckName, ReviewCheckResult } from "@/review";
 import { isBlockingSeverity } from "@/review";
 import { formatFailureSummary } from "@/test-runners";
+import { storyPackageDir } from "@/utils/path-frame";
 import type { TestFailure } from "@/verification";
 import type { FailureRecord, ReviewFinding } from "../core";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
@@ -313,8 +314,9 @@ export class RectifierPromptBuilder {
       )
       .join("\n");
 
-    const scopeConstraint = story.workdir
-      ? `\n\nIMPORTANT: Only create or modify test files within \`${story.workdir}/\`. Do NOT touch source files.`
+    const storyPkg = storyPackageDir(story);
+    const scopeConstraint = storyPkg
+      ? `\n\nIMPORTANT: Only create or modify test files within \`${storyPkg}/\`. Do NOT touch source files.`
       : "\n\nIMPORTANT: Only create or modify test files. Do NOT touch source implementation files.";
 
     return `You are writing a failing test that documents spec-correct behavior.
@@ -377,8 +379,9 @@ Rules:
     opts?: { blockingThreshold?: "error" | "warning" | "info" },
   ): string {
     const threshold = opts?.blockingThreshold ?? "error";
-    const scopeConstraint = story.workdir
-      ? `\n\nIMPORTANT: Only modify test files within \`${story.workdir}/\`. Do NOT touch source files.`
+    const storyPkg = storyPackageDir(story);
+    const scopeConstraint = storyPkg
+      ? `\n\nIMPORTANT: Only modify test files within \`${storyPkg}/\`. Do NOT touch source files.`
       : "\n\nIMPORTANT: Only modify test files. Do NOT touch source implementation files.";
 
     const checkTypes = new Set(testFileFindings.map((c) => c.check));
@@ -617,8 +620,9 @@ ${escapeHatchFor(story)}`;
     story: UserStory,
     opts?: { blockingThreshold?: "error" | "warning" | "info" },
   ): string {
-    const scopeConstraint = story.workdir
-      ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
+    const storyPkg = storyPackageDir(story);
+    const scopeConstraint = storyPkg
+      ? `\n\nIMPORTANT: Only modify files within \`${storyPkg}/\`. Do NOT touch files outside this directory.`
       : "";
 
     const semanticChecks = failedChecks.filter((c) => c.check === "semantic");
@@ -691,8 +695,9 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
       maxHistoryMessages?: number;
     },
   ): string {
-    const scopeConstraint = story.workdir
-      ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
+    const storyPkg = storyPackageDir(story);
+    const scopeConstraint = storyPkg
+      ? `\n\nIMPORTANT: Only modify files within \`${storyPkg}/\`. Do NOT touch files outside this directory.`
       : "";
 
     const errors = formatCheckErrors(failedChecks);

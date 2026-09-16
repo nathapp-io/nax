@@ -14,6 +14,7 @@ import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 import { commandSpecIncludes, normalizeCommandSpec, type QualityCommandSpec, renderCommandSpec } from "@/quality";
 import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "@/utils/path-filters";
+import { storyPackageDir } from "@/utils/path-frame";
 import type { AcceptanceLoopResult, AcceptanceTestPathEntry } from "./acceptance-loop";
 
 // ─── Fix-target resolution ───────────────────────────────────────────────────
@@ -284,10 +285,9 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
         .map((f) => f.trim())
         .filter((f) => f.length > 0);
       const repoRoot = acceptanceContext.projectDir ?? workdir;
+      const storyPkg = storyPackageDir(acceptanceContext.story);
       const packageDir =
-        acceptanceContext.story.workdir && acceptanceContext.projectDir
-          ? path.join(acceptanceContext.projectDir, acceptanceContext.story.workdir)
-          : undefined;
+        storyPkg && acceptanceContext.projectDir ? path.join(acceptanceContext.projectDir, storyPkg) : undefined;
       const ignoreMatchers =
         acceptanceContext.naxIgnoreIndex?.getMatchers(packageDir) ??
         (await resolveNaxIgnorePatterns(repoRoot, packageDir));

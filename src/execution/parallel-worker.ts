@@ -2,7 +2,6 @@
  * Parallel worker — Story execution in worktrees
  */
 
-import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -14,6 +13,7 @@ import type { PRD, UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
+import { storyAbsWorkdir } from "../utils/path-frame";
 import type { WorktreeDependencyContext } from "../worktree/types";
 
 /**
@@ -69,7 +69,7 @@ export async function executeStoryInWorktree(
       story,
       stories: [story],
       projectDir: context.projectDir,
-      workdir: dependencyContext.cwd ?? (story.workdir ? join(worktreePath, story.workdir) : worktreePath),
+      workdir: dependencyContext.cwd ?? storyAbsWorkdir(worktreePath, story),
       worktreeDependencyContext: dependencyContext,
       routing,
       storyGitRef: storyGitRef ?? undefined,

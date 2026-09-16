@@ -1,6 +1,7 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
 import { pipelineEventBus } from "@/pipeline/event-bus";
+import { storyPackageDir } from "@/utils/path-frame";
 import { checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import { type StoryMetrics, toFallbackHops } from "../metrics";
@@ -80,8 +81,8 @@ export async function executeUnified(
     const packageDirs = [
       ...new Set(
         currentPrd.userStories
-          .map((s) => s.workdir)
-          .filter((w): w is string => typeof w === "string" && w.length > 0)
+          .map((s) => storyPackageDir(s))
+          .filter((w): w is string => w !== undefined)
           .map((w) => `${ctx.workdir}/${w}`),
       ),
     ].sort();

@@ -11,6 +11,7 @@ import type { HookContext } from "@/hooks";
 import { getLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
+import { storyPackageDir } from "@/utils/path-frame";
 
 /** Safely get logger instance, returns null if not initialized */
 function getSafeLogger() {
@@ -217,7 +218,7 @@ export async function buildStoryContextFull(
 export function buildStoryContextFullFromCtx(
   ctx: PipelineContext,
 ): Promise<{ markdown: string; builtContext: BuiltContext } | undefined> {
-  const packageWorkdir = ctx.story.workdir ? ctx.workdir : undefined;
+  const packageWorkdir = storyPackageDir(ctx.story) ? ctx.workdir : undefined;
   return buildStoryContextFull(ctx.prd, ctx.story, ctx.config, ctx.workdir, packageWorkdir);
 }
 

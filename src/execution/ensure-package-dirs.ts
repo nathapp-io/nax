@@ -17,6 +17,7 @@
 import path from "node:path";
 import { getSafeLogger } from "../logger";
 import type { PRD } from "../prd";
+import { storyPackageDir } from "../utils/path-frame";
 
 /**
  * Injectable filesystem dependencies. Tests override these to avoid touching
@@ -63,7 +64,7 @@ export async function ensureStoryPackageDirs(
   // Map unique relative workdir -> a representative storyId for log correlation.
   const relToStoryId = new Map<string, string>();
   for (const story of prd.userStories) {
-    const rel = story.workdir?.trim();
+    const rel = storyPackageDir(story);
     if (!rel) continue;
     if (!relToStoryId.has(rel)) relToStoryId.set(rel, story.id);
   }
