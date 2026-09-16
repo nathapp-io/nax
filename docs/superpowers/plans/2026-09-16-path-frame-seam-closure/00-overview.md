@@ -64,7 +64,7 @@ PR 6 is unrelated to path frames and can ship at any time — it is last by ruli
 
 ## Global constraints (apply to every PR)
 
-- **The convention:** every path held in a nax-internal path set is **repo-rooted**. Package-relative spelling is legal in exactly two places, both converting *out of* the canonical frame: the agent prompt/chunk-content boundary, and the PRD at write time.
+- **The convention:** every path held in a nax-internal path set is **repo-rooted**. Package-relative spelling is legal in exactly two places, both converting *out of* the canonical frame: the agent prompt/chunk-content boundary, and the PRD at write time. **Caveat (spec Ruling 8):** the write seam re-spells a declared path only when it resolved on disk at plan time, so a create-intent `expectedFiles` path (and any `contextFiles` entry absent at plan time) stays workdir-relative after canonicalization — `workdirSource` is provenance, not a repo-rooted proof, and no consumer may drop such a path as "out-of-package".
 - **`story.workdir` is always a string. `"."` means repo root.** Never read the raw field — use `storyWorkdir` / `storyPackageDir` / `storyAbsWorkdir` from `@/utils/path-frame`. Enforced by `bun run check:story-workdir-access`.
 - **Bun-native only.** `Bun.file()`, `Bun.write()`, `Bun.spawn()`, `Bun.sleep()` — never Node `fs`/`child_process`. `process.cwd()` is banned outside CLI entry points.
 - **File-size ratchet:** 600 lines for `src/`, 800 for `test/` (`bun run check:file-sizes`). Grandfathered files may not grow. At the edge in this plan:

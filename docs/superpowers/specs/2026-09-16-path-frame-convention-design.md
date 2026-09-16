@@ -34,7 +34,7 @@ issues are instances, not the whole class.
 | 3 | `debate/verifiers/checks.ts:18` | `contextFiles` resolved repo-rooted at plan time, package-relative at runtime (`context/builder.ts:299`) | **runtime consumer fixed** (PR #2081); plan-time verifier path intentionally not (both verifier sites run pre-write — see §2067 RULING) → **#2086** |
 | 4 | `prd` / `story.workdir` null | no frame at all; rules fall back to the whole corpus and `quality.commands` to the root config | **fixed** — #2067, PR #2081 |
 | 5 | `execution/lifecycle/acceptance-helpers.ts:225` → `:302` | repo-framed diff output fed to `join(workdir, file)`; failure swallowed by `catch {}` at `:309` | **#2083** — ⚠️ this row's premise is WRONG: `workdir` there is the run root, not the package dir, so the join is frame-correct today. Filed as a latent contract defect |
-| 6 | `utils/git.ts:491` → `context/builder.ts:299` | `captureOutputFiles` emits repo-framed parent outputs, resolved against the package dir | **#2089** — live; PR #2081's reframe fixed the in-package case only, and the out-of-package fallback resolves to a real but WRONG file |
+| 6 | `utils/git.ts:491` → `context/builder.ts:299` | `captureOutputFiles` emits repo-framed parent outputs, resolved against the package dir | **#2089** — fixed (PR 1 of the closure bundle); PR #2081's reframe fixed the in-package case only, and the out-of-package fallback resolved to a real but WRONG file. See §Rulings 8 |
 | 7 | `review/scoped-lint.ts:124` | package-framed path handed to `findPackageDir(relPath, projectDir)`, which resolves repo-framed | **#2087** — latent: the guard is unreachable on the only production call path |
 | 8 | `context/engine/providers/git-history.ts:104` | `historyScope: "repo"` runs package-framed `touchedFiles` against repoRoot, yielding empty history | **#2088** — or, on a name collision, another file's history under the story's label |
 | 9 | `prompts/builders/adversarial-review-builder.ts:288,295` | prompt-embedded `git diff --name-only -- .` lacks the `--relative` that `tools/git.ts:200` auto-injects for the same verbs | **#2090** — live; also in `review-builder.ts` and `debate-builder.ts` |
@@ -63,6 +63,14 @@ the canonical frame:
 
 Everything between those boundaries — `scopeFiles`, diff collector output, neighbours, fragment
 bodies, `scopePaths`, effectiveness attribution — is repo-rooted with no exceptions and no probing.
+
+**One exception survives the write seam.** The seam re-spells a declared path into the repo frame
+only when the path resolved on disk at plan time (`canonicalizeDeclaredPath`'s four outcomes, §#2067);
+a path that resolved nowhere — a file the story creates — is left exactly as the planner authored it,
+which is workdir-relative. `expectedFiles` are create-intent by definition, so after canonicalization
+a PRD's declared-path set is **mixed**: existing entries are repo-rooted, create-intent entries stay
+package-relative. `workdirSource` records that the PRD *passed through* the seam; it is not proof
+that every declared path is repo-rooted, and no consumer may treat it as one (§Rulings 8).
 
 **`story.workdir` is always a string. `"."` means repo root.** `null`, `undefined` and `""` cease to
 exist downstream.
@@ -241,9 +249,16 @@ neither                -> P unchanged    (a file the story creates)
 both                   -> W + "/" + P    (story-local wins) and log the collision
 ```
 
+The `neither` arm is why a canonical PRD is not uniformly repo-rooted: a create-intent path keeps its
+authored spelling. Downstream frame-splitting helpers (`partitionPackageFrame`, `toPackageFrameFiles`)
+therefore may not infer "repo-rooted" from `workdirSource`. The safe drop of a `toPackageFrame` miss is
+confined to path sets known to carry repo-rooted entries — the merged `contextFiles`, which carries
+repo-rooted parent outputs (nax#2089) — never `expectedFiles`.
+
 This also fixes seam 3's runtime consumer: write-time canonicalization makes the on-disk PRD's
-declared paths repo-rooted, and `context/builder.ts` re-spells them into the package frame at the v1
-context boundary before resolving them. The plan-time heuristic verifiers that also read
+**existing** declared paths repo-rooted, and `context/builder.ts` re-spells them into the package frame
+at the v1 context boundary before resolving them (create-intent paths stay workdir-relative; see
+§Rulings 8). The plan-time heuristic verifiers that also read
 `contextFiles` — `src/plan/critic.ts:64` and `src/debate/verifiers/plan-checklist.ts:94`, both
 routing into `checkFilesExist` (`debate/verifiers/checks.ts:18`) — run on the PRE-write PRD, so they
 are unaffected by it and the consumer check is not closed for the plan-time path.
@@ -462,3 +477,13 @@ Decisions made during design, recorded because a fresh session cannot reconstruc
    three known call sites, which leaves a tail.
 7. **Remove `crossPackageDepth` and amend ADR-010 plus the guides.** Rejected: keeping an honest but
    near-inert knob; keeping it gated pending a follow-up.
+8. **`workdirSource` is provenance, not a frame proof (post-merge correction, 2026-09-16).** The
+   runtime fix for #2089 first assumed a canonical PRD's declared paths are all repo-rooted and dropped
+   every out-of-package `toPackageFrame` miss. The write seam re-spells only paths that resolved at
+   plan time, so create-intent `expectedFiles` stay workdir-relative and were silently dropped. Ruled:
+   apply the canonical drop to `contextFiles` only (the merged list that carries repo-rooted parent
+   outputs); `expectedFiles` keeps the non-canonical passthrough. Rejected: making the seam repo-frame
+   non-existent paths — `toRepoFrame` would double-prefix a cross-package create path, a new bug the
+   `toRepoFrame` disambiguation rule above does not sanction. The same caveat binds any future consumer
+   that splits frames: a `toPackageFrame` miss is only "out-of-package" on a path set known to carry
+   repo-rooted entries.

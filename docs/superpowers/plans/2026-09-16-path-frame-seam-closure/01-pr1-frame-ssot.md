@@ -47,12 +47,14 @@ The producer side is fine: `captureOutputFiles` (`src/utils/git.ts:484-501`) emi
 
 The passthrough is not simply a bug. Its docblock claims it serves "paths already in the package frame (pre-canonicalization PRDs)", and that concern is **real and genuinely ambiguous**: for `workdir = packages/api`, the entry `src/client.ts` is either a legacy package-relative path (passthrough correct) or a repo-root file (passthrough catastrophic). Nothing in the string distinguishes them.
 
-**The disambiguator is `workdirSource`.** `canonicalizePrdWorkdirs` (`src/prd/workdir-canonical.ts:168-174`) stamps it on **every** story it canonicalizes, unconditionally:
+**`workdirSource` is provenance, not a frame proof.** `canonicalizePrdWorkdirs` (`src/prd/workdir-canonical.ts:171`) stamps it on **every** story it canonicalizes, unconditionally — but the write seam re-spells a declared path **only when it resolved on disk at plan time**. `canonicalizeDeclaredPath`'s "neither" arm returns the path unchanged (`src/prd/workdir-canonical.ts:103-106`), and the planner authored it workdir-relative (`src/prompts/builders/plan-builder.ts:58,326,461`). So a canonical PRD's declared-path set is **mixed**: paths that existed are repo-rooted; this story's create-intent `expectedFiles` (and any `contextFiles` entry absent at plan time) stay package-relative.
 
-- `workdirSource` present ⇒ the PRD went through the write seam ⇒ paths are provably repo-rooted ⇒ a `toPackageFrame` miss means genuinely out-of-package, and the passthrough is **wrong**.
-- `workdirSource` absent ⇒ pre-#2067 PRD ⇒ paths may be package-relative ⇒ preserve today's passthrough.
+Consequently the rule is **not** "canonical ⇒ drop every miss":
 
-Decidable, testable without fixtures, and it ages out on its own as old PRDs drain.
+- A miss in a set that genuinely carries repo-rooted paths ⇒ genuinely out-of-package ⇒ drop. That set is the **merged `contextFiles`**, which carries repo-rooted parent outputs (#2089).
+- A miss in a create-intent set ⇒ ambiguous or legitimately package-relative ⇒ **preserve**. That set is `expectedFiles`; dropping it silently loses the create-intent hint (`addCreateIntentElements`).
+
+`workdirSource` present vs. absent still separates canonical from pre-#2067 PRDs, but only the `contextFiles` side of the canonical case is a safe drop. It ages out on its own as old PRDs drain.
 
 ## Why partition rather than mark
 
@@ -74,6 +76,7 @@ Return the classification instead of encoding it in the string. Callers that wan
 - **Produces:** `partitionPackageFrame(files: readonly string[], workdir: string | null | undefined, opts?: { readonly canonical?: boolean }): { readable: string[]; unreachable: string[] }`
   - `readable` — paths spelled for a consumer contained at `workdir`.
   - `unreachable` — paths that are **not** under `workdir`, left repo-rooted. Empty unless `canonical` is true.
+  - `canonical: true` treats a `toPackageFrame` miss as out-of-package and routes it to `unreachable`. Use it **only** on path sets whose misses are known repo-rooted — the merged `contextFiles` (which carries repo-rooted parent outputs). Do **not** use it on create-intent `expectedFiles`: the write seam leaves a path that resolved nowhere in the plan in the author's workdir-relative frame, so a miss there is not proof of out-of-package (`src/prd/workdir-canonical.ts:103-106`).
   - With `canonical: false` (the default) every input lands in `readable`, reproducing today's behaviour exactly.
 
 ---
@@ -136,11 +139,22 @@ Add to `src/utils/path-frame.ts`, immediately after `toPackageFrame`:
  * and what it cannot.
  *
  * `canonical: true` asserts the caller's paths came through the plan-time write
- * seam (story.workdirSource is stamped, src/prd/workdir-canonical.ts), so they
- * are provably repo-rooted. A toPackageFrame miss is then a REAL out-of-package
- * path and goes to `unreachable` rather than being passed through -- passing it
- * through emitted a path that resolved to a real but WRONG file under the
- * consumer's root (nax#2089), exactly what toPackageFrame's docblock forbids.
+ * seam (story.workdirSource is stamped, src/prd/workdir-canonical.ts). That
+ * seam stamps EVERY story, but it re-spells a declared path only when the path
+ * resolved on disk at plan time; a path that existed nowhere is returned
+ * UNCHANGED (canonicalizeDeclaredPath, src/prd/workdir-canonical.ts). So the
+ * flag does not mean every path is repo-rooted: this story's create-intent
+ * `expectedFiles`, and any `contextFiles` entry that was absent at plan time,
+ * stay in the story's workdir-relative frame.
+ *
+ * A toPackageFrame miss is therefore only known out-of-package when the path set
+ * genuinely carries repo-rooted paths. Use `canonical: true` ONLY on such sets --
+ * the merged `contextFiles`, which carries repo-rooted parent outputs (nax#2089):
+ * there a miss is a real out-of-package path that goes to `unreachable` rather
+ * than being passed through as a path resolving to a real but WRONG file under
+ * the consumer's root, exactly what toPackageFrame's docblock forbids. Never use
+ * it on create-intent `expectedFiles`, whose package-relative spelling is legal
+ * and whose miss would be wrongly dropped.
  *
  * Without the flag every entry lands in `readable` unchanged: a pre-#2067 PRD
  * may hold package-relative paths, and `src/x.ts` is genuinely ambiguous between
@@ -178,24 +192,26 @@ export function partitionPackageFrame(
 Run: `bun test test/unit/utils/path-frame.test.ts`
 Expected: PASS — the six new cases plus every pre-existing one.
 
-- [ ] **Step 5: Write the failing consumer test**
+- [ ] **Step 5: Write the failing consumer tests**
 
-Create `test/unit/context/builder-parent-frame.test.ts`.
+Create `test/unit/context/builder-parent-frame.test.ts` with the four cases below.
 
-**Read `src/context/builder.ts:237-330` and an existing `test/unit/context/` suite first** and match their fixture style — the builder needs a story, a parent story with `outputFiles`, and a temp dir with real files on disk (the `exists()` gate at `:309` is a real `Bun.file().exists()`).
+**Read `src/context/builder.ts:237-330` and an existing `test/unit/context/` suite first** and match their fixture style — the builder needs a story, a parent story with `outputFiles`, and a temp dir with real files on disk (the injection gate is a real `Bun.file().exists()`). Use `makeTempDir` / `makeStory` / `makePRD` / `makeSparseNaxConfig` / `makeConfigSlice` from `@test/helpers`. `storyContext.workdir` is the **absolute** package dir used for resolve/exists; the story's own `workdir` field is the **repo-relative** `"packages/api"`.
 
-Fixture: consuming story `workdir: "packages/api"`, `workdirSource: "stated"`, parent `outputFiles: ["package.json", "packages/web/src/x.ts", "packages/api/src/client.ts"]`. Create real files at `<tmp>/package.json`, `<tmp>/packages/api/package.json` (**with distinguishable contents**), `<tmp>/packages/api/src/client.ts`.
+Fixture for cases A and B: consuming story `workdir: "packages/api"`, `workdirSource: "stated"`, parent `outputFiles: ["package.json", "packages/web/src/x.ts", "packages/api/src/client.ts"]`. Create real files at `<tmp>/package.json`, `<tmp>/packages/api/package.json` (distinguishable contents, so a wrong-file read would be visible), `<tmp>/packages/api/src/client.ts`.
 
-Three assertions:
+**A — the wrong file is not injected.** Assert `src/client.ts` **is** injected (#2081's fix; regressing it fails the PR) AND no `file` element has `filePath === "package.json"`. Assert on the injected **path set**, not on file contents: the builder emits path-only elements (`readContextMessage`), so a contents assertion is vacuous and would pass both before and after the fix.
 
-1. **The in-package case still works** — `src/client.ts` is injected. This is #2081's fix; regressing it fails the PR.
-2. **The wrong file is not injected** — no injected element carries the contents of `<tmp>/packages/api/package.json`. Assert on *contents*, not on the path string: the defect is that a real file is read under a path that names a different file.
-3. **Unreachable paths do not consume slots** — give the story six in-package context files plus the three parent outputs, and assert all five injected elements are in-package files.
+**B — unreachable paths do not consume slots.** Give the story three in-package `contextFiles` (`packages/api/src/{a,b,c}.ts`, all on disk) plus the same three parent outputs. Assert every injected `file` element is in-package (`filePath` starts with `src/`) AND `src/client.ts` is present. Pre-fix the two unreachable parent paths survive into `slice(0, FILE_INJECTION_MAX_FILES)` and evict `src/client.ts`; post-fix they are dropped before the slice. Three context files is deliberate: with five or more, all five slots fill with in-package files and the test passes unfixed.
+
+**C — a canonical create-intent output survives (Ruling E).** A `workdirSource: "stated"` story at `packages/api` with `expectedFiles: ["src/new.ts"]`, where `src/new.ts` is **not** on disk. Assert a `file` element with `filePath === "src/new.ts"` exists and its content contains `you will CREATE it`. This fails if `expectedFiles` is canonical-partitioned.
+
+**D — a pre-#2067 create-intent output survives.** Same as C but with no `workdirSource`; asserts the same element (consumer-level backward-compat guard).
 
 - [ ] **Step 6: Run it and confirm it fails**
 
 Run: `bun test test/unit/context/builder-parent-frame.test.ts`
-Expected: FAIL on assertion 2 — the package's own `package.json` is injected.
+Expected: FAIL — case A injects the package's own `package.json`; case B evicts `src/client.ts`; and, before Step 7 passes `canonical` only to `contextFiles`, cases C and D fail because `expectedFiles` is canonical-partitioned and dropped. After Step 7 all four pass.
 
 - [ ] **Step 7: Migrate `src/context/builder.ts`**
 
@@ -203,24 +219,24 @@ At `:294-295`, replace the two `toPackageFrameFiles` calls:
 
 ```ts
 const canonical = story.workdirSource !== undefined;
-const { readable: framedContextFiles, unreachable } = partitionPackageFrame(
-  contextFiles,
-  storyWorkdir(story),
-  { canonical },
-);
-const { readable: framedExpectedFiles } = partitionPackageFrame(expectedFiles, storyWorkdir(story), { canonical });
+const { readable: framedContextFiles, unreachable } = partitionPackageFrame(contextFiles, storyWorkdir(story), {
+  canonical,
+});
+const { readable: framedExpectedFiles } = partitionPackageFrame(expectedFiles, storyWorkdir(story));
 ```
+
+`canonical` is passed for `contextFiles` **only** (Ruling E). The merged `contextFiles` carries repo-rooted parent outputs, so a miss there is genuinely out-of-package. `expectedFiles` takes the default (non-canonical) passthrough: its create-intent paths stay workdir-relative by design, so a canonical drop would silently delete them.
 
 `framedContextFiles` now carries only reachable paths, so the existing `slice(0, FILE_INJECTION_MAX_FILES)` at `:301` no longer spends slots on guaranteed misses. **No further change to the slice is needed** — the partition happens before it.
 
-Then log the dropped set **once**, not per file:
+Then log the dropped set **once**, not per file, naming the `FILE_INJECTION_MAX_FILES` constant rather than a literal:
 
 ```ts
 if (unreachable.length > 0) {
-  getLogger().warn("context", "Parent context files outside this story's package were dropped", {
+  getLogger().warn("context", "Context files outside this story's package were dropped", {
     storyId: story.id,
     count: unreachable.length,
-    files: unreachable.slice(0, 5),
+    files: unreachable.slice(0, FILE_INJECTION_MAX_FILES),
   });
 }
 ```
@@ -275,5 +291,6 @@ Also record in the body:
 
 - A repo-root parent output no longer resolves to the consuming package's same-named file.
 - Out-of-package paths no longer consume file-injection slots.
+- Create-intent `expectedFiles` are preserved for canonical and pre-#2067 PRDs alike (Ruling E).
 - The drop is logged once with a count.
 - `toPackageFrameFiles` is untouched and still has exactly two call sites, both owned by PR 2.
