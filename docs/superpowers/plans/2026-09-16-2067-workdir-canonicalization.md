@@ -4,7 +4,7 @@
 
 **Goal:** Make `nax plan` assign every story a `workdir` whenever its declared files resolve to exactly one workspace package, canonicalize declared paths to the repo frame in the same pass, record which of the three ways the workdir was decided, and warn when a story lands `defaulted` in a repo that has per-package overlays.
 
-**Architecture:** One new pure module, `src/prd/workdir-canonical.ts`, owns the probe-driven derivation and path re-spelling. It is wired into `finalizeAndWritePrd` (`src/plan/strategies/persist-prd.ts`) — the single seam every `nax plan` write already passes through — so no strategy can drift on whether it ran. A new optional story field `workdirSource` records `stated | derived | defaulted`, and a new plan-checklist verifier turns a `defaulted` story in a `.nax/mono/` repo into a visible warning.
+**Architecture:** One new pure module, `src/prd/workdir-canonical.ts`, owns the probe-driven derivation and path re-spelling. It is wired into `finalizeAndWritePrd` (`src/plan/strategies/persist-prd.ts`) — the single seam every `nax plan` write already passes through — so no strategy can drift on whether it ran. A new optional story field `workdirSource` records `stated | derived | defaulted`, and the same seam logs a warning when a story lands `defaulted` in a repo carrying `.nax/mono/` overlays. That warning deliberately is NOT a plan-checklist verifier — see the RULING in Orientation, which explains why a verifier there can never fire.
 
 **Tech Stack:** Bun 1.4.0, TypeScript strict, `bun:test`, Biome.
 
@@ -30,12 +30,18 @@
 
 `main` is at `0e4113d23` with the path-frame foundation and #2071 merged.
 
-Branch `fix/2067-workdir-canonicalization` exists and holds **one docs-only commit** — this plan:
+Branch `fix/2067-workdir-canonicalization` exists and holds **two docs-only commits** — this plan and
+a review pass over it:
 
 ```
+04f433d70  docs: harden the #2067 plan for handover to a fresh session
 340da16f2  docs: implementation plan for workdir canonicalization (#2067)
 0e4113d23  fix(pipeline): frame declared scope files into the repo frame (#2071) (#2078)
 ```
+
+**Start from `04f433d70`** — it is the reviewed revision. `340da16f2` contains four defects that were
+found and corrected: a `validateStory` call with the wrong arity, two banned cast shapes, and a
+warning wired where it could never fire. Do not resurrect anything from it.
 
 **Nothing under `src/` or `test/` has been touched.** `grep -rn workdirSource src/ test/` returns nothing. `bun run test` and `bun run check:all` both pass on this branch as of handover, so any failure you see after Task 1 is yours.
 
@@ -122,7 +128,11 @@ Note that `toRepoFrame` already returns `P` unchanged when `P` starts with `W/` 
 | `test/unit/prd/schema-workdir-source.test.ts` **(create)** | Schema cases. Separate file because `schema.test.ts` is 9 lines from its cap. |
 | `src/plan/strategies/persist-prd.ts` **(modify)** | Runs the pass before `applyPlanFidelity`; gains `repoRoot` and a `_persistPrdDeps` probe. |
 | `src/cli/plan-command.ts` **(modify, 1 line)** | Passes `repoRoot`. |
-| `src/prompts/builders/plan-builder.ts` **(modify)** | Both `workdirField` sites state the frame. |
+| `src/prompts/builders/plan-builder.ts` **(modify)** | Both `workdirField` sites state the frame, plus the shared files rule. |
+| `test/unit/plan/strategies/persist-prd-workdir.test.ts` **(create)** | Task 4 wiring, then Task 5 appends the warning tests. |
+| `test/unit/debate/verifiers/checks.test.ts` **(modify)** | Task 5 appends the seam-3 tests. `checks.ts` itself is NOT modified. |
+
+**No file under `src/debate/` changes.** An earlier revision added a verifier there; it was removed because it could not fire.
 
 ---
 
@@ -1499,14 +1509,19 @@ PR body must record:
 - That canonicalization is fail-open: a probe or discovery failure degrades to the raw PRD, because a PRD with an underived workdir is the status quo and a lost plan is not.
 - That `src/cli/plan-decompose.ts:222` writes directly and is **not** covered — see below.
 - The residual from #2071: a declared path naming a sibling package is still prefixed by `toRepoFrame`. This plan narrows it (a repo-rooted sibling path that exists now canonicalizes to itself and is then passed through), but does not close it.
+- **That live verification was deferred, in those words.** No `monorepo-tiny` run, no live `nax plan`. State plainly that nothing in the PR demonstrates a reduction in failed reads on a real run, and link the follow-up issue.
+- **Why the `defaulted` warning is a log and not a `VerifierFinding`** — both verifier call sites run before the PRD is written, so `workdirSource` is always `undefined` there. Worth stating: a reviewer who knows `checks.ts` will look for it there first.
+- **One deliberate deviation from the spec's *Testing* section.** It asks for canonicalization tests "over a fixture monorepo"; this PR uses an injected `Set`-backed `ExistsProbe` instead. That is faster, exhaustive over all four probe outcomes, and cannot drift as a fixture tree would — but it is a divergence, so name it rather than leaving it silent.
 
 ---
 
 ## Done criteria
 
 - `bun run test`, `bun run check:all` and `bun run test:coverage` all pass.
-- A monorepo PRD written by `nax plan` has `workdir` set on every story whose declared files resolve to one package, and `workdirSource` on every story.
-- The `monorepo-tiny` end-to-end metric is **explicitly out of scope** (see below) — do not tick it, and do not claim it in the PR.
+- Given a monorepo PRD and a probe, `canonicalizePrdWorkdirs` sets `workdir` on every story whose
+  declared files resolve to one package and `workdirSource` on every story, and `finalizeAndWritePrd`
+  writes that result. Verified by unit test at both levels — **not** by running `nax plan`.
+- Live verification (`monorepo-tiny`, and any real `nax plan` run) is **explicitly deferred** — see below. Do not run it, do not tick it, do not claim it in the PR.
 - Declared paths **that exist on disk** in a written PRD are repo-rooted. Paths that exist at neither
   location stay as authored — that is the spec's `neither -> P unchanged` row, and it is how a file
   the story creates is represented. Task 3's first test pins exactly this asymmetry.
@@ -1520,18 +1535,25 @@ PR body must record:
 - **PR 5 (#2074)** — sibling-frame neighbours, `crossPackageDepth` retirement, ADR-010. Separate plan.
 - **`src/cli/plan-decompose.ts:222`.** `planDecomposeCommand` writes the PRD directly via `_planDeps.writeFile`, bypassing `finalizeAndWritePrd`. Sub-stories inherit the parent's package via `storyPackageDir(targetStory)` (`src/cli/plan-decompose.ts:199`), so they are not *wrong* — they simply do not get `workdirSource` stamped, and their declared paths are not re-probed. Routing decompose through the same seam means making `finalizeAndWritePrd` idempotent over an already-canonical PRD and re-running fidelity repairs on a partially-executed PRD, which is a different blast radius. **File it as a follow-up issue citing this plan; do not fix it here.**
 - **Retiring #2071's sibling-package residual.** Canonicalization narrows it but cannot close it: a path that exists at neither location is returned unchanged by design, because that is how a file the story creates is represented.
-- **The spec's `monorepo-tiny` end-to-end metric.** The spec's *Testing* section asks for "a
-  `monorepo-tiny` run asserting zero failed `Read` calls", calling the 6 failures #2072 measured
-  "the regression metric". **There is no `monorepo-tiny` fixture in this repo** — `find . -name
-  "*monorepo-tiny*"` returns nothing; it is an external scratch repo the arc's author ran against.
-  This plan therefore verifies at the unit level only, and that is a real gap: **nothing here proves
-  canonicalization reduces failed reads in a live run.**
+- **Any live verification — DEFERRED by explicit decision, not blocking this PR.** Two things sit in
+  this bucket:
 
-  This is a declared descope, not an oversight. Before merging, run `nax plan` once against a real
-  monorepo and diff the written `prd.json` against the same plan on `main` — every story should gain
-  `workdirSource`, and package-scoped stories should gain `workdir` plus repo-framed `contextFiles`.
-  Record the before/after in the PR body. If no monorepo is to hand, say so in the PR rather than
-  implying the metric was taken.
+  1. **The spec's `monorepo-tiny` end-to-end metric.** The spec's *Testing* section asks for "a
+     `monorepo-tiny` run asserting zero failed `Read` calls", calling the 6 failures #2072 measured
+     "the regression metric". **There is no `monorepo-tiny` fixture in this repo** — `find . -name
+     "*monorepo-tiny*"` returns nothing; it is an external scratch repo the arc's author ran against.
+  2. **A live `nax plan` run** against a real monorepo, diffing the written `prd.json` against the
+     same plan on `main`.
+
+  **Do NOT run either as part of executing this plan.** `nax plan` is a real, billed LLM run and is
+  gated on explicit approval at the moment of launch — it is not yours to start. Verification here is
+  unit-level and ends at `bun run test` / `check:all` / `test:coverage`.
+
+  This is a real and declared gap: **nothing in this PR proves canonicalization reduces failed reads
+  in a live run.** Say exactly that in the PR body. Do not imply the metric was taken, do not
+  describe the expected before/after as though it were observed, and do not tick it in Done criteria.
+  File a follow-up issue titled "live-verify #2067 workdir canonicalization on a real monorepo",
+  citing this plan, and link it from the PR.
 
 - **Migrating existing PRDs.** The `path-frame.ts` accessors normalize defensively at read time; PRDs written before this change keep working and simply carry no `workdirSource`.
 - **Seams 5 through 10** in the design spec's table. Each is filed as its own issue.
