@@ -22,16 +22,10 @@
  * traded for a silent misread.
  */
 
+import { normalizeWorkdir, UNREADABLE_MARKER } from "@/utils/path-frame";
+
 /** Heading emitted by `renderFragmentBody`; the section this module rewrites. */
 const FILES_TOUCHED_HEADING = "## Files touched";
-
-/**
- * Appended to an entry outside the consumer's package.
- *
- * ASCII only and no em dash: this string is rendered into agent prompts and
- * asserted byte-for-byte in tests.
- */
-const UNREADABLE_MARKER = " (other package - not readable from this story's workdir)";
 
 /** Posix-normalised, trailing separators removed. */
 function toPosix(value: string): string {
@@ -44,11 +38,12 @@ function toPosix(value: string): string {
  * Undefined covers three real cases, all of which must degrade to a
  * byte-identical body: a single-package repo, a root-package story, and a
  * story whose PRD left `workdir` null (nax#2067).
+ *
+ * Delegates to the path-frame SSOT so "." is collapsed in exactly one place.
  */
 function normalisePrefix(consumerWorkdir: string | undefined): string | undefined {
-  if (!consumerWorkdir) return undefined;
-  const prefix = toPosix(consumerWorkdir.trim()).replace(/^(\.\/)+/, "");
-  return !prefix || prefix === "." ? undefined : prefix;
+  const prefix = normalizeWorkdir(consumerWorkdir);
+  return prefix === "." ? undefined : prefix;
 }
 
 /**
