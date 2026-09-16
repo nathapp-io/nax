@@ -288,21 +288,25 @@ async function addFileElements(
   // nax#2067/#2089: the on-disk PRD holds repo-rooted declared paths, but the
   // agent's file tools are contained at the package dir (`codingToolRoot`), so
   // each path is re-spelled into the package frame before it is resolved or
-  // emitted. When `workdirSource` is stamped, `canonicalizePrdWorkdirs` has
-  // proven every path is repo-rooted, so a path outside this package is genuinely
+  // emitted. The merged `contextFiles` carries repo-rooted parent outputs, so
+  // when `workdirSource` is stamped a path outside this package is genuinely
   // unreachable: it is dropped rather than passed through as a path that would
   // resolve to a real but WRONG file under this package (#2089).
+  //
+  // `expectedFiles` stays on the non-canonical passthrough: the write seam only
+  // re-spells paths that existed at plan time, so these create-intent outputs
+  // remain workdir-relative and their package-relative spelling is legal.
   const canonical = story.workdirSource !== undefined;
   const { readable: framedContextFiles, unreachable } = partitionPackageFrame(contextFiles, storyWorkdir(story), {
     canonical,
   });
-  const { readable: framedExpectedFiles } = partitionPackageFrame(expectedFiles, storyWorkdir(story), { canonical });
+  const { readable: framedExpectedFiles } = partitionPackageFrame(expectedFiles, storyWorkdir(story));
 
   if (unreachable.length > 0) {
-    getLogger().warn("context", "Parent context files outside this story's package were dropped", {
+    getLogger().warn("context", "Context files outside this story's package were dropped", {
       storyId: story.id,
       count: unreachable.length,
-      files: unreachable.slice(0, 5),
+      files: unreachable.slice(0, FILE_INJECTION_MAX_FILES),
     });
   }
 

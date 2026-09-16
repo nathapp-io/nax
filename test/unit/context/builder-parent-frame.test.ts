@@ -123,4 +123,56 @@ describe("context builder parent-frame partitioning (nax#2089)", () => {
       cleanupTempDir(tempDir);
     }
   });
+
+  test("keeps a canonical story's create-intent expectedFile in the package frame", async () => {
+    const tempDir = makeTempDir("nax-builder-frame-");
+    try {
+      // `src/new.ts` is intentionally NOT on disk: it is this story's own
+      // to-be-created output, authored workdir-relative. The write seam only
+      // re-spells paths that resolved on disk, so it stays package-relative.
+      await writeFiles(tempDir, {
+        "packages/api/src/existing.ts": "export const existing = true;",
+      });
+
+      const consumer = makeStory({
+        id: "US-002",
+        workdir: API_WORKDIR,
+        workdirSource: "stated",
+        expectedFiles: ["src/new.ts"],
+      });
+      const prd = makePRD({ userStories: [consumer] });
+
+      const built = await buildContext(makeStoryContext(prd, path.join(tempDir, API_WORKDIR)), BUDGET);
+      const createIntent = built.elements.find((e) => e.type === "file" && e.filePath === "src/new.ts");
+
+      expect(createIntent).toBeDefined();
+      expect(createIntent?.content).toContain("you will CREATE it");
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  });
+
+  test("keeps a pre-#2067 story's create-intent expectedFile (no workdirSource)", async () => {
+    const tempDir = makeTempDir("nax-builder-frame-");
+    try {
+      await writeFiles(tempDir, {
+        "packages/api/src/existing.ts": "export const existing = true;",
+      });
+
+      const consumer = makeStory({
+        id: "US-002",
+        workdir: API_WORKDIR,
+        expectedFiles: ["src/new.ts"],
+      });
+      const prd = makePRD({ userStories: [consumer] });
+
+      const built = await buildContext(makeStoryContext(prd, path.join(tempDir, API_WORKDIR)), BUDGET);
+      const createIntent = built.elements.find((e) => e.type === "file" && e.filePath === "src/new.ts");
+
+      expect(createIntent).toBeDefined();
+      expect(createIntent?.content).toContain("you will CREATE it");
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  });
 });

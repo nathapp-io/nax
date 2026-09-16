@@ -112,11 +112,22 @@ export function toPackageFrame(path: string, workdir: string | null | undefined)
  * and what it cannot.
  *
  * `canonical: true` asserts the caller's paths came through the plan-time write
- * seam (story.workdirSource is stamped, src/prd/workdir-canonical.ts), so they
- * are provably repo-rooted. A toPackageFrame miss is then a REAL out-of-package
- * path and goes to `unreachable` rather than being passed through -- passing it
- * through emitted a path that resolved to a real but WRONG file under the
- * consumer's root (nax#2089), exactly what toPackageFrame's docblock forbids.
+ * seam (story.workdirSource is stamped, src/prd/workdir-canonical.ts). That
+ * seam stamps EVERY story, but it re-spells a declared path only when the path
+ * resolved on disk at plan time; a path that existed nowhere is returned
+ * UNCHANGED (canonicalizeDeclaredPath, src/prd/workdir-canonical.ts). So the
+ * flag does not mean every path is repo-rooted: this story's create-intent
+ * `expectedFiles`, and any `contextFiles` entry that was absent at plan time,
+ * stay in the story's workdir-relative frame.
+ *
+ * A toPackageFrame miss is therefore only known out-of-package when the path set
+ * genuinely carries repo-rooted paths. Use `canonical: true` ONLY on such sets --
+ * the merged `contextFiles`, which carries repo-rooted parent outputs (nax#2089):
+ * there a miss is a real out-of-package path that goes to `unreachable` rather
+ * than being passed through as a path resolving to a real but WRONG file under
+ * the consumer's root, exactly what toPackageFrame's docblock forbids. Never use
+ * it on create-intent `expectedFiles`, whose package-relative spelling is legal
+ * and whose miss would be wrongly dropped.
  *
  * Without the flag every entry lands in `readable` unchanged: a pre-#2067 PRD
  * may hold package-relative paths, and `src/x.ts` is genuinely ambiguous between
