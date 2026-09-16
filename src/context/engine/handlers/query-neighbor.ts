@@ -68,6 +68,10 @@ export async function handleQueryNeighbor(
   // story.workdir again double-joins in monorepos, and splitting repoRoot from
   // packageDir redirects the cross-package scan at the main checkout under
   // storyIsolation: "worktree". Do not "fix" this without a worktree test.
+  //
+  // Frame (nax#2088): touchedFiles is built here as `[input.filePath]` from a
+  // caller-validated repo-relative path (:55), and packageDir === repoRoot, so
+  // the repo-framed contract already holds and fetch()'s partition is identity.
   const request: ContextRequest = {
     storyId: storyId ?? "_pull-tool",
     repoRoot,

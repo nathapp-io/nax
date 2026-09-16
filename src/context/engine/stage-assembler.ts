@@ -22,7 +22,6 @@ import { getLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import { getContextFiles } from "@/prd";
 import { errorMessage } from "@/utils/errors";
-import { storyWorkdir, toPackageFrameFiles } from "@/utils/path-frame";
 import { estimateAvailableBudgetTokens } from "./available-budget";
 import { loadFeatureManifests, writeContextManifest } from "./manifest-store";
 import { createDefaultOrchestrator } from "./orchestrator-factory";
@@ -230,10 +229,12 @@ export async function assembleForStage(
       // merged config (root + <repoRoot>/.nax/mono/<packageDir>/config.json overlay).
       budgetTokens: stageOverrides?.budgetTokens ?? stageConfig.budgetTokens,
       extraProviderIds: stageOverrides?.extraProviderIds ?? [],
-      // nax#2067: the written PRD holds repo-rooted declared paths; the
-      // history/neighbor providers resolve touchedFiles against packageDir, so
-      // re-frame into the package frame (mirrors src/context/builder.ts).
-      touchedFiles: toPackageFrameFiles(options.touchedFiles ?? getContextFiles(ctx.story), storyWorkdir(ctx.story)),
+      // Path-frame convention (nax#2071): nax-internal path sets are
+      // REPO-ROOTED. The PRD's declared paths pass through in the canonical repo
+      // frame; providers re-spell at their own output boundary (git-history.ts
+      // runs git in repoRoot; code-neighbor.ts partitions into the package frame
+      // in fetch()).
+      touchedFiles: options.touchedFiles ?? getContextFiles(ctx.story),
       ...(options.scopeFiles !== undefined && { scopeFiles: options.scopeFiles }),
       storyScratchDirs,
       priorStageDigest: options.priorStageDigest ?? ctx.contextBundle?.digest,

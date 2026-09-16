@@ -168,16 +168,17 @@ describe("CodeNeighborProvider", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // nax#2067: CodeNeighborProvider resolves touchedFiles against packageDir
-  // (package scope). A repo-rooted path from a canonicalized PRD is joined onto
-  // the package dir and never matches; the request builders re-frame via
-  // toPackageFrameFiles before the request is built.
+  // nax#2067 + nax#2088: touchedFiles is REPO-ROOTED (types.ts). fetch()
+  // partitions it into the package frame at the point of resolution, so a
+  // repo-rooted path from a canonicalized PRD resolves against packageDir and
+  // yields neighbors; the package-framed spelling (what OLD request builders
+  // sent) names a repo-root file outside the package and is dropped.
   // ─────────────────────────────────────────────────────────────────────────────
 
   describe("nax#2067 touchedFiles frame contract", () => {
     // No resolvedTestPatterns: skips sibling-test hinting so the assertion
     // isolates forward/reverse neighbor resolution — the frame that a
-    // repo-rooted touchedFile breaks.
+    // repo-rooted touchedFile must survive.
     const MONOREPO_REQUEST: ContextRequest = {
       storyId: "US-001",
       repoRoot: "/repo",
@@ -187,7 +188,7 @@ describe("CodeNeighborProvider", () => {
       budgetTokens: 8_000,
     };
 
-    test("a repo-rooted touchedFile from a canonicalized PRD yields no neighbors", async () => {
+    test("a repo-rooted touchedFile from a canonicalized PRD yields neighbors", async () => {
       setupDeps({
         files: { "packages/app/src/service.ts": 'import { helper } from "./utils/helper"' },
         globFiles: ["packages/app/src/utils/helper.ts"],
@@ -196,10 +197,11 @@ describe("CodeNeighborProvider", () => {
         ...MONOREPO_REQUEST,
         touchedFiles: ["packages/app/src/service.ts"],
       });
-      expect(result.chunks).toHaveLength(0);
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0]?.content).toContain("utils/helper");
     });
 
-    test("the package-framed spelling (what request builders now send) emits neighbors", async () => {
+    test("the package-framed spelling (what OLD request builders sent) is dropped at package scope", async () => {
       setupDeps({
         files: { "packages/app/src/service.ts": 'import { helper } from "./utils/helper"' },
         globFiles: ["packages/app/src/utils/helper.ts"],
@@ -208,8 +210,7 @@ describe("CodeNeighborProvider", () => {
         ...MONOREPO_REQUEST,
         touchedFiles: ["src/service.ts"],
       });
-      expect(result.chunks).toHaveLength(1);
-      expect(result.chunks[0]?.content).toContain("utils/helper");
+      expect(result.chunks).toHaveLength(0);
     });
   });
 
@@ -393,7 +394,7 @@ describe("CodeNeighborProvider — AC-56 neighborScope", () => {
     stage: "execution",
     role: "implementer",
     budgetTokens: 8_000,
-    touchedFiles: ["src/service.ts"],
+    touchedFiles: ["packages/api/src/service.ts"],
   };
 
   /** Captures which cwds were passed to glob */

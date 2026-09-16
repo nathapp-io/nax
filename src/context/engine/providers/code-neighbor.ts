@@ -11,8 +11,9 @@ import { join, relative, resolve } from "node:path";
 import { getLogger } from "@/logger";
 import { detectLanguage } from "@/project";
 import type { NaxIgnoreMatcher } from "@/utils/path-filters";
-import { UNREADABLE_MARKER } from "@/utils/path-frame";
+import { partitionPackageFrame, UNREADABLE_MARKER } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
+import { packageDirRelative } from "@/utils/paths";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
 import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";
 import { assembleCodeNeighborChunk, type NeighborSection } from "./code-neighbor-chunk";
@@ -234,8 +235,9 @@ function spellForConsumer(absPath: string, consumerRoot: string, repoRoot: strin
  *
  * Two roots, deliberately distinct (nax#2074):
  *   - `consumerRoot` is the absolute dir `filePath` is relative to. It is ALWAYS
- *     `request.packageDir`, because `ContextRequest.touchedFiles` is package-framed
- *     (see src/context/engine/types.ts:329).
+ *     `request.packageDir`: `fetch()` partitions the repo-rooted
+ *     `request.touchedFiles` into the package frame at the point of resolution
+ *     (nax#2088), so every `filePath` that reaches here is package-framed.
  *   - each `ScannedDir.workdir` is the root its `files` are relative to.
  *
  * Under `neighborScope: "repo"` those differ, so no two relative paths here are
@@ -379,15 +381,17 @@ export class CodeNeighborProvider implements IContextProvider {
 
   async fetch(request: ContextRequest, signal?: AbortSignal): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
-    // The scan root: where the reverse-dep glob runs. NOT the frame the touched
-    // files are in — those are package-framed (types.ts:329) and resolved
-    // against request.packageDir inside collectNeighbors (nax#2074).
+    // The scan root: where the reverse-dep glob runs.
     const scanRoot = this.neighborScope === "package" ? request.packageDir : request.repoRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }
 
-    const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
+    // nax#2088: touchedFiles is REPO-ROOTED (types.ts); re-spell into the
+    // package frame here — collectNeighbors joins onto consumerRoot === packageDir.
+    const pkgDir = packageDirRelative(request.repoRoot, request.packageDir);
+    const { readable } = partitionPackageFrame(touchedFiles, pkgDir, { canonical: true });
+    const filesToProcess = readable.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
     // ADR-009: sibling-test derivation requires resolver output on the request.
     // When ContextRequest.resolvedTestPatterns is absent (e.g. legacy callers
@@ -406,14 +410,10 @@ export class CodeNeighborProvider implements IContextProvider {
     const sourceGlob = await resolveSourceGlob(this.sourceGlobOverride, request.packageDir);
     const globCtx = { storyId: request.storyId, packageDir: request.packageDir };
 
-    // Hoist the reverse-dep glob scan outside the per-file loop so we never
-    // re-glob the same directory N times (once per touched file). A shared
-    // content cache further ensures each candidate file is read at most once
-    // across all touched files in this fetch() call.
-    // One scan root. A sibling-package scan was removed in nax#2074: bare
-    // specifiers are never parsed (parseImportSpecifiers, above), so a true
-    // cross-package dependent was never findable, and the only cross-package
-    // matches the scan could produce were false ones.
+    // Hoist the reverse-dep glob scan outside the per-file loop (once per
+    // touched file) with a shared content cache (each candidate read at most
+    // once per fetch). One scan root since nax#2074: bare specifiers are never
+    // parsed, so a cross-package dependent was never findable.
     const scannedDirs: ScannedDir[] = [scanDirectory(sourceGlob, scanRoot, ignoreMatchers, this.maxGlobFiles, globCtx)];
     const contentCacheState = createContentCacheState();
 

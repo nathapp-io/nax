@@ -14,8 +14,11 @@
  */
 
 import { createHash } from "node:crypto";
+import { getLogger } from "@/logger";
 import { gitWithTimeout } from "@/utils/git";
+import { toPackageFrame } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
+import { packageDirRelative } from "@/utils/paths";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,9 +27,12 @@ import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk 
 
 export interface GitHistoryProviderOptions {
   /**
-   * Scope of the git working directory for history queries (AC-55).
-   * "repo" — runs git log in repoRoot (full repo history).
-   * "package" — runs git log in packageDir (monorepo package boundary).
+   * Scope of the git history query (AC-55, nax#2088).
+   * git ALWAYS runs in repoRoot against repo-rooted pathspecs; this option is
+   * a post-filter, not a workdir switch:
+   *   "repo" — every touched file is queried (full repo history).
+   *   "package" — only files beneath packageDir are queried (monorepo package
+   *     boundary).
    * Default: "package" (monorepo-safe; scopes history to the story's package).
    */
   historyScope?: "repo" | "package";
@@ -51,6 +57,7 @@ const MAX_CHUNK_TOKENS = 600;
 
 export const _gitHistoryDeps = {
   gitWithTimeout,
+  getLogger,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,7 +72,12 @@ function contentHash8(content: string): string {
  * Fetch git log for a single file and return a formatted section.
  * Returns null when the file has no history or git fails.
  */
-async function fetchFileHistory(filePath: string, workdir: string, signal?: AbortSignal): Promise<string | null> {
+async function fetchFileHistory(
+  filePath: string,
+  workdir: string,
+  storyId: string | undefined,
+  signal?: AbortSignal,
+): Promise<string | null> {
   // PERF-2: cooperative cancellation — a timed-out fetch must not keep
   // spawning git for files the orchestrator no longer wants.
   if (signal?.aborted) return null;
@@ -76,7 +88,17 @@ async function fetchFileHistory(filePath: string, workdir: string, signal?: Abor
 
   if (exitCode !== 0) return null;
   const trimmed = stdout.trim();
-  if (!trimmed) return null;
+  if (!trimmed) {
+    // A5 (nax#2088): git returned exit 0 with no commits for this pathspec —
+    // a silent miss, not an error. Log once so a frame bug is diagnosable.
+    _gitHistoryDeps.getLogger().warn("context-v2", "git history empty for touched file", {
+      storyId,
+      filePath,
+      pathspec: filePath,
+      cwd: workdir,
+    });
+    return null;
+  }
 
   return `### ${filePath}\n${trimmed}`;
 }
@@ -101,12 +123,26 @@ export class GitHistoryProvider implements IContextProvider {
 
   async fetch(request: ContextRequest, signal?: AbortSignal): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
-    const workdir = this.historyScope === "package" ? request.packageDir : request.repoRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }
 
-    const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
+    // nax#2088: touchedFiles is REPO-ROOTED (types.ts) and git ALWAYS runs in
+    // repoRoot against the repo-rooted pathspec. Running `git log` in packageDir
+    // while the paths stay repo-framed made the pathspec resolve to nothing
+    // (exit 0, empty stdout — silently dropping the file) or, worse, to an
+    // unrelated root-level file under the story's label.
+    //
+    // historyScope is a post-filter, not a workdir switch: under "package" only
+    // entries beneath request.packageDir are kept.
+    const workdir = request.repoRoot;
+    // "." = repo root: a root story (or worktree case where packageDirRelative
+    // is undefined) keeps every entry — toPackageFrame is identity for ".".
+    const packageWorkdir = packageDirRelative(request.repoRoot, request.packageDir) ?? ".";
+    const filesToProcess = touchedFiles
+      .filter(isRelativeAndSafe)
+      .filter((file) => this.historyScope !== "package" || toPackageFrame(file, packageWorkdir) !== null)
+      .slice(0, MAX_FILES);
 
     // US-001: scope attribution must follow the file-to-section association,
     // not the input list. fetchFileHistory returns null for files with no
@@ -119,7 +155,7 @@ export class GitHistoryProvider implements IContextProvider {
       await Promise.all(
         filesToProcess.map(async (file) => ({
           file,
-          section: await fetchFileHistory(file, workdir, signal),
+          section: await fetchFileHistory(file, workdir, request.storyId, signal),
         })),
       )
     ).filter((entry): entry is { file: string; section: string } => entry.section !== null);

@@ -97,7 +97,7 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     );
     const provider = new CodeNeighborProvider({ neighborScope: "repo" });
 
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     const lines = neighborLines(result.chunks[0]?.content ?? "");
     expect(lines).toContain(`- packages/lib/src/index.ts${UNREADABLE_MARKER}`);
@@ -133,7 +133,9 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
 
     // Default scope: the issue's exact configuration. helper.ts must not be
     // recorded as a reverse dependency of the consumer's src/index.ts.
-    const pkgScoped = await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
+    const pkgScoped = await new CodeNeighborProvider().fetch(
+      makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }),
+    );
     const pkgLines = neighborLines(pkgScoped.chunks[0]?.content ?? "");
     expect(pkgLines.some((line) => line.includes("helper.ts"))).toBe(false);
     expect(pkgLines).not.toContain("- src/index.ts");
@@ -142,7 +144,7 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     // the absolute self-skip must still reject both the sibling helper.ts and
     // the sibling's identically-spelled src/index.ts.
     const repoScoped = await new CodeNeighborProvider({ neighborScope: "repo" }).fetch(
-      makeRequest({ touchedFiles: ["src/index.ts"] }),
+      makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }),
     );
     const repoLines = neighborLines(repoScoped.chunks[0]?.content ?? "");
     expect(repoLines.some((line) => line.includes("helper.ts"))).toBe(false);
@@ -162,7 +164,7 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     );
     const provider = new CodeNeighborProvider({ neighborScope: "repo" });
 
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     const lines = neighborLines(result.chunks[0]?.content ?? "");
     expect(lines).toContain("- src/user.ts");
@@ -181,15 +183,16 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     );
     const provider = new CodeNeighborProvider({ neighborScope: "repo" });
 
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     expect(result.chunks[0]?.scopePaths).toContain("packages/lib/src/index.ts");
     expect(result.chunks[0]?.scopePaths?.some((p) => p.includes(UNREADABLE_MARKER))).toBe(false);
   });
 
-  // The touched file is package-framed by contract (types.ts:329). Under
-  // neighborScope "repo" the OLD code resolved it against repoRoot and read
-  // nothing, so forward deps silently vanished.
+  // The touched file is repo-rooted by contract (types.ts); fetch() re-spells
+  // it into the package frame before collectNeighbors runs. Under
+  // neighborScope "repo" the OLD code resolved a package-framed path against
+  // repoRoot and read nothing, so forward deps silently vanished.
   test("forward deps are resolved against packageDir even when the scan root is the repo", async () => {
     setupDeps(
       {
@@ -200,7 +203,7 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     );
     const provider = new CodeNeighborProvider({ neighborScope: "repo" });
 
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- src/dep.ts");
   });
@@ -226,7 +229,7 @@ describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () =>
       return { files: globByCwd[cwd] ?? [], truncated: false };
     };
 
-    await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
+    await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     expect(globbedRoots).toEqual(["/repo/packages/app"]);
   });

@@ -679,13 +679,13 @@ describe("assembleForStage — publishes storyScratchDirs (US-005)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// nax#2067: the on-disk PRD holds repo-rooted declared paths, but the
-// history/neighbor providers resolve request.touchedFiles against packageDir.
-// assembleForStage must re-frame the declared files into the package frame,
-// mirroring v1 addFileElements (src/context/builder.ts).
+// nax#2067 + nax#2088: touchedFiles is REPO-ROOTED (path-frame convention).
+// assembleForStage passes the declared files through in the canonical repo
+// frame; the providers re-spell at their own output boundary (git-history.ts
+// runs git in repoRoot, code-neighbor.ts partitions in fetch()).
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("assembleForStage — nax#2067 touchedFiles package-frame", () => {
+describe("assembleForStage — nax#2088 touchedFiles repo-frame", () => {
   const origCreate = _stageAssemblerDeps.createOrchestrator;
   afterEach(() => {
     _stageAssemblerDeps.createOrchestrator = origCreate;
@@ -697,7 +697,7 @@ describe("assembleForStage — nax#2067 touchedFiles package-frame", () => {
     return mock;
   }
 
-  test("re-frames a canonicalized story's repo-rooted contextFiles into the package frame", async () => {
+  test("passes a canonicalized story's repo-rooted contextFiles through in the repo frame", async () => {
     const mock = capture();
     const ctx = makeCtx({
       storyWorkdir: "packages/app",
@@ -708,10 +708,10 @@ describe("assembleForStage — nax#2067 touchedFiles package-frame", () => {
 
     await assembleForStage(ctx, "execution");
 
-    expect(mock.ref.captured?.touchedFiles).toEqual(["src/service.ts"]);
+    expect(mock.ref.captured?.touchedFiles).toEqual(["packages/app/src/service.ts"]);
   });
 
-  test("leaves a pre-canonicalization package-relative contextFile unchanged", async () => {
+  test("passes a pre-canonicalization package-relative contextFile through unchanged", async () => {
     const mock = capture();
     const ctx = makeCtx({
       storyWorkdir: "packages/app",
@@ -725,7 +725,7 @@ describe("assembleForStage — nax#2067 touchedFiles package-frame", () => {
     expect(mock.ref.captured?.touchedFiles).toEqual(["src/service.ts"]);
   });
 
-  test("leaves a root story's repo-rooted contextFiles unchanged", async () => {
+  test("passes a root story's repo-rooted contextFiles through unchanged", async () => {
     const mock = capture();
     const ctx = makeCtx({
       storyContextFiles: ["src/service.ts"],

@@ -313,6 +313,15 @@ export interface ContextRequest {
   /**
    * Files this story touches (from PRD contextFiles or story.relevantFiles).
    * Used by GitHistoryProvider and CodeNeighborProvider (Phase 3).
+   *
+   * REPO-ROOTED, per the path-frame convention (nax#2071) — see
+   * `src/utils/path-frame.ts`. Both build sites
+   * (src/pipeline/stages/context.ts and stage-assembler.ts) pass the PRD's
+   * repo-rooted `contextFiles` through unchanged. Providers resolve these
+   * against `request.repoRoot` and re-spell at their own output boundary:
+   * git-history.ts runs `git log` in repoRoot with the repo-rooted pathspec
+   * and applies `historyScope` as a post-filter; code-neighbor.ts partitions
+   * them into the package frame at the point of resolution in `fetch()`.
    */
   touchedFiles?: string[];
   /**
@@ -326,11 +335,10 @@ export interface ContextRequest {
    * never read (the identically-named `scopeFiles` on the mechanical-fix
    * strategies is an unrelated field that IS shell-interpolated).
    *
-   * Its neighbour `touchedFiles` is package-framed: both ContextRequest build
-   * sites (src/pipeline/stages/context.ts and stage-assembler.ts) re-spell the
-   * PRD's repo-rooted `contextFiles` into the package frame via
-   * `toPackageFrameFiles`, because GitHistoryProvider / CodeNeighborProvider
-   * resolve them against `request.packageDir`.
+   * Its neighbour `touchedFiles` is repo-rooted the same way: both
+   * ContextRequest build sites (src/pipeline/stages/context.ts and
+   * stage-assembler.ts) pass the PRD's repo-rooted `contextFiles` through
+   * unchanged, and each provider re-spells at its own output boundary.
    */
   scopeFiles?: string[];
   /**
