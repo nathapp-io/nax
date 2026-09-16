@@ -24,6 +24,7 @@ import { storySpendUsd } from "../runtime";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
+import { storyPackageDir } from "../utils/path-frame";
 import { MergeEngine, WorktreeManager } from "../worktree";
 import { handleTierEscalation, verifyEscalationQuotes } from "./escalation";
 import { appendProgress } from "./progress";
@@ -207,7 +208,7 @@ export async function handlePipelineSuccess(
   if (ctx.storyGitRef) {
     for (const completedStory of ctx.storiesToExecute) {
       try {
-        const rawFiles = await captureOutputFiles(ctx.workdir, ctx.storyGitRef, completedStory.workdir);
+        const rawFiles = await captureOutputFiles(ctx.workdir, ctx.storyGitRef, storyPackageDir(completedStory));
         const filtered = filterOutputFiles(rawFiles);
         if (filtered.length > 0) {
           completedStory.outputFiles = filtered;
@@ -215,7 +216,7 @@ export async function handlePipelineSuccess(
         // Capture diff stat summary for dependency context injection.
         // Note: if the agent commits at session-close time (after pipeline stages complete),
         // HEAD may still equal storyGitRef here and the diff will be empty.
-        const diffSummary = await captureDiffSummary(ctx.workdir, ctx.storyGitRef, completedStory.workdir);
+        const diffSummary = await captureDiffSummary(ctx.workdir, ctx.storyGitRef, storyPackageDir(completedStory));
         if (diffSummary) {
           completedStory.diffSummary = diffSummary;
         } else {

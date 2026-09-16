@@ -28,6 +28,7 @@ import { getLogger } from "@/logger";
 import type { PRD, UserStory } from "@/prd";
 import { loadPRD as loadPRDImpl } from "@/prd";
 import { errorMessage } from "@/utils/errors";
+import { storyWorkdir } from "@/utils/path-frame";
 import { applyStaleness, detectContradictions, parseFeatureContextEntries, selectStaleByAge } from "../staleness";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -385,7 +386,7 @@ export class FeatureContextProviderV2 implements IContextProvider {
       // `<root>/.nax-wt/<storyId>/<pkg>` while `repoRoot` is the main
       // checkout, so it yields `.nax-wt/<storyId>/<pkg>` and mis-classifies
       // every entry. Same trap as nax#2069.
-      const body = reframeFilesTouched(rawBody, this.story.workdir);
+      const body = reframeFilesTouched(rawBody, storyWorkdir(this.story));
 
       const bodyTokens = estimateTokens(body);
       if (usedTokens + bodyTokens > fragmentBudget) {
