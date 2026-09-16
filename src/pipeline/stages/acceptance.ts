@@ -28,7 +28,6 @@
  * ```
  */
 
-import path from "node:path";
 import type { HardeningContext } from "@/acceptance";
 import { buildAcceptanceRunCommand, resolveAcceptanceFeatureTestPath } from "@/acceptance";
 import type { Finding } from "@/findings";
@@ -41,6 +40,7 @@ import {
   parseTestFailuresDetailed,
 } from "@/test-runners";
 import { logTestOutput } from "@/utils/log-test-output";
+import { storyAbsWorkdir } from "@/utils/path-frame";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -154,8 +154,7 @@ export const acceptanceStage: PipelineStage = {
     const storiesByPackageDir = new Map<string, number>();
     for (const s of ctx.prd.userStories) {
       if (!isInAcceptanceScope(s)) continue;
-      const wd = s.workdir ?? "";
-      const pkgDir = wd ? path.join(ctx.workdir, wd) : ctx.workdir;
+      const pkgDir = storyAbsWorkdir(ctx.workdir, s);
       storiesByPackageDir.set(pkgDir, (storiesByPackageDir.get(pkgDir) ?? 0) + 1);
     }
 

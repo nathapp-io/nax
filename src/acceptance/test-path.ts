@@ -2,6 +2,7 @@ import path from "node:path";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
 import { isInAcceptanceScope } from "@/prd";
+import { storyWorkdir } from "@/utils/path-frame";
 import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
 
@@ -139,7 +140,7 @@ export async function groupStoriesByPackage(
 
   const groupMap = new Map<string, { stories: UserStory[]; criteria: string[] }>();
   for (const story of nonFixStories) {
-    const wd = story.workdir ?? "";
+    const wd = storyWorkdir(story);
     if (!groupMap.has(wd)) {
       groupMap.set(wd, { stories: [], criteria: [] });
     }

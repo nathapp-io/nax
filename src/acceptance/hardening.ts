@@ -16,6 +16,7 @@ import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { parseTestFailures } from "../test-runners/ac-parser";
+import { storyWorkdir } from "../utils/path-frame";
 import { killProcessGroup } from "../utils/process-kill";
 import { buildAcceptanceRunCommand, generateSkeletonTests } from "./generator";
 import { resolveSuggestedPackageFeatureTestPath } from "./test-path";
@@ -296,7 +297,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
     // placed under <packageDir>/.nax/features/… rather than at the repo root.
     const packageGroups = new Map<string, typeof storiesWithSuggested>();
     for (const story of storiesWithSuggested) {
-      const wd = story.workdir ?? "";
+      const wd = storyWorkdir(story);
       if (!packageGroups.has(wd)) packageGroups.set(wd, []);
       packageGroups.get(wd)?.push(story);
     }
