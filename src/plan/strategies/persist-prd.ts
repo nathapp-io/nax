@@ -52,20 +52,29 @@ export interface PersistPrdArgs {
 }
 
 /**
- * Repair → finalize routing → write. Returns the path written.
+ * Repair → canonicalize → finalize routing → write. Returns the path written.
  *
  * Context-free so `runPlanPipeline`, which never builds a `PlanModeContext`,
  * shares the same invariant as the four strategies.
  */
 export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string> {
+  // Fidelity runs BEFORE canonicalization. `applyPlanFidelity` ends by calling
+  // `warnOnDroppedContextFiles`, which compares the spec's raw `### Context Files`
+  // declarations against `getContextFiles(story)` by exact match. Canonicalization
+  // re-spells those entries into the repo frame, so running it first would make
+  // every package-relative spec entry read as dropped on exactly the monorepo case
+  // this feature targets. Fidelity never writes `contextFiles`/`expectedFiles`, and
+  // the repo state does not change between the two calls, so the order is free.
+  const repaired = applyPlanFidelity(args.prd, args.specContent, args.featureName);
+
   // nax#2067: decide each story's workdir and re-spell its declared paths into
   // the repo frame, while the repo is still in the state the planner described.
-  // Degrades to the raw PRD rather than failing the plan: a PRD with an
-  // underived workdir is the status quo, a lost plan is not.
-  let canonical = args.prd;
+  // Degrades to the fidelity-repaired PRD rather than failing the plan: a PRD with
+  // an underived workdir is the status quo, a lost plan is not.
+  let canonical = repaired;
   try {
     const packages = await _persistPrdDeps.discoverWorkspacePackages(args.repoRoot);
-    const result = canonicalizePrdWorkdirs(args.prd, args.repoRoot, packages, _persistPrdDeps.existsSync);
+    const result = canonicalizePrdWorkdirs(repaired, args.repoRoot, packages, _persistPrdDeps.existsSync);
     canonical = result.prd;
     if (result.collisions.length > 0) {
       getLogger().warn("plan", "declared path exists at both the repo root and the story package; took story-local", {
@@ -86,9 +95,8 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     getLogger().warn("plan", "workdir canonicalization skipped", { error: errorMessage(err) });
   }
 
-  const repaired = applyPlanFidelity(canonical, args.specContent, args.featureName);
   const finalized = finalizePrdRouting(
-    { ...repaired, project: args.projectName },
+    { ...canonical, project: args.projectName },
     args.agentRouting,
     args.profileName,
     args.models,

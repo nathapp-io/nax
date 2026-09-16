@@ -241,16 +241,19 @@ neither                -> P unchanged    (a file the story creates)
 both                   -> W + "/" + P    (story-local wins) and log the collision
 ```
 
-This also fixes seam 3: `checkFilesExist` (`debate/verifiers/checks.ts:26`) joins `contextFiles`
-against the repo root and today emits a spurious `major` finding for every monorepo story. Verified
-against a real PRD (`monorepo-tiny`), whose stories carry `workdir: "packages/lib"` with
-`contextFiles: ["src/util.ts", "src/util.test.ts"]` — package-relative, so every entry currently
-fails the plan-time existence check.
+This also fixes seam 3's runtime consumer: write-time canonicalization makes the on-disk PRD's
+declared paths repo-rooted, and `context/builder.ts` re-spells them into the package frame at the v1
+context boundary before resolving them. The plan-time heuristic verifiers that also read
+`contextFiles` — `src/plan/critic.ts:64` and `src/debate/verifiers/plan-checklist.ts:94`, both
+routing into `checkFilesExist` (`debate/verifiers/checks.ts:18`) — run on the PRE-write PRD, so they
+are unaffected by it and the consumer check is not closed for the plan-time path.
 
 **Provenance** is a new optional story field `workdirSource?: "stated" | "derived" | "defaulted"`.
-A new check in `checks.ts` (142 lines, ample room) warns when a `defaulted` story lands in a repo
-with `.nax/mono/` overlays, naming both consequences the issue documents: whole-corpus rule
-selection and root `quality.commands`.
+A `defaulted` story that lands in a repo with `.nax/mono/` overlays is warned about at plan time by a
+log line emitted from `finalizeAndWritePrd` (`src/plan/strategies/persist-prd.ts`), naming both
+consequences the issue documents: whole-corpus rule selection and root `quality.commands`. It is
+deliberately not a verifier: both verifier call sites run before the PRD is written, so a check there
+could never fire.
 
 **The planner prompt is fixed in the same PR.** `plan-builder.ts:56,399,511` must state the frame
 explicitly. Canonicalizing at write without fixing the instruction means every future PRD arrives
