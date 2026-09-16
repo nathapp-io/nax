@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **watchdog:** Count ACP `tool_call` / `tool_call_update` stream activity by default, and add `agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds` (default 1800s) so long-running tool-only sessions stay alive without masking runaway tool loops.
+- **Story fragments no longer name nax's own artifacts.** The fragment collector (`## Files touched`) ran
+  `git diff --name-only` with no exclusions, so git-tracked run state such as
+  `<pkg>/.nax/cache/test-patterns.json` was recorded as a changed file and then offered to a dependent
+  story as something worth reading. Excludes are anchored at the repository root, so the same fragment is
+  produced whether the story's workdir is the repo root or a package (#2072).
 - **Monorepo: the agent loop now uses per-package config.** `callOp` resolved its config from the repo
   root, so a story with a `workdir` was given the ROOT `quality.commands` and `RunCommand` ran the wrong
   toolchain (#2066). The registry also missed every override under worktree and parallel isolation, where

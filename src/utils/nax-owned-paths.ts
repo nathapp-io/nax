@@ -35,3 +35,30 @@ export const NAX_OWNED_GIT_EXCLUDE_PATHSPECS: readonly string[] = [":(exclude).n
 
 /** Short-form excludes for the review diff collector (`collectDiff` & friends). */
 export const NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS: readonly string[] = [":!.nax/", ":!.nax-pids"];
+
+/**
+ * Repository-root-anchored excludes, for a collector whose cwd varies.
+ *
+ * The two sets above are interpreted relative to git's cwd, which is fine for
+ * their consumers: the review collectors run at the story workdir and mean
+ * "this package's artifacts". The story-fragment collector cannot use them —
+ * its cwd is the repo root for a single-package repo and a package dir for a
+ * monorepo story, but its OUTPUT is repo-rooted and is read by a *different*
+ * story in a *different* package. Run from `packages/lib`, a cwd-relative
+ * exclude hides `packages/lib/.nax/` and leaves the repo-root `.nax/` visible,
+ * so the same fragment gained or lost entries depending on which package
+ * happened to produce it (#2072).
+ *
+ * `top` anchors each pattern at the repository root, so the set is identical
+ * from either cwd. `glob` is still required for the nested pattern — without
+ * it git does not treat a leading `**` as a cross-directory glob (same reason
+ * as `NAX_OWNED_GIT_EXCLUDE_PATHSPECS` above). These exclude ONLY nax's own
+ * artifacts: they must not double as a cwd scope, because a fragment names
+ * where a dependency landed and a sibling package's file has to survive.
+ * Real-git verified in test/integration/pipeline/completion-fragment-paths.test.ts.
+ */
+export const NAX_OWNED_TOP_EXCLUDE_PATHSPECS: readonly string[] = [
+  ":(top,exclude).nax",
+  ":(glob,top,exclude)**/.nax/**",
+  ":(top,exclude).nax-pids",
+];
