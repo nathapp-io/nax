@@ -244,9 +244,11 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * The root itself IS named, deliberately. The rule above -- never reveal
    * repository structure -- is about paths the model never touched; this path is
    * one the model just passed, and telling it where the boundary is is the
-   * difference between "adapt" and "work around". The same root is stated in the
-   * dispatch preamble (src/prompts/sections/agent-scope.ts), so this discloses
-   * nothing the agent was not already told.
+   * difference between "adapt" and "work around". The dispatch preamble
+   * (src/prompts/sections/agent-scope.ts) states the same boundary only as a
+   * package-relative label (`packages/api`), never as an absolute path, so this
+   * message is where the agent first sees the absolute containment root -- and
+   * naming a path the model itself handed in is the right disclosure.
    */
   function outOfRootReason(tool: string, root: string, candidate: string): string {
     const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
