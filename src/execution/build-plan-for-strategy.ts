@@ -38,6 +38,7 @@ import { makeFullSuiteRectifyStrategy, makeRepoScopedTestFixStrategy } from "../
 import type { CallContext } from "../operations/types";
 import type { UserStory } from "../prd/types";
 import { resolveTestFilePatterns } from "../test-runners";
+import { storyPackageDir } from "../utils/path-frame";
 import type { PlanInputs } from "./plan-inputs";
 import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBuilder } from "./story-orchestrator";
 
@@ -225,8 +226,9 @@ export async function buildPlanForStrategy(
 
   // Path anchors shared by both the main-rectification postValidate and the nbf postValidate.
   // Computed once here; used in both closures below to avoid duplicate async FS reads.
-  const { repoRoot, packageDir } = resolveStoryPathAnchors(ctx.packageDir, story.workdir);
-  const resolvedTestPatterns = await resolveTestFilePatterns(config, repoRoot, story.workdir);
+  const storyPkg = storyPackageDir(story);
+  const { repoRoot, packageDir } = resolveStoryPathAnchors(ctx.packageDir, storyPkg);
+  const resolvedTestPatterns = await resolveTestFilePatterns(config, repoRoot, storyPkg);
 
   // Rectification: requires both config gate and typed inputs.
   // Assemble strategies: mechanical fixes first, then full-suite (TDD), then autofix agents.

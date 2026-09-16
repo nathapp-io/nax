@@ -33,6 +33,7 @@ import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
 import { isInAcceptanceScope } from "@/prd";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
+import { storyAbsWorkdir } from "@/utils/path-frame";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -330,7 +331,7 @@ async function runAcceptanceSetup(
 
       for (let i = 0; i < nonFixStories.length; i++) {
         const story = nonFixStories[i];
-        const packageDir = story.workdir ? path.join(ctx.workdir, story.workdir) : ctx.workdir;
+        const packageDir = storyAbsWorkdir(ctx.workdir, story);
         const config = groupConfigs.get(packageDir) ?? ctx.config;
         const task = (
           _acceptanceSetupDeps.callOp(
