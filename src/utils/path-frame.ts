@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 /**
  * Path-frame SSOT (nax#2067, #2071, #2074).
  *
@@ -91,4 +93,43 @@ export function toPackageFrame(path: string, workdir: string | null | undefined)
   if (prefix === ".") return normalized;
   if (normalized.startsWith(`${prefix}/`)) return normalized.slice(prefix.length + 1);
   return null;
+}
+
+/**
+ * Structural shape of the one field these accessors read.
+ *
+ * Deliberately NOT `UserStory` from @/prd/types: src/utils/ must not
+ * value-import from src/prd/, and check:import-cycles guards that. A
+ * structural type keeps this module a leaf.
+ */
+export interface StoryWorkdirLike {
+  readonly workdir?: string;
+}
+
+/**
+ * The story's workdir, always a string. "." means the repo root.
+ *
+ * Use this wherever a workdir is needed as a value or a map key. Grouping on
+ * the raw field produced "" and "." as distinct keys for the same root.
+ */
+export function storyWorkdir(story: StoryWorkdirLike): string {
+  return normalizeWorkdir(story.workdir);
+}
+
+/**
+ * The story's package dir, or undefined at the repo root.
+ *
+ * This is what every API taking "the monorepo package, if any" wants. Passing
+ * a raw workdir instead re-introduces nax#2067: "." is truthy, so a root story
+ * takes the monorepo branch.
+ */
+export function storyPackageDir(story: StoryWorkdirLike): string | undefined {
+  const workdir = storyWorkdir(story);
+  return workdir === "." ? undefined : workdir;
+}
+
+/** Absolute working directory for a story beneath `root`. */
+export function storyAbsWorkdir(root: string, story: StoryWorkdirLike): string {
+  const packageDir = storyPackageDir(story);
+  return packageDir ? join(root, packageDir) : root;
 }
