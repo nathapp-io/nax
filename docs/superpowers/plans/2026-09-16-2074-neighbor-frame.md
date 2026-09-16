@@ -56,7 +56,8 @@
 3. **Do NOT derive the consumer prefix as `relative(repoRoot, packageDir)`.** Under `storyIsolation: "worktree"` `packageDir` is `<root>/.nax-wt/<storyId>/<pkg>` while `repoRoot` is the main checkout, so that derivation yields a prefix matching nothing (the #2069 trap; `src/context/fragments/reframe.ts:70-78` documents it). This plan never derives a prefix: it compares and re-spells **absolute** paths with `node:path`'s `relative`, which is correct whether or not the two roots share an ancestor.
 4. **`resolveImport` already refuses to escape its root** (`code-neighbor.ts:183-184`), so forward deps and sibling-test hints can never leave `consumerRoot`. Only reverse deps can, and only under `neighborScope: "repo"`.
 5. **`query_neighbor` passes `packageDir === repoRoot` deliberately** (`src/context/engine/handlers/query-neighbor.ts:64-73`). Under this plan that path is a no-op re-spelling — do not "fix" it.
-6. **Removing the sibling scan is not a behaviour regression to genuine users.** `parseImportSpecifiers` (`code-neighbor.ts:158-169`) keeps only `.`-prefixed specifiers, so `import { x } from "@scope/lib"` is never collected and a true cross-package dependent was never findable. The design records this as ruling 5.
+6. **Removing the sibling scan is not a behaviour regression to genuine users.** Two independent reasons, both verified in the source: `parseImportSpecifiers` (`code-neighbor.ts:158-169`) keeps only `.`-prefixed specifiers, so `import { x } from "@scope/lib"` is never collected; and even a relative cross-package import (`../../app/src/index`) is rejected by `resolveImport`, which returns null for any candidate escaping its scan root. A true cross-package dependent was findable by neither route. The design records this as ruling 5.
+7. **`resolveExtraGlobWorkdirs` treats "no workspace packages found" as "scan the whole repo"** (`code-neighbor.ts:344`). So a repo that merely looks like a monorepo to the detector globs its entire tree on every fetch. Removing the scan removes that too — worth one line in the PR body.
 
 **Accepted consequence, state it in the PR body:** with `neighborScope: "repo"` AND `storyIsolation: "worktree"`, the scan root (main checkout) and the consumer root (worktree) are different trees, so absolute comparison finds no reverse deps where the old relative comparison found accidental ones. The accidental ones were wrong. The default scope is `"package"`, where scan root and consumer root are the same directory and nothing changes.
 
@@ -74,7 +75,8 @@
 - Consumes: `UNREADABLE_MARKER` from `@/utils/path-frame` (already exported).
 - Produces:
   - `stripUnreadableMarker(value: string): string` in `src/utils/path-frame.ts`
-  - `collectNeighbors(filePath: string, consumerRoot: string, scannedDirs: ScannedDir[], contentCacheState: ContentCacheState, siblingTestContext?: {...}): Promise<{ neighbors: string[]; truncated: boolean }>` — the second parameter changes meaning from "scan root" to "the absolute dir `filePath` is relative to". Returned `neighbors` are **display strings**: package-relative when readable, repo-rooted plus `UNREADABLE_MARKER` when not.
+  - `collectNeighbors(filePath: string, consumerRoot: string, repoRoot: string, scannedDirs: ScannedDir[], contentCacheState: ContentCacheState, siblingTestContext?: {...}): Promise<{ neighbors: string[]; truncated: boolean }>` — the second parameter changes meaning from "scan root" to "the absolute dir `filePath` is relative to", and `repoRoot` is new (it is the fallback spelling for a path outside the consumer). Returned `neighbors` are **display strings**: package-relative when readable, repo-rooted plus `UNREADABLE_MARKER` when not.
+  - `spellForConsumer(absPath: string, consumerRoot: string, repoRoot: string): string` — the single rendering seam.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -168,9 +170,14 @@ function neighborLines(content: string): string[] {
 }
 
 describe("CodeNeighborProvider — path frame (nax#2074)", () => {
-  // The issue's worked example. A repo-scoped scan sees both packages; the
-  // sibling's `import "./index"` resolves to packages/lib/src/index.ts, which
-  // is NOT the consumer's touched file, so it must not be reported.
+  // THE ISSUE'S WORKED EXAMPLE, and the only setup that reproduces the false
+  // reverse-dep: it needs the SIBLING scan, where srcFile is relative to
+  // packages/lib while filePath is relative to packages/app. Measured against
+  // the pre-fix code this returns `- src/helper.ts`.
+  //
+  // This test is RETIRED in Task 2 Step 4: it pins the behaviour of the scan
+  // being deleted. Its durable successor is the "globs only the story's own
+  // package" case added there.
   test("a sibling package's same-named import is not a reverse dependency", async () => {
     setupDeps(
       {
@@ -178,21 +185,25 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
         "/repo/packages/lib/src/helper.ts": 'import "./index";',
         "/repo/packages/lib/src/index.ts": "export const lib = 1;",
       },
-      { "/repo": ["packages/app/src/index.ts", "packages/lib/src/helper.ts", "packages/lib/src/index.ts"] },
+      { "/repo/packages/app": ["src/index.ts"], "/repo/packages/lib": ["src/helper.ts", "src/index.ts"] },
     );
-    const provider = new CodeNeighborProvider({ neighborScope: "repo" });
+    _codeNeighborDeps.discoverWorkspacePackages = async () => ["packages/app", "packages/lib"];
+    const provider = new CodeNeighborProvider();
 
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
 
     const lines = neighborLines(result.chunks[0]?.content ?? "");
-    expect(lines.some((line) => line.includes("packages/lib/src/helper.ts"))).toBe(false);
-    expect(lines.some((line) => line.includes("- src/helper.ts"))).toBe(false);
+    expect(lines).not.toContain("- src/helper.ts");
+    expect(lines.some((line) => line.includes("helper.ts"))).toBe(false);
   });
 
-  // The self-skip had the same defect with the opposite sign: a sibling's
-  // src/index.ts collided with the consumer's touched src/index.ts and was
-  // skipped outright, so a genuine neighbour in that sibling could never be found.
-  test("a sibling file whose relative path equals the touched file is still scanned", async () => {
+  // The other sign of the same defect. Pre-fix, a repo-rooted scan compares a
+  // repo-framed srcFile against a package-framed filePath, so a genuine
+  // cross-package dependent matches NOTHING and is silently dropped; the
+  // `srcFile === filePath` self-skip would have discarded it anyway had the
+  // frames agreed. Measured against the pre-fix code this returns no neighbour
+  // at all beyond the sibling-test hint.
+  test("a genuine cross-package dependent is found and marked unreadable", async () => {
     setupDeps(
       {
         "/repo/packages/app/src/index.ts": "export const app = 1;",
@@ -205,7 +216,7 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
 
     const lines = neighborLines(result.chunks[0]?.content ?? "");
-    expect(lines.some((line) => line.startsWith(`- packages/lib/src/index.ts${UNREADABLE_MARKER}`))).toBe(true);
+    expect(lines).toContain(`- packages/lib/src/index.ts${UNREADABLE_MARKER}`);
   });
 
   // A genuine same-package dependent found via a repo-rooted scan must come
@@ -269,7 +280,17 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
 
 Run: `bun test ./test/unit/context/engine/providers/code-neighbor-frame.test.ts --timeout=60000`
 
-Expected: FAIL. Specifically the first test reports `packages/lib/src/helper.ts` as a neighbour (rendered as `- packages/lib/src/helper.ts`, since the repo-scoped glob emits repo-relative paths that collide with the consumer's `src/index.ts` only after `resolveImport`), the self-skip test finds no neighbour at all, and the forward-dep test finds none because `join("/repo", "src/index.ts")` does not exist.
+Expected: FAIL, 5 of 5. These are the **measured** pre-fix outputs (each list is the `- ` lines of the single chunk), not predictions:
+
+| Test | Pre-fix output | Why it fails |
+|---|---|---|
+| sibling package's same-named import | `["- src/helper.ts", "- test/unit/index.test.ts"]` | the false reverse-dep the issue reports: `resolveImport` relative to `packages/lib` yields `src/index.ts`, which string-equals the consumer's `filePath` |
+| genuine cross-package dependent | `["- test/unit/index.test.ts"]` | repo-framed `srcFile` vs package-framed `filePath` never match, so the real dependent is dropped |
+| dependent inside the consumer's package | `["- test/unit/index.test.ts"]` | same frame mismatch under `neighborScope: "repo"` |
+| `scopePaths` without the marker | no such neighbour exists yet | same as above |
+| forward deps under a repo scan root | `["- test/unit/index.test.ts"]` | `join("/repo", "src/index.ts")` does not exist, so the touched file is never read |
+
+> Note the sibling-test hint `- test/unit/index.test.ts` is present throughout: it is derived from `resolvedTestPatterns` and is unrelated to this fix. Assertions are written so it does not interfere.
 
 - [ ] **Step 3: Add `stripUnreadableMarker` to the path-frame SSOT**
 
@@ -316,6 +337,7 @@ Signature and doc comment:
 async function collectNeighbors(
   filePath: string,
   consumerRoot: string,
+  repoRoot: string,
   scannedDirs: ScannedDir[],
   contentCacheState: ContentCacheState,
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
@@ -402,7 +424,9 @@ Return — re-spell once, here and nowhere else:
 
 ```ts
   return {
-    neighbors: [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE).map((abs) => spellForConsumer(abs, consumerRoot)),
+    neighbors: [...neighbors]
+      .slice(0, MAX_NEIGHBORS_PER_FILE)
+      .map((abs) => spellForConsumer(abs, consumerRoot, repoRoot)),
     truncated: anyTruncated,
   };
 }
@@ -418,18 +442,21 @@ Add above `collectNeighbors` in the same file, and extend the `node:path` import
  *
  * Inside the consumer's root -> package-relative, which is what the agent's
  * file tools can open (codingToolRoot, src/agents/types.ts:182-197).
- * Outside it -> left absolute-relative-to-nothing is useless and a
- * package-relative spelling would resolve to a real but WRONG file, so the
- * path is marked with the same UNREADABLE_MARKER nax#2072 already ships.
+ * Outside it -> repo-rooted and marked: a package-relative spelling would
+ * resolve to a real but WRONG file under the consumer's root, so the path
+ * carries the same UNREADABLE_MARKER nax#2072 already ships. A path beneath
+ * neither root stays absolute -- rare, honest, and still marked.
  *
  * `relative()` on absolute paths is used rather than a derived string prefix:
  * under storyIsolation "worktree" the consumer root and the repo root are
  * different trees, and any prefix derivation silently matches nothing (nax#2069).
  */
-function spellForConsumer(absPath: string, consumerRoot: string): string {
-  const rel = relative(consumerRoot, absPath);
-  if (rel !== "" && !rel.startsWith("..")) return rel;
-  return `${absPath}${UNREADABLE_MARKER}`;
+function spellForConsumer(absPath: string, consumerRoot: string, repoRoot: string): string {
+  const fromConsumer = relative(consumerRoot, absPath);
+  if (fromConsumer !== "" && !fromConsumer.startsWith("..")) return fromConsumer;
+  const fromRepo = relative(repoRoot, absPath);
+  const spelled = fromRepo !== "" && !fromRepo.startsWith("..") ? fromRepo : absPath;
+  return `${spelled}${UNREADABLE_MARKER}`;
 }
 ```
 
@@ -439,7 +466,7 @@ Import the marker at the top of the file:
 import { UNREADABLE_MARKER } from "@/utils/path-frame";
 ```
 
-> Repo-rooted spelling for the marked case is applied by the caller, which is the only layer that knows `repoRoot`; see Step 6.
+> One seam, not two. An earlier draft marked the path in `collectNeighbors` and re-spelled it repo-rooted in `fetch()`, which meant parsing a marker off a string the same change had just built. Pass `repoRoot` down instead.
 
 - [ ] **Step 6: Thread the two roots through `fetch()`**
 
@@ -458,34 +485,18 @@ Every other use of the old `workdir` local in `fetch()` (`request.naxIgnoreIndex
       const { neighbors, truncated } = await collectNeighbors(
         file,
         request.packageDir,
+        request.repoRoot,
         scannedDirs,
         contentCacheState,
         siblingTestContext,
       );
       if (truncated) anyTruncated = true;
       if (neighbors.length > 0) {
-        sections.push({ file, neighbors: neighbors.map((n) => toRepoSpelling(n, request.repoRoot)) });
+        sections.push({ file, neighbors });
       }
 ```
 
-and add, next to `spellForConsumer`:
-
-```ts
-/**
- * Render an unreadable neighbour's absolute path repo-rooted.
- *
- * `spellForConsumer` cannot do this: it is given only the consumer root, and
- * under worktree isolation that root is not beneath repoRoot at all. A path
- * that is beneath neither is left absolute — rare, honest, and still marked.
- */
-function toRepoSpelling(rendered: string, repoRoot: string): string {
-  if (!rendered.endsWith(UNREADABLE_MARKER)) return rendered;
-  const absPath = rendered.slice(0, -UNREADABLE_MARKER.length);
-  const rel = relative(repoRoot, absPath);
-  const spelled = rel !== "" && !rel.startsWith("..") ? rel : absPath;
-  return `${spelled}${UNREADABLE_MARKER}`;
-}
-```
+The `sections.push` line is unchanged from today: `file` stays the package-framed touched file (that is what the consumer can open), and `neighbors` arrive already rendered.
 
 - [ ] **Step 7: Keep the marker out of `scopePaths`**
 
@@ -539,6 +550,8 @@ git commit -m "fix(context): compare neighbour paths absolutely and render in th
 - Modify: `src/context/engine/providers/code-neighbor.ts` — delete `resolveExtraGlobWorkdirs` (`:326-352`), the `discoverWorkspacePackages` dep (`:105`) and its import (`:12`), the `crossPackageDepth` option (`:36-41`), field and constructor line, and the `extraGlobWorkdirs` block in `fetch()`
 - Modify: `test/unit/context/engine/providers/code-neighbor.test.ts` — delete the AC-62 cases in the `AC-56/AC-62` describe block (`:391-475`), retitle the block, drop the `discoverWorkspacePackages` save/restore
 - Modify: `test/unit/context/engine/providers/code-neighbor-cache-budget.test.ts:93`, `code-neighbor-scan-cost.test.ts:96,122,125`, `code-neighbor-size-cap.test.ts:100,122,146,166,186,221` — drop the now-invalid `crossPackageDepth: 0` constructor option
+- Modify: `test/unit/context/engine/providers/code-neighbor-cap.test.ts` — it also saves/restores and stubs `_codeNeighborDeps.discoverWorkspacePackages`; remove those lines (grep it: `grep -n discoverWorkspacePackages test/unit/context/engine/providers/*.ts`)
+- Modify: `test/unit/context/engine/providers/code-neighbor-frame.test.ts` — **retire** Task 1's first case (see Step 4); its `setupDeps` sibling fixture and the `discoverWorkspacePackages` stub go with it
 
 **Interfaces:**
 - Consumes: Task 1's `collectNeighbors(filePath, consumerRoot, scannedDirs, ...)`.
@@ -555,17 +568,18 @@ describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () =>
   // ever produce false matches. It must not run, and must not be paid for.
   test("package scope globs only the story's own package, never a sibling", async () => {
     const globbedRoots: string[] = [];
-    setupDeps(
-      { "/repo/packages/app/src/index.ts": "export const app = 1;" },
-      { "/repo/packages/app": ["src/index.ts"] },
-    );
-    const realGlob = _codeNeighborDeps.glob;
-    _codeNeighborDeps.glob = (pattern, cwd, ...rest) => {
-      globbedRoots.push(cwd);
-      return realGlob(pattern, cwd, ...rest);
+    const globByCwd: Record<string, string[]> = {
+      "/repo/packages/app": ["src/index.ts"],
+      "/repo/packages/lib": ["src/helper.ts"],
+      "/repo": ["packages/app/src/index.ts", "packages/lib/src/helper.ts"],
     };
-    _codeNeighborDeps.discoverWorkspacePackages = async () => {
-      throw new Error("workspace discovery must not run");
+    setupDeps({ "/repo/packages/app/src/index.ts": "export const app = 1;" }, globByCwd);
+    // Record the scan roots instead of delegating: setupDeps' stub takes two
+    // parameters while the real dep takes five, so a pass-through wrapper only
+    // adds a typing problem.
+    _codeNeighborDeps.glob = (_pattern: string, cwd: string) => {
+      globbedRoots.push(cwd);
+      return { files: globByCwd[cwd] ?? [], truncated: false };
     };
 
     await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
@@ -578,7 +592,7 @@ describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () =>
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `bun test ./test/unit/context/engine/providers/code-neighbor-frame.test.ts --timeout=60000`
-Expected: FAIL — `discoverWorkspacePackages` is called (its throw is swallowed by the `catch` in `resolveExtraGlobWorkdirs`, which then returns `[repoRoot]`), so `globbedRoots` is `["/repo/packages/app", "/repo"]`.
+Expected: FAIL — `setupDeps` stubs `discoverWorkspacePackages` to `[]`, and `resolveExtraGlobWorkdirs` treats an empty workspace as "scan the whole repo" (`code-neighbor.ts:344`), so `globbedRoots` is `["/repo/packages/app", "/repo"]`. That fallback is itself worth noting in the PR body: today a single-package repo misdetected as a monorepo globs the entire tree on every fetch.
 
 - [ ] **Step 3: Delete the sibling scan**
 
@@ -614,6 +628,12 @@ In `test/unit/context/engine/providers/code-neighbor.test.ts`:
 - in the `AC-56/AC-62` describe: retitle to `describe("CodeNeighborProvider — AC-56 neighborScope", ...)`, keep the case asserting `neighborScope` selects `packageDir` vs `repoRoot`, and delete the three cases that exercise `crossPackageDepth` (`:417-475`), since the behaviour they pin no longer exists
 
 In `code-neighbor-cache-budget.test.ts`, `code-neighbor-scan-cost.test.ts` and `code-neighbor-size-cap.test.ts`: replace `new CodeNeighborProvider({ crossPackageDepth: 0 })` with `new CodeNeighborProvider()` — `0` was the way to ask for what is now the only behaviour. In `code-neighbor-scan-cost.test.ts:125`, update the comment `With 5 touched files but crossPackageDepth=0, the glob must be called...` to `With 5 touched files, the single scan root is globbed once...`.
+
+In `code-neighbor-cap.test.ts`, `code-neighbor-cache-budget.test.ts`, `code-neighbor-scan-cost.test.ts` and `code-neighbor-size-cap.test.ts`: delete every save/restore/stub of `_codeNeighborDeps.discoverWorkspacePackages`. The dep no longer exists, so those lines are type errors, not dead code.
+
+In `code-neighbor-frame.test.ts`, also delete `_codeNeighborDeps.discoverWorkspacePackages` from `setupDeps`, from the `orig` capture and from the `afterEach` restore — the dep is gone, so those are type errors.
+
+In `code-neighbor-frame.test.ts`, **delete Task 1's first case** (`a sibling package's same-named import is not a reverse dependency`). It pins the sibling scan, which this task removes; keeping it would assert that a code path that no longer runs behaves correctly. The case added in Step 1 above is its successor and is strictly stronger — the scan cannot false-positive if it never runs. Say so in the commit message so the deletion is not read as a dropped guard.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
@@ -855,7 +875,14 @@ Expected: `check:rules-drift` exits 0. **Never hand-edit `.claude/rules/`.**
 - [ ] **Step 6: Verify no stale references remain**
 
 Run: `grep -rn "crossPackageDepth\|resolveExtraGlobWorkdirs\|extraGlobWorkdirs" src test docs .nax .claude`
-Expected: matches only in `docs/superpowers/` (this plan, the design spec, the two earlier plans) and in the deprecation shim, its test, and the docs sentences that name the removed key deliberately. Anything else is a missed site.
+
+Expected matches, and nothing else:
+- `docs/superpowers/` — this plan, the design spec, the two earlier plans. Historical; leave them.
+- `src/config/compat-shims.ts` + `test/unit/config/deprecation-cross-package-depth.test.ts` — the shim names the key on purpose.
+- the docs sentences written in Steps 1-5, which name the removed key deliberately.
+- **`.nax/features/effectiveness-scoring-loop/prd.json` (2 hits) — DO NOT EDIT.** It is a completed run's stored PRD, an artifact of what was planned in the past, not a description of current behaviour. Editing it would falsify a record.
+
+Anything else is a missed site.
 
 - [ ] **Step 7: Commit**
 
@@ -919,7 +946,11 @@ PR body must state, in its own section:
 | Existing config with the key keeps loading, with a deprecation warning | 3 |
 | ADR-010 + `context-engine.md` amendments | 4 |
 | `SPEC-context-engine-v2-compilation.md:306`, `-amendments.md:470,492`, `SPEC-effectiveness-scoring-loop.md:242` | 4 |
-| Regression test from the issue's worked example, incl. the self-skip | 1 (Steps 1-2) |
+| Regression test from the issue's worked example, incl. the self-skip | 1 (Steps 1-2), superseded in 2 (Step 4) |
+
+**Pre-fix outputs in Task 1 Step 2 are measured, not predicted.** The five fixtures were run against `main` @ `503ebd3d1` while this plan was being reviewed. That run corrected a real defect in an earlier draft: the worked-example test had been written with `neighborScope: "repo"`, where it **passes vacuously** — the false reverse-dep needs the sibling scan, because only there do `srcFile` and `filePath` share a spelling. A repo-rooted scan produces the opposite failure (the genuine dependent is dropped), which is now its own case. If you rewrite these fixtures, re-measure; do not trust the reasoning.
+
+**The self-skip defect is not independently observable through the public API.** With the sibling scan, a sibling that genuinely imports the consumer's file cannot be resolved at all — `resolveImport` refuses to return an escaping path (`code-neighbor.ts:183-184`) — so the skip has nothing to hide. It is observable only under a repo-rooted scan, which is what the second Task 1 case exercises. Do not add a test claiming to prove more than that.
 
 Two additions beyond the spec's letter, both required for the letter to be correct:
 1. **The touched file is resolved against `packageDir`, not the scan root.** Absolute comparison is only sound if each side is joined to the root its spelling belongs to, and `touchedFiles` is package-framed by contract. Without this the `"repo"`-scope case compares a correct absolute path against a fabricated one.
@@ -929,4 +960,6 @@ One deliberate deviation: rendering uses `relative()` on absolute paths rather t
 
 **Placeholder scan:** none — every code step carries the literal code, every test step the literal assertions, every run step the exact command and its expected outcome.
 
-**Type consistency:** `collectNeighbors`'s second parameter is `consumerRoot` in Tasks 1 and 2; `spellForConsumer(absPath, consumerRoot)` and `toRepoSpelling(rendered, repoRoot)` are both defined in Task 1 Steps 5-6 and used only there; `stripUnreadableMarker` is defined in Task 1 Step 3 and consumed in Step 7; `_applyRemovedCrossPackageDepthShim` is defined and wired in Task 3 Step 3 with the signature its test imports in Step 1.
+**Type consistency:** `collectNeighbors(filePath, consumerRoot, repoRoot, scannedDirs, contentCacheState, siblingTestContext?)` is used with that arity in Task 1 Step 6 and unchanged by Task 2; `spellForConsumer(absPath, consumerRoot, repoRoot)` is defined in Task 1 Step 5 and called only from `collectNeighbors`' return; `stripUnreadableMarker` is defined in Task 1 Step 3 and consumed in Step 7; `_applyRemovedCrossPackageDepthShim(conf, warn?)` is defined and wired in Task 3 Step 3 with the signature its test imports in Step 1.
+
+**Read Tasks 1 and 2 as one PR.** Task 1 adds a test that Task 2 deletes, deliberately (it pins the scan being removed). A reviewer reading Task 1's commit alone will see a guard disappear one commit later; the commit messages say why.
