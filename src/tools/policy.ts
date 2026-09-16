@@ -17,6 +17,7 @@ import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
 import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
+import { isNaxConfigFile } from "./nax-owned-writes";
 import { pathListElements } from "./path-list";
 import { checkBashCommand } from "./policy-bash";
 import { pathFieldValue } from "./policy-input";
@@ -55,35 +56,6 @@ function entersGitMetadata(root: string, resolved: string): boolean {
   const rel = relative(realOrRaw(root), resolved);
   if (rel === "" || rel.startsWith("..")) return false;
   return rel.split(sep).includes(".git");
-}
-
-/**
- * Is `resolved` one of nax's own CONFIG files, relative to `root`?
- *
- * `.nax/config.json`, and `.nax/mono/<package>/config.json` in a monorepo.
- * Nothing else under `.nax/`: specs, PRDs, rules, context and run state are
- * things an agent legitimately reads, and refusing them wholesale would break
- * ordinary work to close one hole.
- *
- * Why these two at all: `quality.commands` and `acceptance.command` are run by
- * key through a shell and never pass the permission gate (spec R8) -- they are
- * trusted because a HUMAN wrote them. That trust rests entirely on a model
- * being unable to write them. An agent holding `Write` under the default
- * `unrestricted` profile could otherwise add a quality command and receive an
- * ungated shell on the next run, routing around every `Bash(...)` rule, the
- * lexer's construct refusals and containment itself.
- *
- * Segment-exact, never a prefix or substring match, for the same reason
- * `entersGitMetadata` is: `.naxignore`, `docs/nax/config.json` and
- * `.nax/mono/api/notes.md` are ordinary paths a tool must still reach.
- */
-function isNaxConfigFile(root: string, resolved: string): boolean {
-  const rel = relative(realOrRaw(root), resolved);
-  if (rel === "" || rel.startsWith("..")) return false;
-  const segments = rel.split(sep);
-  if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
-  // `.nax/config.json` (2) or `.nax/mono/<package>/config.json` (4).
-  return segments.length === 2 || (segments.length === 4 && segments[1] === "mono");
 }
 
 /**
