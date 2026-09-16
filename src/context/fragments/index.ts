@@ -1,3 +1,4 @@
+export { reframeFilesTouched } from "./reframe";
 export {
   _fragmentStoreDeps,
   deleteFragment,
