@@ -248,7 +248,9 @@ Expected: PASS. A failure here means some test asserted a nested override was re
 
 ```bash
 git add src/tools/nax-owned-writes.ts test/unit/tools/nax-owned-writes.test.ts
-git commit -m "fix(tools): refuse .nax/mono overrides at any package depth"
+git commit -m "fix(tools): refuse .nax/mono overrides at any package depth
+
+Part of #2094."
 ```
 
 ---
@@ -412,7 +414,9 @@ Expected: `policy.ts` ~571. Baseline unchanged at 14.
 
 ```bash
 git add src/tools/nax-owned-writes.ts src/tools/policy.ts test/unit/tools/
-git commit -m "fix(tools): refuse mutating tools on a feature PRD, keep reads"
+git commit -m "fix(tools): refuse mutating tools on a feature PRD, keep reads
+
+Closes #2094."
 ```
 
 ---
@@ -683,7 +687,7 @@ bun run test:coverage
 
 Expected: all green; `check-story-workdir-access: clean (0 exemption(s) still pending)`; `check:file-sizes` baseline still 14; coverage at or above floor with 0 files below.
 
-- [ ] **Confirm the two hardening changes actually refuse**
+- [ ] **Confirm #2094's two halves actually refuse**
 
 The point of Tasks 2 and 3 is that they no longer depend on containment. Verify with a root-workdir story's shape — root = repo root — which is the case that was reachable:
 
@@ -694,6 +698,22 @@ bun test test/unit/tools/nax-owned-writes.test.ts test/unit/tools/policy.test.ts
 Both `.nax/mono/packages/api/config.json` and `.nax/features/*/prd.json` must be refused with the root set to the repo root, not merely when they fall outside a package root.
 
 ---
+
+## Issues this closes
+
+**Closes #2094** — "A root-rooted story can write `.nax/mono/<nested>/config.json` and its own `prd.json`". Tasks 1-3 are its whole fix: Task 2 closes the nested-override half, Task 3 the `prd.json` half. The `Closes #2094.` keyword is on Task 3's commit, which is the one that completes it — do not move it earlier, or the issue auto-closes while half the fix is still unwritten.
+
+**Closes nothing else, and that is not an oversight.** The plan was checked against every open issue:
+
+| Issue | Why it stays open |
+|---|---|
+| #2090 prompt-embedded git lacks `--relative` | **Mitigated, not fixed.** Task 5's scope block tells the agent to strip the `<package>/` prefix from a path it is handed, which is exactly the recovery an ACP reviewer needs when `git diff --name-only` hands it repo-framed paths. The builders still emit the wrong frame, so the defect stands — the agent is now merely equipped to work around it. Say so in the PR; do not close it. |
+| #2083, #2085, #2086, #2087, #2088, #2089, #2091 | Path-frame seams. Untouched by this plan — none involves the tool root, the `.nax` guard or the preamble. |
+| #2084 gate bypasses | `scripts/check-story-workdir-access.ts` is not modified here. |
+| #2093 Exec `target:"repoRoot"` escapes the worktree | A different seam (`codingToolRepoRoot`). Task 5 *reads* that field for its label and defends against the same worktree shape by stripping `.nax-wt/<storyId>`, but it does not fix the Exec path. |
+| #2079, #2080 | Plan-time and PRD-write concerns. |
+
+If a reviewer asks why the path-frame issues did not move: this plan deliberately does not touch the containment root, which is the only thing that would dissolve them. That decision and its reasoning are in the spec.
 
 ## Out of scope
 
