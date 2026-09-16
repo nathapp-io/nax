@@ -1,7 +1,6 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
 import { pipelineEventBus } from "@/pipeline/event-bus";
-import { storyPackageDir } from "@/utils/path-frame";
 import { checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import { type StoryMetrics, toFallbackHops } from "../metrics";
@@ -18,6 +17,7 @@ import { resolveRouting } from "../routing";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
+import { storyPackageDir } from "../utils/path-frame";
 import { precomputeBatchPlan } from "./batching";
 import { enforceCostLimit } from "./cost-guard";
 import { maybeSendCostWarning } from "./cost-warning";
