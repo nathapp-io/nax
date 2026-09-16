@@ -29,6 +29,7 @@ import type { UserStory } from "../prd";
 import type { QualityCommandSpec } from "../quality/command-spec";
 import { renderCommandSpec } from "../quality/command-spec";
 import type { TestSummary } from "../test-runners";
+import { storyPackageDir } from "../utils/path-frame";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -132,7 +133,7 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
     const { testCommand: resolvedTestCmd } = await resolveQualityTestCommands(
       config,
       input.workdir,
-      input.story.workdir,
+      storyPackageDir(input.story),
     );
     // Detection fallback: no command configured (root or per-package) — derive one
     // from the package's manifest. Runs from the package dir, since the default was
@@ -145,14 +146,14 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       if (detected) {
         return { config, testCmd: detected, fullSuiteTimeout, cmdWorkdir: input.workdir };
       }
-      const pkg = input.story.workdir ?? input.workdir;
+      const pkg = storyPackageDir(input.story) ?? input.workdir;
       throw new NaxError(
         `No test command configured or detected for package "${pkg}". Set quality.commands.test in .nax/config.json or .nax/mono/<pkg>/config.json.`,
         "TEST_COMMAND_MISSING",
         {
           stage: "full-suite-gate",
           storyId: input.story.id,
-          packageDir: input.story.workdir,
+          packageDir: storyPackageDir(input.story),
           workdir: input.workdir,
         },
       );
@@ -252,7 +253,7 @@ export const fullSuiteGateOp: DeterministicOperation<
     });
     logger.info("verify[regression]", "Running full-suite gate", {
       storyId: input.story.id,
-      packageDir: input.story.workdir,
+      packageDir: storyPackageDir(input.story),
       cwd: gateCtx.cmdWorkdir,
       command: gateCtx.testCmd,
       timeoutSeconds: gateCtx.fullSuiteTimeout,
@@ -314,14 +315,14 @@ export const fullSuiteGateOp: DeterministicOperation<
         command: cmd,
         exitCode: testResult.exitCode,
         output: testResult.output,
-        packageDir: input.story.workdir,
+        packageDir: storyPackageDir(input.story),
         cwd: input.workdir,
       });
       logger.warn("verify[regression]", "Full-suite gate execution-failed — emitting synth finding", {
         storyId: input.story.id,
         command: cmd,
         exitCode: testResult.exitCode,
-        packageDir: input.story.workdir,
+        packageDir: storyPackageDir(input.story),
       });
       return {
         success: false,

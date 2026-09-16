@@ -13,6 +13,7 @@ import type { UserStory } from "@/prd";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
+import { storyPackageDir } from "@/utils/path-frame";
 // STYLE-6 fix: import handleQueryScratch directly from its handler module
 // to avoid the circular `pull-tools.ts` ↔ `handlers/query-scratch.ts`
 // reference that the previous re-export created.
@@ -96,7 +97,7 @@ export function createContextToolRuntime(options: {
   let resolvedTestPatternsPromise: Promise<ResolvedTestPatterns | undefined> | null = null;
   async function getResolvedTestPatterns(): Promise<ResolvedTestPatterns | undefined> {
     if (resolvedTestPatternsPromise === null) {
-      resolvedTestPatternsPromise = resolveTestFilePatterns(config, repoRoot, story.workdir || undefined, {
+      resolvedTestPatternsPromise = resolveTestFilePatterns(config, repoRoot, storyPackageDir(story), {
         storyId: story.id,
       }).catch((err) => {
         getLogger().warn("context", "Pull-tool runtime: failed to resolve test patterns", {
