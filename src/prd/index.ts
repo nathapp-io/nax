@@ -49,6 +49,7 @@ export type {
 } from "./types";
 export { generateHumanHaltSummary, getContextFiles, getExpectedFiles, isStalled, markStoryAsBlocked } from "./types";
 export { assertPrdCommitted, validateStoryId } from "./validate";
+export { canonicalizePrdWorkdirs } from "./workdir-canonical";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;

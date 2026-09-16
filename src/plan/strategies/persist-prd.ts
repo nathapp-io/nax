@@ -15,11 +15,26 @@
  * repairs they apply"). Re-application is safe: `backfillOutOfScope` early-returns
  * once nothing is missing, and `applyModifiedFiles` merges deduped by path.
  */
+import { existsSync as defaultExistsSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentRoutingConfig, ModelsConfig } from "@/config";
+import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
+import { getLogger } from "@/logger";
 import { applyPlanFidelity } from "@/operations";
+import { canonicalizePrdWorkdirs } from "@/prd";
 import type { PRD } from "@/prd/types";
+import { errorMessage } from "@/utils/errors";
 import { finalizePrdRouting } from "./finalize-routing";
 import type { PlanModeContext } from "./types";
+
+/**
+ * Plan-time filesystem probes. Injected so the canonicalization decision table
+ * is testable without a fixture tree.
+ */
+export const _persistPrdDeps = {
+  existsSync: (path: string): boolean => defaultExistsSync(path),
+  discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => defaultDiscoverWorkspacePackages(repoRoot),
+};
 
 export interface PersistPrdArgs {
   readonly prd: PRD;
@@ -31,6 +46,8 @@ export interface PersistPrdArgs {
   readonly models: ModelsConfig;
   readonly defaultAgent: string;
   readonly outputPath: string;
+  /** Repo root, for the plan-time workdir probes (nax#2067). */
+  readonly repoRoot: string;
   readonly writeFile: (path: string, content: string) => Promise<void>;
 }
 
@@ -41,7 +58,35 @@ export interface PersistPrdArgs {
  * shares the same invariant as the four strategies.
  */
 export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string> {
-  const repaired = applyPlanFidelity(args.prd, args.specContent, args.featureName);
+  // nax#2067: decide each story's workdir and re-spell its declared paths into
+  // the repo frame, while the repo is still in the state the planner described.
+  // Degrades to the raw PRD rather than failing the plan: a PRD with an
+  // underived workdir is the status quo, a lost plan is not.
+  let canonical = args.prd;
+  try {
+    const packages = await _persistPrdDeps.discoverWorkspacePackages(args.repoRoot);
+    const result = canonicalizePrdWorkdirs(args.prd, args.repoRoot, packages, _persistPrdDeps.existsSync);
+    canonical = result.prd;
+    if (result.collisions.length > 0) {
+      getLogger().warn("plan", "declared path exists at both the repo root and the story package; took story-local", {
+        collisions: result.collisions,
+      });
+    }
+    // nax#2067: the only point in `nax plan` where "this story will be root-scoped"
+    // is known. Both consequences are named because both are silent at every later
+    // stage -- plan output, run log, and the completed run's artifacts.
+    if (result.defaulted.length > 0 && _persistPrdDeps.existsSync(join(args.repoRoot, ".nax", "mono"))) {
+      getLogger().warn(
+        "plan",
+        "stories have no resolved workdir in a monorepo: they will receive the WHOLE rule corpus and the ROOT quality.commands, not their package's",
+        { storyIds: result.defaulted },
+      );
+    }
+  } catch (err) {
+    getLogger().warn("plan", "workdir canonicalization skipped", { error: errorMessage(err) });
+  }
+
+  const repaired = applyPlanFidelity(canonical, args.specContent, args.featureName);
   const finalized = finalizePrdRouting(
     { ...repaired, project: args.projectName },
     args.agentRouting,
@@ -65,6 +110,7 @@ export async function persistPrd(ctx: PlanModeContext, prd: PRD): Promise<string
     models: ctx.config.models,
     defaultAgent: ctx.config.agent?.default ?? "claude",
     outputPath: ctx.outputPath,
+    repoRoot: ctx.workdir,
     writeFile: ctx.deps.writeFile,
   });
 }
