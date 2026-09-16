@@ -147,7 +147,14 @@ Fails on any direct `.workdir` read against a story type outside an allowlist (`
 following the 25 bespoke gates already in `scripts/` (`check-dispatch-context`,
 `check-gate-reachability`, `check-file-sizes`, ...).
 
-**The gate has no baseline.** Every site converts in PR 1; there is nowhere for a straggler to hide.
+**The gate has no baseline.** Every site converts in PR 1 except one deliberate, single-entry,
+self-expiring exemption for `src/execution/iteration-runner.ts` (see *Sequencing*). There is nowhere
+else for a straggler to hide.
+
+**The exemption must self-expire.** The gate fails if an exempted file contains **no** raw read —
+a stale exemption is an error, not a silent pass. That makes the entry impossible to leave behind
+once PR 2 converts the file, and stops the allowlist from quietly becoming the baseline this design
+exists to avoid.
 
 ### Why the gate, rather than fixing the known call sites
 
@@ -179,14 +186,29 @@ story, swapping the plain root test command for `turbo run test --filter=<pkg>`.
 `storyPackageDir`. After conversion its documented contract is true by construction rather than by
 convention.
 
-**Two sites need judgement, not sweeping:**
+**One site needs judgement, not sweeping:** `utils/git.ts:481` uses the workdir as a git pathspec
+prefix (`` `${scopePrefix}/` ``). With `"."` that yields `-- ./`, which git accepts but which reads
+as an accident. It takes `storyPackageDir` and omits the pathspec entirely at root.
 
-- `execution/iteration-runner.ts:124-139` branches on `story.workdir` to decide whether to load a
-  per-package config at all. That is the seam #2066/#2069 fixed in `46310bdbe`, three commits before
-  this design. The conversion is behaviour-preserving but must be reviewed individually.
-- `utils/git.ts:481` uses the workdir as a git pathspec prefix (`` `${scopePrefix}/` ``). With `"."`
-  that yields `-- ./`, which git accepts but which reads as an accident. It takes `storyPackageDir`
-  and omits the pathspec entirely at root.
+**And one file is deferred to its own PR** — `src/execution/iteration-runner.ts`. See below.
+
+### `iteration-runner.ts` (PR 2, isolated)
+
+Four raw reads, on the seam #2066/#2069 fixed in `46310bdbe` three commits before this design.
+Isolated so the diff is reviewable against that fix's tests rather than buried in a 11-file sweep.
+
+| Line | Read | Effect of `"."` if swept unconverted |
+|---|---|---|
+| `:124` | `story.workdir ? loadConfigForWorkdir(...) : ctx.config` | **behaviour change.** `"."` is truthy, so it stops short-circuiting to `ctx.config` and instead looks up `.nax/mono/./config.json`. `config/loader.ts:435` misses, logs `Per-package config not found — falling back to root config`, and returns the root config. Same result, but via wasted I/O and a misleading log line on every root story. Converting to `storyPackageDir` restores the clean early return at `loader.ts:435-438`. |
+| `:139` | `storyWorkdir: story.workdir` into `prepareWorktreeDependencies` | benign — `worktree/dependencies.ts:39` joins it, and `join(x, ".")` is `x`. Convert for consistency. |
+| `:167-168`, `:171` | `story.workdir ? join(base, story.workdir) : base`, twice inside a triple-nested ternary | benign for the same reason; `join` normalizes `"."` away. Converting to `storyAbsWorkdir` collapses the ternary and is the readability win that justifies touching it at all. |
+
+Only `:124` changes behaviour, and only in cost and log noise — no run-visible difference. The PR is
+small, but it is the one place in this design where the conversion is not purely mechanical, which
+is exactly why it is not swept.
+
+Gate handling: PR 1 exempts this file by its single self-expiring allowlist entry; PR 2 converts the
+four reads and **deletes the entry**, after which the gate is absolute.
 
 ---
 
@@ -316,10 +338,14 @@ design exists to close. Remove the option:
 
 | PR | Contents | Shape |
 |---|---|---|
-| 1 | `path-frame.ts`, accessors, `check-story-workdir-access.ts`, ~20 site conversions, `schema-story.ts` extraction | large, mechanical, no intended behaviour change |
-| 2 | #2071 — `scope-files.ts` mapping, anti-reversal comment on `collectDiffFileList` | ~3 lines; first consumer of the helper, proves it |
-| 3 | #2067 — plan-time canonicalization, `workdirSource`, critic warning, `plan-builder.ts` frame instruction | medium |
-| 4 | #2074 — absolute comparison, sibling-scan removal, `crossPackageDepth` retirement, ADR + docs | medium |
+| 1 | `path-frame.ts`, accessors, `check-story-workdir-access.ts` (with the `iteration-runner.ts` exemption), ~16 site conversions, `schema-story.ts` extraction | large, mechanical, no intended behaviour change |
+| 2 | `iteration-runner.ts` — 4 reads, exemption deleted, gate becomes absolute | small, reviewed against the #2066/#2069 tests |
+| 3 | #2071 — `scope-files.ts` mapping, anti-reversal comment on `collectDiffFileList` | ~3 lines; first consumer of the helper, proves it |
+| 4 | #2067 — plan-time canonicalization, `workdirSource`, critic warning, `plan-builder.ts` frame instruction | medium |
+| 5 | #2074 — absolute comparison, sibling-scan removal, `crossPackageDepth` retirement, ADR + docs | medium |
+
+PR 2 comes second so the exemption is short-lived and the gate is absolute from that point on,
+rather than staying porous across the three substantive PRs that follow.
 
 ---
 
@@ -339,7 +365,7 @@ that recorded files may not exceed.
 
 **`schema.ts` must be split before `workdirSource` is added.** `validateStory` occupies
 `schema.ts:69-499` — 430 of its 629 lines — and extracting it to `src/prd/schema-story.ts` takes the
-file to roughly 200, clearing the baselined breach. This is a prerequisite of PR 3, scheduled in
+file to roughly 200, clearing the baselined breach. This is a prerequisite of PR 4, scheduled in
 PR 1.
 
 ---
@@ -372,17 +398,23 @@ PR 1.
 
 ## Risks
 
-1. **PR 1 concentrates the risk.** `execution/iteration-runner.ts:124-139` is the seam #2066/#2069
-   fixed in `46310bdbe`. Review it individually rather than sweeping it.
-2. **Ordering is load-bearing.** `schema-story.ts` before `workdirSource`, or the ratchet rejects the
+1. **PR 1 is broad but shallow.** ~16 mechanical conversions with no intended behaviour change,
+   caught by the gate rather than by assertions. The one genuinely risky file,
+   `execution/iteration-runner.ts`, is deliberately excluded and handled in PR 2 against the
+   #2066/#2069 tests.
+2. **The exemption is the one way this design can rot.** If PR 2 never lands, the gate is permanently
+   porous on the file that matters most. The self-expiry rule (a stale exemption fails the gate) is
+   what prevents that, and it must be implemented in PR 1, not deferred with the exemption it
+   guards.
+3. **Ordering is load-bearing.** `schema-story.ts` before `workdirSource`, or the ratchet rejects the
    field.
-3. **`nax plan` gains a filesystem probe it did not have.** Bounded to plan time and to declared
+4. **`nax plan` gains a filesystem probe it did not have.** Bounded to plan time and to declared
    paths, but planning now depends on repo state in a way it previously did not.
-4. **`"."` is truthy.** The gate is what makes this safe; without it the change is a latent
+5. **`"."` is truthy.** The gate is what makes this safe; without it the change is a latent
    behaviour flip at every un-converted truthiness site.
-5. **Scope.** This design grew from three issues into a convention plus an 11-file mechanical
-   conversion. That is a direct consequence of the "no ambiguous tail" ruling and was accepted
-   knowingly.
+6. **Scope.** This design grew from three issues into a convention plus a ~20-site conversion
+   across 11 files, split as ~16 sites in PR 1 and 4 in PR 2. That is a direct consequence of the
+   "no ambiguous tail" ruling and was accepted knowingly.
 
 ---
 
