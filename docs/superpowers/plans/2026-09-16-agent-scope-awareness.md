@@ -10,6 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-16-repo-rooted-agent-analysis.md` — specifically its "Recommendation → Do now instead" section and blocker B2. The repo-rooting change that document assesses is **explicitly out of scope here**; this plan implements only the near-term work it recommends, plus the B2 hardening.
 
+## Starting state — read this first
+
+- **Branch: `feat/agent-scope-awareness`**, already created, based on `main` @ `d9614909c`. It carries two docs-only commits (`04487be10` the spec, `8dc17fa11` this plan) and **zero code**. It is NOT pushed.
+- Work on that branch. Do not branch again, and do not rebase onto a newer `main` without saying so.
+- Everything below was verified against that commit. If a cited line number has moved, trust the **symbol name** and re-locate it; do not assume the surrounding logic changed.
+- Task 1 must land before Tasks 3 and 4 (file-size headroom). Tasks 2, 3 and 5 are otherwise independent of each other.
+
+### Two conventions this repo enforces that will bite you
+
+- **`@/tools/<internal-file>` imports are legal from `test/`** and illegal from `src/`. `scripts/check-alias-internals.ts` exemption 2 states it explicitly: "a unit test's job is to exercise the unit, so reaching past a barrel is the intended behaviour". The test snippets below rely on this — they are correct as written.
+- **`src/tools/nax-owned-writes.ts` must NOT be added to `src/tools/index.ts`.** `src/tools/deny-paths.ts` — the module this one is modelled on — is deliberately absent from that barrel. `src/prompts/sections/agent-scope.ts` is the opposite case: every sibling there IS barrel-exported, so it must be.
+
 ## Global Constraints
 
 - **Never run bare `bun test`** — it has no path and pulls in e2e. Full suite is `bun run test`. Targeted iteration is `bun test test/unit/<path>.test.ts --timeout=30000` (documented in `CLAUDE.md:43`).
@@ -27,8 +39,9 @@
 |---|---|
 | `src/tools/nax-owned-writes.ts` | **New.** The single definition of which `.nax/` paths nax refuses, and to which tools. Holds `isNaxConfigFile` (moved from `policy.ts`), the run-state write guard, and the mutating-tool set. |
 | `src/tools/policy.ts` | **Modified.** Loses `isNaxConfigFile` and its docblock (−28 lines); gains one import and a two-line hook in `applyPathRules`; `outOfRootReason` gains the root in its message. |
-| `src/prompts/sections/agent-scope.ts` | **New.** Renders the scope block. Pure, protocol-agnostic, no I/O. |
+| `src/prompts/sections/agent-scope.ts` | **New.** Renders the scope block. Pure, protocol-agnostic, no I/O. Named `build*Section` and barrel-exported, matching every sibling in that directory. |
 | `src/agents/tool-preamble.ts` | **Modified.** Prepends the scope block on both protocol arms, at the existing dispatch seam. |
+| `src/prompts/sections/index.ts` | **Modified.** One export line. |
 | `test/unit/tools/nax-owned-writes.test.ts` | **New.** Unit tests for the guard module. |
 | `test/unit/prompts/agent-scope.test.ts` | **New.** Unit tests for the scope renderer. |
 
@@ -143,7 +156,7 @@ Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Delete the original from `policy.ts` and import the new one**
 
-In `src/tools/policy.ts`, delete lines 60-87 entirely — the `/** Is `resolved` one of nax's own CONFIG files... */` docblock and the `isNaxConfigFile` function beneath it. Add to the import block (after line 19, keeping alphabetical order by module path):
+In `src/tools/policy.ts`, delete lines 60-87 inclusive — the `/** Is `resolved` one of nax's own CONFIG files... */` docblock and the `isNaxConfigFile` function beneath it. Verified boundaries: line 59 is blank, line 60 opens the docblock, line 87 is the function's closing `}`, line 88 is blank. `entersGitMetadata` ends at line 58 and stays. Add to the import block (after line 19, keeping alphabetical order by module path):
 
 ```ts
 import { isNaxConfigFile } from "./nax-owned-writes";
@@ -486,7 +499,7 @@ Nothing in any prompt states the tool root — verified by grepping every file u
 
 **Interfaces:**
 - Consumes: `AgentRunOptions.codingToolRoot` and `.codingToolRepoRoot` (`src/agents/types.ts:182`, `:190`), both `string | undefined`
-- Produces: `renderAgentScope(root: string | undefined, repoRoot: string | undefined): string | undefined` — the block, or `undefined` when there is no root to describe
+- Produces: `buildAgentScopeSection(root: string | undefined, repoRoot: string | undefined): string | undefined` — the block, or `undefined` when there is no root to describe
 
 - [ ] **Step 1: Write the failing test**
 
@@ -494,36 +507,36 @@ Create `test/unit/prompts/agent-scope.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { renderAgentScope } from "@/prompts/sections/agent-scope";
+import { buildAgentScopeSection } from "@/prompts/sections/agent-scope";
 
-describe("renderAgentScope", () => {
+describe("buildAgentScopeSection", () => {
   test("returns undefined when there is no root", () => {
-    expect(renderAgentScope(undefined, "/repo")).toBeUndefined();
-    expect(renderAgentScope("   ", "/repo")).toBeUndefined();
+    expect(buildAgentScopeSection(undefined, "/repo")).toBeUndefined();
+    expect(buildAgentScopeSection("   ", "/repo")).toBeUndefined();
   });
 
   test("names the package and how to spell paths for it", () => {
-    const out = renderAgentScope("/repo/packages/api", "/repo");
+    const out = buildAgentScopeSection("/repo/packages/api", "/repo");
     expect(out).toContain("packages/api");
     expect(out).toContain("src/index.ts");
     expect(out).not.toContain("packages/api/src/index.ts");
   });
 
   test("says the whole repo is reachable when rooted at the repo", () => {
-    const out = renderAgentScope("/repo", "/repo");
+    const out = buildAgentScopeSection("/repo", "/repo");
     expect(out).toContain("repository root");
     expect(out).not.toContain("cannot be opened");
   });
 
   test("strips the worktree prefix so the label is the package, not the scratch path", () => {
-    const out = renderAgentScope("/repo/.nax-wt/US-001/packages/api", "/repo");
+    const out = buildAgentScopeSection("/repo/.nax-wt/US-001/packages/api", "/repo");
     expect(out).toContain("packages/api");
     expect(out).not.toContain(".nax-wt");
     expect(out).not.toContain("US-001");
   });
 
   test("falls back to the root itself when no repo root is given", () => {
-    expect(renderAgentScope("/repo/packages/api", undefined)).toContain("packages/api");
+    expect(buildAgentScopeSection("/repo/packages/api", undefined)).toContain("packages/api");
   });
 });
 ```
@@ -573,7 +586,7 @@ function packageLabel(root: string, repoRoot: string | undefined): string {
   return segments.slice(2).join("/");
 }
 
-export function renderAgentScope(root: string | undefined, repoRoot: string | undefined): string | undefined {
+export function buildAgentScopeSection(root: string | undefined, repoRoot: string | undefined): string | undefined {
   if (root === undefined || root.trim() === "") return undefined;
   const label = packageLabel(root, repoRoot);
 
@@ -605,20 +618,26 @@ Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Wire it into both protocol arms**
 
-In `src/agents/tool-preamble.ts`, add the import beside the existing ones:
+First export it from the sections barrel. In `src/prompts/sections/index.ts`, add in alphabetical position (before the `./acceptance` exports):
 
 ```ts
-import { renderAgentScope } from "../prompts/sections/agent-scope";
+export { buildAgentScopeSection } from "./agent-scope";
 ```
 
-(relative, not aliased — `check:alias-internals` requires aliases to name barrels, which is why the file's existing imports are relative.)
+Then in `src/agents/tool-preamble.ts`, extend the existing barrel import at `:21` rather than adding a second line:
+
+```ts
+import { applyProtocolRegions, buildAgentScopeSection } from "../prompts/sections";
+```
+
+(Relative, not aliased: `check:alias-internals` requires an alias to name a barrel, which is why this file's existing imports are relative — see its module docblock.)
 
 Replace the body of `promptWithToolPreamble`:
 
 ```ts
 export function promptWithToolPreamble(agentName: string, options: AgentRunOptions): string {
   const base = agentName === NATIVE_AGENT ? options.prompt : buildContextToolPreamble(options);
-  const scope = renderAgentScope(options.codingToolRoot, options.codingToolRepoRoot);
+  const scope = buildAgentScopeSection(options.codingToolRoot, options.codingToolRepoRoot);
   return scope === undefined ? base : `${scope}\n\n${base}`;
 }
 ```
@@ -645,7 +664,7 @@ Expected: all phases pass. Prompt-shape assertions elsewhere (`test/unit/prompts
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/prompts/sections/agent-scope.ts src/agents/tool-preamble.ts test/unit/prompts/agent-scope.test.ts test/unit/agents/
+git add src/prompts/sections/agent-scope.ts src/prompts/sections/index.ts src/agents/tool-preamble.ts test/unit/prompts/agent-scope.test.ts test/unit/agents/
 git commit -m "feat(prompts): tell the agent which tree its file tools are rooted at"
 ```
 
