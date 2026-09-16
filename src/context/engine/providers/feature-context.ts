@@ -21,6 +21,7 @@ import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import {
   listFragmentStoryIds as listFragmentStoryIdsImpl,
   readFragment as readFragmentImpl,
+  reframeFilesTouched,
 } from "@/context/fragments";
 import { FeatureContextProvider as FeatureContextProviderV1 } from "@/context/providers/feature-context";
 import { getLogger } from "@/logger";
@@ -367,8 +368,24 @@ export class FeatureContextProviderV2 implements IContextProvider {
       // is the source of truth for which story ids have an on-disk file.
       if (!fragmentSet.has(storyId)) continue;
 
-      const body = await _featureContextV2Deps.readFragment(projectDir, featureId, storyId);
-      if (body === null) continue;
+      const rawBody = await _featureContextV2Deps.readFragment(projectDir, featureId, storyId);
+      if (rawBody === null) continue;
+
+      // nax#2072: the fragment records repo-rooted paths, but THIS story's
+      // file tools are contained at its package dir, so a dependency's
+      // `packages/lib/src/util.ts` resolves to `<pkg>/packages/lib/...` and
+      // ENOENTs. Re-spell what is reachable, mark what is not.
+      //
+      // Before the budget check, not after: the marker lengthens the body,
+      // and measuring the raw one under-counts `fragmentBudget`.
+      //
+      // The prefix is `story.workdir` (PRD-declared, repo-relative) and must
+      // stay so. `relative(request.repoRoot, request.packageDir)` is NOT
+      // equivalent: under worktree isolation `packageDir` is
+      // `<root>/.nax-wt/<storyId>/<pkg>` while `repoRoot` is the main
+      // checkout, so it yields `.nax-wt/<storyId>/<pkg>` and mis-classifies
+      // every entry. Same trap as nax#2069.
+      const body = reframeFilesTouched(rawBody, this.story.workdir);
 
       const bodyTokens = estimateTokens(body);
       if (usedTokens + bodyTokens > fragmentBudget) {

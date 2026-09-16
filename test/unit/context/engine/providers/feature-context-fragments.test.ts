@@ -480,3 +480,61 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     expect(ids).toEqual(["feature-fragment:US-002", "feature-fragment:US-003"]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// nax#2072: fragment paths are reframed for the consuming story's package
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("FeatureContextProviderV2 — fragment path reframing (nax#2072)", () => {
+  const dependencyFragment =
+    "# US-001 — Add isBlank\n\n" +
+    "## Files touched\n" +
+    "- packages/lib/src/util.ts\n" +
+    "- packages/app/src/index.ts\n\n" +
+    "## Acceptance criteria\n" +
+    "- isBlank works\n";
+
+  /** US-002 (in packages/app) depends on US-001 (in packages/lib). */
+  async function fetchForConsumer(consumerWorkdir: string | undefined): Promise<RawChunk[]> {
+    mockV1Empty();
+    mockLoadPRD(prdWith([storyWith("US-001"), storyWith("US-002", ["US-001"])]));
+    mockListFragmentStoryIds(["US-001"]);
+    mockReadFragment({ "US-001": dependencyFragment });
+
+    const consumer = makeStory({ id: "US-002", dependencies: ["US-001"], workdir: consumerWorkdir });
+    const provider = new FeatureContextProviderV2(consumer, makeFragmentsConfig());
+    const result = await provider.fetch(makeRequest({ storyId: "US-002" }));
+    return fragmentChunks(result.chunks);
+  }
+
+  test("marks the cross-package entry and re-spells the in-package one", async () => {
+    const chunks = await fetchForConsumer("packages/app");
+    const chunk = chunks[0];
+    assertDefined(chunk);
+
+    expect(chunk.content).toContain(
+      "- packages/lib/src/util.ts (other package - not readable from this story's workdir)",
+    );
+    expect(chunk.content).toContain("- src/index.ts");
+    expect(chunk.content).not.toContain("- packages/app/src/index.ts");
+  });
+
+  test("leaves the fragment untouched for a root-package consumer", async () => {
+    const chunks = await fetchForConsumer(undefined);
+    const chunk = chunks[0];
+    assertDefined(chunk);
+
+    expect(chunk.content).toBe(dependencyFragment);
+  });
+
+  test("tokens measure the reframed body, not the raw one", async () => {
+    const chunks = await fetchForConsumer("packages/app");
+    const chunk = chunks[0];
+    assertDefined(chunk);
+
+    // The marker makes the body longer than what was read from disk; a
+    // measurement taken before the transform would under-count the budget.
+    expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
+    expect(chunk.tokens).toBeGreaterThan(Math.ceil(dependencyFragment.length / 4));
+  });
+});
