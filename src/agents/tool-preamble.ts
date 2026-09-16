@@ -17,14 +17,23 @@
  * drift, and a third would otherwise be written without the guard.
  */
 
-import { applyProtocolRegions } from "../prompts/sections";
+import { applyProtocolRegions, buildAgentScopeSection } from "../prompts/sections";
 import { buildContextToolPreamble } from "./acp/adapter-output";
 import { NATIVE_AGENT } from "./native/models";
 import type { AgentRunOptions } from "./types";
 
+/**
+ * Build the dispatch prompt for `agentName`, prefixing the scope block.
+ *
+ * The scope block is prepended on BOTH arms: the boundary is a property of the
+ * tools, not of the transport, and an ACP agent is as blind to it as a native
+ * one. It goes here rather than in a per-op section because every dispatch has
+ * a root and none of the op builders can see it.
+ */
 export function promptWithToolPreamble(agentName: string, options: AgentRunOptions): string {
-  if (agentName === NATIVE_AGENT) return options.prompt;
-  return buildContextToolPreamble(options);
+  const base = agentName === NATIVE_AGENT ? options.prompt : buildContextToolPreamble(options);
+  const scope = buildAgentScopeSection(options.codingToolRoot, options.codingToolRepoRoot);
+  return scope === undefined ? base : `${scope}\n\n${base}`;
 }
 
 /**

@@ -172,4 +172,15 @@ describe("buildHopCallback — declared coding tools reach the agent", () => {
     // model sees as "that tool does not exist".
     expect(response?.answer).toContain("divide");
   });
+
+  test("prepends the scope block on a dispatch with no context pull tools", async () => {
+    const { prompt } = await dispatchOnce();
+
+    // The run() path dispatches through this callback, so the scope block has
+    // to reach an agent that has coding tools but no pull tools — the exact
+    // agent the feature exists for.
+    expect(prompt).toContain("## Your file scope");
+    // The pull-tool catalogue stays gated on the tools actually being present.
+    expect(prompt).not.toContain("## Context Pull Tools");
+  });
 });

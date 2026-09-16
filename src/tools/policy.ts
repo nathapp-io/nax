@@ -17,6 +17,7 @@ import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
 import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
+import { isNaxConfigFile, naxOwnedWriteRefusal } from "./nax-owned-writes";
 import { pathListElements } from "./path-list";
 import { checkBashCommand } from "./policy-bash";
 import { pathFieldValue } from "./policy-input";
@@ -55,35 +56,6 @@ function entersGitMetadata(root: string, resolved: string): boolean {
   const rel = relative(realOrRaw(root), resolved);
   if (rel === "" || rel.startsWith("..")) return false;
   return rel.split(sep).includes(".git");
-}
-
-/**
- * Is `resolved` one of nax's own CONFIG files, relative to `root`?
- *
- * `.nax/config.json`, and `.nax/mono/<package>/config.json` in a monorepo.
- * Nothing else under `.nax/`: specs, PRDs, rules, context and run state are
- * things an agent legitimately reads, and refusing them wholesale would break
- * ordinary work to close one hole.
- *
- * Why these two at all: `quality.commands` and `acceptance.command` are run by
- * key through a shell and never pass the permission gate (spec R8) -- they are
- * trusted because a HUMAN wrote them. That trust rests entirely on a model
- * being unable to write them. An agent holding `Write` under the default
- * `unrestricted` profile could otherwise add a quality command and receive an
- * ungated shell on the next run, routing around every `Bash(...)` rule, the
- * lexer's construct refusals and containment itself.
- *
- * Segment-exact, never a prefix or substring match, for the same reason
- * `entersGitMetadata` is: `.naxignore`, `docs/nax/config.json` and
- * `.nax/mono/api/notes.md` are ordinary paths a tool must still reach.
- */
-function isNaxConfigFile(root: string, resolved: string): boolean {
-  const rel = relative(realOrRaw(root), resolved);
-  if (rel === "" || rel.startsWith("..")) return false;
-  const segments = rel.split(sep);
-  if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
-  // `.nax/config.json` (2) or `.nax/mono/<package>/config.json` (4).
-  return segments.length === 2 || (segments.length === 4 && segments[1] === "mono");
 }
 
 /**
@@ -268,6 +240,15 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * plain message. This must never get chattier for ordinary containment
    * denials, and must never reveal repository structure for a path the model
    * never touched.
+   *
+   * The root itself IS named, deliberately. The rule above -- never reveal
+   * repository structure -- is about paths the model never touched; this path is
+   * one the model just passed, and telling it where the boundary is is the
+   * difference between "adapt" and "work around". The dispatch preamble
+   * (src/prompts/sections/agent-scope.ts) states the same boundary only as a
+   * package-relative label (`packages/api`), never as an absolute path, so this
+   * message is where the agent first sees the absolute containment root -- and
+   * naming a path the model itself handed in is the right disclosure.
    */
   function outOfRootReason(tool: string, root: string, candidate: string): string {
     const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
@@ -297,7 +278,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
         );
       }
     }
-    return "resolves outside the permitted root";
+    return `resolves outside the permitted root (${root}), which is the only directory this tool can reach`;
   }
 
   /**
@@ -308,6 +289,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * denied and an ask on an ungranted call never becomes an approval prompt.
    */
   function applyPathRules(tool: string, rel: string, state: RuleState): PolicyVerdict | undefined {
+    const naxOwned = naxOwnedWriteRefusal(tool, rel);
+    if (naxOwned !== undefined) return deny(`${tool} may not modify ${naxOwned}`);
     const denyEntry = denyBy.get(tool);
     const askEntry = askBy.get(tool);
     if (denyEntry !== undefined && (denyEntry.unconditional || matchesAny(denyEntry.matchers, rel))) {

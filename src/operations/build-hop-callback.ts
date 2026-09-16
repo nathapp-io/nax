@@ -276,21 +276,22 @@ export function buildHopCallback(
     // The three lines that made it reachable are the preamble below, the
     // handler that answers the call, and the turn budget in `send`.
     const hasContextTools = Boolean(contextToolRuntime && (contextPullTools?.length ?? 0) > 0);
-    if (hasContextTools) {
-      // AFTER the swap-handoff / timeout-retry rewrites above, both of which
-      // replace the prompt wholesale — a preamble applied before either would
-      // be discarded, leaving that hop's agent with tools it was never told
-      // about. Safe against compounding across hops: `prompt` is re-seeded from
-      // resolvedRunOptions.prompt on every hop, and the `finalPrompt` the hop
-      // returns is audit-only (manager.ts) — it never feeds a later hop's
-      // runOptions.
-      prompt = promptWithToolPreamble(agentName, {
-        ...resolvedRunOptions,
-        prompt,
-        contextPullTools,
-        contextToolRuntime,
-      });
-    }
+    // Unconditional: the scope block must reach every dispatch, even a
+    // tool-less one; only the pull-tool catalogue inside stays gated, since
+    // buildContextToolPreamble returns the prompt unchanged without tools.
+    // AFTER the swap-handoff / timeout-retry rewrites above, both of which
+    // replace the prompt wholesale — a preamble applied before either would
+    // be discarded, leaving that hop's agent with tools it was never told
+    // about. Safe against compounding across hops: `prompt` is re-seeded from
+    // resolvedRunOptions.prompt on every hop, and the `finalPrompt` the hop
+    // returns is audit-only (manager.ts) — it never feeds a later hop's
+    // runOptions.
+    prompt = promptWithToolPreamble(agentName, {
+      ...resolvedRunOptions,
+      prompt,
+      contextPullTools,
+      contextToolRuntime,
+    });
 
     // Coding tools are resolved per hop rather than per run: a swap changes the
     // agent, and the grants are stage-scoped, so a runtime captured once above
