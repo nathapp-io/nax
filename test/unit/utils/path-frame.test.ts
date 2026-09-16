@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { isRootWorkdir, normalizeWorkdir, toPackageFrame, toRepoFrame, UNREADABLE_MARKER } from "@/utils/path-frame";
+import {
+  isRootWorkdir,
+  normalizeWorkdir,
+  storyAbsWorkdir,
+  storyPackageDir,
+  storyWorkdir,
+  toPackageFrame,
+  toRepoFrame,
+  UNREADABLE_MARKER,
+} from "@/utils/path-frame";
 
 describe("normalizeWorkdir", () => {
   test.each([
@@ -87,5 +96,37 @@ describe("UNREADABLE_MARKER", () => {
     // Rendered into agent prompts and compared byte-for-byte; an em dash here
     // would silently change every marked line.
     expect(/^[\x20-\x7E]*$/.test(UNREADABLE_MARKER)).toBe(true);
+  });
+});
+
+describe("storyWorkdir", () => {
+  test("returns a package path unchanged", () => {
+    expect(storyWorkdir({ workdir: "packages/app" })).toBe("packages/app");
+  });
+
+  test.each([[{}], [{ workdir: undefined }], [{ workdir: "" }], [{ workdir: "." }]])("returns '.' for %p", (story) => {
+    expect(storyWorkdir(story)).toBe(".");
+  });
+});
+
+describe("storyPackageDir", () => {
+  test("returns the package for a monorepo story", () => {
+    expect(storyPackageDir({ workdir: "packages/app" })).toBe("packages/app");
+  });
+
+  test.each([[{}], [{ workdir: "." }], [{ workdir: "" }]])("returns undefined for the root story %p", (story) => {
+    // This is the contract quality/command-resolver.ts documents at :60 and
+    // that "." would otherwise break, because "." is truthy.
+    expect(storyPackageDir(story)).toBeUndefined();
+  });
+});
+
+describe("storyAbsWorkdir", () => {
+  test("joins a package onto the root", () => {
+    expect(storyAbsWorkdir("/repo", { workdir: "packages/app" })).toBe("/repo/packages/app");
+  });
+
+  test.each([[{}], [{ workdir: "." }]])("returns the root unchanged for %p", (story) => {
+    expect(storyAbsWorkdir("/repo", story)).toBe("/repo");
   });
 });
