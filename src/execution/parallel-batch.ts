@@ -21,6 +21,7 @@ import type { PipelineRunResult } from "../pipeline/runner";
 import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
+import { storyPackageDir } from "../utils/path-frame";
 import { prepareWorktreeDependencies } from "../worktree/dependencies";
 import type { WorktreeDependencyContext } from "../worktree/types";
 
@@ -172,12 +173,12 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   const storyEffectiveConfigs = new Map<string, NaxConfig>();
   const configResults = await Promise.allSettled(
     stories
-      .filter((story) => story.workdir)
+      .filter((story) => storyPackageDir(story))
       .map(async (story) => {
         try {
           const effectiveConfig = await _parallelBatchDeps.loadConfigForWorkdir(
             rootConfigPath,
-            story.workdir as string,
+            storyPackageDir(story) as string,
             profileOverride,
           );
           return { storyId: story.id, effectiveConfig };
@@ -213,7 +214,7 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
         projectRoot: workdir,
         worktreeRoot,
         storyId: story.id,
-        storyWorkdir: story.workdir,
+        storyWorkdir: storyPackageDir(story),
         config: effectiveConfig,
       });
       dependencyContexts.set(story.id, dependencyContext);

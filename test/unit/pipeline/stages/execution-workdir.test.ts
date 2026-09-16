@@ -29,7 +29,7 @@ describe("resolveStoryWorkdir (MW-002)", () => {
 
   test("throws when storyWorkdir does not exist on disk", () => {
     expect(() => resolveStoryWorkdir("/tmp", "nonexistent-package-xyz")).toThrow(
-      'story.workdir "nonexistent-package-xyz" does not exist',
+      'story workdir "nonexistent-package-xyz" does not exist',
     );
   });
 });

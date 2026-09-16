@@ -47,7 +47,7 @@ export function resolveStoryWorkdir(repoRoot: string, storyWorkdir?: string): st
   const resolved = join(repoRoot, storyWorkdir);
   if (!existsSync(resolved)) {
     throw new NaxError(
-      `[execution] story.workdir "${storyWorkdir}" does not exist at "${resolved}"`,
+      `[execution] story workdir "${storyWorkdir}" does not exist at "${resolved}"`,
       "WORKDIR_NOT_FOUND",
       { stage: "execution", storyWorkdir, resolved },
     );
