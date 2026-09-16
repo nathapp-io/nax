@@ -37,15 +37,11 @@ const ALLOWED = [
 ];
 
 /**
- * Temporary, single-entry, SELF-EXPIRING exemption.
- *
- * This file sits on the per-package-config seam nax#2066/#2069 just fixed, so
- * it converts in its own reviewable PR rather than inside a 9-file sweep. The
- * staleness check below makes the entry impossible to leave behind: once the
- * file is converted, an exemption that matches nothing FAILS the gate. Without
- * that, this list silently becomes the baseline the rule exists to avoid.
+ * No exemptions. The single temporary entry (src/execution/iteration-runner.ts,
+ * nax#2066/#2069 seam) was retired when that file converted. The staleness
+ * check below is retained: it is what keeps a future exemption temporary.
  */
-const EXEMPT = [join("src", "execution", "iteration-runner.ts")];
+const EXEMPT: string[] = [];
 
 const READ = /([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\.workdir\b/g;
 
