@@ -447,6 +447,7 @@ export class CodeNeighborProvider implements IContextProvider {
       sections,
       truncated: anyTruncated,
       maxGlobFiles: this.maxGlobFiles,
+      packageWorkdir: packageDirRelative(request.repoRoot, request.packageDir) ?? ".",
     });
     if (chunk === null) {
       return { chunks: [], pullTools: [] };

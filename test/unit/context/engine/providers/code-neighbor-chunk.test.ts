@@ -15,6 +15,7 @@ import { describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
 import { assembleCodeNeighborChunk, type NeighborSection } from "@/context/engine";
 import type { RawChunk } from "@/context/engine/types";
+import { UNREADABLE_MARKER } from "@/utils/path-frame";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -36,7 +37,7 @@ function makeSections(items: Array<[string, string[]]>): NeighborSection[] {
 
 describe("assembleCodeNeighborChunk — empty input (AC3)", () => {
   test("[AC3] returns null when no sections are provided", () => {
-    const chunk = assembleCodeNeighborChunk({ sections: [], truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections: [], truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     expect(chunk).toBeNull();
   });
 });
@@ -48,7 +49,7 @@ describe("assembleCodeNeighborChunk — empty input (AC3)", () => {
 describe("assembleCodeNeighborChunk — AC1 (touched file in scopePaths)", () => {
   test("[AC1] chunk.scopePaths contains the touched file path when one file has neighbors", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts", "test/unit/foo.test.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
     expect(chunk.scopePaths).toBeDefined();
     expect(chunk.scopePaths).toContain("src/foo.ts");
@@ -62,7 +63,7 @@ describe("assembleCodeNeighborChunk — AC1 (touched file in scopePaths)", () =>
 describe("assembleCodeNeighborChunk — AC2 (neighbours in scopePaths)", () => {
   test("[AC2] chunk.scopePaths contains each neighbor path rendered in the chunk body", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts", "src/foo/util.ts", "test/unit/foo.test.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
 
     const scope = chunk.scopePaths;
@@ -79,7 +80,7 @@ describe("assembleCodeNeighborChunk — AC2 (neighbours in scopePaths)", () => {
 
   test("[AC2] section header and file label appear in the chunk body", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
     expect(chunk.content).toContain(SECTION_HEADER);
     expect(chunk.content).toContain("### src/foo.ts");
@@ -97,7 +98,7 @@ describe("assembleCodeNeighborChunk — AC4 (shared neighbour dedup)", () => {
       ["src/foo.ts", ["src/shared.ts"]],
       ["src/bar.ts", ["src/shared.ts"]],
     ]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
 
     const scope = chunk.scopePaths;
@@ -115,7 +116,7 @@ describe("assembleCodeNeighborChunk — AC4 (shared neighbour dedup)", () => {
       ["src/foo.ts", ["src/shared.ts"]],
       ["src/bar.ts", ["src/shared.ts"]],
     ]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
     // The shared neighbor path appears in the rendered body under each
     // touched file's section — it is still listed twice in content (the
@@ -133,7 +134,7 @@ describe("assembleCodeNeighborChunk — AC4 (shared neighbour dedup)", () => {
 describe("assembleCodeNeighborChunk — order contract", () => {
   test("[AC4] scopePaths lists the touched file first, then each neighbor in declaration order", () => {
     const sections = makeSections([["src/foo.ts", ["src/dep-a.ts", "src/dep-b.ts", "src/dep-c.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
     expect(chunk.scopePaths).toEqual(["src/foo.ts", "src/dep-a.ts", "src/dep-b.ts", "src/dep-c.ts"]);
   });
@@ -143,7 +144,7 @@ describe("assembleCodeNeighborChunk — order contract", () => {
       ["src/foo.ts", ["src/foo/dep.ts"]],
       ["src/bar.ts", ["src/bar/dep.ts", "src/bar/util.ts"]],
     ]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
     // Touched files first, then neighbors in section order. The exact order
     // is: foo, foo/dep, bar, bar/dep, bar/util.
@@ -164,7 +165,12 @@ describe("assembleCodeNeighborChunk — order contract", () => {
 describe("assembleCodeNeighborChunk — chunk shape", () => {
   test("chunk has expected metadata (kind, scope, role, rawScore)", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    }) as RawChunk;
     expect(chunk.kind).toBe("neighbor");
     expect(chunk.scope).toBe("story");
     expect(chunk.role).toContain("implementer");
@@ -174,14 +180,19 @@ describe("assembleCodeNeighborChunk — chunk shape", () => {
 
   test("chunk.id is 'code-neighbor:' followed by an 8-char content hash", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
     expect(chunk.id).toMatch(/^code-neighbor:[0-9a-f]{8}$/);
   });
 
   test("chunk.tokens equals ceil(content.length / 4)", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts", "src/foo/util.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    }) as RawChunk;
     expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
   });
 
@@ -195,7 +206,12 @@ describe("assembleCodeNeighborChunk — chunk shape", () => {
         neighbors: Array.from({ length: 8 }, (_, j) => `src/file-${i}/dep-${j}.ts`),
       });
     }
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);
   });
 });
@@ -207,14 +223,14 @@ describe("assembleCodeNeighborChunk — chunk shape", () => {
 describe("assembleCodeNeighborChunk — truncation note", () => {
   test("appends the visible truncation note when truncated=true", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: true, maxGlobFiles: 200 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: true, maxGlobFiles: 200, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
     expect(chunk.content).toContain("reverse-dep scan capped at 200 files");
   });
 
   test("omits the truncation note when truncated=false", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts"]]]);
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(chunk, "chunk");
     expect(chunk.content).not.toContain("reverse-dep scan capped");
   });
@@ -240,7 +256,12 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
       { file: "src/a.ts", neighbors: [longNeighborName] },
       { file: "src/b.ts", neighbors: [longNeighborName] },
     ];
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    }) as RawChunk;
     // src/b.ts was dropped — must NOT be in chunk.content.
     expect(chunk.content).not.toContain("src/b.ts");
     // src/b.ts must NOT be in scopePaths either (AC2: scopePaths contains
@@ -259,7 +280,12 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
       { file: "src/b.ts", neighbors: ["src/b/dep.ts"] },
       { file: "src/c.ts", neighbors: [smallNeighborName] },
     ];
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    }) as RawChunk;
     // src/a.ts fits, src/b.ts fits, src/c.ts pushes over the cap and is dropped.
     expect(chunk.scopePaths).toEqual(["src/a.ts", smallNeighborName, "src/b.ts", "src/b/dep.ts"]);
     // And src/c.ts is not rendered.
@@ -275,7 +301,12 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
     // in the section header and fits inside the slice) is kept.
     const hugeSection = "n".repeat(3000);
     const sections: NeighborSection[] = [{ file: "src/only.ts", neighbors: [hugeSection] }];
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);
     expect(chunk.scopePaths).toEqual(["src/only.ts"]);
   });
@@ -288,7 +319,12 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
     // full form is not.
     const longB = `src/multi/b/${"x".repeat(2000)}`;
     const sections: NeighborSection[] = [{ file: "src/multi.ts", neighbors: ["src/multi/a.ts", longB] }];
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);
     // file is fully in body (it's in the section header which fits inside
     // the slice), first neighbour is fully in body, second is sliced.
@@ -309,7 +345,12 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
     const n1 = "src/foo/dep.ts"; // 15 chars, fully rendered
     const n2 = `src/foo${"x".repeat(1900)}`; // 1907 chars, sliced mid-name
     const sections: NeighborSection[] = [{ file, neighbors: [n1, n2] }];
-    const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);
     // file and n1 are fully rendered; n2 is sliced mid-name.
     expect(chunk.scopePaths).toEqual([file, n1]);
@@ -327,10 +368,66 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
 describe("assembleCodeNeighborChunk — determinism", () => {
   test("identical inputs produce identical chunk IDs", () => {
     const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts"]]]);
-    const a = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
-    const b = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
+    const a = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
+    const b = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500, packageWorkdir: "." });
     assertDefined(a, "a");
     assertDefined(b, "b");
     expect(a.id).toBe(b.id);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #2091 — scopePaths are canonicalized to the repo frame at assembly.
+// The rendered section file and unmarked neighbours are package-relative (the
+// agent's file tools are rooted at the package); scopePaths is an attribution
+// key compared against the repo-framed diff, so those paths are re-rooted.
+// Marked neighbours (UNREADABLE_MARKER) are already repo-rooted.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembleCodeNeighborChunk — scopePaths frame canonicalization (#2091)", () => {
+  test("package-relative section files and neighbours are repo-rooted via packageWorkdir", () => {
+    const sections = makeSections([["src/index.ts", ["src/dep.ts", "src/other.ts"]]]);
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: "packages/api",
+    });
+    assertDefined(chunk, "chunk");
+    expect(chunk.scopePaths).toEqual([
+      "packages/api/src/index.ts",
+      "packages/api/src/dep.ts",
+      "packages/api/src/other.ts",
+    ]);
+    // The prompt-facing content keeps the package-relative spelling.
+    expect(chunk.content).toContain("### src/index.ts");
+    expect(chunk.content).toContain("- src/dep.ts");
+  });
+
+  test("a marked (other-package) neighbour stays repo-rooted and is not double-prefixed", () => {
+    const sections = makeSections([["src/index.ts", [`packages/lib/src/index.ts${UNREADABLE_MARKER}`]]]);
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: "packages/api",
+    });
+    assertDefined(chunk, "chunk");
+    // The marked neighbour was already repo-rooted — prefixing it again would
+    // produce the bogus packages/api/packages/lib/src/index.ts.
+    expect(chunk.scopePaths).toEqual(["packages/api/src/index.ts", "packages/lib/src/index.ts"]);
+    expect(chunk.scopePaths?.some((p) => p.includes(UNREADABLE_MARKER))).toBe(false);
+  });
+
+  test("a repo-root story (packageWorkdir '.') leaves package-relative paths unchanged", () => {
+    const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts"]]]);
+    const chunk = assembleCodeNeighborChunk({
+      sections,
+      truncated: false,
+      maxGlobFiles: 500,
+      packageWorkdir: ".",
+    });
+    assertDefined(chunk, "chunk");
+    expect(chunk.scopePaths).toEqual(["src/foo.ts", "src/foo/dep.ts"]);
   });
 });

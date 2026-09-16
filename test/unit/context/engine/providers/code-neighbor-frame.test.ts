@@ -187,6 +187,10 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
 
     expect(result.chunks[0]?.scopePaths).toContain("packages/lib/src/index.ts");
     expect(result.chunks[0]?.scopePaths?.some((p) => p.includes(UNREADABLE_MARKER))).toBe(false);
+    // nax#2091: the touched file is attributed repo-rooted too, not in the
+    // package-relative spelling the agent prompt carries.
+    expect(result.chunks[0]?.scopePaths).toContain("packages/app/src/index.ts");
+    expect(result.chunks[0]?.scopePaths?.some((p) => p.startsWith("src/"))).toBe(false);
   });
 
   // The touched file is repo-rooted by contract (types.ts); fetch() re-spells
