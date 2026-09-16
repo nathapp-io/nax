@@ -42,6 +42,10 @@ afterEach(() => {
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Note: production sets ctx.workdir = join(projectDir, story.workdir) (see
+// src/pipeline/types.ts:89); every test here stubs both git deps, so ctx.workdir
+// is only ever passed through to a stub and the relationship does not matter.
+// Framing reads story.workdir, not ctx.workdir.
 function makeCtx(story: UserStory, workdir = "/repo"): PipelineContext {
   return makeTestContext({ story, workdir, projectDir: workdir });
 }
@@ -180,5 +184,172 @@ describe("resolveScopeFiles — fail-open behaviour", () => {
 
     expect(result).toContain("src/declared.ts");
     expect(result).toContain("src/expected.ts");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// nax#2071: the union must be single-framed.
+//
+// Declared paths come from the PRD and are package-relative; collectDiffFileList
+// runs without `--relative`, so git frames its output at the repo top-level
+// regardless of cwd. Unioned raw, the same file appears under two spellings.
+//
+// The impact is narrower than the issue states. globToRegex anchors as
+// `(?:^|/)...$` (static-rules.ts:158), so a repo-rooted entry CANNOT fail to
+// match a package-relative `appliesTo` glob -- `src/**/*.ts` already matched
+// `packages/app/src/index.ts` before this fix. What framing actually buys is
+// (a) duplicate near-identical union entries collapse, and (b) a ROOT-ANCHORED
+// `appliesTo` glob now matches the declared spelling, where before it could
+// only match the diff-sourced one. Admission is monotone: framing only ever
+// prepends, and the anchor accepts an internal `/`, so no rule admitted before
+// can be dropped now.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveScopeFiles — nax#2071 canonical repo frame", () => {
+  test("maps package-relative declared paths into the repo frame for a monorepo story", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["src/declared.ts"],
+      expectedFiles: ["src/expected.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => [];
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/src/declared.ts", "packages/app/src/expected.ts"]);
+  });
+
+  test("does not double-frame a declared path already spelled repo-rooted", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["packages/app/src/declared.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => [];
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/src/declared.ts"]);
+  });
+
+  test("collapses the declared and diff spellings of the same file to one entry", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["src/shared.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    // Repo-rooted, as git emits without --relative.
+    _scopeFilesDeps.collectDiffFileList = async () => ["packages/app/src/shared.ts"];
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/src/shared.ts"]);
+  });
+
+  // Residual, blast radius nil today: a declared path that genuinely names a
+  // SIBLING package is indistinguishable from a package-relative one, so
+  // toRepoFrame prepends rather than passing it through. toRepoFrame only ever
+  // prepends -- it never slices (that is toPackageFrame, path-frame.ts:94) --
+  // and its segment-boundary test at path-frame.ts:77 is what decides "already
+  // framed" from "needs a prefix". For THIS input a looser startsWith(prefix)
+  // would happen to give the right answer; the boundary guard is justified by
+  // the case documented at path-frame.ts:63-66, not by this one.
+  //
+  // The fabricated path cannot exist, but nothing stats a scopeFiles entry, so
+  // it can only match or fail to match a glob -- and it still matches the
+  // package-relative globs it did before. The exposure is a spurious match
+  // against a root-anchored glob.
+  //
+  // nax#2067 does NOT retire this. Its plan-time pass canonicalizes declared
+  // paths to the REPO frame (see the design spec's #2067 section), which makes
+  // story-local paths arrive already framed -- so this call becomes a no-op for
+  // them -- while a genuine sibling path still lands here and is still
+  // prefixed. #2067 is what starts reliably producing this input; revisit the
+  // case when that PR lands.
+  test("prefixes a sibling-package path rather than treating it as already-framed", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["packages/application/src/other.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => [];
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/packages/application/src/other.ts"]);
+  });
+
+  test("leaves a root story's declared paths unchanged", async () => {
+    const story = makeStory({
+      contextFiles: ["src/declared.ts"],
+      expectedFiles: ["src/expected.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => [];
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["src/declared.ts", "src/expected.ts"]);
+  });
+
+  test("frames declared paths on the degraded path too, when the ref is unresolvable", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["src/declared.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => undefined;
+    _scopeFilesDeps.collectDiffFileList = async () => {
+      throw new Error("should not be called when ref is undefined");
+    };
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/src/declared.ts"]);
+  });
+
+  test("frames declared paths when resolveEffectiveRef throws", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["src/declared.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => {
+      throw new Error("git command failed");
+    };
+    _scopeFilesDeps.collectDiffFileList = async () => {
+      throw new Error("should not be called when resolveEffectiveRef throws");
+    };
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/src/declared.ts"]);
+  });
+
+  test("frames declared paths when collectDiffFileList resolves undefined", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["src/declared.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => undefined;
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/src/declared.ts"]);
+  });
+
+  test("frames declared paths when collectDiffFileList rejects", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["src/declared.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => {
+      throw new Error("git command failed");
+    };
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/src/declared.ts"]);
   });
 });

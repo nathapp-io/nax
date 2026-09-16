@@ -320,6 +320,15 @@ export interface ContextRequest {
    * expectedFiles + git diff). Used by SCOPING decisions only — providers
    * that fetch content read `touchedFiles` instead. Resolved by
    * `resolveScopeFiles(ctx)` and threaded through `StageAssembleOptions.scopeFiles`.
+   *
+   * Repo-rooted, per the path-frame convention (nax#2071) -- see
+   * `src/utils/path-frame.ts`. Entries of THIS field are matched as strings and
+   * never read (the identically-named `scopeFiles` on the mechanical-fix
+   * strategies is an unrelated field that IS shell-interpolated).
+   *
+   * Note that its neighbour `touchedFiles` is NOT yet framed: it comes from the
+   * same PRD `contextFiles` and is still package-relative (seams 6 and 8 in the
+   * path-frame design spec, both filed).
    */
   scopeFiles?: string[];
   /**

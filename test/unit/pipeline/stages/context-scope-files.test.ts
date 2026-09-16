@@ -141,6 +141,27 @@ describe("contextStage — scope files threading (AC-8)", () => {
     expect(capture.captured?.scopeFiles?.length).toBeGreaterThan(0);
   });
 
+  // nax#2071: the AC-8 tests above compare against the resolver's own output, so
+  // they hold under either frame. This one pins the CONCRETE framed value that
+  // reaches the ContextRequest, which is what rule selection then matches
+  // against. It fails on the pre-#2071 resolver, which threaded the raw
+  // package-relative "src/a.ts".
+  test("nax#2071: a monorepo story's scopeFiles reach the ContextRequest repo-framed", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["src/a.ts"],
+      expectedFiles: ["src/b.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => [];
+
+    const capture = captureContextRequest();
+
+    await contextStage.execute(makeCtx(story));
+
+    expect(capture.captured?.scopeFiles).toEqual(["packages/app/src/a.ts", "packages/app/src/b.ts"]);
+  });
+
   test("AC-8 (boundary): fetch request scopeFiles matches the resolver when diff contributes no new paths", async () => {
     const story = makeStory({
       contextFiles: ["src/declared.ts"],
