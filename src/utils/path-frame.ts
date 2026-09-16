@@ -108,6 +108,58 @@ export function toPackageFrame(path: string, workdir: string | null | undefined)
 }
 
 /**
+ * Split a declared-path list into what a package-contained consumer can read
+ * and what it cannot.
+ *
+ * `canonical: true` asserts the caller's paths came through the plan-time write
+ * seam (story.workdirSource is stamped, src/prd/workdir-canonical.ts). That
+ * seam stamps EVERY story, but it re-spells a declared path only when the path
+ * resolved on disk at plan time; a path that existed nowhere is returned
+ * UNCHANGED (canonicalizeDeclaredPath, src/prd/workdir-canonical.ts). So the
+ * flag does not mean every path is repo-rooted: this story's create-intent
+ * `expectedFiles`, and any `contextFiles` entry that was absent at plan time,
+ * stay in the story's workdir-relative frame.
+ *
+ * A toPackageFrame miss is therefore only known out-of-package when the path set
+ * genuinely carries repo-rooted paths. Use `canonical: true` ONLY on such sets --
+ * the merged `contextFiles`, which carries repo-rooted parent outputs (nax#2089):
+ * there a miss is a real out-of-package path that goes to `unreachable` rather
+ * than being passed through as a path resolving to a real but WRONG file under
+ * the consumer's root, exactly what toPackageFrame's docblock forbids. Never use
+ * it on create-intent `expectedFiles`, whose package-relative spelling is legal
+ * and whose miss would be wrongly dropped.
+ *
+ * Without the flag every entry lands in `readable` unchanged: a pre-#2067 PRD
+ * may hold package-relative paths, and `src/x.ts` is genuinely ambiguous between
+ * "already package-framed" and "a repo-root file" with no way to tell from the
+ * string alone.
+ *
+ * The classification is RETURNED, not encoded into the strings. A caller that
+ * wants the marker applies UNREADABLE_MARKER itself; a caller that wants to drop
+ * uses the other list. Encoding it in the path is what splits one file into two
+ * identities downstream (see providers/code-neighbor-chunk.ts).
+ */
+export function partitionPackageFrame(
+  files: readonly string[],
+  workdir: string | null | undefined,
+  opts?: { readonly canonical?: boolean },
+): { readable: string[]; unreachable: string[] } {
+  const readable: string[] = [];
+  const unreachable: string[] = [];
+  for (const file of files) {
+    const framed = toPackageFrame(file, workdir);
+    if (framed !== null) {
+      readable.push(framed);
+    } else if (opts?.canonical) {
+      unreachable.push(file);
+    } else {
+      readable.push(file);
+    }
+  }
+  return { readable, unreachable };
+}
+
+/**
  * Structural shape of the one field these accessors read.
  *
  * Deliberately NOT `UserStory` from @/prd/types: src/utils/ must not
