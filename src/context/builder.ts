@@ -5,6 +5,7 @@
  */
 
 import path from "node:path";
+import { storyWorkdir, toPackageFrameFiles } from "@/utils/path-frame";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
@@ -284,11 +285,20 @@ async function addFileElements(
     return;
   }
 
-  const expectedSet = new Set(expectedFiles);
+  // nax#2067: the on-disk PRD now holds repo-rooted declared paths, but the
+  // agent's file tools are contained at the package dir (`codingToolRoot`), so
+  // each path is re-spelled into the package frame before it is resolved or
+  // emitted. `toPackageFrame` returns null when the path is already
+  // package-relative (a pre-canonicalization PRD) or lies outside the package,
+  // so such a path is left unchanged.
+  const framedContextFiles = toPackageFrameFiles(contextFiles, storyWorkdir(story));
+  const framedExpectedFiles = toPackageFrameFiles(expectedFiles, storyWorkdir(story));
+
+  const expectedSet = new Set(framedExpectedFiles);
   // Tracks paths already surfaced (read or create-intent) so the expectedFiles
   // recovery pass below does not emit a duplicate element for the same path.
   const surfaced = new Set<string>();
-  const filesToLoad = contextFiles.slice(0, FILE_INJECTION_MAX_FILES);
+  const filesToLoad = framedContextFiles.slice(0, FILE_INJECTION_MAX_FILES);
 
   for (let i = 0; i < filesToLoad.length; i++) {
     const relativeFilePath = filesToLoad[i];
@@ -318,7 +328,7 @@ async function addFileElements(
     }
   }
 
-  await addCreateIntentElements(elements, workdir, expectedFiles, surfaced);
+  await addCreateIntentElements(elements, workdir, framedExpectedFiles, surfaced);
 }
 
 /**

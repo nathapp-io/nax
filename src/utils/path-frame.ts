@@ -133,3 +133,15 @@ export function storyAbsWorkdir(root: string, story: StoryWorkdirLike): string {
   const packageDir = storyPackageDir(story);
   return packageDir ? join(root, packageDir) : root;
 }
+
+/**
+ * Re-spell a list of declared files for a package-contained consumer.
+ *
+ * Repo-rooted paths (canonical on-disk PRDs, nax#2067) are converted to the
+ * package frame `workdir` is relative to; paths already in the package frame
+ * (pre-canonicalization PRDs) or outside it pass through unchanged. Mirrors
+ * the v1 reframe in `src/context/builder.ts` — keep the two in sync.
+ */
+export function toPackageFrameFiles(files: readonly string[], workdir: string | null | undefined): string[] {
+  return files.map((file) => toPackageFrame(file, workdir) ?? file);
+}

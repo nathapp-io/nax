@@ -22,6 +22,7 @@ import { getLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import { getContextFiles } from "@/prd";
 import { errorMessage } from "@/utils/errors";
+import { storyWorkdir, toPackageFrameFiles } from "@/utils/path-frame";
 import { estimateAvailableBudgetTokens } from "./available-budget";
 import { loadFeatureManifests, writeContextManifest } from "./manifest-store";
 import { createDefaultOrchestrator } from "./orchestrator-factory";
@@ -229,7 +230,10 @@ export async function assembleForStage(
       // merged config (root + <repoRoot>/.nax/mono/<packageDir>/config.json overlay).
       budgetTokens: stageOverrides?.budgetTokens ?? stageConfig.budgetTokens,
       extraProviderIds: stageOverrides?.extraProviderIds ?? [],
-      touchedFiles: options.touchedFiles ?? getContextFiles(ctx.story),
+      // nax#2067: the written PRD holds repo-rooted declared paths; the
+      // history/neighbor providers resolve touchedFiles against packageDir, so
+      // re-frame into the package frame (mirrors src/context/builder.ts).
+      touchedFiles: toPackageFrameFiles(options.touchedFiles ?? getContextFiles(ctx.story), storyWorkdir(ctx.story)),
       ...(options.scopeFiles !== undefined && { scopeFiles: options.scopeFiles }),
       storyScratchDirs,
       priorStageDigest: options.priorStageDigest ?? ctx.contextBundle?.digest,

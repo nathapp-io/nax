@@ -43,6 +43,7 @@ import { getContextFiles } from "@/prd";
 import { readDigestFile, writeDigestFile } from "@/session";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
+import { storyWorkdir, toPackageFrameFiles } from "@/utils/path-frame";
 import { packageDirRelative } from "@/utils/paths";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -121,7 +122,13 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   }
 
   // Phase 3: derive files touched by this story for git history + neighbor providers.
-  const touchedFiles = getContextFiles(ctx.story);
+  // nax#2067: the on-disk PRD now holds repo-rooted declared paths, but
+  // GitHistoryProvider / CodeNeighborProvider resolve request.touchedFiles
+  // against request.packageDir (the package frame). Re-spell into the package
+  // frame here, mirroring v1's addFileElements (src/context/builder.ts). Paths
+  // already package-relative (pre-canonicalization PRDs) or outside the package
+  // pass through unchanged.
+  const touchedFiles = toPackageFrameFiles(getContextFiles(ctx.story), storyWorkdir(ctx.story));
 
   // Resolve the complete evidence set of files a story touches for SCOPING
   // decisions — never throws (fails open to declared sources). Cached on ctx

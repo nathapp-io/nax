@@ -34,6 +34,7 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
     relevantFiles: s.relevantFiles,
     contextFiles: s.contextFiles,
     expectedFiles: s.expectedFiles,
+    workdir: s.workdir,
   })),
 });
 
@@ -551,5 +552,64 @@ describe("Context Builder", () => {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe("Context Builder — repo-framed declared paths (nax#2067)", () => {
+  const config = makeNaxConfig({ context: { fileInjection: "disabled", testCoverage: { enabled: false } } });
+  const budget: ContextBudget = { maxTokens: 10000, reservedForInstructions: 1000, availableForContext: 9000 };
+
+  test("resolves a repo-rooted contextFile against the story package dir", async () => {
+    const tempDir = makeTempDir("nax-test-");
+    const packageDir = path.join(tempDir, "packages", "app");
+    await fs.mkdir(path.join(packageDir, "src"), { recursive: true });
+    await fs.writeFile(path.join(packageDir, "src", "a.ts"), "export const a = 1;");
+
+    try {
+      const prd = createTestPRD([{ id: "US-001", workdir: "packages/app", contextFiles: ["packages/app/src/a.ts"] }]);
+      const built = await buildContext({ prd, currentStoryId: "US-001", workdir: packageDir, config }, budget);
+
+      const fileElements = built.elements.filter((e) => e.type === "file");
+      expect(fileElements.length).toBe(1);
+      expect(fileElements[0].filePath).toBe("src/a.ts");
+      expect(fileElements[0].content).toContain("read this file before implementing");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("leaves a legacy package-relative contextFile unchanged", async () => {
+    const tempDir = makeTempDir("nax-test-");
+    const packageDir = path.join(tempDir, "packages", "app");
+    await fs.mkdir(path.join(packageDir, "src"), { recursive: true });
+    await fs.writeFile(path.join(packageDir, "src", "a.ts"), "export const a = 1;");
+
+    try {
+      const prd = createTestPRD([{ id: "US-001", workdir: "packages/app", contextFiles: ["src/a.ts"] }]);
+      const built = await buildContext({ prd, currentStoryId: "US-001", workdir: packageDir, config }, budget);
+
+      const fileElements = built.elements.filter((e) => e.type === "file");
+      expect(fileElements.length).toBe(1);
+      expect(fileElements[0].filePath).toBe("src/a.ts");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("leaves a single-package story unaffected", async () => {
+    const tempDir = makeTempDir("nax-test-");
+    await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, "src", "a.ts"), "export const a = 1;");
+
+    try {
+      const prd = createTestPRD([{ id: "US-001", contextFiles: ["src/a.ts"] }]);
+      const built = await buildContext({ prd, currentStoryId: "US-001", workdir: tempDir, config }, budget);
+
+      const fileElements = built.elements.filter((e) => e.type === "file");
+      expect(fileElements.length).toBe(1);
+      expect(fileElements[0].filePath).toBe("src/a.ts");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

@@ -261,6 +261,7 @@ export async function runPlanPipeline(
         models: config.models,
         defaultAgent: config.agent?.default ?? "claude",
         outputPath,
+        repoRoot: workdir,
         writeFile: _planDeps.writeFile,
       });
       logger?.info("plan", "[OK] PRD written via pipeline", { outputPath });

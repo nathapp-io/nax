@@ -282,3 +282,25 @@ describe("checkSpecCoverage (AC8)", () => {
     expect((findings[0] as Record<string, unknown>).specId).toBe("S-099");
   });
 });
+
+// nax#2067 seam 3: checkFilesExist joins contextFiles against the REPO ROOT, so
+// before this arc every monorepo story collected a spurious `major` for every
+// declared path. Canonicalization fixes that upstream; checkFilesExist is unchanged.
+describe("checkFilesExist — repo-framed contextFiles (nax#2067 seam 3)", () => {
+  const onDisk = (...rel: string[]) => {
+    const set = new Set(rel.map((r) => `/workdir/${r}`));
+    return { existsSync: (p: string) => set.has(p) };
+  };
+
+  test("a repo-framed contextFile resolves and produces no finding", () => {
+    const prd = makePrd([makeStory({ workdir: "packages/app", contextFiles: ["packages/app/src/a.ts"] })]);
+    expect(checkFilesExist(prd, "/workdir", onDisk("packages/app/src/a.ts"))).toHaveLength(0);
+  });
+
+  test("the pre-nax#2067 package-relative spelling is what used to miss", () => {
+    const prd = makePrd([makeStory({ workdir: "packages/app", contextFiles: ["src/a.ts"] })]);
+    const findings = checkFilesExist(prd, "/workdir", onDisk("packages/app/src/a.ts"));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.severity).toBe("major");
+  });
+});

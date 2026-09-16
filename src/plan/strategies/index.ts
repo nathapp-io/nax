@@ -5,7 +5,7 @@ export { buildPlanComposition } from "./debate-composition";
 export { createPlanStrategy } from "./factory";
 export { finalizePrdRouting } from "./finalize-routing";
 export type { PersistPrdArgs } from "./persist-prd";
-export { finalizeAndWritePrd, persistPrd } from "./persist-prd";
+export { _persistPrdDeps, finalizeAndWritePrd, persistPrd } from "./persist-prd";
 export { _pipelinePlanDeps, PipelinePlanStrategy } from "./pipeline";
 export { _refinePlanDeps, RefinePlanStrategy } from "./refine";
 export { _singlePlanDeps, SinglePlanStrategy } from "./single";

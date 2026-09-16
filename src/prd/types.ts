@@ -39,6 +39,9 @@ export type StoryStatus =
 /** Verification stage where failure occurred */
 export type VerificationStage = "verify" | "review" | "regression" | "rectification" | "agent-session" | "escalation";
 
+/** How a story's `workdir` was decided (nax#2067). */
+export type WorkdirSource = "stated" | "derived" | "defaulted";
+
 /** Test failure context from parsed test output */
 export interface TestFailureContext {
   /** Test file path */
@@ -240,6 +243,18 @@ export interface UserStory {
    * @example "packages/api"
    */
   workdir?: string;
+  /**
+   * How `workdir` above was decided, stamped by `nax plan` (nax#2067).
+   *
+   * - `stated`    — the planner named it.
+   * - `derived`   — every declared path resolved under exactly one workspace package.
+   * - `defaulted` — paths spanned packages, resolved nowhere, or there were none.
+   *
+   * `defaulted` is the case worth warning about: it means whole-corpus rule
+   * selection and root `quality.commands`, which is silent at every stage.
+   * Absent on PRDs written before nax#2067.
+   */
+  workdirSource?: WorkdirSource;
   /** Files created/modified by this story (auto-captured after completion, used by dependent stories) */
   outputFiles?: string[];
   /** Git diff stat summary of changes made by this story (auto-captured after completion) */
