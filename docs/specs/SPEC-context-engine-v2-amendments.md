@@ -347,7 +347,7 @@ Each provider resolves context using `packageDir` as primary scope, with `repoRo
 | `FeatureContextProvider` | Resolve `featureId` by scanning `<repoRoot>/.nax/features/*/prd.json`. Feature context is always at repo root (features span packages). No change from v1. |
 | `SessionScratchProvider` | Scratch path unchanged: `.nax/features/<id>/sessions/<sessionId>/scratch.jsonl`. Session is story-scoped, not package-scoped. No change. |
 | `GitHistoryProvider` | Scoped to `packageDir`. `git log -- <packageDir>` instead of `git log`. Shows only commits touching the story's package. Falls back to repo-wide if `packageDir === repoRoot`. |
-| `CodeNeighborProvider` | Scoped to `packageDir` by default. Import tracing stops at the package boundary unless the import resolves to a shared package (e.g., `packages/shared/`). Config-overridable: `context.providers[].options.neighborScope: "package" | "repo"`. Default: `"package"`. |
+| `CodeNeighborProvider` | Scoped to `packageDir` by default. Import tracing stops at the package boundary; cross-package reverse-deps are unsupported (nax#2074, AC-62 withdrawn) because only relative `.`-prefixed import specifiers are parsed. Config-overridable: `context.providers[].options.neighborScope: "package" | "repo"`. Default: `"package"`. |
 | `RagProvider` (future) | Index is repo-wide. Query results filtered by `packageDir` prefix when `neighborScope: "package"`. |
 
 #### C.3 Per-package rules store

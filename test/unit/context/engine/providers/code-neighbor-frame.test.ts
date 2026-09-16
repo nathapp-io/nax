@@ -103,6 +103,53 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     expect(lines).toContain(`- packages/lib/src/index.ts${UNREADABLE_MARKER}`);
   });
 
+  // The spec's #2074 worked example (design.md:386-389), restored here as an
+  // ADDITIONAL case alongside the mechanism case below ("package scope globs
+  // only the story's own package"), which pins the glob roots rather than the
+  // rendered result. The plan's Task 2 Step 4 retired the original version of
+  // this case; the spec is the binding authority, so the observable outcome is
+  // pinned here too.
+  //
+  // Pre-fix, at the default package scope the sibling scan globbed
+  // packages/lib and compared relative spellings: helper.ts's `./index`
+  // resolved to the sibling's "src/index.ts", which string-equalled the
+  // consumer's package-framed "src/index.ts", rendering a false
+  // `- src/helper.ts`. The sibling's own "src/index.ts" was skipped outright as
+  // if it were the consumer's file (the self-skip half of the same defect).
+  test("the issue's worked example: no sibling reverse-dep and no self-skip", async () => {
+    setupDeps(
+      {
+        "/repo/packages/app/src/index.ts": "export const app = 1;",
+        "/repo/packages/lib/src/helper.ts": 'import "./index";',
+        "/repo/packages/lib/src/index.ts": "export const lib = 1;",
+      },
+      {
+        "/repo/packages/app": ["src/index.ts"],
+        // The pre-fix sibling scan's inputs; unreachable at package scope now.
+        "/repo/packages/lib": ["src/helper.ts", "src/index.ts"],
+        "/repo": ["packages/app/src/index.ts", "packages/lib/src/helper.ts", "packages/lib/src/index.ts"],
+      },
+    );
+
+    // Default scope: the issue's exact configuration. helper.ts must not be
+    // recorded as a reverse dependency of the consumer's src/index.ts.
+    const pkgScoped = await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
+    const pkgLines = neighborLines(pkgScoped.chunks[0]?.content ?? "");
+    expect(pkgLines.some((line) => line.includes("helper.ts"))).toBe(false);
+    expect(pkgLines).not.toContain("- src/index.ts");
+
+    // Repo scope: the sibling files are scanned, so the absolute comparison and
+    // the absolute self-skip must still reject both the sibling helper.ts and
+    // the sibling's identically-spelled src/index.ts.
+    const repoScoped = await new CodeNeighborProvider({ neighborScope: "repo" }).fetch(
+      makeRequest({ touchedFiles: ["src/index.ts"] }),
+    );
+    const repoLines = neighborLines(repoScoped.chunks[0]?.content ?? "");
+    expect(repoLines.some((line) => line.includes("helper.ts"))).toBe(false);
+    expect(repoLines.some((line) => line.includes("lib/src/index.ts"))).toBe(false);
+    expect(repoLines).not.toContain("- src/index.ts");
+  });
+
   // A genuine same-package dependent found via a repo-rooted scan must come
   // back package-relative, because the agent's file tools are rooted there.
   test("a dependent inside the consumer's package renders package-relative", async () => {

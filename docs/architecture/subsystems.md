@@ -482,7 +482,7 @@ No base class; validated structurally at load time.
 | `FeatureContextProvider` | `context.md` — feature working memory | `repo-scoped` |
 | `SessionScratchProvider` | per-session scratch dir | `package-scoped` |
 | `GitHistoryProvider` | git log diffs — recent changes | `package-scoped` |
-| `CodeNeighborProvider` | import graph — co-changed files | `package-scoped` / `cross-package` |
+| `CodeNeighborProvider` | import graph — co-changed files | `package-scoped` (default) / `repo-scoped` scan via `neighborScope: "repo"` |
 | `TestCoverageProvider` | coverage metrics | `package-scoped` |
 | Plugin providers | npm packages or project-relative paths | operator-registered |
 

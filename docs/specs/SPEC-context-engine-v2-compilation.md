@@ -512,7 +512,7 @@ storyId
 
 ### Amendment C: Monorepo (54-62)
 
-54: Dual workdir. 55: GitHistory package scope. 56: CodeNeighbor package scope. 57: Per-package rules overlay. 58: Feature context repo-scoped. 59: Per-package stage budgets. 60: Manifest records package. 61: Non-monorepo no-op. 62: Cross-package neighbor.
+54: Dual workdir. 55: GitHistory package scope. 56: CodeNeighbor package scope. 57: Per-package rules overlay. 58: Feature context repo-scoped. 59: Per-package stage budgets. 60: Manifest records package. 61: Non-monorepo no-op. 62: Cross-package neighbor (withdrawn, nax#2074).
 
 ### Amendment D: Session Manager (63-78)
 

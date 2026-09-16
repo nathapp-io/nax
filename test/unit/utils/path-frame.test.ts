@@ -5,6 +5,7 @@ import {
   storyAbsWorkdir,
   storyPackageDir,
   storyWorkdir,
+  stripUnreadableMarker,
   toPackageFrame,
   toRepoFrame,
   UNREADABLE_MARKER,
@@ -96,6 +97,25 @@ describe("UNREADABLE_MARKER", () => {
     // Rendered into agent prompts and compared byte-for-byte; an em dash here
     // would silently change every marked line.
     expect(/^[\x20-\x7E]*$/.test(UNREADABLE_MARKER)).toBe(true);
+  });
+});
+
+describe("stripUnreadableMarker", () => {
+  test("strips the marker from a marked path", () => {
+    expect(stripUnreadableMarker(`packages/lib/src/x.ts${UNREADABLE_MARKER}`)).toBe("packages/lib/src/x.ts");
+  });
+
+  test("leaves an unmarked path unchanged", () => {
+    expect(stripUnreadableMarker("src/index.ts")).toBe("src/index.ts");
+  });
+
+  test("returns the empty string when the value is only the marker", () => {
+    expect(stripUnreadableMarker(UNREADABLE_MARKER)).toBe("");
+  });
+
+  test("does not strip a marker that appears as a substring, not a suffix", () => {
+    const value = `${UNREADABLE_MARKER}src/index.ts`;
+    expect(stripUnreadableMarker(value)).toBe(value);
   });
 });
 
