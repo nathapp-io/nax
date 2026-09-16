@@ -17,7 +17,7 @@ import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
 import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
-import { isNaxConfigFile } from "./nax-owned-writes";
+import { isNaxConfigFile, naxOwnedWriteRefusal } from "./nax-owned-writes";
 import { pathListElements } from "./path-list";
 import { checkBashCommand } from "./policy-bash";
 import { pathFieldValue } from "./policy-input";
@@ -280,6 +280,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * denied and an ask on an ungranted call never becomes an approval prompt.
    */
   function applyPathRules(tool: string, rel: string, state: RuleState): PolicyVerdict | undefined {
+    const naxOwned = naxOwnedWriteRefusal(tool, rel);
+    if (naxOwned !== undefined) return deny(`${tool} may not modify ${naxOwned}`);
     const denyEntry = denyBy.get(tool);
     const askEntry = askBy.get(tool);
     if (denyEntry !== undefined && (denyEntry.unconditional || matchesAny(denyEntry.matchers, rel))) {

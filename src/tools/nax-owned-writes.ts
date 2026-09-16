@@ -44,3 +44,36 @@ export function isNaxConfigFile(root: string, resolved: string): boolean {
   // such override writable whenever the story's root was the repo root.
   return segments.length === 2 || (segments.length >= 4 && segments[1] === "mono");
 }
+
+/**
+ * The path-bearing tools that MUTATE. Read, Grep, Glob and Git are read-only
+ * and are deliberately absent: an agent legitimately reads its own PRD, and
+ * refusing that would break ordinary work to close one hole.
+ *
+ * Bash and Exec are absent because they carry no path fields -- a shell
+ * redirect into `.nax/` is gated by the human-authored `Bash(...)` rules and
+ * the lexer, which is a different seam from this one.
+ */
+export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edit", "Delete", "GitCommit"]);
+
+/**
+ * Why `tool` may not touch `rel`, or `undefined` when it may.
+ *
+ * `rel` MUST be the canonical, posix-separated, root-relative spelling the
+ * policy itself derived -- never the caller's own. Matching the caller's
+ * spelling means this guard and the policy that approved the call are reading
+ * different strings, and every alternate spelling ("./x", "a/../x") walks past
+ * the guard. Same rule, and the same reason, as `matchesDenyPaths`.
+ *
+ * The PRD defines the acceptance criteria the story is judged against. An
+ * agent that can rewrite it can pass any review without writing any code,
+ * which defeats the review layer without touching a config file.
+ */
+export function naxOwnedWriteRefusal(tool: string, rel: string): string | undefined {
+  if (!NAX_OWNED_WRITE_TOOLS.has(tool)) return undefined;
+  const segments = rel.split("/");
+  const isFeaturePrd =
+    segments[0] === ".nax" && segments[1] === "features" && segments[segments.length - 1] === "prd.json";
+  if (!isFeaturePrd) return undefined;
+  return `"${rel}" is nax's own run state: it holds the acceptance criteria this story is judged against, so no tool may modify it. Change the code, not the criteria.`;
+}

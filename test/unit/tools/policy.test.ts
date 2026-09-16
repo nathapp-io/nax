@@ -436,6 +436,20 @@ describe("compileToolPolicy — nax config files are excluded at the resolveWith
   });
 });
 
+describe("compileToolPolicy — nax-owned run state", () => {
+  test("Write is refused for a feature PRD even under an unconditional grant", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    const verdict = policy.check("Write", PATH_SCOPE, { path: ".nax/features/auth/prd.json" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("acceptance criteria");
+  });
+
+  test("Read is still allowed for the same path", () => {
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
+    expect(policy.check("Read", PATH_SCOPE, { path: ".nax/features/auth/prd.json" }).allowed).toBe(true);
+  });
+});
+
 describe("verb denial names what is permitted (#1971)", () => {
   const SCOPE: ToolScope = {
     pathFields: [],

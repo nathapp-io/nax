@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { isNaxConfigFile } from "@/tools/nax-owned-writes";
+import { isNaxConfigFile, NAX_OWNED_WRITE_TOOLS, naxOwnedWriteRefusal } from "@/tools/nax-owned-writes";
 
 const ROOT = "/repo";
 
@@ -39,5 +39,41 @@ describe("isNaxConfigFile", () => {
 
   test("does not refuse a bare .nax/mono/config.json — no such override exists", () => {
     expect(isNaxConfigFile(ROOT, join(ROOT, ".nax", "mono", "config.json"))).toBe(false);
+  });
+});
+
+describe("naxOwnedWriteRefusal", () => {
+  test("refuses Write to a feature PRD", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/prd.json")).toBeDefined();
+  });
+
+  test("refuses Edit, Delete and GitCommit to the same path", () => {
+    for (const tool of ["Edit", "Delete", "GitCommit"]) {
+      expect(naxOwnedWriteRefusal(tool, ".nax/features/auth/prd.json")).toBeDefined();
+    }
+  });
+
+  test("allows READS of a feature PRD — an agent legitimately reads its own PRD", () => {
+    for (const tool of ["Read", "Grep", "Glob", "Git"]) {
+      expect(naxOwnedWriteRefusal(tool, ".nax/features/auth/prd.json")).toBeUndefined();
+    }
+  });
+
+  test("allows writes elsewhere under .nax/features", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/notes.md")).toBeUndefined();
+  });
+
+  test("allows writes to an ordinary prd.json outside .nax", () => {
+    expect(naxOwnedWriteRefusal("Write", "docs/prd.json")).toBeUndefined();
+  });
+
+  test("the reason names the path and says why", () => {
+    const reason = naxOwnedWriteRefusal("Write", ".nax/features/auth/prd.json");
+    expect(reason).toContain(".nax/features/auth/prd.json");
+    expect(reason).toContain("acceptance criteria");
+  });
+
+  test("the mutating set is exactly the path-bearing tools that mutate", () => {
+    expect([...NAX_OWNED_WRITE_TOOLS].sort()).toEqual(["Delete", "Edit", "GitCommit", "Write"]);
   });
 });
