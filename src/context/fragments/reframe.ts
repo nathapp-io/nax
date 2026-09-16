@@ -47,7 +47,7 @@ function toPosix(value: string): string {
  */
 function normalisePrefix(consumerWorkdir: string | undefined): string | undefined {
   if (!consumerWorkdir) return undefined;
-  const prefix = toPosix(consumerWorkdir.trim());
+  const prefix = toPosix(consumerWorkdir.trim()).replace(/^(\.\/)+/, "");
   return !prefix || prefix === "." ? undefined : prefix;
 }
 

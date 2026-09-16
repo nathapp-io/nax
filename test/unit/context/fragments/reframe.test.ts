@@ -76,6 +76,13 @@ describe("reframeFilesTouched (nax#2072)", () => {
     );
   });
 
+  test("normalises a leading ./ on the consumer workdir", () => {
+    const out = reframeFilesTouched(body(["packages/app/src/index.ts"]), "./packages/app");
+
+    expect(out).toContain("- src/index.ts");
+    expect(out).not.toContain("packages/app/src/index.ts");
+  });
+
   test("normalises a backslash-spelled consumer workdir", () => {
     const out = reframeFilesTouched(body(["packages/app/src/index.ts"]), "packages\\app");
 
