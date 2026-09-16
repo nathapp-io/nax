@@ -20,14 +20,12 @@ let origGlob: typeof _codeNeighborDeps.glob;
 let origReadFile: typeof _codeNeighborDeps.readFile;
 let origFileExists: typeof _codeNeighborDeps.fileExists;
 let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
-let origDiscoverWorkspacePackages: typeof _codeNeighborDeps.discoverWorkspacePackages;
 
 beforeEach(() => {
   origGlob = _codeNeighborDeps.glob;
   origReadFile = _codeNeighborDeps.readFile;
   origFileExists = _codeNeighborDeps.fileExists;
   origDetectLanguage = _codeNeighborDeps.detectLanguage;
-  origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
 });
 
 afterEach(() => {
@@ -35,7 +33,6 @@ afterEach(() => {
   _codeNeighborDeps.readFile = origReadFile;
   _codeNeighborDeps.fileExists = origFileExists;
   _codeNeighborDeps.detectLanguage = origDetectLanguage;
-  _codeNeighborDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,7 +67,6 @@ describe("CodeNeighborProvider — scan cost", () => {
     const reads = new Map<string, number>();
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
 
     // Glob returns the same candidate list regardless of call count.
     // We also count glob invocations to ensure it is called exactly once.
@@ -93,7 +89,7 @@ describe("CodeNeighborProvider — scan cost", () => {
       return "";
     };
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles }));
 
     // Core assertion: each candidate file should be read at most once.
@@ -106,12 +102,11 @@ describe("CodeNeighborProvider — scan cost", () => {
     expect(globCallCount).toBe(1);
   });
 
-  test("glob count equals number of unique scan dirs (1 primary + N extra), not number of touched files", async () => {
+  test("glob count is one scan root, not number of touched files", async () => {
     const touchedFiles = ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts"];
 
     let globCallCount = 0;
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => {
       globCallCount++;
       return { files: [], truncated: false };
@@ -119,11 +114,10 @@ describe("CodeNeighborProvider — scan cost", () => {
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.readFile = async () => "";
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles }));
 
-    // With 5 touched files but crossPackageDepth=0, the glob must be called
-    // exactly once (one primary workdir scan), not 5 times.
+    // With 5 touched files, the single scan root is globbed once, not 5 times.
     expect(globCallCount).toBe(1);
   });
 });

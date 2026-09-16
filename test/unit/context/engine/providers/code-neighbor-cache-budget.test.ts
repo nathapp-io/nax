@@ -3,9 +3,8 @@
  *
  * The per-file size cap (MAX_NEIGHBOR_FILE_SIZE_BYTES) only bounds a SINGLE
  * file's contribution to the shared content cache. With maxGlobFiles
- * defaulting to 500 per scanned dir (and multiple workspace-package dirs
- * scanned per fetch()), many just-under-the-cap files can still accumulate
- * into hundreds of MB retained for one fetch() call.
+ * defaulting to 500 per scan root, many just-under-the-cap files can still
+ * accumulate into hundreds of MB retained for one fetch() call.
  *
  * This suite verifies the new aggregate budget (MAX_NEIGHBOR_CACHE_TOTAL_BYTES):
  * once the running total of retained bytes would exceed the budget, further
@@ -28,7 +27,6 @@ let origReadFile: typeof _codeNeighborDeps.readFile;
 let origFileExists: typeof _codeNeighborDeps.fileExists;
 let origFileSize: typeof _codeNeighborDeps.fileSize;
 let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
-let origDiscoverWorkspacePackages: typeof _codeNeighborDeps.discoverWorkspacePackages;
 let origGetLogger: typeof _codeNeighborDeps.getLogger;
 
 beforeEach(() => {
@@ -37,7 +35,6 @@ beforeEach(() => {
   origFileExists = _codeNeighborDeps.fileExists;
   origFileSize = _codeNeighborDeps.fileSize;
   origDetectLanguage = _codeNeighborDeps.detectLanguage;
-  origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
   origGetLogger = _codeNeighborDeps.getLogger;
   _codeNeighborDeps.getLogger = () => makeLogger();
 });
@@ -48,7 +45,6 @@ afterEach(() => {
   _codeNeighborDeps.fileExists = origFileExists;
   _codeNeighborDeps.fileSize = origFileSize;
   _codeNeighborDeps.detectLanguage = origDetectLanguage;
-  _codeNeighborDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
   _codeNeighborDeps.getLogger = origGetLogger;
 });
 
@@ -78,7 +74,6 @@ describe("CodeNeighborProvider — aggregate content-cache budget (GROWTH-2)", (
     const readFileCallsByPath: string[] = [];
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => ({ files: CANDIDATES, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => TOUCHED_FILES.some((tf) => p.endsWith(tf));
     _codeNeighborDeps.fileSize = async () => 1024; // well under the per-file cap
@@ -90,7 +85,7 @@ describe("CodeNeighborProvider — aggregate content-cache budget (GROWTH-2)", (
       return CANDIDATE_CONTENT;
     };
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles: TOUCHED_FILES }));
 
     // First pass (touched file 0): every candidate is read exactly once —

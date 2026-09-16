@@ -28,6 +28,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { stripUnreadableMarker } from "@/utils/path-frame";
 import type { RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +143,10 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
       const neighbor = section.neighbors[i];
       const prefixLen = i === 0 ? "- ".length : "\n- ".length;
       cursor += prefixLen;
-      renderedPaths.push({ path: neighbor, end: cursor + neighbor.length });
+      // Attribution uses the bare path: the marker is prompt text, and a
+      // scopePaths key carrying it would split one file into two identities.
+      // `end` still measures the RENDERED length, marker included.
+      renderedPaths.push({ path: stripUnreadableMarker(neighbor), end: cursor + neighbor.length });
       cursor += neighbor.length;
     }
 

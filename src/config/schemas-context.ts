@@ -237,12 +237,6 @@ const ContextV2ConfigBase = z.object({
        */
       neighborScope: z.enum(["repo", "package"]).default("package"),
       /**
-       * Cross-package scan depth for CodeNeighborProvider in monorepo mode (#507).
-       * 0 disables cross-package scanning. Default: 1 (one package level up).
-       * Only active when neighborScope is "package" and the story has a workdir.
-       */
-      crossPackageDepth: z.number().int().min(0).default(1),
-      /**
        * Override the source-file glob for CodeNeighborProvider reverse-dep scanning.
        * When omitted (default), the glob is derived from detectLanguage(packageDir).
        * Tunable per-package via .nax/mono/<pkg>/config.json.
@@ -256,7 +250,7 @@ const ContextV2ConfigBase = z.object({
        */
       maxGlobFiles: z.number().int().min(1).default(500),
     })
-    .default({ historyScope: "package", neighborScope: "package", crossPackageDepth: 1, maxGlobFiles: 500 }),
+    .default({ historyScope: "package", neighborScope: "package", maxGlobFiles: 500 }),
   /**
    * Staleness detection for feature context entries (Amendment A AC-46/AC-47).
    * Downweights old or contradicted entries in context.md so stale advice

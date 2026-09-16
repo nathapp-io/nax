@@ -38,7 +38,7 @@ describe("ContextV2ConfigSchema — manifest retentionDays (US-001)", () => {
       deterministic: false,
       session: { retentionDays: 7, archiveOnFeatureArchive: true },
       staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
-      providers: { historyScope: "package", neighborScope: "package", crossPackageDepth: 1, maxGlobFiles: 500 },
+      providers: { historyScope: "package", neighborScope: "package", maxGlobFiles: 500 },
       manifest: { retentionDays: 30 },
     };
     expect(cfg.manifest?.retentionDays).toBe(30);

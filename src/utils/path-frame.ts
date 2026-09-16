@@ -32,6 +32,18 @@ import { join } from "node:path";
  */
 export const UNREADABLE_MARKER = " (other package - not readable from this story's workdir)";
 
+/**
+ * Remove a trailing UNREADABLE_MARKER from a rendered path.
+ *
+ * The marker is prompt text, not part of the path. Consumers that use a
+ * rendered path as an identity key -- `RawChunk.scopePaths` attribution, for
+ * one -- must strip it, or the same file is attributed under two different
+ * strings depending on which story rendered it.
+ */
+export function stripUnreadableMarker(value: string): string {
+  return value.endsWith(UNREADABLE_MARKER) ? value.slice(0, -UNREADABLE_MARKER.length) : value;
+}
+
 /** Posix separators, no leading "./", no trailing "/". */
 function toPosix(value: string): string {
   return value

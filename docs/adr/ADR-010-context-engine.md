@@ -187,7 +187,7 @@ Introduces dual-workdir resolution in `ContextRequest`:
 
 Provider scopes become configurable:
 - `GitHistoryProvider.historyScope: "package" | "repo"` (default `package`)
-- `CodeNeighborProvider.neighborScope: "package" | "repo"` + `crossPackageDepth: 0 | 1 | 2` (defaults `package`, depth 1)
+- `CodeNeighborProvider.neighborScope: "package" | "repo"` (default `package`). Cross-package reverse-dependency scanning is NOT supported: only relative (`.`-prefixed) import specifiers are parsed, so a bare `@scope/pkg` import is never seen and a true cross-package dependent cannot be found. The `crossPackageDepth` knob that once configured it was removed in nax#2074 — it scanned every sibling package on every fetch and could only return false matches.
 - `StaticRulesProvider` overlays `<repoRoot>/.nax/rules/` with `<packageDir>/.nax/rules/`; same-filename entries → package wins (AC-57).
 
 `FeatureContextProviderV2` remains repo-scoped (AC-58) — features are cross-cutting. Manifest records both paths (AC-60) for audit.

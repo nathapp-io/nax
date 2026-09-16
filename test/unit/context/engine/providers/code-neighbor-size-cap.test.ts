@@ -24,7 +24,6 @@ let origReadFile: typeof _codeNeighborDeps.readFile;
 let origFileExists: typeof _codeNeighborDeps.fileExists;
 let origFileSize: typeof _codeNeighborDeps.fileSize;
 let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
-let origDiscoverWorkspacePackages: typeof _codeNeighborDeps.discoverWorkspacePackages;
 let origGetLogger: typeof _codeNeighborDeps.getLogger;
 
 beforeEach(() => {
@@ -33,7 +32,6 @@ beforeEach(() => {
   origFileExists = _codeNeighborDeps.fileExists;
   origFileSize = _codeNeighborDeps.fileSize;
   origDetectLanguage = _codeNeighborDeps.detectLanguage;
-  origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
   origGetLogger = _codeNeighborDeps.getLogger;
 });
 
@@ -43,7 +41,6 @@ afterEach(() => {
   _codeNeighborDeps.fileExists = origFileExists;
   _codeNeighborDeps.fileSize = origFileSize;
   _codeNeighborDeps.detectLanguage = origDetectLanguage;
-  _codeNeighborDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
   _codeNeighborDeps.getLogger = origGetLogger;
 });
 
@@ -88,7 +85,6 @@ describe("CodeNeighborProvider — size cap (GROWTH-2)", () => {
     const readCalls: string[] = [];
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => ({ files: candidateFiles, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => touchedFiles.some((tf) => p.endsWith(tf));
     _codeNeighborDeps.fileSize = async (p: string) => (p.endsWith("huge-generated.ts") ? OVERSIZED_BYTES : 0);
@@ -97,7 +93,7 @@ describe("CodeNeighborProvider — size cap (GROWTH-2)", () => {
       return "";
     };
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles }));
 
     expect(readCalls.some((p) => p.endsWith("huge-generated.ts"))).toBe(false);
@@ -110,7 +106,6 @@ describe("CodeNeighborProvider — size cap (GROWTH-2)", () => {
     const readCalls: string[] = [];
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => ({ files: candidateFiles, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => touchedFiles.some((tf) => p.endsWith(tf));
     _codeNeighborDeps.fileSize = async () => 1024; // 1KB — well under cap
@@ -119,7 +114,7 @@ describe("CodeNeighborProvider — size cap (GROWTH-2)", () => {
       return "";
     };
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles }));
 
     expect(readCalls.some((p) => p.endsWith("normal.ts"))).toBe(true);
@@ -133,7 +128,6 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     const logger = spyLogger();
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => ({ files: candidateFiles, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => touchedFiles.some((tf) => p.endsWith(tf));
     _codeNeighborDeps.fileSize = async () => {
@@ -143,7 +137,7 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     };
     _codeNeighborDeps.readFile = async () => "";
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles }));
 
     expect(warnCount(logger)).toBe(0);
@@ -155,7 +149,6 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     const logger = spyLogger();
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => ({ files: candidateFiles, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => touchedFiles.some((tf) => p.endsWith(tf));
     _codeNeighborDeps.fileSize = async () => {
@@ -163,7 +156,7 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     };
     _codeNeighborDeps.readFile = async () => "";
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles }));
 
     expect(warnCount(logger)).toBeGreaterThan(0);
@@ -175,7 +168,6 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     const logger = spyLogger();
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => ({ files: candidateFiles, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => touchedFiles.some((tf) => p.endsWith(tf));
     // Simulate a caller passing a partial deps object without fileSize wired up.
@@ -183,7 +175,7 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     depsWithoutFileSize.fileSize = undefined;
     _codeNeighborDeps.readFile = async () => "";
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles }));
 
     expect(warnCount(logger)).toBeGreaterThan(0);
@@ -203,7 +195,6 @@ describe("CodeNeighborProvider — oversized-file skip consistency (item 4)", ()
     const readCalls: string[] = [];
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
-    _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => ({ files: candidateFiles, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => touchedFiles.some((tf) => p.endsWith(tf));
     _codeNeighborDeps.fileSize = async (p: string) => {
@@ -218,7 +209,7 @@ describe("CodeNeighborProvider — oversized-file skip consistency (item 4)", ()
       return "";
     };
 
-    const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
+    const provider = new CodeNeighborProvider();
     await provider.fetch(makeRequest({ touchedFiles }));
 
     // The oversized file must never be read into content — proving the

@@ -347,7 +347,7 @@ Each provider resolves context using `packageDir` as primary scope, with `repoRo
 | `FeatureContextProvider` | Resolve `featureId` by scanning `<repoRoot>/.nax/features/*/prd.json`. Feature context is always at repo root (features span packages). No change from v1. |
 | `SessionScratchProvider` | Scratch path unchanged: `.nax/features/<id>/sessions/<sessionId>/scratch.jsonl`. Session is story-scoped, not package-scoped. No change. |
 | `GitHistoryProvider` | Scoped to `packageDir`. `git log -- <packageDir>` instead of `git log`. Shows only commits touching the story's package. Falls back to repo-wide if `packageDir === repoRoot`. |
-| `CodeNeighborProvider` | Scoped to `packageDir` by default. Import tracing stops at the package boundary unless the import resolves to a shared package (e.g., `packages/shared/`). Config-overridable: `context.providers[].options.neighborScope: "package" | "repo"`. Default: `"package"`. |
+| `CodeNeighborProvider` | Scoped to `packageDir` by default. Import tracing stops at the package boundary; cross-package reverse-deps are unsupported (nax#2074, AC-62 withdrawn) because only relative `.`-prefixed import specifiers are parsed. Config-overridable: `context.providers[].options.neighborScope: "package" | "repo"`. Default: `"package"`. |
 | `RagProvider` (future) | Index is repo-wide. Query results filtered by `packageDir` prefix when `neighborScope: "package"`. |
 
 #### C.3 Per-package rules store
@@ -467,7 +467,7 @@ Non-monorepo projects (where `story.workdir` is undefined) see zero behavioral c
 
 **Per-package rules drift.** Package-level rule files may diverge from repo-level over time. **Mitigation:** `nax rules lint` validates both levels; `nax status` warns when package rules shadow repo rules.
 
-**Neighbor scope too narrow.** A story in `packages/api` may need to see imports from `packages/shared`, but `neighborScope: "package"` stops at the package boundary. **Mitigation:** CodeNeighborProvider resolves cross-package imports transitively up to depth 1 for packages in the workspace's `packages/` directory. Configurable via `options.crossPackageDepth: 0 | 1 | 2` (default: 1).
+**Neighbor scope too narrow.** A story in `packages/api` may need to see imports from `packages/shared`, but `neighborScope: "package"` stops at the package boundary. **Mitigation:** CodeNeighborProvider resolves cross-package imports transitively up to depth 1 for packages in the workspace's `packages/` directory. Configurable via `options.crossPackageDepth: 0 | 1 | 2` (default: 1). **Superseded (nax#2074):** the cross-package scan was removed. Only relative import specifiers are parsed, so cross-package reverse-deps were never findable and the scan produced only false matches. Widen with neighborScope: "repo" instead.
 
 **Git history scope too narrow.** A commit touching both `packages/api` and `packages/shared` would be shown for `packages/api` stories but the diff would be filtered to `packages/api` paths only, potentially hiding relevant changes in shared code. **Mitigation:** commits that touch `packageDir` AND a known shared package are shown in full; shared packages detected from workspace config.
 
@@ -477,7 +477,7 @@ Non-monorepo projects (where `story.workdir` is undefined) see zero behavioral c
 
 55. **GitHistoryProvider package scope.** With `historyScope: "package"`, git history is limited to `packageDir` paths. With `historyScope: "repo"`, full repo history is used. Default: `"package"`.
 
-56. **CodeNeighborProvider package scope.** With `neighborScope: "package"`, import tracing stops at the package boundary except for shared packages (depth 1 by default). With `neighborScope: "repo"`, full repo tracing. Default: `"package"`.
+56. **CodeNeighborProvider package scope.** With `neighborScope: "package"`, import tracing stops at the package boundary. With `neighborScope: "repo"`, full repo tracing. Default: `"package"`.
 
 57. **Per-package rules overlay.** `StaticRulesProvider` loads `<repoRoot>/.nax/rules/*.md`, then overlays `<packageDir>/.nax/rules/*.md`. Same-name files: package wins. Unique files: both included.
 
@@ -489,7 +489,7 @@ Non-monorepo projects (where `story.workdir` is undefined) see zero behavioral c
 
 61. **Non-monorepo no-op.** When `story.workdir` is undefined, behavior is identical to pre-amendment. No config change required.
 
-62. **Cross-package neighbor resolution.** CodeNeighborProvider resolves imports from shared packages (e.g., `packages/shared/`) up to `crossPackageDepth` (default 1), even when `neighborScope: "package"`.
+62. **Cross-package neighbor resolution.** ~~CodeNeighborProvider resolves imports from shared packages (e.g., `packages/shared/`) up to `crossPackageDepth` (default 1), even when `neighborScope: "package"`.~~ **Withdrawn (nax#2074)** — unimplementable as written: bare package-name specifiers are never parsed.
 
 ---
 

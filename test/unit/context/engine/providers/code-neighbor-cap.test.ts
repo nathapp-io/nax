@@ -44,7 +44,6 @@ let origReadFile: typeof _codeNeighborDeps.readFile;
 let origGlob: typeof _codeNeighborDeps.glob;
 let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
 let origGetLogger: typeof _codeNeighborDeps.getLogger;
-let origDiscoverWorkspacePackages: typeof _codeNeighborDeps.discoverWorkspacePackages;
 
 beforeEach(() => {
   origFileExists = _codeNeighborDeps.fileExists;
@@ -52,11 +51,9 @@ beforeEach(() => {
   origGlob = _codeNeighborDeps.glob;
   origDetectLanguage = _codeNeighborDeps.detectLanguage;
   origGetLogger = _codeNeighborDeps.getLogger;
-  origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
   // Quiet defaults
   _codeNeighborDeps.fileExists = async () => false;
   _codeNeighborDeps.readFile = async () => "";
-  _codeNeighborDeps.discoverWorkspacePackages = async () => [];
   _codeNeighborDeps.detectLanguage = async () => undefined;
   _codeNeighborDeps.getLogger = () => makeLogger();
 });
@@ -67,7 +64,6 @@ afterEach(() => {
   _codeNeighborDeps.glob = origGlob;
   _codeNeighborDeps.detectLanguage = origDetectLanguage;
   _codeNeighborDeps.getLogger = origGetLogger;
-  _codeNeighborDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -10,8 +10,8 @@
 import { join, relative, resolve } from "node:path";
 import { getLogger } from "@/logger";
 import { detectLanguage } from "@/project";
-import { discoverWorkspacePackages } from "@/test-runners/detect";
 import type { NaxIgnoreMatcher } from "@/utils/path-filters";
+import { UNREADABLE_MARKER } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
 import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";
@@ -33,13 +33,6 @@ export interface CodeNeighborProviderOptions {
    */
   neighborScope?: "repo" | "package";
   /**
-   * Maximum neighbor traversal depth across the package boundary (AC-62).
-   * Only applies when neighborScope is "package".
-   * 0 — no cross-package scanning.
-   * 1 (default) — additionally scans repoRoot for cross-package reverse deps.
-   */
-  crossPackageDepth?: number;
-  /**
    * Override the source-file glob for reverse-dep scanning (#895).
    * When omitted, derived from detectLanguage(packageDir) via SOURCE_GLOB_BY_LANGUAGE.
    */
@@ -47,8 +40,7 @@ export interface CodeNeighborProviderOptions {
   /**
    * Maximum files scanned per directory during reverse-dep glob (#895).
    * Default: 500 (raised from 200; language-aware glob reduces noise).
-   * Applied per-directory: with crossPackageDepth > 0, each workspace package
-   * dir counts separately, so effective total can be N × maxGlobFiles.
+   * One scan root per fetch since nax#2074, so this is also the per-fetch cap.
    */
   maxGlobFiles?: number;
 }
@@ -104,7 +96,6 @@ export const _codeNeighborDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   fileSize: async (path: string): Promise<number> => (await Bun.file(path).stat()).size,
-  discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
   detectLanguage: (packageDir: string) => detectLanguage(packageDir),
   getLogger,
   glob: (
@@ -216,15 +207,48 @@ function scanDirectory(
 }
 
 /**
- * Collect neighbors for a single file: forward deps (JS/TS only), reverse deps
- * (language-aware glob, configurable cap), and sibling test (ADR-009 SSOT).
+ * Re-spell an absolute neighbour path for the consuming story (nax#2074).
  *
- * Accepts pre-scanned directory results and a shared content cache so that
- * the glob and file reads are not repeated across touched files in one fetch().
+ * Inside the consumer's root -> package-relative, which is what the agent's
+ * file tools can open (codingToolRoot, src/agents/types.ts:182-197).
+ * Outside it -> repo-rooted and marked: a package-relative spelling would
+ * resolve to a real but WRONG file under the consumer's root, so the path
+ * carries the same UNREADABLE_MARKER nax#2072 already ships. A path beneath
+ * neither root stays absolute -- rare, honest, and still marked.
+ *
+ * `relative()` on absolute paths is used rather than a derived string prefix:
+ * under storyIsolation "worktree" the consumer root and the repo root are
+ * different trees, and any prefix derivation silently matches nothing (nax#2069).
+ */
+function spellForConsumer(absPath: string, consumerRoot: string, repoRoot: string): string {
+  const fromConsumer = relative(consumerRoot, absPath);
+  if (fromConsumer !== "" && !fromConsumer.startsWith("..")) return fromConsumer;
+  const fromRepo = relative(repoRoot, absPath);
+  const spelled = fromRepo !== "" && !fromRepo.startsWith("..") ? fromRepo : absPath;
+  return `${spelled}${UNREADABLE_MARKER}`;
+}
+
+/**
+ * Collect neighbors for a single file: forward deps (JS/TS only), reverse deps
+ * (language-aware glob, configurable cap), and sibling tests (ADR-009 SSOT).
+ *
+ * Two roots, deliberately distinct (nax#2074):
+ *   - `consumerRoot` is the absolute dir `filePath` is relative to. It is ALWAYS
+ *     `request.packageDir`, because `ContextRequest.touchedFiles` is package-framed
+ *     (see src/context/engine/types.ts:329).
+ *   - each `ScannedDir.workdir` is the root its `files` are relative to.
+ *
+ * Under `neighborScope: "repo"` those differ, so no two relative paths here are
+ * mutually intelligible. Every comparison is therefore made on absolute paths,
+ * and the result is re-spelled for the consumer exactly once, on return.
+ *
+ * Accepts pre-scanned directory results and a shared content cache so that the
+ * glob and file reads are not repeated across touched files in one fetch().
  */
 async function collectNeighbors(
   filePath: string,
-  workdir: string,
+  consumerRoot: string,
+  repoRoot: string,
   scannedDirs: ScannedDir[],
   contentCacheState: ContentCacheState,
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
@@ -234,33 +258,41 @@ async function collectNeighbors(
   const forwardNeighbors = new Set<string>();
   let anyTruncated = false;
 
-  const ownAbsPath = join(workdir, filePath);
+  const ownAbsPath = join(consumerRoot, filePath);
   if (await _codeNeighborDeps.fileExists(ownAbsPath)) {
     const ownContent = await readCached(ownAbsPath, contentCacheState, _codeNeighborDeps);
     if (ownContent !== null && ownContent.length > 0) {
       for (const spec of parseImportSpecifiers(ownContent)) {
-        const resolved = resolveImport(spec, filePath, workdir);
-        if (resolved && resolved !== filePath) forwardNeighbors.add(resolved);
+        const resolved = resolveImport(spec, filePath, consumerRoot);
+        if (resolved === null) continue;
+        const resolvedAbs = join(consumerRoot, resolved);
+        if (resolvedAbs !== ownAbsPath) forwardNeighbors.add(resolvedAbs);
       }
     }
   }
 
   // Quick check uses the base name (without extension) — broad but avoids parsing every file.
   const fileBaseName = (filePath.split("/").pop() ?? filePath).replace(/\.[^.]+$/, "");
-  const fileNoExt = filePath.replace(/\.[^.]+$/, "");
+  const ownAbsNoExt = ownAbsPath.replace(/\.[^./]+$/, "");
 
   const reverseNeighbors = new Set<string>();
   outer: for (const { workdir: scanWorkdir, files: srcFiles, truncated } of scannedDirs) {
     if (truncated) anyTruncated = true;
     for (const srcFile of srcFiles) {
       if (reverseNeighbors.size >= MAX_NEIGHBORS_PER_FILE) break outer;
-      if (srcFile === filePath) continue;
-      const content = await readCached(join(scanWorkdir, srcFile), contentCacheState, _codeNeighborDeps);
+      const srcAbs = join(scanWorkdir, srcFile);
+      // Absolute self-skip. Comparing `srcFile === filePath` skipped a SIBLING's
+      // identically-spelled file and let a sibling's `./index` count as a
+      // dependent of ours — nax#2074, both signs of the same defect.
+      if (srcAbs === ownAbsPath) continue;
+      const content = await readCached(srcAbs, contentCacheState, _codeNeighborDeps);
       if (content?.includes(fileBaseName)) {
         for (const spec of parseImportSpecifiers(content)) {
           const resolved = resolveImport(spec, srcFile, scanWorkdir);
-          if (resolved === filePath || resolved === fileNoExt) {
-            reverseNeighbors.add(srcFile);
+          if (resolved === null) continue;
+          const resolvedAbs = join(scanWorkdir, resolved);
+          if (resolvedAbs === ownAbsPath || resolvedAbs === ownAbsNoExt) {
+            reverseNeighbors.add(srcAbs);
             break;
           }
         }
@@ -299,7 +331,7 @@ async function collectNeighbors(
     const candidates = deriveSiblingTestCandidates(filePath, siblingTestContext.globs);
     let chosen: string | null = null;
     for (const candidate of candidates) {
-      if (await _codeNeighborDeps.fileExists(join(workdir, candidate))) {
+      if (await _codeNeighborDeps.fileExists(join(consumerRoot, candidate))) {
         chosen = candidate;
         break;
       }
@@ -312,44 +344,15 @@ async function collectNeighbors(
       const mirrored = candidates.find((c, i) => i > 0 && c !== colocated);
       if (mirrored) chosen = mirrored;
     }
-    if (chosen !== null && chosen !== filePath) neighbors.add(chosen);
+    if (chosen !== null && chosen !== filePath) neighbors.add(join(consumerRoot, chosen));
   }
 
-  return { neighbors: [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE), truncated: anyTruncated };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-62 workspace detection helper
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Resolve the extra glob workdirs for cross-package scanning (AC-62).
- *
- * When neighborScope is "package" and crossPackageDepth > 0 in a monorepo,
- * detects workspace packages (pnpm-workspace.yaml, package.json#workspaces, etc.)
- * and returns their absolute paths as scan roots (excluding the current packageDir).
- * Falls back to [repoRoot] when workspace detection finds nothing — this scans
- * the whole repo as a safe fallback for non-standard monorepo layouts.
- *
- * Returns undefined when cross-package scanning is not needed.
- */
-async function resolveExtraGlobWorkdirs(
-  neighborScope: "repo" | "package",
-  crossPackageDepth: number,
-  repoRoot: string,
-  packageDir: string,
-): Promise<string[] | undefined> {
-  if (neighborScope !== "package" || crossPackageDepth <= 0 || packageDir === repoRoot) {
-    return undefined;
-  }
-  try {
-    const relPkgDirs = await _codeNeighborDeps.discoverWorkspacePackages(repoRoot);
-    if (relPkgDirs.length === 0) return [repoRoot];
-    // Convert relative workspace dirs to absolute, excluding the current package
-    return relPkgDirs.map((rel) => join(repoRoot, rel)).filter((abs) => abs !== packageDir);
-  } catch {
-    return [repoRoot];
-  }
+  return {
+    neighbors: [...neighbors]
+      .slice(0, MAX_NEIGHBORS_PER_FILE)
+      .map((abs) => spellForConsumer(abs, consumerRoot, repoRoot)),
+    truncated: anyTruncated,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -365,29 +368,21 @@ export class CodeNeighborProvider implements IContextProvider {
   readonly kind = "neighbor" as const;
 
   private readonly neighborScope: "repo" | "package";
-  private readonly crossPackageDepth: number;
   private readonly sourceGlobOverride: string | undefined;
   private readonly maxGlobFiles: number;
 
   constructor(options: CodeNeighborProviderOptions = {}) {
     this.neighborScope = options.neighborScope ?? "package";
-    this.crossPackageDepth = options.crossPackageDepth ?? 1;
     this.sourceGlobOverride = options.sourceGlob;
     this.maxGlobFiles = options.maxGlobFiles ?? MAX_GLOB_FILES_DEFAULT;
   }
 
   async fetch(request: ContextRequest, signal?: AbortSignal): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
-    const workdir = this.neighborScope === "package" ? request.packageDir : request.repoRoot;
-    // AC-62: cross-package scanning — detect shared workspace dirs instead of scanning full repoRoot.
-    // Only active when neighborScope "package", crossPackageDepth > 0, and this is a monorepo
-    // (packageDir !== repoRoot). Falls back to [repoRoot] when no workspace packages are found.
-    const extraGlobWorkdirs = await resolveExtraGlobWorkdirs(
-      this.neighborScope,
-      this.crossPackageDepth,
-      request.repoRoot,
-      request.packageDir,
-    );
+    // The scan root: where the reverse-dep glob runs. NOT the frame the touched
+    // files are in — those are package-framed (types.ts:329) and resolved
+    // against request.packageDir inside collectNeighbors (nax#2074).
+    const scanRoot = this.neighborScope === "package" ? request.packageDir : request.repoRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }
@@ -405,7 +400,7 @@ export class CodeNeighborProvider implements IContextProvider {
         }
       : undefined;
 
-    const ignoreMatchers = request.naxIgnoreIndex?.getMatchers(workdir);
+    const ignoreMatchers = request.naxIgnoreIndex?.getMatchers(scanRoot);
 
     // Resolve source glob once per request (lazy: detectLanguage called only if no override).
     const sourceGlob = await resolveSourceGlob(this.sourceGlobOverride, request.packageDir);
@@ -415,12 +410,11 @@ export class CodeNeighborProvider implements IContextProvider {
     // re-glob the same directory N times (once per touched file). A shared
     // content cache further ensures each candidate file is read at most once
     // across all touched files in this fetch() call.
-    const scannedDirs: ScannedDir[] = [scanDirectory(sourceGlob, workdir, ignoreMatchers, this.maxGlobFiles, globCtx)];
-    if (extraGlobWorkdirs) {
-      for (const extraDir of extraGlobWorkdirs) {
-        scannedDirs.push(scanDirectory(sourceGlob, extraDir, ignoreMatchers, this.maxGlobFiles, globCtx));
-      }
-    }
+    // One scan root. A sibling-package scan was removed in nax#2074: bare
+    // specifiers are never parsed (parseImportSpecifiers, above), so a true
+    // cross-package dependent was never findable, and the only cross-package
+    // matches the scan could produce were false ones.
+    const scannedDirs: ScannedDir[] = [scanDirectory(sourceGlob, scanRoot, ignoreMatchers, this.maxGlobFiles, globCtx)];
     const contentCacheState = createContentCacheState();
 
     const sections: NeighborSection[] = [];
@@ -431,7 +425,8 @@ export class CodeNeighborProvider implements IContextProvider {
       if (signal?.aborted) break;
       const { neighbors, truncated } = await collectNeighbors(
         file,
-        workdir,
+        request.packageDir,
+        request.repoRoot,
         scannedDirs,
         contentCacheState,
         siblingTestContext,

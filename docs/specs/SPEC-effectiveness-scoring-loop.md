@@ -239,7 +239,7 @@ unaffected by provider-side changes and by the addition of a sibling
 
 Verification note: the 600-line source limit on `code-neighbor.ts` is enforced by the build/static gate `bun run lint` (which runs `check:file-sizes`), not by an acceptance criterion.
 
-**Out of scope:** US-002 only: cross-package neighbour scope when `crossPackageDepth` is greater than zero — scope is recorded for the paths the chunk renders, whichever package they resolve to.
+**Out of scope:** US-002 only: scope is recorded for the paths the chunk renders. (The cross-package scan this line anticipated was removed in nax#2074.)
 
 ### US-003 — Per-provider weight derivation
 
