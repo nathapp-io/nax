@@ -12,9 +12,23 @@
 
 **Scope:** This plan implements **PR 1 and PR 2 only** — the foundation. The three issue fixes that sit on top of it (#2071, #2067, #2074 — PRs 3, 4, 5 in the spec) each get their own plan, because each needs its own regression tests and its own review. This plan produces working, testable software on its own: at the end, the convention exists, is documented, and is enforced repo-wide with no exemptions.
 
+## State at handover
+
+Branch `feat/path-frame-convention` holds **three docs-only commits and zero code**:
+
+```
+bb4cf96ee  docs: implementation plan for the path-frame foundation (#2067)
+7f0a94f33  docs: split iteration-runner.ts into its own PR (path-frame design)
+290589115  docs: path-frame convention design (#2067, #2071, #2074)
+```
+
+Base is `main` @ `d78730b6d`. Nothing under `src/` has been touched. `bun run typecheck`, `bun run check:all` and `bun run lint:biome` all pass on this branch as of the handover, so any failure you see after Task 1 is yours.
+
+Every line number in this plan was verified against that base, and every "replace this" snippet was confirmed to match its file **exactly once** — except the one case flagged explicitly in Task 7 Step 2, which is not uniquely matchable by design.
+
 ## Global Constraints
 
-- **Branch:** `feat/path-frame-convention`, already created, currently at `7f0a94f33`. Do not commit to `main`.
+- **Branch:** `feat/path-frame-convention`, already created, currently at `bb4cf96ee` plus this review commit. Do not commit to `main`.
 - **Never run bare `bun test`, and never `bun run nax`.** Both give confident false signals. Use `bun run test` for the full suite; for a fast single-file loop use `bun test ./path/to/file.test.ts --timeout=60000` (a path argument is always present).
 - **`bun run test:coverage` is NOT part of `check:all`.** This plan adds files under `src/`, so it must be run before the final commit of Task 9.
 - **File-size gate: 600 lines per `src/` file, 800 per `test/` file** (`scripts/check-file-sizes.ts:30`), with a baseline that recorded files may not exceed. `src/context/engine/providers/static-rules.ts` is at **exactly 600** — this plan touches it nowhere. `src/prd/schema.ts` is at **629 and baselined** — Task 4 reduces it.
@@ -455,7 +469,7 @@ Delete the local constant at `:34`:
 const UNREADABLE_MARKER = " (other package - not readable from this story's workdir)";
 ```
 
-Add the import at the top of the import block:
+Add an import — note this file currently has **no imports at all**, so this creates the import block, placed after the module docstring and before `FILES_TOUCHED_HEADING`:
 
 ```ts
 import { normalizeWorkdir, UNREADABLE_MARKER } from "@/utils/path-frame";
@@ -892,10 +906,10 @@ with:
       const wd = storyWorkdir(story);
 ```
 
-Add to the imports:
+Add to the imports — this file imports relatively, so match that:
 
 ```ts
-import { storyWorkdir } from "@/utils/path-frame";
+import { storyWorkdir } from "../utils/path-frame";
 ```
 
 - [ ] **Step 5: Run the tests**
@@ -940,41 +954,44 @@ Expected: PASS. Note the counts.
 
 - [ ] **Step 2: Convert `src/operations/full-suite-gate.ts`**
 
-Add to the imports:
+Add to the imports (this file imports relatively — match its existing style):
 
 ```ts
-import { storyPackageDir } from "@/utils/path-frame";
+import { storyPackageDir } from "../utils/path-frame";
 ```
 
-Line 135, inside the `resolveQualityTestCommands` call:
+**Do this as ONE whole-file replace-all** of the expression, not as six separate line edits:
 
-```ts
-      input.story.workdir,
 ```
-becomes
-```ts
-      storyPackageDir(input.story),
+    input.story.workdir   ->   storyPackageDir(input.story)
 ```
 
-Line 148:
+All six occurrences take the identical replacement, and the surrounding syntax stays valid in every case:
 
-```ts
-      const pkg = input.story.workdir ?? input.workdir;
+| Line | Indent | Before | After |
+|---|---|---|---|
+| 135 | 6 | `input.story.workdir,` | `storyPackageDir(input.story),` |
+| 148 | 6 | `const pkg = input.story.workdir ?? input.workdir;` | `const pkg = storyPackageDir(input.story) ?? input.workdir;` |
+| 155 | 10 | `packageDir: input.story.workdir,` | `packageDir: storyPackageDir(input.story),` |
+| 255 | 6 | `packageDir: input.story.workdir,` | `packageDir: storyPackageDir(input.story),` |
+| 317 | 8 | `packageDir: input.story.workdir,` | `packageDir: storyPackageDir(input.story),` |
+| 324 | 8 | `packageDir: input.story.workdir,` | `packageDir: storyPackageDir(input.story),` |
+
+**Why replace-all and not line-by-line:** `packageDir: input.story.workdir,` appears at three different indentations, and lines **317 and 324 are byte-identical**. A line-scoped edit keyed on that text is not uniquely matchable and will either fail or hit the wrong site. Replacing the bare expression is unambiguous — verified as exactly 6 occurrences in this file and 0 in comments.
+
+Line 135 feeds `resolveQualityTestCommands`, which is the behaviour-relevant one. Lines 155, 255, 317 and 324 are log and error context, where `undefined` is already what a single-package repo emits.
+
+- [ ] **Step 2a: Confirm the replace-all landed exactly**
+
+```bash
+grep -c "storyPackageDir(input.story)" src/operations/full-suite-gate.ts
+grep -c "input.story.workdir" src/operations/full-suite-gate.ts
 ```
-becomes
-```ts
-      const pkg = storyPackageDir(input.story) ?? input.workdir;
-```
-
-Lines 155, 255, 317 and 324 each read `packageDir: input.story.workdir,` — replace each with:
-
-```ts
-          packageDir: storyPackageDir(input.story),
-```
-
-preserving the existing indentation at each site. These four are log and error context; `undefined` is what they already emit for a single-package repo.
+Expected: `6` and `0`.
 
 - [ ] **Step 3: Convert `src/context/engine/tool-runtime.ts`**
+
+This file imports via the `@/` alias — match that style here.
 
 Line 99:
 
@@ -1068,10 +1085,10 @@ become
   const resolvedTestPatterns = await resolveTestFilePatterns(config, repoRoot, storyPkg);
 ```
 
-Add to the imports:
+Add to the imports — this file imports relatively, so match that:
 
 ```ts
-import { storyPackageDir } from "@/utils/path-frame";
+import { storyPackageDir } from "../utils/path-frame";
 ```
 
 - [ ] **Step 3: Convert `src/pipeline/stages/acceptance-setup.ts`**
@@ -1124,10 +1141,10 @@ becomes
         const rawFiles = await captureOutputFiles(ctx.workdir, ctx.storyGitRef, storyPackageDir(completedStory));
 ```
 
-Add to the imports:
+Add to the imports — this file imports relatively, so match that:
 
 ```ts
-import { storyPackageDir } from "@/utils/path-frame";
+import { storyPackageDir } from "../utils/path-frame";
 ```
 
 - [ ] **Step 6: Run the tests**
@@ -1262,10 +1279,10 @@ becomes
     : ctx.config;
 ```
 
-Add to the imports:
+Add to the imports — this file imports relatively, so match that:
 
 ```ts
-import { storyAbsWorkdir, storyPackageDir } from "@/utils/path-frame";
+import { storyAbsWorkdir, storyPackageDir } from "../utils/path-frame";
 ```
 
 - [ ] **Step 3: Convert the worktree-dependency call at `:139`**
