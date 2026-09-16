@@ -1,7 +1,7 @@
 # Path-Frame Convention Design
 
 **Date:** 2026-09-16
-**Status:** Approved, not implemented
+**Status:** Implemented and merged 2026-09-16 — PRs #2076, #2077, #2078, #2081, #2082 (main `a8bc38ef8`). Seams 5-10 are filed, not fixed; see "Out of scope".
 **Base:** `main` @ `d78730b6d`
 **Closes:** [#2067](https://github.com/nathapp-io/nax/issues/2067), [#2071](https://github.com/nathapp-io/nax/issues/2071), [#2074](https://github.com/nathapp-io/nax/issues/2074), plus the `checkFilesExist` contradiction found during this design.
 **Builds on:** [#2072](https://github.com/nathapp-io/nax/issues/2072) (shipped as `src/context/fragments/reframe.ts`, commit `d78730b6d`).
@@ -29,16 +29,16 @@ issues are instances, not the whole class.
 
 | # | Seam | Disagreement | Status here |
 |---|---|---|---|
-| 1 | `pipeline/scope-files.ts:34,50,61` | declared (package) unioned with diff (repo) in one list | **fixed** (#2071) |
-| 2 | `context/engine/providers/code-neighbor.ts:257,262` | sibling-rooted `srcFile` compared and emitted against consumer-rooted `filePath` | **fixed** (#2074) |
-| 3 | `debate/verifiers/checks.ts:18` | `contextFiles` resolved repo-rooted at plan time, package-relative at runtime (`context/builder.ts:299`) | **runtime consumer fixed** (#2067 PR); plan-time verifier path intentionally not (both verifier sites run pre-write — see §2067 RULING) |
-| 4 | `prd` / `story.workdir` null | no frame at all; rules fall back to the whole corpus and `quality.commands` to the root config | **fixed** (#2067) |
-| 5 | `execution/lifecycle/acceptance-helpers.ts:225` → `:302` | repo-framed diff output fed to `join(workdir, file)`; failure swallowed by `catch {}` at `:307` | filed |
-| 6 | `utils/git.ts:491` → `context/builder.ts:299` | `captureOutputFiles` emits repo-framed parent outputs, resolved against the package dir | filed |
-| 7 | `review/scoped-lint.ts:124` | package-framed path handed to `findPackageDir(relPath, projectDir)`, which resolves repo-framed | filed |
-| 8 | `context/engine/providers/git-history.ts:104` | `historyScope: "repo"` runs package-framed `touchedFiles` against repoRoot, yielding empty history | filed |
-| 9 | `prompts/builders/adversarial-review-builder.ts:288,295` | prompt-embedded `git diff --name-only -- .` lacks the `--relative` that `tools/git.ts:200` auto-injects for the same verbs | filed |
-| 10 | `context/engine/effectiveness.ts:370` | persisted `scopePaths` inherit the producing provider's frame, so attribution is frame-dependent | filed |
+| 1 | `pipeline/scope-files.ts:34,50,61` | declared (package) unioned with diff (repo) in one list | **fixed** — #2071, PR #2078 |
+| 2 | `context/engine/providers/code-neighbor.ts:257,262` | sibling-rooted `srcFile` compared and emitted against consumer-rooted `filePath` | **fixed** — #2074, PR #2082 |
+| 3 | `debate/verifiers/checks.ts:18` | `contextFiles` resolved repo-rooted at plan time, package-relative at runtime (`context/builder.ts:299`) | **runtime consumer fixed** (PR #2081); plan-time verifier path intentionally not (both verifier sites run pre-write — see §2067 RULING) → **#2086** |
+| 4 | `prd` / `story.workdir` null | no frame at all; rules fall back to the whole corpus and `quality.commands` to the root config | **fixed** — #2067, PR #2081 |
+| 5 | `execution/lifecycle/acceptance-helpers.ts:225` → `:302` | repo-framed diff output fed to `join(workdir, file)`; failure swallowed by `catch {}` at `:309` | **#2083** — ⚠️ this row's premise is WRONG: `workdir` there is the run root, not the package dir, so the join is frame-correct today. Filed as a latent contract defect |
+| 6 | `utils/git.ts:491` → `context/builder.ts:299` | `captureOutputFiles` emits repo-framed parent outputs, resolved against the package dir | **#2089** — live; PR #2081's reframe fixed the in-package case only, and the out-of-package fallback resolves to a real but WRONG file |
+| 7 | `review/scoped-lint.ts:124` | package-framed path handed to `findPackageDir(relPath, projectDir)`, which resolves repo-framed | **#2087** — latent: the guard is unreachable on the only production call path |
+| 8 | `context/engine/providers/git-history.ts:104` | `historyScope: "repo"` runs package-framed `touchedFiles` against repoRoot, yielding empty history | **#2088** — or, on a name collision, another file's history under the story's label |
+| 9 | `prompts/builders/adversarial-review-builder.ts:288,295` | prompt-embedded `git diff --name-only -- .` lacks the `--relative` that `tools/git.ts:200` auto-injects for the same verbs | **#2090** — live; also in `review-builder.ts` and `debate-builder.ts` |
+| 10 | `context/engine/effectiveness.ts:370` | persisted `scopePaths` inherit the producing provider's frame, so attribution is frame-dependent | **#2091** — live; suffix-anchored globs over-attribute rather than miss |
 
 ### Root cause
 
@@ -425,9 +425,16 @@ PR 1.
 
 ## Out of scope
 
-Seams 5 through 10 in the table above. Each gets its own issue citing this convention, so the rule
-exists before the fixes do. They are not fixed here because each carries its own blast radius and
-none blocks the three filed issues.
+Seams 5 through 10 in the table above. Each has its own issue citing this convention, so the rule
+exists before the fixes do — **#2083, #2089, #2087, #2088, #2090, #2091**, all filed 2026-09-16
+after the arc merged. They are not fixed here because each carries its own blast radius and none
+blocks the three filed issues.
+
+The arc also left four follow-ups of its own: **#2079** (live verification, deferred by ruling for
+the whole arc), **#2080** (`plan --decompose` bypasses the write seam), **#2084** (the
+`check-story-workdir-access` gate is bypassable by optional chaining, destructuring, or a receiver
+not named `*story`), and **#2085** (`modifiedFiles` is the one declared-path list #2067 does not
+canonicalize). Plus **#2086** for seam 3's plan-time half.
 
 Also out of scope: teaching `parseImportSpecifiers` to resolve workspace package names so that
 cross-package reverse-deps could work. That is a feature, not a fix, and the `crossPackageDepth`
