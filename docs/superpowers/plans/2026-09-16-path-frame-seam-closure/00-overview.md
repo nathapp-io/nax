@@ -3,13 +3,13 @@
 Bundled fix plan for the ten open defects filed as **#2083-#2091 and #2093**: the six unfixed path-frame seams, the arc's three bookkeeping follow-ups, and one unrelated worktree escape.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-path-frame-convention-design.md`
-**Base:** `main` @ `71071a035`. Every line number in these plans was re-verified against that commit, not against the commits the issues were filed at (`a8bc38ef8` / `d9614909c`).
+**Base:** plans were written against `main` @ `71071a035`. **PR 1 has since merged as `d95cfee2b` (#2097)** — it changed `src/utils/path-frame.ts` and `src/context/builder.ts`, so line numbers in those two files have shifted. See the drift warning below.
 
 Each PR is a separate file in this directory and is **self-contained** — an executor reads one file, not all six.
 
 | PR | File | Issues | Live? |
 |---|---|---|---|
-| 1 | [`01-pr1-frame-ssot.md`](./01-pr1-frame-ssot.md) | #2089 | **LIVE** |
+| 1 | [`01-pr1-frame-ssot.md`](./01-pr1-frame-ssot.md) | #2089 | ✅ **MERGED** `d95cfee2b` (PR #2097) |
 | 2 | [`02-pr2-provider-frames.md`](./02-pr2-provider-frames.md) | #2088, #2091 | #2091 **LIVE** |
 | 3 | [`03-pr3-plan-write-seam.md`](./03-pr3-plan-write-seam.md) | #2086, #2085 | **LIVE** |
 | 4 | [`04-pr4-review-builder-frames.md`](./04-pr4-review-builder-frames.md) | #2090 | **LIVE** |
@@ -26,9 +26,9 @@ You are picking this up cold. Do these four things before touching code.
    git switch -c fix/path-frame-seams
    ```
    If you want isolation per PR, use `superpowers:using-git-worktrees` instead.
-3. **Confirm your base.** These plans were written against `main` @ `71071a035`:
+3. **Confirm your base.** Plans were written against `71071a035`; PR 1 merged on top as `d95cfee2b`:
    ```bash
-   git log --oneline -1          # expect 71071a035, or newer — see the drift warning below
+   git log --oneline -3          # d95cfee2b or newer — see the drift warning below
    ```
 4. **Re-verify before trusting any line number.** See the next section. This is not optional.
 
@@ -39,7 +39,7 @@ Then follow the PR file's steps in order with `superpowers:subagent-driven-devel
 Every `file.ts:NNN` in these plans was verified against `71071a035` on 2026-09-16. **Two things invalidate them:**
 
 - **Commits landing on `main` after that.** Check with `git log --oneline 71071a035..HEAD`.
-- **Earlier PRs in this bundle.** PR 1 changes `src/utils/path-frame.ts` and `src/context/builder.ts`; PR 2 changes the context engine; PR 4 changes three prompt builders. An executor starting PR 5 will find shifted lines in files PRs 1-4 touched.
+- **Earlier PRs in this bundle.** PR 1 **has already landed** and moved `src/utils/path-frame.ts` and `src/context/builder.ts` — every line number cited for those two files is stale. PR 2 changes the context engine; PR 4 changes three prompt builders. An executor starting PR 5 will find shifted lines in files PRs 1-4 touched.
 
 **Treat every line number as a hint, and the surrounding quoted code as the real anchor.** Each plan quotes the code it refers to — grep for the snippet, not the line. If a quoted snippet no longer exists, stop and re-verify the claim before implementing; a seam may already have been closed by another PR in this bundle.
 
@@ -49,13 +49,20 @@ The issue bodies on GitHub carry line numbers from `a8bc38ef8` / `d9614909c` and
 
 **PR 1 → PR 2 is the only hard dependency.** PR 1 introduces `partitionPackageFrame`, which PR 2 consumes; and PR 2's decision about `touchedFiles`' frame depends on PR 1 having settled the canonical-vs-legacy rule.
 
-**PR 1 → PR 3 is a soft dependency.** PR 3 Part B uses `partitionPackageFrame` if it exists and falls back to `toPackageFrame` per entry if not. PR 3 can therefore ship before PR 1, but is slightly cleaner after it.
+**PR 1 is DONE** (`d95cfee2b`), so `partitionPackageFrame` exists and both dependencies are satisfied. PRs 2-6 are now all startable.
+
+⚠️ **PR 1 also produced a binding ruling that changes PRs 2 and 3** — see Ruling 8 / E below before starting either.
 
 PRs 4, 5 and 6 are fully independent and may be parallelised.
 
 PR 6 is unrelated to path frames and can ship at any time — it is last by ruling, not by dependency.
 
 ## Standing rulings (settled — do not re-litigate)
+
+0. **Ruling 8 / E — `workdirSource` is provenance, NOT a frame proof.** Recorded in the spec's §Rulings when PR 1 merged (`d95cfee2b`). The write seam re-spells a declared path only when it resolved on disk at plan time, so create-intent paths stay workdir-relative even on a canonical PRD. **A `toPackageFrame` miss is only "out-of-package" on a path set known to carry repo-rooted entries.** This binds every remaining PR:
+   - `contextFiles` (merged, carries repo-rooted parent outputs) — canonical drop **allowed** (PR 1, and PR 2's `touchedFiles` which derives from it).
+   - `expectedFiles` — **forbidden**; dropping deletes create-intent hints.
+   - `modifiedFiles` — **forbidden** (Ruling F in PR 3); the write seam never touches this list at all, and dropping revokes a granted authorization.
 
 1. **#2090 — the ACP parity premise is RETIRED.** Only a justification paragraph in one test file's header comment is removed. ACP itself, the test file, and all four of its assertions stay. See PR 4 for the evidence.
 2. **#2087 — narrow, do not fix. `runAutofixLint` is DELETED** (zero production callers). See PR 5.
