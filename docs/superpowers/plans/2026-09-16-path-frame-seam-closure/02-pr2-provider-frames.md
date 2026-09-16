@@ -117,6 +117,8 @@ Check `check:logger-storyid` passes — the logger call needs a story id if the 
 
 Re-spell at the point of resolution using `partitionPackageFrame(files, packageDir, { canonical: true })` from PR 1, or resolve against `repoRoot` directly. Whichever you choose, **run the full code-neighbor suite** and read every failure.
 
+**Why `canonical: true` is sanctioned here and nowhere else.** Spec Ruling 8 permits the canonical drop only on a path set known to carry repo-rooted entries. `touchedFiles` derives from `getContextFiles(ctx.story)` — the merged `contextFiles`, which is exactly the set PR 1 ruled safe. It is *not* fully repo-rooted (a `contextFiles` entry absent at plan time stays workdir-relative), but dropping such an entry is harmless at this seam: it names a file that does not exist, so the `git log` and neighbour lookups it feeds would return nothing anyway. Contrast PR 3, where the same flag on `modifiedFiles` would revoke a granted authorization — see Ruling F there.
+
 `query-neighbor.ts:78` builds `touchedFiles: [input.filePath]` from a single caller-supplied path — verify which frame that caller speaks before changing anything.
 
 - [ ] **A7: Run, confirm pass. Commit Part A.**

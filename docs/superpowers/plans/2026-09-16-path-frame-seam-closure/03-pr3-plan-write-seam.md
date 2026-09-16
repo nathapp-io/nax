@@ -129,7 +129,26 @@ Blast radius is bounded: nothing stats or compares these paths, only prompt rend
 
 Smaller change; does not disturb the deliberate fidelity-before-canonicalization order; matches the convention's stated shape — one canonical frame internally, one re-spelling at the agent boundary. Canonicalizing at the write seam would require either reordering fidelity (which `persist-prd.ts:61` took a deviation to establish) or running the canonical pass twice.
 
-**Confirmed feasible:** `src/prompts/sections/story.ts:7` imports `UserStory` from `@/prd/types`, and `workdirSource` is declared on that type at `types.ts:257`. The disambiguator PR 1 established is available at this seam.
+### ⛔ Ruling F — `canonical` MUST NOT be used on `modifiedFiles`
+
+**Supersedes an earlier revision of this plan, which said to pass `{ canonical: story.workdirSource !== undefined }` here. Do not do that.**
+
+Spec **Ruling 8** (recorded when PR 1 merged): *a `toPackageFrame` miss is only "out-of-package" on a path set known to carry repo-rooted entries.* `modifiedFiles` is the opposite of such a set:
+
+- `canonicalizePrdWorkdirs` contains **zero** references to `modifiedFiles` — verify yourself with `grep -c modifiedFiles src/prd/workdir-canonical.ts`, expect `0`. It re-spells `contextFiles` and `expectedFiles` only.
+- `applyModifiedFiles` runs inside `applyPlanFidelity`, which `persist-prd.ts:61-77` deliberately orders **before** canonicalization. Entries are appended after the canonical pass has already run.
+
+So `workdirSource` carries **no information** about this list's frame. That is the entire premise of #2085.
+
+And the consequence of getting it wrong is worse here than in PR 1. Dropping an unresolvable `contextFiles` entry is harmless — the `exists()` gate would skip it anyway. **`modifiedFiles` is an authorization list.** Dropping or marking a legitimately package-relative entry revokes permission the spec granted, which is the failure mode #1450 exists to prevent.
+
+**Ruled: use the default non-canonical passthrough.** `partitionPackageFrame(paths, storyWorkdir(story))` with no options — a repo-rooted in-package entry is re-spelled, everything else passes through untouched. No entry is ever dropped or marked.
+
+This fixes the real defect (a repo-rooted entry naming a path the agent's tools cannot address) without inventing authority to delete an entry whose frame is genuinely unknown.
+
+**Out-of-package `modifiedFiles` (e.g. `packages/web/src/x.ts` on a `packages/api` story) stays as-is and is a known residual.** It is indistinguishable from a legitimately package-relative path, and the safe failure is an unusable authorization line, not a revoked one. Note it in the PR body; do not try to solve it here.
+
+**Confirmed feasible:** `src/prompts/sections/story.ts:7` imports `UserStory` from `@/prd/types`.
 
 - [ ] **B1: Write the failing test**
 
@@ -138,7 +157,7 @@ In **`test/unit/prompts/sections/story.test.ts`**. The pure renderer has its own
 Four cases for a `workdir: "packages/api"`, `workdirSource: "stated"` story:
 1. `modifiedFiles: [{ path: "packages/api/src/x.ts" }]` → renders `src/x.ts`.
 2. `modifiedFiles: [{ path: "src/x.ts" }]` on a story with **no** `workdirSource` → unchanged (legacy passthrough).
-3. An out-of-package entry (`package.json`) on a canonical story → rendered with `UNREADABLE_MARKER`, consistent with PR 1's classification.
+3. An out-of-package entry (`packages/web/src/x.ts`) on a canonical story → **rendered unchanged**, NOT dropped and NOT marked (Ruling F). This test is the guard against someone re-introducing the canonical drop here.
 4. A root story → unchanged.
 
 Preserve the `reason` text in every case — `modified-files.ts:31-40` renders `` `- \`${path}\` — ${reason}` `` and the reason must survive reframing.
@@ -147,7 +166,7 @@ Preserve the `reason` text in every case — `modified-files.ts:31-40` renders `
 
 - [ ] **B3: Implement**
 
-Reframe in `src/prompts/sections/story.ts:27`, inside `modifiedFilesLines`, before calling `buildModifiedFilesLines`. Use `partitionPackageFrame` from PR 1 if it has landed; otherwise `toPackageFrame` per entry with the same `{ canonical: story.workdirSource !== undefined }` rule.
+Reframe in `src/prompts/sections/story.ts:27`, inside `modifiedFilesLines`, before calling `buildModifiedFilesLines`. Use `partitionPackageFrame(paths, storyWorkdir(story))` — **no options object** (Ruling F above). `partitionPackageFrame` landed with PR 1 (`d95cfee2b`) and is exported from `@/utils/path-frame`.
 
 **Keep `modified-files.ts` a pure renderer.** The frame decision belongs in the section that knows the story.
 
@@ -179,6 +198,7 @@ Also record in the body:
 - **`persist-prd.ts` is unchanged.** The fidelity-before-canonicalization order at `:61-77` is a deliberate deviation from an earlier PR and was not disturbed — `modifiedFiles` is reframed at the prompt boundary instead. Paste `git diff src/plan/strategies/persist-prd.ts` showing it empty.
 - **Any pre-existing test whose expectation moved.** A test asserting the spurious `major` encoded the bug; name it and say so explicitly rather than letting it look like a silent expectation change.
 - **`src/prompts/sections/modified-files.ts` stays a pure renderer** — the frame decision lives in `story.ts`, which knows the story. Its own suite should be green unchanged.
+- **Ruling F: no canonical drop on `modifiedFiles`.** Per spec Ruling 8, `workdirSource` says nothing about this list's frame — the write seam never touches it. Because it is an authorization list, dropping an entry revokes permission the spec granted. Out-of-package entries render unchanged; name that residual explicitly.
 
 ---
 
