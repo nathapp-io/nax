@@ -24,4 +24,20 @@ describe("isNaxConfigFile", () => {
   test("allows a path outside the root", () => {
     expect(isNaxConfigFile(join(ROOT, "packages", "api"), join(ROOT, ".nax", "config.json"))).toBe(false);
   });
+
+  test("refuses a nested monorepo override — the real shape loader.ts writes", () => {
+    expect(isNaxConfigFile(ROOT, join(ROOT, ".nax", "mono", "packages", "api", "config.json"))).toBe(true);
+  });
+
+  test("refuses a deeply nested monorepo override", () => {
+    expect(isNaxConfigFile(ROOT, join(ROOT, ".nax", "mono", "services", "edge", "api", "config.json"))).toBe(true);
+  });
+
+  test("still allows a non-config file at the same nesting", () => {
+    expect(isNaxConfigFile(ROOT, join(ROOT, ".nax", "mono", "packages", "api", "notes.md"))).toBe(false);
+  });
+
+  test("does not refuse a bare .nax/mono/config.json — no such override exists", () => {
+    expect(isNaxConfigFile(ROOT, join(ROOT, ".nax", "mono", "config.json"))).toBe(false);
+  });
 });

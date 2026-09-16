@@ -36,6 +36,11 @@ export function isNaxConfigFile(root: string, resolved: string): boolean {
   if (rel === "" || rel.startsWith("..")) return false;
   const segments = rel.split(sep);
   if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
-  // `.nax/config.json` (2) or `.nax/mono/<package>/config.json` (4).
-  return segments.length === 2 || (segments.length === 4 && segments[1] === "mono");
+  // `.nax/config.json` (2), or `.nax/mono/<package>/config.json` at ANY package
+  // depth (>= 4). The real override path is nested -- `loadConfigForWorkdir`
+  // reads `.nax/mono/<packageDir>/config.json` where packageDir is the
+  // repo-relative package path (`src/config/loader.ts:382`), so a normal
+  // `packages/*` layout is 5 segments, not 4. A length-exact rule left every
+  // such override writable whenever the story's root was the repo root.
+  return segments.length === 2 || (segments.length >= 4 && segments[1] === "mono");
 }
