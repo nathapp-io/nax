@@ -19,6 +19,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { byCodePoint } from "@/utils/sort";
+import { stripControlChars } from "@/utils/strip-control-chars";
 
 export interface ResolvedSpinBreakerSettings {
   readonly enabled: boolean;
@@ -83,6 +84,14 @@ export interface SpinSummary {
 
 export interface SpinBreaker {
   observe(toolName: string, input: unknown): SpinVerdict;
+  /**
+   * Feed back what a call returned. `observe` runs pre-execution, so the
+   * result of occurrence N is only known when occurrence N+1 is judged —
+   * that one-call lag is intentional and harmless at these thresholds.
+   * Calls that are denied or throw never reach here; those keys fall back
+   * to the raw backstop inside `observe`.
+   */
+  noteResult(toolName: string, input: unknown, resultText: string): void;
   summary(): SpinSummary;
 }
 
@@ -95,6 +104,21 @@ function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   const entries = Object.entries(value as Record<string, unknown>).sort((a, b) => byCodePoint(a[0], b[0]));
   return `{${entries.map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`).join(",")}}`;
+}
+
+/**
+ * Strips the tokens that differ between two byte-identical runs: elapsed
+ * times and clock timestamps (ANSI escapes are removed by
+ * `stripControlChars` first). Deliberately surgical rather than blanking
+ * every digit — "2 failed" -> "1 failed" is real progress and must survive
+ * normalisation, while "in 1.20s" -> "in 1.23s" must not.
+ */
+const DURATION_OR_TIMESTAMP =
+  /\b\d+(?:\.\d+)?\s?(?:ms|s|m|min)\b|\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b|\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g;
+
+function resultDigest(text: string): string {
+  const normalised = stripControlChars(text).replace(DURATION_OR_TIMESTAMP, "").replace(/\s+/g, " ").trim();
+  return String(Bun.hash(normalised));
 }
 
 /**
@@ -132,16 +156,24 @@ function nudgeText(nudgeNumber: number, repeats: number): string {
   return (template ?? "").replace("{repeats}", String(repeats));
 }
 
+interface KeyRecord {
+  /** Raw cumulative occurrences — the backstop, and what `summary` reports. */
+  count: number;
+  /** Consecutive occurrences whose result digest was unchanged. */
+  sameResultRun: number;
+  digest?: string;
+}
+
 export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBreaker {
   const points = nudgePoints(settings);
   // Insertion-ordered and capped: a Map's iteration order gives the eviction
-  // order for free, so the window needs no second structure. The value is a
-  // cumulative count, so a re-issued key reads as a continuation of its
-  // prior count — but only for keys still in the window: an evicted key is
-  // gone, and the next sighting will start fresh at 1. That is the same
-  // windowing tradeoff `newKeyEvents` already documents, just on the count
-  // axis.
-  const recent = new Map<string, number>();
+  // order for free, so the window needs no second structure. The value carries
+  // the cumulative count and the same-result run, so a re-issued key reads as
+  // a continuation of its prior state — but only for keys still in the window:
+  // an evicted key is gone, and the next sighting will start fresh at 1. That
+  // is the same windowing tradeoff `newKeyEvents` already documents, just on
+  // the count axis.
+  const recent = new Map<string, KeyRecord>();
   let repeatsSinceProgress = 0;
   let totalCalls = 0;
   let newKeyEvents = 0;
@@ -150,7 +182,7 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
   let nudges = 0;
 
   function remember(key: string): void {
-    recent.set(key, 1);
+    recent.set(key, { count: 1, sameResultRun: 0 });
     newKeyEvents += 1;
     if (recent.size > settings.recentKeyWindow) {
       const oldest = recent.keys().next();
@@ -217,21 +249,27 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
         return { action: "allow" };
       }
 
-      const cumulativeCount = (recent.get(key) ?? 0) + 1;
-      recent.set(key, cumulativeCount);
-      if (cumulativeCount > maxSameKeyRepeats) maxSameKeyRepeats = cumulativeCount;
+      const record = recent.get(key) ?? { count: 0, sameResultRun: 0 };
+      record.count += 1;
+      recent.set(key, record);
+      if (record.count > maxSameKeyRepeats) maxSameKeyRepeats = record.count;
 
-      // Cumulative per-key stop. A freshly-laundered loop is the shape we
-      // want to catch (nax#2047). Only check when the knob is non-zero —
-      // 0 disables.
-      if (settings.stopAfterSameKeyRepeats > 0 && cumulativeCount >= settings.stopAfterSameKeyRepeats) {
-        return stopOrNudge(toolName, cumulativeCount, "same-key-cumulative", () => {
-          // The stop consumes the evidence it fired on (nax#2120, Task 1).
-          // Set to 0 rather than deleting the entry: the key must stay in
-          // `recent` so its next occurrence still reads as a repeat, not as
-          // progress. Only a REAL stop resets — a downgraded nudge must not,
-          // or the threshold could never be reached twice.
-          recent.set(key, 0);
+      // nax#2120: the cumulative threshold now runs on the RESULT axis. Same
+      // call + same result N times is a spin whatever interleaved; same call
+      // with a changing result is an edit -> test loop, which is work. The
+      // raw count is kept as a backstop for a call whose result is unique
+      // every time, or which never reaches `noteResult` (denied, threw) —
+      // `stopAfterRepeats` bounds it without adding a knob.
+      if (settings.stopAfterSameKeyRepeats > 0 && record.sameResultRun >= settings.stopAfterSameKeyRepeats) {
+        return stopOrNudge(toolName, record.sameResultRun, "same-key-cumulative", () => {
+          record.count = 0;
+          record.sameResultRun = 0;
+        });
+      }
+      if (settings.stopAfterSameKeyRepeats > 0 && record.count >= settings.stopAfterRepeats) {
+        return stopOrNudge(toolName, record.count, "same-key-cumulative", () => {
+          record.count = 0;
+          record.sameResultRun = 0;
         });
       }
 
@@ -246,6 +284,15 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
       if (isNudgePoint && nudges < settings.maxNudges) return buildNudge(toolName, repeatsSinceProgress);
 
       return { action: "allow" };
+    },
+
+    noteResult(toolName, input, resultText) {
+      if (!settings.enabled) return;
+      const record = recent.get(callKey(toolName, input));
+      if (record === undefined) return;
+      const digest = resultDigest(resultText);
+      record.sameResultRun = record.digest === digest ? record.sameResultRun + 1 : 1;
+      record.digest = digest;
     },
 
     summary() {

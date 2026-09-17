@@ -410,6 +410,7 @@ export async function runNativeTurn(
               content: verdict.action === "nudge" ? `[nax] ${verdict.text}\n\n---\n\n${answer.answer}` : answer.answer,
               denied: answer.denied,
             });
+            spinBreaker?.noteResult(call.name, call.input, answer.answer);
             continue;
           }
           const answerText = answer?.answer ?? "";
@@ -418,6 +419,7 @@ export async function runNativeTurn(
             toolCallId: call.id,
             content: verdict.action === "nudge" ? `[nax] ${verdict.text}\n\n---\n\n${answerText}` : answerText,
           });
+          spinBreaker?.noteResult(call.name, call.input, answerText);
         } catch (err) {
           // A tool failure is data, not a turn failure: the existing pull-tool
           // contract already surfaces a handler throw as status "error".

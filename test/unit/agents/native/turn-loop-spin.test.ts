@@ -25,6 +25,8 @@ interface RunTurnWithSpinOpts {
   complete: TurnDeps["complete"];
   spinBreaker: TurnDeps["spinBreaker"];
   onToolResult?: (content: string) => void;
+  /** Per-call tool answer. Defaults to the constant every existing test relies on. */
+  answer?: () => string;
 }
 
 /**
@@ -39,7 +41,7 @@ interface RunTurnWithSpinOpts {
  */
 async function runTurnWithSpin(opts: RunTurnWithSpinOpts) {
   const interactionHandler: SendTurnOpts["interactionHandler"] = {
-    onInteraction: async () => ({ answer: "29 tests passed" }),
+    onInteraction: async () => ({ answer: opts.answer?.() ?? "29 tests passed" }),
   };
   const result = await runNativeTurn(
     handle,
@@ -126,6 +128,34 @@ describe("runNativeTurn — spin breaker", () => {
         stopAfterRepeats: 4,
         maxNudges: 1,
       }),
+    });
+
+    expect(result.spinStopped).toBeUndefined();
+    expect(result.output).toBe("done");
+  });
+
+  test("a model that edits and re-runs the same scoped test is not stopped (nax#2120)", async () => {
+    // The shape of run-2026-09-17T11-43-47-190Z US-001: one RunCommand key
+    // re-run after each edit, with a different failure each time. 40
+    // iterations, well past stopAfterSameKeyRepeats=12.
+    let call = 0;
+    let answered = 0;
+    const result = await runTurnWithSpin({
+      complete: async () => {
+        call += 1;
+        if (call > 40) return { text: "done", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 };
+        return {
+          text: "",
+          toolCalls: [{ id: `c${call}`, name: "RunCommand", input: { command: "testScoped" } }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costUsd: 0,
+        };
+      },
+      answer: () => {
+        answered += 1;
+        return `FAIL: expected ${answered} to equal ${answered + 1}`;
+      },
+      spinBreaker: createSpinBreaker(DEFAULT_SPIN_BREAKER_SETTINGS),
     });
 
     expect(result.spinStopped).toBeUndefined();
