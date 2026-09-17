@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeConfigSlice } from "@test/helpers";
-import { _scopedLintDeps, runAutofixLint, runScopedLintCheck } from "@/review/scoped-lint";
+import { _scopedLintDeps, runScopedLintCheck } from "@/review/scoped-lint";
 import type { ReviewConfig } from "@/review/types";
 
 const baseReviewConfig: ReviewConfig = makeConfigSlice("review", {
@@ -140,24 +140,6 @@ describe("runScopedLintCheck", () => {
     expect(runMock).toHaveBeenCalled();
   });
 
-  test("supports explicit scope input via runAutofixLint", async () => {
-    const result = await runAutofixLint({
-      resolvedLintCommand: "eslint --max-warnings=0",
-      configCommands: { ...baseReviewConfig.commands, lintScoped: "eslint {{files}}" },
-      qualityCommands: {},
-      workdir: "/repo",
-      storyId: "US-001",
-      scope: {
-        changedFiles: ["src/a.ts"],
-        contextFiles: ["src/b.ts"],
-        packageDir: ".",
-      },
-    });
-
-    expect(result.command).toBe("eslint 'src/a.ts' 'src/b.ts'");
-    expect(result.lintScope?.packageGroups).toEqual([{ packageDir: ".", files: ["src/a.ts", "src/b.ts"] }]);
-  });
-
   test("degraded mode filters out-of-scope diagnostics for unsupported command shape", async () => {
     _scopedLintDeps.listChangedFiles = mock(async () => ["src/in.ts"]);
     _scopedLintDeps.runLintCommand = mock(async () => ({
@@ -212,38 +194,6 @@ describe("runScopedLintCheck", () => {
     expect(result.output).toBe("totally unparseable lint output");
   });
 
-  test("dogfood replay shape: sibling-package lint debt is reported as out_of_scope", async () => {
-    _scopedLintDeps.runLintCommand = mock(async () => ({
-      commandName: "lint",
-      command: "custom-lint",
-      success: false,
-      exitCode: 1,
-      output: "packages/web/src/sibling.ts:3:1 error sibling debt",
-      durationMs: 9,
-      timedOut: false,
-    }));
-
-    const result = await runAutofixLint({
-      resolvedLintCommand: "custom-lint",
-      configCommands: baseReviewConfig.commands,
-      lintOutputFormat: "auto",
-      workdir: "/repo",
-      storyId: "US-001",
-      scope: {
-        changedFiles: ["packages/api/src/in.ts"],
-        contextFiles: [],
-        packageDir: "packages/api",
-      },
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.lintScope?.status).toBe("out_of_scope");
-    expect(result.lintScope?.packageGroups).toEqual([
-      { packageDir: "packages/api", files: ["packages/api/src/in.ts"] },
-    ]);
-    expect(result.output).toContain("out of story scope");
-  });
-
   test("attaches findings for failing scoped lint results when output is parseable", async () => {
     _scopedLintDeps.runLintCommand = mock(async (_workdir, _storyId, _env, command) => ({
       commandName: "lint",
@@ -268,5 +218,36 @@ describe("runScopedLintCheck", () => {
     expect(result.success).toBe(false);
     expect(result.findings?.length).toBeGreaterThan(0);
     expect(result.findings?.[0]?.file).toContain("src/alpha.ts");
+  });
+
+  // Contract pin (issue #2087): runReview's production call site
+  // (src/execution/lifecycle/run-initialization.ts:95) passes only
+  // { config, workdir, executionConfig } — no story, no projectDir, no
+  // storyGitRef, no scope. resolveLintScope must therefore route through the
+  // missing_story_git_ref arm and run the FULL lint, never the empty-scope
+  // false-green at scoped-lint.ts:268-280. If a future re-wire threads
+  // story/projectDir/storyGitRef into runReview, this test must fail loudly.
+  test("runReview call shape: no story/projectDir/storyGitRef/scope degrades to full lint", async () => {
+    const runMock = mock(async (_workdir, _storyId, _env, command) => ({
+      commandName: "lint",
+      command,
+      success: true,
+      exitCode: 0,
+      output: "ok",
+      durationMs: 12,
+      timedOut: false,
+    }));
+    _scopedLintDeps.runLintCommand = runMock;
+
+    const result = await runScopedLintCheck({
+      resolvedLintCommand: "eslint --max-warnings=0",
+      configCommands: baseReviewConfig.commands,
+      qualityCommands: {},
+      workdir: "/repo",
+    });
+
+    expect(result.lintScope?.status).toBe("degraded");
+    expect(result.command).toBe("eslint --max-warnings=0");
+    expect(runMock).toHaveBeenCalled();
   });
 });
