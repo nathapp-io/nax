@@ -249,4 +249,57 @@ describe("modifiedFiles reframed at the prompt boundary (nax#2085)", () => {
     );
     expect(rendered).toContain("- `packages/api/src/x.ts` — root frame");
   });
+
+  // A story's `modifiedFiles` list can carry more than one entry. Every case
+  // above has exactly one, so an index-based zip between the framed paths and
+  // the original reasons was never exercised — a desync would attach the wrong
+  // reason to the wrong path without any of those tests noticing.
+  test("keeps each reason paired with its own path across multiple entries", () => {
+    const rendered = buildStorySection(
+      makeStory({
+        workdir: "packages/api",
+        workdirSource: "stated",
+        acceptanceCriteria: ["works"],
+        modifiedFiles: [
+          mod("packages/api/src/in-package.ts", "in-package reason"),
+          mod("packages/web/src/out-of-package.ts", "out-of-package reason"),
+        ],
+      }),
+    );
+    expect(rendered).toContain("- `src/in-package.ts` — in-package reason");
+    expect(rendered).toContain("- `packages/web/src/out-of-package.ts` — out-of-package reason");
+    expect(rendered).not.toContain("undefined");
+  });
+
+  // H6: a batch prompt has exactly one agent root — the FIRST story's package
+  // (src/execution/story-selector.ts takes storiesToExecute[0], and
+  // src/operations/call.ts derives codingToolRoot from it). Framing each
+  // story's modifiedFiles against its OWN workdir re-spells a second story's
+  // out-of-root entry as if it lived under the first story's package — a real
+  // but WRONG file the batch's single agent root can actually open.
+  test("buildBatchStorySection frames every story against the FIRST story's package, not its own", () => {
+    const rendered = buildBatchStorySection([
+      makeStory({
+        id: "BATCH-001",
+        workdir: "packages/api",
+        workdirSource: "stated",
+        acceptanceCriteria: ["works"],
+        modifiedFiles: [mod("packages/api/src/x.ts", "r-US-1")],
+      }),
+      makeStory({
+        id: "BATCH-002",
+        workdir: "packages/web",
+        workdirSource: "stated",
+        acceptanceCriteria: ["works"],
+        modifiedFiles: [mod("packages/web/src/app.ts", "r-US-2")],
+      }),
+    ]);
+
+    // First story re-spells against its own (and the batch's) root package.
+    expect(rendered).toContain("- `src/x.ts` — r-US-1");
+    // Second story's entry is out of the batch root's package: it must NOT be
+    // re-spelled into a same-named file the agent root could actually open.
+    expect(rendered).not.toContain("- `src/app.ts` — r-US-2");
+    expect(rendered).toContain("- `packages/web/src/app.ts` — r-US-2");
+  });
 });
