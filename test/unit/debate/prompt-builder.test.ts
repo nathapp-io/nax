@@ -462,6 +462,43 @@ describe("buildResolverPrompt()", () => {
     expect(prompt).not.toContain(":!*.spec.ts");
   });
 
+  test("ref mode commands are package-relative; full diff excludes only nax metadata (#2090)", () => {
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+    const prompt = makeBuilder().buildResolverPrompt(
+      LABELED_PROPOSALS,
+      CRITIQUES_STRINGS,
+      {
+        mode: "ref" as const,
+        storyGitRef: "abc123",
+        stat: "1 file changed",
+        productionExcludePatterns: [":!*_test.go", ":!tests/test_*.py"],
+      },
+      REVIEW_STORY,
+      ctx,
+    );
+
+    const lines = prompt.split("\n");
+    const diffLines = lines.filter((line) => line.includes("git diff "));
+    const logLines = lines.filter((line) => line.includes("git log "));
+    expect(diffLines.length).toBeGreaterThan(0);
+    expect(logLines.length).toBeGreaterThan(0);
+    for (const line of diffLines) {
+      expect(line).toContain("--relative");
+      expect(line).toContain("-- .");
+    }
+    for (const line of logLines) {
+      expect(line).toContain("--relative");
+    }
+
+    const fullDiffLine = lines.find((line) => line.includes("Full diff:"));
+    expect(fullDiffLine).toBeDefined();
+    expect(fullDiffLine).toContain("--relative");
+    expect(fullDiffLine).toContain("-- .");
+    expect(fullDiffLine).not.toContain(":!*_test.go");
+    expect(fullDiffLine).not.toContain(":!tests/test_*.py");
+    expect(fullDiffLine).toContain(":!.nax/");
+  });
+
   test.each([
     ["synthesis", { resolverType: "synthesis" as const }, /synthes/i],
     ["custom", { resolverType: "custom" as const }, /judge/i],

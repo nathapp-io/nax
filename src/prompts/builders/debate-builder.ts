@@ -443,15 +443,20 @@ function buildDebateDiffSection(ctx: DiffContext): string {
       ...new Set([...(ctx.productionExcludePatterns ?? []), ":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"]),
     ];
     const excludeArgs = excludes.map((p) => `'${p}'`).join(" ");
+    // The full diff keeps test files (its label distinguishes it from the
+    // production diff), so it carries only the nax-metadata excludes.
+    const naxExcludeArgs = [":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"].map((p) => `'${p}'`).join(" ");
     // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
     // one on the native protocol (src/prompts/sections/diff-access.ts).
+    // `--relative` is appended after `..HEAD` so git prints package-cwd paths
+    // to the reviewer (#2090).
     const shellBody = [
       `## Git Baseline: \`${ref}\``,
       "",
       "To inspect the implementation:",
-      `- Full diff: \`git diff --unified=3 ${ref}..HEAD\``,
-      `- Production diff: \`git diff --unified=3 ${ref}..HEAD -- . ${excludeArgs}\``,
-      `- Commit history: \`git log --oneline ${ref}..HEAD\``,
+      `- Full diff: \`git diff --unified=3 ${ref}..HEAD --relative -- . ${naxExcludeArgs}\``,
+      `- Production diff: \`git diff --unified=3 ${ref}..HEAD --relative -- . ${excludeArgs}\``,
+      `- Commit history: \`git log --oneline ${ref}..HEAD --relative\``,
       "",
       "Use these commands to inspect the code. Do NOT rely solely on the file list above.",
     ].join("\n");
