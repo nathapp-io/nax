@@ -195,6 +195,19 @@ export interface AgentRunOptions {
    */
   codingToolRepoRoot?: string;
   /**
+   * The absolute `fileOutput` path the dispatching op declared, when it declared
+   * one (nax#2115).
+   *
+   * Forwarded to `compileToolPolicy` as `ownedWriteExemption` so an op whose
+   * contract is "write your result to this file" can write it even when the path
+   * is otherwise nax-owned run state. Today only the three plan ops
+   * (`plan`, `plan-refine`, `debate-plan`) name a guarded path; every other
+   * fileOutput path is unguarded and the exemption is inert for them.
+   *
+   * PRODUCER: src/operations/call.ts (`runOp.fileOutput?.(input)`).
+   */
+  codingToolFileOutput?: string;
+  /**
    * The run's output directory (`~/.nax/<project>` by default), where durable
    * run artifacts live. Carried here so the tool-audit ledger lands beside
    * prompt-audit and review-audit rather than inside `codingToolRoot`.

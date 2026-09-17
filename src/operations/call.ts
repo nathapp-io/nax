@@ -252,6 +252,9 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     ...(ctx.runtime.toolProviders.length > 0 ? { providers: ctx.runtime.toolProviders } : {}),
     ...(runOp.toolPatterns !== undefined ? { toolPatterns: runOp.toolPatterns } : {}),
     codingToolRoot: packageWorkdir(ctx.packageView),
+    // nax#2115: the op's own declared output file; the policy exempts it from
+    // the nax-owned write refusal. See AgentRunOptions.codingToolFileOutput.
+    ...(fileOutputPath !== undefined ? { codingToolFileOutput: fileOutputPath } : {}),
     codingToolRepoRoot: storyExecRoot(ctx.packageView),
     // PRODUCER for AgentRunOptions.outputDir. Durable run artifacts (prompt-audit,
     // review-audit, and now the tool-audit ledger) anchor here rather than under

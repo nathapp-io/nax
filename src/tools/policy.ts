@@ -130,6 +130,15 @@ export interface ToolPolicyOptions {
    * on an ungranted call is a plain denial.
    */
   readonly askRules?: readonly ToolGrant[];
+  /**
+   * The ONE nax-owned path this session may write despite `naxOwnedWriteRefusal`
+   * (nax#2115): the ABSOLUTE `fileOutput` path the dispatching op declared. It is
+   * canonicalised into this policy's own root-relative frame below rather than by
+   * the caller, so alternate spellings of the same file cannot diverge from the
+   * string the guard compares. Only the feature-PRD refusal honours it; the nax
+   * CONFIG refusal is deliberately not exempted.
+   */
+  readonly ownedWriteExemption?: string;
 }
 
 function isFieldlessScope(scope: ToolScope): boolean {
@@ -147,6 +156,13 @@ function isFieldlessScope(scope: ToolScope): boolean {
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string, options?: ToolPolicyOptions): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
   const execTouchedPaths = options?.execTouchedPaths;
+  // nax#2115: the SAME transform `relativeTo` applies to every checked path, so
+  // the guard compares like with like. A path outside the root yields a
+  // ".."-prefixed rel that can never equal a checked path's, exempting nothing.
+  const ownedWriteExemption =
+    options?.ownedWriteExemption === undefined
+      ? undefined
+      : relative(resolvedRoot, realOrRaw(options.ownedWriteExemption)).split(sep).join("/");
   const denyBy = compileRuleMap(options?.denyRules);
   const askBy = compileRuleMap(options?.askRules);
   const compiled = new Map<
@@ -289,7 +305,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * denied and an ask on an ungranted call never becomes an approval prompt.
    */
   function applyPathRules(tool: string, rel: string, state: RuleState): PolicyVerdict | undefined {
-    const naxOwned = naxOwnedWriteRefusal(tool, rel);
+    const naxOwned = naxOwnedWriteRefusal(tool, rel, ownedWriteExemption);
     if (naxOwned !== undefined) return deny(`${tool} may not modify ${naxOwned}`);
     const denyEntry = denyBy.get(tool);
     const askEntry = askBy.get(tool);
