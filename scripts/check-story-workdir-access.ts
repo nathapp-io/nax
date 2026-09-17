@@ -11,49 +11,95 @@
  * Why the rule and not a set of patches (nax#2067, nax#2084): 19 raw reads
  * across 10 files used THREE different spellings of "absent" -- `?? ""`,
  * `|| undefined` and `? :` truthiness -- and `workdir` is now always a
- * string where "." means the repo root. "." is truthy and is not "", so
- * every one of those idioms lands differently on it. Patching the known
- * sites leaves the next author free to add a fourth.
+ * string where "." means the repo root. Patching the known sites leaves the
+ * next author free to add a fourth.
  *
- * nax#2084 shipped a v2 built on a token-level scanner keyed on the
- * receiver's DECLARED-IN-FILE type annotation (a name -> annotation binding
- * map). It missed the dominant real idiom: member chains (`ctx.story.workdir`),
- * indexed access (`stories[0].workdir`), casts (`(s as UserStory).workdir`),
- * and any receiver whose type is INFERRED rather than explicitly annotated
- * in the same file. Its own header claimed cross-file/inferred type
- * resolution "would need a real checker, which TypeScript 7 does not expose
- * to JavaScript" -- that claim was false: the pinned `typescript@7.0.2`
- * exports `typescript/unstable/async`, an out-of-process API (spawns the
- * `tsgo` binary) with a real `Checker` (`getTypeAtLocation`,
- * `typeToString`, ...). This v3 walks the REAL AST (`typescript/unstable/ast`)
- * over the project's real `Program`/`Checker` and resolves the ACTUAL type
- * at each candidate site, not a per-file syntactic guess. That also fixes
- * three false positives the token scanner had no way to avoid: same-name
- * shadowing across scopes (the checker resolves per-position, not per-file),
- * a `/story.workdir/` regex literal (the real parser never sees an
- * identifier inside a regex literal), and a same-shaped local object type
- * with a `workdir` field that ISN'T a story (the checker's type is the
- * literal's OWN object type, e.g. `{ workdir: string }`, never `UserStory`).
+ * ## v4 (path-frame follow-up, this file)
  *
- * The walker skips comments (the AST has no comment nodes to visit) and the
- * `ALLOWED` declaration sites. A legitimate wrapper accessor -- code whose
- * whole purpose is reading `.workdir`, e.g. a second SSOT accessor -- takes
- * an inline `// workdir-access-allow: <reason>` marker on the access line or
- * the line directly above, rather than needing the whole file added to
- * `ALLOWED`. The `EXEMPT` list (path-level, silences every hit in a file) is
- * empty by contract: every site is either converted to the accessor,
- * marked with the inline marker, or added to `ALLOWED` with a written reason.
+ * v3 keyed the STORY_TYPES check on the receiver's RENDERED type string
+ * (`typeToString(...)` compared against a literal name list). That is
+ * invisible to anything that does not print back exactly as `UserStory` or
+ * `StoryWorkdirLike`: `Readonly<UserStory>`, `Pick<UserStory, "workdir">`,
+ * `interface X extends UserStory`, an intersection, a union of two
+ * story-shaped types, and a destructuring ASSIGNMENT (`({ workdir } = s)`,
+ * which v3's binder never even visited -- it only handled the
+ * `BindingElement` shape, not the `ShorthandPropertyAssignment` /
+ * `PropertyAssignment` a destructuring assignment target actually parses as).
+ *
+ * v4 drops the name/string proxy and asks the real checker two structural
+ * questions instead:
+ *   1. Does the receiver's (non-nullable) type have a `workdir` property at
+ *      all (`Checker.getPropertyOfType`)?
+ *   2. Does that property SYMBOL's declaration live in one of the two files
+ *      that declare the field (`src/prd/types.ts` for `UserStory`,
+ *      `src/utils/path-frame.ts` for `StoryWorkdirLike`)?
+ *
+ * Verified empirically against the real checker: `getPropertyOfType` walks
+ * through `Readonly<T>`, `Pick<T, K>`, `interface extends`, and intersections
+ * to the SAME underlying declaration node as a plain `UserStory` receiver --
+ * these are exactly the shapes that only differ from a plain `UserStory` in
+ * how they PRINT, not in where the property resolves to. A union of two
+ * story-shaped types yields a property whose `.declarations` includes both
+ * constituents' declaration sites, so it is caught too. A same-shaped local
+ * object type (`{ workdir: string }`, the standing false-positive control)
+ * resolves its OWN `workdir` declaration to the fixture file itself, not to
+ * either canonical file, and is correctly not flagged. Nullability is
+ * stripped with `Checker.getNonNullableType` before the property lookup --
+ * safe here (unlike the display-string strip it replaces) because every
+ * fixture in this file's suite uses REAL imported types, which do not hit
+ * the unresolved-type error-recovery collapse that made the string strip
+ * necessary in the first place.
+ *
+ * The walker also now covers destructuring ASSIGNMENT (`({ workdir } = s)`
+ * and its renamed form `({ workdir: w } = s)`, both `ShorthandPropertyAssignment`
+ * / `PropertyAssignment` nodes inside an `ObjectLiteralExpression` used as a
+ * `BinaryExpression`'s assignment target -- not `BindingElement` at all),
+ * function-parameter and nested destructuring (unified with the plain
+ * `const { workdir } = story` case: for ANY `BindingElement`, the receiver
+ * type is `Checker.getTypeAtLocation` on the ENCLOSING BINDING PATTERN node
+ * itself, which resolves correctly whether that pattern's owner is a
+ * `VariableDeclaration`, a `Parameter`, an arrow function parameter, or a
+ * `ForOfStatement` -- one rule, not the four ad hoc receiver-walk branches
+ * v3 had, one of which (`ForOfStatement`) was dead code because the walk
+ * never reached it), a computed element-access key that resolves to a
+ * `"workdir"` string LITERAL TYPE (`const K = "workdir" as const; s[K]`),
+ * and a `` `workdir` `` no-substitution template key.
+ *
+ * The inline `// workdir-access-allow: <reason>` escape hatch is now
+ * resolved from the candidate's ENCLOSING STATEMENT's real leading/trailing
+ * comment TRIVIA (`getLeadingCommentRanges` / `getTrailingCommentRanges` from
+ * `typescript/unstable/ast/scanner` -- the same primitives the compiler's
+ * own emitter uses to attach comments to nodes), not by testing a regex
+ * against raw source lines. That closes two spoofs the line-text version
+ * had: text that merely LOOKS like the marker inside a string literal (never
+ * a comment trivia range, so never matched) and a comment that is textually
+ * "the line above" but is actually attached to a DIFFERENT, unrelated
+ * statement (trivia is bound to the specific statement node, not a line
+ * number). An empty reason (`// workdir-access-allow:` with nothing after
+ * the colon) no longer suppresses anything; a marker whose statement turns
+ * out not to be a real story-typed read is reported as a STALE MARKER,
+ * mirroring the staleness check `EXEMPT` already had.
+ *
+ * A file on disk under a scanned directory that the tsconfig's Program does
+ * not contain (e.g. a `.tsx` file under a dir whose tsconfig `include` only
+ * lists `.ts`) is now a hard error naming the file, not a silent skip -- the
+ * fail-open this rewrite's v3 header claimed to have closed by relocating it
+ * from the root check into `findViolations` instead of removing it.
+ *
+ * `src/` is now a REQUIRED scan directory: a root with no `src/` at all used
+ * to print "clean" (`assertRootReadable` only `stat`s the root itself). Other
+ * `SCAN_DIRS` entries (`bin/`, `scripts/`) stay optional -- a fixture root
+ * legitimately has neither.
  *
  * Takes an optional root so the gate can be tested against a fixture tree.
- * Fails CLOSED: an unreadable or missing root is a hard error (exit 1), not
- * a silent "clean". A missing SCAN_DIRS entry (e.g. a fixture root with no
- * `bin/`) is tolerated -- that is a legitimately absent optional directory,
- * not a broken scan root.
+ * Fails CLOSED: an unreadable or missing root, a missing `src/`, or a file
+ * the Program cannot see is a hard error (exit 1), never a silent "clean".
  */
 
 import { stat } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { SyntaxKind } from "typescript/unstable/ast";
+import { getLeadingCommentRanges, getTrailingCommentRanges } from "typescript/unstable/ast/scanner";
 import type { Project } from "typescript/unstable/async";
 import { API } from "typescript/unstable/async";
 
@@ -61,9 +107,9 @@ const ROOT = resolve(process.argv[2] ?? process.cwd());
 
 /** Each entry maps a scanned top-level directory to the tsconfig whose Program contains it. */
 const SCAN_DIRS = [
-  { dir: "src", tsconfig: "tsconfig.json" },
-  { dir: "bin", tsconfig: "tsconfig.json" },
-  { dir: "scripts", tsconfig: "tsconfig.test.json" },
+  { dir: "src", tsconfig: "tsconfig.json", required: true },
+  { dir: "bin", tsconfig: "tsconfig.json", required: false },
+  { dir: "scripts", tsconfig: "tsconfig.test.json", required: false },
 ] as const;
 
 const SCAN_EXTENSIONS = [".ts", ".tsx"] as const;
@@ -91,16 +137,21 @@ const ALLOWED = [
 const EXEMPT: string[] = [];
 
 /**
- * Type names whose declaration includes a `workdir?: string` field.
- *
- * Anchors the gate on the RESOLVED TYPE at the access site, not on any
- * syntactic proxy for it. Mirrors `src/prd/types.ts:245` (UserStory.workdir?)
- * and `src/utils/path-frame.ts:170` (StoryWorkdirLike.workdir?).
+ * The two files that DECLARE a `workdir?: string` field: `UserStory`
+ * (src/prd/types.ts) and its structural alias `StoryWorkdirLike`
+ * (src/utils/path-frame.ts). A candidate is a violation iff the property
+ * SYMBOL the checker resolves for its `.workdir` access has a declaration
+ * in one of these files -- not iff the receiver's rendered type NAME
+ * matches a literal list (see the v4 header comment for why that is a
+ * strictly weaker check).
  */
-const STORY_TYPES: ReadonlySet<string> = new Set(["UserStory", "StoryWorkdirLike"]);
+const DECLARATION_FILE_PATHS: ReadonlySet<string> = new Set([
+  resolve(ROOT, "src", "prd", "types.ts"),
+  resolve(ROOT, "src", "utils", "path-frame.ts"),
+]);
 
-/** Inline escape hatch for a legitimate accessor site outside `ALLOWED`. */
-const ALLOW_MARKER = /workdir-access-allow:/;
+/** Inline escape hatch for a legitimate accessor site outside `ALLOWED`. Requires a non-empty reason. */
+const ALLOW_MARKER_RE = /workdir-access-allow:\s*(.*)/;
 
 /**
  * Exemptions that matched no read. A stale exemption fails the gate: it is what
@@ -116,17 +167,21 @@ export interface Violation {
   readonly text: string;
 }
 
-/** A candidate read: the node whose text is reported, and the expression whose TYPE decides it. */
-interface CandidateHit {
-  readonly reportNode: AstNode;
-  readonly receiverExpr: AstNode;
-}
-
 // The remote AST node shape is not exported as a public type by
 // typescript/unstable/ast (RemoteNode is internal); every access below is
 // guarded by a SyntaxKind check first, which is the real type discriminant.
 // biome-ignore lint/suspicious/noExplicitAny: see comment above
 type AstNode = any;
+
+/** A candidate read: the node to report, and the node whose TYPE decides it. */
+interface CandidateHit {
+  readonly reportNode: AstNode;
+  /** Expression (property/element access receiver, destructuring-assignment RHS) or binding-pattern node. */
+  readonly typeSite: AstNode;
+  readonly nameNode: AstNode;
+  /** True only for a computed element-access key (`s[K]`) whose literal-ness needs a checker round trip. */
+  readonly nameNeedsTypeCheck: boolean;
+}
 
 /**
  * Resolve a position to a 1-based line number using the source text.
@@ -152,58 +207,68 @@ function posToLine(lineStarts: readonly number[], pos: number): number {
 }
 
 /**
- * True when `node` names "workdir" as a plain identifier or a string literal
- * (covers both `.workdir` and `["workdir"]` name positions).
+ * True when `node` names "workdir" as a plain identifier, a string literal,
+ * or a no-substitution template literal (covers `.workdir`, `["workdir"]`
+ * and `` [`workdir`] `` name positions).
  */
 function isWorkdirName(node: AstNode | undefined): boolean {
   if (node === undefined) return false;
   if (node.kind === SyntaxKind.Identifier) return node.text === "workdir";
   if (node.kind === SyntaxKind.StringLiteral) return node.text === "workdir";
+  if (node.kind === SyntaxKind.NoSubstitutionTemplateLiteral) return node.text === "workdir";
   return false;
 }
 
 /**
- * The receiver expression a destructured `{ workdir } = EXPR` binds against,
- * or `{ workdir } = EXPR` inside a `for (const { workdir } of EXPR)`. Returns
- * undefined for a shape with no single receiver expression to type-check
- * (e.g. a destructured function parameter -- no site of that shape exists in
- * this repo's `UserStory`/`StoryWorkdirLike` usage today).
- */
-function bindingReceiver(bindingElement: AstNode): AstNode | undefined {
-  const pattern = bindingElement.parent;
-  const owner = pattern?.parent;
-  if (owner === undefined) return undefined;
-  if (owner.kind === SyntaxKind.VariableDeclaration && owner.initializer !== undefined) {
-    return owner.initializer;
-  }
-  if (owner.kind === SyntaxKind.ForOfStatement && owner.expression !== undefined) {
-    return owner.expression;
-  }
-  return undefined;
-}
-
-/**
- * Walk the file's real AST for the three shapes a `.workdir` read can take:
- *   - property access:   EXPR (. | ?.) workdir
- *   - element access:    EXPR [ "workdir" ]
- *   - object binding:    { workdir } = EXPR   (destructuring assignment/declaration)
+ * Walk the file's real AST for every shape a `.workdir` read can take:
+ *   - property access:        EXPR (. | ?.) workdir
+ *   - element access:         EXPR [ "workdir" | `workdir` | computed const ]
+ *   - binding element:        { workdir } from a VariableDeclaration,
+ *     Parameter, arrow Parameter, ForOfStatement, or nested pattern owner --
+ *     one rule, since the receiver type is `getTypeAtLocation` on the
+ *     ENCLOSING PATTERN NODE itself in every case
+ *   - destructuring ASSIGNMENT: ({ workdir } = EXPR) / ({ workdir: w } = EXPR)
  *
- * Each candidate carries the RECEIVER EXPRESSION node; the caller resolves
- * its type via the real checker rather than any syntactic proxy for it.
+ * Each candidate carries the node whose TYPE the caller resolves via the
+ * real checker, never a syntactic proxy for it.
  */
 function collectCandidates(sourceFile: AstNode): CandidateHit[] {
   const hits: CandidateHit[] = [];
 
   function walk(node: AstNode): void {
-    if (node.kind === SyntaxKind.PropertyAccessExpression && isWorkdirName(node.name)) {
-      hits.push({ reportNode: node, receiverExpr: node.expression });
-    } else if (node.kind === SyntaxKind.ElementAccessExpression && isWorkdirName(node.argumentExpression)) {
-      hits.push({ reportNode: node, receiverExpr: node.expression });
+    if (node.kind === SyntaxKind.PropertyAccessExpression) {
+      if (isWorkdirName(node.name)) {
+        hits.push({ reportNode: node, typeSite: node.expression, nameNode: node.name, nameNeedsTypeCheck: false });
+      }
+    } else if (node.kind === SyntaxKind.ElementAccessExpression) {
+      const arg = node.argumentExpression;
+      if (arg?.kind === SyntaxKind.StringLiteral || arg?.kind === SyntaxKind.NoSubstitutionTemplateLiteral) {
+        if (isWorkdirName(arg)) {
+          hits.push({ reportNode: node, typeSite: node.expression, nameNode: arg, nameNeedsTypeCheck: false });
+        }
+      } else if (arg?.kind === SyntaxKind.Identifier) {
+        // Could be a `const K = "workdir" as const` literal-typed key -- confirmed
+        // via the checker at resolution time, not here (M1).
+        hits.push({ reportNode: node, typeSite: node.expression, nameNode: arg, nameNeedsTypeCheck: true });
+      }
     } else if (node.kind === SyntaxKind.BindingElement) {
       const nameNode = node.propertyName ?? node.name;
       if (isWorkdirName(nameNode)) {
-        const receiver = bindingReceiver(node);
-        if (receiver !== undefined) hits.push({ reportNode: node, receiverExpr: receiver });
+        hits.push({ reportNode: node, typeSite: node.parent, nameNode, nameNeedsTypeCheck: false });
+      }
+    } else if (
+      (node.kind === SyntaxKind.ShorthandPropertyAssignment || node.kind === SyntaxKind.PropertyAssignment) &&
+      isWorkdirName(node.name)
+    ) {
+      const objLit = node.parent;
+      const bin = objLit?.parent;
+      if (
+        objLit?.kind === SyntaxKind.ObjectLiteralExpression &&
+        bin?.kind === SyntaxKind.BinaryExpression &&
+        bin.left === objLit &&
+        bin.operatorToken?.kind === SyntaxKind.EqualsToken
+      ) {
+        hits.push({ reportNode: node, typeSite: bin.right, nameNode: node.name, nameNeedsTypeCheck: false });
       }
     }
     node.forEachChild(walk);
@@ -214,14 +279,61 @@ function collectCandidates(sourceFile: AstNode): CandidateHit[] {
 }
 
 /**
+ * Walk up from `node` to the nearest ancestor that is itself an element of
+ * some parent's `.statements` array -- the unit comment trivia attaches to.
+ */
+function enclosingStatement(node: AstNode): AstNode {
+  let cur = node;
+  while (cur.parent !== undefined) {
+    const parent = cur.parent;
+    const statements = parent.statements;
+    if (Array.isArray(statements) && statements.includes(cur)) return cur;
+    cur = parent;
+  }
+  return cur;
+}
+
+/** The non-empty reason on an inline marker line, or undefined if absent/empty. */
+function markerReason(commentText: string): string | undefined {
+  for (const line of commentText.split("\n")) {
+    const match = ALLOW_MARKER_RE.exec(line);
+    if (match !== null) {
+      const reason = (match[1] ?? "").trim();
+      if (reason.length > 0) return reason;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether `statement`'s own leading or trailing comment trivia carries a
+ * valid (non-empty-reason) `workdir-access-allow:` marker.
+ */
+function statementMarker(source: string, statement: AstNode): string | undefined {
+  const leading = getLeadingCommentRanges(source, statement.pos) ?? [];
+  const trailing = getTrailingCommentRanges(source, statement.end) ?? [];
+  for (const range of [...leading, ...trailing]) {
+    const reason = markerReason(source.slice(range.pos, range.end));
+    if (reason !== undefined) return reason;
+  }
+  return undefined;
+}
+
+/**
  * The single public walker entry point.
  *
- * Resolves the REAL type of each candidate's receiver expression via the
- * project's checker, and flags it iff that type is one of STORY_TYPES.
+ * Resolves the REAL type of each candidate's type site via the project's
+ * checker, and flags it iff the resolved `workdir` property's declaration
+ * lives in one of `DECLARATION_FILE_PATHS`.
  */
 export async function findViolations(project: Project, filePath: string, relPath: string): Promise<Violation[]> {
   const sourceFile = await project.program.getSourceFile(filePath);
-  if (sourceFile === undefined) return [];
+  if (sourceFile === undefined) {
+    throw new Error(
+      `check-story-workdir-access: ${relPath} is on disk under a scanned directory but the TypeScript ` +
+        "Program does not contain it -- check the tsconfig `include` globs for this extension/directory.",
+    );
+  }
 
   const source: string = sourceFile.text;
   const lines = source.split("\n");
@@ -229,39 +341,54 @@ export async function findViolations(project: Project, filePath: string, relPath
   const candidates = collectCandidates(sourceFile);
 
   const out: Violation[] = [];
-  const seen = new Set<number>();
+  const seenViolationLines = new Set<number>();
+  const seenStaleLines = new Set<number>();
+
   for (const hit of candidates) {
+    if (hit.nameNeedsTypeCheck) {
+      const nameType = await project.checker.getTypeAtLocation(hit.nameNode);
+      if (nameType === undefined || !nameType.isStringLiteralType() || nameType.value !== "workdir") continue;
+    }
+
     const line = posToLine(lineStarts, hit.reportNode.getStart());
-    if (seen.has(line)) continue;
+    const statement = enclosingStatement(hit.reportNode);
+    const reason = statementMarker(source, statement);
 
-    // Inline escape hatch: the marker may sit on the access line itself or
-    // the line directly above it (mirrors the repo's other `-allow:` markers,
-    // which tolerate the formatter moving a trailing comment).
-    const ownLine = lines[line - 1] ?? "";
-    const priorLine = lines[line - 2] ?? "";
-    if (ALLOW_MARKER.test(ownLine) || ALLOW_MARKER.test(priorLine)) continue;
-
-    // An optional-chained `story?.workdir` types its receiver as
-    // `UserStory | undefined`; strip the nullable members from the DISPLAY
-    // STRING before the STORY_TYPES check. (checker.getNonNullableType()
-    // looks like the principled way to do this, but it collapses to "any"
-    // for a fixture's deliberately-unresolved bare type reference -- a real
-    // op on an error type, not a string trick -- so it corrupts every
-    // fixture in this file's suite; a display-string strip has no such
-    // failure mode and matches exactly what a human reads at the site.)
-    const type = await project.checker.getTypeAtLocation(hit.receiverExpr);
+    const type = await project.checker.getTypeAtLocation(hit.typeSite);
     if (type === undefined) continue;
-    const rawTypeName = await project.checker.typeToString(type);
-    const typeName = rawTypeName
-      .split("|")
-      .map((part) => part.trim())
-      .filter((part) => part !== "undefined" && part !== "null")
-      .join(" | ");
-    if (!STORY_TYPES.has(typeName)) continue;
+    const nonNullable = (await project.checker.getNonNullableType(type)) ?? type;
+    const propSymbol = await project.checker.getPropertyOfType(nonNullable, "workdir");
 
-    seen.add(line);
-    out.push({ file: relPath, line, text: ownLine.trim() });
+    let isStoryRead = false;
+    if (propSymbol !== undefined) {
+      for (const decl of propSymbol.declarations) {
+        const declNode = await decl.resolve(project);
+        const declFile = (declNode as AstNode | undefined)?.getSourceFile?.()?.fileName;
+        if (declFile !== undefined && DECLARATION_FILE_PATHS.has(resolve(declFile))) {
+          isStoryRead = true;
+          break;
+        }
+      }
+    }
+
+    if (!isStoryRead) {
+      if (reason !== undefined && !seenStaleLines.has(line)) {
+        seenStaleLines.add(line);
+        out.push({
+          file: relPath,
+          line,
+          text: `STALE MARKER (${reason}): no story-typed workdir read here -- remove the marker`,
+        });
+      }
+      continue;
+    }
+
+    if (reason !== undefined) continue;
+    if (seenViolationLines.has(line)) continue;
+    seenViolationLines.add(line);
+    out.push({ file: relPath, line, text: (lines[line - 1] ?? "").trim() });
   }
+
   return out;
 }
 
@@ -299,12 +426,32 @@ async function assertRootReadable(root: string): Promise<void> {
 }
 
 /**
+ * Verify every REQUIRED SCAN_DIRS entry exists. Unlike the ENOENT tolerance
+ * in `walk` (for legitimately optional dirs like `bin/`), a root with no
+ * `src/` at all is a broken scan root, not a clean tree with nothing in it
+ * (M2).
+ */
+async function assertRequiredDirsExist(root: string): Promise<void> {
+  for (const { dir, required } of SCAN_DIRS) {
+    if (!required) continue;
+    try {
+      await stat(join(root, dir));
+    } catch (err) {
+      throw new Error(
+        `check-story-workdir-access: required scan directory missing: ${join(root, dir)} (${(err as Error).message})`,
+      );
+    }
+  }
+}
+
+/**
  * Scan the tree. Side effects live behind `import.meta.main` so the test can
  * import `findViolations` without the gate running -- and exiting -- on import.
  * Same guard as scripts/check-gate-reachability.ts:147.
  */
 async function main(): Promise<void> {
   await assertRootReadable(ROOT);
+  await assertRequiredDirsExist(ROOT);
 
   const api = new API({ cwd: ROOT });
   const tsconfigs = [...new Set(SCAN_DIRS.map((d) => d.tsconfig))];
