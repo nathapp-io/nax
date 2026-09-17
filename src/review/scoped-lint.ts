@@ -120,7 +120,7 @@ async function filterFilesToScope(
     // FIXME(#2087): frame contradiction — these two lines demand different
     // frames for the same `relPath`. Line 121 treats `relPath` as
     // package-relative (join with `workdir` = the package dir). Line 124
-    // hands `relPath` to `findPackageDir(relPath, projectDir)`, which does
+    // (now 132 / 136 post-FIXME insertion) hands `relPath` to `findPackageDir(relPath, projectDir)`, which does
     // `resolve(workdir, dirname(filePath))` (src/test-runners/resolver.ts:262-264)
     // and walks up from there — unambiguously repo-framed. No spelling of
     // `relPath` satisfies both. Both must be re-derived (a single shared

@@ -45,16 +45,19 @@ describe("regenerateAcceptanceTest — rejects stub content (US-003)", () => {
   let tmpDir: string;
   let origAcceptanceSetupExecute: typeof _regenerateDeps.acceptanceSetupExecute;
   let origGetLogger: typeof _regenerateDeps.getLogger;
+  let origSpawnGitDiff: typeof _regenerateDeps.spawnGitDiff;
 
   beforeEach(() => {
     tmpDir = makeTempDir("nax-regen-stub-test-");
     origAcceptanceSetupExecute = _regenerateDeps.acceptanceSetupExecute;
     origGetLogger = _regenerateDeps.getLogger;
+    origSpawnGitDiff = _regenerateDeps.spawnGitDiff;
   });
 
   afterEach(() => {
     (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = origAcceptanceSetupExecute;
     (_regenerateDeps as { getLogger: unknown }).getLogger = origGetLogger;
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = origSpawnGitDiff;
     cleanupTempDir(tmpDir);
   });
 

@@ -333,7 +333,7 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
         const ellipsis = unreadableCount > unreadableSample.length ? ", ..." : "";
         logger?.warn(
           "acceptance",
-          `regenerateAcceptanceTest: ${unreadableCount} changed file(s) unreadable: ${unreadableSample.join(", ")}${ellipsis}`,
+          `regenerateAcceptanceTest: ${unreadableCount} changed file(s) unreadable: ${unreadableSample.map((p) => `\`${p}\``).join(", ")}${ellipsis}`,
         );
       }
 
