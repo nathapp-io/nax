@@ -43,6 +43,7 @@ import { getContextFiles } from "@/prd";
 import { readDigestFile, writeDigestFile } from "@/session";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
+import { storyWorkdir } from "@/utils/path-frame";
 import { packageDirRelative } from "@/utils/paths";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -172,6 +173,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     featureId: ctx.featureDir?.replace(/\/$/, "").split("/").pop(),
     repoRoot: ctx.projectDir,
     packageDir: ctx.workdir,
+    storyWorkdir: storyWorkdir(ctx.story),
+    contextFilesCanonical: ctx.story.workdirSource !== undefined,
     stage: "context", // initial assembly; promptStage overrides to the strategy stage (single-session / tdd-simple / no-test / batch)
     role: "implementer",
     budgetTokens: stageOverrides?.budgetTokens ?? ctx.config.context.featureEngine?.budgetTokens ?? 8_000,

@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { assertDefined } from "@test/helpers";
+import { assertDefined, makeLogger } from "@test/helpers";
 import type { GitHistoryProviderOptions } from "@/context/engine/providers/git-history";
 import { _gitHistoryDeps, GitHistoryProvider } from "@/context/engine/providers/git-history";
 import type { ContextRequest } from "@/context/engine/types";
@@ -16,13 +16,16 @@ import type { ContextRequest } from "@/context/engine/types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 let origGitWithTimeout: typeof _gitHistoryDeps.gitWithTimeout;
+let origGetLogger: typeof _gitHistoryDeps.getLogger;
 
 beforeEach(() => {
   origGitWithTimeout = _gitHistoryDeps.gitWithTimeout;
+  origGetLogger = _gitHistoryDeps.getLogger;
 });
 
 afterEach(() => {
   _gitHistoryDeps.gitWithTimeout = origGitWithTimeout;
+  _gitHistoryDeps.getLogger = origGetLogger;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +188,7 @@ describe("GitHistoryProvider — AC-55 historyScope", () => {
     storyId: "US-002",
     repoRoot: "/repo",
     packageDir: "/repo/packages/api",
+    storyWorkdir: "packages/api",
     stage: "execution",
     role: "implementer",
     budgetTokens: 8_000,
@@ -301,6 +305,7 @@ describe("GitHistoryProvider — nax#2067 touchedFiles frame contract", () => {
       storyId: "US-001",
       repoRoot: "/repo",
       packageDir: "/repo/packages/app",
+      storyWorkdir: "packages/app",
       stage: "execution",
       role: "implementer",
       budgetTokens: 8_000,
@@ -324,6 +329,7 @@ describe("GitHistoryProvider — nax#2067 touchedFiles frame contract", () => {
       storyId: "US-001",
       repoRoot: "/repo",
       packageDir: "/repo/packages/app",
+      storyWorkdir: "packages/app",
       stage: "execution",
       role: "implementer",
       budgetTokens: 8_000,
@@ -462,6 +468,40 @@ describe("GitHistoryProvider — US-001 scope attribution", () => {
 // SEC-503: path traversal prevention
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe("GitHistoryProvider — worktree isolation (nax#2088 follow-up)", () => {
+  // Under storyIsolation: "worktree", packageDir is `.nax-wt/<storyId>/<pkg>`
+  // while repoRoot stays the main checkout. Deriving the package frame as
+  // packageDirRelative(repoRoot, packageDir) yields ".nax-wt/<storyId>/<pkg>",
+  // which the historyScope "package" post-filter compares against repo-rooted
+  // touchedFiles — matching nothing, so every file is dropped and the
+  // provider returns zero chunks, silently. The fix reads request.storyWorkdir
+  // (threaded from the story) instead of deriving it from repoRoot/packageDir.
+  test("touchedFiles resolve under storyIsolation: worktree via request.storyWorkdir", async () => {
+    mockGit(new Map([["packages/app/src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
+    const p = new GitHistoryProvider({ historyScope: "package" });
+
+    const result = await p.fetch({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/.nax-wt/US-001/packages/app",
+      storyWorkdir: "packages/app",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8_000,
+      touchedFiles: ["packages/app/src/service.ts"],
+    });
+
+    expect(result.chunks).toHaveLength(1);
+    // M-5 (path-frame follow-up review): this pins CURRENT, not intended,
+    // behavior. Chunk content is rendered into a package-contained agent's
+    // prompt and a filed follow-up (#2104's sibling work) requires it to be
+    // PACKAGE-FRAMED (e.g. "src/service.ts", not "packages/app/src/service.ts").
+    // Do not treat this assertion as a spec to preserve — when that follow-up
+    // lands, update it rather than resisting the change.
+    expect(result.chunks[0]?.content).toContain("packages/app/src/service.ts");
+  });
+});
+
 describe("GitHistoryProvider — SEC-503 path traversal prevention", () => {
   test("drops touchedFiles with '..' traversal — never calls git for them", async () => {
     const queriedFiles: string[] = [];
@@ -545,5 +585,68 @@ describe("GitHistoryProvider — cooperative cancellation (PERF-2)", () => {
 
     // The first spawn aborts the signal; no further files are queried.
     expect(queried).toEqual(["src/a.ts"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// M-2 (path-frame follow-up review): the two drop-warns were never asserted
+// to fire, fire once, or carry the right fields. Pattern copied from the
+// code-neighbor sibling (code-neighbor-frame.test.ts, "with contextFilesCanonical,
+// a genuinely out-of-package touchedFile is dropped AND logged with a count").
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("GitHistoryProvider — drop-warn logging (M-2)", () => {
+  test("historyScope 'package' drop warns once with a count and packageDir/workdir fields", async () => {
+    mockGit(new Map([["packages/app/src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
+    const logger = makeLogger();
+    _gitHistoryDeps.getLogger = () => logger;
+
+    const p = new GitHistoryProvider({ historyScope: "package" });
+    await p.fetch({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/packages/app",
+      storyWorkdir: "packages/app",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8_000,
+      touchedFiles: ["packages/app/src/service.ts", "packages/other/src/unrelated.ts"],
+    });
+
+    const dropWarnings = logger.calls.filter(
+      (c) => c.level === "warn" && c.message === "git history dropped touched file(s) outside package scope",
+    );
+    expect(dropWarnings).toHaveLength(1);
+    expect(dropWarnings[0]?.data?.storyId).toBe("US-001");
+    expect(dropWarnings[0]?.data?.count).toBe(1);
+    expect(dropWarnings[0]?.data?.packageDir).toBe("/repo/packages/app");
+    expect(dropWarnings[0]?.data?.workdir).toBe("packages/app");
+  });
+
+  test("empty-stdout for a touched file warns once with storyId, packageDir and workdir fields", async () => {
+    mockGit(new Map([["packages/app/src/service.ts", { stdout: "", exitCode: 0 }]]));
+    const logger = makeLogger();
+    _gitHistoryDeps.getLogger = () => logger;
+
+    const p = new GitHistoryProvider({ historyScope: "package" });
+    const result = await p.fetch({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/packages/app",
+      storyWorkdir: "packages/app",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8_000,
+      touchedFiles: ["packages/app/src/service.ts"],
+    });
+
+    expect(result.chunks).toHaveLength(0);
+    const emptyWarnings = logger.calls.filter(
+      (c) => c.level === "warn" && c.message === "git history empty for touched file",
+    );
+    expect(emptyWarnings).toHaveLength(1);
+    expect(emptyWarnings[0]?.data?.storyId).toBe("US-001");
+    expect(emptyWarnings[0]?.data?.packageDir).toBe("/repo/packages/app");
+    expect(emptyWarnings[0]?.data?.workdir).toBe("packages/app");
   });
 });

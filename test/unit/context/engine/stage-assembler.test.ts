@@ -239,6 +239,8 @@ function makeCtx(
     projectDir?: string;
     /** Override story.workdir (relative sub-package path). */
     storyWorkdir?: string;
+    /** Override story.workdirSource (nax#2067 provenance stamp). */
+    storyWorkdirSource?: "stated" | "derived" | "defaulted";
     /** Declared contextFiles on the story (nax#2067 canonicalized / pre-canonicalized). */
     storyContextFiles?: string[];
     /** ADR-009 resolved test-file patterns carried on the pipeline context. */
@@ -262,6 +264,7 @@ function makeCtx(
   const story = makeStory({
     id: "US-001",
     ...(overrides.storyWorkdir && { workdir: overrides.storyWorkdir }),
+    ...(overrides.storyWorkdirSource && { workdirSource: overrides.storyWorkdirSource }),
     ...(overrides.storyContextFiles && { contextFiles: overrides.storyContextFiles }),
   });
   return makeTestContext({
@@ -736,5 +739,57 @@ describe("assembleForStage — nax#2088 touchedFiles repo-frame", () => {
     await assembleForStage(ctx, "execution");
 
     expect(mock.ref.captured?.touchedFiles).toEqual(["src/service.ts"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BLOCKER (path-frame follow-up review): pin the producer of the new
+// ContextRequest fields (`storyWorkdir`, `contextFilesCanonical`). Deleting
+// `storyWorkdir: storyWorkdir(ctx.story)` at stage-assembler.ts:222 left the
+// suite fully green before this block existed: both new worktree tests above
+// construct the ContextRequest literal directly and never exercise the
+// producer. With the producer silently dropping the field, both providers
+// fall back to `?? "."`, which is QUIETER than the bug it replaced (no warn,
+// no `unreachable` entries) -- exactly what this test guards against.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assembleForStage — producer pins storyWorkdir / contextFilesCanonical", () => {
+  const origCreate = _stageAssemblerDeps.createOrchestrator;
+  afterEach(() => {
+    _stageAssemblerDeps.createOrchestrator = origCreate;
+  });
+
+  function capture(): { ref: { captured: ContextRequest | null } } {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
+    return mock;
+  }
+
+  test("threads storyWorkdir and stamps contextFilesCanonical=true for a workdirSource-stamped story", async () => {
+    const mock = capture();
+    const ctx = makeCtx({
+      storyWorkdir: "packages/app",
+      storyWorkdirSource: "stated",
+      workdir: "/repo/packages/app",
+      projectDir: "/repo",
+    });
+
+    await assembleForStage(ctx, "execution");
+
+    expect(mock.ref.captured?.storyWorkdir).toBe("packages/app");
+    expect(mock.ref.captured?.contextFilesCanonical).toBe(true);
+  });
+
+  test("threads storyWorkdir '.' and stamps contextFilesCanonical=false for an unstamped root story", async () => {
+    const mock = capture();
+    const ctx = makeCtx({
+      workdir: "/repo",
+      projectDir: "/repo",
+    });
+
+    await assembleForStage(ctx, "execution");
+
+    expect(mock.ref.captured?.storyWorkdir).toBe(".");
+    expect(mock.ref.captured?.contextFilesCanonical).toBe(false);
   });
 });

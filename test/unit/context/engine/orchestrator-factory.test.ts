@@ -72,13 +72,15 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
     featureId: "test-feature",
     repoRoot: "/repo",
     packageDir: "/repo/packages/pkg-a",
+    storyWorkdir: "packages/pkg-a",
     // nax#1743: "execution" was retired from STAGE_CONTEXT_MAP (never assembled by
     // any site); "single-session" carries the equivalent provider set (code-neighbor
     // included), which this factory test relies on via the stage->providerIds fallback.
     stage: "single-session",
     role: "implementer",
     budgetTokens: 10000,
-    touchedFiles: ["src/auth.ts"],
+    // Repo-rooted per the path-frame convention (nax#2071/#2088).
+    touchedFiles: ["packages/pkg-a/src/auth.ts"],
     storyScratchDirs: [],
     agentId: "claude",
     ...overrides,
@@ -152,7 +154,7 @@ describe("createDefaultOrchestrator — #507 provider scope config", () => {
     expect(capturedWorkdirs.every((w) => w === "/repo")).toBe(true);
   });
 
-  test("GitHistoryProvider uses packageDir workdir when historyScope is 'package' (default)", async () => {
+  test("GitHistoryProvider still runs git at repoRoot when historyScope is 'package' (default) — it is a post-filter, not a workdir switch", async () => {
     const capturedWorkdirs: string[] = [];
     _gitHistoryDeps.gitWithTimeout = async (_args, workdir) => {
       capturedWorkdirs.push(workdir);
@@ -163,7 +165,13 @@ describe("createDefaultOrchestrator — #507 provider scope config", () => {
     const orchestrator = createDefaultOrchestrator(makeStory(), config);
     await orchestrator.assemble(makeRequest());
 
-    expect(capturedWorkdirs.every((w) => w === "/repo/packages/pkg-a")).toBe(true);
+    // AC-55 (nax#2088): git ALWAYS runs at repoRoot against repo-rooted
+    // pathspecs; historyScope only decides which touchedFiles reach it.
+    // Pre-fix this assertion was vacuously true — the request's touchedFiles
+    // never survived the package post-filter, so gitWithTimeout was never
+    // called and capturedWorkdirs stayed []. It must now be non-empty.
+    expect(capturedWorkdirs.length).toBeGreaterThan(0);
+    expect(capturedWorkdirs.every((w) => w === "/repo")).toBe(true);
   });
 
   test("CodeNeighborProvider uses repoRoot workdir when neighborScope is 'repo'", async () => {

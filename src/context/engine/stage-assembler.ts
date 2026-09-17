@@ -22,6 +22,7 @@ import { getLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import { getContextFiles } from "@/prd";
 import { errorMessage } from "@/utils/errors";
+import { storyWorkdir } from "@/utils/path-frame";
 import { estimateAvailableBudgetTokens } from "./available-budget";
 import { loadFeatureManifests, writeContextManifest } from "./manifest-store";
 import { createDefaultOrchestrator } from "./orchestrator-factory";
@@ -218,6 +219,8 @@ export async function assembleForStage(
       featureId: ctx.prd.feature,
       repoRoot: ctx.projectDir,
       packageDir: ctx.workdir,
+      storyWorkdir: storyWorkdir(ctx.story),
+      contextFilesCanonical: ctx.story.workdirSource !== undefined,
       // BUG-1 fix: thread the runtime output dir so providers that read
       // metrics.json (PriorRunFailureProvider) hit the same location
       // saveRunMetrics writes to. Without this, every rectify-stage probe

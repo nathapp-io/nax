@@ -325,6 +325,45 @@ export interface ContextRequest {
    */
   touchedFiles?: string[];
   /**
+   * The PRD-declared story workdir, repo-relative (e.g. "packages/api", or
+   * "." for the repo root), from `storyWorkdir(story)` (@/utils/path-frame).
+   *
+   * FRAME: this is the safe boundary for re-spelling `touchedFiles` (which is
+   * repo-rooted) into a package-contained provider's own frame. It must NOT
+   * be re-derived as `packageDirRelative(repoRoot, packageDir)` — under
+   * `execution.storyIsolation: "worktree"`, `packageDir` is
+   * `<root>/.nax-wt/<storyId>/<pkg>` while `repoRoot` is the main checkout,
+   * so that derivation yields `.nax-wt/<storyId>/<pkg>`, matches nothing, and
+   * silently drops every entry (nax#2069, nax path-frame follow-up C1). See
+   * src/context/fragments/reframe.ts and providers/feature-context.ts, which
+   * already carry the story for exactly this reason.
+   *
+   * Populated at request-build time by producers that have the story
+   * (src/pipeline/stages/context.ts, src/context/engine/stage-assembler.ts).
+   * Producers that call a provider directly with a pre-resolved package root
+   * passed as BOTH repoRoot and packageDir (the pull-tool handlers,
+   * handlers/query-neighbor.ts and handlers/query-feature-context.ts, which
+   * have no story object) omit this field; consumers fall back to "." (repo
+   * root === package root, so every touched file is already in-frame) rather
+   * than deriving from repoRoot/packageDir.
+   */
+  storyWorkdir?: string;
+  /**
+   * True when `touchedFiles` came through the plan-time write seam
+   * (`story.workdirSource !== undefined`, src/prd/workdir-canonical.ts) and
+   * so may be safely partitioned with `partitionPackageFrame`'s
+   * `canonical: true` (src/utils/path-frame.ts) — treating a toPackageFrame
+   * MISS as a real, droppable cross-package path rather than passing it
+   * through as a path that would resolve to a real but WRONG file under
+   * this package (H7, path-frame follow-up to #2089).
+   *
+   * Populated at the same two producer sites as `storyWorkdir`. Omit (or
+   * leave false) rather than default it to `true`: an unbacked assertion
+   * here is exactly the H7 defect — the flag must reflect real provenance,
+   * not just "the provider found it convenient".
+   */
+  contextFilesCanonical?: boolean;
+  /**
    * Complete evidence set of files a story touches (PRD contextFiles +
    * expectedFiles + git diff). Used by SCOPING decisions only — providers
    * that fetch content read `touchedFiles` instead. Resolved by

@@ -18,7 +18,6 @@ import { getLogger } from "@/logger";
 import { gitWithTimeout } from "@/utils/git";
 import { toPackageFrame } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
-import { packageDirRelative } from "@/utils/paths";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,6 +50,9 @@ const MAX_FILES = 10;
 /** Token ceiling for the combined history chunk */
 const MAX_CHUNK_TOKENS = 600;
 
+/** Max number of dropped-file paths sampled into a single warn log (L-5). */
+const LOG_SAMPLE_MAX_FILES = 5;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,6 +78,8 @@ async function fetchFileHistory(
   filePath: string,
   workdir: string,
   storyId: string | undefined,
+  packageWorkdir: string,
+  packageDirAbs: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
   // PERF-2: cooperative cancellation — a timed-out fetch must not keep
@@ -91,11 +95,15 @@ async function fetchFileHistory(
   if (!trimmed) {
     // A5 (nax#2088): git returned exit 0 with no commits for this pathspec —
     // a silent miss, not an error. Log once so a frame bug is diagnosable.
+    // §9 (.nax/rules/monorepo-awareness.md) vocabulary: `packageDir` is the
+    // ABSOLUTE package dir, `workdir` is the RELATIVE story.workdir (M-3 fix
+    // — these were previously swapped here).
     _gitHistoryDeps.getLogger().warn("context-v2", "git history empty for touched file", {
       storyId,
       filePath,
       pathspec: filePath,
-      cwd: workdir,
+      packageDir: packageDirAbs,
+      workdir: packageWorkdir,
     });
     return null;
   }
@@ -135,14 +143,53 @@ export class GitHistoryProvider implements IContextProvider {
     //
     // historyScope is a post-filter, not a workdir switch: under "package" only
     // entries beneath request.packageDir are kept.
+    //
+    // RESIDUAL (nax path-frame follow-up #1): workdir stays request.repoRoot,
+    // the MAIN checkout, even under storyIsolation: "worktree". ContextRequest
+    // carries no separate "worktree repo root" distinct from packageDir (which
+    // already includes the package suffix), so there is nowhere safe to derive
+    // it from without guessing. Any history that DOES survive under worktree
+    // isolation is therefore read from the main checkout's HEAD, not the
+    // worktree's. See the follow-up report for this residual; do not "fix" it
+    // by joining packageDir segments without a real worktree-root field.
     const workdir = request.repoRoot;
-    // "." = repo root: a root story (or worktree case where packageDirRelative
-    // is undefined) keeps every entry — toPackageFrame is identity for ".".
-    const packageWorkdir = packageDirRelative(request.repoRoot, request.packageDir) ?? ".";
-    const filesToProcess = touchedFiles
-      .filter(isRelativeAndSafe)
-      .filter((file) => this.historyScope !== "package" || toPackageFrame(file, packageWorkdir) !== null)
-      .slice(0, MAX_FILES);
+    // request.storyWorkdir is the PRD-declared story workdir (repo-relative),
+    // threaded onto the request by the callers that build it from a story
+    // (pipeline/stages/context.ts, stage-assembler.ts). It must NOT be derived
+    // as packageDirRelative(repoRoot, packageDir): under storyIsolation:
+    // "worktree", packageDir is `<root>/.nax-wt/<storyId>/<pkg>` while repoRoot
+    // is the main checkout, so that derivation yields `.nax-wt/<storyId>/<pkg>`,
+    // matches nothing in repo-rooted touchedFiles, and silently drops every
+    // entry. Same trap as nax#2069; see src/context/fragments/reframe.ts.
+    // "." = repo root: a root story (or a caller with no story, e.g. a
+    // pull-tool handler where packageDir already equals repoRoot) keeps every
+    // entry — toPackageFrame is identity for ".".
+    const packageWorkdir = request.storyWorkdir ?? ".";
+    const safeFiles = touchedFiles.filter(isRelativeAndSafe);
+    const inHistoryScope =
+      this.historyScope !== "package"
+        ? safeFiles
+        : safeFiles.filter((file) => toPackageFrame(file, packageWorkdir) !== null);
+    if (this.historyScope === "package") {
+      const droppedByScope = safeFiles.filter((file) => toPackageFrame(file, packageWorkdir) === null);
+      if (droppedByScope.length > 0) {
+        // Supplements the empty-stdout A5 warn below: that one can only fire
+        // on files that reach fetchFileHistory. Files removed by THIS
+        // historyScope post-filter never reach it, and were the dominant
+        // silent-drop path (nax path-frame follow-up review, C1/H7/M14).
+        // §9 (.nax/rules/monorepo-awareness.md) vocabulary: `packageDir` is
+        // the ABSOLUTE package dir, `workdir` is the RELATIVE story.workdir
+        // (M-3 fix — this previously logged the relative value as `packageDir`).
+        _gitHistoryDeps.getLogger().warn("context-v2", "git history dropped touched file(s) outside package scope", {
+          storyId: request.storyId,
+          packageDir: request.packageDir,
+          workdir: packageWorkdir,
+          count: droppedByScope.length,
+          files: droppedByScope.slice(0, LOG_SAMPLE_MAX_FILES),
+        });
+      }
+    }
+    const filesToProcess = inHistoryScope.slice(0, MAX_FILES);
 
     // US-001: scope attribution must follow the file-to-section association,
     // not the input list. fetchFileHistory returns null for files with no
@@ -155,7 +202,7 @@ export class GitHistoryProvider implements IContextProvider {
       await Promise.all(
         filesToProcess.map(async (file) => ({
           file,
-          section: await fetchFileHistory(file, workdir, request.storyId, signal),
+          section: await fetchFileHistory(file, workdir, request.storyId, packageWorkdir, request.packageDir, signal),
         })),
       )
     ).filter((entry): entry is { file: string; section: string } => entry.section !== null);

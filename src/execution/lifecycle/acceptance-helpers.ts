@@ -281,19 +281,26 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
 
   if (storyGitRef) {
     try {
-      // `repoRoot` already computed below; the join at `:302` must resolve against
-      // it (not `workdir`) because `spawnGitDiff` returns paths framed at the
-      // repository top level (no `--relative`, no pathspec on the spawn side
-      // until this fix threaded it). In a monorepo `workdir` is the package dir;
-      // joining a repo-framed path onto it would produce
-      // `<packageDir>/<repoFramedPath>` and 100% ENOENT, silently dropped.
+      // `repoRoot` also frames the read join below (`:302`) because
+      // `spawnGitDiff` returns paths framed at the repository top level (no
+      // `--relative`). In a monorepo `workdir` is the package dir; joining a
+      // repo-framed path onto it would produce `<packageDir>/<repoFramedPath>`
+      // and 100% ENOENT, silently dropped.
       const repoRoot = acceptanceContext.projectDir ?? workdir;
       const storyPkg = storyPackageDir(acceptanceContext.story);
       // Mirror captureOutputFiles (src/utils/git.ts:484-501): when a story targets
       // a package, scope the diff to that package so cross-package diffs don't
       // fill the 50KB budget and the regenerator only sees in-scope files.
       const pathspec = storyPkg ? `${storyPkg}/` : undefined;
-      const diffOutput = await _regenerateDeps.spawnGitDiff(workdir, storyGitRef, pathspec);
+      // spawnGitDiff spawns with `cwd: <first arg>` and git resolves a
+      // pathspec relative to cwd, not the repo root. `pathspec` here is
+      // REPO-RELATIVE ("packages/api/", from storyPackageDir), so the spawn
+      // must run at `repoRoot`, not `workdir` (the package dir) — running it
+      // at `workdir` resolves "packages/api/" to
+      // "<repoRoot>/packages/api/packages/api/", which git accepts and
+      // silently returns nothing (exit 0, no error). Verified against real
+      // git (path-frame follow-up H1).
+      const diffOutput = await _regenerateDeps.spawnGitDiff(repoRoot, storyGitRef, pathspec);
       const changedFilesRaw = diffOutput
         .split("\n")
         .map((f) => f.trim())

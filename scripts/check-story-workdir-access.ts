@@ -11,34 +11,108 @@
  * Why the rule and not a set of patches (nax#2067, nax#2084): 19 raw reads
  * across 10 files used THREE different spellings of "absent" -- `?? ""`,
  * `|| undefined` and `? :` truthiness -- and `workdir` is now always a
- * string where "." means the repo root. "." is truthy and is not "", so
- * every one of those idioms lands differently on it. Patching the known
- * sites leaves the next author free to add a fourth.
+ * string where "." means the repo root. Patching the known sites leaves the
+ * next author free to add a fourth.
  *
- * nax#2084 replaces the v1 regex with a token-level walk over the
- * TypeScript scanner. The walker catches every spelling the regex
- * missed -- `?.workdir`, `const { workdir } = story`, `story["workdir"]`,
- * and any read where the receiver has a non-`*story` name but a
- * `UserStory`-shaped declared type -- and keys on the DECLARED TYPE of
- * the receiver (via the binding map it builds for the file), not the
- * name. The four bypass idioms a re-bind to `target` introduces used to
- * ride through under v1; v2 reads the explicit `: UserStory` annotation
- * and flags them.
+ * ## v4 (path-frame follow-up, this file)
  *
- * The walker skips comments and the `ALLOWED` declaration sites. The
- * `EXEMPT` list is empty by contract: every site is either converted to
- * the accessor or added to `ALLOWED` with a written reason.
+ * v3 keyed the STORY_TYPES check on the receiver's RENDERED type string
+ * (`typeToString(...)` compared against a literal name list). That is
+ * invisible to anything that does not print back exactly as `UserStory` or
+ * `StoryWorkdirLike`: `Readonly<UserStory>`, `Pick<UserStory, "workdir">`,
+ * `interface X extends UserStory`, an intersection, a union of two
+ * story-shaped types, and a destructuring ASSIGNMENT (`({ workdir } = s)`,
+ * which v3's binder never even visited -- it only handled the
+ * `BindingElement` shape, not the `ShorthandPropertyAssignment` /
+ * `PropertyAssignment` a destructuring assignment target actually parses as).
+ *
+ * v4 drops the name/string proxy and asks the real checker two structural
+ * questions instead:
+ *   1. Does the receiver's (non-nullable) type have a `workdir` property at
+ *      all (`Checker.getPropertyOfType`)?
+ *   2. Does that property SYMBOL's declaration live in one of the two files
+ *      that declare the field (`src/prd/types.ts` for `UserStory`,
+ *      `src/utils/path-frame.ts` for `StoryWorkdirLike`)?
+ *
+ * Verified empirically against the real checker: `getPropertyOfType` walks
+ * through `Readonly<T>`, `Pick<T, K>`, `interface extends`, and intersections
+ * to the SAME underlying declaration node as a plain `UserStory` receiver --
+ * these are exactly the shapes that only differ from a plain `UserStory` in
+ * how they PRINT, not in where the property resolves to. A union of two
+ * story-shaped types yields a property whose `.declarations` includes both
+ * constituents' declaration sites, so it is caught too. A same-shaped local
+ * object type (`{ workdir: string }`, the standing false-positive control)
+ * resolves its OWN `workdir` declaration to the fixture file itself, not to
+ * either canonical file, and is correctly not flagged. Nullability is
+ * stripped with `Checker.getNonNullableType` before the property lookup --
+ * safe here (unlike the display-string strip it replaces) because every
+ * fixture in this file's suite uses REAL imported types, which do not hit
+ * the unresolved-type error-recovery collapse that made the string strip
+ * necessary in the first place.
+ *
+ * The walker also now covers destructuring ASSIGNMENT (`({ workdir } = s)`
+ * and its renamed form `({ workdir: w } = s)`, both `ShorthandPropertyAssignment`
+ * / `PropertyAssignment` nodes inside an `ObjectLiteralExpression` used as a
+ * `BinaryExpression`'s assignment target -- not `BindingElement` at all),
+ * function-parameter and nested destructuring (unified with the plain
+ * `const { workdir } = story` case: for ANY `BindingElement`, the receiver
+ * type is `Checker.getTypeAtLocation` on the ENCLOSING BINDING PATTERN node
+ * itself, which resolves correctly whether that pattern's owner is a
+ * `VariableDeclaration`, a `Parameter`, an arrow function parameter, or a
+ * `ForOfStatement` -- one rule, not the four ad hoc receiver-walk branches
+ * v3 had, one of which (`ForOfStatement`) was dead code because the walk
+ * never reached it), a computed element-access key that resolves to a
+ * `"workdir"` string LITERAL TYPE (`const K = "workdir" as const; s[K]`),
+ * and a `` `workdir` `` no-substitution template key.
+ *
+ * The inline `// workdir-access-allow: <reason>` escape hatch is now
+ * resolved from the candidate's ENCLOSING STATEMENT's real leading/trailing
+ * comment TRIVIA (`getLeadingCommentRanges` / `getTrailingCommentRanges` from
+ * `typescript/unstable/ast/scanner` -- the same primitives the compiler's
+ * own emitter uses to attach comments to nodes), not by testing a regex
+ * against raw source lines. That closes two spoofs the line-text version
+ * had: text that merely LOOKS like the marker inside a string literal (never
+ * a comment trivia range, so never matched) and a comment that is textually
+ * "the line above" but is actually attached to a DIFFERENT, unrelated
+ * statement (trivia is bound to the specific statement node, not a line
+ * number). An empty reason (`// workdir-access-allow:` with nothing after
+ * the colon) no longer suppresses anything; a marker whose statement turns
+ * out not to be a real story-typed read is reported as a STALE MARKER,
+ * mirroring the staleness check `EXEMPT` already had.
+ *
+ * A file on disk under a scanned directory that the tsconfig's Program does
+ * not contain (e.g. a `.tsx` file under a dir whose tsconfig `include` only
+ * lists `.ts`) is now a hard error naming the file, not a silent skip -- the
+ * fail-open this rewrite's v3 header claimed to have closed by relocating it
+ * from the root check into `findViolations` instead of removing it.
+ *
+ * `src/` is now a REQUIRED scan directory: a root with no `src/` at all used
+ * to print "clean" (`assertRootReadable` only `stat`s the root itself). Other
+ * `SCAN_DIRS` entries (`bin/`, `scripts/`) stay optional -- a fixture root
+ * legitimately has neither.
  *
  * Takes an optional root so the gate can be tested against a fixture tree.
+ * Fails CLOSED: an unreadable or missing root, a missing `src/`, or a file
+ * the Program cannot see is a hard error (exit 1), never a silent "clean".
  */
 
-import type { Dirent } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
-import { createScanner, LanguageVariant, SyntaxKind } from "typescript/unstable/ast";
+import { stat } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
+import { SyntaxKind } from "typescript/unstable/ast";
+import { getLeadingCommentRanges, getTrailingCommentRanges } from "typescript/unstable/ast/scanner";
+import type { Project } from "typescript/unstable/async";
+import { API } from "typescript/unstable/async";
 
-const ROOT = process.argv[2] ?? process.cwd();
-const SCAN_DIRS = ["src", "scripts"] as const;
+const ROOT = resolve(process.argv[2] ?? process.cwd());
+
+/** Each entry maps a scanned top-level directory to the tsconfig whose Program contains it. */
+const SCAN_DIRS = [
+  { dir: "src", tsconfig: "tsconfig.json", required: true },
+  { dir: "bin", tsconfig: "tsconfig.json", required: false },
+  { dir: "scripts", tsconfig: "tsconfig.test.json", required: false },
+] as const;
+
+const SCAN_EXTENSIONS = [".ts", ".tsx"] as const;
 
 /**
  * Files permitted to touch the raw field: it is declared and wrapped here.
@@ -63,15 +137,21 @@ const ALLOWED = [
 const EXEMPT: string[] = [];
 
 /**
- * Type names whose declaration includes a `workdir?: string` field.
- *
- * Anchors the gate on the DECLARED TYPE rather than the receiver's name --
- * the named receiver `target` (case-4 of the brief) is flagged iff its
- * annotation is one of these. Mirrors `src/prd/types.ts:245`
- * (UserStory.workdir?) and `src/utils/path-frame.ts:170`
- * (StoryWorkdirLike.workdir?).
+ * The two files that DECLARE a `workdir?: string` field: `UserStory`
+ * (src/prd/types.ts) and its structural alias `StoryWorkdirLike`
+ * (src/utils/path-frame.ts). A candidate is a violation iff the property
+ * SYMBOL the checker resolves for its `.workdir` access has a declaration
+ * in one of these files -- not iff the receiver's rendered type NAME
+ * matches a literal list (see the v4 header comment for why that is a
+ * strictly weaker check).
  */
-const STORY_TYPES: ReadonlySet<string> = new Set(["UserStory", "StoryWorkdirLike"]);
+const DECLARATION_FILE_PATHS: ReadonlySet<string> = new Set([
+  resolve(ROOT, "src", "prd", "types.ts"),
+  resolve(ROOT, "src", "utils", "path-frame.ts"),
+]);
+
+/** Inline escape hatch for a legitimate accessor site outside `ALLOWED`. Requires a non-empty reason. */
+const ALLOW_MARKER_RE = /workdir-access-allow:\s*(.*)/;
 
 /**
  * Exemptions that matched no read. A stale exemption fails the gate: it is what
@@ -87,40 +167,24 @@ export interface Violation {
   readonly text: string;
 }
 
-interface ScannedToken {
-  readonly kind: SyntaxKind;
-  readonly text: string;
-  readonly pos: number;
-  readonly end: number;
-}
+// The remote AST node shape is not exported as a public type by
+// typescript/unstable/ast (RemoteNode is internal); every access below is
+// guarded by a SyntaxKind check first, which is the real type discriminant.
+// biome-ignore lint/suspicious/noExplicitAny: see comment above
+type AstNode = any;
 
-/**
- * Tokenize the file in skipTrivia mode (comments and whitespace are skipped).
- * Returns a flat array of tokens with their source text and positions.
- */
-function tokenize(source: string): ScannedToken[] {
-  const scanner = createScanner(/*skipTrivia*/ true, LanguageVariant.Standard, source);
-  const tokens: ScannedToken[] = [];
-  let token = scanner.scan();
-  let guard = 0;
-  while (token !== SyntaxKind.EndOfFile && guard < 1_000_000) {
-    tokens.push({
-      kind: token,
-      text: scanner.getTokenText(),
-      pos: scanner.getTokenStart(),
-      end: scanner.getTokenEnd(),
-    });
-    token = scanner.scan();
-    guard++;
-  }
-  return tokens;
+/** A candidate read: the node to report, and the node whose TYPE decides it. */
+interface CandidateHit {
+  readonly reportNode: AstNode;
+  /** Expression (property/element access receiver, destructuring-assignment RHS) or binding-pattern node. */
+  readonly typeSite: AstNode;
+  readonly nameNode: AstNode;
+  /** True only for a computed element-access key (`s[K]`) whose literal-ness needs a checker round trip. */
+  readonly nameNeedsTypeCheck: boolean;
 }
 
 /**
  * Resolve a position to a 1-based line number using the source text.
- *
- * Tokens carry byte offsets; the report (and existing CI integrations) read
- * 1-based lines, so we compute them once per file rather than per token.
  */
 function computeLineStarts(source: string): number[] {
   const starts: number[] = [0];
@@ -143,139 +207,114 @@ function posToLine(lineStarts: readonly number[], pos: number): number {
 }
 
 /**
- * Build a binding map of `name -> declaredType` for the file.
- *
- * Detects two declaration shapes:
- *   - variable declarations with explicit type: `const|let|var NAME: TYPE [= ...]`
- *   - function parameters with explicit type:   `NAME: TYPE` (after `(` or `,`)
- *
- * Both are intra-procedural; cross-file type resolution would need a real
- * checker, which TypeScript 7 does not expose to JavaScript.
+ * True when `node` names "workdir" as a plain identifier, a string literal,
+ * or a no-substitution template literal (covers `.workdir`, `["workdir"]`
+ * and `` [`workdir`] `` name positions).
  */
-function collectTypeBindings(tokens: readonly ScannedToken[]): Map<string, string> {
-  const bindings = new Map<string, string>();
-  const sk = SyntaxKind;
-  const declKeywords = new Set<SyntaxKind>([sk.ConstKeyword, sk.LetKeyword, sk.VarKeyword]);
+function isWorkdirName(node: AstNode | undefined): boolean {
+  if (node === undefined) return false;
+  if (node.kind === SyntaxKind.Identifier) return node.text === "workdir";
+  if (node.kind === SyntaxKind.StringLiteral) return node.text === "workdir";
+  if (node.kind === SyntaxKind.NoSubstitutionTemplateLiteral) return node.text === "workdir";
+  return false;
+}
 
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (t === undefined) continue;
+/**
+ * Walk the file's real AST for every shape a `.workdir` read can take:
+ *   - property access:        EXPR (. | ?.) workdir
+ *   - element access:         EXPR [ "workdir" | `workdir` | computed const ]
+ *   - binding element:        { workdir } from a VariableDeclaration,
+ *     Parameter, arrow Parameter, ForOfStatement, or nested pattern owner --
+ *     one rule, since the receiver type is `getTypeAtLocation` on the
+ *     ENCLOSING PATTERN NODE itself in every case
+ *   - destructuring ASSIGNMENT: ({ workdir } = EXPR) / ({ workdir: w } = EXPR)
+ *
+ * Each candidate carries the node whose TYPE the caller resolves via the
+ * real checker, never a syntactic proxy for it.
+ */
+function collectCandidates(sourceFile: AstNode): CandidateHit[] {
+  const hits: CandidateHit[] = [];
 
-    // Variable declaration with optional DeclareKeyword prefix:
-    //   (DeclareKeyword)? (ConstKeyword|LetKeyword|VarKeyword) NAME ':' TYPE ...
-    if (declKeywords.has(t.kind)) {
-      const nameTok = tokens[i + 1];
-      const colonTok = tokens[i + 2];
-      const typeTok = tokens[i + 3];
-      if (nameTok?.kind === sk.Identifier && colonTok?.kind === sk.ColonToken && typeTok?.kind === sk.Identifier) {
-        bindings.set(nameTok.text, typeTok.text);
+  function walk(node: AstNode): void {
+    if (node.kind === SyntaxKind.PropertyAccessExpression) {
+      if (isWorkdirName(node.name)) {
+        hits.push({ reportNode: node, typeSite: node.expression, nameNode: node.name, nameNeedsTypeCheck: false });
       }
-      continue;
-    }
-
-    // Function parameter: NAME ':' TYPE (preceded by `(` or `,`).
-    if (
-      t.kind === sk.Identifier &&
-      (tokens[i - 1]?.kind === sk.OpenParenToken || tokens[i - 1]?.kind === sk.CommaToken)
+    } else if (node.kind === SyntaxKind.ElementAccessExpression) {
+      const arg = node.argumentExpression;
+      if (arg?.kind === SyntaxKind.StringLiteral || arg?.kind === SyntaxKind.NoSubstitutionTemplateLiteral) {
+        if (isWorkdirName(arg)) {
+          hits.push({ reportNode: node, typeSite: node.expression, nameNode: arg, nameNeedsTypeCheck: false });
+        }
+      } else if (arg?.kind === SyntaxKind.Identifier) {
+        // Could be a `const K = "workdir" as const` literal-typed key -- confirmed
+        // via the checker at resolution time, not here (M1).
+        hits.push({ reportNode: node, typeSite: node.expression, nameNode: arg, nameNeedsTypeCheck: true });
+      }
+    } else if (node.kind === SyntaxKind.BindingElement) {
+      const nameNode = node.propertyName ?? node.name;
+      if (isWorkdirName(nameNode)) {
+        hits.push({ reportNode: node, typeSite: node.parent, nameNode, nameNeedsTypeCheck: false });
+      }
+    } else if (
+      (node.kind === SyntaxKind.ShorthandPropertyAssignment || node.kind === SyntaxKind.PropertyAssignment) &&
+      isWorkdirName(node.name)
     ) {
-      const colonTok = tokens[i + 1];
-      const typeTok = tokens[i + 2];
-      if (colonTok?.kind === sk.ColonToken && typeTok?.kind === sk.Identifier) {
-        bindings.set(t.text, typeTok.text);
+      const objLit = node.parent;
+      const bin = objLit?.parent;
+      if (
+        objLit?.kind === SyntaxKind.ObjectLiteralExpression &&
+        bin?.kind === SyntaxKind.BinaryExpression &&
+        bin.left === objLit &&
+        bin.operatorToken?.kind === SyntaxKind.EqualsToken
+      ) {
+        hits.push({ reportNode: node, typeSite: bin.right, nameNode: node.name, nameNeedsTypeCheck: false });
       }
+    }
+    node.forEachChild(walk);
+  }
+
+  walk(sourceFile);
+  return hits;
+}
+
+/**
+ * Walk up from `node` to the nearest ancestor that is itself an element of
+ * some parent's `.statements` array -- the unit comment trivia attaches to.
+ */
+function enclosingStatement(node: AstNode): AstNode {
+  let cur = node;
+  while (cur.parent !== undefined) {
+    const parent = cur.parent;
+    const statements = parent.statements;
+    if (Array.isArray(statements) && statements.includes(cur)) return cur;
+    cur = parent;
+  }
+  return cur;
+}
+
+/** The non-empty reason on an inline marker line, or undefined if absent/empty. */
+function markerReason(commentText: string): string | undefined {
+  for (const line of commentText.split("\n")) {
+    const match = ALLOW_MARKER_RE.exec(line);
+    if (match !== null) {
+      const reason = (match[1] ?? "").trim();
+      if (reason.length > 0) return reason;
     }
   }
-  return bindings;
+  return undefined;
 }
 
 /**
- * True when the receiver identifier's declared type contains a `workdir?: string`
- * field -- i.e. its type is one of STORY_TYPES.
+ * Whether `statement`'s own leading or trailing comment trivia carries a
+ * valid (non-empty-reason) `workdir-access-allow:` marker.
  */
-function receiverIsStoryType(name: string, bindings: ReadonlyMap<string, string>): boolean {
-  const type = bindings.get(name);
-  if (type === undefined) return false;
-  return STORY_TYPES.has(type);
-}
-
-interface CandidateHit {
-  readonly pos: number;
-  readonly end: number;
-}
-
-/**
- * Walk the token stream for workdir access candidates.
- *
- * Detects four shapes (the four bypass idioms of nax#2084):
- *   - property access:       IDENT(.|\?.) workdir
- *   - element access:        IDENT [ "workdir" ]
- *   - object binding:        { workdir } = IDENT
- *
- * Each shape yields a (pos, end) range for the receiver. The caller filters
- * by declared type.
- */
-function findWorkdirCandidates(tokens: readonly ScannedToken[]): CandidateHit[] {
-  const sk = SyntaxKind;
-  const out: CandidateHit[] = [];
-
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (t === undefined) continue;
-    const next1 = tokens[i + 1];
-    const next2 = tokens[i + 2];
-    const next3 = tokens[i + 3];
-    const next4 = tokens[i + 4];
-
-    // Property access: IDENT (. | ?.) IDENT("workdir")
-    if (
-      t.kind === sk.Identifier &&
-      (next1?.kind === sk.DotToken || next1?.kind === sk.QuestionDotToken) &&
-      next2?.kind === sk.Identifier &&
-      next2.text === "workdir"
-    ) {
-      out.push({ pos: t.pos, end: t.end });
-      i += 2;
-      continue;
-    }
-
-    // Element access: IDENT [ StringLiteral("workdir") ]
-    if (
-      t.kind === sk.Identifier &&
-      next1?.kind === sk.OpenBracketToken &&
-      next2?.kind === sk.StringLiteral &&
-      next2.text.replace(/['"]/g, "") === "workdir" &&
-      next3?.kind === sk.CloseBracketToken
-    ) {
-      out.push({ pos: t.pos, end: t.end });
-      i += 3;
-      continue;
-    }
-
-    // Object binding: { IDENT("workdir") } = IDENT
-    if (
-      t.kind === sk.OpenBraceToken &&
-      next1?.kind === sk.Identifier &&
-      next1.text === "workdir" &&
-      next2?.kind === sk.CloseBraceToken &&
-      next3?.kind === sk.EqualsToken &&
-      next4?.kind === sk.Identifier
-    ) {
-      // The RECEIVER of a binding pattern is the right-hand side of `=`.
-      out.push({ pos: next4.pos, end: next4.end });
-      i += 4;
-    }
-  }
-  return out;
-}
-
-/**
- * Resolve a candidate hit to its root identifier text, used as the binding
- * lookup key. For property/element access the root is the leftmost identifier;
- * for binding patterns the receiver is the IDENT after `=`.
- */
-function rootReceiver(hit: CandidateHit, tokens: readonly ScannedToken[]): string | undefined {
-  for (const tok of tokens) {
-    if (tok.pos === hit.pos) return tok.text;
+function statementMarker(source: string, statement: AstNode): string | undefined {
+  const leading = getLeadingCommentRanges(source, statement.pos) ?? [];
+  const trailing = getTrailingCommentRanges(source, statement.end) ?? [];
+  for (const range of [...leading, ...trailing]) {
+    const reason = markerReason(source.slice(range.pos, range.end));
+    if (reason !== undefined) return reason;
   }
   return undefined;
 }
@@ -283,46 +322,125 @@ function rootReceiver(hit: CandidateHit, tokens: readonly ScannedToken[]): strin
 /**
  * The single public walker entry point.
  *
- * Pure with respect to the filesystem: tests can call it with a fixture
- * string. The optional `opts` bag is reserved for callers that want to
- * supply an external type resolver (e.g. one driven by a real checker)
- * once TypeScript 7's package API grows a JS-accessible checker. Today
- * it is ignored: the parse-only walker is sufficient for the four-pass
- * fixtures and the real-tree run -- both rely on the same binding map.
+ * Resolves the REAL type of each candidate's type site via the project's
+ * checker, and flags it iff the resolved `workdir` property's declaration
+ * lives in one of `DECLARATION_FILE_PATHS`.
  */
-export function findViolations(file: string, source: string): Violation[] {
-  const tokens = tokenize(source);
-  const bindings = collectTypeBindings(tokens);
-  const candidates = findWorkdirCandidates(tokens);
+export async function findViolations(project: Project, filePath: string, relPath: string): Promise<Violation[]> {
+  const sourceFile = await project.program.getSourceFile(filePath);
+  if (sourceFile === undefined) {
+    throw new Error(
+      `check-story-workdir-access: ${relPath} is on disk under a scanned directory but the TypeScript ` +
+        "Program does not contain it -- check the tsconfig `include` globs for this extension/directory.",
+    );
+  }
+
+  const source: string = sourceFile.text;
+  const lines = source.split("\n");
   const lineStarts = computeLineStarts(source);
+  const candidates = collectCandidates(sourceFile);
 
   const out: Violation[] = [];
-  const seen = new Set<string>();
+  const seenViolationLines = new Set<number>();
+  const seenStaleLines = new Set<number>();
+
   for (const hit of candidates) {
-    const receiver = rootReceiver(hit, tokens);
-    if (receiver === undefined) continue;
-    if (!receiverIsStoryType(receiver, bindings)) continue;
-    const line = posToLine(lineStarts, hit.pos);
-    const key = `${line}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const lineText = source.split("\n")[line - 1] ?? "";
-    out.push({ file, line, text: lineText.trim() });
+    if (hit.nameNeedsTypeCheck) {
+      const nameType = await project.checker.getTypeAtLocation(hit.nameNode);
+      if (nameType === undefined || !nameType.isStringLiteralType() || nameType.value !== "workdir") continue;
+    }
+
+    const line = posToLine(lineStarts, hit.reportNode.getStart());
+    const statement = enclosingStatement(hit.reportNode);
+    const reason = statementMarker(source, statement);
+
+    const type = await project.checker.getTypeAtLocation(hit.typeSite);
+    if (type === undefined) continue;
+    const nonNullable = (await project.checker.getNonNullableType(type)) ?? type;
+    const propSymbol = await project.checker.getPropertyOfType(nonNullable, "workdir");
+
+    let isStoryRead = false;
+    if (propSymbol !== undefined) {
+      for (const decl of propSymbol.declarations) {
+        const declNode = await decl.resolve(project);
+        const declFile = (declNode as AstNode | undefined)?.getSourceFile?.()?.fileName;
+        if (declFile !== undefined && DECLARATION_FILE_PATHS.has(resolve(declFile))) {
+          isStoryRead = true;
+          break;
+        }
+      }
+    }
+
+    if (!isStoryRead) {
+      if (reason !== undefined && !seenStaleLines.has(line)) {
+        seenStaleLines.add(line);
+        out.push({
+          file: relPath,
+          line,
+          text: `STALE MARKER (${reason}): no story-typed workdir read here -- remove the marker`,
+        });
+      }
+      continue;
+    }
+
+    if (reason !== undefined) continue;
+    if (seenViolationLines.has(line)) continue;
+    seenViolationLines.add(line);
+    out.push({ file: relPath, line, text: (lines[line - 1] ?? "").trim() });
   }
+
   return out;
 }
 
 async function* walk(dir: string): AsyncGenerator<string> {
-  let entries: Dirent[];
+  const { readdir } = await import("node:fs/promises");
+  let entries: import("node:fs").Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
+  } catch (err) {
+    // ENOENT: a legitimately absent optional directory (e.g. a fixture root
+    // with no bin/). Anything else -- EACCES, ELOOP, ... -- is a broken scan
+    // and must fail the gate closed, not read as "nothing here".
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw err;
   }
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) yield* walk(full);
-    else if (entry.name.endsWith(".ts")) yield full;
+    else if (SCAN_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) yield full;
+  }
+}
+
+/**
+ * Verify the scan root itself is readable. Distinct from a missing SCAN_DIRS
+ * entry (tolerated, see `walk`): a missing or unreadable ROOT means the gate
+ * was invoked against nothing, and printing "clean" for that is the exact
+ * fail-open bug this rewrite closes (M3).
+ */
+async function assertRootReadable(root: string): Promise<void> {
+  try {
+    await stat(root);
+  } catch (err) {
+    throw new Error(`check-story-workdir-access: scan root is unreadable: ${root} (${(err as Error).message})`);
+  }
+}
+
+/**
+ * Verify every REQUIRED SCAN_DIRS entry exists. Unlike the ENOENT tolerance
+ * in `walk` (for legitimately optional dirs like `bin/`), a root with no
+ * `src/` at all is a broken scan root, not a clean tree with nothing in it
+ * (M2).
+ */
+async function assertRequiredDirsExist(root: string): Promise<void> {
+  for (const { dir, required } of SCAN_DIRS) {
+    if (!required) continue;
+    try {
+      await stat(join(root, dir));
+    } catch (err) {
+      throw new Error(
+        `check-story-workdir-access: required scan directory missing: ${join(root, dir)} (${(err as Error).message})`,
+      );
+    }
   }
 }
 
@@ -332,23 +450,47 @@ async function* walk(dir: string): AsyncGenerator<string> {
  * Same guard as scripts/check-gate-reachability.ts:147.
  */
 async function main(): Promise<void> {
+  await assertRootReadable(ROOT);
+  await assertRequiredDirsExist(ROOT);
+
+  const api = new API({ cwd: ROOT });
+  const tsconfigs = [...new Set(SCAN_DIRS.map((d) => d.tsconfig))];
+  const snapshot = await api.updateSnapshot({ openProjects: [...tsconfigs] });
+
+  const projectByConfig = new Map<string, Project>();
+  for (const tsconfig of tsconfigs) {
+    const project = snapshot.getProject(tsconfig);
+    if (project === undefined) {
+      await api.close();
+      throw new Error(`check-story-workdir-access: failed to load project ${tsconfig}`);
+    }
+    projectByConfig.set(tsconfig, project);
+  }
+
   const violations: Violation[] = [];
   const exemptionsUsed = new Set<string>();
 
-  for (const scanDir of SCAN_DIRS) {
-    for await (const file of walk(join(ROOT, scanDir))) {
-      const rel = relative(ROOT, file);
-      if (ALLOWED.includes(rel)) continue;
+  try {
+    for (const { dir, tsconfig } of SCAN_DIRS) {
+      const project = projectByConfig.get(tsconfig);
+      if (project === undefined) continue;
 
-      const found = findViolations(rel, await readFile(file, "utf8"));
-      if (found.length === 0) continue;
+      for await (const file of walk(join(ROOT, dir))) {
+        const rel = relative(ROOT, file);
+        if ((ALLOWED as readonly string[]).includes(rel)) continue;
 
-      if (EXEMPT.includes(rel)) {
-        exemptionsUsed.add(rel);
-        continue;
+        const found = await findViolations(project, file, rel);
+        if (found.length === 0) continue;
+
+        if (EXEMPT.includes(rel)) {
+          exemptionsUsed.add(rel);
+          continue;
+        }
+        violations.push(...found);
       }
-      violations.push(...found);
     }
+  } finally {
+    await api.close();
   }
 
   const stale = findStaleExemptions(EXEMPT, exemptionsUsed);

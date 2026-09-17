@@ -13,7 +13,6 @@ import { detectLanguage } from "@/project";
 import type { NaxIgnoreMatcher } from "@/utils/path-filters";
 import { partitionPackageFrame, UNREADABLE_MARKER } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
-import { packageDirRelative } from "@/utils/paths";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
 import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";
 import { assembleCodeNeighborChunk, type NeighborSection } from "./code-neighbor-chunk";
@@ -389,8 +388,40 @@ export class CodeNeighborProvider implements IContextProvider {
 
     // nax#2088: touchedFiles is REPO-ROOTED (types.ts); re-spell into the
     // package frame here — collectNeighbors joins onto consumerRoot === packageDir.
-    const pkgDir = packageDirRelative(request.repoRoot, request.packageDir);
-    const { readable } = partitionPackageFrame(touchedFiles, pkgDir, { canonical: true });
+    //
+    // pkgDir MUST come from request.storyWorkdir, not from
+    // packageDirRelative(request.repoRoot, request.packageDir): under
+    // storyIsolation: "worktree" that derivation yields
+    // ".nax-wt/<storyId>/<pkg>", matches nothing, and silently drops every
+    // touched file (nax#2069, path-frame follow-up C1). "." (no story, or a
+    // caller that already passes the resolved package root as repoRoot, e.g.
+    // handlers/query-neighbor.ts) is the safe fallback: toPackageFrame is
+    // identity for ".".
+    const pkgDir = request.storyWorkdir ?? ".";
+    // H7 (path-frame follow-up to #2089): `canonical: true` asserts
+    // touchedFiles came through the plan-time write seam
+    // (story.workdirSource !== undefined) — this provider cannot see that
+    // flag directly, only what the request producer threaded onto it. An
+    // unconditional `true` here was unbacked: for a pre-#2067 PRD holding a
+    // real, existing package-relative entry, it silently dropped the file as
+    // "outside the package" with no diagnostic.
+    const canonical = request.contextFilesCanonical ?? false;
+    const { readable, unreachable } = partitionPackageFrame(touchedFiles, pkgDir, { canonical });
+    if (unreachable.length > 0) {
+      _codeNeighborDeps
+        .getLogger()
+        .warn(
+          "context-v2",
+          "code-neighbor touchedFiles could not be resolved inside this story's package and were dropped",
+          {
+            storyId: request.storyId,
+            packageDir: request.packageDir,
+            workdir: pkgDir,
+            count: unreachable.length,
+            files: unreachable.slice(0, MAX_FILES),
+          },
+        );
+    }
     const filesToProcess = readable.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
     // ADR-009: sibling-test derivation requires resolver output on the request.
@@ -447,7 +478,7 @@ export class CodeNeighborProvider implements IContextProvider {
       sections,
       truncated: anyTruncated,
       maxGlobFiles: this.maxGlobFiles,
-      packageWorkdir: packageDirRelative(request.repoRoot, request.packageDir) ?? ".",
+      packageWorkdir: pkgDir,
     });
     if (chunk === null) {
       return { chunks: [], pullTools: [] };

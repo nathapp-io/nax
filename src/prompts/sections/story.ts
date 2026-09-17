@@ -5,7 +5,7 @@
  */
 
 import type { UserStory } from "@/prd/types";
-import { partitionPackageFrame, storyWorkdir } from "@/utils/path-frame";
+import { storyWorkdir, toPackageFrame } from "@/utils/path-frame";
 import { buildModifiedFilesLines } from "./modified-files";
 import { buildOutOfScopeLines } from "./out-of-scope";
 
@@ -35,18 +35,34 @@ function outOfScopeLines(story: UserStory): string[] {
  * authorisation list — dropping or marking an entry would revoke permission the
  * spec granted. The default passthrough re-spells an in-package repo-rooted
  * entry and leaves everything else untouched.
+ *
+ * `rootWorkdir` is the frame to re-spell against — the workdir of the agent
+ * that will actually read this prompt, which is NOT always `story`'s own
+ * workdir. A batch prompt has exactly one agent root, the first story's
+ * package (src/execution/story-selector.ts takes `storiesToExecute[0]`, and
+ * src/operations/call.ts derives `codingToolRoot` from it), so every story in
+ * the batch must be framed against that one root. Framing a second story
+ * against its own workdir re-spelled a cross-package entry into a real but
+ * WRONG file the batch's single agent root could actually open — nax#2085
+ * H6. An entry outside `rootWorkdir` falls through unchanged, same as any
+ * other out-of-package entry.
+ *
+ * Each entry is framed directly through `toPackageFrame` rather than via
+ * `partitionPackageFrame` plus an index zip: a zip's index correspondence
+ * would hold only by construction (every entry landing in one array), and a
+ * future edit is one `{ canonical: true }` away from silently pairing reasons
+ * with the wrong paths (nax#2085 M11). Mapping per entry cannot desync.
  */
-function modifiedFilesLines(story: UserStory): string[] {
+function modifiedFilesLines(story: UserStory, rootWorkdir: string): string[] {
   const entries = story.modifiedFiles;
   if (!entries || entries.length === 0) return [];
-  const { readable } = partitionPackageFrame(
-    entries.map((entry) => entry.path),
-    storyWorkdir(story),
+  return buildModifiedFilesLines(
+    entries.map((entry) => ({ ...entry, path: toPackageFrame(entry.path, rootWorkdir) ?? entry.path })),
   );
-  return buildModifiedFilesLines(entries.map((entry, i) => ({ ...entry, path: readable[i] })));
 }
 
 export function buildBatchStorySection(stories: UserStory[]): string {
+  const rootWorkdir = stories.length > 0 ? storyWorkdir(stories[0] as UserStory) : ".";
   const storyBlocks = stories.map((story, i) => {
     const criteria = story.acceptanceCriteria.map((c, j) => `${j + 1}. ${c}`).join("\n");
     return [
@@ -57,7 +73,7 @@ export function buildBatchStorySection(stories: UserStory[]): string {
       "**Acceptance Criteria:**",
       criteria,
       ...outOfScopeLines(story),
-      ...modifiedFilesLines(story),
+      ...modifiedFilesLines(story, rootWorkdir),
     ].join("\n");
   });
 
@@ -96,7 +112,7 @@ export function buildStoryReminderSection(story: UserStory): string {
     "**Acceptance Criteria:**",
     criteria,
     ...outOfScopeLines(story),
-    ...modifiedFilesLines(story),
+    ...modifiedFilesLines(story, storyWorkdir(story)),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");
@@ -120,7 +136,7 @@ export function buildStorySection(story: UserStory): string {
     "**Acceptance Criteria:**",
     criteria,
     ...outOfScopeLines(story),
-    ...modifiedFilesLines(story),
+    ...modifiedFilesLines(story, storyWorkdir(story)),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");
