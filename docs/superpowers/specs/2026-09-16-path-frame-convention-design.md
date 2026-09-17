@@ -1,7 +1,7 @@
 # Path-Frame Convention Design
 
 **Date:** 2026-09-16
-**Status:** Implemented and merged in two waves. **Wave 1** (the convention and seams 1-4) merged 2026-09-16 as PRs #2076, #2077, #2078, #2081, #2082 (main `a8bc38ef8`). **Wave 2** (seam closure) merged 2026-09-17: seams 5-10 closed by PRs #2097, #2099, #2100, #2101, #2102 and the unrelated worktree escape #2093 by #2103 (main `6507cf061`). A post-merge review then found follow-ups, including two P0s, so the arc is **not finished** — see "Post-merge review and the P2/P3 wave".
+**Status:** Implemented and merged in three waves; a fourth is in flight. **Wave 1** (the convention and seams 1-4) merged 2026-09-16 as PRs #2076, #2077, #2078, #2081, #2082 (main `a8bc38ef8`). **Wave 2** (seam closure) merged 2026-09-17: seams 5-10 closed by PRs #2097, #2099, #2100, #2101, #2102 and the unrelated worktree escape #2093 by #2103 (main `6507cf061`). A post-merge review then found follow-ups, including two P0s; **Wave 3** closed those as PR #2109 (main `4762eda6d`, closing #2104-#2108). The remaining P2/P3 findings are still in flight, so the arc is **not finished** — see "Post-merge review and the P2/P3 wave".
 **Base:** `main` @ `d78730b6d`
 **Closes:** [#2067](https://github.com/nathapp-io/nax/issues/2067), [#2071](https://github.com/nathapp-io/nax/issues/2071), [#2074](https://github.com/nathapp-io/nax/issues/2074), plus the `checkFilesExist` contradiction found during this design.
 **Builds on:** [#2072](https://github.com/nathapp-io/nax/issues/2072) (shipped as `src/context/fragments/reframe.ts`, commit `d78730b6d`).
@@ -474,10 +474,10 @@ Both re-open hazards this spec had already written down:
   gate is weaker than the regex it replaced on the dominant raw-read idiom, while **#2084** — the issue
   describing that bypass — sat closed.
 
-The follow-up work lives in two places:
+Where that follow-up work went:
 
-- **`fix/path-frame-p0-p1`** — the two P0s and three P1s. Complete and gate-verified, **not yet merged**
-  at the time of writing.
+- **Wave 3** — the two P0s and three P1s, **merged 2026-09-17 as PR #2109** (squash `4762eda6d`),
+  closing **#2104-#2108**. That commit is `main`'s tip and the base of the P2/P3 wave below.
 - **The P2/P3 wave** — `docs/superpowers/plans/2026-09-17-path-frame-p2-p3/` — the remaining P2/P3
   findings. **In flight, not merged.**
 

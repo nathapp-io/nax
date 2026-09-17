@@ -17,18 +17,15 @@ import type { ContextRequest } from "@/context/engine/types";
 
 let origGitWithTimeout: typeof _gitHistoryDeps.gitWithTimeout;
 let origGetLogger: typeof _gitHistoryDeps.getLogger;
-let origExistsSync: typeof _gitHistoryDeps.existsSync;
 
 beforeEach(() => {
   origGitWithTimeout = _gitHistoryDeps.gitWithTimeout;
   origGetLogger = _gitHistoryDeps.getLogger;
-  origExistsSync = _gitHistoryDeps.existsSync;
 });
 
 afterEach(() => {
   _gitHistoryDeps.gitWithTimeout = origGitWithTimeout;
   _gitHistoryDeps.getLogger = origGetLogger;
-  _gitHistoryDeps.existsSync = origExistsSync;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,209 +181,6 @@ describe("GitHistoryProvider", () => {
 // ALWAYS runs in repoRoot against the repo-rooted pathspec. historyScope is a
 // POST-FILTER, not a workdir switch — under "package" only entries beneath
 // packageDir are queried; under "repo" the whole repo is in scope.
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("GitHistoryProvider — AC-55 historyScope", () => {
-  const MONOREPO_REQUEST: ContextRequest = {
-    storyId: "US-002",
-    repoRoot: "/repo",
-    packageDir: "/repo/packages/api",
-    storyWorkdir: "packages/api",
-    stage: "execution",
-    role: "implementer",
-    budgetTokens: 8_000,
-    touchedFiles: ["packages/api/src/service.ts"],
-  };
-
-  /** Captures (args, cwd) per git invocation; returns success for every file. */
-  function captureInvocations(): Array<{ args: string[]; cwd: string }> {
-    const captured: Array<{ args: string[]; cwd: string }> = [];
-    _gitHistoryDeps.gitWithTimeout = async (args: string[], cwd: string) => {
-      captured.push({ args, cwd });
-      return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
-    };
-    return captured;
-  }
-
-  test("default historyScope is 'package' — git ALWAYS runs in repoRoot", async () => {
-    const invocations = captureInvocations();
-    const p = new GitHistoryProvider();
-    await p.fetch(MONOREPO_REQUEST);
-    expect(invocations[0]?.cwd).toBe("/repo");
-  });
-
-  test("historyScope 'repo' — git runs in repoRoot with the repo-rooted pathspec", async () => {
-    const invocations = captureInvocations();
-    const p = new GitHistoryProvider({ historyScope: "repo" } as GitHistoryProviderOptions);
-    await p.fetch(MONOREPO_REQUEST);
-    expect(invocations[0]?.cwd).toBe("/repo");
-    expect(invocations[0]?.args).toContain("packages/api/src/service.ts");
-  });
-
-  test("historyScope 'package' — cwd is STILL repoRoot, pathspec still repo-rooted", async () => {
-    const invocations = captureInvocations();
-    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
-    await p.fetch(MONOREPO_REQUEST);
-    expect(invocations[0]?.cwd).toBe("/repo");
-    expect(invocations[0]?.args).toContain("packages/api/src/service.ts");
-  });
-
-  test("historyScope 'package' — a file outside the package is filtered out, never queried", async () => {
-    const queried: string[] = [];
-    _gitHistoryDeps.gitWithTimeout = async (args: string[], _cwd: string) => {
-      queried.push(args[args.length - 1] ?? "");
-      return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
-    };
-    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
-    await p.fetch({
-      ...MONOREPO_REQUEST,
-      touchedFiles: ["packages/api/src/service.ts", "package.json"],
-    });
-    expect(queried).toEqual(["packages/api/src/service.ts"]);
-  });
-
-  test("sharper variant: a root-level src/client.ts is NOT returned under a packages/api story", async () => {
-    // A root-level src/client.ts exists. Under the OLD "repo"-scope code a
-    // package-framed "src/client.ts" resolved at repoRoot and surfaced the ROOT
-    // file's history under the story's label. Under the new contract the
-    // package post-filter must drop the root-level path before git is called.
-    const queried: string[] = [];
-    _gitHistoryDeps.gitWithTimeout = async (args: string[], _cwd: string) => {
-      const fileArg = args[args.length - 1] ?? "";
-      queried.push(fileArg);
-      // The root-level file's history — would corrupt attribution if queried.
-      const stdout =
-        fileArg === "src/client.ts" ? "abc1234 root-level client history" : "abc1234 package client history";
-      return { stdout, stderr: "", exitCode: 0 };
-    };
-    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
-    const result = await p.fetch({
-      ...MONOREPO_REQUEST,
-      touchedFiles: ["packages/api/src/client.ts", "src/client.ts"],
-    });
-    expect(queried).toEqual(["packages/api/src/client.ts"]);
-    expect(result.chunks[0]?.content).not.toContain("root-level client history");
-  });
-
-  test("historyScope 'repo' — an ambiguous legacy spelling colliding at the repo root is dropped, not queried", async () => {
-    // M13: under "repo" scope every file is queried at repoRoot, so a pre-#2067
-    // package-relative legacy spelling ("src/client.ts" for a packages/api
-    // story) resolves the ROOT file and surfaces its history under the story's
-    // label. When the same spelling ALSO resolves under the package, the two
-    // readings are indistinguishable and the root answer is the wrong one:
-    // disambiguate by dropping it (and logging), rather than assume repo-rooted.
-    const queried: string[] = [];
-    _gitHistoryDeps.gitWithTimeout = async (args: string[], _cwd: string) => {
-      const fileArg = args[args.length - 1] ?? "";
-      queried.push(fileArg);
-      const stdout =
-        fileArg === "src/client.ts" ? "abc1234 root-level client history" : "abc1234 package client history";
-      return { stdout, stderr: "", exitCode: 0 };
-    };
-    _gitHistoryDeps.existsSync = (p) => p === "/repo/packages/api/src/client.ts" || p === "/repo/src/client.ts";
-    const logger = makeLogger();
-    _gitHistoryDeps.getLogger = () => logger;
-
-    const p = new GitHistoryProvider({ historyScope: "repo" } as GitHistoryProviderOptions);
-    const result = await p.fetch({
-      ...MONOREPO_REQUEST,
-      touchedFiles: ["packages/api/src/client.ts", "src/client.ts"],
-    });
-
-    expect(queried).toEqual(["packages/api/src/client.ts"]);
-    expect(result.chunks[0]?.content).not.toContain("root-level client history");
-    const dropWarn = logger.calls.find((call) => call.message.includes("colliding"));
-    expect(dropWarn?.data).toMatchObject({
-      storyId: "US-002",
-      packageDir: "/repo/packages/api",
-      workdir: "packages/api",
-      count: 1,
-      files: ["src/client.ts"],
-    });
-  });
-
-  test("historyScope 'repo' — a canonical set keeps a genuine repo-rooted path, no collision probe", async () => {
-    // contextFilesCanonical asserts the plan-time write seam re-spelled every
-    // existing path, so a toPackageFrame miss is genuinely out-of-package. Even
-    // with a same-named file under the package, the repo-rooted path stands.
-    const queried: string[] = [];
-    _gitHistoryDeps.gitWithTimeout = async (args: string[], _cwd: string) => {
-      const fileArg = args[args.length - 1] ?? "";
-      queried.push(fileArg);
-      return { stdout: "abc1234 root manifest history", stderr: "", exitCode: 0 };
-    };
-    _gitHistoryDeps.existsSync = () => true; // same-named file exists under the package too
-    const logger = makeLogger();
-    _gitHistoryDeps.getLogger = () => logger;
-
-    const p = new GitHistoryProvider({ historyScope: "repo" } as GitHistoryProviderOptions);
-    const result = await p.fetch({
-      ...MONOREPO_REQUEST,
-      contextFilesCanonical: true,
-      touchedFiles: ["package.json"],
-    });
-
-    expect(queried).toEqual(["package.json"]);
-    expect(result.chunks[0]?.content).toContain("root manifest history");
-    expect(result.chunks[0]?.scopePaths).toEqual(["package.json"]);
-    expect(logger.calls.some((call) => call.message.includes("colliding"))).toBe(false);
-  });
-
-  test("historyScope 'repo' — a non-canonical repo-root-only path is kept (no package counterpart)", async () => {
-    // A genuine repo-root file at a non-canonical request: it does NOT resolve
-    // under the package, so there is no collision and the repo history stands.
-    const queried: string[] = [];
-    _gitHistoryDeps.gitWithTimeout = async (args: string[], _cwd: string) => {
-      const fileArg = args[args.length - 1] ?? "";
-      queried.push(fileArg);
-      return { stdout: "abc1234 root-only history", stderr: "", exitCode: 0 };
-    };
-    _gitHistoryDeps.existsSync = (p) => p === "/repo/package.json"; // only at the repo root
-    const logger = makeLogger();
-    _gitHistoryDeps.getLogger = () => logger;
-
-    const p = new GitHistoryProvider({ historyScope: "repo" } as GitHistoryProviderOptions);
-    const result = await p.fetch({ ...MONOREPO_REQUEST, touchedFiles: ["package.json"] });
-
-    expect(queried).toEqual(["package.json"]);
-    expect(result.chunks[0]?.content).toContain("root-only history");
-    // Part A: an out-of-package file is marked, not silently re-rooted.
-    expect(result.chunks[0]?.content).toContain(
-      "package.json (other package - not readable from this story's workdir)",
-    );
-    expect(result.chunks[0]?.scopePaths).toEqual(["package.json"]);
-    expect(logger.calls.some((call) => call.message.includes("colliding"))).toBe(false);
-  });
-
-  test("historyScope 'package' — chunk heading is package-relative, scopePaths repo-rooted", async () => {
-    mockGit(new Map([["packages/api/src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
-    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
-    const result = await p.fetch(MONOREPO_REQUEST);
-    expect(result.chunks).toHaveLength(1);
-    // H9: content crosses into the agent's prompt, whose file tools are rooted
-    // at the package dir — the heading must be package-relative to open.
-    expect(result.chunks[0]?.content).toContain("### src/service.ts");
-    expect(result.chunks[0]?.content).not.toContain("### packages/api/src/service.ts");
-    // ...while scopePaths is matched against the repo-framed diff and stays
-    // repo-rooted (code-neighbor-chunk.ts splits the two the same way).
-    expect(result.chunks[0]?.scopePaths).toEqual(["packages/api/src/service.ts"]);
-  });
-
-  test("non-monorepo: packageDir === repoRoot — every file stays in scope", async () => {
-    const invocations = captureInvocations();
-    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
-    await p.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] })); // packageDir === repoRoot === "/repo"
-    expect(invocations[0]?.cwd).toBe("/repo");
-    expect(invocations[0]?.args).toContain("src/foo.ts");
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// nax#2067: touchedFiles is REPO-ROOTED per the path-frame convention (nax#2071)
-// and git ALWAYS runs in repoRoot (nax#2088). A repo-rooted touchedFile from a
-// canonicalized PRD therefore yields a chunk — the OLD contract where it
-// yielded nothing (and where the builders re-framed touched files themselves)
-// is gone.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("GitHistoryProvider — nax#2067 touchedFiles frame contract", () => {

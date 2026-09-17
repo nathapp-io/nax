@@ -19,7 +19,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getLogger } from "@/logger";
 import { gitWithTimeout } from "@/utils/git";
@@ -67,7 +66,6 @@ const LOG_SAMPLE_MAX_FILES = 5;
 export const _gitHistoryDeps = {
   gitWithTimeout,
   getLogger,
-  existsSync,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,22 +98,39 @@ function renderHeading(filePath: string, packageWorkdir: string): string {
   return framed === null ? `${filePath}${UNREADABLE_MARKER}` : framed;
 }
 
+/** True when `path` has at least one commit in `repoRoot`'s history. */
+async function hasHistoryAt(path: string, repoRoot: string): Promise<boolean> {
+  const { stdout, exitCode } = await _gitHistoryDeps.gitWithTimeout(["log", "--oneline", "-1", "--", path], repoRoot);
+  return exitCode === 0 && stdout.trim().length > 0;
+}
+
 /**
  * True when `file` (already a `toPackageFrame` miss) is ambiguous: a pre-#2067
- * package-relative legacy spelling for a file that ALSO exists at the repo
- * root. The string "src/client.ts" cannot distinguish "the root file" from
+ * package-relative legacy spelling for a file that ALSO reads as a repo-root
+ * path. The string "src/client.ts" cannot distinguish "the root file" from
  * "the package's file spelled package-relative", so querying it at repoRoot
  * would surface the root file's history under this story's label — the #2088
  * sharper variant that `"package"` scope drops (M13). The caller drops it.
  *
+ * Ambiguity is decided from HISTORY, not from the working tree. What this gates
+ * is `git log --follow`, and the two disagree in both directions: a root file
+ * deleted last month is absent from disk yet still reports a full history, and
+ * the package's counterpart may be a file this story is about to CREATE. An
+ * existsSync probe sees neither, reports no collision, and attributes the root
+ * file's history to this story — the defect it was meant to prevent.
+ *
  * Only consulted for a non-canonical set: `contextFilesCanonical` asserts the
  * plan-time write seam already re-spelled every existing path, so a miss there
- * is genuinely out-of-package and a repo-rooted query is correct.
+ * is genuinely out-of-package and a repo-rooted query is correct. Unreachable
+ * for a root story: `toPackageFrame(file, ".")` never returns null, so the
+ * caller's filter excludes every file before this is consulted.
  */
-function collidesWithPackageFile(file: string, packageWorkdir: string, repoRoot: string): boolean {
-  return (
-    _gitHistoryDeps.existsSync(join(repoRoot, packageWorkdir, file)) && _gitHistoryDeps.existsSync(join(repoRoot, file))
-  );
+async function collidesWithPackageFile(file: string, packageWorkdir: string, repoRoot: string): Promise<boolean> {
+  const [underPackage, atRoot] = await Promise.all([
+    hasHistoryAt(join(packageWorkdir, file), repoRoot),
+    hasHistoryAt(file, repoRoot),
+  ]);
+  return underPackage && atRoot;
 }
 
 /**
@@ -125,16 +140,16 @@ function collidesWithPackageFile(file: string, packageWorkdir: string, repoRoot:
  * a `toPackageFrame` miss that also resolves beneath the package is a
  * collision (see `collidesWithPackageFile`) and is dropped.
  */
-function repoScopeFiles(
+async function repoScopeFiles(
   files: string[],
   packageWorkdir: string,
   repoRoot: string,
   canonical: boolean,
-): { kept: string[]; dropped: string[] } {
+): Promise<{ kept: string[]; dropped: string[] }> {
   if (canonical) return { kept: files, dropped: [] };
-  const dropped = files.filter(
-    (file) => toPackageFrame(file, packageWorkdir) === null && collidesWithPackageFile(file, packageWorkdir, repoRoot),
-  );
+  const misses = files.filter((file) => toPackageFrame(file, packageWorkdir) === null);
+  const collisions = await Promise.all(misses.map((file) => collidesWithPackageFile(file, packageWorkdir, repoRoot)));
+  const dropped = misses.filter((_file, i) => collisions[i]);
   if (dropped.length === 0) return { kept: files, dropped: [] };
   const droppedSet = new Set(dropped);
   return { kept: files.filter((file) => !droppedSet.has(file)), dropped };
@@ -258,11 +273,13 @@ export class GitHistoryProvider implements IContextProvider {
       }
     } else {
       // "repo": every safe file is queried — except an ambiguous pre-#2067
-      // legacy spelling that also resolves beneath the package (M13). Dropping
-      // the collision rather than guessing repo-rooted is what closes the
+      // legacy spelling that ALSO has history beneath the package (M13).
+      // Dropping the collision rather than guessing repo-rooted closes the
       // #2088 sharper variant for this scope; a canonical set has no ambiguity
-      // and is passed through untouched (see repoScopeFiles).
-      const { kept, dropped } = repoScopeFiles(
+      // and is passed through untouched (see repoScopeFiles). Ambiguity is
+      // judged from history, not the working tree — see collidesWithPackageFile
+      // for why the two differ in both directions.
+      const { kept, dropped } = await repoScopeFiles(
         safeFiles,
         packageWorkdir,
         request.repoRoot,
