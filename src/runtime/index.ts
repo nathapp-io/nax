@@ -83,6 +83,7 @@ export {
   createSpinBreaker,
   DEFAULT_SPIN_BREAKER_SETTINGS,
   type ResolvedSpinBreakerSettings,
+  SPIN_TERMINAL_NOTICE,
   type SpinBreaker,
   type SpinSummary,
   type SpinVerdict,

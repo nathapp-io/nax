@@ -157,6 +157,19 @@ const NUDGE_ESCALATION: readonly string[] = [
   "Final warning: {repeats} repeated calls with no progress. The next repeated call ends this session with no answer recorded. Produce your final answer now.",
 ];
 
+/**
+ * Answered to every outstanding call when the breaker first decides to end a
+ * turn (nax#2120). The stop used to break with the call unexecuted and
+ * unanswered, so the turn was classified `fail-spin` and retried on the
+ * timeout lane — a FRESH session at a reduced budget, discarding everything
+ * the turn had accumulated. One terminal round trip lets the model close out
+ * instead, and makes NUDGE_ESCALATION's final warning literally true.
+ */
+export const SPIN_TERMINAL_NOTICE =
+  "[nax] This turn is ending: you repeated the same call with no change in its result. " +
+  "This call was not executed. Produce your final answer now, in the exact format your " +
+  "instructions require. Any further tool call ends the turn with no answer recorded.";
+
 function nudgeText(nudgeNumber: number, repeats: number): string {
   const template = NUDGE_ESCALATION[Math.min(nudgeNumber, NUDGE_ESCALATION.length) - 1] ?? NUDGE_ESCALATION[0];
   return (template ?? "").replace("{repeats}", String(repeats));

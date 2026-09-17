@@ -161,4 +161,55 @@ describe("runNativeTurn — spin breaker", () => {
     expect(result.spinStopped).toBeUndefined();
     expect(result.output).toBe("done");
   });
+
+  test("a spun turn gets one terminal round trip to produce an answer (nax#2120)", async () => {
+    let call = 0;
+    const result = await runTurnWithSpin({
+      complete: async (messages) => {
+        call += 1;
+        const warned = messages.some((m) => typeof m.content === "string" && m.content.includes("This turn is ending"));
+        // The model answers as soon as it is told the turn is ending.
+        if (warned) return { text: "final answer", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 };
+        return {
+          text: "",
+          toolCalls: [{ id: `c${call}`, name: "RunCommand", input: { command: "testScoped" } }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costUsd: 0,
+        };
+      },
+      spinBreaker: createSpinBreaker({
+        ...DEFAULT_SPIN_BREAKER_SETTINGS,
+        nudgeAfterRepeats: 3,
+        stopAfterRepeats: 6,
+        maxNudges: 1,
+      }),
+    });
+
+    expect(result.output).toBe("final answer");
+    expect(result.spinStopped).toBeUndefined();
+    expect(result.turnIncomplete).toBeUndefined();
+  });
+
+  test("a model that keeps calling tools after the terminal notice is stopped hard", async () => {
+    let call = 0;
+    const result = await runTurnWithSpin({
+      complete: async () => {
+        call += 1;
+        return {
+          text: "",
+          toolCalls: [{ id: `c${call}`, name: "RunCommand", input: { command: "testScoped" } }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costUsd: 0,
+        };
+      },
+      spinBreaker: createSpinBreaker({
+        ...DEFAULT_SPIN_BREAKER_SETTINGS,
+        nudgeAfterRepeats: 3,
+        stopAfterRepeats: 6,
+        maxNudges: 1,
+      }),
+    });
+
+    expect(result.spinStopped).toBe(true);
+  });
 });

@@ -17,6 +17,7 @@ import { inputClassTokens } from "@/agents/cost";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
+import { SPIN_TERMINAL_NOTICE } from "@/runtime/spin-breaker";
 // `spin-breaker` is its own nested barrel (src/runtime/spin-breaker/index.ts),
 // not an internal file reached through the parent — an EXACT barrel match is
 // legal for a value import even though it bypasses @/runtime, the same
@@ -110,6 +111,9 @@ export async function runNativeTurn(
   // Set ONLY when the breaker ended the turn, so the wiring layer can classify
   // it as `fail-spin` rather than a generic incomplete turn.
   let spinStopped = false;
+  // nax#2120: the first stop verdict spends a terminal round trip rather than
+  // tearing the turn down, so a false positive does not cost the transcript.
+  let spinWarned = false;
   const invalidCallBudget = createInvalidCallBudget();
 
   const anchor = nativeSessionLastUsage.get(handle.id);
@@ -387,10 +391,26 @@ export async function runNativeTurn(
           }
           const verdict = spinBreaker?.observe(call.name, call.input) ?? { action: "allow" as const };
           if (verdict.action === "stop") {
-            spinStopped = true;
-            // The call is deliberately NOT executed and NOT answered: the turn
-            // is over, and a tool-result for a call nobody will read only grows
-            // the transcript the retry drops anyway.
+            if (spinWarned) {
+              spinStopped = true;
+              // Second stop: the model ignored the notice. The call is
+              // deliberately NOT executed and NOT answered — the turn is over
+              // and a tool-result nobody will read only grows the transcript
+              // the retry drops anyway.
+              break;
+            }
+            spinWarned = true;
+            // Every outstanding call in THIS batch is answered, not just the
+            // triggering one: the next `complete()` would otherwise be sent a
+            // tool_call with no matching result, which strict providers reject.
+            for (const outstanding of res.toolCalls.slice(res.toolCalls.indexOf(call))) {
+              messages.push({
+                role: "tool-result",
+                toolCallId: outstanding.id,
+                content: SPIN_TERMINAL_NOTICE,
+                isError: true,
+              });
+            }
             break;
           }
           const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
