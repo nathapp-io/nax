@@ -349,4 +349,90 @@ test("AC-1: real test", async () => {
     expect(calledRef).toBe("abc1234");
     expect(calledPathspec).toBe("packages/api/");
   });
+
+  // #2083 polish: exercise both `logger?.warn` branches added by the
+  // frame-safe read fix. Captured-logger pattern mirrors the error-log tests
+  // above; the first triggers the outer `catch` (spawnGitDiff throws), the
+  // second triggers the inner per-file `catch` (the file is unlinked before
+  // the read loop sees it).
+  test("warns with the git-diff-failed message when spawnGitDiff throws (#2083)", async () => {
+    const testPath = join(tmpDir, ".nax-acceptance.test.ts");
+    await Bun.write(testPath, "original test content");
+
+    const warnLogs: Array<{ stage: string; message: string }> = [];
+    const capturedLogger = {
+      info: mock(() => {}),
+      warn: mock((stage: string, message: string) => {
+        warnLogs.push({ stage, message });
+      }),
+      error: mock(() => {}),
+      debug: mock(() => {}),
+    };
+    (_regenerateDeps as { getLogger: unknown }).getLogger = mock(() => capturedLogger);
+
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => {
+      throw new Error("git exploded");
+    });
+
+    // Ensure acceptance-setup leaves real content so we only see the warn,
+    // not a stub-rejection error.
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async () => {
+      await Bun.write(testPath, 'test("AC-1: real", async () => { expect(true).toBe(true); });');
+    });
+
+    const ctx = makeMinimalPipelineContext({ workdir: tmpDir, storyGitRef: "abc1234" });
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    const diffFailLogs = warnLogs.filter((l) => l.stage === "acceptance" && l.message.includes("git diff failed"));
+    expect(diffFailLogs.length).toBeGreaterThan(0);
+    expect(diffFailLogs[0].message).toContain("abc1234");
+  });
+
+  test("warns with the unreadable-file message when a diff'd file is gone by read time (#2083)", async () => {
+    const { existsSync, mkdirSync, unlinkSync } = await import("node:fs");
+
+    // Layout: tmpDir (= repo root) / packages/api/src/x.ts. The spawn returns
+    // the repo-framed path AND unlinks the file before returning, so the
+    // readFile that follows hits ENOENT and trips the inner per-file catch.
+    const repoRoot = tmpDir;
+    const implRelPath = "packages/api/src/x.ts";
+    const implAbsPath = join(repoRoot, implRelPath);
+    mkdirSync(join(repoRoot, "packages", "api", "src"), { recursive: true });
+    await Bun.write(implAbsPath, "export const x = 1;");
+
+    const testPath = join(repoRoot, ".nax-acceptance.test.ts");
+    await Bun.write(testPath, "original test content");
+
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => {
+      if (existsSync(implAbsPath)) unlinkSync(implAbsPath);
+      return implRelPath;
+    });
+
+    const warnLogs: Array<{ stage: string; message: string }> = [];
+    const capturedLogger = {
+      info: mock(() => {}),
+      warn: mock((stage: string, message: string) => {
+        warnLogs.push({ stage, message });
+      }),
+      error: mock(() => {}),
+      debug: mock(() => {}),
+    };
+    (_regenerateDeps as { getLogger: unknown }).getLogger = mock(() => capturedLogger);
+
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async () => {
+      await Bun.write(testPath, 'test("AC-1: real", async () => { expect(true).toBe(true); });');
+    });
+
+    const ctx = makeMinimalPipelineContext({
+      workdir: repoRoot,
+      projectDir: repoRoot,
+      storyGitRef: "abc1234",
+    });
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    const unreadableLogs = warnLogs.filter((l) => l.stage === "acceptance" && l.message.includes("unreadable"));
+    expect(unreadableLogs.length).toBeGreaterThan(0);
+    // Backtick-delimited paths (MIN-2) — assert the wrapping survives the join.
+    expect(unreadableLogs[0].message).toContain(`\`${implRelPath}\``);
+  });
 });
