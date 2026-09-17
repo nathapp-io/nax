@@ -293,9 +293,13 @@ const AgentSpinBreakerConfigSchema = z
     stopAfterRepeats: z.number().int().min(3).max(1000).default(50),
     recentKeyWindow: z.number().int().min(2).max(1024).default(64),
     /**
-     * nax#2047: cumulative per-key repeat threshold. Closes the laundering
-     * hole where one interleaving call resets `repeatsSinceProgress` and
-     * lets the same shape run forever. 0 disables the cumulative check.
+     * nax#2120: consecutive same-RESULT repeat threshold. The turn ends when
+     * the same call returns an unchanged result this many times in a row.
+     * Closes the nax#2047 laundering hole (an interleaving call no longer
+     * resets the run) without killing a healthy edit -> re-run-test loop,
+     * whose result changes each iteration. The key's raw cumulative count is
+     * separately bounded by `stopAfterRepeats`, which also acts as the
+     * backstop for a result that changes every time. 0 disables this axis.
      */
     stopAfterSameKeyRepeats: z.number().int().min(0).max(1000).default(12),
   })

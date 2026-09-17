@@ -396,7 +396,11 @@ export async function runNativeTurn(
               // Second stop: the model ignored the notice. The call is
               // deliberately NOT executed and NOT answered — the turn is over
               // and a tool-result nobody will read only grows the transcript
-              // the retry drops anyway.
+              // the retry drops anyway. The `fail-spin` -> fresh-session
+              // timeout lane is load-bearing here: it drops the transcript
+              // that carries the unanswered call. Any future same-session
+              // resume lane for `fail-spin` must answer this call, or it
+              // silently persists a tool_call with no matching tool-result.
               break;
             }
             spinWarned = true;

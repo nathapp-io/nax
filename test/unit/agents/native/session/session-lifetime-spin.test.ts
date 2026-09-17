@@ -86,6 +86,28 @@ async function runTurnAgainst(handle: SessionHandle, breaker: SpinBreaker | unde
   );
 }
 
+/**
+ * Like `runTurnAgainst`, but takes the model and a per-call answer directly.
+ * The nax#2120 cross-turn reprieve test needs CHANGING results so the raw
+ * backstop — not the same-result axis — is what fires and gets reprieved.
+ */
+async function runTurnWith(
+  handle: SessionHandle,
+  breaker: SpinBreaker | undefined,
+  complete: TurnDeps["complete"],
+  answer: () => string,
+) {
+  return runNativeTurn(
+    handle,
+    "hi",
+    { interactionHandler: { onInteraction: async () => ({ answer: answer() }) } },
+    {
+      complete,
+      ...(breaker !== undefined ? { spinBreaker: breaker } : {}),
+    },
+  );
+}
+
 describe("spin breaker — session lifetime (nax#2047)", () => {
   test("two turns on the same handle.id share the cumulative per-key counter", async () => {
     // 7 < 12 → no stop on turn 1. Turn 2 continues the same cumulative count,
@@ -176,6 +198,68 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
     const result = await runTurnAgainst(handle, undefined, 5);
     expect(result.spinStopped).toBeUndefined();
     expect(result.output).toBe("done");
+
+    await closeNativeSession(handle, false);
+  });
+
+  // nax#2120 Important #1: the first stop is reprieved by the turn loop
+  // (Task 4), so `spinStopped` stays unset and the SAME breaker keeps going
+  // into the next turn. Before the fix `repeatsSinceProgress` stayed latched
+  // near stopAfterRepeats, so the next turn's second repeated call stopped
+  // cold (reason repeat-run, nudges already spent). A real stop must consume
+  // the run evidence so it re-accumulates in full.
+  test("a reprieved first stop does not make the next turn stop cold", async () => {
+    const settings: ResolvedSpinBreakerSettings = { ...DEFAULT_SPIN_BREAKER_SETTINGS };
+    const handle = await openNativeSession("sess-reprieve", opts({ spinBreaker: settings }));
+    const breaker = nativeSessionSpinBreaker.get("sess-reprieve");
+    expect(breaker).toBeDefined();
+
+    let answered = 0;
+    const uniqueAnswer = () => {
+      answered += 1;
+      return `unique result ${answered}`;
+    };
+    let turn1Produced = 0;
+    const turn1 = async () => {
+      turn1Produced += 1;
+      if (turn1Produced > 50) {
+        return { text: "done", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 };
+      }
+      return {
+        text: "",
+        toolCalls: [{ id: `t1-${turn1Produced}`, name: "RunCommand", input: { command: "testScoped" } }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+        costUsd: 0,
+      };
+    };
+
+    // Changing results keep the same-result axis silent; the raw per-key
+    // backstop fires at call 50, with `repeatsSinceProgress` at 48. That stop
+    // is the first, so the turn loop reprieves it and the model closes out.
+    const first = await runTurnWith(handle, breaker, turn1, uniqueAnswer);
+    expect(first.spinStopped).toBeUndefined();
+    expect(first.output).toBe("done");
+
+    // Turn 2 makes three more repeats of the same key. Before the fix the
+    // second call reached rsp 50 and stopped cold; now the run restarts and
+    // all three are allowed before the model answers.
+    let turn2Produced = 0;
+    const turn2 = async () => {
+      turn2Produced += 1;
+      if (turn2Produced > 3) {
+        return { text: "done", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 };
+      }
+      return {
+        text: "",
+        toolCalls: [{ id: `t2-${turn2Produced}`, name: "RunCommand", input: { command: "testScoped" } }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+        costUsd: 0,
+      };
+    };
+
+    const second = await runTurnWith(handle, breaker, turn2, uniqueAnswer);
+    expect(second.spinStopped).toBeUndefined();
+    expect(second.output).toBe("done");
 
     await closeNativeSession(handle, false);
   });

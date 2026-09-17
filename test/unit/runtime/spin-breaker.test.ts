@@ -193,7 +193,7 @@ describe("createSpinBreaker", () => {
     expect(stopped).toBe(true);
   });
 
-  test("stops at the 12th occurrence of one key regardless of what came between (cumulative counter)", () => {
+  test("stops at the 16th occurrence of one key regardless of what came between (cumulative result run)", () => {
     const breaker = createSpinBreaker(settings());
     const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
     const KEY_B = { command: "testScoped", values: { files: "b.test.ts" } };
@@ -437,11 +437,12 @@ describe("createSpinBreaker", () => {
   // nax#2120 defect 2: the cumulative counter had no progress axis, so an
   // edit -> re-run-scoped-test loop read identically to an idle re-run loop.
   // Result identity is the axis the nudge copy already claims to measure.
-  test("an edit-test loop with changing results is never stopped", () => {
+  test("an edit-test loop with changing results survives well past the same-result threshold", () => {
     const breaker = createSpinBreaker(settings());
 
     // 40 iterations of the shape that was killed: same scoped test command,
-    // a different failure each time.
+    // a different failure each time. Bounded by the raw backstop at
+    // stopAfterRepeats=50, so this must stay under 50 iterations.
     for (let i = 0; i < 40; i += 1) {
       const verdict = breaker.observe("RunCommand", TEST_CMD);
       expect(verdict.action).not.toBe("stop");
@@ -522,8 +523,10 @@ describe("createSpinBreaker", () => {
   });
 
   test("a key with no noted result falls back to the raw count", () => {
-    // Denied and errored calls never reach noteResult. They must still be
-    // bounded, on the raw backstop rather than the result axis.
+    // Models a call that throws: an error string is not a result, so it never
+    // reaches noteResult and rides the raw backstop. (A DENIED call does feed
+    // noteResult — a stable denial is an unchanged result by design.) Still
+    // bounded, just on the raw backstop rather than the result axis.
     const breaker = createSpinBreaker(settings());
 
     let stopped = false;
@@ -532,5 +535,28 @@ describe("createSpinBreaker", () => {
     }
 
     expect(stopped).toBe(true);
+  });
+
+  // nax#2120 Important #1: a real stop must consume `repeatsSinceProgress`
+  // too, not just the per-key record. The breaker is session-scoped
+  // (nax#2047) and the first stop is reprieved (Task 4), so a latched run
+  // counter made the next turn stop on its first or second repeated call.
+  test("a repeat-run stop resets the run, so the next occurrence does not re-kill", () => {
+    // stopAfterSameKeyRepeats: 0 disables the result axis, so ONLY the
+    // repeat-run path (rsp >= stopAfterRepeats) can fire here.
+    const breaker = createSpinBreaker(settings({ stopAfterSameKeyRepeats: 0 }));
+
+    let firstStopAt: number | undefined;
+    for (let i = 0; i < 60 && firstStopAt === undefined; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") firstStopAt = i + 1;
+    }
+    expect(firstStopAt).toBe(51);
+
+    // The counter restarted at zero: the next 49 repeats are allowed again...
+    for (let i = 0; i < 49; i += 1) {
+      expect(breaker.observe("RunCommand", TEST_CMD).action).not.toBe("stop");
+    }
+    // ...and the 50th re-accumulates to the stop. A wedged loop still dies.
+    expect(breaker.observe("RunCommand", TEST_CMD).action).toBe("stop");
   });
 });

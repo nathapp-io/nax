@@ -85,6 +85,7 @@ export {
   type ResolvedSpinBreakerSettings,
   SPIN_TERMINAL_NOTICE,
   type SpinBreaker,
+  type SpinStopReason,
   type SpinSummary,
   type SpinVerdict,
 } from "./spin-breaker";

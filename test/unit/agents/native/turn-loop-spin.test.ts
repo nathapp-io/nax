@@ -82,7 +82,12 @@ describe("runNativeTurn — spin breaker", () => {
 
     expect(result.spinStopped).toBe(true);
     expect(result.turnIncomplete).toBe(true);
-    expect(result.internalRoundTrips).toBeLessThan(10);
+    // nax#2120 Important #1: the first stop is reprieved and now resets
+    // `repeatsSinceProgress` (real-stop consumption). The same looping model
+    // must therefore re-accumulate the raw per-key count to
+    // stopAfterRepeats=6 before the hard stop, landing at 12 round trips,
+    // not the pre-fix 8 (where the latched run counter stopped it immediately).
+    expect(result.internalRoundTrips).toBe(12);
   });
 
   test("prepends the nudge to the real tool result instead of replacing it", async () => {
