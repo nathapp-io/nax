@@ -363,6 +363,29 @@ describe("globTool — _globDeps.scan injection", () => {
     expect(res.content).toBe("scan exploded");
   });
 
+  test("AC11 (async): a failure raised while advancing the scan iterator is surfaced, not swallowed", async () => {
+    // Bun.Glob reports disk/glob failures while the iterator advances, not at
+    // the `scan()` call itself, so the catch has to cover every `next()`. The
+    // first case rejects before yielding anything; the second yields a hit and
+    // then rejects, and that partial match must not leak out as a listing.
+    _globDeps.scan = () => ({
+      [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(new Error("iterator exploded")) }),
+    });
+    const first = await globTool.run({ pattern: "src/**/*.ts" }, ctx());
+    expect(first.isError).toBe(true);
+    expect(first.content).toBe("iterator exploded");
+
+    _globDeps.scan = () =>
+      (async function* () {
+        yield "src/a.ts";
+        throw new Error("iterator exploded mid-listing");
+      })();
+    const second = await globTool.run({ pattern: "src/**/*.ts" }, ctx());
+    expect(second.isError).toBe(true);
+    expect(second.content).toBe("iterator exploded mid-listing");
+    expect(second.content).not.toContain("a.ts");
+  });
+
   test("AC12: production scan is reached through _globDeps, not an inline Bun.Glob", async () => {
     let calls = 0;
     let received: { pattern: string; cwd: string; absolute: boolean } | undefined;
@@ -390,5 +413,20 @@ describe("globTool.description", () => {
 
   test("AC14: advertises existence probing with 'whether a path exists'", () => {
     expect(globTool.description).toContain("whether a path exists");
+  });
+
+  test("advertises the decode rule that makes the lossless claim actionable", () => {
+    // "Each line is lossless" is only usable if the agent knows how to decode
+    // a line back into paths: that a basename is quoted when it contains
+    // whitespace or a quote, which escapes stand for literal characters inside
+    // a quoted form, and that an unquoted backslash is literal rather than an
+    // escape introducer. Without this the rule lives only in a source comment.
+    expect(globTool.description).toContain("wrapped in double quotes");
+    expect(globTool.description).toContain("\\\\"); // backslash escape
+    expect(globTool.description).toContain('\\"'); // quote escape
+    expect(globTool.description).toContain("\\n");
+    expect(globTool.description).toContain("\\r");
+    expect(globTool.description).toContain("\\t");
+    expect(globTool.description).toContain("bare backslash is literal");
   });
 });

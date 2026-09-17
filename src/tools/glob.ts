@@ -113,7 +113,7 @@ function needsQuoting(b: string): boolean {
 export const globTool: CodingTool = {
   name: "Glob",
   description:
-    "List repository files matching a glob pattern, grouping matches by their parent directory. One line per parent directory, basenames sorted ascending, e.g. 'path/to/ a.ts b.ts'. Each line is lossless — concatenating the prefix and a basename reproduces the matched path. The tool can also be used to check whether a path exists (call with a literal path like 'src/a.ts'; a hit returns 'src/ a.ts', a miss returns 'no matches for \"src/a.ts\"'). Patterns are matched relative to the repository root; a pattern that tries to climb out matches nothing.",
+    "List repository files matching a glob pattern, grouping matches by their parent directory. One line per parent directory, basenames sorted ascending, e.g. 'path/to/ a.ts b.ts'. Each line is lossless — concatenating the prefix and a basename reproduces the matched path. A basename is wrapped in double quotes when it contains whitespace or a double quote, and inside quotes the escapes \\\\, \\\", \\n, \\r and \\t stand for the literal character; outside quotes nothing is escaped, so a bare backslash is literal. The tool can also be used to check whether a path exists (call with a literal path like 'src/a.ts'; a hit returns 'src/ a.ts', a miss returns 'no matches for \"src/a.ts\"'). Patterns are matched relative to the repository root; a pattern that tries to climb out matches nothing.",
   inputSchema: {
     type: "object",
     properties: { pattern: { type: "string", description: "Glob pattern, relative to the repository root" } },
