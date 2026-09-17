@@ -241,7 +241,7 @@ The diff is small and almost entirely **subtractive**: ~25 files, ~150 lines del
 | Site | Fate |
 |---|---|
 | `src/context/fragments/reframe.ts` (96 lines) | deleted — fragments already record repo-rooted paths |
-| `src/utils/path-frame.ts` `toPackageFrame`, `toPackageFrameFiles`, `UNREADABLE_MARKER`, `stripUnreadableMarker` | dead (−49 lines) |
+| `src/utils/path-frame.ts` `toPackageFrame`, `UNREADABLE_MARKER`, `stripUnreadableMarker` | dead (−49 lines) |
 | `src/context/builder.ts:294`, `src/pipeline/stages/context.ts:131`, `src/context/engine/stage-assembler.ts:236` | three near-identical re-spells, all no-ops |
 | `spellForConsumer` (`code-neighbor.ts:223-229`) | collapses to `relative(repoRoot, abs)` (−35) |
 | `stripUnreadableMarker` call (`code-neighbor-chunk.ts:149`) | dead |

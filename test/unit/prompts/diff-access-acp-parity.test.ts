@@ -78,7 +78,7 @@ describe("ACP parity — the region leaves the pre-change prompt unchanged", () 
     ["adversarial", adversarialAcp],
   ])("%s: the shell commands are still the ones ACP had", (_label, render) => {
     const prompt = render();
-    expect(prompt).toContain(`git diff --unified=3 ${REF}..HEAD`);
+    expect(prompt).toContain(`git diff --relative --unified=3 ${REF}..HEAD`);
     expect(prompt).toContain(`git log --oneline ${REF}..HEAD`);
   });
 

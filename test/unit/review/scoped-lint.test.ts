@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeConfigSlice } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { _reconcileDeps } from "@/execution/lifecycle/run-initialization";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { _reviewGitDeps } from "@/review/runner";
 import { _scopedLintDeps, runScopedLintCheck } from "@/review/scoped-lint";
 import type { ReviewConfig } from "@/review/types";
 
@@ -11,11 +15,34 @@ const baseReviewConfig: ReviewConfig = makeConfigSlice("review", {
   },
 });
 
+/**
+ * Run `fn` with a fresh silent logger and collect every redacted warn entry it
+ * emits. `scoped-lint.ts` reports the resolved scope arm only through
+ * `lint_scope_degraded` logs (the `degradedReason` is not carried on the
+ * `ReviewCheckResult`), so this is the seam that exposes the specific arm.
+ */
+async function captureWarns<T>(fn: () => Promise<T>): Promise<{ result: T; warns: LogEntry[] }> {
+  resetLogger();
+  initLogger({ level: "silent", suppressConsole: true });
+  const warns: LogEntry[] = [];
+  const unsubscribe = addSink((entry) => {
+    if (entry.level === "warn") warns.push(entry);
+  });
+  try {
+    const result = await fn();
+    return { result, warns };
+  } finally {
+    unsubscribe();
+    resetLogger();
+  }
+}
+
 describe("runScopedLintCheck", () => {
   const originalListChangedFiles = _scopedLintDeps.listChangedFiles;
   const originalFindPackageDir = _scopedLintDeps.findPackageDir;
   const originalRunLintCommand = _scopedLintDeps.runLintCommand;
   const originalFileExists = _scopedLintDeps.fileExists;
+  const originalGetUncommittedFiles = _reviewGitDeps.getUncommittedFiles;
 
   beforeEach(() => {
     _scopedLintDeps.listChangedFiles = mock(async () => ["src/alpha.ts"]);
@@ -38,6 +65,7 @@ describe("runScopedLintCheck", () => {
     _scopedLintDeps.findPackageDir = originalFindPackageDir;
     _scopedLintDeps.runLintCommand = originalRunLintCommand;
     _scopedLintDeps.fileExists = originalFileExists;
+    _reviewGitDeps.getUncommittedFiles = originalGetUncommittedFiles;
   });
 
   test("uses lintScoped template with {{files}} substitution", async () => {
@@ -194,6 +222,41 @@ describe("runScopedLintCheck", () => {
     expect(result.output).toBe("totally unparseable lint output");
   });
 
+  // Restored from #2102 — deleting the runAutofixLint shim took the only
+  // out_of_scope coverage with it. The shim was a pure forward to
+  // runScopedLintCheck, so the same arguments are retargeted here directly.
+  test("dogfood replay shape: sibling-package lint debt is reported as out_of_scope", async () => {
+    _scopedLintDeps.runLintCommand = mock(async () => ({
+      commandName: "lint",
+      command: "custom-lint",
+      success: false,
+      exitCode: 1,
+      output: "packages/web/src/sibling.ts:3:1 error sibling debt",
+      durationMs: 9,
+      timedOut: false,
+    }));
+
+    const result = await runScopedLintCheck({
+      resolvedLintCommand: "custom-lint",
+      configCommands: baseReviewConfig.commands,
+      lintOutputFormat: "auto",
+      workdir: "/repo",
+      storyId: "US-001",
+      scope: {
+        changedFiles: ["packages/api/src/in.ts"],
+        contextFiles: [],
+        packageDir: "packages/api",
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.lintScope?.status).toBe("out_of_scope");
+    expect(result.lintScope?.packageGroups).toEqual([
+      { packageDir: "packages/api", files: ["packages/api/src/in.ts"] },
+    ]);
+    expect(result.output).toContain("out of story scope");
+  });
+
   test("attaches findings for failing scoped lint results when output is parseable", async () => {
     _scopedLintDeps.runLintCommand = mock(async (_workdir, _storyId, _env, command) => ({
       commandName: "lint",
@@ -220,14 +283,17 @@ describe("runScopedLintCheck", () => {
     expect(result.findings?.[0]?.file).toContain("src/alpha.ts");
   });
 
-  // Contract pin (issue #2087): runReview's production call site
-  // (src/execution/lifecycle/run-initialization.ts:95) passes only
+  // Contract pin (issue #2087 / post-merge finding H3): runReview's production
+  // call site is the `_reconcileDeps.runReview` adapter in
+  // src/execution/lifecycle/run-initialization.ts:36-37, which forwards only
   // { config, workdir, executionConfig } — no story, no projectDir, no
   // storyGitRef, no scope. resolveLintScope must therefore route through the
   // missing_story_git_ref arm and run the FULL lint, never the empty-scope
-  // false-green at scoped-lint.ts:268-280. If a future re-wire threads
-  // story/projectDir/storyGitRef into runReview, this test must fail loudly.
-  test("runReview call shape: no story/projectDir/storyGitRef/scope degrades to full lint", async () => {
+  // false-green at scoped-lint.ts:268-280. If a future re-wire threads story,
+  // projectDir, storyGitRef or scope into that call site, this test must fail
+  // loudly — it invokes the production adapter rather than re-stating its
+  // argument shape, so the re-wire reaches the assertions.
+  test("runReview production call shape: no story/projectDir/storyGitRef/scope takes the missing_story_git_ref arm and runs full lint", async () => {
     const runMock = mock(async (_workdir, _storyId, _env, command) => ({
       commandName: "lint",
       command,
@@ -238,16 +304,16 @@ describe("runScopedLintCheck", () => {
       timedOut: false,
     }));
     _scopedLintDeps.runLintCommand = runMock;
+    _reviewGitDeps.getUncommittedFiles = mock(async () => []);
 
-    const result = await runScopedLintCheck({
-      resolvedLintCommand: "eslint --max-warnings=0",
-      configCommands: baseReviewConfig.commands,
-      qualityCommands: {},
-      workdir: "/repo",
-    });
+    const { result, warns } = await captureWarns(() =>
+      _reconcileDeps.runReview(baseReviewConfig, "/repo", DEFAULT_CONFIG.execution),
+    );
 
-    expect(result.lintScope?.status).toBe("degraded");
-    expect(result.command).toBe("eslint --max-warnings=0");
-    expect(runMock).toHaveBeenCalled();
+    expect(warns.find((entry) => entry.message === "lint_scope_degraded")?.data?.reason).toBe("missing_story_git_ref");
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0]?.lintScope?.status).toBe("degraded");
+    expect(result.checks[0]?.command).toBe("eslint --max-warnings=0");
+    expect(runMock).toHaveBeenCalledWith("/repo", undefined, undefined, "eslint --max-warnings=0", []);
   });
 });

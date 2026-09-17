@@ -1,7 +1,7 @@
 # Path-Frame Convention Design
 
 **Date:** 2026-09-16
-**Status:** Implemented and merged 2026-09-16 — PRs #2076, #2077, #2078, #2081, #2082 (main `a8bc38ef8`). Seams 5-10 are filed, not fixed; see "Out of scope".
+**Status:** Implemented and merged in three waves; a fourth is in flight. **Wave 1** (the convention and seams 1-4) merged 2026-09-16 as PRs #2076, #2077, #2078, #2081, #2082 (main `a8bc38ef8`). **Wave 2** (seam closure) merged 2026-09-17: seams 5-10 closed by PRs #2097, #2099, #2100, #2101, #2102 and the unrelated worktree escape #2093 by #2103 (main `6507cf061`). A post-merge review then found follow-ups, including two P0s; **Wave 3** closed those as PR #2109 (main `4762eda6d`, closing #2104-#2108). The remaining P2/P3 findings are still in flight, so the arc is **not finished** — see "Post-merge review and the P2/P3 wave".
 **Base:** `main` @ `d78730b6d`
 **Closes:** [#2067](https://github.com/nathapp-io/nax/issues/2067), [#2071](https://github.com/nathapp-io/nax/issues/2071), [#2074](https://github.com/nathapp-io/nax/issues/2074), plus the `checkFilesExist` contradiction found during this design.
 **Builds on:** [#2072](https://github.com/nathapp-io/nax/issues/2072) (shipped as `src/context/fragments/reframe.ts`, commit `d78730b6d`).
@@ -31,14 +31,14 @@ issues are instances, not the whole class.
 |---|---|---|---|
 | 1 | `pipeline/scope-files.ts:34,50,61` | declared (package) unioned with diff (repo) in one list | **fixed** — #2071, PR #2078 |
 | 2 | `context/engine/providers/code-neighbor.ts:257,262` | sibling-rooted `srcFile` compared and emitted against consumer-rooted `filePath` | **fixed** — #2074, PR #2082 |
-| 3 | `debate/verifiers/checks.ts:18` | `contextFiles` resolved repo-rooted at plan time, package-relative at runtime (`context/builder.ts:299`) | **runtime consumer fixed** (PR #2081); plan-time verifier path intentionally not (both verifier sites run pre-write — see §2067 RULING) → **#2086** |
+| 3 | `debate/verifiers/checks.ts:18` | `contextFiles` resolved repo-rooted at plan time, package-relative at runtime (`context/builder.ts:299`) | **closed** — #2086, PR #2100. Runtime consumer fixed (PR #2081); plan-time verifier path intentionally not (both verifier sites run pre-write — see §2067 RULING) |
 | 4 | `prd` / `story.workdir` null | no frame at all; rules fall back to the whole corpus and `quality.commands` to the root config | **fixed** — #2067, PR #2081 |
-| 5 | `execution/lifecycle/acceptance-helpers.ts:225` → `:302` | repo-framed diff output fed to `join(workdir, file)`; failure swallowed by `catch {}` at `:309` | **#2083** — ⚠️ this row's premise is WRONG: `workdir` there is the run root, not the package dir, so the join is frame-correct today. Filed as a latent contract defect |
-| 6 | `utils/git.ts:491` → `context/builder.ts:299` | `captureOutputFiles` emits repo-framed parent outputs, resolved against the package dir | **#2089** — fixed (PR 1 of the closure bundle); PR #2081's reframe fixed the in-package case only, and the out-of-package fallback resolved to a real but WRONG file. See §Rulings 8 |
-| 7 | `review/scoped-lint.ts:124` | package-framed path handed to `findPackageDir(relPath, projectDir)`, which resolves repo-framed | **#2087** — latent: the guard is unreachable on the only production call path |
-| 8 | `context/engine/providers/git-history.ts:104` | `historyScope: "repo"` runs package-framed `touchedFiles` against repoRoot, yielding empty history | **#2088** — or, on a name collision, another file's history under the story's label |
-| 9 | `prompts/builders/adversarial-review-builder.ts:288,295` | prompt-embedded `git diff --name-only -- .` lacks the `--relative` that `tools/git.ts:200` auto-injects for the same verbs | **#2090** — live; also in `review-builder.ts` and `debate-builder.ts` |
-| 10 | `context/engine/effectiveness.ts:370` | persisted `scopePaths` inherit the producing provider's frame, so attribution is frame-dependent | **#2091** — live; suffix-anchored globs over-attribute rather than miss |
+| 5 | `execution/lifecycle/acceptance-helpers.ts:225` → `:302` | repo-framed diff output fed to `join(workdir, file)`; failure swallowed by `catch {}` at `:309` | **closed** — #2083, PR #2102. ⚠️ this row's premise is WRONG: `workdir` there is the run root, not the package dir, so the join is frame-correct today. Filed as a latent contract defect, and closed as one |
+| 6 | `utils/git.ts:491` → `context/builder.ts:299` | `captureOutputFiles` emits repo-framed parent outputs, resolved against the package dir | **closed** — #2089, PR #2097 (PR 1 of the closure bundle); PR #2081's reframe fixed the in-package case only, and the out-of-package fallback resolved to a real but WRONG file. See §Rulings 8 |
+| 7 | `review/scoped-lint.ts:124` | package-framed path handed to `findPackageDir(relPath, projectDir)`, which resolves repo-framed | **closed** — #2087, PR #2102 (narrow by ruling, not fixed: the guard was unreachable on the only production call path) |
+| 8 | `context/engine/providers/git-history.ts:104` | `historyScope: "repo"` runs package-framed `touchedFiles` against repoRoot, yielding empty history | **closed** — #2088, PR #2099; or, on a name collision, another file's history under the story's label |
+| 9 | `prompts/builders/adversarial-review-builder.ts:288,295` | prompt-embedded `git diff --name-only -- .` lacks the `--relative` that `tools/git.ts:200` auto-injects for the same verbs | **closed** — #2090, PR #2101; also in `review-builder.ts` and `debate-builder.ts` |
+| 10 | `context/engine/effectiveness.ts:370` | persisted `scopePaths` inherit the producing provider's frame, so attribution is frame-dependent | **closed** — #2091, PR #2099; suffix-anchored globs over-attribute rather than miss |
 
 ### Root cause
 
@@ -250,7 +250,7 @@ both                   -> W + "/" + P    (story-local wins) and log the collisio
 ```
 
 The `neither` arm is why a canonical PRD is not uniformly repo-rooted: a create-intent path keeps its
-authored spelling. Downstream frame-splitting helpers (`partitionPackageFrame`, `toPackageFrameFiles`)
+authored spelling. Downstream frame-splitting helpers — currently `partitionPackageFrame` alone —
 therefore may not infer "repo-rooted" from `workdirSource`. The safe drop of a `toPackageFrame` miss is
 confined to path sets known to carry repo-rooted entries — the merged `contextFiles`, which carries
 repo-rooted parent outputs (nax#2089) — never `expectedFiles`.
@@ -354,7 +354,7 @@ design exists to close. Remove the option:
 
 ## Sequencing
 
-> Status: PRs 1-4 merged. PR 5 (#2074) is the only open row.
+> Status: all five PRs merged 2026-09-16 (main `a8bc38ef8`). The seam-closure arc that followed — seams 5-10 — also merged; see the status line at the top and "Post-merge review and the P2/P3 wave".
 
 | PR | Contents | Shape |
 |---|---|---|
@@ -443,7 +443,8 @@ PR 1.
 Seams 5 through 10 in the table above. Each has its own issue citing this convention, so the rule
 exists before the fixes do — **#2083, #2089, #2087, #2088, #2090, #2091**, all filed 2026-09-16
 after the arc merged. They are not fixed here because each carries its own blast radius and none
-blocks the three filed issues.
+blocks the three filed issues. All six were subsequently closed by the seam-closure wave — see
+"Post-merge review and the P2/P3 wave" below.
 
 The arc also left four follow-ups of its own: **#2079** (live verification, deferred by ruling for
 the whole arc), **#2080** (`plan --decompose` bypasses the write seam), **#2084** (the
@@ -454,6 +455,36 @@ canonicalize). Plus **#2086** for seam 3's plan-time half.
 Also out of scope: teaching `parseImportSpecifiers` to resolve workspace package names so that
 cross-package reverse-deps could work. That is a feature, not a fix, and the `crossPackageDepth`
 retirement above is the honest interim state.
+
+---
+
+## Post-merge review and the P2/P3 wave
+
+The two waves above merged, but the arc is **not finished**. A post-merge code review of the six
+seam-closure PRs — *Path-Frame Seam Closure — Post-Merge Code Review* (2026-09-17),
+`nax-path-frame-seam-closure-review-2026-09-17.md` — found follow-up work, including **two P0s**.
+Both re-open hazards this spec had already written down:
+
+- **A provider re-derived `relative(repoRoot, packageDir)`.** `src/context/engine/providers/code-neighbor.ts`
+  and `…/git-history.ts` derived the package frame from the request's root and package dirs — the exact
+  derivation `src/context/fragments/reframe.ts:68-74` forbids **by name**. Under
+  `execution.storyIsolation: "worktree"` it yields `.nax-wt/<storyId>/<pkg>`, matches nothing, and
+  silently zeroes both providers.
+- **The enforcement gate reported `clean` on a real bypass.** The rewritten `check-story-workdir-access`
+  gate is weaker than the regex it replaced on the dominant raw-read idiom, while **#2084** — the issue
+  describing that bypass — sat closed.
+
+Where that follow-up work went:
+
+- **Wave 3** — the two P0s and three P1s, **merged 2026-09-17 as PR #2109** (squash `4762eda6d`),
+  closing **#2104-#2108**. That commit is `main`'s tip and the base of the P2/P3 wave below.
+- **The P2/P3 wave** — `docs/superpowers/plans/2026-09-17-path-frame-p2-p3/` — the remaining P2/P3
+  findings. **In flight, not merged.**
+
+Deliberately still open: **#2079** (live verification of #2067 — needs a real billed `nax plan` run and
+explicit approval at the launch moment) and **#2080** (`plan --decompose` bypasses the write seam).
+**#2096** stays open by design. Two consecutive arcs have now needed a dedicated bookkeeping pass
+(#2092, then this wave's PR 6); see that plan's "Consider preventing this".
 
 ---
 

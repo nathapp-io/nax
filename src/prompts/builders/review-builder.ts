@@ -19,8 +19,9 @@ import { SEMANTIC_CATEGORY_ENUM_LINE } from "@/review/semantic-categories";
 import type { LLMFinding } from "@/review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 import { wrapJsonPrompt } from "@/utils/llm-json";
+import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import { buildReviewOutOfScopeBlock } from "../sections";
-import { wrapDiffAccess } from "../sections/diff-access";
+import { DIFF_SCOPE_OMISSION_NOTICE, wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -330,22 +331,23 @@ ${diff}\`\`\`
  * Includes stat summary, git baseline ref, and pre-built self-serve commands.
  */
 function buildRefDiffSection(storyGitRef: string, stat: string, excludePatterns: string[]): string {
-  const merged = [...new Set([...excludePatterns, ":!.nax/", ":!.nax-pids"])];
+  const merged = [...new Set([...excludePatterns, ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS])];
   const excludeArgs = merged.map((p) => `'${p}'`).join(" ");
   // The full diff is scoped to the cwd subtree but must keep test files, so it
   // carries only the nax-metadata excludes — reusing `merged` would apply the
   // caller's production/test exclusion set and make it identical to the
   // production diff its own label distinguishes it from.
-  const naxExcludeArgs = [":!.nax/", ":!.nax-pids"].map((p) => `'${p}'`).join(" ");
-  // These strings are the ACP arm. `--relative` is appended AFTER `..HEAD` so
-  // git prints paths relative to the package cwd the reviewer is contained at
-  // (#2090); the native rendering does not use them — it swaps in the Git tool,
-  // which applies `--relative` itself (src/tools/git.ts:200). Flag position is
-  // deliberate: the parity prefix assertions match `..HEAD` at the end of the
-  // range.
-  const productionDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD --relative -- . ${excludeArgs}`;
-  const fullDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD --relative -- . ${naxExcludeArgs}`;
-  const logCmd = `git log --oneline ${storyGitRef}..HEAD --relative`;
+  const naxExcludeArgs = NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS.map((p) => `'${p}'`).join(" ");
+  // These strings are the ACP arm. `--relative` makes git print paths relative
+  // to the package cwd the reviewer is contained at (#2090), and flags precede
+  // the ref because a flag after a revision list reads as a pathspec
+  // (src/tools/git.ts:202). `git log --oneline` prints no paths, so
+  // `--relative` is inert there and is omitted. The native rendering does not
+  // use these strings — it swaps in the Git tool, which applies `--relative`
+  // itself and carries the same pathspecs in the spec below.
+  const productionDiffCmd = `git diff --relative --unified=3 ${storyGitRef}..HEAD -- . ${excludeArgs}`;
+  const fullDiffCmd = `git diff --relative --unified=3 ${storyGitRef}..HEAD -- . ${naxExcludeArgs}`;
+  const logCmd = `git log --oneline ${storyGitRef}..HEAD`;
 
   // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
   // one on the native protocol (src/prompts/sections/diff-access.ts).
@@ -364,5 +366,16 @@ Use these commands to inspect the code. Do NOT rely solely on the file list abov
 ${stat}
 \`\`\`
 
-${wrapDiffAccess({ ref: storyGitRef, productionExclude: [".", ...merged] }, shellBody)}`;
+${DIFF_SCOPE_OMISSION_NOTICE}
+
+${wrapDiffAccess(
+  {
+    ref: storyGitRef,
+    // Native parity: the ACP full diff carries the nax excludes and no caller
+    // patterns, so the spec's fullExclude must match (M9).
+    fullExclude: [".", ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS],
+    productionExclude: [".", ...merged],
+  },
+  shellBody,
+)}`;
 }

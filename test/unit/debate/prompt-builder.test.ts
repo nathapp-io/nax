@@ -483,11 +483,17 @@ describe("buildResolverPrompt()", () => {
     expect(diffLines.length).toBeGreaterThan(0);
     expect(logLines.length).toBeGreaterThan(0);
     for (const line of diffLines) {
-      expect(line).toContain("--relative");
+      // Flags precede the refs (src/tools/git.ts:202). Assert flag presence and
+      // that no flag trails the revision range, so the next flag addition does
+      // not re-create this pressure.
+      expect(line).toContain("git diff --relative");
       expect(line).toContain("-- .");
+      expect(line).not.toContain("..HEAD --relative");
     }
     for (const line of logLines) {
-      expect(line).toContain("--relative");
+      // `git log --oneline` prints no paths, so `--relative` there is inert argv.
+      expect(line).toContain("git log --oneline abc123..HEAD");
+      expect(line).not.toContain("--relative");
     }
 
     const fullDiffLine = lines.find((line) => line.includes("Full diff:"));

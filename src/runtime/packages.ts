@@ -10,7 +10,15 @@ export type PackageOverrideLoader = (repoRoot: string, packageDir: string) => Pr
 export interface PackageView {
   readonly packageDir: string;
   readonly relativeFromRoot: string;
-  /** Absolute path to the repo root (.nax/ anchor). Use as cwd when running root-config commands. */
+  /**
+   * Absolute path to the repo root (.nax/ anchor) — the MAIN CHECKOUT, captured
+   * once per run and stamped on every view, never re-pointed at a worktree.
+   *
+   * Do NOT use it as a spawn cwd for a story-scoped command under worktree
+   * isolation: that writes the user's real working tree (nax#2093). Route
+   * package commands through `packageWorkdir(view)` and Exec's
+   * `target: "repoRoot"` through `storyExecRoot(view)` instead.
+   */
   readonly repoRoot: string;
   /** True when a per-package config override was hydrated for this package. */
   readonly hasOverride: boolean;
@@ -211,6 +219,12 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
 export function storyExecRoot(view: { readonly repoRoot: string; readonly packageDir?: string }): string {
   const { repoRoot, packageDir } = view;
   if (!packageDir) return repoRoot;
+  // Mirror packageWorkdir's guard (:46). An absolute packageDir is already a
+  // real directory the caller resolved, so the relative-key arithmetic below
+  // does not apply: `split("/")[0]` is "" for such a path, the `.nax-wt` check
+  // falls through, and returning repoRoot would hand back the MAIN CHECKOUT --
+  // silently re-entering the nax#2093 bug this function exists to fix.
+  if (!repoRoot || isAbsolute(packageDir)) return packageDir;
   const segments = packageDir.split("/");
   if (segments[0] !== ".nax-wt" || segments.length < 2) return repoRoot;
   return join(repoRoot, segments[0], segments[1] as string);
