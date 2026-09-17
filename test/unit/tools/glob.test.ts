@@ -44,11 +44,55 @@ function ctx() {
 }
 
 /**
+ * Unescape a quoted-form basename back into its real characters. The renderer
+ * uses a JSON-style escape (`\"`, `\\`, `\n`, `\r`, `\t`); everything else
+ * passes through so the parser can survive an unrecognised escape rather than
+ * silently swallowing characters.
+ */
+function unescapeBasename(s: string): string {
+  let result = "";
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === "\\" && i + 1 < s.length) {
+      const next = s[i + 1];
+      if (next === "\\") {
+        result += "\\";
+        i += 2;
+        continue;
+      }
+      if (next === '"') {
+        result += '"';
+        i += 2;
+        continue;
+      }
+      if (next === "n") {
+        result += "\n";
+        i += 2;
+        continue;
+      }
+      if (next === "r") {
+        result += "\r";
+        i += 2;
+        continue;
+      }
+      if (next === "t") {
+        result += "\t";
+        i += 2;
+        continue;
+      }
+    }
+    result += s[i];
+    i++;
+  }
+  return result;
+}
+
+/**
  * Parse a group line into its leading directory prefix and basenames. Each
- * line is `<dir>/ <b1> <b2> ...` with basenames that contain whitespace
- * wrapped in `"..."`. The parser is what the agent would do to recover the
- * matched paths; if the format ever changes, the round-trip AC (#5) must still
- * match.
+ * line is `<dir>/ <b1> <b2> ...` with basenames that contain whitespace or
+ * `"` wrapped in `"..."` and special characters escaped. The parser is what
+ * the agent would do to recover the matched paths; if the format ever
+ * changes, the round-trip AC (#5) must still match.
  */
 function parseGroupLine(line: string): { dir: string; basenames: string[] } {
   // A line is `<dir>/ <b1> <b2> ...` — the directory prefix always ends in
@@ -59,16 +103,29 @@ function parseGroupLine(line: string): { dir: string; basenames: string[] } {
   const rest = line.slice(spaceIdx + 1);
   const basenames: string[] = [];
   // Walk basenames separated by single spaces. A basename is either an
-  // unquoted run of non-space characters, or a double-quoted run that may
-  // contain spaces. The unquoted case reads up to the next space; the quoted
-  // case reads until the matching close quote.
+  // unquoted run of non-space characters, or a double-quoted run with
+  // backslash escapes. The unquoted case reads up to the next space; the
+  // quoted case reads until the unescaped close quote.
   let i = 0;
   while (i < rest.length) {
     if (rest[i] === '"') {
-      const close = rest.indexOf('"', i + 1);
-      expect(close).toBeGreaterThan(i);
-      basenames.push(rest.slice(i + 1, close));
-      i = close + 1;
+      i++;
+      let body = "";
+      while (i < rest.length && rest[i] !== '"') {
+        // A backslash escapes the next character, including `\"` — the scan
+        // for the closing quote must skip the pair, or an escaped quote would
+        // be read as the end of the basename.
+        if (rest[i] === "\\" && i + 1 < rest.length) {
+          body += rest[i] + rest[i + 1];
+          i += 2;
+          continue;
+        }
+        body += rest[i];
+        i++;
+      }
+      expect(rest[i]).toBe('"');
+      i++;
+      basenames.push(unescapeBasename(body));
     } else {
       const next = rest.indexOf(" ", i);
       if (next === -1) {
@@ -174,10 +231,12 @@ describe("globTool — directory-grouped output", () => {
     // The renderer must treat every whitespace character as a reason to
     // quote, not just ` ` and `\t` — a tab or NBSP in an unquoted basename
     // would split a single basename into two when the parser reads it back,
-    // violating AC5's reconstructed-set invariant. `_globDeps.scan` is the
-    // injection seam: the filesystem would not yield a basename with a
-    // literal NBSP on its own, so the test drives the production path with a
-    // controlled iterator.
+    // violating AC5's reconstructed-set invariant. Tab is escaped as the
+    // two-character sequence `\t` so the parser reverses it losslessly;
+    // NBSP survives literally since it isn't a control character. `_globDeps.scan`
+    // is the injection seam: the filesystem would not yield a basename with
+    // a literal NBSP on its own, so the test drives the production path with
+    // a controlled iterator.
     _globDeps.scan = () =>
       (async function* () {
         yield "src/a b.ts";
@@ -188,11 +247,56 @@ describe("globTool — directory-grouped output", () => {
     const res = await globTool.run({ pattern: "**/*.ts" }, ctx());
     expect(res.isError).toBeFalsy();
     expect(res.content).toContain('"a b.ts"');
-    expect(res.content).toContain('"c\td.ts"');
+    // Tab in the basename escapes to the two-character sequence `\t`.
+    expect(res.content).toContain('"c\\td.ts"');
+    // NBSP is whitespace but not a control — it passes through literally.
     expect(res.content).toContain('"e\u00A0f.ts"');
-    // The plain basename stays unquoted — only whitespace triggers quoting.
+    // The plain basename stays unquoted — only whitespace (or `"`) triggers quoting.
     expect(res.content).toContain("plain.ts");
     expect(res.content).not.toContain('"plain.ts"');
+  });
+
+  test("embedded quotes and newlines in basenames round-trip losslessly via escaping", async () => {
+    // AC5 demands the reconstructed set equals the matched set exactly. A
+    // basename with `"` or `\n` would break the format if emitted raw: the
+    // inner `"` would terminate the quoted form early, and a literal `\n`
+    // would split the line itself when group lines are joined by `\n`. The
+    // renderer must escape these so the parser can reverse them. A
+    // basename with just a backslash is emitted unquoted — the backslash is
+    // not whitespace or a quote character, so it does not need quoting on
+    // its own.
+    _globDeps.scan = () =>
+      (async function* () {
+        yield 'src/has"quote.md';
+        yield "src/has\nnewline.md";
+        yield "src/has\rcarriage.md";
+        yield "src/has\\backslash.md";
+      })();
+    const res = await globTool.run({ pattern: "**/*.md" }, ctx());
+    expect(res.isError).toBeFalsy();
+    // Quote-bearing and control-whitespace basenames are wrapped in quotes
+    // with escapes applied.
+    expect(res.content).toContain('"has\\"quote.md"');
+    expect(res.content).toContain('"has\\nnewline.md"');
+    expect(res.content).toContain('"has\\rcarriage.md"');
+    // A pure-backslash basename stays unquoted — the renderer only quotes
+    // when whitespace or `"` is present.
+    expect(res.content).toContain("has\\backslash.md");
+    // Crucially, no literal `\n` may appear in the output — otherwise the
+    // line structure breaks. The escape uses the two-character sequence `\n`
+    // (backslash + n), not a real newline.
+    expect(res.content).not.toContain("\n\n"); // there must still be exactly one separator between the two lines
+    // And no literal carriage return either — that would also break grouping.
+    expect(res.content).not.toContain("\r");
+
+    // Round-trip: the parser must recover the original basenames, in the
+    // ascending code-unit order AC4 requires (`\n` 0x0a < `\r` 0x0d < `"` 0x22
+    // < `\` 0x5c).
+    const lines = res.content.split("\n");
+    expect(lines).toHaveLength(1);
+    const { dir, basenames } = parseGroupLine(lines[0]);
+    expect(dir).toBe("src/");
+    expect(basenames).toEqual(["has\nnewline.md", "has\rcarriage.md", 'has"quote.md', "has\\backslash.md"]);
   });
 
   test("AC7: a single match uses the same shape as a multi-match result", async () => {

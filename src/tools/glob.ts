@@ -6,12 +6,13 @@
  * nothing rather than escaping.
  *
  * Output is directory-grouped — one line per parent directory, basenames
- * joined with single spaces, basenames containing whitespace wrapped in
- * double quotes. A match directly at the repository root is grouped under
- * the prefix `./`, so every line has a directory prefix and there is no
- * second shape to recognise. The format is lossless: parsing each line back
- * into `<dir>/ <b1> <b2> ...` and joining each basename to its directory
- * reconstructs the matched set exactly.
+ * joined with single spaces, basenames containing whitespace or a quote
+ * wrapped in double quotes and escaped (`\\`, `\"`, `\n`, `\r`, `\t`). A
+ * match directly at the repository root is grouped under the prefix `./`, so
+ * every line has a directory prefix and there is no second shape to
+ * recognise. The format is lossless: parsing each line back into
+ * `<dir>/ <b1> <b2> ...`, unescaping each quoted basename, and joining each
+ * basename to its directory reconstructs the matched set exactly.
  */
 
 import { sep } from "node:path";
@@ -43,12 +44,38 @@ export const _globDeps = {
 };
 
 /**
+ * Escapes applied inside a quoted basename. Four are required to keep the
+ * format lossless: `"` (would otherwise end the quoted form early), `\` (it
+ * introduces the escapes, so it must escape itself), and the line terminators
+ * `\n` / `\r` (group lines are joined by `\n`, so a literal one inside a
+ * basename would split a single line into two). `\t` is escaped as well, so a
+ * consumer that tokenises on whitespace rather than on this grammar still
+ * sees one basename. Everything else passes through unchanged; this is not a
+ * general-purpose escape.
+ */
+const ESCAPED_BASENAME_CHARS: Readonly<Record<string, string>> = {
+  "\\": "\\\\",
+  '"': '\\"',
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+};
+
+function escapeBasename(b: string): string {
+  // The `?? c` arm is unreachable — the regex only matches the keys above —
+  // but it keeps the callback's return type `string` for `String.replace`.
+  return b.replace(/[\\"\n\r\t]/g, (c) => ESCAPED_BASENAME_CHARS[c] ?? c);
+}
+
+/**
  * Bucket a flat match list by parent directory and render each bucket as one
  * line: `<dir>/ <b1> <b2> ...`. The shape is identical whether the result
  * holds one match or many, so a wide listing and an existence probe read the
- * same way. Whitespace in a basename is quoted; everything else passes
- * through unchanged. Group lines and basenames are both sorted ascending, so
- * the output is deterministic for a given match set.
+ * same way. A basename containing whitespace or a quote is wrapped in double
+ * quotes, with the characters above escaped inside the quotes; every other
+ * basename — including one that contains only a backslash — passes through
+ * unchanged. Group lines and basenames are both sorted ascending, so the
+ * output is deterministic for a given match set.
  */
 function renderGrouped(matches: readonly string[]): string {
   const byDir = new Map<string, string[]>();
@@ -68,10 +95,19 @@ function renderGrouped(matches: readonly string[]): string {
   for (const dir of dirs) {
     const bucket = byDir.get(dir) ?? [];
     bucket.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    const rendered = bucket.map((b) => (/\s/.test(b) ? `"${b}"` : b));
+    const rendered = bucket.map((b) => (needsQuoting(b) ? `"${escapeBasename(b)}"` : b));
     lines.push(`${dir} ${rendered.join(" ")}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * True when a basename needs quoting to keep the format unambiguous: any
+ * whitespace (would split a single basename into multiple tokens), or the
+ * quote character itself (would terminate the quoted form early).
+ */
+function needsQuoting(b: string): boolean {
+  return /[\s"]/.test(b);
 }
 
 export const globTool: CodingTool = {
