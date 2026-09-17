@@ -17,10 +17,28 @@ import type { DebateStageConfig } from "../debate";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { callOp, decomposeOp } from "../operations";
+import { finalizeAndWritePrd } from "../plan/strategies";
 import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import { buildSourceRootsSection } from "./plan-helpers";
 import { _planDeps, createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, resolvePlanModelSelection } from "./plan-runtime";
+
+function validateDecomposedStoryIds(stories: readonly DecomposedStory[], existingIds: ReadonlySet<string>): void {
+  const generatedIds = new Set<string>();
+  for (const story of stories) {
+    if (existingIds.has(story.id) || generatedIds.has(story.id)) {
+      throw new NaxError(
+        `Sub-story id "${story.id}" duplicates an existing or generated story`,
+        "DECOMPOSE_VALIDATION_FAILED",
+        {
+          stage: "decompose",
+          storyId: story.id,
+        },
+      );
+    }
+    generatedIds.add(story.id);
+  }
+}
 
 /**
  * Decompose an existing story into sub-stories.
@@ -167,6 +185,8 @@ export async function planDecomposeCommand(
         }
       }
 
+      validateDecomposedStoryIds(decompStories, new Set(prd.userStories.map((story) => story.id)));
+
       // AC-count check: retryable within shared maxReplanAttempts budget
       const violations = decompStories.filter(
         (sub) => sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount,
@@ -212,14 +232,33 @@ export async function planDecomposeCommand(
     ...updatedStories.slice(originalIndex + 1),
   ];
 
-  // Delta C4: record the loader-resolved config profile name (AC 6 sets
-  // config.profile after all merges) so nax run can detect ladder drift.
-  const updatedPrd: PRD = {
-    ...prd,
-    userStories: finalStories,
-    routingProfile: config.profile ?? "default",
-  };
-  await _planDeps.writeFile(prdPath, JSON.stringify(updatedPrd, null, 2));
+  // nax#2080: the decompose write goes through the same seam as `nax plan`, so
+  // sub-stories get `workdirSource` stamped and their declared paths re-spelled
+  // into the repo frame. Scoped to the sub-stories: the rest of this PRD may
+  // already be executing, and re-deriving a workdir or re-resolving routing over
+  // it would rewrite decisions that have already had effects.
+  //
+  // `specContent` is "" because decompose has no spec -- and with a scope set the
+  // seam skips fidelity outright, so the value is never read.
+  //
+  // Delta C4: `finalizePrdRouting` inside the seam records the loader-resolved
+  // config profile name (`config.profile`) at PRD root, which is what this
+  // function used to stamp by hand, so `nax run` can still detect ladder drift.
+  await finalizeAndWritePrd({
+    prd: { ...prd, userStories: finalStories },
+    specContent: "",
+    featureName: options.feature,
+    projectName: prd.project,
+    agentRouting: config.routing?.agents,
+    profileName: config.profile,
+    models: config.models,
+    defaultAgent: config.agent?.default ?? "claude",
+    outputPath: prdPath,
+    repoRoot: workdir,
+    scope: new Set(subStoriesWithParent.map((s) => s.id)),
+    preserveScopedAgents: true,
+    writeFile: _planDeps.writeFile,
+  });
   return () => {};
 }
 

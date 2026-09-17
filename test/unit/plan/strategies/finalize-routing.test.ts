@@ -108,4 +108,30 @@ describe("finalizePrdRouting", () => {
     expect(routing?.profileModelTier).toBeUndefined();
     expect(routing?.initialModelTier).toBeUndefined();
   });
+
+  test("leaves a story outside `only` as the identical reference (nax#2080)", () => {
+    const input = prdWith({ agentProfileId: "claude-final" });
+    const untouched = input.userStories[0];
+
+    const out = finalizePrdRouting(input, agentRouting, "cross-agent", models, "claude", new Set(["US-999"]));
+
+    expect(out.userStories[0]).toBe(untouched);
+    expect(out.userStories[0].routing?.agent).toBeUndefined();
+    // The PRD-root stamp is not story-scoped.
+    expect(out.routingProfile).toBe("cross-agent");
+  });
+
+  test("resolves a story that IS in `only` (nax#2080)", () => {
+    const out = finalizePrdRouting(
+      prdWith({ agentProfileId: "claude-final" }),
+      agentRouting,
+      "cross-agent",
+      models,
+      "claude",
+      new Set(["US-001"]),
+    );
+
+    expect(out.userStories[0].routing?.agent).toBe("claude");
+    expect(out.userStories[0].routing?.initialProfileId).toBe("claude-final");
+  });
 });

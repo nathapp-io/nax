@@ -375,4 +375,24 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     setupDeps(prd, [makeSubStory("US-001-A", { acceptanceCriteria: exactAcs }), makeSubStory("US-001-B")]);
     await expect(planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" })).resolves.not.toThrow();
   });
+
+  test("rejects a generated id that already belongs to the PRD", async () => {
+    const prd = makePrd([makeStory({ id: "US-001" }), makeStory({ id: "US-002" })]);
+    setupDeps(prd, [makeSubStory("US-002")]);
+
+    await expect(
+      planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
+    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    expect(capturedWriteArgs).toEqual([]);
+  });
+
+  test("rejects duplicate generated ids before writing the PRD", async () => {
+    const prd = makePrd([makeStory({ id: "US-001" })]);
+    setupDeps(prd, [makeSubStory("US-001-A"), makeSubStory("US-001-A")]);
+
+    await expect(
+      planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
+    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    expect(capturedWriteArgs).toEqual([]);
+  });
 });
