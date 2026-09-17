@@ -13,23 +13,29 @@
 
 import { relative } from "node:path";
 
-/** The worktree segment `packageWorkdir()` bakes into an isolated story's root. */
+/** The reserved worktree segment an isolated story's root is nested under. */
 const WORKTREE_DIR = ".nax-wt";
 
 /**
  * The package label to show, with any worktree scratch prefix removed.
  *
- * Under `storyIsolation: "worktree"` the root is `<repo>/.nax-wt/<storyId>/<pkg>`
- * (src/worktree/manager.ts), so the naive relative path leaks the scratch
- * directory and the story id into the prompt. Both are noise to the agent, and
- * naming them invites it to reason about a path it should not care about.
- * Returns "" when the root IS the repo root.
+ * Post-nax#2093 the sole producer (`src/agents/tool-preamble.ts`) passes the
+ * story's worktree root as `repoRoot` and its package workdir as `root`, so
+ * `relative(repoRoot, root)` is already the bare package path (`packages/api`)
+ * and the strip below no longer fires in production.
+ *
+ * Retained as defence-in-depth: it is pure, the pair it handles is exactly what
+ * a regression that re-pointed `repoRoot` back at the main checkout would
+ * produce, and the naive relative path would then leak the scratch directory and
+ * the story id into the prompt — noise that invites the agent to reason about a
+ * path it should not care about. Returns "" when the root IS the repo root.
  */
 function packageLabel(root: string, repoRoot: string | undefined): string {
   const rel = repoRoot === undefined || repoRoot.trim() === "" ? root : relative(repoRoot, root);
   const segments = rel.split(/[\\/]/).filter((segment) => segment !== "");
   if (segments[0] !== WORKTREE_DIR) return segments.join("/");
-  // Drop `.nax-wt` and the story id beneath it.
+  // Drop `.nax-wt` and the story id beneath it. Unreachable from the current
+  // producer — see the docblock above.
   return segments.slice(2).join("/");
 }
 
@@ -46,13 +52,26 @@ export function buildAgentScopeSection(root: string | undefined, repoRoot: strin
     ].join("\n");
   }
 
-  return [
+  const lines = [
     "## Your file scope",
     "",
     `Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at \`${label}\`, NOT at the repository root.`,
     `Spell every path relative to that directory: write \`src/index.ts\`, never \`${label}/src/index.ts\`.`,
     "",
-    `If a path you were given already starts with \`${label}/\`, strip that prefix before using it.`,
+  ];
+  // Only a multi-segment label is safe to strip. A single-segment label (`api`)
+  // is indistinguishable from the first segment of a package-relative path, so
+  // the old unconditional rule deleted real prefixes: label `api`, path
+  // `api/openapi.yaml`, rewritten to `openapi.yaml` and not found. Prompt-
+  // embedded git output is package-relative as of nax#2101, so this now covers
+  // only repo-root-relative paths named elsewhere in the prompt.
+  if (label.includes("/")) {
+    lines.push(
+      `If a path you were given starts with \`${label}/\`, it is relative to the repository root — drop that prefix and use the rest.`,
+    );
+  }
+  lines.push(
     "If it names a different package, your tools cannot open it — say so rather than guessing at its contents.",
-  ].join("\n");
+  );
+  return lines.join("\n");
 }

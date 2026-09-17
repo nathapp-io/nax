@@ -49,8 +49,14 @@ export interface CodingToolSupport {
 export function buildCodingToolSupport(args: {
   root?: string;
   /**
-   * Repo root for Exec's `target: "repoRoot"` form. Falls back to `root`
-   * when absent (single-package repos, where the two coincide).
+   * Execution root for Exec's `target: "repoRoot"` form, supplied by
+   * `storyExecRoot` in `src/operations/call.ts`.
+   *
+   * Under story worktree isolation this is the story's worktree root
+   * (`<repo>/.nax-wt/<storyId>`), NOT the main checkout — a repo-scoped command
+   * that used `PackageView.repoRoot` here wrote the user's real working tree
+   * (nax#2093). Falls back to `root` when absent, which is correct for
+   * single-package repos and non-isolated runs where the two coincide.
    */
   repoRoot?: string;
   grants?: readonly ToolGrant[];
