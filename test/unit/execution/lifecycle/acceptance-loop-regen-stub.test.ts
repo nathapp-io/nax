@@ -284,21 +284,41 @@ test("AC-1: real test", async () => {
     const packageDir = join(repoRoot, "packages", "api");
     const implRelPath = "packages/api/src/add.ts";
     const implAbsPath = join(repoRoot, implRelPath);
-    const implContent = "export function add(a: number, b: number) { return a + b; }";
+    const implContentBefore = "export function add(a: number, b: number) { return a + b; }";
+    const implContentAfter = "export function add(a: number, b: number) { return a + b + 0; }";
 
     mkdirSync(join(packageDir, "src"), { recursive: true });
-    await Bun.write(implAbsPath, implContent);
+
+    // A REAL git repo, not a mock: this is the exact shape the pinned test
+    // was blind to (path-frame follow-up H1/H2) — a mocked spawnGitDiff that
+    // ignores both `cwd` and `pathspec` can't tell a correct
+    // (cwd, pathspec) combination from the broken one the code actually
+    // sends. `spawnGitDiff` spawns with `cwd: workdir`, and this file's own
+    // comment says workdir is the package dir in a monorepo — a repo-rooted
+    // pathspec ("packages/api/") handed to a package-dir cwd resolves to
+    // "<repoRoot>/packages/api/packages/api/" and git returns nothing, exit
+    // 0. Only a real git process reproduces that.
+    await Bun.spawn(["git", "init"], { cwd: repoRoot }).exited;
+    await Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: repoRoot }).exited;
+    await Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: repoRoot }).exited;
+
+    await Bun.write(implAbsPath, implContentBefore);
+    await Bun.spawn(["git", "add", "-A"], { cwd: repoRoot }).exited;
+    await Bun.spawn(["git", "commit", "-m", "base"], { cwd: repoRoot }).exited;
+    const baseRefProc = Bun.spawn(["git", "rev-parse", "HEAD"], { cwd: repoRoot, stdout: "pipe" });
+    const baseRef = (await new Response(baseRefProc.stdout).text()).trim();
+    await baseRefProc.exited;
+
+    // The story's implementation commit: what storyGitRef must diff AGAINST.
+    await Bun.write(implAbsPath, implContentAfter);
+    await Bun.spawn(["git", "add", "-A"], { cwd: repoRoot }).exited;
+    await Bun.spawn(["git", "commit", "-m", "implement US-001"], { cwd: repoRoot }).exited;
 
     const testPath = join(packageDir, ".nax-acceptance.test.ts");
     await Bun.write(testPath, "original test content");
 
-    // spawnGitDiff returns repo-rooted paths. The fix threads the story's
-    // package as a pathspec so cross-package bleeds don't fill the 50KB budget.
-    const spawnMock = mock(async (_workdir: string, _ref: string, _pathspec?: string) => implRelPath);
-    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = spawnMock;
-    // Leave _regenerateDeps.readFile at the default (Bun.file(...).text()) so
-    // the read actually hits the disk — proves the join resolves to a real
-    // file. A path that doesn't exist would throw and be skipped silently.
+    // Real spawnGitDiff (not mocked) and real readFile — both must land on
+    // the actual files on disk for this test to pass.
 
     const capturedCtxs: Array<PipelineContext & { implementationContext?: Array<{ path: string; content: string }> }> =
       [];
@@ -311,7 +331,7 @@ test("AC-1: real test", async () => {
     const ctx = makeMinimalPipelineContext({
       workdir: packageDir,
       projectDir: repoRoot,
-      storyGitRef: "abc1234",
+      storyGitRef: baseRef,
       story: {
         id: "US-001",
         title: "t",
@@ -329,25 +349,18 @@ test("AC-1: real test", async () => {
 
     await regenerateAcceptanceTest(testPath, ctx);
 
-    // The implementationContext must carry the read content — proving the
-    // join landed on the real file. Before the fix, the join produces
-    // `<packageDir>/packages/api/src/add.ts` (does not exist) and the read
-    // throws; the catch swallows and implementationContext ends up undefined.
+    // The implementationContext must carry the read content — proving both
+    // that git found the changed file (the cwd/pathspec combination works)
+    // AND that the read landed on the real file. Before the fix,
+    // spawnGitDiff ran with cwd=packageDir and pathspec="packages/api/",
+    // git returned nothing, changedFiles was empty, and
+    // implementationContext stayed undefined — silently, exit 0, no warn.
     expect(capturedCtxs).toHaveLength(1);
     const passed = capturedCtxs[0];
     expect(passed.implementationContext).toBeDefined();
     expect(passed.implementationContext).toHaveLength(1);
     expect(passed.implementationContext?.[0].path).toBe(implRelPath);
-    expect(passed.implementationContext?.[0].content).toBe(implContent);
-
-    // The spawn must receive the story's package so the diff can't pull in
-    // other packages' diffs and fill the 50KB budget — mirrors the shape of
-    // captureOutputFiles (src/utils/git.ts:484-501).
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    const [calledWorkdir, calledRef, calledPathspec] = spawnMock.mock.calls[0];
-    expect(calledWorkdir).toBe(packageDir);
-    expect(calledRef).toBe("abc1234");
-    expect(calledPathspec).toBe("packages/api/");
+    expect(passed.implementationContext?.[0].content).toBe(implContentAfter);
   });
 
   // #2083 polish: exercise both `logger?.warn` branches added by the

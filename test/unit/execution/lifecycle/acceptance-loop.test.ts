@@ -611,6 +611,12 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
     const ctx = makeMinimalPipelineContext({
       workdir: tmpDir,
+      // Single-package repo: projectDir === workdir, so repoRoot resolves to
+      // tmpDir too. spawnGitDiff spawns at repoRoot (path-frame follow-up
+      // H1/H2 fix) — leaving projectDir at the helper's unrelated default
+      // ("/tmp/workdir") would desync it from workdir and assert the wrong
+      // cwd for a single-package repo.
+      projectDir: tmpDir,
       storyGitRef: "abc1234",
     });
 
