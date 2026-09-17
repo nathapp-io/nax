@@ -22,6 +22,7 @@ import {
 import type { DecomposedStory } from "@/agents/shared/types-extended";
 import type { CompleteOptions } from "@/agents/types";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
+import { _persistPrdDeps } from "@/plan/strategies";
 import type { PRD, UserStory } from "@/prd";
 import { getContextFiles } from "@/prd";
 
@@ -371,5 +372,140 @@ describe("planDecomposeCommand — PRD write-back", () => {
 
     // When debate succeeds, adapter.decompose() should NOT be called
     expect(adapterDecomposeCalls).toHaveLength(0);
+  });
+});
+
+describe("planDecomposeCommand — writes through the plan-write seam (nax#2080)", () => {
+  let tmpDir: string;
+  let capturedWriteArgs: Array<[string, string]>;
+  let origPersistExistsSync: typeof _persistPrdDeps.existsSync;
+  let origPersistDiscover: typeof _persistPrdDeps.discoverWorkspacePackages;
+
+  beforeEach(async () => {
+    tmpDir = makeTempDir("nax-decompose-seam-");
+    capturedWriteArgs = [];
+    await mkdir(join(tmpDir, ".nax", "features", FEATURE), { recursive: true });
+    origPersistExistsSync = _persistPrdDeps.existsSync;
+    origPersistDiscover = _persistPrdDeps.discoverWorkspacePackages;
+  });
+
+  afterEach(() => {
+    mock.restore();
+    _planDeps.readFile = origReadFile;
+    _planDeps.writeFile = origWriteFile;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
+    _planDeps.createRuntime = origCreateRuntime;
+    _planDeps.existsSync = origExistsSync;
+    _planDeps.createDebateRunner = origCreateDebateRunner;
+    _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
+    _planDeps.readPackageJson = origReadPackageJson;
+    _planDeps.readPackageJsonAt = origReadPackageJsonAt;
+    _planDeps.spawnSync = origSpawnSync;
+    _planDeps.mkdirp = origMkdirp;
+    _persistPrdDeps.existsSync = origPersistExistsSync;
+    _persistPrdDeps.discoverWorkspacePackages = origPersistDiscover;
+    cleanupTempDir(tmpDir);
+  });
+
+  function setup(prd: PRD, stories: UserStory[]) {
+    const prdPath = join(tmpDir, ".nax", "features", FEATURE, "prd.json");
+    _planDeps.existsSync = mock((path: string) => path === prdPath);
+    _planDeps.readFile = mock(async (path: string) => (path === prdPath ? JSON.stringify(prd) : ""));
+    _planDeps.writeFile = mock(async (path: string, content: string) => {
+      capturedWriteArgs.push([path, content]);
+    });
+    _planDeps.scanSourceRoots = mock(async () => []);
+    _planDeps.discoverWorkspacePackages = mock(async () => []);
+    _planDeps.readPackageJson = mock(async () => ({ name: "test-project" }));
+    _planDeps.readPackageJsonAt = mock(async () => null);
+    _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
+    _planDeps.mkdirp = mock(async () => {});
+    _planDeps.createRuntime = mock(() =>
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => ({ stories: stories.map(toDecomposedStory) })),
+      }),
+    );
+    return prdPath;
+  }
+
+  test("stamps workdirSource and repo-frames the sub-story's contextFiles", async () => {
+    const parent = makeStory({ id: "US-001", workdir: "packages/app", workdirSource: "stated" });
+    setup(makePrd([parent]), [makeSubStory("US-001-A", { contextFiles: ["src/foo.ts"] })]);
+
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = (p: string) => p === join(tmpDir, "packages/app/src/foo.ts");
+
+    await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
+
+    const written = JSON.parse(capturedWriteArgs[0][1]) as PRD;
+    const sub = written.userStories.find((s) => s.id === "US-001-A");
+    assertDefined(sub, "sub-story US-001-A");
+    expect(sub.workdir).toBe("packages/app");
+    expect(sub.workdirSource).toBe("stated");
+    expect(getContextFiles(sub)).toEqual(["packages/app/src/foo.ts"]);
+  });
+
+  /**
+   * `makeNaxConfig()` ships `routing.agents = { enabled: true, strategy: "off", profiles: [] }`,
+   * and `resolveAgentAssignment` returns null on an empty `profiles` list
+   * (src/agents/shared/agent-profile-resolver.ts:25-26). Under that default the
+   * "sibling keeps its agent" assertion below would hold with or without the scope
+   * guard. A real profile is what makes it a test.
+   */
+  function makeRoutedConfig() {
+    return makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off",
+          default: "claude-default",
+          profiles: [{ id: "claude-default", target: { agent: "claude", model: "balanced" }, strengths: ["design"] }],
+        },
+      },
+    });
+  }
+
+  test("leaves an already-executed sibling untouched", async () => {
+    const parent = makeStory({ id: "US-001" });
+    const done = makeStory({
+      id: "US-002",
+      status: "passed",
+      contextFiles: ["src/bar.ts"],
+      routing: { complexity: "medium", testStrategy: "tdd-simple", reasoning: "r", agent: "opencode" },
+    });
+    setup(makePrd([parent, done]), [makeSubStory("US-001-A")]);
+
+    // A probe that would happily re-frame and re-derive everything if it were asked.
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = () => true;
+
+    await planDecomposeCommand(tmpDir, makeRoutedConfig(), { feature: FEATURE, storyId: "US-001" });
+
+    const written = JSON.parse(capturedWriteArgs[0][1]) as PRD;
+    const sibling = written.userStories.find((s) => s.id === "US-002");
+    assertDefined(sibling, "sibling US-002");
+    expect(sibling.status).toBe("passed");
+    expect(sibling.workdirSource).toBeUndefined();
+    expect(sibling.workdir).toBeUndefined();
+    expect(getContextFiles(sibling)).toEqual(["src/bar.ts"]);
+    expect(sibling.routing?.agent).toBe("opencode");
+
+    // Positive control: the new sub-story IS resolved by the seam, so the sibling
+    // assertion above is about the scope rather than about routing being inert.
+    const sub = written.userStories.find((s) => s.id === "US-001-A");
+    expect(sub?.routing?.agent).toBe("claude");
+  });
+
+  test("preserves the PRD project field and still stamps routingProfile", async () => {
+    setup(makePrd([makeStory({ id: "US-001" })]), [makeSubStory("US-001-A")]);
+    _persistPrdDeps.discoverWorkspacePackages = async () => [];
+    _persistPrdDeps.existsSync = () => false;
+
+    const before = makePrd([makeStory({ id: "US-001" })]);
+    await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
+
+    const written = JSON.parse(capturedWriteArgs[0][1]) as PRD;
+    expect(written.project).toBe(before.project);
+    expect(written.routingProfile).toBe("default");
   });
 });
