@@ -279,24 +279,24 @@ Recommended commands:
 
 \`\`\`bash
 # Full diff including tests (adversarial review sees everything except nax metadata):
-git diff --unified=3 ${storyGitRef}..HEAD -- . ${excludeArgs}
+git diff --unified=3 ${storyGitRef}..HEAD --relative -- . ${excludeArgs}
 
 # Commit history for this story:
-git log --oneline ${storyGitRef}..HEAD
+git log --oneline ${storyGitRef}..HEAD --relative
 
 # Files added in this story (for test audit gap):
-git diff --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${excludeArgs}
+git diff --name-only --diff-filter=A ${storyGitRef}..HEAD --relative -- . ${excludeArgs}
 
 # Show a specific file's full content:
 cat path/to/file.ts
 \`\`\`
 
 **Test audit workflow:**
-1. Run: \`git diff --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${excludeArgs}\`
+1. Run: \`git diff --name-only --diff-filter=A ${storyGitRef}..HEAD --relative -- . ${excludeArgs}\`
 2. For each new source file, check whether a matching test file was added (patterns: ${testPatternGuide}).
 3. If a new exported module has no test file, flag it as \`"test-gap"\`.
 4. To focus only on production deltas while auditing test coverage, run:
-  \`git diff --unified=3 ${storyGitRef}..HEAD -- . ${productionExcludeArgs}\`
+  \`git diff --unified=3 ${storyGitRef}..HEAD --relative -- . ${productionExcludeArgs}\`
 
 `;
 

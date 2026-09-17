@@ -312,3 +312,38 @@ describe("semantic review prompt", () => {
     expect(semanticPrompt(makeScopeStory())).not.toContain("Out of Scope (feature-level");
   });
 });
+
+// ─── ref-mode git frame (#2090) ────────────────────────────────────────────────
+
+describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — ref-mode git frame (#2090)", () => {
+  const prompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(
+    STORY,
+    makeSemanticReviewConfig({ model: "balanced", diffMode: "ref", rules: [], excludePatterns: [":!*.test.ts"] }),
+    { mode: "ref", storyGitRef: "abc123", stat: " src/a.ts | 2 +-" },
+  );
+
+  test("every emitted diff and log command is package-relative and scoped", () => {
+    const lines = prompt.split("\n");
+    const diffLines = lines.filter((line) => line.includes("git diff "));
+    const logLines = lines.filter((line) => line.includes("git log "));
+
+    expect(diffLines.length).toBeGreaterThan(0);
+    expect(logLines.length).toBeGreaterThan(0);
+    for (const line of diffLines) {
+      expect(line).toContain("--relative");
+      expect(line).toContain("-- .");
+    }
+    for (const line of logLines) {
+      expect(line).toContain("--relative");
+    }
+  });
+
+  test("the full diff scopes to the cwd subtree without excluding test files", () => {
+    const fullDiffLine = prompt.split("\n").find((line) => line.includes("Full diff (including tests)"));
+    expect(fullDiffLine).toBeDefined();
+    expect(fullDiffLine).toContain("--relative");
+    expect(fullDiffLine).toContain("-- .");
+    expect(fullDiffLine).not.toContain(":!*.test.ts");
+    expect(fullDiffLine).toContain(":!.nax/");
+  });
+});

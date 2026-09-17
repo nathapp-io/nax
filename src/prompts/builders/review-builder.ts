@@ -332,15 +332,20 @@ ${diff}\`\`\`
 function buildRefDiffSection(storyGitRef: string, stat: string, excludePatterns: string[]): string {
   const merged = [...new Set([...excludePatterns, ":!.nax/", ":!.nax-pids"])];
   const excludeArgs = merged.map((p) => `'${p}'`).join(" ");
-  // These strings are the ACP arm, pinned byte-for-byte by
-  // test/unit/prompts/diff-access-acp-parity.test.ts so native's Git error rate
-  // stays measurable against an arm that did not move. The native rendering
-  // does not use them — it swaps in the Git tool, which applies `--relative`
-  // itself (src/tools/git.ts:200), so the package-relative fix already reaches
-  // the protocol this defect was observed on.
-  const productionDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD -- . ${excludeArgs}`;
-  const fullDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD`;
-  const logCmd = `git log --oneline ${storyGitRef}..HEAD`;
+  // The full diff is scoped to the cwd subtree but must keep test files, so it
+  // carries only the nax-metadata excludes — reusing `merged` would apply the
+  // caller's production/test exclusion set and make it identical to the
+  // production diff its own label distinguishes it from.
+  const naxExcludeArgs = [":!.nax/", ":!.nax-pids"].map((p) => `'${p}'`).join(" ");
+  // These strings are the ACP arm. `--relative` is appended AFTER `..HEAD` so
+  // git prints paths relative to the package cwd the reviewer is contained at
+  // (#2090); the native rendering does not use them — it swaps in the Git tool,
+  // which applies `--relative` itself (src/tools/git.ts:200). Flag position is
+  // deliberate: the parity prefix assertions match `..HEAD` at the end of the
+  // range.
+  const productionDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD --relative -- . ${excludeArgs}`;
+  const fullDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD --relative -- . ${naxExcludeArgs}`;
+  const logCmd = `git log --oneline ${storyGitRef}..HEAD --relative`;
 
   // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
   // one on the native protocol (src/prompts/sections/diff-access.ts).

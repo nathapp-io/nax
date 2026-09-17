@@ -105,6 +105,32 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     expect(result).not.toContain("src/**.ts");
     expect(result).not.toContain("test/**/**.test.ts");
   });
+
+  test("every emitted diff and log command is package-relative and scoped (#2090)", () => {
+    const result = builder.buildAdversarialReviewPrompt(
+      STORY,
+      { ...CONFIG, excludePatterns: [":!*.test.ts"] },
+      {
+        mode: "ref",
+        storyGitRef: STORY_GIT_REF,
+        testGlobs: ["**/*.test.ts"],
+        refExcludePatterns: [":!*.test.ts"],
+      },
+    );
+
+    const diffLines = result.split("\n").filter((line) => line.includes("git diff "));
+    const logLines = result.split("\n").filter((line) => line.includes("git log "));
+
+    expect(diffLines.length).toBeGreaterThan(0);
+    expect(logLines.length).toBeGreaterThan(0);
+    for (const line of diffLines) {
+      expect(line).toContain("--relative");
+      expect(line).toContain("-- .");
+    }
+    for (const line of logLines) {
+      expect(line).toContain("--relative");
+    }
+  });
 });
 
 // ─── embedded mode ────────────────────────────────────────────────────────────

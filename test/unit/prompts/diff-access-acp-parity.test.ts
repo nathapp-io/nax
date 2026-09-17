@@ -1,8 +1,14 @@
 /**
- * The ACP arm must be byte-for-byte what shipped before the diff-access region
- * existed. That is not a nicety: it is the premise the whole scope decision
- * rests on — native's Git error rate can only be measured before/after if the
- * ACP arm did not move underneath it.
+ * The region must leave the ACP shell body intact: no marker survives rendering,
+ * the JSON join stays at exactly two newlines, and the region adds no trailing
+ * blank lines of its own. These are the invariants the suite pins.
+ *
+ * The byte-freeze premise this file originally carried is retired. It held the
+ * ACP arm still as a control while native changed, but the delivered ACP prompt
+ * moved in #2095 — buildAgentScopeSection is prepended to both arms at
+ * src/agents/tool-preamble.ts:33-37 — and this file stayed green, because it
+ * asserts on builder output, not the prompt the agent receives. A control arm
+ * that moves while this file notices nothing is not a control arm.
  *
  * The renderer-level suite cannot check this. It exercises `applyDiffAccess` on
  * a synthetic body, and the defect this file exists for lived in the seam
