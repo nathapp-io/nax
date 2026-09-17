@@ -15,6 +15,7 @@ import { getLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import { _manifestStoreDeps, loadContextManifests } from "./manifest-store";
 import { globToRegex, normalizePath } from "./providers/static-rules";
+import { isGlobScopePath } from "./scope-path-match";
 import type { ChunkEffectiveness } from "./types";
 
 export const _effectivenessDeps = {
@@ -80,12 +81,6 @@ const STOPWORDS = new Set([
 ]);
 const MIN_TOKEN_LEN = 4;
 const TOKEN_PATTERN = /[^\s_\-./:,;()[\]{}'"!?]+/g;
-
-// nax#2091: a scope path carrying any of these is an authored glob; without
-// them it is a literal and must anchor exactly. globToRegex is suffix-anchored
-// (`(?:^|/)...$`), so a package-relative literal "src/client.ts" matched a
-// same-named file in another package (packages/web/src/client.ts).
-const SCOPE_GLOB_META = /[*?[{]/;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tokenizer (local copy — avoids a circular dep between staleness ↔ effectiveness)
@@ -373,13 +368,15 @@ function isBinarySection(section: string): boolean {
 }
 
 /** True when a diff file path matches any of the chunk's scope paths. */
-function pathMatchesScope(scopePaths: string[], filePath: string): boolean {
+export function pathMatchesScope(scopePaths: string[], filePath: string): boolean {
   const normalized = normalizePath(filePath);
   return scopePaths.some((pattern) => {
     const normalizedPattern = normalizePath(pattern);
     // Literal (no glob metacharacter): anchor exactly. The suffix-anchored
     // globToRegex would match a same-named file in another package (#2091).
-    if (!SCOPE_GLOB_META.test(pattern)) return normalizedPattern === normalized;
+    // `isGlobScopePath` normalizes internally, so the metacharacter test and
+    // the literal comparison are made against the same string (finding L5).
+    if (!isGlobScopePath(normalizedPattern)) return normalizedPattern === normalized;
     return globToRegex(normalizedPattern).test(normalized);
   });
 }

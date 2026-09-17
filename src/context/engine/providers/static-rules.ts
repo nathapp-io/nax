@@ -26,6 +26,7 @@ import { getLogger } from "@/logger";
 import { estimateTokens } from "@/optimizer";
 import { errorMessage } from "@/utils/errors";
 import type { ProviderScopingReport } from "../manifest-types";
+import { frameAppliesTo, globToRegex, isGlobScopePath, normalizePath } from "../scope-path-match";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
 import { buildBudgetNoticeChunk, buildSectionBudgetPressure } from "./static-rules-budget-notice";
@@ -114,49 +115,11 @@ function canonicalRulePriority(rule: CanonicalRule): number {
   return rule.priority ?? 100;
 }
 
-export function normalizePath(path: string): string {
-  return path.replaceAll("\\", "/").replace(/^\.\//, "");
-}
-
-export function globToRegex(pattern: string): RegExp {
-  let regex = "";
-  let i = 0;
-  while (i < pattern.length) {
-    const c = pattern[i];
-    if (c === "*") {
-      if (pattern[i + 1] === "*") {
-        const beforeSlash = i > 0 && pattern[i - 1] === "/";
-        const afterSlash = pattern[i + 2] === "/";
-        if (beforeSlash && afterSlash) {
-          regex = `${regex}(?:.*\\/)?`;
-          i += 3;
-        } else if (afterSlash) {
-          regex += "(?:.*\\/)?";
-          i += 3;
-        } else {
-          regex += ".*";
-          i += 2;
-        }
-        continue;
-      }
-      regex += "[^/]*";
-      i++;
-      continue;
-    }
-    if (c === "?") {
-      regex += "[^/]";
-      i++;
-      continue;
-    }
-    if (`.+^\${}()|[]\\`.includes(c)) {
-      regex += `\\${c}`;
-    } else {
-      regex += c;
-    }
-    i++;
-  }
-  return new RegExp(`(?:^|/)${regex}$`);
-}
+// `normalizePath`/`globToRegex` moved to `../scope-path-match` so the matcher
+// below and effectiveness.ts share one implementation. Re-exported here to
+// preserve this module's public surface (the context-engine barrel and
+// effectiveness.ts import them from `./providers/static-rules`).
+export { globToRegex, normalizePath } from "../scope-path-match";
 
 /**
  * Returns true when the rule's `appliesTo:` frontmatter (file-scope filter) matches
@@ -167,13 +130,20 @@ export function globToRegex(pattern: string): RegExp {
  * Keyed on `request.scopeFiles` (US — rule-scoping), not `request.touchedFiles` —
  * scopeFiles is the resolved evidence set (US-003), touchedFiles is content-fetch input.
  */
-function ruleMatchesScopeFiles(appliesTo: string[] | undefined, scopeFiles: string[] | undefined): boolean {
+export function ruleMatchesScopeFiles(appliesTo: string[] | undefined, scopeFiles: string[] | undefined): boolean {
   if (!appliesTo || appliesTo.length === 0) return true;
   if (!scopeFiles || scopeFiles.length === 0) return true;
 
   const files = scopeFiles.map((f) => normalizePath(f));
-  const patterns = appliesTo.map((p) => globToRegex(normalizePath(p)));
-  return files.some((file) => patterns.some((pattern) => pattern.test(file)));
+  return appliesTo.some((pattern) => {
+    const normalizedPattern = normalizePath(pattern);
+    // Literal (no glob metacharacter): anchor exactly — the same rule
+    // effectiveness.ts's pathMatchesScope applies, so a rule cannot be admitted
+    // for selection and then denied attribution (#2091 / follow-up 8).
+    return files.some((file) =>
+      isGlobScopePath(normalizedPattern) ? globToRegex(normalizedPattern).test(file) : normalizedPattern === file,
+    );
+  });
 }
 
 /**
@@ -252,9 +222,14 @@ export class StaticRulesProvider implements IContextProvider {
         const packageRules = await _staticRulesDeps.loadCanonicalRules(request.packageDir);
         packageRulesCount = packageRules.length;
         if (packageRules.length > 0) {
+          // H8: a package rule's `appliesTo:` literal is package-relative while
+          // scopeFiles and the diff are repo-rooted. Frame it with the owning
+          // package before selection and before it is carried as scopePaths, so
+          // selection and attribution both see the repo frame (#2091 stays fixed).
+          const packageRel = normalizePath(relative(request.repoRoot, request.packageDir));
           const merged = new Map<string, CanonicalRule>();
           for (const rule of repoRules) merged.set(canonicalRuleId(rule), rule);
-          for (const rule of packageRules) merged.set(canonicalRuleId(rule), rule);
+          for (const rule of packageRules) merged.set(canonicalRuleId(rule), frameAppliesTo(rule, packageRel));
           mergedRules = [...merged.values()];
         }
       }
