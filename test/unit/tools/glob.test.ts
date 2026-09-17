@@ -170,6 +170,31 @@ describe("globTool — directory-grouped output", () => {
     expect(lines[0].startsWith("docs/ ")).toBe(true);
   });
 
+  test("whitespace-bearing basenames (space, tab, NBSP) all quote to preserve the round-trip", async () => {
+    // The renderer must treat every whitespace character as a reason to
+    // quote, not just ` ` and `\t` — a tab or NBSP in an unquoted basename
+    // would split a single basename into two when the parser reads it back,
+    // violating AC5's reconstructed-set invariant. `_globDeps.scan` is the
+    // injection seam: the filesystem would not yield a basename with a
+    // literal NBSP on its own, so the test drives the production path with a
+    // controlled iterator.
+    _globDeps.scan = () =>
+      (async function* () {
+        yield "src/a b.ts";
+        yield "src/c\td.ts";
+        yield "src/e\u00A0f.ts";
+        yield "src/plain.ts";
+      })();
+    const res = await globTool.run({ pattern: "**/*.ts" }, ctx());
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toContain('"a b.ts"');
+    expect(res.content).toContain('"c\td.ts"');
+    expect(res.content).toContain('"e\u00A0f.ts"');
+    // The plain basename stays unquoted — only whitespace triggers quoting.
+    expect(res.content).toContain("plain.ts");
+    expect(res.content).not.toContain('"plain.ts"');
+  });
+
   test("AC7: a single match uses the same shape as a multi-match result", async () => {
     const res = await globTool.run({ pattern: "src/a.ts" }, ctx());
     expect(res.isError).toBeFalsy();

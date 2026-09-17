@@ -68,7 +68,7 @@ function renderGrouped(matches: readonly string[]): string {
   for (const dir of dirs) {
     const bucket = byDir.get(dir) ?? [];
     bucket.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    const rendered = bucket.map((b) => (b.includes(" ") || b.includes("\t") ? `"${b}"` : b));
+    const rendered = bucket.map((b) => (/\s/.test(b) ? `"${b}"` : b));
     lines.push(`${dir} ${rendered.join(" ")}`);
   }
   return lines.join("\n");
