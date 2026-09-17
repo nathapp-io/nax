@@ -11,8 +11,9 @@ import type { Iteration } from "@/findings";
 import type { AcDroppedEntry, AcQuoteRejectionCode } from "@/review/ac-quote-validator";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import { buildReviewOutOfScopeBlock } from "../sections";
-import { wrapDiffAccess } from "../sections/diff-access";
+import { DIFF_SCOPE_OMISSION_NOTICE, wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
 export interface TestInventory {
@@ -36,9 +37,10 @@ export interface AdversarialReviewPromptOptions {
   /** Project test file globs resolved by resolveTestFilePatterns(). */
   testGlobs?: readonly string[];
   /**
-   * Pathspec exclusions for mode === "ref" git commands shown in prompt.
-   * Always merged with ':!.nax/' and ':!.nax-pids'.
-   * Adversarial does NOT exclude test files (unlike semantic).
+   * Caller production-scope exclusions for mode === "ref". They apply to the
+   * production-only diff; the full diff carries nax metadata only, so a caller
+   * test glob cannot hide the test files that view exists to audit.
+   * Adversarial does NOT exclude test files by default (unlike semantic).
    */
   excludePatterns?: string[];
   /**
@@ -251,10 +253,15 @@ function buildAdversarialRefDiffSection(
   testGlobs: readonly string[] = [],
   refExcludePatterns: readonly string[] = [],
 ): string {
-  const merged = [...new Set([...excludePatterns, ":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"])];
-  const excludeArgs = merged.map((p) => `'${p}'`).join(" ");
+  // The full diff (and the added-files audit) take nax metadata ONLY. A caller
+  // excludePatterns is a production-scope filter: applying it here would hide
+  // the test files this view exists to audit, and would make the full diff
+  // identical to the production diff whose label distinguishes it. This is the
+  // same defect #2101 fixed in the semantic and debate builders.
+  const fullExcludes = [...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS];
+  const fullExcludeArgs = fullExcludes.map((p) => `'${p}'`).join(" ");
   const productionExcludes = [
-    ...new Set([...refExcludePatterns, ":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"]),
+    ...new Set([...refExcludePatterns, ...excludePatterns, ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS]),
   ];
   const productionExcludeArgs = productionExcludes.map((p) => `'${p}'`).join(" ");
   const statBlock = stat ? `## Changed Files Summary\n\n\`\`\`\n${stat}\n\`\`\`\n\n` : "";
@@ -279,31 +286,31 @@ Recommended commands:
 
 \`\`\`bash
 # Full diff including tests (adversarial review sees everything except nax metadata):
-git diff --unified=3 ${storyGitRef}..HEAD --relative -- . ${excludeArgs}
+git diff --relative --unified=3 ${storyGitRef}..HEAD -- . ${fullExcludeArgs}
 
 # Commit history for this story:
-git log --oneline ${storyGitRef}..HEAD --relative
+git log --oneline ${storyGitRef}..HEAD
 
 # Files added in this story (for test audit gap):
-git diff --name-only --diff-filter=A ${storyGitRef}..HEAD --relative -- . ${excludeArgs}
+git diff --relative --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${fullExcludeArgs}
 
 # Show a specific file's full content:
 cat path/to/file.ts
 \`\`\`
 
 **Test audit workflow:**
-1. Run: \`git diff --name-only --diff-filter=A ${storyGitRef}..HEAD --relative -- . ${excludeArgs}\`
+1. Run: \`git diff --relative --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${fullExcludeArgs}\`
 2. For each new source file, check whether a matching test file was added (patterns: ${testPatternGuide}).
 3. If a new exported module has no test file, flag it as \`"test-gap"\`.
 4. To focus only on production deltas while auditing test coverage, run:
-  \`git diff --unified=3 ${storyGitRef}..HEAD --relative -- . ${productionExcludeArgs}\`
+  \`git diff --relative --unified=3 ${storyGitRef}..HEAD -- . ${productionExcludeArgs}\`
 
 `;
 
-  return `${statBlock}${wrapDiffAccess(
+  return `${statBlock}${DIFF_SCOPE_OMISSION_NOTICE}\n\n${wrapDiffAccess(
     {
       ref: storyGitRef,
-      fullExclude: [".", ...merged],
+      fullExclude: [".", ...fullExcludes],
       productionExclude: [".", ...productionExcludes],
       testGlobs: [...testGlobs],
       testAudit: true,

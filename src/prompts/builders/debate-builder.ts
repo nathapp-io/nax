@@ -21,8 +21,9 @@ import { PERSONA_FRAGMENTS } from "@/debate/personas";
 import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "@/debate/types";
 import type { Finding } from "@/findings";
 import type { DiffContext } from "@/review/types";
+import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import type { ComposeInput } from "../compose";
-import { wrapDiffAccess } from "../sections/diff-access";
+import { DIFF_SCOPE_OMISSION_NOTICE, wrapDiffAccess } from "../sections/diff-access";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -439,24 +440,24 @@ function buildDebateDiffSection(ctx: DiffContext): string {
     // ref mode: reviewer self-serves the full diff via tools
     const stat = ctx.stat ?? "(no stat available)";
     const ref = ctx.storyGitRef;
-    const excludes = [
-      ...new Set([...(ctx.productionExcludePatterns ?? []), ":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"]),
-    ];
+    const excludes = [...new Set([...(ctx.productionExcludePatterns ?? []), ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS])];
     const excludeArgs = excludes.map((p) => `'${p}'`).join(" ");
     // The full diff keeps test files (its label distinguishes it from the
     // production diff), so it carries only the nax-metadata excludes.
-    const naxExcludeArgs = [":!.nax/", ":!**/.nax/", ":!.nax-pids", ":!**/.nax-pids"].map((p) => `'${p}'`).join(" ");
+    const naxExcludeArgs = NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS.map((p) => `'${p}'`).join(" ");
     // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
     // one on the native protocol (src/prompts/sections/diff-access.ts).
-    // `--relative` is appended after `..HEAD` so git prints package-cwd paths
-    // to the reviewer (#2090).
+    // `--relative` makes git print package-cwd paths to the reviewer (#2090),
+    // and flags precede the ref because a flag after a revision list reads as a
+    // pathspec (src/tools/git.ts:202). `git log --oneline` prints no paths, so
+    // `--relative` is inert there and is omitted.
     const shellBody = [
       `## Git Baseline: \`${ref}\``,
       "",
       "To inspect the implementation:",
-      `- Full diff: \`git diff --unified=3 ${ref}..HEAD --relative -- . ${naxExcludeArgs}\``,
-      `- Production diff: \`git diff --unified=3 ${ref}..HEAD --relative -- . ${excludeArgs}\``,
-      `- Commit history: \`git log --oneline ${ref}..HEAD --relative\``,
+      `- Full diff: \`git diff --relative --unified=3 ${ref}..HEAD -- . ${naxExcludeArgs}\``,
+      `- Production diff: \`git diff --relative --unified=3 ${ref}..HEAD -- . ${excludeArgs}\``,
+      `- Commit history: \`git log --oneline ${ref}..HEAD\``,
       "",
       "Use these commands to inspect the code. Do NOT rely solely on the file list above.",
     ].join("\n");
@@ -466,7 +467,18 @@ function buildDebateDiffSection(ctx: DiffContext): string {
       stat,
       "```",
       "",
-      wrapDiffAccess({ ref, productionExclude: [".", ...excludes] }, shellBody),
+      DIFF_SCOPE_OMISSION_NOTICE,
+      "",
+      wrapDiffAccess(
+        {
+          ref,
+          // Native parity: ACP's full diff carries the nax excludes and no
+          // caller patterns, so the spec's fullExclude must match (M9).
+          fullExclude: [".", ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS],
+          productionExclude: [".", ...excludes],
+        },
+        shellBody,
+      ),
     ].join("\n");
   }
   // embedded mode: emit the diff block

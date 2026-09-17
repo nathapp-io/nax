@@ -33,8 +33,29 @@
  */
 export const NAX_OWNED_GIT_EXCLUDE_PATHSPECS: readonly string[] = [":(exclude).nax", ":(glob,exclude)**/.nax/**"];
 
-/** Short-form excludes for the review diff collector (`collectDiff` & friends). */
-export const NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS: readonly string[] = [":!.nax/", ":!.nax-pids"];
+/**
+ * Short-form excludes for the review diff collectors (`collectDiff` & friends)
+ * and the review builders' self-serve `git diff` prompts.
+ *
+ * Four entries, not two. `:!.nax/` is anchored at git's cwd, so it hides only
+ * the current package's artifacts; a nested `packages/api/tools/.nax/` survives
+ * it. #2101's follow-up found three review builders carrying three divergent
+ * hand-rolled copies — two of which used a leading-double-star, trailing-slash
+ * spelling that is inert.
+ *
+ * Real-git verified (git 2.50.1): that spelling matches only the repository-root
+ * `.nax/` and leaves nested copies visible. A working nested exclude needs a
+ * trailing double-star element after the directory name, which git's pathspec
+ * wildmatch treats as crossing directories. The `-pids` entry is the same for
+ * process scratch. Do not "simplify" these back to the bare directory form;
+ * that re-opens the leak.
+ */
+export const NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS: readonly string[] = [
+  ":!.nax/",
+  ":!**/.nax/**",
+  ":!.nax-pids",
+  ":!**/.nax-pids/**",
+];
 
 /**
  * Repository-root-anchored excludes, for a collector whose cwd varies.

@@ -52,7 +52,7 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     ["story title", () => STORY.title],
     ["story id", () => STORY.id],
     ["storyGitRef", () => STORY_GIT_REF],
-    ["git diff command", () => `git diff --unified=3 ${STORY_GIT_REF}..HEAD`],
+    ["git diff command", () => `git diff --relative --unified=3 ${STORY_GIT_REF}..HEAD`],
   ])("prompt contains %s", (_label, getValue) => {
     const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
     expect(result).toContain(getValue());
@@ -124,12 +124,36 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     expect(diffLines.length).toBeGreaterThan(0);
     expect(logLines.length).toBeGreaterThan(0);
     for (const line of diffLines) {
-      expect(line).toContain("--relative");
+      // Flags precede the refs (src/tools/git.ts:202). Assert flag presence and
+      // that no flag trails the revision range, so the next flag addition does
+      // not re-create this pressure.
+      expect(line).toContain("git diff --relative");
       expect(line).toContain("-- .");
+      expect(line).not.toContain("..HEAD --relative");
     }
     for (const line of logLines) {
-      expect(line).toContain("--relative");
+      // `git log --oneline` prints no paths, so `--relative` there is inert argv.
+      expect(line).toContain(`git log --oneline ${STORY_GIT_REF}..HEAD`);
+      expect(line).not.toContain("--relative");
     }
+
+    // Part D: the full diff takes nax metadata ONLY — a configured caller
+    // excludePatterns applies to the production-only diff, never to the full
+    // one (otherwise its own label, "adversarial review sees everything", lies).
+    const fullDiffCmd = /# Full diff including tests[^\n]*\n(git diff [^\n]+)/.exec(result)?.[1] ?? "";
+    const addedFilesCmd = /# Files added in this story[^\n]*\n(git diff [^\n]+)/.exec(result)?.[1] ?? "";
+    const productionDiffCmd = /production deltas[^\n]*\n\s*`(git diff [^`]+)`/.exec(result)?.[1] ?? "";
+    expect(fullDiffCmd).not.toContain(":!*.test.ts");
+    expect(fullDiffCmd).toContain(":!.nax/");
+    expect(addedFilesCmd).not.toContain(":!*.test.ts");
+    expect(addedFilesCmd).toContain(":!.nax/");
+    expect(productionDiffCmd).toContain(":!*.test.ts");
+    expect(productionDiffCmd).toContain(":!.nax/");
+
+    const spec = JSON.parse(/<!--nax:diff-access:\S+ (\{.*?\})-->/.exec(result)?.[1] ?? "{}");
+    expect(spec.fullExclude).not.toContain(":!*.test.ts");
+    expect(spec.fullExclude).toContain(":!.nax/");
+    expect(spec.productionExclude).toContain(":!*.test.ts");
   });
 });
 
