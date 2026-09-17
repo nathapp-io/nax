@@ -3,20 +3,36 @@
 Bundled fix plan for the ten open defects filed as **#2083-#2091 and #2093**: the six unfixed path-frame seams, the arc's three bookkeeping follow-ups, and one unrelated worktree escape.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-path-frame-convention-design.md`
-**Base:** plans were written against `main` @ `71071a035`. **PR 1 has since merged as `d95cfee2b` (#2097)** — it changed `src/utils/path-frame.ts` and `src/context/builder.ts`, so line numbers in those two files have shifted. See the drift warning below.
+**Base:** plans were written against `main` @ `71071a035`. **All six PRs have since merged**, through `6507cf061` (#2103) — so line numbers in every file the arc touched are stale, not just the two PR 1 moved. See the drift warning below.
 
 Each PR is a separate file in this directory and is **self-contained** — an executor reads one file, not all six.
 
 | PR | File | Issues | Live? |
 |---|---|---|---|
 | 1 | [`01-pr1-frame-ssot.md`](./01-pr1-frame-ssot.md) | #2089 | ✅ **MERGED** `d95cfee2b` (PR #2097) |
-| 2 | [`02-pr2-provider-frames.md`](./02-pr2-provider-frames.md) | #2088, #2091 | #2091 **LIVE** |
-| 3 | [`03-pr3-plan-write-seam.md`](./03-pr3-plan-write-seam.md) | #2086, #2085 | **LIVE** |
-| 4 | [`04-pr4-review-builder-frames.md`](./04-pr4-review-builder-frames.md) | #2090 | **LIVE** |
-| 5 | [`05-pr5-latent-tail-and-gate.md`](./05-pr5-latent-tail-and-gate.md) | #2083, #2087, #2084 | Latent |
-| 6 | [`06-pr6-worktree-exec-root.md`](./06-pr6-worktree-exec-root.md) | #2093 | **LIVE, damaging** |
+| 2 | [`02-pr2-provider-frames.md`](./02-pr2-provider-frames.md) | #2088, #2091 | ✅ **MERGED** `d67b56dac` (PR #2099) |
+| 3 | [`03-pr3-plan-write-seam.md`](./03-pr3-plan-write-seam.md) | #2086, #2085 | ✅ **MERGED** `1de06d3f0` (PR #2100) |
+| 4 | [`04-pr4-review-builder-frames.md`](./04-pr4-review-builder-frames.md) | #2090 | ✅ **MERGED** `be8c151ef` (PR #2101) |
+| 5 | [`05-pr5-latent-tail-and-gate.md`](./05-pr5-latent-tail-and-gate.md) | #2083, #2087, #2084 | ✅ **MERGED** `8cae0c3cd` (PR #2102) |
+| 6 | [`06-pr6-worktree-exec-root.md`](./06-pr6-worktree-exec-root.md) | #2093 | ✅ **MERGED** `6507cf061` (PR #2103) |
 
-## Start here (handover)
+## ⏭️ This arc has a second wave — read that, not this
+
+All six PRs below have merged. A **post-merge review** of them — *Path-Frame Seam Closure — Post-Merge
+Code Review* (2026-09-17), `nax-path-frame-seam-closure-review-2026-09-17.md` (outside this repo) —
+found follow-up work, including two P0s: a provider re-deriving `relative(repoRoot, packageDir)`
+(forbidden by name in `src/context/fragments/reframe.ts:68-74`) and an enforcement gate reporting
+`clean` on the dominant raw-read idiom while the issue describing that bypass (#2084) sat closed.
+
+That follow-up work is planned in
+**[`docs/superpowers/plans/2026-09-17-path-frame-p2-p3/`](../2026-09-17-path-frame-p2-p3/00-overview.md)**.
+The files in **this** directory are a historical record — read them for their reasoning, do not execute
+them as a work queue.
+
+## Start here (handover) — historical
+
+> **All six PRs have merged.** This section is retained for provenance and is no longer a live
+> handover — do not branch or execute from it. See the second-wave pointer above.
 
 You are picking this up cold. Do these four things before touching code.
 
@@ -36,12 +52,13 @@ Then follow the PR file's steps in order with `superpowers:subagent-driven-devel
 
 ## ⚠️ Line numbers drift — verify, do not trust
 
-Every `file.ts:NNN` in these plans was verified against `71071a035` on 2026-09-16. **Two things invalidate them:**
+Every `file.ts:NNN` in these plans was verified against `71071a035` on 2026-09-16. **The drift is now total, not partial — three things invalidate them:**
 
-- **Commits landing on `main` after that.** Check with `git log --oneline 71071a035..HEAD`.
-- **Earlier PRs in this bundle.** PR 1 **has already landed** and moved `src/utils/path-frame.ts` and `src/context/builder.ts` — every line number cited for those two files is stale. PR 2 changes the context engine; PR 4 changes three prompt builders. An executor starting PR 5 will find shifted lines in files PRs 1-4 touched.
+- **All six PRs of this bundle have landed**, through `6507cf061` (#2103). Check with `git log --oneline 71071a035..HEAD`. This directory is now a historical record, not a work queue.
+- **Every file any of the six PRs touched has shifted** — PR 1 moved `src/utils/path-frame.ts` and `src/context/builder.ts`; PR 2 moved the context engine; PR 3 moved the plan write seam and `story.ts`; PR 4 moved the three prompt builders; PR 5 moved `scoped-lint.ts`, `acceptance-helpers.ts` and the workdir gate; PR 6 moved `packages.ts` and the coding-tool support files. Every line number cited for any of those is stale.
+- **The follow-up `fix/path-frame-p0-p1` branch shifted them again**, on top of the six merges — see the second-wave pointer above.
 
-**Treat every line number as a hint, and the surrounding quoted code as the real anchor.** Each plan quotes the code it refers to — grep for the snippet, not the line. If a quoted snippet no longer exists, stop and re-verify the claim before implementing; a seam may already have been closed by another PR in this bundle.
+**Treat every line number as a hint, and the surrounding quoted code as the real anchor.** Each plan quotes the code it refers to — grep for the snippet, not the line. If a quoted snippet no longer exists, stop and re-verify the claim before implementing; a seam may already have been closed by another PR in this bundle — and all of them have now merged.
 
 The issue bodies on GitHub carry line numbers from `a8bc38ef8` / `d9614909c` and are **already stale**. Prefer these plans over the issue text where they disagree; the four known disagreements are listed under Corrections below.
 
@@ -49,13 +66,13 @@ The issue bodies on GitHub carry line numbers from `a8bc38ef8` / `d9614909c` and
 
 **PR 1 → PR 2 is the only hard dependency.** PR 1 introduces `partitionPackageFrame`, which PR 2 consumes; and PR 2's decision about `touchedFiles`' frame depends on PR 1 having settled the canonical-vs-legacy rule.
 
-**PR 1 is DONE** (`d95cfee2b`), so `partitionPackageFrame` exists and both dependencies are satisfied. PRs 2-6 are now all startable.
+**All six PRs are DONE** — the last merged as `6507cf061` (#2103) — so `partitionPackageFrame` exists and the PR 1 → PR 2 dependency is long satisfied. Nothing in this directory is startable; the bundle is a historical record.
 
 ⚠️ **PR 1 also produced a binding ruling that changes PRs 2 and 3** — see Ruling 8 / E below before starting either.
 
 PRs 4, 5 and 6 are fully independent and may be parallelised.
 
-PR 6 is unrelated to path frames and can ship at any time — it is last by ruling, not by dependency.
+PR 6 was unrelated to path frames and shipped last by ruling, not by dependency.
 
 ## Standing rulings (settled — do not re-litigate)
 
