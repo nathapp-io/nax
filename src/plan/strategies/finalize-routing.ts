@@ -11,6 +11,10 @@ import type { PRD, StoryRouting } from "@/prd/types";
  * is returned by identity. `routingProfile` is stamped regardless -- it is a PRD
  * property, not a story one.
  *
+ * `preserveExistingAgent` keeps an already selected active agent while still
+ * resolving unassigned stories. Decomposition uses this for children that inherit
+ * a parent's escalated assignment (ADR-025).
+ *
  * Pure function — never mutates the input PRD.
  */
 export function finalizePrdRouting(
@@ -20,6 +24,7 @@ export function finalizePrdRouting(
   models: ModelsConfig,
   defaultAgent: string,
   only?: ReadonlySet<string>,
+  preserveExistingAgent = false,
 ): PRD {
   const userStories = prd.userStories.map((story) => {
     // nax#2080: a scoped write (decompose) adds stories to a PRD that may already
@@ -36,15 +41,16 @@ export function finalizePrdRouting(
       defaultAgent,
     );
     if (!assignment) return story;
+    const agent = preserveExistingAgent && story.routing?.agent !== undefined ? story.routing.agent : assignment.agent;
     // story.routing is guaranteed to be defined if assignment resolved (routing
     // has complexity required by StoryRouting); cast to satisfy TypeScript.
     const routing = {
       ...story.routing,
-      agent: assignment.agent,
+      agent,
       agentProfileId: assignment.agentProfileId,
       ...(assignment.profileModelTier !== undefined ? { profileModelTier: assignment.profileModelTier } : {}),
       ...(assignment.profileModelPin !== undefined ? { profileModelPin: assignment.profileModelPin } : {}),
-      initialAgent: story.routing?.initialAgent ?? assignment.agent,
+      initialAgent: story.routing?.initialAgent ?? agent,
       initialProfileId: story.routing?.initialProfileId ?? assignment.agentProfileId,
       ...((story.routing?.initialModelTier ?? assignment.profileModelTier)
         ? { initialModelTier: story.routing?.initialModelTier ?? assignment.profileModelTier }

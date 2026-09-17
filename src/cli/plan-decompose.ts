@@ -23,6 +23,23 @@ import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import { buildSourceRootsSection } from "./plan-helpers";
 import { _planDeps, createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, resolvePlanModelSelection } from "./plan-runtime";
 
+function validateDecomposedStoryIds(stories: readonly DecomposedStory[], existingIds: ReadonlySet<string>): void {
+  const generatedIds = new Set<string>();
+  for (const story of stories) {
+    if (existingIds.has(story.id) || generatedIds.has(story.id)) {
+      throw new NaxError(
+        `Sub-story id "${story.id}" duplicates an existing or generated story`,
+        "DECOMPOSE_VALIDATION_FAILED",
+        {
+          stage: "decompose",
+          storyId: story.id,
+        },
+      );
+    }
+    generatedIds.add(story.id);
+  }
+}
+
 /**
  * Decompose an existing story into sub-stories.
  *
@@ -168,6 +185,8 @@ export async function planDecomposeCommand(
         }
       }
 
+      validateDecomposedStoryIds(decompStories, new Set(prd.userStories.map((story) => story.id)));
+
       // AC-count check: retryable within shared maxReplanAttempts budget
       const violations = decompStories.filter(
         (sub) => sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount,
@@ -237,6 +256,7 @@ export async function planDecomposeCommand(
     outputPath: prdPath,
     repoRoot: workdir,
     scope: new Set(subStoriesWithParent.map((s) => s.id)),
+    preserveScopedAgents: true,
     writeFile: _planDeps.writeFile,
   });
   return () => {};

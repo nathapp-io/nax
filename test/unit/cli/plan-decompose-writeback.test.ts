@@ -496,6 +496,31 @@ describe("planDecomposeCommand — writes through the plan-write seam (nax#2080)
     expect(sub?.routing?.agent).toBe("claude");
   });
 
+  test("preserves an escalated parent's inherited agent on the sub-story", async () => {
+    const parent = makeStory({
+      id: "US-001",
+      routing: {
+        complexity: "medium",
+        testStrategy: "tdd-simple",
+        reasoning: "r",
+        agent: "opencode",
+        agentProfileId: "claude-default",
+        initialAgent: "claude",
+        initialProfileId: "claude-default",
+      },
+    });
+    setup(makePrd([parent]), [makeSubStory("US-001-A")]);
+    _persistPrdDeps.discoverWorkspacePackages = async () => [];
+    _persistPrdDeps.existsSync = () => false;
+
+    await planDecomposeCommand(tmpDir, makeRoutedConfig(), { feature: FEATURE, storyId: "US-001" });
+
+    const written = JSON.parse(capturedWriteArgs[0][1]);
+    const sub = written.userStories.find((story: UserStory) => story.id === "US-001-A");
+    expect(sub?.routing?.agent).toBe("opencode");
+    expect(sub?.routing?.initialAgent).toBe("claude");
+  });
+
   test("preserves the PRD project field and still stamps routingProfile", async () => {
     setup(makePrd([makeStory({ id: "US-001" })]), [makeSubStory("US-001-A")]);
     _persistPrdDeps.discoverWorkspacePackages = async () => [];

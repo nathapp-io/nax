@@ -61,6 +61,8 @@ export interface PersistPrdArgs {
    * `nax plan --decompose`. Absent for `nax plan`, which owns the whole PRD.
    */
   readonly scope?: ReadonlySet<string>;
+  /** Preserve an inherited active agent on scoped stories (ADR-025). */
+  readonly preserveScopedAgents?: boolean;
   readonly writeFile: (path: string, content: string) => Promise<void>;
 }
 
@@ -141,6 +143,7 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     args.models,
     args.defaultAgent,
     args.scope,
+    args.preserveScopedAgents,
   );
   await args.writeFile(args.outputPath, JSON.stringify(finalized, null, 2));
   return args.outputPath;
