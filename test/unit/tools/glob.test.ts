@@ -89,18 +89,52 @@ function unescapeBasename(s: string): string {
 
 /**
  * Parse a group line into its leading directory prefix and basenames. Each
- * line is `<dir>/ <b1> <b2> ...` with basenames that contain whitespace or
- * `"` wrapped in `"..."` and special characters escaped. The parser is what
- * the agent would do to recover the matched paths; if the format ever
- * changes, the round-trip AC (#5) must still match.
+ * line is `<dir>/ <b1> <b2> ...` with basenames (and, when needed, the dir
+ * prefix itself) that contain whitespace or `"` wrapped in `"..."` and
+ * special characters escaped. The parser is what the agent would do to
+ * recover the matched paths; if the format ever changes, the round-trip
+ * AC (#5) must still match.
  */
 function parseGroupLine(line: string): { dir: string; basenames: string[] } {
-  // A line is `<dir>/ <b1> <b2> ...` — the directory prefix always ends in
-  // "/" (the leading "./" case is just `./<basename>` with a trailing space).
-  expect(line).toMatch(/^\S+\/\s/);
-  const spaceIdx = line.indexOf(" ");
-  const dir = line.slice(0, spaceIdx);
-  const rest = line.slice(spaceIdx + 1);
+  // The dir prefix always ends in "/" (the leading "./" case is just
+  // `./<basename>` with a trailing space) and is either unquoted or wrapped
+  // in `"..."` with the same escapes a quoted basename uses. Branch on a
+  // leading `"` to read the quoted body up to the unescaped closing quote
+  // and expect a single space after it; otherwise the dir ends at the last
+  // "/" in the line (the dir terminator) followed by a single space. Using
+  // `lastIndexOf` rather than the first `/` matters for nested paths like
+  // `src/deep/ b.ts` — the LAST `/` is the dir terminator, the others are
+  // part of the dir.
+  let dir: string;
+  let rest: string;
+  if (line.startsWith('"')) {
+    let i = 1;
+    let body = "";
+    while (i < line.length && line[i] !== '"') {
+      // A backslash escapes the next character, including `\"` — the scan
+      // for the closing quote must skip the pair, or an escaped quote
+      // would be read as the end of the dir prefix.
+      if (line[i] === "\\" && i + 1 < line.length) {
+        body += line[i] + line[i + 1];
+        i += 2;
+        continue;
+      }
+      body += line[i];
+      i++;
+    }
+    expect(line[i]).toBe('"');
+    i++;
+    expect(line[i]).toBe(" ");
+    i++;
+    dir = unescapeBasename(body);
+    rest = line.slice(i);
+  } else {
+    const slashIdx = line.lastIndexOf("/");
+    expect(slashIdx).toBeGreaterThanOrEqual(0);
+    dir = line.slice(0, slashIdx + 1);
+    expect(line[slashIdx + 1]).toBe(" ");
+    rest = line.slice(slashIdx + 2);
+  }
   const basenames: string[] = [];
   // Walk basenames separated by single spaces. A basename is either an
   // unquoted run of non-space characters, or a double-quoted run with
@@ -297,6 +331,61 @@ describe("globTool — directory-grouped output", () => {
     const { dir, basenames } = parseGroupLine(lines[0]);
     expect(dir).toBe("src/");
     expect(basenames).toEqual(["has\nnewline.md", "has\rcarriage.md", 'has"quote.md', "has\\backslash.md"]);
+  });
+
+  test("a directory whose name contains a space round-trips through a quoted dir prefix", async () => {
+    // The renderer applies the same quoting/escaping rules to the dir
+    // prefix that basenames use — otherwise a directory like `my code/`
+    // would render as `my code/ a.ts`, and any consumer splitting on
+    // whitespace would misread `dir = "my"`, breaking AC-5's lossless
+    // claim. The dir gets wrapped in `"..."` so the format stays
+    // mechanically splittable even when a directory's name contains a
+    // space. `_globDeps.scan` is the injection seam: the filesystem would
+    // not surface a directory whose name is itself a space, so the test
+    // drives the production path with a controlled iterator.
+    _globDeps.scan = () =>
+      (async function* () {
+        yield "my code/a.ts";
+        yield "my code/b notes.md";
+        yield "my code/c.ts";
+      })();
+    const res = await globTool.run({ pattern: "**/*" }, ctx());
+    expect(res.isError).toBeFalsy();
+    // The dir prefix is quoted; basenames sort ascending; the basename
+    // that itself contains a space is its own quoted form.
+    expect(res.content).toBe('"my code/" a.ts "b notes.md" c.ts');
+    // Round-trip through parseGroupLine must recover every matched path
+    // — the same invariant AC-5 enforces for whitespace-free dirs.
+    const lines = res.content.split("\n");
+    expect(lines).toHaveLength(1);
+    const { dir, basenames } = parseGroupLine(lines[0]);
+    expect(dir).toBe("my code/");
+    expect(basenames).toEqual(["a.ts", "b notes.md", "c.ts"]);
+    expect(basenames.map((b) => `${dir}${b}`)).toEqual(["my code/a.ts", "my code/b notes.md", "my code/c.ts"]);
+  });
+
+  test("a directory whose name contains a double quote round-trips through an escaped quoted dir prefix", async () => {
+    // The same quoting rule covers a dir containing `"` (the only other
+    // character that would otherwise terminate the quoted form early). The
+    // inner `"` is escaped inside the body, so the parser reads the body
+    // losslessly. Driving through `_globDeps.scan` for the same reason as
+    // the space-in-dir test: a real filesystem would not yield a path
+    // component containing `"` on its own.
+    _globDeps.scan = () =>
+      (async function* () {
+        yield 'my"code/a.ts';
+        yield 'my"code/b.ts';
+      })();
+    const res = await globTool.run({ pattern: "**/*" }, ctx());
+    expect(res.isError).toBeFalsy();
+    // The dir prefix is quoted; the inner `"` becomes `\"`.
+    expect(res.content).toBe('"my\\"code/" a.ts b.ts');
+    // Round-trip: the parser reverses the escape.
+    const lines = res.content.split("\n");
+    expect(lines).toHaveLength(1);
+    const { dir, basenames } = parseGroupLine(lines[0]);
+    expect(dir).toBe('my"code/');
+    expect(basenames).toEqual(["a.ts", "b.ts"]);
   });
 
   test("AC7: a single match uses the same shape as a multi-match result", async () => {

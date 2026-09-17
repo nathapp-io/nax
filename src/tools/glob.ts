@@ -96,7 +96,14 @@ function renderGrouped(matches: readonly string[]): string {
     const bucket = byDir.get(dir) ?? [];
     bucket.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     const rendered = bucket.map((b) => (needsQuoting(b) ? `"${escapeBasename(b)}"` : b));
-    lines.push(`${dir} ${rendered.join(" ")}`);
+    // The dir prefix carries the same quoting rules a basename does: a dir
+    // containing whitespace or `"` is wrapped in double quotes with the same
+    // escapes, so `<dir>/ <b1> <b2> ...` stays mechanically splittable in
+    // either shape and the round-trip — AC-5 — survives a directory whose
+    // name contains a space (e.g. `my code/` would otherwise render as
+    // `my code/ a.ts`, ambiguous on whitespace).
+    const dirPrefix = needsQuoting(dir) ? `"${escapeBasename(dir)}"` : dir;
+    lines.push(`${dirPrefix} ${rendered.join(" ")}`);
   }
   return lines.join("\n");
 }
