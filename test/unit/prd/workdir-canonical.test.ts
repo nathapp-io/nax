@@ -252,3 +252,72 @@ describe("canonicalizePrdWorkdirs", () => {
     expect(JSON.stringify(input)).toBe(snapshot);
   });
 });
+
+describe("canonicalizePrdWorkdirs — scoped canonicalization (nax#2080)", () => {
+  test("leaves a story outside `only` as the identical reference", () => {
+    const untouched = makeStory({ id: "US-001", contextFiles: ["src/a.ts"] });
+    const target = makeStory({ id: "US-002", contextFiles: ["src/b.ts"] });
+    const prd = makePRD({ userStories: [untouched, target] });
+    const exists = probeOf("packages/app/src/a.ts", "packages/app/src/b.ts");
+
+    const { prd: out } = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, exists, { only: new Set(["US-002"]) });
+
+    // Identity, not deep equality: an untouched story must not even be respread,
+    // or a caller cannot tell "we left it alone" from "we recomputed the same value".
+    expect(out.userStories[0]).toBe(untouched);
+    expect(out.userStories[0]?.workdirSource).toBeUndefined();
+    expect(out.userStories[1]?.workdir).toBe("packages/app");
+    expect(out.userStories[1]?.contextFiles).toEqual(["packages/app/src/b.ts"]);
+  });
+
+  test("does not report an out-of-scope story as defaulted", () => {
+    const prd = makePRD({ userStories: [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })] });
+
+    const { defaulted } = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, probeOf(), { only: new Set(["US-002"]) });
+
+    expect(defaulted).toEqual(["US-002"]);
+  });
+
+  test("derive:false defaults an unstated story without probing the filesystem", () => {
+    const prd = makePRD({ userStories: [makeStory({ id: "US-001", contextFiles: ["src/a.ts"] })] });
+    const probed: string[] = [];
+    const exists = (abs: string): boolean => {
+      probed.push(abs);
+      return true;
+    };
+
+    const { prd: out, defaulted } = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, exists, { derive: false });
+
+    expect(out.userStories[0]?.workdir).toBeUndefined();
+    expect(out.userStories[0]?.workdirSource).toBe("defaulted");
+    expect(defaulted).toEqual(["US-001"]);
+    // Zero probes: derivation is skipped, and workdir "." short-circuits
+    // canonicalizeDeclaredPath before it probes either location.
+    expect(probed).toEqual([]);
+  });
+
+  test("derive:false still re-spells the paths of a story that states its workdir", () => {
+    const prd = makePRD({
+      userStories: [makeStory({ id: "US-001", workdir: "packages/app", contextFiles: ["src/a.ts"] })],
+    });
+
+    const { prd: out } = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, probeOf("packages/app/src/a.ts"), {
+      derive: false,
+    });
+
+    expect(out.userStories[0]?.workdirSource).toBe("stated");
+    expect(out.userStories[0]?.contextFiles).toEqual(["packages/app/src/a.ts"]);
+  });
+
+  test("is a fixed point over an already-canonical story", () => {
+    const prd = makePRD({
+      userStories: [makeStory({ id: "US-001", workdir: "packages/app", contextFiles: ["src/a.ts"] })],
+    });
+    const exists = probeOf("packages/app/src/a.ts");
+
+    const once = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, exists).prd;
+    const twice = canonicalizePrdWorkdirs(once, REPO, PACKAGES, exists).prd;
+
+    expect(twice.userStories[0]).toEqual(once.userStories[0]);
+  });
+});

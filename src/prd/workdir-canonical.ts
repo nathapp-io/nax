@@ -14,7 +14,7 @@
 
 import { join } from "node:path";
 import { normalizeWorkdir, toRepoFrame } from "@/utils/path-frame";
-import type { PRD, WorkdirSource } from "./types";
+import type { PRD, UserStory, WorkdirSource } from "./types";
 
 /** Synchronous existence probe over ABSOLUTE paths. */
 export type ExistsProbe = (absPath: string) => boolean;
@@ -120,18 +120,61 @@ export function canonicalizeDeclaredPath(
  * root (see `canonicalizeDeclaredPath`). All three are RETURNED rather than logged here so this
  * module stays pure -- and, for `defaulted`, because this is the only point in `nax plan` where that
  * fact is known (see the RULING in the plan's Orientation section).
+ *
+ * `opts.only` restricts the whole pass to a subset of stories and `opts.derive`
+ * turns derivation off; see {@link CanonicalizeOptions} for why a scoped caller
+ * needs both. Omitting `opts` is the whole-PRD behaviour `nax plan` uses.
  */
+/** Options for {@link canonicalizePrdWorkdirs}. Both default to today's whole-PRD behaviour. */
+export interface CanonicalizeOptions {
+  /**
+   * Restrict canonicalization to these story ids. A story outside the set is
+   * returned by IDENTITY -- not respread -- and contributes to none of the three
+   * returned reports.
+   *
+   * `nax plan --decompose` (nax#2080) writes into a PRD whose other stories may
+   * already have executed. Re-spelling their paths is harmless, but re-deciding
+   * anything about them is not, and one scope for the whole write is simpler to
+   * reason about than three separate guards.
+   */
+  readonly only?: ReadonlySet<string>;
+  /**
+   * Derive a workdir for a story that did not state one. Default true.
+   *
+   * `false` is for a caller writing into a PRD that has partly executed:
+   * derivation reads the filesystem, and the answer changes once earlier stories
+   * have created files, so a story that legitimately defaulted at plan time would
+   * silently acquire a package. A sub-story inherits its parent's workdir
+   * (ADR-025: decompose inherits, it does not re-select), so there is nothing
+   * left for derivation to decide there anyway.
+   */
+  readonly derive?: boolean;
+}
+
 export function canonicalizePrdWorkdirs(
   prd: PRD,
   repoRoot: string,
   packages: readonly string[],
   exists: ExistsProbe,
+  opts?: CanonicalizeOptions,
 ): { prd: PRD; collisions: string[]; defaulted: string[]; rootOnly: string[] } {
   const collisions: string[] = [];
   const defaulted: string[] = [];
   const rootOnly: string[] = [];
+  const deriveEnabled = opts?.derive ?? true;
+
+  // normalizeWorkdir collapses "", ".", "./" and absent to "." so a planner that
+  // literally emits "." is treated as root, not as a stated package.
+  const decideWorkdir = (story: UserStory, declared: readonly string[]): { workdir: string; source: WorkdirSource } => {
+    const statedWorkdir = normalizeWorkdir(story.workdir);
+    if (statedWorkdir !== ".") return { workdir: statedWorkdir, source: "stated" };
+    if (!deriveEnabled) return { workdir: ".", source: "defaulted" };
+    return deriveWorkdir(declared, repoRoot, packages, exists);
+  };
 
   const userStories = prd.userStories.map((story) => {
+    if (opts?.only && !opts.only.has(story.id)) return story;
+
     // `workdir` is destructured off `rest` rather than left to the conditional
     // spread below: spreading `...story` would re-introduce the raw value (a
     // literal ".", "" or "./") that normalizeWorkdir collapsed, landing it in the
@@ -144,13 +187,7 @@ export function canonicalizePrdWorkdirs(
       ...(story.expectedFiles ?? []),
     ];
 
-    // normalizeWorkdir collapses "", ".", "./" and absent to "." so a planner that
-    // literally emits "." is treated as root, not as a stated package.
-    const statedWorkdir = normalizeWorkdir(story.workdir);
-    const stated = statedWorkdir !== ".";
-    const { workdir, source }: { workdir: string; source: WorkdirSource } = stated
-      ? { workdir: statedWorkdir, source: "stated" }
-      : deriveWorkdir(declared, repoRoot, packages, exists);
+    const { workdir, source } = decideWorkdir(story, declared);
     if (source === "defaulted") defaulted.push(story.id);
 
     const reframe = (path: string): string => {
