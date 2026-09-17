@@ -98,6 +98,26 @@ function setupPackageRule(rule: CanonicalRule): void {
     workdir === MONOREPO_REQUEST.packageDir ? [rule] : [];
 }
 
+/**
+ * Mirror of setupPackageRule: the rule loads only at the REPO root, and the
+ * package directory has NO rules of its own — the shape the #2113 hoist
+ * regression test needs, since the pre-hoist framing block lived inside the
+ * `packageRules.length > 0` guard and never ran for a package with zero
+ * package-level rules of its own.
+ */
+function setupRepoRule(rule: CanonicalRule): void {
+  _staticRulesDeps.loadCanonicalRules = async (workdir: string) =>
+    workdir === MONOREPO_REQUEST.repoRoot ? [rule] : [];
+}
+
+const REPO_RULE: CanonicalRule = {
+  id: "session-keeper-rule",
+  fileName: "session-keeper-rule.md",
+  path: "session-keeper-rule.md",
+  content: "## Session Keeper\n\nSession keeper body.",
+  appliesTo: ["src/session/session-keeper.ts"],
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // H8 — the provider frames a package-relative literal `appliesTo` into the
 // repo frame before emitting scopePaths.
@@ -197,6 +217,66 @@ describe("classifyWithTerms — a package-relative literal is attributed after f
       diffText,
     });
     expect(effectiveness.signal).toBe("ignored");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// nax#2113 — repo-level rules must be framed too, not only package rules.
+//
+// `frameAppliesTo` used to apply only to `packageRules`, so a REPO-LEVEL rule
+// whose `appliesTo` is a package-relative literal (e.g.
+// "src/session/session-keeper.ts") stopped selecting entirely in a monorepo —
+// the literal never matched the repo-framed scopeFiles/diff. The ruling: this
+// is a bug, and framing a repo-level literal is strictly tighter than the
+// pre-#2091 behaviour (a framed literal is compared with === against exactly
+// one repo-rooted string, so it cannot reach a sibling package).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("StaticRulesProvider — repo-level rules are framed too (nax#2113)", () => {
+  test("a repo-level rule with a package-relative literal appliesTo selects for the in-scope package", async () => {
+    setupRepoRule(REPO_RULE);
+    const provider = new StaticRulesProvider();
+
+    const result = await provider.fetch({
+      ...MONOREPO_REQUEST,
+      scopeFiles: ["packages/api/src/session/session-keeper.ts"],
+    });
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("Session keeper body.");
+    expect(result.chunks[0]?.scopePaths).toEqual(["packages/api/src/session/session-keeper.ts"]);
+  });
+
+  test("#2091 control: a repo-level rule's framed literal does not select/attribute a same-named file in a different package", async () => {
+    setupRepoRule(REPO_RULE);
+    const provider = new StaticRulesProvider();
+
+    const result = await provider.fetch({
+      ...MONOREPO_REQUEST,
+      scopeFiles: ["packages/web/src/session/session-keeper.ts"],
+    });
+
+    expect(result.chunks).toHaveLength(0);
+  });
+
+  test("the hoist: a monorepo package with ZERO package-level rules still gets its repo-level literal framed and selected", async () => {
+    // Regression test for the trap: the framing block used to live inside
+    // `if (packageRules.length > 0)`, so a package with no rules of its own —
+    // the common monorepo shape — never entered it and the repo-level literal
+    // stayed unframed and silently dropped, even though `mergedRules` still
+    // equalled `repoRules` (this exact scenario). This is the test that must
+    // FAIL before the hoist and PASS after it.
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) =>
+      workdir === MONOREPO_REQUEST.repoRoot ? [REPO_RULE] : [];
+    const provider = new StaticRulesProvider();
+
+    const result = await provider.fetch({
+      ...MONOREPO_REQUEST,
+      scopeFiles: ["packages/api/src/session/session-keeper.ts"],
+    });
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.scopePaths).toEqual(["packages/api/src/session/session-keeper.ts"]);
   });
 });
 

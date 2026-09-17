@@ -133,9 +133,10 @@ describe("TestCoverageProvider", () => {
     });
   });
 
-  describe("AC7: packageDir relativised before resolveTestFilePatterns", () => {
-    test("passes relative packageDir when packageDir differs from repoRoot", async () => {
+  describe("AC7: packageDir derived from storyWorkdir(story), not relative(repoRoot, packageDir)", () => {
+    test("passes the story's workdir when the story declares a package workdir", async () => {
       const cfg = makeConfigWithTestCoverage();
+      const storyInPackage = makeStory({ id: "story-001", workdir: "packages/api" });
       let receivedPackageDir: string | undefined;
       _testCoverageProviderDeps.resolveTestFilePatterns = async (_config, _workdir, pkg) => {
         receivedPackageDir = pkg;
@@ -143,13 +144,13 @@ describe("TestCoverageProvider", () => {
       };
       mockScanner({ summary: "coverage", tokens: 10, files: [], totalTests: 5 });
 
-      const provider = new TestCoverageProvider(STORY, cfg);
+      const provider = new TestCoverageProvider(storyInPackage, cfg);
       await provider.fetch(makeRequest({ repoRoot: "/repo", packageDir: "/repo/packages/api" }));
 
       expect(receivedPackageDir).toBe("packages/api");
     });
 
-    test("passes undefined packageDir when packageDir equals repoRoot (single-package repo)", async () => {
+    test("passes undefined packageDir when the story has no workdir (single-package repo)", async () => {
       const cfg = makeConfigWithTestCoverage();
       let receivedPackageDir: string | undefined | null = null;
       _testCoverageProviderDeps.resolveTestFilePatterns = async (_config, _workdir, pkg) => {
@@ -162,6 +163,29 @@ describe("TestCoverageProvider", () => {
       await provider.fetch(makeRequest({ repoRoot: "/repo", packageDir: "/repo" }));
 
       expect(receivedPackageDir).toBeUndefined();
+    });
+
+    // nax#2111: under execution.storyIsolation "worktree", request.packageDir is
+    // rooted at the story's worktree checkout (e.g. "/repo/.nax-wt/story-001/packages/api")
+    // while request.repoRoot stays the MAIN checkout ("/repo"). relative(repoRoot, packageDir)
+    // then yields ".nax-wt/story-001/packages/api", which matches no real
+    // ".nax/mono/<pkg>/config.json" and silently falls back to root config with no diagnostic.
+    // The fix sources the package dir from storyWorkdir(this.story) instead, which is
+    // PRD-declared and immune to which checkout packageDir happens to be rooted at.
+    test("under worktree isolation, derives packageDir from storyWorkdir(story) rather than relative(repoRoot, packageDir)", async () => {
+      const cfg = makeConfigWithTestCoverage();
+      const storyInPackage = makeStory({ id: "story-001", workdir: "packages/api" });
+      let receivedPackageDir: string | undefined;
+      _testCoverageProviderDeps.resolveTestFilePatterns = async (_config, _workdir, pkg) => {
+        receivedPackageDir = pkg;
+        return { globs: ["**/*.test.ts"], regex: [], pathspec: [], resolution: "fallback", testDirs: [] };
+      };
+      mockScanner({ summary: "coverage", tokens: 10, files: [], totalTests: 5 });
+
+      const provider = new TestCoverageProvider(storyInPackage, cfg);
+      await provider.fetch(makeRequest({ repoRoot: "/repo", packageDir: "/repo/.nax-wt/story-001/packages/api" }));
+
+      expect(receivedPackageDir).toBe("packages/api");
     });
   });
 

@@ -44,7 +44,7 @@ Frontmatter keys (all optional):
 | Key | Type | Default | Effect |
 |:---|:---|:---|:---|
 | `priority` | int | `100` | Lower = more important. Drives sort order and budget-truncation tail bias. Use `50-80` for must-have rules, `100` for normal, `150+` for nice-to-have. |
-| `paths` | string \| string[] | none | Globs against `relative(repoRoot, packageDir)`. Rule loads only when the **package** matches. Always-true in single-package repos. |
+| `paths` | string \| string[] | none | Globs against the story's package-relative workdir (`request.storyWorkdir`). Rule loads only when the **package** matches. Always-true in single-package repos. |
 | `appliesTo` | string \| string[] | none | Globs against `request.touchedFiles` (PRD `contextFiles`). Rule loads only when the story declares it touches a matching file. |
 
 Body must pass the neutrality linter — see below.
@@ -121,6 +121,25 @@ appliesTo:
 ```
 
 Combine with `paths:` to layer: package-scope first, then file-pattern-scope.
+
+### `appliesTo:` literals in a monorepo are framed automatically
+
+Write an `appliesTo:` literal (no glob metacharacters) package-relative, the same
+way you'd write it inside that package's own tree — e.g.
+`appliesTo: ["src/session/session-keeper.ts"]` for a rule that targets exactly
+`apps/api/src/session/session-keeper.ts`. The Context Engine re-spells it into
+the repo-rooted frame (`apps/api/src/session/session-keeper.ts`) before matching
+against `scopeFiles`/the diff, using the story's declared workdir. This applies
+to **both** package-level rules (`apps/api/.nax/rules/foo.md`) and repo-level
+rules scoped with `paths:` to one package (nax#2113) — a repo-level rule with a
+bare package-relative literal is not silently dropped in a monorepo.
+
+Framing only re-spells literals; an authored glob (anything containing `*`,
+`?`, `[`, or `{`) is left untouched, so `appliesTo: ["src/agents/**"]` already
+matches any package's `src/agents/` directory without needing a repo-rooted
+spelling. Framing a literal is exact-match (`===`) after re-spelling, so it can
+match at most one file in one package — it cannot reach a same-named file in a
+sibling package (the failure mode nax#2091 fixed stays fixed).
 
 ### Splitting vs tagging
 

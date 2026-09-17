@@ -164,6 +164,54 @@ describe("path-filters (#542)", () => {
     });
   });
 
+  // nax#2111 (path-filters follow-up): resolveNaxIgnorePatterns's packagePrefix
+  // used to be derived as relative(repoRoot, packageDir). Under
+  // execution.storyIsolation: "worktree", packageDir is
+  // <root>/.nax-wt/<storyId>/<pkg> while repoRoot stays the main checkout, so
+  // that derivation yields ".nax-wt/<storyId>/<pkg>" instead of "<pkg>".
+  //
+  // Unlike ruleMatchesPackage (nax#2111 1b), this IS reachable: compileMatcher
+  // prepends packagePrefix to the SUBJECT (`${packagePrefix}/${normalized}`)
+  // before testing a root pattern's regex against it. A root pattern that
+  // matches the ".nax-wt/<storyId>" prefix itself — e.g. ".nax-wt/**", a
+  // natural thing for a repo to ignore worktree artifacts with — then matches
+  // every package-relative subject, because the buggy prefix supplies the
+  // match instead of merely failing to break one. This is a FALSE POSITIVE,
+  // the opposite direction from the ruleMatchesPackage case (which is
+  // provably immune to false negatives due to suffix-anchoring, but was never
+  // tested for false positives against a pattern matching its own prefix).
+  //
+  // The fix threads the PRD-declared story workdir through as an explicit
+  // packageWorkdir argument, overriding the relative() derivation.
+  describe("resolveNaxIgnorePatterns — worktree isolation false positive (nax#2111 path-filters)", () => {
+    test("a root pattern matching the worktree prefix does NOT match an ordinary package file once packageWorkdir is supplied", async () => {
+      const files = new Map<string, string>([["/repo/.naxignore", ".nax-wt/**\n"]]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo", "/repo/.nax-wt/story-001/packages/api", "packages/api");
+      expect(matchers.some((m) => m.test("packages/api/src/a.ts"))).toBe(false);
+    });
+
+    test("without packageWorkdir (falling back to the buggy derivation) the same pattern DOES falsely match — pinning the bug this closes", async () => {
+      const files = new Map<string, string>([["/repo/.naxignore", ".nax-wt/**\n"]]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo", "/repo/.nax-wt/story-001/packages/api");
+      expect(matchers.some((m) => m.test("packages/api/src/a.ts"))).toBe(true);
+    });
+
+    test("a package-relative pattern still matches its own package once packageWorkdir is supplied", async () => {
+      const files = new Map<string, string>([["/repo/.naxignore", "packages/api/dist/**\n"]]);
+      _pathFilterDeps.fileExists = async (path) => files.has(path);
+      _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
+
+      const matchers = await resolveNaxIgnorePatterns("/repo", "/repo/.nax-wt/story-001/packages/api", "packages/api");
+      expect(matchers.some((m) => m.test("dist/index.js"))).toBe(true);
+    });
+  });
+
   // BUG-45: `**` without flanking slashes must not cross directory
   // boundaries, and backslash-escaped spaces in a pattern must be preserved
   // rather than lost during normalization.

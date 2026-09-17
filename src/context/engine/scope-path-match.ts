@@ -112,3 +112,44 @@ export function frameAppliesTo(rule: CanonicalRule, packageWorkdir: string): Can
     ),
   };
 }
+
+/**
+ * Returns true when a rule's `paths:` frontmatter (package-scope filter) matches
+ * the current package directory relative to the repo root.
+ * Rules with no `paths:` field are global and always match.
+ * Single-package repos (packageDir === repoRoot) always match regardless of paths.
+ *
+ * The package-relative frame comes from `storyWorkdir` (request.storyWorkdir,
+ * PRD-declared), NOT `relative(repoRoot, packageDir)`: under
+ * `execution.storyIsolation: "worktree"`, `repoRoot` is the main checkout while
+ * `packageDir` is `<root>/.nax-wt/<storyId>/<pkg>`, so that derivation yields
+ * `.nax-wt/<storyId>/<pkg>` instead of `<pkg>` (nax#2111, same defect class as
+ * H8 / nax#2069). `storyWorkdir` is immune to which checkout `packageDir`
+ * happens to be rooted at.
+ *
+ * A missing/"." storyWorkdir falls back to "." (no package frame). This can
+ * only be reached when `packageDir !== repoRoot` yet the caller omitted
+ * `storyWorkdir` — `static-rules.ts`'s fast path (`packageDir === repoRoot`)
+ * already covers the single-package and pull-tool-handler cases where
+ * `storyWorkdir` is legitimately absent (see `ContextRequest.storyWorkdir`'s
+ * docblock in `../types.ts` and the mirrored fallback at its AC-57
+ * package-rule overlay).
+ *
+ * Moved here from `static-rules.ts` for the file-size gate (nax#2113's repo-rule
+ * hoist pushed that file to 624/600 lines) — this module is the designated leaf
+ * for scope/frame matching primitives.
+ */
+export function ruleMatchesPackage(
+  paths: string[] | undefined,
+  repoRoot: string,
+  packageDir: string,
+  storyWorkdir: string | undefined,
+): boolean {
+  if (!paths || paths.length === 0) return true;
+  if (packageDir === repoRoot) return true;
+
+  const rel = normalizePath(storyWorkdir ?? ".");
+  const patterns = paths.map((p) => globToRegex(normalizePath(p)));
+  // Also test rel + "/" so that "packages/api/**" matches the base dir "packages/api"
+  return patterns.some((pattern) => pattern.test(rel) || pattern.test(`${rel}/`));
+}
