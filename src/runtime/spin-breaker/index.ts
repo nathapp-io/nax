@@ -112,9 +112,15 @@ function stableStringify(value: unknown): string {
  * `stripControlChars` first). Deliberately surgical rather than blanking
  * every digit — "2 failed" -> "1 failed" is real progress and must survive
  * normalisation, while "in 1.20s" -> "in 1.23s" must not.
+ *
+ * The single-letter `m`/`s` units are ambiguous with ordinary tokens
+ * (`file-2m.ts`, "expected 5 m"), so they are stripped only when the number
+ * is decimal (`1.2s`) or sits in a time context (`in`/`took`/`=`/`(`/`,`).
+ * `ms` and `min` are unambiguous and stay unconditional. The `ms|s|m|min`
+ * alternation is ordered so backtracking still reaches `min`.
  */
 const DURATION_OR_TIMESTAMP =
-  /\b\d+(?:\.\d+)?\s?(?:ms|s|m|min)\b|\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b|\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g;
+  /\b\d+\.\d+\s?(?:ms|s|m|min)\b|(?:\b(?:in|took)\s?|[=(,]\s?)\d+\s?[ms]\b|\b\d+(?:\.\d+)?\s?(?:ms|min)\b|\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b|\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g;
 
 function resultDigest(text: string): string {
   const normalised = stripControlChars(text).replace(DURATION_OR_TIMESTAMP, "").replace(/\s+/g, " ").trim();

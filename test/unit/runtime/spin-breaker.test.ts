@@ -491,6 +491,21 @@ describe("createSpinBreaker", () => {
     }
   });
 
+  test("a bare integer m/s token is a changed result, not a stripped duration (nax#2120 fix)", () => {
+    // A single-letter unit with no time context is ordinary content, not an
+    // elapsed time: `file-2m.ts` and `file-3m.ts` differ for real. If the
+    // normaliser stripped the `<int>m`/`<int>s` tokens the digests would be
+    // identical and this healthy loop would be stopped at 16.
+    for (const unit of ["m", "s"]) {
+      const breaker = createSpinBreaker(settings());
+      for (let i = 0; i < 40; i += 1) {
+        const verdict = breaker.observe("RunCommand", TEST_CMD);
+        expect(verdict.action).not.toBe("stop");
+        breaker.noteResult("RunCommand", TEST_CMD, `file-${i}${unit}.ts`);
+      }
+    }
+  });
+
   test("the raw backstop still fires when results never repeat", () => {
     // A call whose result is unique every time (a clock read, a random id)
     // must not be immortal: stopAfterRepeats bounds the raw cumulative count.
