@@ -3,7 +3,7 @@
   "feature": "glob-directory-grouped-output",
   "branchName": "feat/glob-directory-grouped-output",
   "createdAt": "2025-02-14T00:00:00Z",
-  "updatedAt": "2026-09-17T11:45:58.427Z",
+  "updatedAt": "2026-09-17T12:16:07.722Z",
   "userStories": [
     {
       "id": "US-001",
@@ -33,8 +33,8 @@
         "output-format"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
