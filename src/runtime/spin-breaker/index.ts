@@ -158,20 +158,51 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
     }
   }
 
-  function buildNudge(toolName: string): SpinVerdict {
+  function buildNudge(toolName: string, repeats: number): SpinVerdict {
     nudges += 1;
     getSafeLogger()?.warn("spin-breaker", "Repeated calls with no progress — nudging", {
       tool: toolName,
-      repeats: repeatsSinceProgress,
+      repeats,
       nudgeNumber: nudges,
       newKeyEvents,
     });
-    return {
-      action: "nudge",
-      nudgeNumber: nudges,
-      repeats: repeatsSinceProgress,
-      text: nudgeText(nudges, repeatsSinceProgress),
-    };
+    return { action: "nudge", nudgeNumber: nudges, repeats, text: nudgeText(nudges, repeats) };
+  }
+
+  /**
+   * nax#2120: the escalation ladder must always render before a kill. The
+   * nudge points are derived from `repeatsSinceProgress`, but the cumulative
+   * per-key check runs on a different counter, so for a loop over 1-2
+   * already-seen keys the first nudge point was unreachable by arithmetic
+   * and the turn was killed cold with `nudges: 0`.
+   *
+   * Deliberately NOT a config refinement: reachability depends on the loop's
+   * CYCLE LENGTH, not on the knobs, so no cross-field inequality can express
+   * it. Spending a nudge instead costs at most `maxNudges` extra calls before
+   * a genuine nax#2047 kill, and makes `nudges: 0` on a stop unreachable for
+   * every configuration.
+   *
+   * `onStop` runs only when the verdict is a real stop — the Task 1 evidence
+   * reset must not fire on a downgrade, or the threshold could never be
+   * reached twice and the loop would nudge forever.
+   */
+  function stopOrNudge(
+    toolName: string,
+    repeats: number,
+    reason: "repeat-run" | "same-key-cumulative",
+    onStop?: () => void,
+  ): SpinVerdict {
+    if (nudges < settings.maxNudges) return buildNudge(toolName, repeats);
+    onStop?.();
+    getSafeLogger()?.error("spin-breaker", "Ending the turn — repeated calls with no progress", {
+      tool: toolName,
+      repeats,
+      reason,
+      newKeyEvents,
+      totalCalls,
+      nudges,
+    });
+    return { action: "stop", repeats, reason };
   }
 
   return {
@@ -194,41 +225,25 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
       // want to catch (nax#2047). Only check when the knob is non-zero —
       // 0 disables.
       if (settings.stopAfterSameKeyRepeats > 0 && cumulativeCount >= settings.stopAfterSameKeyRepeats) {
-        // nax#2120: the stop CONSUMES the evidence it fired on. Without this
-        // the count stays above the threshold forever, and because the
-        // breaker is session-scoped (nax#2047) every later turn died on its
-        // first re-occurrence of this key — a ratchet, not a spin. Set to 0
-        // rather than deleting the entry: the key must stay in `recent` so
-        // its next occurrence still reads as a repeat, not as progress.
-        recent.set(key, 0);
-        getSafeLogger()?.error("spin-breaker", "Ending the turn — same call repeated with no progress", {
-          tool: toolName,
-          repeats: cumulativeCount,
-          reason: "same-key-cumulative",
-          newKeyEvents,
-          totalCalls,
-          nudges,
+        return stopOrNudge(toolName, cumulativeCount, "same-key-cumulative", () => {
+          // The stop consumes the evidence it fired on (nax#2120, Task 1).
+          // Set to 0 rather than deleting the entry: the key must stay in
+          // `recent` so its next occurrence still reads as a repeat, not as
+          // progress. Only a REAL stop resets — a downgraded nudge must not,
+          // or the threshold could never be reached twice.
+          recent.set(key, 0);
         });
-        return { action: "stop", repeats: cumulativeCount, reason: "same-key-cumulative" };
       }
 
       repeatsSinceProgress += 1;
       if (repeatsSinceProgress > maxRepeatRun) maxRepeatRun = repeatsSinceProgress;
 
       if (repeatsSinceProgress >= settings.stopAfterRepeats) {
-        getSafeLogger()?.error("spin-breaker", "Ending the turn — repeated calls with no progress", {
-          tool: toolName,
-          repeats: repeatsSinceProgress,
-          reason: "repeat-run",
-          newKeyEvents,
-          totalCalls,
-          nudges,
-        });
-        return { action: "stop", repeats: repeatsSinceProgress, reason: "repeat-run" };
+        return stopOrNudge(toolName, repeatsSinceProgress, "repeat-run");
       }
 
       const isNudgePoint = points.includes(repeatsSinceProgress);
-      if (isNudgePoint && nudges < settings.maxNudges) return buildNudge(toolName);
+      if (isNudgePoint && nudges < settings.maxNudges) return buildNudge(toolName, repeatsSinceProgress);
 
       return { action: "allow" };
     },

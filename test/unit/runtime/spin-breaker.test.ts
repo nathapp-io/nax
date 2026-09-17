@@ -197,7 +197,7 @@ describe("createSpinBreaker", () => {
     // reaches the threshold regardless of B interleaving.
     let aCount = 0;
     let stoppedAtA: number | undefined;
-    for (let cycle = 0; cycle < 6; cycle += 1) {
+    for (let cycle = 0; cycle < 8; cycle += 1) {
       // Three A's, then a B. Per cycle: A becomes cumulative (cycle*3 + 1..3).
       for (let i = 0; i < 3; i += 1) {
         aCount += 1;
@@ -215,7 +215,9 @@ describe("createSpinBreaker", () => {
       }
     }
 
-    expect(stoppedAtA).toBe(12);
+    // nax#2120: occurrences 12, 13 and 14 spend the three nudges; the stop
+    // lands on 15. The ladder must always render before a kill.
+    expect(stoppedAtA).toBe(15);
   });
 
   test("interleaving does not reset the cumulative counter (the laundering hole)", () => {
@@ -223,19 +225,18 @@ describe("createSpinBreaker", () => {
     const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
     const KEY_B = { command: "testScoped", values: { files: "b.test.ts" } };
 
-    // [A, B, A, B, ..., A] — A's count climbs to 12 while repeatsSinceProgress
-    // never exceeds 1. The default nudgeAfterRepeats=25 means the existing
-    // repeatsSinceProgress path cannot trip. The new cumulative check must.
-    let aCount = 0;
+    // [A, B, A, B, ...] — repeatsSinceProgress never exceeds 1, so the
+    // nudgeAfterRepeats=25 path can never trip. Only the cumulative check
+    // can end this, and it must, after spending the full ladder. Both keys
+    // climb together, so which one finally crosses is symmetric and not
+    // worth asserting; that the loop is bounded at all is the point.
     let stoppedAt: number | undefined;
-    for (let i = 0; i < 30 && stoppedAt === undefined; i += 1) {
-      const input = i % 2 === 0 ? KEY_A : KEY_B;
-      if (input === KEY_A) aCount += 1;
-      const verdict = breaker.observe("RunCommand", input);
-      if (verdict.action === "stop") stoppedAt = aCount;
+    for (let i = 0; i < 40 && stoppedAt === undefined; i += 1) {
+      if (breaker.observe("RunCommand", i % 2 === 0 ? KEY_A : KEY_B).action === "stop") stoppedAt = i + 1;
     }
 
-    expect(stoppedAt).toBe(12);
+    expect(stoppedAt).toBe(26);
+    expect(breaker.summary().nudges).toBe(3);
   });
 
   test("600 varied calls never trip (nax#2013 regression guard)", () => {
@@ -308,11 +309,10 @@ describe("createSpinBreaker", () => {
     expect(stops).toBeLessThanOrEqual(1); // 0 from cumulative, at most 1 from existing path
   });
 
-  test("stopAfterSameKeyRepeats defaults to 12 (sanity check that default trips at 12)", () => {
-    // With the default settings (stopAfterSameKeyRepeats=12) and 50 identical
-    // calls, the cumulative check must trip BEFORE repeatsSinceProgress
-    // reaches the first nudge point (25). If the cumulative path were off
-    // or defaulted too high, this would let 25+ identical calls through.
+  test("the cumulative path spends the nudge ladder before it stops (nax#2120)", () => {
+    // With the default settings the cumulative check engages at 12, but it
+    // must NOT kill cold: occurrences 12/13/14 nudge, and 15 stops. A
+    // same-key stop reached with nudges: 0 is the defect nax#2120 filed.
     const breaker = createSpinBreaker(settings());
     const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
 
@@ -324,8 +324,8 @@ describe("createSpinBreaker", () => {
       if (verdict.action === "stop") stoppedAt = i + 1;
     }
 
-    expect(stoppedAt).toBe(12);
-    expect(nudges).toBe(0);
+    expect(stoppedAt).toBe(15);
+    expect(nudges).toBe(3);
   });
 
   // nax#2120 defect 3 (the ratchet): the cumulative count latched at the
@@ -336,10 +336,10 @@ describe("createSpinBreaker", () => {
     const breaker = createSpinBreaker(settings());
 
     let firstStopAt: number | undefined;
-    for (let i = 0; i < 12 && firstStopAt === undefined; i += 1) {
+    for (let i = 0; i < 20 && firstStopAt === undefined; i += 1) {
       if (breaker.observe("RunCommand", TEST_CMD).action === "stop") firstStopAt = i + 1;
     }
-    expect(firstStopAt).toBe(12);
+    expect(firstStopAt).toBe(15);
 
     // The 11 occurrences after the stop must all be allowed: the count
     // restarts from zero and has to climb the full threshold again.
@@ -353,12 +353,45 @@ describe("createSpinBreaker", () => {
   test("a stop does not turn the key into a new-key event", () => {
     const breaker = createSpinBreaker(settings());
 
-    for (let i = 0; i < 12; i += 1) breaker.observe("RunCommand", TEST_CMD);
+    for (let i = 0; i < 15; i += 1) breaker.observe("RunCommand", TEST_CMD);
     const newKeysAfterStop = breaker.summary().newKeyEvents;
     breaker.observe("RunCommand", TEST_CMD);
 
     // Resetting the count must not look like progress: newKeyEvents is the
     // "did something new happen" instrument and a re-issued key is not new.
     expect(breaker.summary().newKeyEvents).toBe(newKeysAfterStop);
+  });
+
+  // nax#2120 defect 1: for a loop over 1-2 already-seen keys the first nudge
+  // point (25) was unreachable, because the cumulative stop returned before
+  // repeatsSinceProgress was incremented. The invariant is now in the
+  // mechanism: no config can produce a stop with nudges: 0.
+  test("never stops with nudges unspent, for any cycle length", () => {
+    const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
+    const KEY_B = { command: "testScoped", values: { files: "b.test.ts" } };
+    const KEY_C = { command: "testScoped", values: { files: "c.test.ts" } };
+    const cycles: ReadonlyArray<readonly unknown[]> = [[KEY_A], [KEY_A, KEY_B], [KEY_A, KEY_B, KEY_C]];
+
+    for (const cycle of cycles) {
+      const breaker = createSpinBreaker(settings());
+      let stopped = false;
+      for (let i = 0; i < 400 && !stopped; i += 1) {
+        if (breaker.observe("RunCommand", cycle[i % cycle.length]).action === "stop") stopped = true;
+      }
+      expect(stopped).toBe(true);
+      expect(breaker.summary().nudges).toBe(3);
+    }
+  });
+
+  test("a downgraded stop does not consume the cumulative evidence", () => {
+    // The Task 1 reset belongs to a REAL stop. If a nudge reset the count
+    // too, the threshold could never be reached a second time and the loop
+    // would nudge forever.
+    const breaker = createSpinBreaker(settings());
+    let stopped = false;
+    for (let i = 0; i < 20 && !stopped; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") stopped = true;
+    }
+    expect(stopped).toBe(true);
   });
 });

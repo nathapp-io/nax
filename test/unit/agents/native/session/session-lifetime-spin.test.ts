@@ -88,9 +88,11 @@ async function runTurnAgainst(handle: SessionHandle, breaker: SpinBreaker | unde
 
 describe("spin breaker — session lifetime (nax#2047)", () => {
   test("two turns on the same handle.id share the cumulative per-key counter", async () => {
-    // 7 < 12 → no stop on turn 1; another 7 brings the cumulative count to
-    // 14 (8, 9, 10, 11, 12 → trip at the 12th identical call), so turn 2
-    // stops even though each turn individually is below the cap.
+    // 7 < 12 → no stop on turn 1. Turn 2 continues the same cumulative count,
+    // but under nax#2120 it must now spend the (3) nudge ladder before it can
+    // stop, so the hard stop lands at call 8 of turn 2 rather than reaching 12
+    // on the combined counter. 25 is comfortably past that hard-stop point, so
+    // this holds under the later nax#2120 tasks too.
     const settings: ResolvedSpinBreakerSettings = {
       ...DEFAULT_SPIN_BREAKER_SETTINGS,
       stopAfterSameKeyRepeats: 12,
@@ -104,7 +106,7 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
     expect(first.spinStopped).toBeUndefined();
     expect(first.output).toBe("done");
 
-    const second = await runTurnAgainst(handle, breaker, 7);
+    const second = await runTurnAgainst(handle, breaker, 25);
     expect(second.spinStopped).toBe(true);
     expect(second.turnIncomplete).toBe(true);
 
