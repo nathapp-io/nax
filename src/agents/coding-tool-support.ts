@@ -86,6 +86,11 @@ export function buildCodingToolSupport(args: {
   askRules?: readonly ToolGrant[];
   /** PipelineStage this support is built for; carried into every `AskRequest`. */
   pipelineStage?: string;
+  /**
+   * Absolute path the dispatching op declared as its `fileOutput` (nax#2115);
+   * forwarded to `compileToolPolicy` as its `ownedWriteExemption`.
+   */
+  fileOutputPath?: string;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -155,6 +160,7 @@ export function buildCodingToolSupport(args: {
       execTouchedPaths,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
+      ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
     }),
     declaredCommands: new Set(declaredCommands.keys()),
     ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
@@ -253,6 +259,7 @@ export async function resolveCodingToolSupport(
     | "toolPatterns"
     | "codingToolRoot"
     | "codingToolRepoRoot"
+    | "codingToolFileOutput"
     | "outputDir"
     | "pipelineStage"
     | "storyId"
@@ -409,5 +416,6 @@ export async function resolveCodingToolSupport(
     ...(packageName !== undefined ? { packageName } : {}),
     allowScripts,
     ...(denyPaths !== undefined ? { denyPaths } : {}),
+    ...(options.codingToolFileOutput !== undefined ? { fileOutputPath: options.codingToolFileOutput } : {}),
   });
 }

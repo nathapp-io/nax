@@ -69,11 +69,24 @@ export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edi
  * agent that can rewrite it can pass any review without writing any code,
  * which defeats the review layer without touching a config file.
  */
-export function naxOwnedWriteRefusal(tool: string, rel: string): string | undefined {
+export function naxOwnedWriteRefusal(tool: string, rel: string, exemptRel?: string): string | undefined {
   if (!NAX_OWNED_WRITE_TOOLS.has(tool)) return undefined;
   const segments = rel.split("/");
   const isFeaturePrd =
     segments[0] === ".nax" && segments[1] === "features" && segments[segments.length - 1] === "prd.json";
   if (!isFeaturePrd) return undefined;
+  // nax#2115: the plan session is the ONE writer of a PRD -- its op declares
+  // `fileOutput: (input) => input.outputPath` and every plan prompt instructs
+  // the agent to write the PRD there rather than reply with it. #2095 added
+  // this guard without an exemption, which severed that contract and left
+  // `nax plan` unable to produce a PRD in ANY mode.
+  //
+  // The exemption is PATH-EXACT, not role-shaped: the plan session may write
+  // the single path its own op declared, and nothing else. A sibling feature's
+  // PRD stays refused even to the plan session, so a planner cannot reach
+  // across features to rewrite criteria it is not authoring. `exemptRel` must
+  // be the caller's canonical, posix-separated, root-relative spelling --
+  // derived by the policy itself, never taken from the agent's own arguments.
+  if (exemptRel !== undefined && rel === exemptRel) return undefined;
   return `"${rel}" is nax's own run state: it holds the acceptance criteria this story is judged against, so no tool may modify it. Change the code, not the criteria.`;
 }

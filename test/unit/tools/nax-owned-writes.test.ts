@@ -77,3 +77,31 @@ describe("naxOwnedWriteRefusal", () => {
     expect([...NAX_OWNED_WRITE_TOOLS].sort()).toEqual(["Delete", "Edit", "GitCommit", "Write"]);
   });
 });
+
+describe("naxOwnedWriteRefusal — plan-op exemption (nax#2115)", () => {
+  const PRD = ".nax/features/auth/prd.json";
+
+  test("exempts the one path the plan op declared as its fileOutput", () => {
+    expect(naxOwnedWriteRefusal("Write", PRD, PRD)).toBeUndefined();
+  });
+
+  test("exemption is path-exact: another feature's PRD is still refused", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/billing/prd.json", PRD)).toBeDefined();
+  });
+
+  test("an absent exemption leaves the refusal exactly as it was", () => {
+    expect(naxOwnedWriteRefusal("Write", PRD, undefined)).toBeDefined();
+    expect(naxOwnedWriteRefusal("Write", PRD)).toBeDefined();
+  });
+
+  test("an exemption naming a non-PRD path grants nothing", () => {
+    expect(naxOwnedWriteRefusal("Write", PRD, "src/index.ts")).toBeDefined();
+  });
+
+  test("read-only tools were never refused, exemption or not", () => {
+    for (const tool of ["Read", "Grep", "Glob", "Git"]) {
+      expect(naxOwnedWriteRefusal(tool, PRD, PRD)).toBeUndefined();
+      expect(naxOwnedWriteRefusal(tool, PRD)).toBeUndefined();
+    }
+  });
+});

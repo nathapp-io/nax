@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolScope } from "@/tools";
@@ -725,5 +725,52 @@ describe("compileToolPolicy — deny/ask rules for one tool merge (spec Task 4)"
 
     expect(verdict.allowed).toBe(false);
     if (verdict.allowed === false) expect(verdict.rule).toBe("Read(test/**)");
+  });
+});
+
+describe("compileToolPolicy — plan-op PRD write exemption (nax#2115)", () => {
+  const PRD_REL = ".nax/features/auth/prd.json";
+  const grants = [{ tool: "Write", patterns: ["**"] }];
+
+  test("without the exemption, the plan op's own fileOutput path is denied", () => {
+    const policy = compileToolPolicy(grants, root);
+    const verdict = policy.check("Write", PATH_SCOPE, { path: PRD_REL });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("nax's own run state");
+  });
+
+  test("with the exemption, that exact path is allowed", () => {
+    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, PRD_REL) });
+    expect(policy.check("Write", PATH_SCOPE, { path: PRD_REL }).allowed).toBe(true);
+  });
+
+  test("the exemption does not open a sibling feature's PRD", () => {
+    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, PRD_REL) });
+    const verdict = policy.check("Write", PATH_SCOPE, { path: ".nax/features/billing/prd.json" });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("nax's own run state");
+  });
+
+  test("an alternate spelling of the exempt path still resolves to it and is allowed", () => {
+    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, PRD_REL) });
+    expect(policy.check("Write", PATH_SCOPE, { path: "./.nax/features/auth/prd.json" }).allowed).toBe(true);
+    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/features/../features/auth/prd.json" }).allowed).toBe(true);
+  });
+
+  // The exempt PRD does NOT exist when the policy compiles -- `nax plan` creates
+  // its feature dir but the agent writes the file afterwards. `root` here is a
+  // mkdtemp path, which on macOS sits behind a /var -> /private/var symlink, so
+  // this also pins that realOrRaw resolves an absent leaf via its nearest
+  // existing ancestor. If it fell back to the raw path, resolvedRoot (realpathed)
+  // and the exemption would disagree and the exemption would go SILENTLY inert.
+  test("exempts a path that does not exist yet, behind a symlinked root", () => {
+    expect(existsSync(join(root, PRD_REL))).toBe(false);
+    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, PRD_REL) });
+    expect(policy.check("Write", PATH_SCOPE, { path: PRD_REL }).allowed).toBe(true);
+  });
+
+  test("the exemption never widens the nax CONFIG refusal", () => {
+    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, ".nax/config.json") });
+    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/config.json" }).allowed).toBe(false);
   });
 });
