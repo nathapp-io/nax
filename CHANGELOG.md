@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SessionManager` reused a live session whenever the agent name matched and
   discarded the requested endpoint. Same-agent ladder rungs and sticky endpoints
   inherited by warm rectification ops were both inert (#1965).
+- `nax plan --decompose` now persists through `finalizeAndWritePrd` instead of writing the PRD raw, so decompose-created sub-stories get `workdirSource` stamped and their declared paths re-spelled into the repo frame (#2080). The write is scoped to the new sub-stories: workdir derivation and routing resolution do not re-run over stories already in the PRD, which may have executed.
 
 ### Changed
 
