@@ -115,10 +115,12 @@ Every context provider and verification strategy must declare which anchor it us
 
 | Scope | Anchor | Examples |
 |:---|:---|:---|
-| `repo-scoped` | `repoRoot` | `StaticRulesProvider`, `FeatureContextProvider` |
-| `package-scoped` | `packageDir` | `GitHistoryProvider`, `CodeNeighborProvider`, `SessionScratchProvider` |
+| `repo-scoped` | `repoRoot` | `StaticRulesProvider`, `FeatureContextProvider`, `GitHistoryProvider` |
+| `package-scoped` | `packageDir` | `CodeNeighborProvider`, `SessionScratchProvider` |
 
 There is no `cross-package` scope. `CodeNeighborProvider`'s sibling scan was removed in nax#2074: it parsed only relative import specifiers, so it could not find a true cross-package dependent, and it compared paths across two roots. A provider that must see another package sets its scan root to `repoRoot` and re-spells every emitted path for the consumer (`src/utils/path-frame.ts`).
+
+`GitHistoryProvider` is repo-scoped even though it serves a package-contained story: `git log` runs at `repoRoot` against repo-rooted pathspecs (nax#2088), and its `historyScope` option is a **post-filter** over those entries — `"package"` drops entries outside the story's package, `"repo"` keeps them — not a workdir switch. A chunk heading is re-spelled package-relative because it is rendered into the agent's prompt; `scopePaths` stay repo-rooted to match the repo-framed diff.
 
 Declare scope in the file header comment. A provider that reaches beyond its own package must say so in that header and re-spell every emitted path for the consumer.
 

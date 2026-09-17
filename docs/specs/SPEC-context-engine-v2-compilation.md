@@ -302,7 +302,7 @@ SESSION (.nax/features/<id>/sessions/<sessionId>/)
 | StaticRules | repo + package overlay | No (always merges both) | N/A |
 | FeatureContext | repo (features are cross-cutting) | No | N/A |
 | SessionScratch | story-scoped (not package-scoped) | No | N/A |
-| GitHistory | `packageDir` | `historyScope: "package" \| "repo"` | Commits touching shared packages shown in full |
+| GitHistory | `repoRoot` (git always runs there; `historyScope` post-filters to `packageDir`) | `historyScope: "package" \| "repo"` | Commits touching shared packages shown in full |
 | CodeNeighbor | `packageDir` | `neighborScope: "package" \| "repo"` | cross-package scan: unsupported (removed, nax#2074) |
 
 `ContextRequest` carries both `repoRoot` (absolute) and `packageDir` (absolute). Non-monorepo: `packageDir === repoRoot`.
