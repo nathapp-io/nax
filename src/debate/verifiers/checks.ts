@@ -8,23 +8,36 @@
 import { existsSync as defaultExistsSync } from "node:fs";
 import { join } from "node:path";
 import type { VerifierFinding } from "@/plan/spec-deltas";
+import { canonicalizeDeclaredPath } from "@/prd";
 import type { PRD } from "@/prd/types";
+import { storyWorkdir } from "@/utils/path-frame";
 import type { FactsManifest } from "../facts-manifest";
 
 export interface CheckDeps {
   existsSync: (path: string) => boolean;
 }
 
+/**
+ * Flag contextFiles entries that resolve nowhere.
+ *
+ * `workdir` is the REPO ROOT (both call sites pass it): the planner emits
+ * package-relative paths for monorepo stories before the write seam has
+ * canonicalized them, so each declared path is canonicalized against the
+ * story's own workdir first and then probed in the repo frame. A path that
+ * resolves in either frame counts as existing; one that resolves in neither
+ * still fires.
+ */
 export function checkFilesExist(prd: PRD, workdir: string, deps?: CheckDeps): VerifierFinding[] {
   const existsSync = deps?.existsSync ?? defaultExistsSync;
   const findings: VerifierFinding[] = [];
   for (const story of prd.userStories) {
     if (!story.contextFiles) continue;
+    const storyDir = storyWorkdir(story);
     for (const entry of story.contextFiles) {
       const filePath = typeof entry === "string" ? entry : entry.path;
       const factId = typeof entry === "string" ? undefined : entry.factId;
-      const absPath = join(workdir, filePath);
-      if (existsSync(absPath)) continue;
+      const canonical = canonicalizeDeclaredPath(filePath, storyDir, workdir, existsSync).path;
+      if (existsSync(join(workdir, canonical))) continue;
 
       // An entry citing a manifest factId claims to be grounded in existing repo state.
       // If the path doesn't exist, grounding is broken — that's a blocker.

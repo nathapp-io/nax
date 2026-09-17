@@ -5,6 +5,7 @@
  */
 
 import type { UserStory } from "@/prd/types";
+import { partitionPackageFrame, storyWorkdir } from "@/utils/path-frame";
 import { buildModifiedFilesLines } from "./modified-files";
 import { buildOutOfScopeLines } from "./out-of-scope";
 
@@ -22,9 +23,27 @@ function outOfScopeLines(story: UserStory): string[] {
  * src/prd/modifies.ts). Ordered after the exclusions so the two boundary blocks
  * read together: what this story must not do, then what it is permitted to
  * touch despite the file already existing.
+ *
+ * Re-spelled here, at the prompt boundary, because the write seam never touches
+ * `modifiedFiles` — it is appended by the fidelity pass that deliberately runs
+ * before canonicalization (src/plan/strategies/persist-prd.ts). A repo-rooted
+ * entry names a path the agent's package-contained file tools cannot address,
+ * so the authorisation would be unusable.
+ *
+ * `canonical` is deliberately NOT set (spec Ruling 8 / plan Ruling F):
+ * `workdirSource` says nothing about this list's frame, and this is an
+ * authorisation list — dropping or marking an entry would revoke permission the
+ * spec granted. The default passthrough re-spells an in-package repo-rooted
+ * entry and leaves everything else untouched.
  */
 function modifiedFilesLines(story: UserStory): string[] {
-  return buildModifiedFilesLines(story.modifiedFiles);
+  const entries = story.modifiedFiles;
+  if (!entries || entries.length === 0) return [];
+  const { readable } = partitionPackageFrame(
+    entries.map((entry) => entry.path),
+    storyWorkdir(story),
+  );
+  return buildModifiedFilesLines(entries.map((entry, i) => ({ ...entry, path: readable[i] })));
 }
 
 export function buildBatchStorySection(stories: UserStory[]): string {
