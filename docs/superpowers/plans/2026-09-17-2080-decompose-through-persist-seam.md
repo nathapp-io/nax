@@ -414,7 +414,11 @@ git commit -m "feat(plan): optional story scope for finalizePrdRouting (#2080)"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append this block to the end of `test/unit/plan/strategies/persist-prd-workdir.test.ts`. The file already defines `MODELS`, `makePrd()`, `captureWarnings()` and the `_persistPrdDeps` save/restore hooks — reuse them.
+Append this block to the end of `test/unit/plan/strategies/persist-prd-workdir.test.ts`. The file already defines `MODELS`, `makePrd()`, `captureWarnings()` and the `_persistPrdDeps` save/restore hooks — reuse them. Widen the existing config type import at the top of the file:
+
+```ts
+import type { AgentRoutingConfig, ModelsConfig } from "@/config";
+```
 
 ```ts
 describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
@@ -446,6 +450,20 @@ describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
     });
   }
 
+  /**
+   * An ENABLED routing config with a real profile. Required, not decoration:
+   * `resolveAgentAssignment` returns null the moment `enabled !== true` or
+   * `profiles` is empty (src/agents/shared/agent-profile-resolver.ts:23-26), so
+   * with routing off the "executed story keeps its agent" assertion below would
+   * pass even without the `only` guard -- a test that cannot fail.
+   */
+  const ROUTING: AgentRoutingConfig = {
+    enabled: true,
+    strategy: "off",
+    default: "claude-default",
+    profiles: [{ id: "claude-default", target: { agent: "claude", model: "balanced" }, strengths: ["design"] }],
+  };
+
   async function persistScoped(prd: PRD, scope: ReadonlySet<string>): Promise<PRD> {
     let written = "";
     await finalizeAndWritePrd({
@@ -453,7 +471,7 @@ describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
       specContent: "",
       featureName: "f",
       projectName: "p",
-      agentRouting: undefined,
+      agentRouting: ROUTING,
       profileName: undefined,
       models: MODELS,
       defaultAgent: "claude",
@@ -480,9 +498,14 @@ describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
     const parent = parsed.userStories.find((s) => s.id === "US-001");
     expect(parent?.status).toBe("decomposed");
     expect(parent?.contextFiles).toEqual(["packages/app/src/a.ts"]);
-    // The executed story's recorded agent survives: re-resolution would reset it.
+    // The executed story's recorded agent survives: re-resolution would reset it
+    // to ROUTING's "claude". initialAgent is sticky either way, so `agent` is the
+    // only field that proves the guard fired.
     expect(parent?.routing?.agent).toBe("opencode");
     expect(parent?.routing?.initialAgent).toBe("claude");
+    // Positive control: the SCOPED story IS resolved, so the assertion above is
+    // about the scope, not about routing being inert.
+    expect(sub?.routing?.agent).toBe("claude");
   });
 
   test("does not re-derive a workdir for a story the repo has since grown a file for", async () => {
@@ -763,6 +786,26 @@ describe("planDecomposeCommand — writes through the plan-write seam (nax#2080)
     expect(getContextFiles(sub)).toEqual(["packages/app/src/foo.ts"]);
   });
 
+  /**
+   * `makeNaxConfig()` ships `routing.agents = { enabled: true, strategy: "off", profiles: [] }`,
+   * and `resolveAgentAssignment` returns null on an empty `profiles` list
+   * (src/agents/shared/agent-profile-resolver.ts:25-26). Under that default the
+   * "sibling keeps its agent" assertion below would hold with or without the scope
+   * guard. A real profile is what makes it a test.
+   */
+  function makeRoutedConfig() {
+    return makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off",
+          default: "claude-default",
+          profiles: [{ id: "claude-default", target: { agent: "claude", model: "balanced" }, strengths: ["design"] }],
+        },
+      },
+    });
+  }
+
   test("leaves an already-executed sibling untouched", async () => {
     const parent = makeStory({ id: "US-001" });
     const done = makeStory({
@@ -777,7 +820,7 @@ describe("planDecomposeCommand — writes through the plan-write seam (nax#2080)
     _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
     _persistPrdDeps.existsSync = () => true;
 
-    await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
+    await planDecomposeCommand(tmpDir, makeRoutedConfig(), { feature: FEATURE, storyId: "US-001" });
 
     const written = JSON.parse(capturedWriteArgs[0][1]) as PRD;
     const sibling = written.userStories.find((s) => s.id === "US-002");
@@ -787,6 +830,11 @@ describe("planDecomposeCommand — writes through the plan-write seam (nax#2080)
     expect(sibling.workdir).toBeUndefined();
     expect(getContextFiles(sibling)).toEqual(["src/bar.ts"]);
     expect(sibling.routing?.agent).toBe("opencode");
+
+    // Positive control: the new sub-story IS resolved by the seam, so the sibling
+    // assertion above is about the scope rather than about routing being inert.
+    const sub = written.userStories.find((s) => s.id === "US-001-A");
+    expect(sub?.routing?.agent).toBe("claude");
   });
 
   test("preserves the PRD project field and still stamps routingProfile", async () => {
@@ -967,3 +1015,16 @@ BODY
 - **The `.nax/mono` defaulted-warning will now fire for sub-stories of a root-scoped parent.** That is correct and useful: it names both consequences (whole rule corpus, root `quality.commands`) at the one moment the author can act. Leave it.
 - **`_persistPrdDeps` vs `_planDeps`.** The seam probes the filesystem through `_persistPrdDeps` (`src/plan/strategies/persist-prd.ts:34`); the decompose command uses `_planDeps`. A decompose test that stubs only `_planDeps.discoverWorkspacePackages` will silently hit the real filesystem inside the seam. Stub both, restore both.
 - **Scope is a `ReadonlySet<string>`, not an array.** Membership is checked once per story per transformation; an array turns each pass quadratic and invites duplicate ids.
+
+---
+
+## Review log (2026-09-17)
+
+The plan was reviewed against the codebase after drafting, with the doubtful claims executed rather than reasoned about. What that changed:
+
+- **Two assertions were vacuous and are now real.** `resolveAgentAssignment` returns `null` when `agentRouting?.enabled !== true` **or** `profiles` is empty (`src/agents/shared/agent-profile-resolver.ts:23-26`), and `makeNaxConfig()` ships `routing.agents = { enabled: true, strategy: "off", profiles: [] }`. Both the Task 3 and Task 4 "the out-of-scope story keeps its agent" tests were originally written with routing that resolves to `null` for *every* story, so they would have passed with the `only` guard deleted. Both now pass a routing config with a real profile, and both gained a positive control asserting the **scoped** story *is* resolved.
+- **The fidelity-skip test was confirmed non-vacuous.** `extractSpecOutOfScope("## Out of scope\n\n- Rewriting the scheduler")` returns `["Rewriting the scheduler"]` and `applyPlanFidelity` backfills it onto `prd.outOfScope` — verified by execution. So asserting the scoped write leaves `outOfScope` empty is a real assertion.
+- **Both config literals were compiled.** `AgentRoutingConfig` with `strengths` and the `makeNaxConfig({ routing: { agents: { profiles: [...] } } })` DeepPartial override both typecheck under `tsconfig.test.json`, and the `profiles` array survives the merge (length 1, not erased).
+- **Verified by reading, not assumed:** `makePRD` has no `outOfScope` default (so `?? []` is the right assertion form); `src/prd/index.ts:53` is the export line to extend; `src/plan/strategies/index.ts:8` already exports `_persistPrdDeps`; `canonicalizeDeclaredPath` returns early on `workdir === "."` (so the zero-probe assertion in Task 1 holds); `src/cli/plan-command.ts` already imports from `../plan/strategies` (no new import cycle).
+
+One step remains genuinely discovery-dependent and is marked as such: **Task 4 Step 5**, reconciling sibling decompose tests whose sub-story assertions now see `workdirSource` and a resolved `routing`. It states the two expected causes and the stop condition.
