@@ -54,6 +54,7 @@ const MONOREPO_REQUEST: ContextRequest = {
   storyId: "US-002",
   repoRoot: "/repo",
   packageDir: "/repo/packages/api",
+  storyWorkdir: "packages/api",
   stage: "execution",
   role: "implementer",
   budgetTokens: 8000,
@@ -140,6 +141,56 @@ describe("StaticRulesProvider — paths: frontmatter package-scope filter", () =
     // Package matches, but no touched files → appliesTo passes (no touchedFiles = always include)
     const result = await provider.fetch(MONOREPO_REQUEST);
     expect(result.chunks).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// paths: frontmatter under worktree isolation (nax#2111)
+//
+// Under execution.storyIsolation: "worktree", request.packageDir is rooted at
+// the story's worktree checkout (e.g. "/repo/.nax-wt/<storyId>/packages/api")
+// while request.repoRoot stays the MAIN checkout ("/repo").
+// relative(repoRoot, packageDir) then yields ".nax-wt/<storyId>/packages/api",
+// which matches no repo-rooted paths: pattern and silently drops the rule with
+// no diagnostic. The fix sources the package-relative frame from
+// request.storyWorkdir (PRD-declared, immune to which checkout packageDir is
+// rooted at) instead of re-deriving it from repoRoot/packageDir.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WORKTREE_REQUEST: ContextRequest = {
+  storyId: "US-002",
+  repoRoot: "/repo",
+  packageDir: "/repo/.nax-wt/US-002/packages/api",
+  storyWorkdir: "packages/api",
+  stage: "execution",
+  role: "implementer",
+  budgetTokens: 8000,
+};
+
+describe("StaticRulesProvider — paths: frontmatter under worktree isolation (nax#2111)", () => {
+  test("a repo-level rule scoped to the story's package still matches via storyWorkdir", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === WORKTREE_REQUEST.repoRoot) {
+        return [{ fileName: "api.md", content: "API rule.", paths: ["packages/api/**"] }];
+      }
+      return [];
+    };
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(WORKTREE_REQUEST);
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("API rule.");
+  });
+
+  test("a repo-level rule scoped to a DIFFERENT package still excludes under worktree isolation", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
+      if (workdir === WORKTREE_REQUEST.repoRoot) {
+        return [{ fileName: "web.md", content: "Web-only rule.", paths: ["packages/web/**"] }];
+      }
+      return [];
+    };
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch(WORKTREE_REQUEST);
+    expect(result.chunks).toHaveLength(0);
   });
 });
 

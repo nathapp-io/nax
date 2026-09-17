@@ -14,7 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { type CanonicalRule, DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "@/context/rules/canonical-loader";
 import { applySectionBudget, priorityToRawScore } from "@/context/rules/rule-budget";
 import type { RuleSection } from "@/context/rules/rule-sections";
@@ -26,7 +26,7 @@ import { getLogger } from "@/logger";
 import { estimateTokens } from "@/optimizer";
 import { errorMessage } from "@/utils/errors";
 import type { ProviderScopingReport } from "../manifest-types";
-import { frameAppliesTo, globToRegex, isGlobScopePath, normalizePath } from "../scope-path-match";
+import { frameAppliesTo, globToRegex, isGlobScopePath, normalizePath, ruleMatchesPackage } from "../scope-path-match";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
 import { buildBudgetNoticeChunk, buildSectionBudgetPressure } from "./static-rules-budget-notice";
@@ -155,21 +155,8 @@ function ruleMatchesStage(stages: string[] | undefined, stage: string): boolean 
   return stages.includes(stage);
 }
 
-/**
- * Returns true when the rule's `paths:` frontmatter (package-scope filter) matches
- * the current package directory relative to the repo root.
- * Rules with no `paths:` field are global and always match.
- * Single-package repos (packageDir === repoRoot) always match regardless of paths.
- */
-function ruleMatchesPackage(paths: string[] | undefined, repoRoot: string, packageDir: string): boolean {
-  if (!paths || paths.length === 0) return true;
-  if (packageDir === repoRoot) return true;
-
-  const rel = normalizePath(relative(repoRoot, packageDir));
-  const patterns = paths.map((p) => globToRegex(normalizePath(p)));
-  // Also test rel + "/" so that "packages/api/**" matches the base dir "packages/api"
-  return patterns.some((pattern) => pattern.test(rel) || pattern.test(`${rel}/`));
-}
+// `ruleMatchesPackage` moved to `../scope-path-match` (file-size gate — this
+// file was at 624/600 lines after nax#2113's hoist). Re-imported below.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
@@ -203,7 +190,7 @@ export class StaticRulesProvider implements IContextProvider {
 
       // Apply paths: frontmatter filter — repo-level rules with a paths: key only load for matching packages
       const repoRules = repoRulesAll.filter((rule) =>
-        ruleMatchesPackage(rule.paths, request.repoRoot, request.packageDir),
+        ruleMatchesPackage(rule.paths, request.repoRoot, request.packageDir, request.storyWorkdir),
       );
 
       if (repoRulesAll.length > 0 && repoRules.length < repoRulesAll.length) {
@@ -216,32 +203,51 @@ export class StaticRulesProvider implements IContextProvider {
       }
 
       // AC-57: in monorepos, load package-level rules and overlay (package wins on same fileName)
+      //
+      // nax#2113: repo-level rules must be framed too, not only package rules.
+      // A repo-level rule's `appliesTo:` can be authored as a package-relative
+      // literal (e.g. "src/session/session-keeper.ts", meant for one specific
+      // package) just as easily as a package-level rule's can — frameAppliesTo
+      // is idempotent and a no-op at the repo root (toRepoFrame treats "."
+      // as a no-op), so framing every repo-level rule whenever this story is
+      // package-contained cannot regress a rule that was already correctly
+      // repo-rooted or authored as a glob.
+      //
+      // This framing must happen whenever packageDir !== repoRoot, NOT only
+      // inside `if (packageRules.length > 0)`: a monorepo package with no
+      // package-level rules of its own — the common shape — never entered
+      // that inner block, so its repo-level literals stayed unframed and
+      // silently dropped even though `mergedRules` still equalled `repoRules`.
+      // Hoisting this out of the package-rules guard is the fix; leaving it
+      // inside is the exact trap that made the bug look fixed while a
+      // no-package-rules package stayed broken.
+      //
+      // The frame comes from request.storyWorkdir, NOT
+      // relative(request.repoRoot, request.packageDir): under
+      // execution.storyIsolation: "worktree" repoRoot is the main checkout
+      // while packageDir is <root>/.nax-wt/<storyId>/<pkg>, so that
+      // derivation yields ".nax-wt/<storyId>/<pkg>", matches no scope file,
+      // and silently drops the rule (nax#2069 / path-frame C1). The branch
+      // is only entered when packageDir !== repoRoot; pull-tool handlers
+      // pass packageDir as BOTH roots and omit storyWorkdir, so the "."
+      // fallback is their safe case.
       let mergedRules: CanonicalRule[] = repoRules;
       let packageRulesCount = 0;
       if (request.packageDir !== request.repoRoot) {
+        const packageRel = normalizePath(request.storyWorkdir ?? ".");
+        const framedRepoRules = repoRules.map((rule) => frameAppliesTo(rule, packageRel));
+
         const packageRules = await _staticRulesDeps.loadCanonicalRules(request.packageDir);
         packageRulesCount = packageRules.length;
-        if (packageRules.length > 0) {
-          // H8: a package rule's `appliesTo:` literal is package-relative while
-          // scopeFiles and the diff are repo-rooted. Frame it with the owning
-          // package before selection and before it is carried as scopePaths, so
-          // selection and attribution both see the repo frame (#2091 stays fixed).
-          //
-          // The frame comes from request.storyWorkdir, NOT
-          // relative(request.repoRoot, request.packageDir): under
-          // execution.storyIsolation: "worktree" repoRoot is the main checkout
-          // while packageDir is <root>/.nax-wt/<storyId>/<pkg>, so that
-          // derivation yields ".nax-wt/<storyId>/<pkg>", matches no scope file,
-          // and silently drops the rule (nax#2069 / path-frame C1). The branch
-          // is only entered when packageDir !== repoRoot; pull-tool handlers
-          // pass packageDir as BOTH roots and omit storyWorkdir, so the "."
-          // fallback is their safe case.
-          const packageRel = normalizePath(request.storyWorkdir ?? ".");
-          const merged = new Map<string, CanonicalRule>();
-          for (const rule of repoRules) merged.set(canonicalRuleId(rule), rule);
-          for (const rule of packageRules) merged.set(canonicalRuleId(rule), frameAppliesTo(rule, packageRel));
-          mergedRules = [...merged.values()];
-        }
+
+        // H8: a package rule's `appliesTo:` literal is package-relative while
+        // scopeFiles and the diff are repo-rooted. Frame it with the owning
+        // package before selection and before it is carried as scopePaths, so
+        // selection and attribution both see the repo frame (#2091 stays fixed).
+        const merged = new Map<string, CanonicalRule>();
+        for (const rule of framedRepoRules) merged.set(canonicalRuleId(rule), rule);
+        for (const rule of packageRules) merged.set(canonicalRuleId(rule), frameAppliesTo(rule, packageRel));
+        mergedRules = [...merged.values()];
       }
 
       mergedRules.sort((a, b) => {

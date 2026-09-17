@@ -8,7 +8,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { relative } from "node:path";
 import type { NaxConfig } from "@/config/types";
 import type { TestScanOptions, TestScanResult } from "@/context/test-scanner";
 import { generateTestCoverageSummary } from "@/context/test-scanner";
@@ -17,6 +16,7 @@ import { getContextFiles } from "@/prd";
 import type { UserStory } from "@/prd/types";
 import { coerceSmartRunner, type ResolvedTestPatterns, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
+import { storyWorkdir } from "@/utils/path-frame";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,9 +66,17 @@ export class TestCoverageProvider implements IContextProvider {
     }
 
     try {
-      // request.packageDir is absolute; resolveTestFilePatterns expects a relative path.
-      // Relativise against repoRoot and pass undefined for single-package repos.
-      const relPackageDir = relative(request.repoRoot, request.packageDir) || undefined;
+      // resolveTestFilePatterns expects a repo-relative package dir, or undefined
+      // for single-package repos. Source it from the PRD-declared story workdir,
+      // NOT relative(request.repoRoot, request.packageDir): under
+      // execution.storyIsolation "worktree", request.packageDir is rooted at the
+      // story's worktree checkout while request.repoRoot stays the main checkout,
+      // so that relative() yields ".nax-wt/<storyId>/<pkg>" — matching no real
+      // ".nax/mono/<pkg>/config.json" and silently falling back to root config
+      // (nax#2111). storyWorkdir() returns "." for the repo root; map that to
+      // undefined to preserve the existing single-package-repo semantics.
+      const workdir = storyWorkdir(this.story);
+      const relPackageDir = workdir === "." ? undefined : workdir;
       const resolved = await _testCoverageProviderDeps.resolveTestFilePatterns(
         this.config,
         request.repoRoot,

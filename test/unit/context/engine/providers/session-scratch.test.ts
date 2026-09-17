@@ -182,6 +182,45 @@ describe("SessionScratchProvider", () => {
     expect(result.chunks[0].content).not.toContain("coverage/lcov.info");
   });
 
+  // nax#2111 (path-filters follow-up): under execution.storyIsolation
+  // "worktree", request.packageDir is rooted at the story's worktree checkout
+  // (context.ts:175 / stage-assembler.ts:221 set packageDir: ctx.workdir,
+  // documented as pointing at .nax-wt/<id>/ in worktree mode) while
+  // request.repoRoot stays the main checkout. Without storyWorkdir threaded
+  // through, resolveNaxIgnorePatterns's packagePrefix falls back to
+  // relative(repoRoot, packageDir) = ".nax-wt/US-001/packages/api", and a root
+  // .naxignore pattern that matches that prefix itself (".nax-wt/**" — a
+  // natural thing to ignore worktree artifacts with) then falsely excludes
+  // every changed file in the package.
+  test("does not false-positive-exclude an ordinary changed file under worktree isolation", async () => {
+    const ignoreFiles = new Map<string, string>([["/repo/.naxignore", ".nax-wt/**\n"]]);
+    _pathFilterDeps.fileExists = async (path) => ignoreFiles.has(path);
+    _pathFilterDeps.readFile = async (path) => ignoreFiles.get(path) ?? "";
+    const entry = JSON.stringify({
+      kind: "tdd-session",
+      timestamp: "2026-01-01T00:02:00.000Z",
+      storyId: "US-001",
+      stage: "tdd-implementer",
+      role: "implementer",
+      success: true,
+      filesChanged: ["src/index.ts"],
+      outputTail: "updated files",
+    });
+    mockScratchFile(`${entry}\n`);
+    const provider = new SessionScratchProvider();
+    const result = await provider.fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        packageDir: "/repo/.nax-wt/US-001/packages/api",
+        storyWorkdir: "packages/api",
+        storyScratchDirs: ["/sess/dir"],
+      }),
+    );
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].content).toContain("src/index.ts");
+  });
+
   test("skips malformed JSONL lines without throwing", async () => {
     mockScratchFile(`${VERIFY_ENTRY}\nnot-valid-json\n${TDD_ENTRY}\n`);
     const provider = new SessionScratchProvider();
