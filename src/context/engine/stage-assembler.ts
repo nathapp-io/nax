@@ -220,6 +220,7 @@ export async function assembleForStage(
       repoRoot: ctx.projectDir,
       packageDir: ctx.workdir,
       storyWorkdir: storyWorkdir(ctx.story),
+      contextFilesCanonical: ctx.story.workdirSource !== undefined,
       // BUG-1 fix: thread the runtime output dir so providers that read
       // metrics.json (PriorRunFailureProvider) hit the same location
       // saveRunMetrics writes to. Without this, every rectify-stage probe

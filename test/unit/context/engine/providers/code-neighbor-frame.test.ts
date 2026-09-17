@@ -8,6 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger } from "@test/helpers";
 import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
@@ -267,5 +268,63 @@ describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () =>
     await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     expect(globbedRoots).toEqual(["/repo/packages/app"]);
+  });
+});
+
+describe("CodeNeighborProvider — H7: canonical is gated on provenance, drop is logged (path-frame follow-up)", () => {
+  let origGetLogger: typeof _codeNeighborDeps.getLogger;
+
+  beforeEach(() => {
+    origGetLogger = _codeNeighborDeps.getLogger;
+  });
+
+  afterEach(() => {
+    _codeNeighborDeps.getLogger = origGetLogger;
+  });
+
+  // Before this fix, `canonical: true` was passed unconditionally, so a
+  // pre-#2067 PRD's real, existing package-relative entry was dropped as
+  // "outside the package" with no diagnostic (H7).
+  test("without contextFilesCanonical, a package-relative touchedFile passes through unchanged (non-canonical)", async () => {
+    setupDeps(
+      { "/repo/packages/app/src/index.ts": "export const app = 1;" },
+      { "/repo/packages/app": ["src/index.ts"] },
+    );
+    const logger = makeLogger();
+    _codeNeighborDeps.getLogger = () => logger;
+
+    const result = await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
+
+    // Passed through, not dropped: partitionPackageFrame with no `canonical`
+    // treats every entry as already in-frame.
+    expect(result.chunks.length).toBeGreaterThan(0);
+    expect(logger.calls.some((c) => c.level === "warn")).toBe(false);
+  });
+
+  test("with contextFilesCanonical, a genuinely out-of-package touchedFile is dropped AND logged with a count", async () => {
+    setupDeps(
+      { "/repo/packages/app/src/index.ts": "export const app = 1;" },
+      { "/repo/packages/app": ["src/index.ts"] },
+    );
+    const logger = makeLogger();
+    _codeNeighborDeps.getLogger = () => logger;
+
+    const result = await new CodeNeighborProvider().fetch(
+      makeRequest({
+        contextFilesCanonical: true,
+        touchedFiles: ["packages/other/src/unrelated.ts"],
+      }),
+    );
+
+    expect(result.chunks).toHaveLength(0);
+    const dropWarnings = logger.calls.filter(
+      (c) =>
+        c.level === "warn" &&
+        c.message === "code-neighbor touchedFiles could not be resolved inside this story's package and were dropped",
+    );
+    expect(dropWarnings).toHaveLength(1);
+    expect(dropWarnings[0]?.data?.count).toBe(1);
+    expect(dropWarnings[0]?.data?.storyId).toBe("US-001");
+    expect(dropWarnings[0]?.data?.packageDir).toBe("packages/app");
   });
 });

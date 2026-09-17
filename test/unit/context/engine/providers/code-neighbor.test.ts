@@ -184,6 +184,7 @@ describe("CodeNeighborProvider", () => {
       repoRoot: "/repo",
       packageDir: "/repo/packages/app",
       storyWorkdir: "packages/app",
+      contextFilesCanonical: true,
       stage: "execution",
       role: "implementer",
       budgetTokens: 8_000,

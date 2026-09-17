@@ -349,6 +349,21 @@ export interface ContextRequest {
    */
   storyWorkdir?: string;
   /**
+   * True when `touchedFiles` came through the plan-time write seam
+   * (`story.workdirSource !== undefined`, src/prd/workdir-canonical.ts) and
+   * so may be safely partitioned with `partitionPackageFrame`'s
+   * `canonical: true` (src/utils/path-frame.ts) — treating a toPackageFrame
+   * MISS as a real, droppable cross-package path rather than passing it
+   * through as a path that would resolve to a real but WRONG file under
+   * this package (H7, path-frame follow-up to #2089).
+   *
+   * Populated at the same two producer sites as `storyWorkdir`. Omit (or
+   * leave false) rather than default it to `true`: an unbacked assertion
+   * here is exactly the H7 defect — the flag must reflect real provenance,
+   * not just "the provider found it convenient".
+   */
+  contextFilesCanonical?: boolean;
+  /**
    * Complete evidence set of files a story touches (PRD contextFiles +
    * expectedFiles + git diff). Used by SCOPING decisions only — providers
    * that fetch content read `touchedFiles` instead. Resolved by

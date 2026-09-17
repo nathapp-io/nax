@@ -398,7 +398,29 @@ export class CodeNeighborProvider implements IContextProvider {
     // handlers/query-neighbor.ts) is the safe fallback: toPackageFrame is
     // identity for ".".
     const pkgDir = request.storyWorkdir ?? ".";
-    const { readable } = partitionPackageFrame(touchedFiles, pkgDir, { canonical: true });
+    // H7 (path-frame follow-up to #2089): `canonical: true` asserts
+    // touchedFiles came through the plan-time write seam
+    // (story.workdirSource !== undefined) — this provider cannot see that
+    // flag directly, only what the request producer threaded onto it. An
+    // unconditional `true` here was unbacked: for a pre-#2067 PRD holding a
+    // real, existing package-relative entry, it silently dropped the file as
+    // "outside the package" with no diagnostic.
+    const canonical = request.contextFilesCanonical ?? false;
+    const { readable, unreachable } = partitionPackageFrame(touchedFiles, pkgDir, { canonical });
+    if (unreachable.length > 0) {
+      _codeNeighborDeps
+        .getLogger()
+        .warn(
+          "context-v2",
+          "code-neighbor touchedFiles could not be resolved inside this story's package and were dropped",
+          {
+            storyId: request.storyId,
+            packageDir: pkgDir,
+            count: unreachable.length,
+            files: unreachable.slice(0, MAX_FILES),
+          },
+        );
+    }
     const filesToProcess = readable.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
     // ADR-009: sibling-test derivation requires resolver output on the request.
