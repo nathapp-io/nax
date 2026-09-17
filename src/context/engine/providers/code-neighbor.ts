@@ -415,7 +415,8 @@ export class CodeNeighborProvider implements IContextProvider {
           "code-neighbor touchedFiles could not be resolved inside this story's package and were dropped",
           {
             storyId: request.storyId,
-            packageDir: pkgDir,
+            packageDir: request.packageDir,
+            workdir: pkgDir,
             count: unreachable.length,
             files: unreachable.slice(0, MAX_FILES),
           },

@@ -325,6 +325,10 @@ describe("CodeNeighborProvider — H7: canonical is gated on provenance, drop is
     expect(dropWarnings).toHaveLength(1);
     expect(dropWarnings[0]?.data?.count).toBe(1);
     expect(dropWarnings[0]?.data?.storyId).toBe("US-001");
-    expect(dropWarnings[0]?.data?.packageDir).toBe("packages/app");
+    // monorepo-awareness.md §9 vocabulary: `packageDir` is the ABSOLUTE path to
+    // the story's package, `workdir` the repo-relative one. Logging the relative
+    // value under `packageDir` makes a JSONL reader applying §9 read it wrong.
+    expect(dropWarnings[0]?.data?.packageDir).toBe("/repo/packages/app");
+    expect(dropWarnings[0]?.data?.workdir).toBe("packages/app");
   });
 });

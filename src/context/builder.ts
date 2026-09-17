@@ -247,6 +247,24 @@ async function addTestCoverageElement(
  * left unreclassified -- ambiguous, and `partitionPackageFrame` already
  * drops it exactly as before.
  *
+ * BLOCKER (path-frame follow-up review): the probe above is provenance-blind
+ * -- "exists at package, absent at repo root" is indistinguishable between
+ * (a) this story's own contextFiles entry, which passed through
+ * `canonicalizeDeclaredPath` at plan time and is legitimately eligible for
+ * this disambiguation, and (b) a MERGED PARENT OUTPUT FILE
+ * (`getParentOutputFiles`, ENH-005), which never passes through that seam --
+ * `canonicalizePRD` (src/prd/workdir-canonical.ts) only reframes a story's
+ * OWN `contextFiles`/`expectedFiles`, never `outputFiles` -- and per Ruling
+ * 8/E is not guaranteed repo-rooted either. A parent output whose write has
+ * not landed (skipped/failed/not-yet-run story) is absent at the repo root
+ * for a reason that has nothing to do with frame; if the consuming package
+ * happens to hold an unrelated file at that same relative spelling, probing
+ * alone reclassifies it and injects that unrelated file labelled as the
+ * parent's output -- the #2089 failure reached from the other direction.
+ * Provenance is the only safe discriminator, so entries named in
+ * `neverReclassify` (merged parent outputs) always skip the probe and pass
+ * through unchanged, identically to the "resolves at NEITHER" case above.
+ *
  * Root stories (`workdirRel === "."`) are returned unchanged: the repo frame
  * and the package frame are the same frame, so there is nothing to disambiguate.
  */
@@ -254,6 +272,7 @@ async function reclassifyPlanTimeAbsentEntries(
   entries: readonly string[],
   workdirRel: string,
   packageDirAbs: string,
+  neverReclassify: ReadonlySet<string>,
 ): Promise<string[]> {
   if (workdirRel === ".") return [...entries];
   // packageDirAbs === join(repoRootAbs, workdirRel) (PipelineContext contract,
@@ -261,11 +280,22 @@ async function reclassifyPlanTimeAbsentEntries(
   // recover repoRootAbs without a second field on StoryContext.
   const repoRootAbs = path.resolve(packageDirAbs, ...workdirRel.split("/").map(() => ".."));
   const out: string[] = [];
+  // L-1: bound the filesystem probe rather than running it over the full
+  // merged list (which can be far larger than what will ever be injected --
+  // the FILE_INJECTION_MAX_FILES cap applies later, at :417). Once this many
+  // entries have been probed, remaining candidates pass through unchanged
+  // (same outcome as "resolves at NEITHER frame").
+  let probesRemaining = FILE_INJECTION_MAX_FILES;
   for (const entry of entries) {
-    if (toPackageFrame(entry, workdirRel) !== null) {
+    if (toPackageFrame(entry, workdirRel) !== null || neverReclassify.has(entry)) {
       out.push(entry);
       continue;
     }
+    if (probesRemaining <= 0) {
+      out.push(entry);
+      continue;
+    }
+    probesRemaining--;
     const [existsAtPackage, existsAtRepoRoot] = await Promise.all([
       _contextBuilderDeps.fileExists(path.join(packageDirAbs, entry)),
       _contextBuilderDeps.fileExists(path.join(repoRootAbs, entry)),
@@ -288,6 +318,12 @@ async function addFileElements(
 
   // ENH-005: Inject parent output files for context chaining (always supplementary)
   const parentFiles = getParentOutputFiles(story, storyContext.prd?.userStories ?? []);
+  // BLOCKER (path-frame follow-up review): tracked by identity, not derived
+  // from `contextFiles` post-merge -- this set is threaded into
+  // `reclassifyPlanTimeAbsentEntries` so a merged parent output is never
+  // probed for reclassification, regardless of what happens to be on disk.
+  // See that function's docblock for the failure mode this prevents.
+  const parentFileSet = new Set(parentFiles);
   if (parentFiles.length > 0) {
     const logger = _contextBuilderDeps.getLogger();
     logger.info("context", "Injecting parent output files for context chaining", {
@@ -350,10 +386,13 @@ async function addFileElements(
   // nax#2067/#2089: the on-disk PRD holds repo-rooted declared paths, but the
   // agent's file tools are contained at the package dir (`codingToolRoot`), so
   // each path is re-spelled into the package frame before it is resolved or
-  // emitted. The merged `contextFiles` carries repo-rooted parent outputs, so
-  // when `workdirSource` is stamped a path outside this package is genuinely
-  // unreachable: it is dropped rather than passed through as a path that would
-  // resolve to a real but WRONG file under this package (#2089).
+  // emitted. When `workdirSource` is stamped a path outside this package is
+  // genuinely unreachable: it is dropped rather than passed through as a path
+  // that would resolve to a real but WRONG file under this package (#2089).
+  // NOTE: the merged `contextFiles` also carries parent outputs
+  // (`getParentOutputFiles`), which are NOT guaranteed repo-rooted -- they
+  // never pass through the plan-time write seam (see the BLOCKER note on
+  // `reclassifyPlanTimeAbsentEntries` below).
   //
   // `usedAutoDetect` overrides `workdirSource`: an auto-detected set is
   // package-framed by construction and must never take the canonical drop
@@ -380,7 +419,7 @@ async function addFileElements(
   // different repo-rooted path, or resolves nowhere yet, is left for
   // partitionPackageFrame to classify as before.
   const declaredContextFiles = canonical
-    ? await reclassifyPlanTimeAbsentEntries(contextFiles, storyWorkdir(story), workdir)
+    ? await reclassifyPlanTimeAbsentEntries(contextFiles, storyWorkdir(story), workdir, parentFileSet)
     : contextFiles;
 
   const { readable: framedContextFiles, unreachable } = partitionPackageFrame(
@@ -394,17 +433,20 @@ async function addFileElements(
 
   if (unreachable.length > 0) {
     // §9 (.nax/rules/monorepo-awareness.md): storyId first, packageDir present,
-    // so a parallel run's JSONL is attributable. Wording no longer asserts
-    // "outside this story's package" -- after the reclassification above, a
-    // drop here is either a genuine cross-package path OR an entry that
-    // resolved in neither frame (most often: a file nothing has created yet),
-    // and the log cannot tell those apart from the path string alone.
+    // so a parallel run's JSONL is attributable. Vocabulary per the table in
+    // that rule: `packageDir` is the ABSOLUTE package dir, `workdir` is the
+    // RELATIVE story.workdir (M-3 fix -- these were previously swapped here).
+    // Wording no longer asserts "outside this story's package" -- after the
+    // reclassification above, a drop here is either a genuine cross-package
+    // path OR an entry that resolved in neither frame (most often: a file
+    // nothing has created yet), and the log cannot tell those apart from the
+    // path string alone.
     _contextBuilderDeps
       .getLogger()
       .warn("context", "Context files could not be resolved inside this story's package and were dropped", {
         storyId: story.id,
-        workdir,
-        packageDir: storyWorkdir(story),
+        packageDir: workdir,
+        workdir: storyWorkdir(story),
         count: unreachable.length,
         files: unreachable.slice(0, FILE_INJECTION_MAX_FILES),
       });

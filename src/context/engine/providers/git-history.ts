@@ -50,6 +50,9 @@ const MAX_FILES = 10;
 /** Token ceiling for the combined history chunk */
 const MAX_CHUNK_TOKENS = 600;
 
+/** Max number of dropped-file paths sampled into a single warn log (L-5). */
+const LOG_SAMPLE_MAX_FILES = 5;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,7 +78,8 @@ async function fetchFileHistory(
   filePath: string,
   workdir: string,
   storyId: string | undefined,
-  packageDir: string,
+  packageWorkdir: string,
+  packageDirAbs: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
   // PERF-2: cooperative cancellation — a timed-out fetch must not keep
@@ -91,13 +95,15 @@ async function fetchFileHistory(
   if (!trimmed) {
     // A5 (nax#2088): git returned exit 0 with no commits for this pathspec —
     // a silent miss, not an error. Log once so a frame bug is diagnosable.
-    // §9 (.nax/rules/monorepo-awareness.md): log storyId + packageDir, not
-    // cwd, so parallel runs can be correlated.
+    // §9 (.nax/rules/monorepo-awareness.md) vocabulary: `packageDir` is the
+    // ABSOLUTE package dir, `workdir` is the RELATIVE story.workdir (M-3 fix
+    // — these were previously swapped here).
     _gitHistoryDeps.getLogger().warn("context-v2", "git history empty for touched file", {
       storyId,
       filePath,
       pathspec: filePath,
-      packageDir,
+      packageDir: packageDirAbs,
+      workdir: packageWorkdir,
     });
     return null;
   }
@@ -171,11 +177,15 @@ export class GitHistoryProvider implements IContextProvider {
         // on files that reach fetchFileHistory. Files removed by THIS
         // historyScope post-filter never reach it, and were the dominant
         // silent-drop path (nax path-frame follow-up review, C1/H7/M14).
+        // §9 (.nax/rules/monorepo-awareness.md) vocabulary: `packageDir` is
+        // the ABSOLUTE package dir, `workdir` is the RELATIVE story.workdir
+        // (M-3 fix — this previously logged the relative value as `packageDir`).
         _gitHistoryDeps.getLogger().warn("context-v2", "git history dropped touched file(s) outside package scope", {
           storyId: request.storyId,
-          packageDir: packageWorkdir,
+          packageDir: request.packageDir,
+          workdir: packageWorkdir,
           count: droppedByScope.length,
-          files: droppedByScope.slice(0, 5),
+          files: droppedByScope.slice(0, LOG_SAMPLE_MAX_FILES),
         });
       }
     }
@@ -192,7 +202,7 @@ export class GitHistoryProvider implements IContextProvider {
       await Promise.all(
         filesToProcess.map(async (file) => ({
           file,
-          section: await fetchFileHistory(file, workdir, request.storyId, packageWorkdir, signal),
+          section: await fetchFileHistory(file, workdir, request.storyId, packageWorkdir, request.packageDir, signal),
         })),
       )
     ).filter((entry): entry is { file: string; section: string } => entry.section !== null);
