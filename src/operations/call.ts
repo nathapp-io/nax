@@ -7,7 +7,7 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { composeSections, join } from "../prompts/compose";
-import { packageWorkdir } from "../runtime/packages";
+import { packageWorkdir, storyExecRoot } from "../runtime/packages";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildHopCallback } from "./build-hop-callback";
@@ -252,7 +252,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     ...(ctx.runtime.toolProviders.length > 0 ? { providers: ctx.runtime.toolProviders } : {}),
     ...(runOp.toolPatterns !== undefined ? { toolPatterns: runOp.toolPatterns } : {}),
     codingToolRoot: packageWorkdir(ctx.packageView),
-    codingToolRepoRoot: ctx.packageView.repoRoot,
+    codingToolRepoRoot: storyExecRoot(ctx.packageView),
     // PRODUCER for AgentRunOptions.outputDir. Durable run artifacts (prompt-audit,
     // review-audit, and now the tool-audit ledger) anchor here rather than under
     // codingToolRoot, which is a package workdir inside the story's worktree and
