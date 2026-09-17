@@ -14,6 +14,12 @@
  * contract already claimed ("the four plan strategies cannot drift on which
  * repairs they apply"). Re-application is safe: `backfillOutOfScope` early-returns
  * once nothing is missing, and `applyModifiedFiles` merges deduped by path.
+ *
+ * nax#2080 adds `scope`: a caller that ADDS stories to an existing PRD names them,
+ * and every transformation applies only to those. Not an idempotency knob -- two of
+ * the three transformations (workdir derivation, routing resolution) are
+ * deliberately NOT safe to re-run over a PRD that has started executing, so the
+ * scope is what stops them rather than a fixed-point property of each.
  */
 import { existsSync as defaultExistsSync } from "node:fs";
 import { join } from "node:path";
@@ -48,6 +54,13 @@ export interface PersistPrdArgs {
   readonly outputPath: string;
   /** Repo root, for the plan-time workdir probes (nax#2067). */
   readonly repoRoot: string;
+  /**
+   * Restrict every transformation to these story ids (nax#2080).
+   *
+   * Set by a caller that ADDS stories to an existing PRD -- today only
+   * `nax plan --decompose`. Absent for `nax plan`, which owns the whole PRD.
+   */
+  readonly scope?: ReadonlySet<string>;
   readonly writeFile: (path: string, content: string) => Promise<void>;
 }
 
@@ -65,7 +78,13 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
   // every package-relative spec entry read as dropped on exactly the monorepo case
   // this feature targets. Fidelity never writes `contextFiles`/`expectedFiles`, and
   // the repo state does not change between the two calls, so the order is free.
-  const repaired = applyPlanFidelity(args.prd, args.specContent, args.featureName);
+  // nax#2080: fidelity is a FEATURE-level repair keyed on the spec -- it backfills
+  // `prd.outOfScope` and attaches `### Modifies` entries by story id. A scoped
+  // caller has neither: decompose runs with no spec content, and its sub-story ids
+  // are new, so every spec entry would orphan-warn. The parent PRD's fidelity was
+  // already applied at plan time; re-running it here would only risk re-deciding
+  // feature-level fields on a PRD that has started executing.
+  const repaired = args.scope ? args.prd : applyPlanFidelity(args.prd, args.specContent, args.featureName);
 
   // nax#2067: decide each story's workdir and re-spell its declared paths into
   // the repo frame, while the repo is still in the state the planner described.
@@ -74,7 +93,15 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
   let canonical = repaired;
   try {
     const packages = await _persistPrdDeps.discoverWorkspacePackages(args.repoRoot);
-    const result = canonicalizePrdWorkdirs(repaired, args.repoRoot, packages, _persistPrdDeps.existsSync);
+    // nax#2080: a scoped write turns DERIVATION off as well as narrowing the story
+    // set. Path re-spelling is idempotent, but derivation reads the filesystem, and
+    // once earlier stories have created files a story that legitimately defaulted at
+    // plan time would silently acquire a package. A sub-story inherits its parent's
+    // workdir (ADR-025), so there is nothing for derivation to decide.
+    const result = canonicalizePrdWorkdirs(repaired, args.repoRoot, packages, _persistPrdDeps.existsSync, {
+      only: args.scope,
+      derive: args.scope === undefined,
+    });
     canonical = result.prd;
     if (result.collisions.length > 0) {
       getLogger().warn("plan", "declared path exists at both the repo root and the story package; took story-local", {
@@ -113,6 +140,7 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     args.profileName,
     args.models,
     args.defaultAgent,
+    args.scope,
   );
   await args.writeFile(args.outputPath, JSON.stringify(finalized, null, 2));
   return args.outputPath;
