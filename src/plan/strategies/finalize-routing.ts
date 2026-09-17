@@ -7,6 +7,10 @@ import type { PRD, StoryRouting } from "@/prd/types";
  * concrete agent + tier, stamps origin fields (initialAgent / initialProfileId),
  * and records the config-profile name at PRD root.
  *
+ * `only`, when given, restricts resolution to those story ids; every other story
+ * is returned by identity. `routingProfile` is stamped regardless -- it is a PRD
+ * property, not a story one.
+ *
  * Pure function — never mutates the input PRD.
  */
 export function finalizePrdRouting(
@@ -15,8 +19,15 @@ export function finalizePrdRouting(
   profileName: string | undefined,
   models: ModelsConfig,
   defaultAgent: string,
+  only?: ReadonlySet<string>,
 ): PRD {
   const userStories = prd.userStories.map((story) => {
+    // nax#2080: a scoped write (decompose) adds stories to a PRD that may already
+    // be executing. Re-resolving an existing story would overwrite `routing.agent`
+    // from current config, resetting an escalated story's recorded agent back to
+    // its profile default -- `initialAgent` is sticky, but `agent` is not.
+    if (only && !only.has(story.id)) return story;
+
     const assignment = resolveAgentAssignment(
       story.routing?.agentProfileId,
       agentRouting,
