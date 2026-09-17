@@ -183,6 +183,7 @@ describe("CodeNeighborProvider", () => {
       storyId: "US-001",
       repoRoot: "/repo",
       packageDir: "/repo/packages/app",
+      storyWorkdir: "packages/app",
       stage: "execution",
       role: "implementer",
       budgetTokens: 8_000,

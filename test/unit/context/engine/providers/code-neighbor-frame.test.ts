@@ -32,6 +32,7 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
     storyId: "US-001",
     repoRoot: "/repo",
     packageDir: "/repo/packages/app",
+    storyWorkdir: "packages/app",
     stage: "execution",
     role: "implementer",
     budgetTokens: 8_000,
@@ -208,6 +209,36 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     const provider = new CodeNeighborProvider({ neighborScope: "repo" });
 
     const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
+
+    expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- src/dep.ts");
+  });
+});
+
+describe("CodeNeighborProvider — worktree isolation (nax#2088 follow-up)", () => {
+  // Under storyIsolation: "worktree", packageDir is `.nax-wt/<storyId>/<pkg>`
+  // while repoRoot stays the main checkout. Deriving the package frame as
+  // packageDirRelative(repoRoot, packageDir) yields ".nax-wt/<storyId>/<pkg>",
+  // which matches nothing in repo-rooted touchedFiles, so every file is
+  // marked unreachable and the provider returns zero chunks — silently. The
+  // fix threads story.workdir onto the request instead of deriving it.
+  test("touchedFiles resolve under storyIsolation: worktree via request.storyWorkdir", async () => {
+    setupDeps(
+      {
+        "/repo/.nax-wt/US-001/packages/app/src/index.ts": 'import "./dep";',
+        "/repo/.nax-wt/US-001/packages/app/src/dep.ts": "export const dep = 1;",
+      },
+      { "/repo/.nax-wt/US-001/packages/app": ["src/index.ts", "src/dep.ts"] },
+    );
+    const provider = new CodeNeighborProvider();
+
+    const result = await provider.fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        packageDir: "/repo/.nax-wt/US-001/packages/app",
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
 
     expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- src/dep.ts");
   });

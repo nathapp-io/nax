@@ -13,7 +13,6 @@ import { detectLanguage } from "@/project";
 import type { NaxIgnoreMatcher } from "@/utils/path-filters";
 import { partitionPackageFrame, UNREADABLE_MARKER } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
-import { packageDirRelative } from "@/utils/paths";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
 import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";
 import { assembleCodeNeighborChunk, type NeighborSection } from "./code-neighbor-chunk";
@@ -389,7 +388,16 @@ export class CodeNeighborProvider implements IContextProvider {
 
     // nax#2088: touchedFiles is REPO-ROOTED (types.ts); re-spell into the
     // package frame here — collectNeighbors joins onto consumerRoot === packageDir.
-    const pkgDir = packageDirRelative(request.repoRoot, request.packageDir);
+    //
+    // pkgDir MUST come from request.storyWorkdir, not from
+    // packageDirRelative(request.repoRoot, request.packageDir): under
+    // storyIsolation: "worktree" that derivation yields
+    // ".nax-wt/<storyId>/<pkg>", matches nothing, and silently drops every
+    // touched file (nax#2069, path-frame follow-up C1). "." (no story, or a
+    // caller that already passes the resolved package root as repoRoot, e.g.
+    // handlers/query-neighbor.ts) is the safe fallback: toPackageFrame is
+    // identity for ".".
+    const pkgDir = request.storyWorkdir ?? ".";
     const { readable } = partitionPackageFrame(touchedFiles, pkgDir, { canonical: true });
     const filesToProcess = readable.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
@@ -447,7 +455,7 @@ export class CodeNeighborProvider implements IContextProvider {
       sections,
       truncated: anyTruncated,
       maxGlobFiles: this.maxGlobFiles,
-      packageWorkdir: packageDirRelative(request.repoRoot, request.packageDir) ?? ".",
+      packageWorkdir: pkgDir,
     });
     if (chunk === null) {
       return { chunks: [], pullTools: [] };
