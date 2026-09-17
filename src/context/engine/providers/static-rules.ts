@@ -226,7 +226,17 @@ export class StaticRulesProvider implements IContextProvider {
           // scopeFiles and the diff are repo-rooted. Frame it with the owning
           // package before selection and before it is carried as scopePaths, so
           // selection and attribution both see the repo frame (#2091 stays fixed).
-          const packageRel = normalizePath(relative(request.repoRoot, request.packageDir));
+          //
+          // The frame comes from request.storyWorkdir, NOT
+          // relative(request.repoRoot, request.packageDir): under
+          // execution.storyIsolation: "worktree" repoRoot is the main checkout
+          // while packageDir is <root>/.nax-wt/<storyId>/<pkg>, so that
+          // derivation yields ".nax-wt/<storyId>/<pkg>", matches no scope file,
+          // and silently drops the rule (nax#2069 / path-frame C1). The branch
+          // is only entered when packageDir !== repoRoot; pull-tool handlers
+          // pass packageDir as BOTH roots and omit storyWorkdir, so the "."
+          // fallback is their safe case.
+          const packageRel = normalizePath(request.storyWorkdir ?? ".");
           const merged = new Map<string, CanonicalRule>();
           for (const rule of repoRules) merged.set(canonicalRuleId(rule), rule);
           for (const rule of packageRules) merged.set(canonicalRuleId(rule), frameAppliesTo(rule, packageRel));

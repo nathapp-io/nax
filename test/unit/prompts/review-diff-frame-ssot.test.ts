@@ -122,7 +122,7 @@ describe("review diff frame — nax-exclusion SSOT (Part A)", () => {
       ":!.nax/",
       ":!**/.nax/**",
       ":!.nax-pids",
-      ":!**/.nax-pids/**",
+      ":!**/.nax-pids",
     ]);
   });
 });

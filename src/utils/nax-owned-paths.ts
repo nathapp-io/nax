@@ -37,24 +37,35 @@ export const NAX_OWNED_GIT_EXCLUDE_PATHSPECS: readonly string[] = [":(exclude).n
  * Short-form excludes for the review diff collectors (`collectDiff` & friends)
  * and the review builders' self-serve `git diff` prompts.
  *
- * Four entries, not two. `:!.nax/` is anchored at git's cwd, so it hides only
- * the current package's artifacts; a nested `packages/api/tools/.nax/` survives
- * it. #2101's follow-up found three review builders carrying three divergent
- * hand-rolled copies — two of which used a leading-double-star, trailing-slash
- * spelling that is inert.
+ * Four entries, not two (the per-entry comments below carry the exact
+ * spellings). The cwd-level `.nax/` entry is load-bearing: it is the ONLY entry
+ * that excludes the cwd-level directory, so it must not be dropped. The nested
+ * directory entry, which carries a trailing double-star element, is what
+ * excludes NESTED directories (`packages/api/tools/.nax/`). `.nax-pids` is a
+ * FILE, so its nested entry carries no trailing double-star element — that
+ * would match nothing. #2101's follow-up found three review builders carrying
+ * three divergent hand-rolled copies, two of which used the
+ * leading-double-star, trailing-slash spelling that is fully inert.
  *
- * Real-git verified (git 2.50.1): that spelling matches only the repository-root
- * `.nax/` and leaves nested copies visible. A working nested exclude needs a
- * trailing double-star element after the directory name, which git's pathspec
- * wildmatch treats as crossing directories. The `-pids` entry is the same for
- * process scratch. Do not "simplify" these back to the bare directory form;
- * that re-opens the leak.
+ * Real-git verified (git 2.50.1): a leading double-star followed by `/` and then
+ * a trailing `/` with no trailing element matches NOTHING — it is fully inert,
+ * so only the cwd-level entry hides the cwd-level directory. A working nested
+ * exclude needs a trailing double-star element after the directory name, which
+ * git's pathspec wildmatch treats as crossing directories. Do not "simplify"
+ * these back to the bare directory form; that re-opens the leak.
  */
+// Inert spelling deliberately NOT used here: `:!**/.nax/` (leading double-star,
+// trailing slash, no trailing element) — real git matches nothing with it, so
+// `:!.nax/` is the only entry that excludes the cwd-level directory.
 export const NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS: readonly string[] = [
+  // cwd-level .nax/ directory — the ONLY entry that excludes it; load-bearing.
   ":!.nax/",
+  // nested .nax/ directories.
   ":!**/.nax/**",
+  // cwd-level .nax-pids file.
   ":!.nax-pids",
-  ":!**/.nax-pids/**",
+  // nested .nax-pids file — no trailing double-star: it is a file, so that would be inert.
+  ":!**/.nax-pids",
 ];
 
 /**

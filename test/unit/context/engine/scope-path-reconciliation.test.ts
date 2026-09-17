@@ -65,6 +65,7 @@ const MONOREPO_REQUEST: ContextRequest = {
   storyId: "US-003",
   repoRoot: "/repo",
   packageDir: "/repo/packages/api",
+  storyWorkdir: "packages/api",
   stage: "execution",
   role: "implementer",
   budgetTokens: 8_000,
@@ -109,6 +110,41 @@ describe("StaticRulesProvider — package-relative literal appliesTo is framed (
 
     const result = await provider.fetch({
       ...MONOREPO_REQUEST,
+      scopeFiles: ["packages/api/src/session/session-keeper.ts"],
+    });
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.scopePaths).toEqual(["packages/api/src/session/session-keeper.ts"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H8 / path-frame C1 — under worktree isolation the frame MUST come from
+// request.storyWorkdir, not a `relative(repoRoot, packageDir)` derivation.
+// `repoRoot` is the main checkout while `packageDir` is the worktree package
+// path, so that derivation yields ".nax-wt/US-001/packages/api": the rule's
+// package-relative literal is framed wrong, no scope file matches it, and the
+// rule is silently dropped.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("StaticRulesProvider — worktree isolation frames from storyWorkdir (H8/C1)", () => {
+  const WORKTREE_REQUEST: ContextRequest = {
+    storyId: "US-001",
+    repoRoot: "/repo",
+    packageDir: "/repo/.nax-wt/US-001/packages/api",
+    storyWorkdir: "packages/api",
+    stage: "execution",
+    role: "implementer",
+    budgetTokens: 8_000,
+  };
+
+  test("selects the package rule and frames its literal from storyWorkdir", async () => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) =>
+      workdir === WORKTREE_REQUEST.packageDir ? [PACKAGE_RULE] : [];
+
+    const provider = new StaticRulesProvider();
+    const result = await provider.fetch({
+      ...WORKTREE_REQUEST,
       scopeFiles: ["packages/api/src/session/session-keeper.ts"],
     });
 
