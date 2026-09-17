@@ -226,8 +226,11 @@ const ContextV2ConfigBase = z.object({
     .object({
       /**
        * Working directory scope for GitHistoryProvider (#507).
-       * "package" — run git log in packageDir (monorepo-safe default).
-       * "repo" — run git log in repoRoot (full repo history).
+       * git ALWAYS runs in repoRoot against repo-rooted paths; this option is
+       * a post-filter, not a workdir switch:
+       *   "package" — only files beneath packageDir are queried (monorepo-safe
+       *     default).
+       *   "repo" — every touched file is queried (full repo history).
        */
       historyScope: z.enum(["repo", "package"]).default("package"),
       /**

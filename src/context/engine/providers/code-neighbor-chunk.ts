@@ -28,7 +28,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { stripUnreadableMarker } from "@/utils/path-frame";
+import { stripUnreadableMarker, toRepoFrame, UNREADABLE_MARKER } from "@/utils/path-frame";
 import type { RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,6 +61,14 @@ export interface AssembleCodeNeighborChunkInput {
   truncated: boolean;
   /** The cap that produced `truncated` — surfaced in the truncation note. */
   maxGlobFiles: number;
+  /**
+   * Repo-relative package workdir ("." at the repo root). The rendered
+   * section file and unmarked neighbours are package-relative (the agent's
+   * file tools are rooted at the package); scopePaths is an attribution key
+   * compared against the repo-framed diff, so those paths are re-rooted
+   * here. Marked neighbours (UNREADABLE_MARKER) are already repo-rooted.
+   */
+  packageWorkdir: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,7 +116,7 @@ export function contentHash8(content: string): string {
  * fully-rendered neighbour.
  */
 export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput): RawChunk | null {
-  const { sections, truncated, maxGlobFiles } = input;
+  const { sections, truncated, maxGlobFiles, packageWorkdir } = input;
   if (sections.length === 0) return null;
 
   const header = "## Code Neighbors\n\nRelated files (imports, reverse-deps, tests):";
@@ -137,16 +145,28 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
     // Record path end-positions for this section (positions are in the
     // final body, before the cap slice).
     const sectionStart = body.length + separatorCost;
-    renderedPaths.push({ path: section.file, end: sectionStart + HEADER_PREFIX.length + section.file.length });
+    renderedPaths.push({
+      // The section file is package-framed (partitionPackageFrame readable
+      // list); scopePaths is compared against the repo-framed diff, so it is
+      // re-rooted here. `end` still measures the RENDERED length.
+      path: toRepoFrame(section.file, packageWorkdir),
+      end: sectionStart + HEADER_PREFIX.length + section.file.length,
+    });
     let cursor = sectionStart + fileText.length;
     for (let i = 0; i < section.neighbors.length; i++) {
       const neighbor = section.neighbors[i];
       const prefixLen = i === 0 ? "- ".length : "\n- ".length;
       cursor += prefixLen;
-      // Attribution uses the bare path: the marker is prompt text, and a
-      // scopePaths key carrying it would split one file into two identities.
-      // `end` still measures the RENDERED length, marker included.
-      renderedPaths.push({ path: stripUnreadableMarker(neighbor), end: cursor + neighbor.length });
+      // Attribution uses the bare path in the repo frame: the marker is
+      // prompt text (a scopePaths key carrying it would split one file into
+      // two identities), and the marker is also the frame discriminator — a
+      // marked neighbour is already repo-rooted, an unmarked one is
+      // package-relative. `end` still measures the RENDERED length, marker
+      // included.
+      const path = neighbor.endsWith(UNREADABLE_MARKER)
+        ? stripUnreadableMarker(neighbor)
+        : toRepoFrame(neighbor, packageWorkdir);
+      renderedPaths.push({ path, end: cursor + neighbor.length });
       cursor += neighbor.length;
     }
 

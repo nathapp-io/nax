@@ -421,7 +421,7 @@ In a monorepo, context scope matters. By default, per-package providers only sca
 
 | Key | Default | Effect |
 |:----|:--------|:-------|
-| `providers.historyScope` | `"package"` | `git log` runs in `packageDir` only. Set `"repo"` for full-repo history when stories commonly touch root-level files. |
+| `providers.historyScope` | `"package"` | `git log` always runs in `repoRoot` against repo-rooted paths; `"package"` filters history to files under the story's package (default), `"repo"` keeps all story files. |
 | `providers.neighborScope` | `"package"` | Import graph scans only within `packageDir`. Set `"repo"` when packages tightly share imports. |
 
 > Cross-package reverse-dependency scanning is unsupported. `CodeNeighborProvider` parses only relative import specifiers, so a dependent in another package that imports by package name is invisible to it. The `providers.crossPackageDepth` key was removed in nax#2074; a config that still sets it loads with a deprecation warning and the key is ignored. To widen the scan root, set `providers.neighborScope: "repo"`.

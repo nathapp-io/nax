@@ -68,6 +68,10 @@ export async function handleQueryNeighbor(
   // story.workdir again double-joins in monorepos, and splitting repoRoot from
   // packageDir redirects the cross-package scan at the main checkout under
   // storyIsolation: "worktree". Do not "fix" this without a worktree test.
+  //
+  // Frame (nax#2088): chunks here are returned to the tool runtime, never
+  // persisted to manifests, so their scopePaths never reach effectiveness
+  // attribution; package-as-repoRoot makes the frame distinction moot.
   const request: ContextRequest = {
     storyId: storyId ?? "_pull-tool",
     repoRoot,

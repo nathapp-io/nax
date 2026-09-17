@@ -6,7 +6,7 @@ These keys live under `context.v2.providers` in `.nax/config.json` (or per-packa
 
 | Key | Type | Default | Description |
 |:----|:-----|:--------|:------------|
-| `historyScope` | `"repo" \| "package"` | `"package"` | Working directory scope for `GitHistoryProvider`. `"package"` runs `git log` in `packageDir` (monorepo-safe). |
+| `historyScope` | `"repo" \| "package"` | `"package"` | Working directory scope for `GitHistoryProvider`. `git log` always runs in `repoRoot` against repo-rooted paths; `"package"` filters history to files under the story's package (monorepo-safe default), `"repo"` keeps all story files. |
 | `neighborScope` | `"repo" \| "package"` | `"package"` | Working directory scope for `CodeNeighborProvider`. `"package"` scans from `packageDir`. |
 | `sourceGlob` | `string?` | _(derived)_ | Override the source-file glob used for reverse-dep scanning. When omitted, derived from `detectLanguage(packageDir)` (TypeScript, Go, Python, Rust each get a narrow glob; unknown packages get the wide fallback). |
 | `maxGlobFiles` | `number` | `500` | Maximum files scanned per directory during reverse-dep glob. Truncation logs at `warn` level and appends a note to the context chunk. |

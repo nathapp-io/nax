@@ -266,3 +266,79 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
     expect(tokenizeCalls).toBe(7);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #2091 — scopePaths attribution: literal paths must not cross packages
+//
+// The chunk's scopePaths and the repo-wide git diff live in two different
+// frames. A package-relative literal "src/client.ts" compiled through the
+// suffix-anchored glob matched BOTH packages/api/src/client.ts AND
+// packages/web/src/client.ts, so a chunk scoped to one package collected
+// "followed" credit from a same-named file in another. After canonicalization
+// (B3) the persisted scopePaths are repo-rooted, and a literal must anchor
+// exactly (B4) — while authored globs keep glob semantics.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("classifyWithTerms (#2091) — scopePaths must not cross packages", () => {
+  // Shares >=3 significant terms with the diff's added lines, so the
+  // suffix-anchored glob would classify "followed" before the fix.
+  const CHUNK_SUMMARY = "JWT authentication tokens stored in secure cookies for session management";
+
+  function diffFor(filePath: string): string {
+    return [
+      `diff --git a/${filePath} b/${filePath}`,
+      "index abc..def 100644",
+      `--- a/${filePath}`,
+      `+++ b/${filePath}`,
+      "@@ -1,1 +1,1 @@",
+      "-old line",
+      `+${CHUNK_SUMMARY}`,
+    ].join("\n");
+  }
+
+  test("a package-relative literal scope does not match a same-named file in another package", () => {
+    // Worked example from #2091: a chunk produced by a packages/api story
+    // carried scopePaths ["src/client.ts"] (package-relative). The repo-wide
+    // diff changed packages/web/src/client.ts — a DIFFERENT file with the
+    // same package-relative name. The suffix-anchored glob previously matched
+    // it (followed); an exact literal must not.
+    const diffText = diffFor("packages/web/src/client.ts");
+    const evidence = buildEvidenceTerms("", diffText, []);
+
+    const result = classifyWithTerms(CHUNK_SUMMARY, evidence, {
+      scopePaths: ["src/client.ts"],
+      diffText,
+    });
+
+    expect(result.signal).toBe("ignored");
+  });
+
+  test("a repo-rooted literal scope matches the exact diff path (positive control)", () => {
+    // Post-canonicalization spelling: a packages/api story now emits the
+    // repo-rooted "packages/api/src/client.ts". A literal must match exactly.
+    // A fix that makes every scope "ignored" fails here.
+    const diffText = diffFor("packages/api/src/client.ts");
+    const evidence = buildEvidenceTerms("", diffText, []);
+
+    const result = classifyWithTerms(CHUNK_SUMMARY, evidence, {
+      scopePaths: ["packages/api/src/client.ts"],
+      diffText,
+    });
+
+    expect(result.signal).toBe("followed");
+  });
+
+  test("glob scopePaths keep glob semantics across packages", () => {
+    // A static-rules chunk scoped ["packages/**/*.ts"] must still match
+    // packages/api/src/client.ts — authored globs are not literals.
+    const diffText = diffFor("packages/api/src/client.ts");
+    const evidence = buildEvidenceTerms("", diffText, []);
+
+    const result = classifyWithTerms(CHUNK_SUMMARY, evidence, {
+      scopePaths: ["packages/**/*.ts"],
+      diffText,
+    });
+
+    expect(result.signal).toBe("followed");
+  });
+});

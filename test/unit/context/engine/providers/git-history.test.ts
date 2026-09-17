@@ -50,16 +50,6 @@ function mockGit(responses: Map<string, { stdout: string; stderr?: string; exitC
   };
 }
 
-/** Installs a mock that captures workdirs and returns success for every file */
-function captureWorkdirs(): string[] {
-  const captured: string[] = [];
-  _gitHistoryDeps.gitWithTimeout = async (_args: string[], workdir: string) => {
-    captured.push(workdir);
-    return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
-  };
-  return captured;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,7 +172,12 @@ describe("GitHistoryProvider", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC-55: historyScope option
+// AC-55: historyScope (nax#2088)
+//
+// The frame contract flipped in nax#2088: touchedFiles is REPO-ROOTED and git
+// ALWAYS runs in repoRoot against the repo-rooted pathspec. historyScope is a
+// POST-FILTER, not a workdir switch — under "package" only entries beneath
+// packageDir are queried; under "repo" the whole repo is in scope.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("GitHistoryProvider — AC-55 historyScope", () => {
@@ -193,63 +188,115 @@ describe("GitHistoryProvider — AC-55 historyScope", () => {
     stage: "execution",
     role: "implementer",
     budgetTokens: 8_000,
-    touchedFiles: ["src/service.ts"],
+    touchedFiles: ["packages/api/src/service.ts"],
   };
 
-  test("default historyScope is 'package' — uses packageDir", async () => {
-    const workdirs = captureWorkdirs();
+  /** Captures (args, cwd) per git invocation; returns success for every file. */
+  function captureInvocations(): Array<{ args: string[]; cwd: string }> {
+    const captured: Array<{ args: string[]; cwd: string }> = [];
+    _gitHistoryDeps.gitWithTimeout = async (args: string[], cwd: string) => {
+      captured.push({ args, cwd });
+      return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
+    };
+    return captured;
+  }
+
+  test("default historyScope is 'package' — git ALWAYS runs in repoRoot", async () => {
+    const invocations = captureInvocations();
     const p = new GitHistoryProvider();
     await p.fetch(MONOREPO_REQUEST);
-    expect(workdirs[0]).toBe("/repo/packages/api");
+    expect(invocations[0]?.cwd).toBe("/repo");
   });
 
-  test("historyScope 'repo' — uses repoRoot", async () => {
-    const workdirs = captureWorkdirs();
+  test("historyScope 'repo' — git runs in repoRoot with the repo-rooted pathspec", async () => {
+    const invocations = captureInvocations();
     const p = new GitHistoryProvider({ historyScope: "repo" } as GitHistoryProviderOptions);
     await p.fetch(MONOREPO_REQUEST);
-    expect(workdirs[0]).toBe("/repo");
+    expect(invocations[0]?.cwd).toBe("/repo");
+    expect(invocations[0]?.args).toContain("packages/api/src/service.ts");
   });
 
-  test("historyScope 'package' — uses packageDir", async () => {
-    const workdirs = captureWorkdirs();
+  test("historyScope 'package' — cwd is STILL repoRoot, pathspec still repo-rooted", async () => {
+    const invocations = captureInvocations();
     const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
     await p.fetch(MONOREPO_REQUEST);
-    expect(workdirs[0]).toBe("/repo/packages/api");
+    expect(invocations[0]?.cwd).toBe("/repo");
+    expect(invocations[0]?.args).toContain("packages/api/src/service.ts");
   });
 
-  test("non-monorepo: historyScope 'package' uses repoRoot when packageDir === repoRoot", async () => {
-    const workdirs = captureWorkdirs();
+  test("historyScope 'package' — a file outside the package is filtered out, never queried", async () => {
+    const queried: string[] = [];
+    _gitHistoryDeps.gitWithTimeout = async (args: string[], _cwd: string) => {
+      queried.push(args[args.length - 1] ?? "");
+      return { stdout: "abc1234 feat: something", stderr: "", exitCode: 0 };
+    };
     const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
-    await p.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] })); // packageDir === repoRoot === "/repo"
-    expect(workdirs[0]).toBe("/repo");
+    await p.fetch({
+      ...MONOREPO_REQUEST,
+      touchedFiles: ["packages/api/src/service.ts", "package.json"],
+    });
+    expect(queried).toEqual(["packages/api/src/service.ts"]);
   });
 
-  test("historyScope 'package' — chunk content still contains file history", async () => {
-    mockGit(new Map([["src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
+  test("sharper variant: a root-level src/client.ts is NOT returned under a packages/api story", async () => {
+    // A root-level src/client.ts exists. Under the OLD "repo"-scope code a
+    // package-framed "src/client.ts" resolved at repoRoot and surfaced the ROOT
+    // file's history under the story's label. Under the new contract the
+    // package post-filter must drop the root-level path before git is called.
+    const queried: string[] = [];
+    _gitHistoryDeps.gitWithTimeout = async (args: string[], _cwd: string) => {
+      const fileArg = args[args.length - 1] ?? "";
+      queried.push(fileArg);
+      // The root-level file's history — would corrupt attribution if queried.
+      const stdout =
+        fileArg === "src/client.ts" ? "abc1234 root-level client history" : "abc1234 package client history";
+      return { stdout, stderr: "", exitCode: 0 };
+    };
+    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
+    const result = await p.fetch({
+      ...MONOREPO_REQUEST,
+      touchedFiles: ["packages/api/src/client.ts", "src/client.ts"],
+    });
+    expect(queried).toEqual(["packages/api/src/client.ts"]);
+    expect(result.chunks[0]?.content).not.toContain("root-level client history");
+  });
+
+  test("historyScope 'package' — chunk content still contains the story file's history", async () => {
+    mockGit(new Map([["packages/api/src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
     const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
     const result = await p.fetch(MONOREPO_REQUEST);
     expect(result.chunks).toHaveLength(1);
-    expect(result.chunks[0]?.content).toContain("src/service.ts");
+    expect(result.chunks[0]?.content).toContain("packages/api/src/service.ts");
+  });
+
+  test("non-monorepo: packageDir === repoRoot — every file stays in scope", async () => {
+    const invocations = captureInvocations();
+    const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
+    await p.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] })); // packageDir === repoRoot === "/repo"
+    expect(invocations[0]?.cwd).toBe("/repo");
+    expect(invocations[0]?.args).toContain("src/foo.ts");
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// nax#2067: GitHistoryProvider resolves touchedFiles against packageDir (package
-// scope). A repo-rooted path from a canonicalized PRD yields empty history; the
-// request builders re-frame via toPackageFrameFiles before the request is built,
-// so the provider must only ever receive the package-relative spelling.
+// nax#2067: touchedFiles is REPO-ROOTED per the path-frame convention (nax#2071)
+// and git ALWAYS runs in repoRoot (nax#2088). A repo-rooted touchedFile from a
+// canonicalized PRD therefore yields a chunk — the OLD contract where it
+// yielded nothing (and where the builders re-framed via toPackageFrameFiles)
+// is gone.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("GitHistoryProvider — nax#2067 touchedFiles frame contract", () => {
-  const p = new GitHistoryProvider(); // package scope (default)
+  const p = new GitHistoryProvider(); // package scope (default) — cwd is repoRoot
 
-  test("a repo-rooted touchedFile from a canonicalized PRD yields no chunk", async () => {
-    mockGit(
-      new Map([
-        // `git -C <packageDir> log -- packages/app/src/service.ts` matches nothing.
-        ["packages/app/src/service.ts", { stdout: "", exitCode: 0 }],
-      ]),
-    );
+  test("a repo-rooted touchedFile from a canonicalized PRD yields a chunk at cwd=repoRoot", async () => {
+    mockGit(new Map([["packages/app/src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
+    const cwds: string[] = [];
+    const orig = _gitHistoryDeps.gitWithTimeout;
+    _gitHistoryDeps.gitWithTimeout = async (args, cwd) => {
+      cwds.push(cwd);
+      return orig(args, cwd);
+    };
     const result = await p.fetch({
       storyId: "US-001",
       repoRoot: "/repo",
@@ -259,11 +306,20 @@ describe("GitHistoryProvider — nax#2067 touchedFiles frame contract", () => {
       budgetTokens: 8_000,
       touchedFiles: ["packages/app/src/service.ts"],
     });
-    expect(result.chunks).toHaveLength(0);
+    expect(cwds[0]).toBe("/repo");
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.content).toContain("packages/app/src/service.ts");
   });
 
-  test("the package-framed spelling (what request builders now send) emits a chunk", async () => {
-    mockGit(new Map([["src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
+  test("the package-framed spelling (what OLD request builders sent) is filtered out at package scope", async () => {
+    // Under the new contract a package-framed "src/service.ts" names the
+    // ROOT-level file, which is outside packages/app — the package post-filter
+    // drops it before git is ever invoked.
+    let queried = false;
+    _gitHistoryDeps.gitWithTimeout = async () => {
+      queried = true;
+      return { stdout: "abc1234 root history", stderr: "", exitCode: 0 };
+    };
     const result = await p.fetch({
       storyId: "US-001",
       repoRoot: "/repo",
@@ -273,8 +329,8 @@ describe("GitHistoryProvider — nax#2067 touchedFiles frame contract", () => {
       budgetTokens: 8_000,
       touchedFiles: ["src/service.ts"],
     });
-    expect(result.chunks).toHaveLength(1);
-    expect(result.chunks[0]?.content).toContain("src/service.ts");
+    expect(queried).toBe(false);
+    expect(result.chunks).toHaveLength(0);
   });
 });
 
