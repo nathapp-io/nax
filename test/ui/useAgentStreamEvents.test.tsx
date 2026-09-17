@@ -6,15 +6,22 @@
  * and then waits for a drain tick rather than reading the refs directly.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { Box, Text } from "ink";
 import { render } from "ink-testing-library";
 import { act } from "react";
 import { type AgentStreamEvent, AgentStreamEventBus, type IAgentStreamEventBus } from "@/runtime";
 import { useAgentStreamEvents } from "@/tui/hooks/useAgentStreamEvents";
 
-/** Comfortably longer than the hook's 150ms RENDER_INTERVAL_MS. */
-const DRAIN_WAIT_MS = 220;
+/**
+ * Tick the fake clock past the hook's `RENDER_INTERVAL_MS = 150` so its
+ * `setInterval` drain effect fires exactly once. `DRAIN_WAIT_MS` previously
+ * real-timer-waited ~220ms (the 150ms tick plus margin); under fake timers we
+ * can advance deterministically to 200ms, which is the smallest "comfortable"
+ * ceiling that still leaves the interval callback safely inside the advance
+ * window without falling on the boundary.
+ */
+const DRAIN_WAIT_MS = 200;
 
 const CALL_ID = "call-1";
 
@@ -87,16 +94,20 @@ function mount(options: { bus?: IAgentStreamEventBus | null } = {}) {
   };
 
   /**
-   * Waits past one drain tick so the buffered refs reach React state.
+   * Advances the fake clock past one drain tick so the buffered refs reach
+   * React state. Real-time `setTimeout` here would cost ~220ms per call;
+   * under fake timers the advance is synchronous and the wall-clock cost
+   * drops to whatever React takes to flush the resulting setState.
    *
    * `act` returns React's own `Thenable`, not a `Promise`, which trips
    * biome's useAwaitThenable — hence the `Promise.resolve` wrapper rather
-   * than awaiting the call directly.
+   * than awaiting the call directly. The `act` wrapper is sync here so
+   * state updates flush before `lastFrame()` reads the rendered output.
    */
   const drain = async () => {
     await Promise.resolve(
-      act(async () => {
-        await new Promise<void>((resolve) => setTimeout(resolve, DRAIN_WAIT_MS));
+      act(() => {
+        jest.advanceTimersByTime(DRAIN_WAIT_MS);
       }),
     );
   };
@@ -104,195 +115,208 @@ function mount(options: { bus?: IAgentStreamEventBus | null } = {}) {
   return { ...view, bus, emit, drain };
 }
 
-describe("useAgentStreamEvents — call lifecycle", () => {
-  test("starts with no calls and zero tokens", () => {
-    const { lastFrame, unmount } = mount();
-
-    expect(lastFrame()).toContain("calls:0");
-    expect(lastFrame()).toContain("in:0");
-    expect(lastFrame()).toContain("out:0");
-    unmount();
+// All tests in this file use jest.useFakeTimers() so the hook's
+// setInterval-based drain effect can be advanced synchronously inside
+// `drain()` instead of waiting ~220ms per test on a real timer. Real
+// timers would push 14 tests × 220ms = ~3s of pure wall-clock wait.
+describe("useAgentStreamEvents", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
-  test("agent.call_started records the call with its agent, model, story and stage", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
+  describe("useAgentStreamEvents — call lifecycle", () => {
+    test("starts with no calls and zero tokens", () => {
+      const { lastFrame, unmount } = mount();
 
-    emit(started());
-    await drain();
+      expect(lastFrame()).toContain("calls:0");
+      expect(lastFrame()).toContain("in:0");
+      expect(lastFrame()).toContain("out:0");
+      unmount();
+    });
 
-    expect(lastFrame()).toContain("calls:1");
-    expect(lastFrame()).toContain("agent:claude");
-    expect(lastFrame()).toContain("model:claude-opus-5");
-    expect(lastFrame()).toContain("story:US-001");
-    expect(lastFrame()).toContain("stage:execution");
-    expect(lastFrame()).toContain("status:active");
-    unmount();
+    test("agent.call_started records the call with its agent, model, story and stage", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
+
+      emit(started());
+      await drain();
+
+      expect(lastFrame()).toContain("calls:1");
+      expect(lastFrame()).toContain("agent:claude");
+      expect(lastFrame()).toContain("model:claude-opus-5");
+      expect(lastFrame()).toContain("story:US-001");
+      expect(lastFrame()).toContain("stage:execution");
+      expect(lastFrame()).toContain("status:active");
+      unmount();
+    });
+
+    test("a new call starts every counter at zero", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
+
+      emit(started());
+      await drain();
+
+      expect(lastFrame()).toContain("msg:0");
+      expect(lastFrame()).toContain("think:0");
+      expect(lastFrame()).toContain("usage:0");
+      expect(lastFrame()).toContain("tools:0");
+      unmount();
+    });
+
+    test("agent.call_ended removes the call", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
+
+      emit(started(), update("agent.call_ended", { status: "success" }));
+      await drain();
+
+      expect(lastFrame()).toContain("calls:0");
+      unmount();
+    });
   });
 
-  test("a new call starts every counter at zero", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
+  describe("useAgentStreamEvents — per-kind counters", () => {
+    test("agent.message_update increments messageUpdates and advances lastActivityAt", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
 
-    emit(started());
-    await drain();
+      emit(started(), update("agent.message_update"), update("agent.message_update"));
+      await drain();
 
-    expect(lastFrame()).toContain("msg:0");
-    expect(lastFrame()).toContain("think:0");
-    expect(lastFrame()).toContain("usage:0");
-    expect(lastFrame()).toContain("tools:0");
-    unmount();
+      expect(lastFrame()).toContain("msg:2");
+      expect(lastFrame()).toContain("activity:2000");
+      unmount();
+    });
+
+    test("agent.thinking_update increments thinkingUpdates", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
+
+      emit(started(), update("agent.thinking_update"));
+      await drain();
+
+      expect(lastFrame()).toContain("think:1");
+      unmount();
+    });
+
+    test("agent.tool_call_update increments toolCallUpdates and records the tool name", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
+
+      emit(
+        started(),
+        update("agent.tool_call_update", { toolName: "Read" }),
+        update("agent.tool_call_update", { toolName: "Edit" }),
+      );
+      await drain();
+
+      expect(lastFrame()).toContain("tools:2");
+      expect(lastFrame()).toContain("tool:Edit");
+      unmount();
+    });
+
+    test("an update for an unknown call is ignored", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
+
+      emit(update("agent.message_update", { callId: "call-unknown" }));
+      await drain();
+
+      expect(lastFrame()).toContain("calls:0");
+      unmount();
+    });
+
+    test("agent.process_update carries no per-call state and changes nothing", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
+
+      emit(started(), update("agent.process_update", { status: "spawned" }));
+      await drain();
+
+      expect(lastFrame()).toContain("msg:0");
+      expect(lastFrame()).toContain("activity:1000");
+      unmount();
+    });
   });
 
-  test("agent.call_ended removes the call", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
+  describe("useAgentStreamEvents — token totals are cumulative-to-delta", () => {
+    test("the first usage_update adds its totals whole", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
 
-    emit(started(), update("agent.call_ended", { status: "success" }));
-    await drain();
+      emit(started(), update("agent.usage_update", { inputTokens: 100, outputTokens: 40 }));
+      await drain();
 
-    expect(lastFrame()).toContain("calls:0");
-    unmount();
-  });
-});
+      expect(lastFrame()).toContain("in:100");
+      expect(lastFrame()).toContain("out:40");
+      expect(lastFrame()).toContain("usage:1");
+      unmount();
+    });
 
-describe("useAgentStreamEvents — per-kind counters", () => {
-  test("agent.message_update increments messageUpdates and advances lastActivityAt", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
+    test("a later cumulative total adds only the delta, not the total again", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
 
-    emit(started(), update("agent.message_update"), update("agent.message_update"));
-    await drain();
+      emit(
+        started(),
+        update("agent.usage_update", { inputTokens: 100, outputTokens: 40 }),
+        update("agent.usage_update", { inputTokens: 150, outputTokens: 90 }),
+      );
+      await drain();
 
-    expect(lastFrame()).toContain("msg:2");
-    expect(lastFrame()).toContain("activity:2000");
-    unmount();
-  });
+      expect(lastFrame()).toContain("in:150");
+      expect(lastFrame()).toContain("out:90");
+      unmount();
+    });
 
-  test("agent.thinking_update increments thinkingUpdates", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
+    test("a total that goes backwards never decreases the running count", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
 
-    emit(started(), update("agent.thinking_update"));
-    await drain();
+      emit(
+        started(),
+        update("agent.usage_update", { inputTokens: 100, outputTokens: 40 }),
+        update("agent.usage_update", { inputTokens: 10, outputTokens: 5 }),
+      );
+      await drain();
 
-    expect(lastFrame()).toContain("think:1");
-    unmount();
-  });
+      expect(lastFrame()).toContain("in:100");
+      expect(lastFrame()).toContain("out:40");
+      unmount();
+    });
 
-  test("agent.tool_call_update increments toolCallUpdates and records the tool name", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
+    test("a usage_update omitting token fields leaves the totals untouched", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
 
-    emit(
-      started(),
-      update("agent.tool_call_update", { toolName: "Read" }),
-      update("agent.tool_call_update", { toolName: "Edit" }),
-    );
-    await drain();
+      emit(started(), update("agent.usage_update", { inputTokens: 100 }), update("agent.usage_update"));
+      await drain();
 
-    expect(lastFrame()).toContain("tools:2");
-    expect(lastFrame()).toContain("tool:Edit");
-    unmount();
-  });
+      expect(lastFrame()).toContain("in:100");
+      expect(lastFrame()).toContain("out:0");
+      expect(lastFrame()).toContain("usage:2");
+      unmount();
+    });
 
-  test("an update for an unknown call is ignored", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
+    test("a call that ends and restarts counts its new totals from zero again", async () => {
+      const { lastFrame, emit, drain, unmount } = mount();
 
-    emit(update("agent.message_update", { callId: "call-unknown" }));
-    await drain();
+      emit(
+        started(),
+        update("agent.usage_update", { inputTokens: 100, outputTokens: 40 }),
+        update("agent.call_ended", { status: "success" }),
+        started(),
+        update("agent.usage_update", { inputTokens: 30, outputTokens: 10 }),
+      );
+      await drain();
 
-    expect(lastFrame()).toContain("calls:0");
-    unmount();
-  });
-
-  test("agent.process_update carries no per-call state and changes nothing", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
-
-    emit(started(), update("agent.process_update", { status: "spawned" }));
-    await drain();
-
-    expect(lastFrame()).toContain("msg:0");
-    expect(lastFrame()).toContain("activity:1000");
-    unmount();
-  });
-});
-
-describe("useAgentStreamEvents — token totals are cumulative-to-delta", () => {
-  test("the first usage_update adds its totals whole", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
-
-    emit(started(), update("agent.usage_update", { inputTokens: 100, outputTokens: 40 }));
-    await drain();
-
-    expect(lastFrame()).toContain("in:100");
-    expect(lastFrame()).toContain("out:40");
-    expect(lastFrame()).toContain("usage:1");
-    unmount();
+      expect(lastFrame()).toContain("in:130");
+      expect(lastFrame()).toContain("out:50");
+      unmount();
+    });
   });
 
-  test("a later cumulative total adds only the delta, not the total again", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
+  describe("useAgentStreamEvents — no bus", () => {
+    test("a null bus leaves the hook inert rather than throwing", async () => {
+      const { lastFrame, drain, unmount } = mount({ bus: null });
 
-    emit(
-      started(),
-      update("agent.usage_update", { inputTokens: 100, outputTokens: 40 }),
-      update("agent.usage_update", { inputTokens: 150, outputTokens: 90 }),
-    );
-    await drain();
+      await drain();
 
-    expect(lastFrame()).toContain("in:150");
-    expect(lastFrame()).toContain("out:90");
-    unmount();
-  });
-
-  test("a total that goes backwards never decreases the running count", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
-
-    emit(
-      started(),
-      update("agent.usage_update", { inputTokens: 100, outputTokens: 40 }),
-      update("agent.usage_update", { inputTokens: 10, outputTokens: 5 }),
-    );
-    await drain();
-
-    expect(lastFrame()).toContain("in:100");
-    expect(lastFrame()).toContain("out:40");
-    unmount();
-  });
-
-  test("a usage_update omitting token fields leaves the totals untouched", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
-
-    emit(started(), update("agent.usage_update", { inputTokens: 100 }), update("agent.usage_update"));
-    await drain();
-
-    expect(lastFrame()).toContain("in:100");
-    expect(lastFrame()).toContain("out:0");
-    expect(lastFrame()).toContain("usage:2");
-    unmount();
-  });
-
-  test("a call that ends and restarts counts its new totals from zero again", async () => {
-    const { lastFrame, emit, drain, unmount } = mount();
-
-    emit(
-      started(),
-      update("agent.usage_update", { inputTokens: 100, outputTokens: 40 }),
-      update("agent.call_ended", { status: "success" }),
-      started(),
-      update("agent.usage_update", { inputTokens: 30, outputTokens: 10 }),
-    );
-    await drain();
-
-    expect(lastFrame()).toContain("in:130");
-    expect(lastFrame()).toContain("out:50");
-    unmount();
-  });
-});
-
-describe("useAgentStreamEvents — no bus", () => {
-  test("a null bus leaves the hook inert rather than throwing", async () => {
-    const { lastFrame, drain, unmount } = mount({ bus: null });
-
-    await drain();
-
-    expect(lastFrame()).toContain("calls:0");
-    expect(lastFrame()).toContain("in:0");
-    unmount();
+      expect(lastFrame()).toContain("calls:0");
+      expect(lastFrame()).toContain("in:0");
+      unmount();
+    });
   });
 });

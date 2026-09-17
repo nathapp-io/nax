@@ -11,10 +11,22 @@
  * cannot hang a run's completion phase.
  */
 
+import { killProcessGroup } from "../utils/process-kill";
 import type { ForgeDeps } from "./types";
 
 /** Default wall-clock cap for any one subprocess (BUG-8). */
 export const DEFAULT_SUBPROCESS_TIMEOUT_MS = 30_000;
+
+/**
+ * Injectable seam mirroring the `_autoPrDeps` pattern. Production callers read
+ * through these references; tests mutate fields on the exported object to
+ * inject fakes without `mock.module()`. `killProcessGroup` is the established
+ * process-tree cleanup primitive (`src/utils/process-kill.ts`) — the direct
+ * `proc.kill()` only reaches the spawned shell, leaving grandchildren (a
+ * package manager postinstall, a `sleep` after a `trap 'exit 0' TERM`) holding
+ * stdout open and stalling the pipe drain.
+ */
+export const _forgeDeps = { killProcessGroup };
 
 /**
  * Default subprocess runner — wraps Bun.spawn with concurrent stdout/stderr
@@ -28,18 +40,35 @@ export async function defaultRun(
   cmd: string[],
   opts: { cwd: string; timeoutMs?: number },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(cmd, {
+    cwd: opts.cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    // ORPHAN-1: setsid() makes this pid the process-group leader, so the
+    // killProcessGroup call below reaches grandchildren rather than only the
+    // direct child. Without it, a trap-handled `exit 0` on TERM leaves `sleep`
+    // holding the stdout pipe and the drain blocks until it dies naturally.
+    detached: true,
+  });
   const timeoutMs = opts.timeoutMs ?? DEFAULT_SUBPROCESS_TIMEOUT_MS;
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    proc.kill();
+    // killProcessGroup(-pid) is the only thing that reaches grandchildren; a
+    // bare `proc.kill()` would orphan anything the direct child spawned.
+    // SIGTERM (not SIGKILL): the 124 substitution below distinguishes a
+    // timed-out child that exited cleanly from a real success, and only
+    // SIGTERM lets a process trap-handle it. SIGKILL would land on 137
+    // (128 + 9) and the substitution branch would never fire.
+    _forgeDeps.killProcessGroup(proc.pid, "SIGTERM");
   }, timeoutMs);
   try {
+    // .catch(() => "") guards against broken-pipe errors after SIGKILL so the
+    // timeout path always returns a result instead of rejecting.
     const [exitCode, stdout, stderr] = await Promise.all([
       proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
+      new Response(proc.stdout).text().catch(() => ""),
+      new Response(proc.stderr).text().catch(() => ""),
     ]);
     return timedOut
       ? {

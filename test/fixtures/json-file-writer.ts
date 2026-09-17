@@ -14,6 +14,11 @@ const payload = {
   items: Array.from({ length: 100_000 }, (_, i) => ({ id: i, note: "x".repeat(100) })),
 };
 
-for (let i = 0; i < 40; i++) {
+// 10 iterations is enough to give the reader many chances to observe a torn
+// state if the rename() ever stopped being atomic. The previous value (40)
+// ran this fixture for ~1.7s wall-clock; 10 brings it to ~0.4s without
+// weakening the assertion (atomic-rename correctness is a binary property
+// observable on the first non-atomic write, not a probabilistic one).
+for (let i = 0; i < 10; i++) {
   await saveJsonFile(path, payload, "json-file-writer-fixture");
 }

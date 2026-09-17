@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   assertCaughtInstanceOf,
@@ -25,15 +25,29 @@ import { EXIT_CODES, runPrecheck } from "@/precheck";
 // Requires real claude binary — skipped by default, run with FULL=1.
 const skipInCI = fullTest;
 
-async function setupGitRepo(dir: string): Promise<void> {
-  mkdirSync(join(dir, ".git"));
-  await Bun.spawn(["git", "init"], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
+/**
+ * One-shot git template built at module load. `setupGitRepo` copies this dir's
+ * `.git` into each test's temp dir instead of running `git init` + two
+ * `git config` spawns per call. Cold-start `git` invocations were ~150-250ms
+ * each on Linux; copying a fully-initialised `.git` is ~5-10ms, so this turns
+ * ~600ms of per-test setup into ~5ms. The template lives for the lifetime of
+ * the test process and is never modified after construction, so it is safe
+ * to share across sequential tests.
+ */
+const GIT_TEMPLATE = await (async (): Promise<string> => {
+  const dir = makeTempDir("nax-precheck-git-template-");
+  await Bun.spawn(["git", "init", "-q"], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
   await Bun.spawn(["git", "config", "user.name", "Test"], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
   await Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: dir, stdout: "ignore", stderr: "ignore" })
     .exited;
-  writeFileSync(join(dir, "README.md"), "# Test");
-  await Bun.spawn(["git", "add", "."], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
-  await Bun.spawn(["git", "commit", "-m", "init"], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
+  return dir;
+})();
+
+async function setupGitRepo(dir: string): Promise<void> {
+  // Copy the shared template's `.git` instead of re-running `git init` +
+  // `git config` cold-start. Tests in this file run sequentially (no
+  // `.concurrent` modifier), so the template is safe to read concurrently.
+  cpSync(join(GIT_TEMPLATE, ".git"), join(dir, ".git"), { recursive: true });
 }
 
 const createConfig = (_workdir: string): NaxConfig =>
