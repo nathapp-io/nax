@@ -1,0 +1,81 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "glob-directory-grouped-output",
+  "branchName": "feat/glob-directory-grouped-output",
+  "createdAt": "2025-02-14T00:00:00Z",
+  "updatedAt": "2026-09-17T12:16:07.722Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Directory-grouped Glob output and existence-probe description",
+      "description": "**Goal** — Replace Glob's flat path rendering with lossless, deterministic directory-grouped output and advertise that shape and exact-path existence probing.\n\n**Motivation** — Grouping cuts the payload by ~45% and the line count by ~9x, and it does so without discarding a single path — the directory prefix is shared rather than dropped.\n\n**Approach** — `Glob` collects matches exactly as it does today — `Bun.Glob().scan()` from `ctx.root` with `absolute: false`, each hit re-checked through `resolveWithin`, stopping at `MAX_MATCHES`. Only the final rendering changes: instead of sorting the paths and joining them with newlines, the paths are bucketed by parent directory and each bucket is rendered as one line.\n\nOne line per parent directory. The line is the directory prefix, always ending in `/`, then a single space, then the basenames separated by single spaces:\n```\n./ notes.md\nsrc/ _pkg.ts errors.ts\nsrc/acceptance/ content-loader.ts generator.ts types.ts\nsrc/tools/ bash.ts delete.ts edit.ts glob.ts read.ts\n```\n- A match directly at the repository root is grouped under the prefix `./`, so every line has a prefix and there is no second shape to recognise.\n- Group lines are ordered by directory prefix, ascending. Basenames within a line are ordered ascending. The rendering is therefore deterministic for a given match set.\n- A basename containing whitespace is wrapped in double quotes (`docs/ intro.md \"release notes.md\"`), so the line stays unambiguously splittable and the round-trip stays lossless.\n- A single match uses the same shape as any other result (`src/tools/ read.ts`). There is no special case, so an existence probe and a wide listing read identically.\n\nThe result is lossless: concatenating a line's directory prefix with each of its basenames reconstructs exactly the set of root-relative paths that matched.\n\n`_globDeps` is a new `@internal` test-only injectable exported from `src/tools/glob.ts` and re-exported from `src/tools/index.ts`, mirroring `_grepDeps` (`src/tools/grep.ts:33`, re-exported at `src/tools/index.ts:19`). It holds the single member the scan needs, so a test can substitute a scanner that throws. `globTool.run` calls the scan through `_globDeps` rather than constructing `Bun.Glob` inline. It exists because no malformed pattern makes `Bun.Glob().scan()` throw; otherwise the catch is reachable only through an environment-dependent filesystem error.\n\n`globTool.run` returns `{ content: <group lines joined by \"\\n\"> }` in this format. Its signature is unchanged, as are both no-match returns and the `isError` path. `globTool.description` additionally carries sample group line `path/to/ a.ts b.ts` and phrase `whether a path exists`.\n\n**Scope** — In: grouped rendering, description, and injected scan dependency in `src/tools/glob.ts`; the `_globDeps` barrel export; and behavior tests in the existing glob test file. Out: rtk command interception for the `Read` tool: measured on this repository, rtk's default `--level none` saves 0%, and `--level aggressive` replaces function bodies with `// ... implementation`, which destroys the exact text the `Edit` tool needs to match; rtk command interception for the `Glob` tool; the grouping win is a formatting change and does not require a third-party binary or a subprocess; Adding any new member to the `Site` union in `src/execution/command-interceptor/index.ts`; Adding a dedicated `LS`, `Exists`, or directory-listing coding tool; Raising, lowering, or making configurable the `MAX_MATCHES` cap of 500 in `src/tools/glob.ts`; Reporting how many matches were discarded when the 500-match cap binds, whether via `resultBytesPreTruncation` or any other channel; Changing the `ls` and `find` redirect text in the `GLOB` intent of `src/tools/denial-redirect.ts`; Changing the output format of the `Grep` tool in `src/tools/grep.ts`; Changing the `Read` tool in `src/tools/read.ts` in any way; `<!-- spec-writing: completed-through-phase-6 -->`.\n\n**Interface**\n```typescript\nglobTool: CodingTool\nresolveWithin(root: string, candidate: string, execTouchedPaths?: readonly string[]): string | null\nMAX_MATCHES = 500\nclimbsOut(pattern: string): boolean\nrun(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>\n```",
+      "acceptanceCriteria": [
+        "Given a root containing `src/a.ts` and `src/deep/b.ts`, when `globTool.run` is called with pattern `src/**/*.ts`, then content consists of exactly the two lines `src/ a.ts` and `src/deep/ b.ts`.",
+        "Given a root containing `notes.md` directly at the root, when `globTool.run` is called with pattern `*.md`, then content consists of the single line `./ notes.md`.",
+        "Given a root whose matches span `src/` and `src/deep/`, when `globTool.run` returns content, then the group line beginning `src/ ` appears before the group line beginning `src/deep/ `.",
+        "Given a directory containing `c.ts`, `a.ts`, and `b.ts`, when `globTool.run` renders its group, then the basenames are ordered `a.ts b.ts c.ts`.",
+        "When each `globTool.run` content line is parsed into its leading directory prefix and basenames and the prefix is joined to each basename, then the reconstructed set equals exactly the root-relative paths matched, with no path added and none dropped.",
+        "Given a root containing `docs/release notes.md`, when `globTool.run` renders the `docs/` group, then that basename is emitted as `\"release notes.md\"`.",
+        "Given a root containing `src/a.ts`, when `globTool.run` is called with `src/a.ts`, then it returns `src/ a.ts` as a single group line in the same shape a multi-match result uses.",
+        "Given a root containing no Python file, when `globTool.run` is called with `**/*.py`, then it returns content containing `no matches for \"**/*.py\"` with falsy `isError`.",
+        "When `globTool.run` is called with `../**/*`, then it returns content equal to `no matches` that contains no `..` sequence.",
+        "Given more than 500 files match the pattern, when `globTool.run` renders content, then the total basenames across all group lines equals 500.",
+        "Given `_globDeps.scan` throws an error with message `scan exploded`, when `globTool.run` is called with `src/**/*.ts`, then it resolves with `isError` true and content equal to `scan exploded`.",
+        "Given `_globDeps.scan` is a recording stub, when `globTool.run` is called with `src/**/*.ts`, then the stub is invoked exactly once with pattern `src/**/*.ts` and cwd equal to the supplied `ToolRunContext.root`, so the production path reaches the scan through `_globDeps` and not an inline `Bun.Glob`.",
+        "When `globTool.description` is read from the advertised tool schema, then it contains `path/to/ a.ts b.ts`.",
+        "When `globTool.description` is read from the advertised tool schema, then it contains `whether a path exists`.",
+        "When `globTool.run` receives a non-string `input.pattern`, then it returns `{ content: \"pattern must be a string\", isError: true }` unchanged."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "glob",
+        "output-format"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a standard change across the Glob module, its barrel export, and an existing unit suite, with deterministic formatting and injectable scanner behavior but no new integration or abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/tools/glob.ts",
+        "src/tools/policy.ts",
+        "src/tools/grep.ts",
+        "src/tools/registry.ts",
+        "src/tools/index.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/read-glob.test.ts",
+          "reason": "its globTool case \"matches files by pattern, relative to the root\" asserts the flat one-path-per-line shape as a two-element array of root-relative paths, a closed-world assertion the grouped format necessarily breaks; replace it with the invariant that the result is two group lines, one per parent directory, as defined in the Design section's output format."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "51e5491a31ba1160e9d1a4dfad01520e6f2ff32d"
+    }
+  ],
+  "analysis": "This enhancement is localized to the existing Glob coding tool. `globTool` currently validates the pattern, rejects `..` without scanning, scans `new Bun.Glob(pattern)` from `ctx.root` with `absolute: false`, re-checks every hit with `resolveWithin`, normalizes separators, stops at private `MAX_MATCHES = 500`, catches scan errors, then sorts and newline-joins flat paths (`src/tools/glob.ts:9-55`). Preserve every collection, containment, cap, and failure behavior; replace only final rendering with deterministic directory buckets. `resolveWithin` must remain on each candidate because it returns null for candidates outside the root or protected locations (`src/tools/policy.ts:95-104`).\n\nThe unchanged public interface is `CodingTool.run(input, ctx): Promise<ToolResult>` and `ToolRunContext.root` is the scanner cwd (`src/tools/registry.ts:43-68`). Glob is already registered by runtime (`src/tools/runtime.ts:20,70`). `src/tools/index.ts:18` currently exports `globTool`; it must additionally export the new injectable. Follow the mutable test dependency precedent, `export const _grepDeps = { which, spawn }` (`src/tools/grep.ts:33`), rather than mutating a Bun global; the repository test-writing rule identifies `_deps` injection as the mechanism for otherwise environment-dependent error paths (`.nax/rules/test-writing.md:27-39`).\n\nExisting glob coverage is in `test/unit/tools/read-glob.test.ts`: the flat-path assertion at `:134-139` must change, while adjacent tests anchor no-match and climb-out behavior (`:141-151`). Add behavioral coverage for grouping, sorting, root paths, whitespace quoting, exact-path probes, 500 collected hits, injected errors, injected scanner arguments, and description text. This intentional output-contract change is safe because the model is the sole consumer; agents learn the migration through the new advertised description. Principal risks are sorting full paths rather than independently sorting prefixes and basenames, losing paths while bucketing, treating root files differently, weakening containment or cap semantics, changing either no-match/error return, and bypassing `_globDeps` with inline construction. No new files, dependencies, runtime registration changes, or migration layer are required.",
+  "outOfScope": [
+    "rtk command interception for the `Read` tool: measured on this repository, rtk's default `--level none` saves 0%, and `--level aggressive` replaces function bodies with `// ... implementation`, which destroys the exact text the `Edit` tool needs to match.",
+    "rtk command interception for the `Glob` tool; the grouping win is a formatting change and does not require a third-party binary or a subprocess.",
+    "Adding any new member to the `Site` union in `src/execution/command-interceptor/index.ts`.",
+    "Adding a dedicated `LS`, `Exists`, or directory-listing coding tool.",
+    "Raising, lowering, or making configurable the `MAX_MATCHES` cap of 500 in `src/tools/glob.ts`.",
+    "Reporting how many matches were discarded when the 500-match cap binds, whether via `resultBytesPreTruncation` or any other channel.",
+    "Changing the `ls` and `find` redirect text in the `GLOB` intent of `src/tools/denial-redirect.ts`.",
+    "Changing the output format of the `Grep` tool in `src/tools/grep.ts`.",
+    "Changing the `Read` tool in `src/tools/read.ts` in any way."
+  ],
+  "routingProfile": "native"
+}
