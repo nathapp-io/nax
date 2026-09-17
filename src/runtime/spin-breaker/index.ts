@@ -190,10 +190,17 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
       recent.set(key, cumulativeCount);
       if (cumulativeCount > maxSameKeyRepeats) maxSameKeyRepeats = cumulativeCount;
 
-      // Cumulative per-key stop comes first: a freshly-laundered loop is
-      // the shape we want to catch, and this fires before any nudge can be
-      // spent. Only check when the knob is non-zero — 0 disables.
+      // Cumulative per-key stop. A freshly-laundered loop is the shape we
+      // want to catch (nax#2047). Only check when the knob is non-zero —
+      // 0 disables.
       if (settings.stopAfterSameKeyRepeats > 0 && cumulativeCount >= settings.stopAfterSameKeyRepeats) {
+        // nax#2120: the stop CONSUMES the evidence it fired on. Without this
+        // the count stays above the threshold forever, and because the
+        // breaker is session-scoped (nax#2047) every later turn died on its
+        // first re-occurrence of this key — a ratchet, not a spin. Set to 0
+        // rather than deleting the entry: the key must stay in `recent` so
+        // its next occurrence still reads as a repeat, not as progress.
+        recent.set(key, 0);
         getSafeLogger()?.error("spin-breaker", "Ending the turn — same call repeated with no progress", {
           tool: toolName,
           repeats: cumulativeCount,

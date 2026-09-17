@@ -327,4 +327,38 @@ describe("createSpinBreaker", () => {
     expect(stoppedAt).toBe(12);
     expect(nudges).toBe(0);
   });
+
+  // nax#2120 defect 3 (the ratchet): the cumulative count latched at the
+  // threshold, so every later occurrence of that key re-killed instantly.
+  // The breaker is session-scoped by design (nax#2047), so "latched" meant
+  // every subsequent TURN died on its first re-occurrence of the key.
+  test("a cumulative stop resets that key's count, so the next occurrence does not re-kill", () => {
+    const breaker = createSpinBreaker(settings());
+
+    let firstStopAt: number | undefined;
+    for (let i = 0; i < 12 && firstStopAt === undefined; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") firstStopAt = i + 1;
+    }
+    expect(firstStopAt).toBe(12);
+
+    // The 11 occurrences after the stop must all be allowed: the count
+    // restarts from zero and has to climb the full threshold again.
+    for (let i = 0; i < 11; i += 1) {
+      expect(breaker.observe("RunCommand", TEST_CMD).action).not.toBe("stop");
+    }
+    // The 12th does fire again — a genuinely wedged session still dies.
+    expect(breaker.observe("RunCommand", TEST_CMD).action).toBe("stop");
+  });
+
+  test("a stop does not turn the key into a new-key event", () => {
+    const breaker = createSpinBreaker(settings());
+
+    for (let i = 0; i < 12; i += 1) breaker.observe("RunCommand", TEST_CMD);
+    const newKeysAfterStop = breaker.summary().newKeyEvents;
+    breaker.observe("RunCommand", TEST_CMD);
+
+    // Resetting the count must not look like progress: newKeyEvents is the
+    // "did something new happen" instrument and a re-issued key is not new.
+    expect(breaker.summary().newKeyEvents).toBe(newKeysAfterStop);
+  });
 });
