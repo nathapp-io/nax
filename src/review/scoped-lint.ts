@@ -117,6 +117,18 @@ async function filterFilesToScope(
 ): Promise<string[]> {
   const inScope: string[] = [];
   for (const relPath of files) {
+    // FIXME(#2087): frame contradiction — these two lines demand different
+    // frames for the same `relPath`. Line 121 treats `relPath` as
+    // package-relative (join with `workdir` = the package dir). Line 124
+    // (now 132 / 136 post-FIXME insertion) hands `relPath` to `findPackageDir(relPath, projectDir)`, which does
+    // `resolve(workdir, dirname(filePath))` (src/test-runners/resolver.ts:262-264)
+    // and walks up from there — unambiguously repo-framed. No spelling of
+    // `relPath` satisfies both. Both must be re-derived (a single shared
+    // frame derivation upstream) before `projectDir`, `story`, or
+    // `storyGitRef` are ever threaded into the runReview call from
+    // src/execution/lifecycle/run-initialization.ts:95 — at which point
+    // `filterFilesToScope` starts receiving real, non-empty inputs and the
+    // contradiction becomes reachable. Do not silently rewire.
     const absPath = join(workdir, relPath);
     const exists = await _scopedLintDeps.fileExists(absPath);
     if (!exists) continue;
@@ -369,23 +381,6 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     },
     findings: parsed.findings?.filter((f) => typeof f.file === "string" && scopedSet.has(normalizePath(f.file))),
   };
-}
-
-export async function runAutofixLint(args: {
-  resolvedLintCommand: string;
-  configCommands: ReviewConfig["commands"];
-  qualityCommands?: QualityConfig["commands"];
-  lintOutputFormat?: LintOutputFormat;
-  workdir: string;
-  projectDir?: string;
-  storyId?: string;
-  env?: Record<string, string | undefined>;
-  /** Secret env var names to strip before spawning the lint command. */
-  stripEnvVars?: string[];
-  naxIgnoreIndex?: NaxIgnoreIndex;
-  scope: AutofixLintScope;
-}): Promise<ReviewCheckResult> {
-  return runScopedLintCheck(args);
 }
 
 export const _scopedLintDeps = {

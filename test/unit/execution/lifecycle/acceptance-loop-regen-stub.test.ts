@@ -1,5 +1,7 @@
 /**
- * Unit tests for acceptance-loop.ts — US-003: Stub content rejection in regenerateAcceptanceTest
+ * Unit tests for acceptance-loop.ts — US-003 (stub rejection) and #2083
+ * (frame-safe regeneration: reads must join onto projectDir so monorepo
+ * stories don't silently lose their implementation context).
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -43,16 +45,19 @@ describe("regenerateAcceptanceTest — rejects stub content (US-003)", () => {
   let tmpDir: string;
   let origAcceptanceSetupExecute: typeof _regenerateDeps.acceptanceSetupExecute;
   let origGetLogger: typeof _regenerateDeps.getLogger;
+  let origSpawnGitDiff: typeof _regenerateDeps.spawnGitDiff;
 
   beforeEach(() => {
     tmpDir = makeTempDir("nax-regen-stub-test-");
     origAcceptanceSetupExecute = _regenerateDeps.acceptanceSetupExecute;
     origGetLogger = _regenerateDeps.getLogger;
+    origSpawnGitDiff = _regenerateDeps.spawnGitDiff;
   });
 
   afterEach(() => {
     (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = origAcceptanceSetupExecute;
     (_regenerateDeps as { getLogger: unknown }).getLogger = origGetLogger;
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = origSpawnGitDiff;
     cleanupTempDir(tmpDir);
   });
 
@@ -254,5 +259,180 @@ test("AC-1: real test", async () => {
 
     bakContent = await Bun.file(`${testPath}.bak`).text();
     expect(bakContent).toBe("new content");
+  });
+
+  // #2083: spawnGitDiff returns repo-rooted paths (no --relative, no pathspec)
+  // because the spawn runs `git diff --name-only <ref>` in cwd. When the
+  // acceptance context's workdir is a package dir beneath projectDir (the
+  // canonical monorepo shape: pipeline/types.ts:83-93), joining the diff
+  // output onto workdir produces a non-existent nested path
+  // (`<packageDir>/<repoFramedPath>`) and the read silently swallows the
+  // ENOENT — implementationContext ends up undefined. Reads must join onto
+  // `projectDir ?? workdir` (the `repoRoot` already computed above) so the
+  // read lands on the real file on disk. Placed in this file (rather than
+  // acceptance-loop.test.ts) because adding it there pushed the parent past
+  // the 800-line test limit.
+  test("reads implementation files from projectDir (repo root), not workdir (#2083)", async () => {
+    const { mkdirSync } = await import("node:fs");
+
+    // Layout:
+    //   tmpDir/                                       (= projectDir, the repo root)
+    //   tmpDir/packages/api/                          (= workdir, the package dir)
+    //   tmpDir/packages/api/src/add.ts                (the real implementation file)
+    //   tmpDir/packages/api/.nax-acceptance.test.ts   (the test to regenerate)
+    const repoRoot = tmpDir;
+    const packageDir = join(repoRoot, "packages", "api");
+    const implRelPath = "packages/api/src/add.ts";
+    const implAbsPath = join(repoRoot, implRelPath);
+    const implContent = "export function add(a: number, b: number) { return a + b; }";
+
+    mkdirSync(join(packageDir, "src"), { recursive: true });
+    await Bun.write(implAbsPath, implContent);
+
+    const testPath = join(packageDir, ".nax-acceptance.test.ts");
+    await Bun.write(testPath, "original test content");
+
+    // spawnGitDiff returns repo-rooted paths. The fix threads the story's
+    // package as a pathspec so cross-package bleeds don't fill the 50KB budget.
+    const spawnMock = mock(async (_workdir: string, _ref: string, _pathspec?: string) => implRelPath);
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = spawnMock;
+    // Leave _regenerateDeps.readFile at the default (Bun.file(...).text()) so
+    // the read actually hits the disk — proves the join resolves to a real
+    // file. A path that doesn't exist would throw and be skipped silently.
+
+    const capturedCtxs: Array<PipelineContext & { implementationContext?: Array<{ path: string; content: string }> }> =
+      [];
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(
+      async (ctx: PipelineContext & { implementationContext?: Array<{ path: string; content: string }> }) => {
+        capturedCtxs.push(ctx);
+      },
+    );
+
+    const ctx = makeMinimalPipelineContext({
+      workdir: packageDir,
+      projectDir: repoRoot,
+      storyGitRef: "abc1234",
+      story: {
+        id: "US-001",
+        title: "t",
+        description: "d",
+        acceptanceCriteria: [],
+        dependencies: [],
+        tags: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        workdir: "packages/api",
+      },
+    });
+
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    // The implementationContext must carry the read content — proving the
+    // join landed on the real file. Before the fix, the join produces
+    // `<packageDir>/packages/api/src/add.ts` (does not exist) and the read
+    // throws; the catch swallows and implementationContext ends up undefined.
+    expect(capturedCtxs).toHaveLength(1);
+    const passed = capturedCtxs[0];
+    expect(passed.implementationContext).toBeDefined();
+    expect(passed.implementationContext).toHaveLength(1);
+    expect(passed.implementationContext?.[0].path).toBe(implRelPath);
+    expect(passed.implementationContext?.[0].content).toBe(implContent);
+
+    // The spawn must receive the story's package so the diff can't pull in
+    // other packages' diffs and fill the 50KB budget — mirrors the shape of
+    // captureOutputFiles (src/utils/git.ts:484-501).
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [calledWorkdir, calledRef, calledPathspec] = spawnMock.mock.calls[0];
+    expect(calledWorkdir).toBe(packageDir);
+    expect(calledRef).toBe("abc1234");
+    expect(calledPathspec).toBe("packages/api/");
+  });
+
+  // #2083 polish: exercise both `logger?.warn` branches added by the
+  // frame-safe read fix. Captured-logger pattern mirrors the error-log tests
+  // above; the first triggers the outer `catch` (spawnGitDiff throws), the
+  // second triggers the inner per-file `catch` (the file is unlinked before
+  // the read loop sees it).
+  test("warns with the git-diff-failed message when spawnGitDiff throws (#2083)", async () => {
+    const testPath = join(tmpDir, ".nax-acceptance.test.ts");
+    await Bun.write(testPath, "original test content");
+
+    const warnLogs: Array<{ stage: string; message: string }> = [];
+    const capturedLogger = {
+      info: mock(() => {}),
+      warn: mock((stage: string, message: string) => {
+        warnLogs.push({ stage, message });
+      }),
+      error: mock(() => {}),
+      debug: mock(() => {}),
+    };
+    (_regenerateDeps as { getLogger: unknown }).getLogger = mock(() => capturedLogger);
+
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => {
+      throw new Error("git exploded");
+    });
+
+    // Ensure acceptance-setup leaves real content so we only see the warn,
+    // not a stub-rejection error.
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async () => {
+      await Bun.write(testPath, 'test("AC-1: real", async () => { expect(true).toBe(true); });');
+    });
+
+    const ctx = makeMinimalPipelineContext({ workdir: tmpDir, storyGitRef: "abc1234" });
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    const diffFailLogs = warnLogs.filter((l) => l.stage === "acceptance" && l.message.includes("git diff failed"));
+    expect(diffFailLogs.length).toBeGreaterThan(0);
+    expect(diffFailLogs[0].message).toContain("abc1234");
+  });
+
+  test("warns with the unreadable-file message when a diff'd file is gone by read time (#2083)", async () => {
+    const { existsSync, mkdirSync, unlinkSync } = await import("node:fs");
+
+    // Layout: tmpDir (= repo root) / packages/api/src/x.ts. The spawn returns
+    // the repo-framed path AND unlinks the file before returning, so the
+    // readFile that follows hits ENOENT and trips the inner per-file catch.
+    const repoRoot = tmpDir;
+    const implRelPath = "packages/api/src/x.ts";
+    const implAbsPath = join(repoRoot, implRelPath);
+    mkdirSync(join(repoRoot, "packages", "api", "src"), { recursive: true });
+    await Bun.write(implAbsPath, "export const x = 1;");
+
+    const testPath = join(repoRoot, ".nax-acceptance.test.ts");
+    await Bun.write(testPath, "original test content");
+
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => {
+      if (existsSync(implAbsPath)) unlinkSync(implAbsPath);
+      return implRelPath;
+    });
+
+    const warnLogs: Array<{ stage: string; message: string }> = [];
+    const capturedLogger = {
+      info: mock(() => {}),
+      warn: mock((stage: string, message: string) => {
+        warnLogs.push({ stage, message });
+      }),
+      error: mock(() => {}),
+      debug: mock(() => {}),
+    };
+    (_regenerateDeps as { getLogger: unknown }).getLogger = mock(() => capturedLogger);
+
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async () => {
+      await Bun.write(testPath, 'test("AC-1: real", async () => { expect(true).toBe(true); });');
+    });
+
+    const ctx = makeMinimalPipelineContext({
+      workdir: repoRoot,
+      projectDir: repoRoot,
+      storyGitRef: "abc1234",
+    });
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    const unreadableLogs = warnLogs.filter((l) => l.stage === "acceptance" && l.message.includes("unreadable"));
+    expect(unreadableLogs.length).toBeGreaterThan(0);
+    // Backtick-delimited paths (MIN-2) — assert the wrapping survives the join.
+    expect(unreadableLogs[0].message).toContain(`\`${implRelPath}\``);
   });
 });

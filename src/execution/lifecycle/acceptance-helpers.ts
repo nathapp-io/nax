@@ -222,8 +222,10 @@ export function buildFailureResult(
 
 /** Injectable dependencies for regenerateAcceptanceTest */
 export const _regenerateDeps = {
-  spawnGitDiff: async (workdir: string, gitRef: string): Promise<string> => {
-    const proc = Bun.spawn(["git", "diff", "--name-only", gitRef], {
+  spawnGitDiff: async (workdir: string, gitRef: string, pathspec?: string): Promise<string> => {
+    const args = ["git", "diff", "--name-only", gitRef];
+    if (pathspec) args.push("--", pathspec);
+    const proc = Bun.spawn(args, {
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
@@ -279,13 +281,23 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
 
   if (storyGitRef) {
     try {
-      const diffOutput = await _regenerateDeps.spawnGitDiff(workdir, storyGitRef);
+      // `repoRoot` already computed below; the join at `:302` must resolve against
+      // it (not `workdir`) because `spawnGitDiff` returns paths framed at the
+      // repository top level (no `--relative`, no pathspec on the spawn side
+      // until this fix threaded it). In a monorepo `workdir` is the package dir;
+      // joining a repo-framed path onto it would produce
+      // `<packageDir>/<repoFramedPath>` and 100% ENOENT, silently dropped.
+      const repoRoot = acceptanceContext.projectDir ?? workdir;
+      const storyPkg = storyPackageDir(acceptanceContext.story);
+      // Mirror captureOutputFiles (src/utils/git.ts:484-501): when a story targets
+      // a package, scope the diff to that package so cross-package diffs don't
+      // fill the 50KB budget and the regenerator only sees in-scope files.
+      const pathspec = storyPkg ? `${storyPkg}/` : undefined;
+      const diffOutput = await _regenerateDeps.spawnGitDiff(workdir, storyGitRef, pathspec);
       const changedFilesRaw = diffOutput
         .split("\n")
         .map((f) => f.trim())
         .filter((f) => f.length > 0);
-      const repoRoot = acceptanceContext.projectDir ?? workdir;
-      const storyPkg = storyPackageDir(acceptanceContext.story);
       const packageDir =
         storyPkg && acceptanceContext.projectDir ? path.join(acceptanceContext.projectDir, storyPkg) : undefined;
       const ignoreMatchers =
@@ -296,10 +308,13 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
       const MAX_BYTES = 50 * 1024;
       let totalBytes = 0;
       const entries: Array<{ path: string; content: string }> = [];
+      const SKIP_LOG_SAMPLE_LIMIT = 5;
+      let unreadableCount = 0;
+      const unreadableSample: string[] = [];
 
       for (const file of changedFiles) {
         if (totalBytes >= MAX_BYTES) break;
-        const filePath = path.join(workdir, file);
+        const filePath = path.join(repoRoot, file);
         try {
           const fileContent = await _regenerateDeps.readFile(filePath);
           const remaining = MAX_BYTES - totalBytes;
@@ -307,15 +322,32 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
           entries.push({ path: file, content: trimmed });
           totalBytes += trimmed.length;
         } catch {
-          // skip unreadable files
+          // #2083: count and log instead of swallowing — silent skips make a
+          // wrong join (or any other silent ENOENT class) invisible.
+          unreadableCount++;
+          if (unreadableSample.length < SKIP_LOG_SAMPLE_LIMIT) unreadableSample.push(file);
         }
+      }
+
+      if (unreadableCount > 0) {
+        const ellipsis = unreadableCount > unreadableSample.length ? ", ..." : "";
+        logger?.warn(
+          "acceptance",
+          `regenerateAcceptanceTest: ${unreadableCount} changed file(s) unreadable: ${unreadableSample.map((p) => `\`${p}\``).join(", ")}${ellipsis}`,
+        );
       }
 
       if (entries.length > 0) {
         implementationContext = entries;
       }
-    } catch {
-      // git diff failed — proceed without implementation context
+    } catch (err) {
+      // #2083: break the silence — a failed diff is the OTHER path that
+      // leaves the regenerator prompt without implementation context.
+      logger?.warn(
+        "acceptance",
+        `regenerateAcceptanceTest: git diff failed for ${storyGitRef}; proceeding without implementation context`,
+        { cause: err },
+      );
     }
   }
 
