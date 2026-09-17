@@ -194,3 +194,24 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     hydrate,
   };
 }
+
+/**
+ * The root of the tree the story is actually executing in.
+ *
+ * `PackageView.repoRoot` is the MAIN CHECKOUT -- captured once per run in
+ * createRuntime() and stamped on every view, never re-pointed at a worktree.
+ * Under storyIsolation "worktree" an Exec with target "repoRoot" resolved
+ * against it wrote the user's real working tree (nax#2093).
+ *
+ * Counterpart to toOverrideKey above: that one strips the `.nax-wt/<storyId>`
+ * prefix for the OVERRIDE LOOKUP; this one keeps it, because a repo-scoped
+ * command must run inside the story's own tree. Both rest on `.nax-wt` being a
+ * reserved nax worktree directory, gitignored and never a workspace package path.
+ */
+export function storyExecRoot(view: { readonly repoRoot: string; readonly packageDir?: string }): string {
+  const { repoRoot, packageDir } = view;
+  if (!packageDir) return repoRoot;
+  const segments = packageDir.split("/");
+  if (segments[0] !== ".nax-wt" || segments.length < 2) return repoRoot;
+  return join(repoRoot, segments[0], segments[1] as string);
+}

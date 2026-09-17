@@ -181,11 +181,17 @@ export interface AgentRunOptions {
    */
   codingToolRoot?: string;
   /**
-   * Repo root for the same dispatch, when the story runs in a package.
+   * Execution root for the same dispatch, when the story runs in a package.
    *
    * `codingToolRoot` is the package workdir and is the containment root for
-   * every path-bearing tool. Exec's `target: "repoRoot"` needs the workspace
-   * root as well, and it is not derivable from the package dir alone.
+   * every path-bearing tool. Exec's `target: "repoRoot"` needs the repo root as
+   * well, and it is not derivable from the package dir alone. Under story
+   * worktree isolation this is the story EXECUTION root — the worktree root
+   * `<repoRoot>/.nax-wt/<storyId>` — NOT the main checkout; a repo-scoped
+   * command must not write the user's real working tree (nax#2093).
+   *
+   * PRODUCER: src/operations/call.ts (`codingToolRepoRoot: storyExecRoot(...)`,
+   * resolved by `storyExecRoot` in src/runtime/packages.ts).
    */
   codingToolRepoRoot?: string;
   /**
