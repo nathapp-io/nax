@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
 import type { UserStory } from "@/prd/types";
 import { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "@/prompts/sections/story";
+import { UNREADABLE_MARKER } from "@/utils/path-frame";
 
 describe("buildStorySection", () => {
   const mockStory = makeStory({
@@ -185,5 +186,67 @@ describe("out-of-scope rendering", () => {
     expect(acIndex).toBeGreaterThan(-1);
     expect(oosIndex).toBeGreaterThan(acIndex);
     expect(result).not.toContain("2. An interactive Ink TUI");
+  });
+});
+
+// nax#2085: the write seam never touches `modifiedFiles` (it rides through the
+// fidelity pass that deliberately runs before canonicalization), so the frame
+// decision belongs here, at the prompt boundary. Per plan Ruling F this is the
+// default non-canonical passthrough: an in-package repo-rooted entry is
+// re-spelled, everything else is left untouched. No entry is ever dropped or
+// marked — this list is an authorisation, and dropping an entry revokes it.
+describe("modifiedFiles reframed at the prompt boundary (nax#2085)", () => {
+  const mod = (path: string, reason: string): { path: string; reason: string } => ({ path, reason });
+
+  test("re-spells an in-package repo-rooted entry for the story's package", () => {
+    const rendered = buildStorySection(
+      makeStory({
+        workdir: "packages/api",
+        workdirSource: "stated",
+        acceptanceCriteria: ["works"],
+        modifiedFiles: [mod("packages/api/src/x.ts", "the assertion moved")],
+      }),
+    );
+    expect(rendered).toContain("- `src/x.ts` — the assertion moved");
+    expect(rendered).not.toContain("packages/api/src/x.ts");
+  });
+
+  // A legacy (pre-nax#2067) story has a workdir but no `workdirSource` stamp.
+  // Its package-relative entry is in a frame nothing can confirm, so it must
+  // pass through untouched — a `canonical` regression would drop it entirely.
+  test("leaves a legacy story's package-relative path untouched", () => {
+    const rendered = buildStorySection(
+      makeStory({
+        workdir: "packages/api",
+        acceptanceCriteria: ["works"],
+        modifiedFiles: [mod("src/x.ts", "legacy frame")],
+      }),
+    );
+    expect(rendered).toContain("- `src/x.ts` — legacy frame");
+  });
+
+  test("renders an out-of-package entry unchanged — never dropped, never marked (Ruling F)", () => {
+    const rendered = buildStorySection(
+      makeStory({
+        workdir: "packages/api",
+        workdirSource: "stated",
+        acceptanceCriteria: ["works"],
+        modifiedFiles: [mod("packages/web/src/x.ts", "neighbour change")],
+      }),
+    );
+    expect(rendered).toContain("- `packages/web/src/x.ts` — neighbour change");
+    expect(rendered).not.toContain(UNREADABLE_MARKER);
+  });
+
+  test("leaves a root story's entries unchanged", () => {
+    const rendered = buildStorySection(
+      makeStory({
+        workdir: ".",
+        workdirSource: "stated",
+        acceptanceCriteria: ["works"],
+        modifiedFiles: [mod("packages/api/src/x.ts", "root frame")],
+      }),
+    );
+    expect(rendered).toContain("- `packages/api/src/x.ts` — root frame");
   });
 });

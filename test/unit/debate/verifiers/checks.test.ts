@@ -283,24 +283,45 @@ describe("checkSpecCoverage (AC8)", () => {
   });
 });
 
-// nax#2067 seam 3: checkFilesExist joins contextFiles against the REPO ROOT, so
-// before this arc every monorepo story collected a spurious `major` for every
-// declared path. Canonicalization fixes that upstream; checkFilesExist is unchanged.
-describe("checkFilesExist — repo-framed contextFiles (nax#2067 seam 3)", () => {
+// nax#2086: checkFilesExist used to join every declared path onto the repo root
+// unconditionally, so a monorepo story's package-relative contextFiles entry
+// always missed — a spurious `major`, or a spurious `blocker` when the entry was
+// factId-cited, on exactly the best-grounded entries. The probe now
+// canonicalizes with the story's own workdir first, so a path resolving in
+// either frame counts as existing.
+describe("checkFilesExist — package-relative contextFiles (nax#2086)", () => {
   const onDisk = (...rel: string[]) => {
     const set = new Set(rel.map((r) => `/workdir/${r}`));
     return { existsSync: (p: string) => set.has(p) };
   };
 
-  test("a repo-framed contextFile resolves and produces no finding", () => {
-    const prd = makePrd([makeStory({ workdir: "packages/app", contextFiles: ["packages/app/src/a.ts"] })]);
-    expect(checkFilesExist(prd, "/workdir", onDisk("packages/app/src/a.ts"))).toHaveLength(0);
+  test("a package-relative entry resolving under the story's workdir produces no finding", () => {
+    const prd = makePrd([makeStory({ workdir: "packages/api", contextFiles: ["src/index.ts"] })]);
+    expect(checkFilesExist(prd, "/workdir", onDisk("packages/api/src/index.ts"))).toHaveLength(0);
   });
 
-  test("the pre-nax#2067 package-relative spelling is what used to miss", () => {
-    const prd = makePrd([makeStory({ workdir: "packages/app", contextFiles: ["src/a.ts"] })]);
-    const findings = checkFilesExist(prd, "/workdir", onDisk("packages/app/src/a.ts"));
+  test("a factId-cited package-relative entry resolving under the workdir draws no blocker", () => {
+    const prd = makePrd([
+      makeStory({ workdir: "packages/api", contextFiles: [{ path: "src/index.ts", factId: "F-001" }] }),
+    ]);
+    expect(checkFilesExist(prd, "/workdir", onDisk("packages/api/src/index.ts"))).toHaveLength(0);
+  });
+
+  test("a path that resolves in neither frame still draws its major — the check is not defanged", () => {
+    const prd = makePrd([makeStory({ workdir: "packages/api", contextFiles: ["src/missing.ts"] })]);
+    const findings = checkFilesExist(prd, "/workdir", onDisk("packages/api/src/index.ts"));
     expect(findings).toHaveLength(1);
     expect(findings[0]?.severity).toBe("major");
+  });
+
+  test("a root story keeps its single-frame probe, unchanged", () => {
+    const prd = makePrd([makeStory({ workdir: undefined, contextFiles: ["src/root.ts"] })]);
+    expect(checkFilesExist(prd, "/workdir", onDisk("src/root.ts"))).toHaveLength(0);
+    expect(checkFilesExist(prd, "/workdir", onDisk("src/other.ts"))).toHaveLength(1);
+  });
+
+  test("a repo-framed entry on a package story still resolves", () => {
+    const prd = makePrd([makeStory({ workdir: "packages/app", contextFiles: ["packages/app/src/a.ts"] })]);
+    expect(checkFilesExist(prd, "/workdir", onDisk("packages/app/src/a.ts"))).toHaveLength(0);
   });
 });
