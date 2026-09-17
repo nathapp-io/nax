@@ -148,10 +148,15 @@ describe("readTool", () => {
 });
 
 describe("globTool", () => {
-  test("matches files by pattern, relative to the root", async () => {
+  test("matches files by pattern, relative to the root — one group line per parent directory", async () => {
+    // The grouped format renders one line per parent directory:
+    // `<dir>/ <b1> <b2> ...`. Two parent directories under src/ yield exactly
+    // two lines, with the basenames appearing on the line whose directory
+    // prefix is their parent.
     const res = await globTool.run({ pattern: "src/**/*.ts" }, ctx([]));
-    const lines = res.content.trim().split("\n").sort();
-    expect(lines).toEqual(["src/a.ts", "src/deep/b.ts"]);
+    const lines = res.content.split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines.sort()).toEqual(["src/ a.ts", "src/deep/ b.ts"]);
   });
 
   test("reports no matches without erroring", async () => {

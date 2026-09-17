@@ -15,7 +15,7 @@ export {
   gitTool,
 } from "./git";
 export { buildCommitArgvs, gitCommitTool } from "./git-commit";
-export { globTool } from "./glob";
+export { _globDeps, globTool } from "./glob";
 export { _grepDeps, buildGrepArgv, grepTool } from "./grep";
 export { narrowGrants, type ToolPatternNarrowing } from "./narrow-grants";
 export type { ExecTarget, NormalizeInput, NormalizeResult } from "./package-managers";

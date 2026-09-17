@@ -1,0 +1,265 @@
+/**
+ * Directory-grouped Glob output and existence-probe description.
+ *
+ * Each acceptance criterion below exercises a piece of the new shape — one
+ * line per parent directory, basenames sorted ascending, quoted basenames
+ * round-tripping losslessly — and the `_globDeps` scan injection that lets a
+ * test provoke the catch path without planting a malformed pattern on disk.
+ */
+
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { _globDeps, DEFAULT_TOOL_MAX_FILE_BYTES, globTool } from "@/tools";
+
+let root: string;
+
+// Capture the production scanner at module-load time so the afterEach hook
+// restores the real Bun.Glob scanner, not a placeholder. The capture must
+// happen after `_globDeps` has been imported above (so the export is bound)
+// and before any test substitutes a stub.
+const productionScan = _globDeps.scan;
+
+beforeAll(() => {
+  root = mkdtempSync(join(tmpdir(), "nax-glob-"));
+  mkdirSync(join(root, "src", "deep"), { recursive: true });
+  mkdirSync(join(root, "docs"), { recursive: true });
+  writeFileSync(join(root, "src", "a.ts"), "export const a = 1;\n");
+  writeFileSync(join(root, "src", "deep", "b.ts"), "export const b = 2;\n");
+  writeFileSync(join(root, "notes.md"), "hello\n");
+  writeFileSync(join(root, "docs", "intro.md"), "intro\n");
+  writeFileSync(join(root, "docs", "release notes.md"), "release\n");
+});
+
+afterEach(() => {
+  // _globDeps.scan is test-only; production wires it to a real Bun.Glob
+  // scanner. Restore the original scanner between cases so a stub from one
+  // test never leaks into the next.
+  _globDeps.scan = productionScan;
+});
+
+function ctx() {
+  return { root, resolvedPaths: [], maxBytes: 10_000, maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES };
+}
+
+/**
+ * Parse a group line into its leading directory prefix and basenames. Each
+ * line is `<dir>/ <b1> <b2> ...` with basenames that contain whitespace
+ * wrapped in `"..."`. The parser is what the agent would do to recover the
+ * matched paths; if the format ever changes, the round-trip AC (#5) must still
+ * match.
+ */
+function parseGroupLine(line: string): { dir: string; basenames: string[] } {
+  // A line is `<dir>/ <b1> <b2> ...` — the directory prefix always ends in
+  // "/" (the leading "./" case is just `./<basename>` with a trailing space).
+  expect(line).toMatch(/^\S+\/\s/);
+  const spaceIdx = line.indexOf(" ");
+  const dir = line.slice(0, spaceIdx);
+  const rest = line.slice(spaceIdx + 1);
+  const basenames: string[] = [];
+  // Walk basenames separated by single spaces. A basename is either an
+  // unquoted run of non-space characters, or a double-quoted run that may
+  // contain spaces. The unquoted case reads up to the next space; the quoted
+  // case reads until the matching close quote.
+  let i = 0;
+  while (i < rest.length) {
+    if (rest[i] === '"') {
+      const close = rest.indexOf('"', i + 1);
+      expect(close).toBeGreaterThan(i);
+      basenames.push(rest.slice(i + 1, close));
+      i = close + 1;
+    } else {
+      const next = rest.indexOf(" ", i);
+      if (next === -1) {
+        basenames.push(rest.slice(i));
+        i = rest.length;
+        continue;
+      }
+      basenames.push(rest.slice(i, next));
+      i = next;
+    }
+    // Between basenames: skip the single space. The next iteration's `while`
+    // guard handles end-of-string naturally.
+    if (i < rest.length) {
+      expect(rest[i]).toBe(" ");
+      i++;
+    }
+  }
+  return { dir, basenames };
+}
+
+describe("globTool — directory-grouped output", () => {
+  test("AC1: src/**/*.ts yields one group line per parent directory", async () => {
+    const res = await globTool.run({ pattern: "src/**/*.ts" }, ctx());
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toBe("src/ a.ts\nsrc/deep/ b.ts");
+  });
+
+  test("AC2: a file directly at the root is grouped under './'", async () => {
+    const res = await globTool.run({ pattern: "*.md" }, ctx());
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toBe("./ notes.md");
+  });
+
+  test("AC3: group lines are ordered by ascending directory prefix", async () => {
+    const res = await globTool.run({ pattern: "**/*.ts" }, ctx());
+    const lines = res.content.split("\n");
+    const idxSrc = lines.findIndex((l) => l.startsWith("src/ "));
+    const idxDeep = lines.findIndex((l) => l.startsWith("src/deep/ "));
+    expect(idxSrc).toBeGreaterThanOrEqual(0);
+    expect(idxDeep).toBeGreaterThanOrEqual(0);
+    expect(idxSrc).toBeLessThan(idxDeep);
+  });
+
+  test("AC4: basenames within a group are ordered ascending", async () => {
+    const res = await globTool.run({ pattern: "src/**" }, ctx());
+    const lines = res.content.split("\n");
+    // Two groups exist: "src/ a.ts" and "src/deep/ b.ts". The basenames on
+    // each line must be ascending within that line.
+    for (const line of lines) {
+      const { basenames } = parseGroupLine(line);
+      const sorted = [...basenames].sort();
+      expect(basenames).toEqual(sorted);
+    }
+  });
+
+  test("AC4 (extended): basenames are ordered ascending even when the disk order is shuffled", async () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "nax-glob-shuffle-"));
+    mkdirSync(join(fixtureRoot, "dir"), { recursive: true });
+    // Write in reverse order to make sure the sort is the renderer's doing.
+    writeFileSync(join(fixtureRoot, "dir", "c.ts"), "");
+    writeFileSync(join(fixtureRoot, "dir", "b.ts"), "");
+    writeFileSync(join(fixtureRoot, "dir", "a.ts"), "");
+    const res = await globTool.run(
+      { pattern: "**/*.ts" },
+      {
+        root: fixtureRoot,
+        resolvedPaths: [],
+        maxBytes: 10_000,
+        maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES,
+      },
+    );
+    expect(res.content).toBe("dir/ a.ts b.ts c.ts");
+  });
+
+  test("AC5: round-tripping through the group format reconstructs the matched set", async () => {
+    const res = await globTool.run({ pattern: "**/*" }, ctx());
+    expect(res.isError).toBeFalsy();
+    const reconstructed = new Set<string>();
+    for (const line of res.content.split("\n")) {
+      const { dir, basenames } = parseGroupLine(line);
+      for (const b of basenames) {
+        reconstructed.add(`${dir}${b}`);
+      }
+    }
+    expect(reconstructed).toEqual(
+      new Set(["./notes.md", "src/a.ts", "src/deep/b.ts", "docs/intro.md", "docs/release notes.md"]),
+    );
+  });
+
+  test("AC6: a basename with a space is wrapped in double quotes", async () => {
+    const res = await globTool.run({ pattern: "docs/*" }, ctx());
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toContain('"release notes.md"');
+    expect(res.content).toContain("intro.md");
+    // Line must remain unambiguously splittable: a quoted basename never
+    // leaks into the directory prefix, and the prefix still ends in "/".
+    const lines = res.content.split("\n");
+    expect(lines.length).toBe(1);
+    expect(lines[0].startsWith("docs/ ")).toBe(true);
+  });
+
+  test("AC7: a single match uses the same shape as a multi-match result", async () => {
+    const res = await globTool.run({ pattern: "src/a.ts" }, ctx());
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toBe("src/ a.ts");
+  });
+
+  test("AC8: no matches reports the pattern and is not an error", async () => {
+    const res = await globTool.run({ pattern: "**/*.py" }, ctx());
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toContain('no matches for "**/*.py"');
+  });
+
+  test("AC9: a pattern that climbs out yields 'no matches' with no '..' sequence", async () => {
+    const res = await globTool.run({ pattern: "../**/*" }, ctx());
+    expect(res.content).toBe("no matches");
+    expect(res.content).not.toContain("..");
+  });
+
+  test("AC10: more than 500 matches yield exactly 500 basenames across group lines", async () => {
+    const manyRoot = mkdtempSync(join(tmpdir(), "nax-glob-many-"));
+    mkdirSync(join(manyRoot, "dir"), { recursive: true });
+    // 600 files; the cap is 500, so 500 basenames must appear in the output.
+    for (let i = 0; i < 600; i++) {
+      writeFileSync(join(manyRoot, "dir", `f${i}.txt`), "");
+    }
+    const res = await globTool.run(
+      { pattern: "**/*.txt" },
+      {
+        root: manyRoot,
+        resolvedPaths: [],
+        maxBytes: 10_000_000,
+        maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES,
+      },
+    );
+    const lines = res.content.split("\n");
+    let total = 0;
+    for (const line of lines) {
+      const { basenames } = parseGroupLine(line);
+      total += basenames.length;
+    }
+    expect(total).toBe(500);
+  });
+
+  test("AC15: non-string pattern is rejected with the exact prior message and isError=true", async () => {
+    const res = await globTool.run({ pattern: 42 }, ctx());
+    expect(res).toEqual({ content: "pattern must be a string", isError: true });
+  });
+
+  test("AC15 (null): null pattern is rejected with the same message", async () => {
+    const res = await globTool.run({ pattern: null }, ctx());
+    expect(res).toEqual({ content: "pattern must be a string", isError: true });
+  });
+});
+
+describe("globTool — _globDeps.scan injection", () => {
+  test("AC11: a throwing _globDeps.scan surfaces the error as isError with its message", async () => {
+    _globDeps.scan = () => {
+      throw new Error("scan exploded");
+    };
+    const res = await globTool.run({ pattern: "src/**/*.ts" }, ctx());
+    expect(res.isError).toBe(true);
+    expect(res.content).toBe("scan exploded");
+  });
+
+  test("AC12: production scan is reached through _globDeps, not an inline Bun.Glob", async () => {
+    let calls = 0;
+    let received: { pattern: string; cwd: string; absolute: boolean } | undefined;
+    _globDeps.scan = (pattern, opts) => {
+      calls++;
+      received = { pattern, cwd: opts.cwd, absolute: opts.absolute };
+      // Yield a single hit so the rendering pipeline still runs end-to-end.
+      return (async function* () {
+        yield "src/a.ts";
+      })();
+    };
+    const ctxObj = ctx();
+    await globTool.run({ pattern: "src/**/*.ts" }, ctxObj);
+    expect(calls).toBe(1);
+    expect(received?.pattern).toBe("src/**/*.ts");
+    expect(received?.cwd).toBe(ctxObj.root);
+    expect(received?.absolute).toBe(false);
+  });
+});
+
+describe("globTool.description", () => {
+  test("AC13: advertises the grouped shape with sample 'path/to/ a.ts b.ts'", () => {
+    expect(globTool.description).toContain("path/to/ a.ts b.ts");
+  });
+
+  test("AC14: advertises existence probing with 'whether a path exists'", () => {
+    expect(globTool.description).toContain("whether a path exists");
+  });
+});
