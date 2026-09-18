@@ -119,18 +119,32 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     getLogger().warn("plan", "workdir canonicalization skipped", { error: errorMessage(err) });
   }
 
-  // nax#2125: a story the write seam stamped (workdirSource defined) should have
+  // nax#2125: a story THIS pass canonicalized (workdirSource defined) should have
   // every declared path already in the repo frame. Nothing on the happy path can
   // violate this -- canonicalizePrdWorkdirs reframes unconditionally -- so a
   // violation means a caller bypassed the seam or a reframing missed a field.
+  //
+  // nax#2080: only inspect stories this pass actually canonicalized. canonicalizePrdWorkdirs
+  // returns an out-of-`only` story by IDENTITY, and that story may carry a pre-PR3
+  // `workdirSource` stamp whose create-intent path the OLD existence-gated
+  // canonicalizer left workdir-relative. On a scoped write that is a legitimate
+  // legacy shape -- deliberately not reframed -- not a bypass or a missed field,
+  // so validating it would warn on exactly the legacy PRDs this change keeps
+  // loading. `args.scope` is therefore a filter here, not just a transformation
+  // guard. Unscoped writes (full `nax plan`) validate every stamped story.
+  //
   // Sits outside the try/catch so it inspects the final `canonical` whether or
   // not canonicalization threw, and returns rather than throws, so it needs no
   // error handling.
-  const nonCanonical = findNonCanonicalDeclaredPaths(canonical);
+  const scope = args.scope;
+  const canonicalizedThisPass = scope
+    ? canonical.userStories.filter((story) => scope.has(story.id))
+    : canonical.userStories;
+  const nonCanonical = findNonCanonicalDeclaredPaths({ ...canonical, userStories: canonicalizedThisPass });
   if (nonCanonical.length > 0) {
     getLogger().warn(
       "plan",
-      "declared paths remain outside the repo frame on a canonicalized story -- a caller bypassed canonicalizePrdWorkdirs or reframing missed a field",
+      "declared paths remain outside the repo frame on a story this pass canonicalized -- a caller bypassed canonicalizePrdWorkdirs, reframing missed a field, or a pre-PR3 workdirSource stamp was carried through",
       { nonCanonical },
     );
   }

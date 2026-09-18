@@ -207,9 +207,18 @@ export interface NonCanonicalDeclaredPath {
  * Plan-WRITE-time invariant check (design §4 PR3 bullet 3): every declared path
  * on a story that canonicalizePrdWorkdirs has stamped (workdirSource defined)
  * should already be in the repo frame -- a path is canonical iff re-applying
- * canonicalizeDeclaredPath to it is a no-op. This is NOT a PRD.parse()-time
- * schema rule: a legacy PRD (workdirSource undefined) is skipped entirely, so
- * hand-edited and pre-#2125 PRDs keep loading.
+ * canonicalizeDeclaredPath to it is a no-op.
+ *
+ * A violation is evidence, not proof of a bug. Two legitimate causes produce a
+ * non-canonical path on a stamped story: a PRD written before the single-frame
+ * redesign carries a `workdirSource` stamp from the OLD existence-gated
+ * canonicalizer while a create-intent path is still workdir-relative; and a
+ * scoped caller (nax plan --decompose) deliberately does not reframe the
+ * out-of-scope stories canonicalizePrdWorkdirs returns by identity. A caller
+ * that only wants the stories a given pass touched should pass just those (see
+ * finalizeAndWritePrd, nax#2080). This is NOT a PRD.parse()-time schema rule:
+ * a pre-#2125 PRD with no `workdirSource` at all is skipped entirely, so
+ * hand-edited and legacy PRDs keep loading.
  *
  * Returns violations rather than throwing -- the caller (finalizeAndWritePrd)
  * logs and continues, matching nax plan's recovery-tolerant contract

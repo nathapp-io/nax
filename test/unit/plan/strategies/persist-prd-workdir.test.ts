@@ -418,6 +418,39 @@ describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
     expect(parsed.project).toBe("decompose-project");
     expect(parsed.routingProfile).toBe("cross-agent");
   });
+
+  test("does not flag an out-of-scope pre-PR3 stamped story as non-canonical", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = (p: string) => p === "/repo/packages/app/src/b.ts";
+
+    // US-001 carries a `workdirSource` stamp from the OLD existence-gated
+    // canonicalizer, so its create-intent path is still workdir-relative --
+    // exactly the legacy shape this PR promises to keep loading. Only US-001-A
+    // is in scope this pass, so US-001 must not be inspected and must not trip
+    // the bypass warning.
+    const prd = makePRD({
+      userStories: [
+        makeStory({
+          id: "US-001",
+          status: "decomposed",
+          workdir: "packages/app",
+          workdirSource: "stated",
+          contextFiles: ["src/a.ts"],
+        }),
+        makeStory({ id: "US-001-A", parentStoryId: "US-001", workdir: "packages/app", contextFiles: ["src/b.ts"] }),
+      ],
+    });
+
+    const cap = captureWarnings();
+    try {
+      const parsed = await persistScoped(prd, new Set(["US-001-A"]));
+      expect(cap.calls.some((c) => c.message.includes("outside the repo frame"))).toBe(false);
+      // The legacy out-of-scope story is written through untouched.
+      expect(parsed.userStories.find((s) => s.id === "US-001")?.contextFiles).toEqual(["src/a.ts"]);
+    } finally {
+      cap.restore();
+    }
+  });
 });
 
 describe("finalizeAndWritePrd — non-canonical declared-path warning (single-frame redesign, nax#2125)", () => {
