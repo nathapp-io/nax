@@ -39,39 +39,41 @@ function packageLabel(root: string, repoRoot: string | undefined): string {
   return segments.slice(2).join("/");
 }
 
-export function buildAgentScopeSection(root: string | undefined, repoRoot: string | undefined): string | undefined {
+export function buildAgentScopeSection(
+  root: string | undefined,
+  repoRoot: string | undefined,
+  workdirLabel: string | undefined,
+): string | undefined {
   if (root === undefined || root.trim() === "") return undefined;
+  // Post-single-frame-redesign, root and repoRoot are always equal —
+  // packageLabel(root, repoRoot) always returns "". workdirLabel (the
+  // story's package-relative workdir, "." at the repo root) is the new
+  // source of "which package is this story in", threaded from the
+  // caller rather than derived from a root/repoRoot difference that no
+  // longer exists. See packageLabel's docblock for why it stays wired
+  // rather than deleted (PR 4 retires it alongside codingToolRepoRoot).
   const label = packageLabel(root, repoRoot);
+  void label; // retained call for PR 4's single-unit deletion; not rendered
 
-  if (label === "") {
+  const isRepoRootStory = workdirLabel === undefined || workdirLabel === "." || workdirLabel.trim() === "";
+
+  if (isRepoRootStory) {
     return [
       "## Your file scope",
       "",
       "Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at the repository root.",
-      "Every path you pass them is resolved from there, and nothing outside it can be opened.",
+      "Every path you pass them is resolved from there.",
     ].join("\n");
   }
 
-  const lines = [
+  return [
     "## Your file scope",
     "",
-    `Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at \`${label}\`, NOT at the repository root.`,
-    `Spell every path relative to that directory: write \`src/index.ts\`, never \`${label}/src/index.ts\`.`,
+    "Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at the repository root, NOT at your package.",
+    `Your story's package is \`${workdirLabel}\`. Spell every path repo-rooted from the repository root: write`,
+    `\`${workdirLabel}/src/index.ts\`, never \`src/index.ts\`.`,
     "",
-  ];
-  // Only a multi-segment label is safe to strip. A single-segment label (`api`)
-  // is indistinguishable from the first segment of a package-relative path, so
-  // the old unconditional rule deleted real prefixes: label `api`, path
-  // `api/openapi.yaml`, rewritten to `openapi.yaml` and not found. Prompt-
-  // embedded git output is package-relative as of nax#2101, so this now covers
-  // only repo-root-relative paths named elsewhere in the prompt.
-  if (label.includes("/")) {
-    lines.push(
-      `If a path you were given starts with \`${label}/\`, it is relative to the repository root — drop that prefix and use the rest.`,
-    );
-  }
-  lines.push(
-    "If it names a different package, your tools cannot open it — say so rather than guessing at its contents.",
-  );
-  return lines.join("\n");
+    `Declared commands (via RunCommand) still run inside \`${workdirLabel}\` — only the file tools' path frame changed.`,
+    "You can read and, per your write authorization, edit files outside your package if a task genuinely requires it — say so rather than guessing at another package's contents from its name alone.",
+  ].join("\n");
 }

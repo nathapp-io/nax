@@ -48,6 +48,22 @@ describe("promptWithToolPreamble", () => {
     expect(promptWithToolPreamble("native", bare)).toBe("hi");
     expect(promptWithToolPreamble("claude", bare)).toBe("hi");
   });
+
+  test("surfaces the story's package label in the scope block (single-frame PR2)", () => {
+    // Post-move root === repoRoot, so the package identity can only come from
+    // `codingToolWorkdirLabel`; both arms must carry it.
+    const scoped = makeOptions({
+      codingToolRoot: "/repo",
+      codingToolRepoRoot: "/repo",
+      codingToolWorkdirLabel: "packages/api",
+    });
+    for (const agent of ["native", "claude"]) {
+      const prompt = promptWithToolPreamble(agent, scoped);
+      expect(prompt).toContain("rooted at the repository root, NOT at your package");
+      expect(prompt).toContain("Your story's package is `packages/api`");
+      expect(prompt).toContain("`packages/api/src/index.ts`, never `src/index.ts`");
+    }
+  });
 });
 
 /**
