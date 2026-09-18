@@ -122,11 +122,16 @@ export const DEFAULT_LOG_MAX_COUNT = 20;
  *
  * `format:` rather than `tformat:` or the bare form: it places the separator
  * BETWEEN commits, so each --name-only file list stays grouped with the commit
- * that produced it instead of being orphaned after a blank line.
+ * that produced it instead of being orphaned after a blank line. Observed
+ * against a real repo, `format:%h %ad %s --name-only` renders the file list on
+ * the line directly after its commit's header; `tformat:` (which is what a bare
+ * `--format=` means) leaves a blank line between the two.
  *
- * `--date=short` pairs with it: `format:%h %ad %s` plus the default date form
- * would print an ISO-8601 timestamp, which is more noise than the compact line
- * is meant to carry.
+ * `--date=short` pairs with it: `%ad` renders in whatever form `--date`
+ * selects, and the default is the raw commit timestamp
+ * (`Thu Apr 7 15:13:13 2005 -0700`) -- more noise than the compact line is
+ * meant to carry. (`%ai`/`%as` would be the ISO-8601 spellings; neither is
+ * used here.)
  */
 export const DEFAULT_LOG_FORMAT = "format:%h %ad %s";
 
