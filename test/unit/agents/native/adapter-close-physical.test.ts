@@ -95,6 +95,19 @@ describe("native closePhysicalSession — run teardown reaches the session maps"
     expect(collectionsHolding(name)).toEqual([]);
   });
 
+  test("physical close removes a successful session's transcript", async () => {
+    const adapter = new NativeAgentAdapter();
+    const name = "nax-teardown-us-003-success";
+    await openNativeSession(name, openOpts());
+    await transcriptStore.saveTranscript(dir, name, []);
+
+    expect(await Bun.file(transcriptStore.transcriptPath(dir, name)).exists()).toBe(true);
+
+    await adapter.closePhysicalSession(name, dir);
+
+    expect(await Bun.file(transcriptStore.transcriptPath(dir, name)).exists()).toBe(false);
+  });
+
   test("a throwing transcript retain still clears every native map", async () => {
     const adapter = new NativeAgentAdapter();
     const name = "nax-throw-us-002-implementer";

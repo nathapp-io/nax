@@ -142,7 +142,7 @@ describe("postJson", () => {
       ].join("/");
       const deps: PostJsonDeps = {
         fetch: mockFetch(async () => {
-          throw new Error("boom");
+          throw new Error(`request to ${slackUrl} failed`);
         }),
       };
       const ok = await postJson(slackUrl, {}, { headers: {}, timeoutMs: 1000, stage: "test", deps });
@@ -152,6 +152,7 @@ describe("postJson", () => {
       expect(entry).toBeDefined();
       const payload = JSON.stringify(entry?.data);
       expect(payload).not.toContain(slackUrl);
+      expect(payload).not.toContain("T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX");
       expect(payload).toContain("https://hooks.slack.com");
     });
   });

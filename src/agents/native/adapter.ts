@@ -30,7 +30,6 @@ import {
   toThinkingLevel,
 } from "./models";
 import {
-  clearNativeSessionState,
   closeNativeSession,
   markNativeTurnOutcome,
   nativeSessionCompaction,
@@ -480,6 +479,6 @@ export class NativeAgentAdapter implements AgentAdapter {
     _workdir?: string,
     _options?: { force?: boolean; signal?: AbortSignal },
   ): Promise<void> {
-    clearNativeSessionState(handle);
+    return closeNativeSession({ id: handle, agentName: NATIVE_AGENT });
   }
 }

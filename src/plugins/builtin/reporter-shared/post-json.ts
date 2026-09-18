@@ -13,6 +13,12 @@ export const _postJsonDeps: PostJsonDeps = { fetch: globalThis.fetch };
  * correlate repeated failures to one endpoint, too few to recover the secret.
  */
 const URL_HASH_HEX_LENGTH = 12;
+const REDACTED_ENDPOINT = "[REDACTED_ENDPOINT]";
+
+/** Remove the configured endpoint from transport errors before they reach the logger. */
+function redactEndpointFromError(error: unknown, url: string): string {
+  return errorMessage(error).replaceAll(url, REDACTED_ENDPOINT);
+}
 
 /**
  * Log-safe descriptor for a webhook target.
@@ -64,7 +70,7 @@ export async function postJson(
   } catch (err) {
     logger?.warn(opts.stage, "Telemetry POST failed", {
       ...describeEndpoint(url),
-      error: errorMessage(err),
+      error: redactEndpointFromError(err, url),
     });
     return false;
   }

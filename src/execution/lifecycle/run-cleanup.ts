@@ -10,6 +10,7 @@
  * - Release lock
  */
 
+import { packageConfigCache } from "@/config";
 import { disposeFeatureResolver } from "@/context";
 import { _resetCanonicalRulesCache } from "@/context/engine";
 import { fireHook, type HookContext, type LoadedHooksConfig } from "@/hooks";
@@ -44,6 +45,7 @@ export const _runCleanupDeps = {
   clearWorkspaceCache,
   clearGitRootCache,
   resetCanonicalRulesCache: _resetCanonicalRulesCache,
+  clearPackageConfigCache: () => packageConfigCache.clear(),
 };
 
 export interface RunCleanupOptions {
@@ -284,6 +286,7 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   _runCleanupDeps.clearLanguageCache();
   _runCleanupDeps.clearWorkspaceCache();
   _runCleanupDeps.clearGitRootCache();
+  _runCleanupDeps.clearPackageConfigCache();
   // CTX-2: canonical-rules memoization joins the same per-run-cache-clear
   // convention as the caches above — without this, a long-lived in-process
   // consumer (embedded TUI, watch mode) would keep serving the first run's
