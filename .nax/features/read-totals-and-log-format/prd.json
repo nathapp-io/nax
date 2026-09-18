@@ -3,7 +3,7 @@
   "feature": "read-totals-and-log-format",
   "branchName": "feat/read-totals-and-log-format",
   "createdAt": "2026-09-15T00:00:00.000Z",
-  "updatedAt": "2026-09-18T02:55:01.684Z",
+  "updatedAt": "2026-09-18T03:14:13.876Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,8 +28,8 @@
         "bounded-io"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -91,7 +91,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "This is a small extension of the existing typed argv and schema patterns across the tool barrel and focused tests, with no new abstraction or external integration."
+        "reasoning": "This is a small extension of the existing typed argv and schema patterns across the tool barrel and focused tests, with no new abstraction or external integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/tools/git.ts",
@@ -103,7 +106,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "922f7cf88598e8d310cf01235ad4dec1c504dfdc"
     }
   ],
   "analysis": "This is an enhancement to two independent agent-facing TypeScript tools; the stories share no symbols or implementation dependency. `readTool.run`'s no-offset/no-limit branch at `src/tools/read.ts:67-71` currently returns only `truncate(await readPrefix(target, ctx.maxBytes), ctx.maxBytes)`. The ranged path at `src/tools/read.ts:73-111` supplies the line-splitting, trailing-newline, floor-label, range-header, and past-EOF patterns, but its empty-string split must not be copied as-is because an empty unranged file must report `[0 lines]`. `readPrefix` reads no more than maxBytes + 1 bytes (`src/utils/bounded-io.ts:18-25`), so the new path must preserve that work bound, determine overrun against `ctx.maxBytes` (not `ctx.maxFileBytes`), count an incomplete final line as part of the floor, and truncate header plus body together. `src/tools/grep.ts:172-177` establishes that an additive caveat must lead and be inside `truncate`; `test/unit/tools/buffering-ceilings.test.ts:32-51` guards the no-whole-file-read invariant. Extend and rename the obsolete no-range test in `test/unit/tools/read-glob.test.ts`; retain the existing range regressions. Unreadable approved files remain tool errors rather than denials (`src/tools/read.ts:112-115`).\n\n`buildGitArgv` in `src/tools/git.ts:190-267` is the sole argv builder used by `gitTool.run` (`src/tools/git.ts:327-328`). It uses `flagFromBoolean` (`src/tools/git.ts:169-188`) for typed, verb-gated boolean flags, places flags before refs, and applies the separate unscoped-log max-count default. Implement `fullMessage` through that same validation/gating pattern; reject a true `fullMessage` with true `oneline`; emit compact `--format` and `--date` only for log with neither explicit output mode. The schema at `src/tools/git.ts:291-314` needs the new boolean and corrected pathspec/nameOnly wording. `--format` and `--date` must not enter the escape-flag list defined by `src/tools/git-flags/index.ts:1-10`; the interceptor operates on argv arrays, not shell strings. Because the tool barrel has explicit exports (`src/tools/index.ts:8-17`), re-export `DEFAULT_LOG_FORMAT` there to meet the public import requirement. Extend `test/unit/tools/git-output-bounds.test.ts`; the pre-existing tail regression in `test/unit/tools/git.test.ts:157-160` remains compatible because new flags are before refs. No migration/configuration is needed: default log output intentionally changes to compact lines, and clients needing default git bodies use `fullMessage`. `show`, byte ceilings, execution/post-process ordering, and escape protections remain unchanged.\n\nAudit: all nine US-001 spec criteria are retained (50-line header/body, no-final-newline count, empty read, byte-ceiling floor and marker, tiny budget, ranged header, and past-EOF regression), plus the failure-table unreadable-file error case. All twelve US-002 criteria are retained: the first criterion is represented by the two observable required argv elements in a single criterion, followed by format ordering, both opt-outs and their contradiction/error paths, non-log isolation, nameOnly/path safety, schema exposure, maxCount composition, and exported-constant anchoring. Every criterion is observable from `readTool.run`, `buildGitArgv`, or `gitTool.inputSchema`; each story has negative-path criteria. The feature-level Out of Scope list is preserved verbatim below.",
