@@ -7,7 +7,7 @@
 
 import path from "node:path";
 import { groupStoriesByPackage } from "@/acceptance";
-import { loadConfigForWorkdir, type NaxConfig } from "@/config";
+import { loadConfigForPackage, type NaxConfig } from "@/config";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
@@ -104,7 +104,9 @@ export interface RunnerCompletionResult {
 export const _runnerCompletionDeps: {
   runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult>;
   handleRunCompletion(opts: RunCompletionOptions): Promise<RunCompletionResult>;
-  loadConfigForWorkdir(rootConfigPath: string, workdir?: string): Promise<NaxConfig>;
+  // `from` is required, so this call site cannot drop the run's --profile chain
+  // the way acceptance-setup's did (nax#2126).
+  loadConfigForPackage(projectDir: string, packageDir: string | undefined, from: NaxConfig): Promise<NaxConfig>;
   runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null>;
 } = {
   async runAcceptanceLoop(ctx) {
@@ -115,7 +117,7 @@ export const _runnerCompletionDeps: {
     const { handleRunCompletion } = await import("./lifecycle/run-completion");
     return handleRunCompletion(opts);
   },
-  loadConfigForWorkdir,
+  loadConfigForPackage,
   // Dynamic import (matching handleRunCompletion's own pattern above), not a
   // static one: the finish module imports the CLI barrel, and a static import
   // here would create a load-time cycle back through this module's own tree.
@@ -185,9 +187,10 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
 
               if (relativeWorkdir && relativeWorkdir !== ".") {
                 try {
-                  groupConfig = await _runnerCompletionDeps.loadConfigForWorkdir(
-                    path.join(options.workdir, ".nax", "config.json"),
+                  groupConfig = await _runnerCompletionDeps.loadConfigForPackage(
+                    options.workdir,
                     relativeWorkdir,
+                    options.config,
                   );
                 } catch (error) {
                   logger?.warn("execution", "Falling back to root config for package acceptance settings", {

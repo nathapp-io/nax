@@ -107,7 +107,7 @@ const origGitSpawn = _gitDeps.spawn;
 
 beforeEach(() => {
   _runnerCompletionDeps.handleRunCompletion = mock(async () => baseCompletionResult);
-  _runnerCompletionDeps.loadConfigForWorkdir = mock(async () =>
+  _runnerCompletionDeps.loadConfigForPackage = mock(async () =>
     makeNaxConfig({
       acceptance: { enabled: false },
       execution: { regressionGate: { mode: "disabled" } },
