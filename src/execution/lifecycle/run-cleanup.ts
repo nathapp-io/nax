@@ -11,6 +11,7 @@
  */
 
 import { disposeFeatureResolver } from "@/context";
+import { _resetCanonicalRulesCache } from "@/context/engine";
 import { fireHook, type HookContext, type LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
@@ -23,7 +24,10 @@ import type {
   PostRunContext,
 } from "@/plugins";
 import { countStories, type PRD } from "@/prd";
+import { clearLanguageCache } from "@/project";
+import { clearWorkspaceCache } from "@/test-runners/detect";
 import { errorMessage } from "@/utils/errors";
+import { clearGitRootCache } from "@/verification";
 import { resetRuntimeCrashRetryCounts } from "../escalation";
 import { releaseLock } from "../helpers";
 
@@ -33,7 +37,14 @@ type PostRunActionOutcome =
   | { status: "skipped"; reason: string }
   | { status: "error"; reason: string };
 
-export const _runCleanupDeps = { fireHook, resetRuntimeCrashRetryCounts };
+export const _runCleanupDeps = {
+  fireHook,
+  resetRuntimeCrashRetryCounts,
+  clearLanguageCache,
+  clearWorkspaceCache,
+  clearGitRootCache,
+  resetCanonicalRulesCache: _resetCanonicalRulesCache,
+};
 
 export interface RunCleanupOptions {
   runId: string;
@@ -265,6 +276,19 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   // BUG-15: clear the runtime-crash retry budget so the next run in this
   // process starts with a fresh budget (tests, watch mode).
   _runCleanupDeps.resetRuntimeCrashRetryCounts();
+
+  // MEM-7: clear per-run detection memos so subsequent runs in the same process
+  // start fresh. These live in the finally (cleanupRun), not in run-completion:
+  // completion is inside the runner try, so a throw out of setup or execution
+  // would otherwise leave all four process-lifetime memos stale.
+  _runCleanupDeps.clearLanguageCache();
+  _runCleanupDeps.clearWorkspaceCache();
+  _runCleanupDeps.clearGitRootCache();
+  // CTX-2: canonical-rules memoization joins the same per-run-cache-clear
+  // convention as the caches above — without this, a long-lived in-process
+  // consumer (embedded TUI, watch mode) would keep serving the first run's
+  // .nax/rules/ content to every subsequent run in the same process.
+  _runCleanupDeps.resetCanonicalRulesCache();
 
   // Always release lock, even if execution fails
   await releaseLock(workdir);

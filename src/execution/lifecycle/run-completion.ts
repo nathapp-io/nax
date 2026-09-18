@@ -10,7 +10,7 @@
 
 import { resolveDefaultAgent } from "@/agents";
 import type { NaxConfig } from "@/config";
-import { _resetCanonicalRulesCache, purgeStaleManifests } from "@/context/engine";
+import { purgeStaleManifests } from "@/context/engine";
 import { fireHook } from "@/hooks";
 import type { HooksConfig } from "@/hooks/types";
 import { getSafeLogger } from "@/logger";
@@ -19,12 +19,9 @@ import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";
-import { clearLanguageCache } from "@/project";
 import { totalSpendUsd } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import { purgeStaleScratch } from "@/session";
-import { clearWorkspaceCache } from "@/test-runners/detect";
-import { clearGitRootCache } from "@/verification";
 import type { DeferredReviewResult } from "../deferred-review";
 import type { ExitReason } from "../executor-types";
 import { closeAllRunSessions } from "../session-manager-runtime";
@@ -402,16 +399,6 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   if (options.pluginProviderCache) {
     await options.pluginProviderCache.disposeAll();
   }
-
-  // Clear per-run detection memos so subsequent runs in the same process start fresh.
-  clearLanguageCache();
-  clearWorkspaceCache();
-  clearGitRootCache();
-  // CTX-2: canonical-rules memoization joins the same per-run-cache-clear
-  // convention as the caches above — without this, a long-lived in-process
-  // consumer (embedded TUI, watch mode) would keep serving the first run's
-  // .nax/rules/ content to every subsequent run in the same process.
-  _resetCanonicalRulesCache();
 
   // Compute final story counts before emitting completion event (RL-002)
   const finalCounts = countStories(prd);
