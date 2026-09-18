@@ -11,10 +11,13 @@ this document, not the fix suggestions in the review doc where the two differ.**
 **Provenance of the citations below.** Every file:line referenced in a ruling was opened and read at
 `cf8c3baaa`, including on a third pass over this document itself, which corrected three of its own
 errors: the MEM-2 delegation did not typecheck, MEM-2 said "three maps" when there are nine, and
-SEC-9 said to import a constant that is module-private. Treat the code facts as proven. **One thing
-is explicitly NOT proven and is called out inline: whether `descriptor.handle` is populated for
-native sessions at teardown (MEM-2).** Verify that first - if it is not, the MEM-2 fix is inert and
-the design needs revisiting before you write it.
+SEC-9 said to import a constant that is module-private. Treat the code facts as proven.
+
+MEM-2's one open risk - whether `descriptor.handle` is populated for native sessions, without which
+the fix would be inert - **has since been closed empirically**: a probe against the real
+`SessionManager` and `NativeAgentAdapter` confirmed it is set, that it equals `handle.id`, and that
+the leak reproduces after `closeStory`. The output is recorded in the MEM-2 section and doubles as
+the failing-first test recipe. Nothing in this document is now unverified.
 
 ---
 
@@ -195,12 +198,43 @@ model already supports:
 `handle.id`) and the new `closePhysicalSession` (passing its `handle` string) call it. Do not
 reconstruct a synthetic `SessionHandle` just to satisfy the signature.
 
-**Verify before relying on it:** `session-manager-runtime.ts:10` returns early on
-`if (!descriptor.handle)`. Confirm a native session's descriptor actually carries `handle` at
-teardown - `manager.ts:493` sets it on the `openSession` create path, but `manager.ts:195`
-(`create({ handle: options.handle })`) allows it to be undefined. If it is ever undefined for native
-sessions, the new method is unreachable and the fix is inert, which is the defect class this finding
-is about in the first place.
+#### VERIFIED: `descriptor.handle` is populated, and the leak reproduces
+
+`session-manager-runtime.ts:10` returns early on `if (!descriptor.handle)`, so the whole fix hinges
+on that field being set for native sessions. **This was proven empirically**, not by reading: a probe
+drove the real `SessionManager` against the real `NativeAgentAdapter`, then called `closeStory`.
+
+```
+descriptor.handle                   = "nax-e12a329d-us-001-implementer"
+descriptor.handle === name          = true
+descriptor.handle === handle.id     = true      <- the exact key the nine maps use
+descriptor.state                    = "RUNNING"
+maps keyed by that exact string     = true
+native adapter.closePhysicalSession = "undefined"   <- the gap, confirmed
+AFTER closeStory: descriptor gone   = true
+AFTER closeStory: transcriptDirs LEAKED = true
+AFTER closeStory: timeouts LEAKED       = true
+AFTER closeStory: streamHooks LEAKED    = true
+```
+
+**Conclusions, all now proven:**
+1. The fix is **reachable** - `descriptor.handle` is set, so a native `closePhysicalSession` will be
+   called at teardown.
+2. `descriptor.handle === handle.id` exactly, which is why the string-keyed helper above is the right
+   shape rather than a workaround.
+3. The leak is **real and reproducible**: after `closeStory` the descriptor is gone while all the
+   native maps still hold the session.
+
+Why `handle` is always set where it matters: `_findByName` (`manager.ts:393-398`) matches on
+`session.handle === name`, so a descriptor created without a handle can never be found by name.
+`openSession` therefore always takes the `!existingDescriptor` branch for it and creates a fresh
+descriptor with `handle: name` (`manager.ts:493`), agent-agnostically. The one production `create()`
+that omits `handle` (`pipeline/stages/context.ts:83-90`, the context stage pre-allocating a scratch
+dir) yields a descriptor that stays in `CREATED` and never has a physical session - so the early
+return is *correct* for it, not a miss.
+
+**Use the reproduction above as your failing-first test**, asserting all nine maps rather than the
+three shown.
 
 #### The two parts
 
