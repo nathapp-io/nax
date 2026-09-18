@@ -147,7 +147,29 @@ describe("buildHopCallback — declared coding tools reach the agent", () => {
   test("advertises the operation's declared tools to the dispatched session", async () => {
     const { opts } = await dispatchOnce();
 
-    expect(opts.codingTools?.map((t) => t.name).sort()).toEqual(["Git", "Glob", "Grep", "Read"]);
+    // US-003 invariant: the operation's declaration is the ceiling on
+    // REPOSITORY tools, but the scratchpad tools are the universal layer
+    // appended on every op, so the advertised set contains the declared
+    // read/repo tools AND the three scratchpad tools, with no other
+    // repository tool. Closed-list form is replaced because the append at
+    // declaredWithProviders necessarily grows the set.
+    const advertised = opts.codingTools?.map((t) => t.name) ?? [];
+    // Declared repository tools reach the advertised set.
+    expect(advertised).toContain("Read");
+    expect(advertised).toContain("Glob");
+    expect(advertised).toContain("Grep");
+    expect(advertised).toContain("Git");
+    // Universal scratchpad layer.
+    expect(advertised).toContain("ScratchpadWrite");
+    expect(advertised).toContain("ScratchpadRead");
+    expect(advertised).toContain("ScratchpadList");
+    // No repository-mutating tool the op did not declare.
+    expect(advertised).not.toContain("Write");
+    expect(advertised).not.toContain("Edit");
+    expect(advertised).not.toContain("Delete");
+    expect(advertised).not.toContain("GitCommit");
+    expect(advertised).not.toContain("RunCommand");
+    expect(advertised).not.toContain("Exec");
   });
 
   test("installs an interaction handler with no bridge and no context pull tools", async () => {

@@ -475,7 +475,11 @@ export async function resolveCodingToolSupport(
           providerIdByTool: new Map<string, string>(),
           entries: [],
         };
-  const declaredWithProviders = [...declared, ...providerResult.tools.map((t) => t.name)] as readonly CodingToolName[];
+  const declaredWithProviders = [
+    ...declared,
+    ...providerResult.tools.map((t) => t.name),
+    ...(["ScratchpadWrite", "ScratchpadRead", "ScratchpadList"] as const),
+  ] as readonly CodingToolName[];
   // Logged before the empty-union return: a provider-only op whose only
   // provider failed must still say so, not vanish silently. A no-op when
   // providers were gated off (R12) and `failures` is empty.

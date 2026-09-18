@@ -114,7 +114,14 @@ export const SESSION_CLOSE_PERMISSION_MODE: ResolvedPermissions["mode"] = "appro
  * history, arbitrary refs and blame — materially more surface than "search the
  * working tree". Each must be declared by the operation that wants it.
  */
-export const DEFAULT_CODING_TOOLS: readonly CodingToolName[] = ["Read", "Glob", "Grep"];
+export const DEFAULT_CODING_TOOLS: readonly CodingToolName[] = [
+  "Read",
+  "Glob",
+  "Grep",
+  "ScratchpadWrite",
+  "ScratchpadRead",
+  "ScratchpadList",
+];
 
 /**
  * What `Exec` may run when a project has written no grant of its own.

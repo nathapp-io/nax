@@ -269,7 +269,26 @@ describe("createSessionRunHop — declared coding tools", () => {
       const hop = createSessionRunHop(sessionManager);
       await hop("claude", makeCodingRunOptions(root));
 
-      expect(seen?.codingTools?.map((t) => t.name).sort()).toEqual(["Git", "Glob", "Grep", "Read"]);
+      // US-003 invariant: the operation's declaration is the ceiling on
+      // REPOSITORY tools, but the scratchpad tools are the universal layer
+      // appended on every op, so the advertised set contains the declared
+      // read/repo tools AND the three scratchpad tools, with no other
+      // repository tool. Closed-list form is replaced because the append at
+      // declaredWithProviders necessarily grows the set.
+      const advertised = seen?.codingTools?.map((t) => t.name) ?? [];
+      // Declared repository tools reach the advertised set.
+      expect(advertised).toContain("Read");
+      expect(advertised).toContain("Glob");
+      expect(advertised).toContain("Grep");
+      expect(advertised).toContain("Git");
+      // Universal scratchpad layer.
+      expect(advertised).toContain("ScratchpadWrite");
+      expect(advertised).toContain("ScratchpadRead");
+      expect(advertised).toContain("ScratchpadList");
+      // No repository-mutating tool the op did not declare.
+      expect(advertised).not.toContain("Write");
+      expect(advertised).not.toContain("Edit");
+      expect(advertised).not.toContain("Delete");
       const response = await seen?.interactionHandler?.onInteraction({
         kind: "coding-tool",
         name: "Read",
