@@ -5,7 +5,6 @@
  */
 
 import type { UserStory } from "@/prd/types";
-import { storyWorkdir } from "@/utils/path-frame";
 import { buildModifiedFilesLines } from "./modified-files";
 import { buildOutOfScopeLines } from "./out-of-scope";
 
@@ -27,7 +26,7 @@ function outOfScopeLines(story: UserStory): string[] {
  * Rendered repo-rooted exactly as stored. nax's single-frame redesign roots the
  * agent's file tools (Read/Write/Edit/Grep/Git) at the repo root, so a
  * repo-rooted entry names the frame the agent can already address. The old
- * `toPackageFrame` re-spelling is gone; it existed only because a
+ * package-frame re-spelling is gone; it existed only because a
  * package-contained agent could not open a repo-rooted path, and that premise
  * no longer holds.
  *
@@ -36,30 +35,14 @@ function outOfScopeLines(story: UserStory): string[] {
  * is an authorisation list — dropping or marking an entry would revoke permission
  * the spec granted. `modifiedFiles` is passed through as stored because it is now
  * already repo-rooted, so there is no frame to correct and no entry to mark.
- *
- * `rootWorkdir` is kept as an unused parameter so this signature and every call
- * site survive unchanged; PR 4 deletes both. Its old batch-anchor rationale —
- * a batch prompt has exactly one agent root, the first story's package
- * (src/execution/story-selector.ts takes `storiesToExecute[0]`, and
- * src/operations/call.ts derives `codingToolRoot` from it), so a second story's
- * cross-package entry was re-spelled against that one root (nax#2085 H6) — is
- * now moot: repo-rooted entries are rendered as stored, so there is no frame to
- * pick and no single-root constraint to honour.
  */
-function modifiedFilesLines(story: UserStory, _rootWorkdir: string): string[] {
+function modifiedFilesLines(story: UserStory): string[] {
   const entries = story.modifiedFiles;
   if (!entries || entries.length === 0) return [];
-  // nax single-frame redesign PR 2: the agent's tools are now rooted at
-  // the repo root, so a repo-rooted modifiedFiles entry is passed through
-  // as stored — no package reframing. `_rootWorkdir` kept as a parameter
-  // (unused) so every call site and this function's signature survive
-  // unchanged until PR 4 deletes both; a bare rename would touch three
-  // call sites for a helper being deleted in the very next phase anyway.
   return buildModifiedFilesLines(entries);
 }
 
 export function buildBatchStorySection(stories: UserStory[]): string {
-  const rootWorkdir = stories.length > 0 ? storyWorkdir(stories[0] as UserStory) : ".";
   const storyBlocks = stories.map((story, i) => {
     const criteria = story.acceptanceCriteria.map((c, j) => `${j + 1}. ${c}`).join("\n");
     return [
@@ -70,7 +53,7 @@ export function buildBatchStorySection(stories: UserStory[]): string {
       "**Acceptance Criteria:**",
       criteria,
       ...outOfScopeLines(story),
-      ...modifiedFilesLines(story, rootWorkdir),
+      ...modifiedFilesLines(story),
     ].join("\n");
   });
 
@@ -109,7 +92,7 @@ export function buildStoryReminderSection(story: UserStory): string {
     "**Acceptance Criteria:**",
     criteria,
     ...outOfScopeLines(story),
-    ...modifiedFilesLines(story, storyWorkdir(story)),
+    ...modifiedFilesLines(story),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");
@@ -133,7 +116,7 @@ export function buildStorySection(story: UserStory): string {
     "**Acceptance Criteria:**",
     criteria,
     ...outOfScopeLines(story),
-    ...modifiedFilesLines(story, storyWorkdir(story)),
+    ...modifiedFilesLines(story),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");

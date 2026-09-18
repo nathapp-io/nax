@@ -2,19 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { buildAgentScopeSection } from "@/prompts/sections/agent-scope";
 
 /**
- * Single-frame redesign PR2: root === repoRoot after the move, so the package
- * identity comes from the new third parameter (`workdirLabel` =
+ * Single-frame redesign: the containment root is the repo/worktree root, so the
+ * package identity comes from the second parameter (`workdirLabel` =
  * `storyWorkdir(story)`), not from a root/repoRoot difference that no longer
  * exists. These tests render the section and assert its exact text.
  */
 describe("buildAgentScopeSection", () => {
   test("returns undefined when there is no root", () => {
-    expect(buildAgentScopeSection(undefined, "/repo", "packages/api")).toBeUndefined();
-    expect(buildAgentScopeSection("   ", "/repo", "packages/api")).toBeUndefined();
+    expect(buildAgentScopeSection(undefined, "packages/api")).toBeUndefined();
+    expect(buildAgentScopeSection("   ", "packages/api")).toBeUndefined();
   });
 
   test("roots a package story's tools at the repo root and spells paths repo-rooted", () => {
-    const out = buildAgentScopeSection("/repo", "/repo", "packages/api");
+    const out = buildAgentScopeSection("/repo", "packages/api");
     const expected = [
       "## Your file scope",
       "",
@@ -36,7 +36,7 @@ describe("buildAgentScopeSection", () => {
       "Every path you pass them is resolved from there.",
     ].join("\n");
     for (const label of [".", undefined, "   "] as const) {
-      expect(buildAgentScopeSection("/repo", "/repo", label)).toBe(expected);
+      expect(buildAgentScopeSection("/repo", label)).toBe(expected);
     }
   });
 });

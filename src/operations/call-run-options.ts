@@ -76,7 +76,6 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     ...(toolPatterns !== undefined ? { toolPatterns } : {}),
     codingToolRoot: storyExecRoot(ctx.packageView),
     ...(fileOutputPath !== undefined ? { codingToolFileOutput: fileOutputPath } : {}),
-    codingToolRepoRoot: storyExecRoot(ctx.packageView),
     // PR1 (single-frame redesign): thread the repo root and the story's
     // RELATIVE package dir independently of codingToolRoot, so
     // resolveCodingToolSupport can resolve declared commands' execution cwd

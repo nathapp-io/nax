@@ -234,9 +234,9 @@ export async function assembleForStage(
       extraProviderIds: stageOverrides?.extraProviderIds ?? [],
       // Path-frame convention (nax#2071): nax-internal path sets are
       // REPO-ROOTED. The PRD's declared paths pass through in the canonical repo
-      // frame; providers re-spell at their own output boundary (git-history.ts
-      // runs git in repoRoot; code-neighbor.ts partitions into the package frame
-      // in fetch()).
+      // frame; providers resolve against repoRoot and emit repo-rooted
+      // (git-history.ts runs git in repoRoot; code-neighbor.ts resolves and
+      // renders repo-rooted in fetch()).
       touchedFiles: options.touchedFiles ?? getContextFiles(ctx.story),
       ...(options.scopeFiles !== undefined && { scopeFiles: options.scopeFiles }),
       storyScratchDirs,

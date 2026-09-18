@@ -7,6 +7,7 @@
  *   storyWorkdir(story)          -> string, "." at the repo root
  *   storyPackageDir(story)       -> string | undefined, undefined at the root
  *   storyAbsWorkdir(root, story) -> absolute working directory
+ *   isWithinPackage(path, workdir) -> boolean, is a repo-rooted path inside that package
  *
  * Why the rule and not a set of patches (nax#2067, nax#2084): 19 raw reads
  * across 10 files used THREE different spellings of "absent" -- `?? ""`,

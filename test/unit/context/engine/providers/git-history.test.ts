@@ -206,9 +206,9 @@ describe("GitHistoryProvider — nax#2067 touchedFiles frame contract", () => {
     });
     expect(cwds[0]).toBe("/repo");
     expect(result.chunks).toHaveLength(1);
-    // H9: the heading is package-relative for the package-contained agent;
-    // scopePaths keeps the repo-rooted spelling the diff is matched against.
-    expect(result.chunks[0]?.content).toContain("### src/service.ts");
+    // Single-frame: the heading is repo-rooted and scopePaths shares the
+    // identical spelling.
+    expect(result.chunks[0]?.content).toContain("### packages/app/src/service.ts");
     expect(result.chunks[0]?.scopePaths).toEqual(["packages/app/src/service.ts"]);
   });
 
@@ -388,12 +388,10 @@ describe("GitHistoryProvider — worktree isolation (nax#2088 follow-up)", () =>
     });
 
     expect(result.chunks).toHaveLength(1);
-    // H9: content is re-spelled for the package-contained consumer; scopePaths
-    // stays repo-rooted so it still matches the repo-framed diff. Both are
-    // pinned on the SAME chunk, since sharing one string for both was the bug.
-    // (Supersedes the M-5 note that pinned the pre-H9 repo-rooted heading.)
-    expect(result.chunks[0]?.content).toContain("### src/service.ts");
-    expect(result.chunks[0]?.content).not.toContain("### packages/app/src/service.ts");
+    // Single-frame: content and scopePaths share one repo-rooted spelling.
+    // (Supersedes the M-5 note that pinned the pre-H9 repo-rooted heading, and
+    // the H9 note that split content/scopePaths.)
+    expect(result.chunks[0]?.content).toContain("### packages/app/src/service.ts");
     expect(result.chunks[0]?.scopePaths).toEqual(["packages/app/src/service.ts"]);
   });
 });

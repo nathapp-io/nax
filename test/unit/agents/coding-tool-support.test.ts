@@ -413,6 +413,42 @@ describe("buildCodingToolSupport — Exec grant selection (findLast)", () => {
   });
 });
 
+/**
+ * PR4 deletion: the redundant repo-root input field is gone, so
+ * `resolveCodingToolSupport` passes no explicit `repoRoot` and
+ * `buildCodingToolSupport`'s
+ * `args.repoRoot ?? args.root` fallback supplies the unified `codingToolRoot`.
+ * Pin that Exec's `target: "repoRoot"` still resolves at that root — the
+ * regression this deletion could otherwise hide.
+ */
+describe("resolveCodingToolSupport — repoRoot falls back to the unified root (PR4)", () => {
+  test("Exec target 'repoRoot' resolves at codingToolRoot with no separate repoRoot input", async () => {
+    const repo = makeTempDir("nax-reporoot-fallback-");
+    try {
+      const execution: Record<string, unknown> = {
+        permissionProfile: "unrestricted",
+        permissions: { run: { allow: ["Exec(pwd)"] } },
+      };
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["RunCommand", "Exec"],
+        codingToolRoot: repo,
+        pipelineStage: "run",
+        config: makeNaxConfig({ execution }),
+      });
+      const result = await support?.runtime.callTool("RunCommand", { argv: ["pwd"], target: "repoRoot" });
+      expect(result?.kind).toBe("ok");
+      if (result?.kind !== "ok") throw new Error("expected Exec to succeed");
+      const lines = result.content
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+      expect(lines).toContain(await realpathAsync(repo));
+    } finally {
+      cleanupTempDir(repo);
+    }
+  });
+});
+
 describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
   let logCalls: LogEntry[];
 

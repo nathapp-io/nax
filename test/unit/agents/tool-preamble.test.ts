@@ -54,7 +54,6 @@ describe("promptWithToolPreamble", () => {
     // `codingToolWorkdirLabel`; both arms must carry it.
     const scoped = makeOptions({
       codingToolRoot: "/repo",
-      codingToolRepoRoot: "/repo",
       codingToolWorkdirLabel: "packages/api",
     });
     for (const agent of ["native", "claude"]) {

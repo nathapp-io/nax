@@ -32,11 +32,7 @@ import type { AgentRunOptions } from "./types";
  */
 export function promptWithToolPreamble(agentName: string, options: AgentRunOptions): string {
   const base = agentName === NATIVE_AGENT ? options.prompt : buildContextToolPreamble(options);
-  const scope = buildAgentScopeSection(
-    options.codingToolRoot,
-    options.codingToolRepoRoot,
-    options.codingToolWorkdirLabel,
-  );
+  const scope = buildAgentScopeSection(options.codingToolRoot, options.codingToolWorkdirLabel);
   return scope === undefined ? base : `${scope}\n\n${base}`;
 }
 

@@ -1,15 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   isRootWorkdir,
+  isWithinPackage,
   normalizeWorkdir,
-  partitionPackageFrame,
   storyAbsWorkdir,
   storyPackageDir,
   storyWorkdir,
-  stripUnreadableMarker,
-  toPackageFrame,
   toRepoFrame,
-  UNREADABLE_MARKER,
 } from "@/utils/path-frame";
 
 describe("normalizeWorkdir", () => {
@@ -67,56 +64,35 @@ describe("toRepoFrame", () => {
   });
 });
 
-describe("toPackageFrame", () => {
-  test("is identity at root", () => {
-    expect(toPackageFrame("packages/app/src/index.ts", ".")).toBe("packages/app/src/index.ts");
+describe("isWithinPackage", () => {
+  test("rejects a sibling package that shares a name prefix", () => {
+    // The exact boundary defect that recurred three times: "packages/application"
+    // must not be read as "packages/app" + "lication".
+    expect(isWithinPackage("packages/application/src/x.ts", "packages/app")).toBe(false);
   });
 
-  test("strips the package prefix", () => {
-    expect(toPackageFrame("packages/app/src/index.ts", "packages/app")).toBe("src/index.ts");
+  test("accepts a file beneath the package", () => {
+    expect(isWithinPackage("packages/app/src/x.ts", "packages/app")).toBe(true);
   });
 
-  test("returns null for a path outside the package", () => {
-    expect(toPackageFrame("packages/lib/src/util.ts", "packages/app")).toBeNull();
+  test("accepts the package directory itself", () => {
+    // Intentional semantic delta from the deleted package-frame translation,
+    // which returned null for the package dir itself.
+    expect(isWithinPackage("packages/app", "packages/app")).toBe(true);
   });
 
-  test("returns null on a sibling whose name shares a prefix", () => {
-    expect(toPackageFrame("packages/application/src/x.ts", "packages/app")).toBeNull();
-  });
-
-  test("returns null for the package directory itself", () => {
-    expect(toPackageFrame("packages/app", "packages/app")).toBeNull();
-  });
-});
-
-describe("UNREADABLE_MARKER", () => {
-  test("is the exact string the fragment reframe already ships", () => {
-    expect(UNREADABLE_MARKER).toBe(" (other package - not readable from this story's workdir)");
-  });
-
-  test("is ASCII only", () => {
-    // Rendered into agent prompts and compared byte-for-byte; an em dash here
-    // would silently change every marked line.
-    expect(/^[\x20-\x7E]*$/.test(UNREADABLE_MARKER)).toBe(true);
+  test.each([["."], [undefined], [""]])("treats repo-root workdir %p as containing every path", (workdir) => {
+    expect(isWithinPackage("src/a.ts", workdir as string | null | undefined)).toBe(true);
   });
 });
 
-describe("stripUnreadableMarker", () => {
-  test("strips the marker from a marked path", () => {
-    expect(stripUnreadableMarker(`packages/lib/src/x.ts${UNREADABLE_MARKER}`)).toBe("packages/lib/src/x.ts");
-  });
-
-  test("leaves an unmarked path unchanged", () => {
-    expect(stripUnreadableMarker("src/index.ts")).toBe("src/index.ts");
-  });
-
-  test("returns the empty string when the value is only the marker", () => {
-    expect(stripUnreadableMarker(UNREADABLE_MARKER)).toBe("");
-  });
-
-  test("does not strip a marker that appears as a substring, not a suffix", () => {
-    const value = `${UNREADABLE_MARKER}src/index.ts`;
-    expect(stripUnreadableMarker(value)).toBe(value);
+describe("module export surface (single-frame redesign)", () => {
+  test("exposes toRepoFrame as the only frame primitive and no marker helper", async () => {
+    const keys = Object.keys(await import("@/utils/path-frame"));
+    // Catch any new *Frame* primitive, not only those ending in "Frame"
+    // (a reintroduced package-frame file helper must fail this pin).
+    expect(keys.filter((k) => k.includes("Frame"))).toEqual(["toRepoFrame"]);
+    expect(keys.filter((k) => /marker/i.test(k))).toEqual([]);
   });
 });
 
@@ -149,50 +125,5 @@ describe("storyAbsWorkdir", () => {
 
   test.each([[{}], [{ workdir: "." }]])("returns the root unchanged for %p", (story) => {
     expect(storyAbsWorkdir("/repo", story)).toBe("/repo");
-  });
-});
-
-describe("partitionPackageFrame (nax#2089)", () => {
-  test("re-spells an in-package path into readable", () => {
-    expect(partitionPackageFrame(["packages/api/src/client.ts"], "packages/api", { canonical: true })).toEqual({
-      readable: ["src/client.ts"],
-      unreachable: [],
-    });
-  });
-
-  test("routes a repo-root path to unreachable instead of emitting a wrong path", () => {
-    expect(partitionPackageFrame(["package.json"], "packages/api", { canonical: true })).toEqual({
-      readable: [],
-      unreachable: ["package.json"],
-    });
-  });
-
-  test("routes a sibling-package path to unreachable", () => {
-    expect(partitionPackageFrame(["packages/web/src/x.ts"], "packages/api", { canonical: true })).toEqual({
-      readable: [],
-      unreachable: ["packages/web/src/x.ts"],
-    });
-  });
-
-  test("preserves input order within readable", () => {
-    expect(
-      partitionPackageFrame(["packages/api/b.ts", "package.json", "packages/api/a.ts"], "packages/api", {
-        canonical: true,
-      }),
-    ).toEqual({ readable: ["b.ts", "a.ts"], unreachable: ["package.json"] });
-  });
-
-  test("root workdir is identity and never routes to unreachable", () => {
-    expect(partitionPackageFrame(["package.json"], ".", { canonical: true })).toEqual({
-      readable: ["package.json"],
-      unreachable: [],
-    });
-  });
-
-  test("non-canonical mode keeps the legacy passthrough", () => {
-    expect(partitionPackageFrame(["package.json"], "packages/api")).toEqual({
-      readable: ["package.json"],
-      unreachable: [],
-    });
   });
 });
