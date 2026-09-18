@@ -47,16 +47,7 @@ beforeAll(() => {
   symlinkSync(outside, join(scratchpad, "escape-link"));
 });
 
-// `confineTo` is the new field this story adds; the type's definition lives in
-// `src/tools/types.ts` and is updated by the implementer. Until then, the
-// intersection type below keeps the test file compiling under the strict
-// `tsconfig.test.json` gate without falling back to the ratchet-forbidden
-// double-cast form -- the property is just absent on the public type, not
-// private, and once added it is narrower than `ToolScope & { confineTo }`
-// (which still type-checks).
-type ToolScopeWithConfineTo = ToolScope & { confineTo: string };
-
-function confinedScope(): ToolScopeWithConfineTo {
+function confinedScope(): ToolScope {
   return { pathFields: ["path"], confineTo: ".nax/scratchpad" };
 }
 
@@ -215,5 +206,82 @@ describe("AC8: the same deny rule allows a confined non-secret path", () => {
     });
     const verdict = policy.check("ScratchpadWrite", confinedScope(), { path: "notes.md" });
     expect(verdict.allowed).toBe(true);
+  });
+});
+
+/**
+ * The ACs above pin `pathFields: ["path"]`, but `pathsBranch` has four
+ * path-bearing loops (pathFields, listPathFields, arrayPathFields,
+ * refPathFields) plus a `pathListElements` call that takes the confined root
+ * as its anchor. Each loop is a separate chance to forget the shift; a
+ * regression that drops `effectiveRoot` from any one of them would be a
+ * containment hole no AC above would catch. The tests below exercise each
+ * branch with the same shape of input -- a path that exists inside the
+ * confined directory AND an absolute path inside the policy root but OUTSIDE
+ * the confined directory, which is refused iff the branch is correctly
+ * anchored to `effectiveRoot` (pre-feature and the regression both resolve
+ * against `resolvedRoot`, which sits above the confined directory and so
+ * accepts that absolute path).
+ */
+describe("confinement applies to the listPathFields branch", () => {
+  test("a single-token listPathField value resolves against the confined directory", () => {
+    const scope: ToolScope = { pathFields: [], listPathFields: ["files"], confineTo: ".nax/scratchpad" };
+    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["*"] }], root);
+    const verdict = policy.check("Bulk", scope, { files: "notes.md" });
+    expect(verdict.allowed).toBe(true);
+    if (!verdict.allowed) throw new Error("unreachable");
+    // The resolved path sits under the confined directory, not the policy
+    // root -- a regression that anchors this branch to resolvedRoot would
+    // resolve to <root>/notes.md (inside policy root, outside confined dir).
+    expect(verdict.resolvedPaths).toEqual([join(policy.root, ".nax", "scratchpad", "notes.md")]);
+  });
+
+  test("an absolute listPathField value inside the policy root but outside the confined directory is a breach", () => {
+    const scope: ToolScope = { pathFields: [], listPathFields: ["files"], confineTo: ".nax/scratchpad" };
+    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["*"] }], root);
+    const verdict = policy.check("Bulk", scope, { files: join(root, "src", "index.ts") });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed) throw new Error("unreachable");
+    expect(verdict.breach).toBe(true);
+  });
+});
+
+describe("confinement applies to the arrayPathFields branch", () => {
+  test("an arrayPathField element resolves against the confined directory", () => {
+    const scope: ToolScope = { pathFields: [], arrayPathFields: ["paths"], confineTo: ".nax/scratchpad" };
+    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["*"] }], root);
+    const verdict = policy.check("Bulk", scope, { paths: ["notes.md"] });
+    expect(verdict.allowed).toBe(true);
+    if (!verdict.allowed) throw new Error("unreachable");
+    expect(verdict.resolvedPaths).toEqual([join(policy.root, ".nax", "scratchpad", "notes.md")]);
+  });
+
+  test("an absolute arrayPathField element inside the policy root but outside the confined directory is a breach", () => {
+    const scope: ToolScope = { pathFields: [], arrayPathFields: ["paths"], confineTo: ".nax/scratchpad" };
+    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["*"] }], root);
+    const verdict = policy.check("Bulk", scope, { paths: [join(root, "src", "index.ts")] });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed) throw new Error("unreachable");
+    expect(verdict.breach).toBe(true);
+  });
+});
+
+describe("confinement applies to the refPathFields branch", () => {
+  test("the path half of a rev:path ref resolves against the confined directory", () => {
+    const scope: ToolScope = { pathFields: [], refPathFields: ["refs"], confineTo: ".nax/scratchpad" };
+    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["*"] }], root);
+    const verdict = policy.check("Bulk", scope, { refs: ["HEAD:notes.md"] });
+    expect(verdict.allowed).toBe(true);
+    if (!verdict.allowed) throw new Error("unreachable");
+    expect(verdict.resolvedPaths).toEqual([join(policy.root, ".nax", "scratchpad", "notes.md")]);
+  });
+
+  test("an absolute refPathField path inside the policy root but outside the confined directory is a breach", () => {
+    const scope: ToolScope = { pathFields: [], refPathFields: ["refs"], confineTo: ".nax/scratchpad" };
+    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["*"] }], root);
+    const verdict = policy.check("Bulk", scope, { refs: [`HEAD:${join(root, "src", "index.ts")}`] });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed) throw new Error("unreachable");
+    expect(verdict.breach).toBe(true);
   });
 });
