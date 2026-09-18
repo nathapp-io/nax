@@ -27,7 +27,7 @@ function outOfScopeLines(story: UserStory): string[] {
  * Rendered repo-rooted exactly as stored. nax's single-frame redesign roots the
  * agent's file tools (Read/Write/Edit/Grep/Git) at the repo root, so a
  * repo-rooted entry names the frame the agent can already address. The old
- * `toPackageFrame` re-spelling is gone; it existed only because a
+ * package-frame re-spelling is gone; it existed only because a
  * package-contained agent could not open a repo-rooted path, and that premise
  * no longer holds.
  *

@@ -351,11 +351,12 @@ export interface ContextRequest {
   /**
    * True when `touchedFiles` came through the plan-time write seam
    * (`story.workdirSource !== undefined`, src/prd/workdir-canonical.ts) and
-   * so may be safely partitioned with `partitionPackageFrame`'s
-   * `canonical: true` (src/utils/path-frame.ts) — treating a toPackageFrame
-   * MISS as a real, droppable cross-package path rather than passing it
-   * through as a path that would resolve to a real but WRONG file under
-   * this package (H7, path-frame follow-up to #2089).
+   * so is known repo-rooted: every path is in-frame, and an entry lying
+   * outside this package is genuinely repo-rooted rather than an ambiguous
+   * pre-#2067 legacy spelling. Consumers use this to skip collision/ambiguity
+   * handling — a MISS is a real, droppable cross-package path rather than a
+   * path that would resolve to a real but WRONG file under this package
+   * (H7, path-frame follow-up to #2089).
    *
    * Populated at the same two producer sites as `storyWorkdir`. Omit (or
    * leave false) rather than default it to `true`: an unbacked assertion

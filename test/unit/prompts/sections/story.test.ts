@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
 import type { UserStory } from "@/prd/types";
 import { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "@/prompts/sections/story";
-import { UNREADABLE_MARKER } from "@/utils/path-frame";
 
 describe("buildStorySection", () => {
   const mockStory = makeStory({
@@ -234,7 +233,6 @@ describe("modifiedFiles rendered repo-rooted as stored (single-frame PR 2)", () 
       }),
     );
     expect(rendered).toContain("- `packages/web/src/x.ts` — neighbour change");
-    expect(rendered).not.toContain(UNREADABLE_MARKER);
   });
 
   test("leaves a root story's entries unchanged", () => {

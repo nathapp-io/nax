@@ -2,14 +2,10 @@ import { describe, expect, test } from "bun:test";
 import {
   isRootWorkdir,
   normalizeWorkdir,
-  partitionPackageFrame,
   storyAbsWorkdir,
   storyPackageDir,
   storyWorkdir,
-  stripUnreadableMarker,
-  toPackageFrame,
   toRepoFrame,
-  UNREADABLE_MARKER,
 } from "@/utils/path-frame";
 
 describe("normalizeWorkdir", () => {
@@ -65,58 +61,13 @@ describe("toRepoFrame", () => {
   test("normalizes a leading ./ on the input path", () => {
     expect(toRepoFrame("./src/index.ts", "packages/app")).toBe("packages/app/src/index.ts");
   });
-});
 
-describe("toPackageFrame", () => {
-  test("is identity at root", () => {
-    expect(toPackageFrame("packages/app/src/index.ts", ".")).toBe("packages/app/src/index.ts");
-  });
-
-  test("strips the package prefix", () => {
-    expect(toPackageFrame("packages/app/src/index.ts", "packages/app")).toBe("src/index.ts");
-  });
-
-  test("returns null for a path outside the package", () => {
-    expect(toPackageFrame("packages/lib/src/util.ts", "packages/app")).toBeNull();
-  });
-
-  test("returns null on a sibling whose name shares a prefix", () => {
-    expect(toPackageFrame("packages/application/src/x.ts", "packages/app")).toBeNull();
-  });
-
-  test("returns null for the package directory itself", () => {
-    expect(toPackageFrame("packages/app", "packages/app")).toBeNull();
-  });
-});
-
-describe("UNREADABLE_MARKER", () => {
-  test("is the exact string the fragment reframe already ships", () => {
-    expect(UNREADABLE_MARKER).toBe(" (other package - not readable from this story's workdir)");
-  });
-
-  test("is ASCII only", () => {
-    // Rendered into agent prompts and compared byte-for-byte; an em dash here
-    // would silently change every marked line.
-    expect(/^[\x20-\x7E]*$/.test(UNREADABLE_MARKER)).toBe(true);
-  });
-});
-
-describe("stripUnreadableMarker", () => {
-  test("strips the marker from a marked path", () => {
-    expect(stripUnreadableMarker(`packages/lib/src/x.ts${UNREADABLE_MARKER}`)).toBe("packages/lib/src/x.ts");
-  });
-
-  test("leaves an unmarked path unchanged", () => {
-    expect(stripUnreadableMarker("src/index.ts")).toBe("src/index.ts");
-  });
-
-  test("returns the empty string when the value is only the marker", () => {
-    expect(stripUnreadableMarker(UNREADABLE_MARKER)).toBe("");
-  });
-
-  test("does not strip a marker that appears as a substring, not a suffix", () => {
-    const value = `${UNREADABLE_MARKER}src/index.ts`;
-    expect(stripUnreadableMarker(value)).toBe(value);
+  test("is the only re-framing primitive exported by the module", async () => {
+    const mod = await import("@/utils/path-frame");
+    expect(Object.keys(mod)).not.toContain("toPackageFrame");
+    expect(Object.keys(mod)).not.toContain("partitionPackageFrame");
+    expect(Object.keys(mod)).not.toContain("UNREADABLE_MARKER");
+    expect(Object.keys(mod)).not.toContain("stripUnreadableMarker");
   });
 });
 
@@ -149,50 +100,5 @@ describe("storyAbsWorkdir", () => {
 
   test.each([[{}], [{ workdir: "." }]])("returns the root unchanged for %p", (story) => {
     expect(storyAbsWorkdir("/repo", story)).toBe("/repo");
-  });
-});
-
-describe("partitionPackageFrame (nax#2089)", () => {
-  test("re-spells an in-package path into readable", () => {
-    expect(partitionPackageFrame(["packages/api/src/client.ts"], "packages/api", { canonical: true })).toEqual({
-      readable: ["src/client.ts"],
-      unreachable: [],
-    });
-  });
-
-  test("routes a repo-root path to unreachable instead of emitting a wrong path", () => {
-    expect(partitionPackageFrame(["package.json"], "packages/api", { canonical: true })).toEqual({
-      readable: [],
-      unreachable: ["package.json"],
-    });
-  });
-
-  test("routes a sibling-package path to unreachable", () => {
-    expect(partitionPackageFrame(["packages/web/src/x.ts"], "packages/api", { canonical: true })).toEqual({
-      readable: [],
-      unreachable: ["packages/web/src/x.ts"],
-    });
-  });
-
-  test("preserves input order within readable", () => {
-    expect(
-      partitionPackageFrame(["packages/api/b.ts", "package.json", "packages/api/a.ts"], "packages/api", {
-        canonical: true,
-      }),
-    ).toEqual({ readable: ["b.ts", "a.ts"], unreachable: ["package.json"] });
-  });
-
-  test("root workdir is identity and never routes to unreachable", () => {
-    expect(partitionPackageFrame(["package.json"], ".", { canonical: true })).toEqual({
-      readable: ["package.json"],
-      unreachable: [],
-    });
-  });
-
-  test("non-canonical mode keeps the legacy passthrough", () => {
-    expect(partitionPackageFrame(["package.json"], "packages/api")).toEqual({
-      readable: ["package.json"],
-      unreachable: [],
-    });
   });
 });
