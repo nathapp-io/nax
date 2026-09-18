@@ -26,12 +26,13 @@ import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
 import { buildAcceptanceRunCommand, generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
-import { loadConfigForWorkdir } from "@/config";
+import { loadConfigForPackage } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
 import { isInAcceptanceScope } from "@/prd";
+import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
 import { storyAbsWorkdir } from "@/utils/path-frame";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
@@ -150,9 +151,8 @@ export const _acceptanceSetupDeps = {
     return Bun.file(filePath).text();
   },
   autoCommitIfDirty: _autoCommitIfDirty,
-  loadGroupConfig: async (projectDir: string, relativeWorkdir: string): Promise<NaxConfig> => {
-    return loadConfigForWorkdir(path.join(projectDir, ".nax", "config.json"), relativeWorkdir || undefined);
-  },
+  // loadConfigForPackage's required `from` keeps the --profile chain (nax#2126).
+  loadGroupConfig: loadConfigForPackage,
   runTest: async (
     _testPath: string,
     _workdir: string,
@@ -260,9 +260,10 @@ async function runAcceptanceSetup(
     let config = ctx.config;
     if (relativeWorkdir && relativeWorkdir !== ".") {
       try {
-        config = await _acceptanceSetupDeps.loadGroupConfig(ctx.projectDir, relativeWorkdir);
-      } catch {
-        config = ctx.config;
+        config = await _acceptanceSetupDeps.loadGroupConfig(ctx.projectDir, relativeWorkdir, ctx.config);
+      } catch (err) {
+        const data = { storyId: "_setup", packageDir: relativeWorkdir, error: errorMessage(err) };
+        getSafeLogger()?.warn("acceptance-setup", "Package config failed to load — using root config", data);
       }
     }
     groupConfigs.set(group.packageDir, config);

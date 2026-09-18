@@ -97,7 +97,7 @@ const origDeps = { ..._runnerCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.handleRunCompletion = mock(async () => defaultCompletionResult);
-  _runnerCompletionDeps.loadConfigForWorkdir = mock(async () => acceptanceConfig());
+  _runnerCompletionDeps.loadConfigForPackage = mock(async () => acceptanceConfig());
   pipelineEventBus.clear();
 });
 

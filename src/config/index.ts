@@ -12,6 +12,7 @@ export type { ConfigLoader } from "./loader-runtime";
 export { createConfigLoader } from "./loader-runtime";
 export { mergePackageConfig } from "./merge";
 export { deepMergeConfig } from "./merger";
+export { loadConfigForPackage } from "./package-config";
 export { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFilePath } from "./path-security";
 export {
   featureDir,

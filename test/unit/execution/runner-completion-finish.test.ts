@@ -107,7 +107,7 @@ const origDeps = { ..._runnerCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.handleRunCompletion = mock(async () => defaultCompletionResult);
-  _runnerCompletionDeps.loadConfigForWorkdir = mock(async () => makeConfig(true));
+  _runnerCompletionDeps.loadConfigForPackage = mock(async () => makeConfig(true));
 });
 
 afterEach(() => {

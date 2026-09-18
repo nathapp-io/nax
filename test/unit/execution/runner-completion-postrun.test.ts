@@ -109,7 +109,7 @@ const origDeps = { ..._runnerCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.handleRunCompletion = mock(async () => defaultCompletionResult);
-  _runnerCompletionDeps.loadConfigForWorkdir = mock(async () => makeConfig(true));
+  _runnerCompletionDeps.loadConfigForPackage = mock(async () => makeConfig(true));
 });
 
 afterEach(() => {
@@ -473,7 +473,7 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
   test("loads per-package config and forwards commandOverride/testFramework", async () => {
     let capturedCtx: Parameters<typeof _runnerCompletionDeps.runAcceptanceLoop>[0] | undefined;
 
-    const loadConfigForWorkdirMock = mock(async (_rootConfigPath: string, relativeWorkdir?: string) => {
+    const loadConfigForPackageMock = mock(async (_projectDir: string, relativeWorkdir?: string) => {
       if (relativeWorkdir === "apps/api") {
         return makeNaxConfig({
           acceptance: { enabled: true, command: "npx jest --config jest.nax.config.js {{FILE}}" },
@@ -490,7 +490,7 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
       }
       return makeConfig(true);
     });
-    _runnerCompletionDeps.loadConfigForWorkdir = loadConfigForWorkdirMock;
+    _runnerCompletionDeps.loadConfigForPackage = loadConfigForPackageMock;
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx): Promise<AcceptanceLoopResult> => {
       capturedCtx = ctx;
@@ -527,23 +527,67 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
 
     const paths = capturedCtx?.acceptanceTestPaths ?? [];
     expect(paths.length).toBe(2);
-    expect(loadConfigForWorkdirMock).toHaveBeenCalledTimes(2);
+    expect(loadConfigForPackageMock).toHaveBeenCalledTimes(2);
     expect(paths[0]?.commandOverride).toBe("npx jest --config jest.nax.config.js {{FILE}}");
     expect(paths[0]?.testFramework).toBe("jest");
     expect(paths[1]?.commandOverride).toBe("pnpm vitest run {{FILE}}");
     expect(paths[1]?.testFramework).toBe("vitest");
   });
 
+  // nax#2126 — the sibling defect. This site resolves its per-package config the
+  // same way acceptance-setup does, and dropping the run config here would drop
+  // the --profile chain with it. Passing `options.config` as `from` is what
+  // loadConfigForPackage turns into the profile override, so pin the argument.
+  test("passes the run config as `from`, so the --profile chain reaches the group config", async () => {
+    const seenFrom: Array<{ projectDir: string; packageDir: string | undefined; from: NaxConfig }> = [];
+    _runnerCompletionDeps.loadConfigForPackage = mock(async (projectDir, packageDir, from) => {
+      seenFrom.push({ projectDir, packageDir, from });
+      return makeConfig(true);
+    });
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (ctx): Promise<AcceptanceLoopResult> => ({
+        success: true,
+        prd: ctx.prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+      }),
+    );
+
+    const prd: PRD = {
+      project: "proj",
+      feature: "profile-chain",
+      branchName: "feat/profile-chain",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [{ ...makeStory("US-001", "passed"), workdir: "apps/api" }],
+    };
+    const config = makeConfig(true);
+    config.profileChain = ["fixture-native"];
+    const opts: RunnerCompletionOptions = {
+      ...makeOpts(config, prd, makeStatusWriter()),
+      featureDir: `${WORKDIR}/.nax/features/profile-chain`,
+    };
+
+    await runCompletionPhase(opts);
+
+    expect(seenFrom.length).toBe(1);
+    expect(seenFrom[0]?.projectDir).toBe(WORKDIR);
+    expect(seenFrom[0]?.packageDir).toBe("apps/api");
+    expect(seenFrom[0]?.from.profileChain).toEqual(["fixture-native"]);
+  });
+
   test("falls back to root config when per-package config load fails", async () => {
     let capturedCtx: Parameters<typeof _runnerCompletionDeps.runAcceptanceLoop>[0] | undefined;
 
-    const loadConfigForWorkdirMock = mock(async (_rootConfigPath: string, relativeWorkdir?: string) => {
+    const loadConfigForPackageMock = mock(async (_projectDir: string, relativeWorkdir?: string) => {
       if (relativeWorkdir === "apps/api") {
         throw new Error("simulated read failure");
       }
       return makeConfig(true);
     });
-    _runnerCompletionDeps.loadConfigForWorkdir = loadConfigForWorkdirMock;
+    _runnerCompletionDeps.loadConfigForPackage = loadConfigForPackageMock;
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx): Promise<AcceptanceLoopResult> => {
       capturedCtx = ctx;
@@ -593,7 +637,7 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
   test("US-003 AC-11: acceptanceEnabled is resolved from the package's config, not the root", async () => {
     let capturedCtx: Parameters<typeof _runnerCompletionDeps.runAcceptanceLoop>[0] | undefined;
 
-    const loadConfigForWorkdirMock = mock(async (_rootConfigPath: string, relativeWorkdir?: string) => {
+    const loadConfigForPackageMock = mock(async (_projectDir: string, relativeWorkdir?: string) => {
       // apps/api package has acceptance disabled
       if (relativeWorkdir === "apps/api") {
         return makeNaxConfig({
@@ -604,7 +648,7 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
       }
       return makeConfig(true);
     });
-    _runnerCompletionDeps.loadConfigForWorkdir = loadConfigForWorkdirMock;
+    _runnerCompletionDeps.loadConfigForPackage = loadConfigForPackageMock;
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx): Promise<AcceptanceLoopResult> => {
       capturedCtx = ctx;
