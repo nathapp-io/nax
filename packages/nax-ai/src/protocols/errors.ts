@@ -33,15 +33,72 @@ export function classifyHttpError(status: number | undefined): ProtocolErrorKind
  * send a consumer into an endless shorten-and-retry loop.
  */
 const CONTEXT_OVERFLOW_MARKERS: readonly string[] = [
+  // Generic and OpenAI-compatible
   "context_length_exceeded",
   "context length exceeded",
+  "token limit exceeded",
   "maximum context length",
   "exceed context limit",
+  "exceeds the context window",
+  "model_context_window_exceeded",
+  // Anthropic (token overflow, and the 413 request byte-size form)
   "prompt is too long",
+  "request_too_large",
+  // Amazon Bedrock
   "input is too long",
+  // Google Gemini
   "exceeds the maximum number of tokens",
+  // Groq
   "reduce the length of the messages",
+  // xAI Grok
+  "maximum prompt length is",
+  // OpenRouter / Poolside
+  "maximum allowed input length",
+  // Together AI
+  "is longer than the model",
+  // llama.cpp server
+  "exceeds the available context size",
+  // LM Studio
+  "greater than the context length",
+  // GitHub Copilot
+  "prompt token count of",
+  // MiniMax
+  "context window exceeds limit",
+  // Kimi For Coding
+  "exceeded model token limit",
+  // DS4 server
+  "the configured context size is",
+  // DashScope / Qwen Token Plan
+  "range of input length should be",
+  // Ollama
+  "exceeded max context length",
+  // Deliberately broad, and the reason NON_OVERFLOW_MARKERS exists: Bedrock
+  // words a throttle as "ThrottlingException: Too many tokens, please wait".
   "too many tokens",
+];
+
+/**
+ * Substrings that rule a message OUT of `context-overflow`, lowercased,
+ * whatever the overflow table says.
+ *
+ * The overflow table is matched by substring, so a throttling message can
+ * satisfy it by accident: Bedrock's "ThrottlingException: Too many tokens,
+ * please wait before trying again" contains the `too many tokens` marker
+ * verbatim. Classifying that as an overflow would send a consumer off to
+ * compact and retry a conversation that was never too large, while the real
+ * fault -- a throttle it should have waited out -- goes unreported.
+ *
+ * Checked before the overflow table, so an exclusion always wins. Status
+ * precedence already protects the 429 case; this protects every other status,
+ * including the aggregator-relayed 200 of nax#44 and a plain 400.
+ */
+const NON_OVERFLOW_MARKERS: readonly string[] = [
+  "throttlingexception",
+  "throttling error",
+  "service unavailable",
+  "rate limit",
+  "rate_limit",
+  "too many requests",
 ];
 
 /**
@@ -83,16 +140,14 @@ function isNonFailingStatus(status: number | undefined): boolean {
  * verdict of its own keeps it — a 429 mentioning tokens is a rate limit, and
  * the caller should wait rather than compact.
  *
- * A non-failing status is refined to `transport` (nax#1869). An error event
- * that arrives under a 200 means the response headers were fine and the stream
- * broke afterwards; that is a transport fault, not the "unknown" the bare
- * status table has to answer. It is the shape OpenRouter's "Upstream idle
- * timeout exceeded" takes, and reading it as unknown cost a real run both its
- * agent swap and nax-ai's own bounded retry, since both key on `transport`.
- * An absent status gets the same answer for consistency with `classifyThrown`,
- * the sibling path for the identical fault. Neither can become
- * `context-overflow`: an overflow always arrives on a failing status, so
- * declining to guess one here still costs nothing.
+ * A non-failing status is refined to `transport` (nax#1869), unless the
+ * message carries policy or overflow content, in which case that refinement
+ * takes over — see `classifyBrokenStream`. That refinement, not the status
+ * gate, is what decides `context-overflow`: OpenRouter (and other
+ * OpenAI-compatible aggregators) answer HTTP 200 and relay an upstream
+ * provider's 4xx as a stream `error` event, so a genuine overflow can arrive
+ * on a status that is not itself a failure (nax#44). The status is a signal
+ * about the envelope, not a gate on what the message is allowed to mean.
  */
 export function classifyProviderError(status: number | undefined, message: string | undefined): ProtocolErrorKind {
   const kind = classifyHttpError(status);
@@ -103,19 +158,36 @@ export function classifyProviderError(status: number | undefined, message: strin
 
   if (kind !== "bad-request" || message === undefined) return kind;
 
+  return matchesContextOverflow(message) ? "context-overflow" : kind;
+}
+
+/**
+ * Whether a message names a context-window overflow, case-insensitively.
+ *
+ * An exclusion wins over a marker: see `NON_OVERFLOW_MARKERS` for why the
+ * overflow table alone cannot separate a throttle from an overflow.
+ */
+function matchesContextOverflow(message: string): boolean {
   const haystack = message.toLowerCase();
-  return CONTEXT_OVERFLOW_MARKERS.some((marker) => haystack.includes(marker)) ? "context-overflow" : kind;
+  if (NON_OVERFLOW_MARKERS.some((marker) => haystack.includes(marker))) return false;
+  return CONTEXT_OVERFLOW_MARKERS.some((marker) => haystack.includes(marker));
 }
 
 /**
  * The kind for an error event whose status reported no failure: `transport`,
- * unless the message carries policy content nax-ai must not retry itself.
+ * unless the message carries policy content nax-ai must not retry itself
+ * (checked first, so an established rate-limit/overload phrasing keeps its
+ * kind), or names a context overflow (nax#44) — the aggregator-relay shape
+ * described on `classifyProviderError`.
  */
 function classifyBrokenStream(message: string | undefined): ProtocolErrorKind {
   if (message === undefined) return "transport";
   const haystack = message.toLowerCase();
+
   const policy = STREAM_POLICY_MARKERS.find(([marker]) => haystack.includes(marker));
-  return policy ? policy[1] : "transport";
+  if (policy) return policy[1];
+
+  return matchesContextOverflow(message) ? "context-overflow" : "transport";
 }
 
 /**
