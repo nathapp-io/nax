@@ -123,6 +123,19 @@ describe("setupRun — US-004: run-start scratchpad wipe", () => {
     expect(result.runtime).toBeDefined();
   });
 
+  test("a dry run leaves the scratchpad alone — a preview is not a mutation", async () => {
+    const { workdir, options } = await makeRun("nax-test-scratchpad-dryrun-");
+    const parked = join(workdir, SCRATCHPAD_DIR, "notes.md");
+    await Bun.write(parked, "parked note");
+
+    // Same contract as the adjacent transcript sweep: nothing is deleted under
+    // --dry-run, and nothing accumulates either (no story is dispatched).
+    const result = await setupRun({ ...options, dryRun: true });
+
+    expect(result.runtime).toBeDefined();
+    expect(existsSync(parked)).toBe(true);
+  });
+
   test("AC3: a rejected directory removal is tolerated and reported at warn", async () => {
     const { workdir, options } = await makeRun("nax-test-scratchpad-busy-");
     const removeMock = mock(async (_path: string) => {

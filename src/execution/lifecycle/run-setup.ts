@@ -453,9 +453,11 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       // before this one writes. Behind the same lock as the sweep above: the
       // wipe is destructive run state, and a second nax process that loses the
       // lock race must not clear the running run's scratchpad on its way out.
-      // Absence and failure are tolerated inside wipeScratchpad() — a busy
-      // handle or a permission error must never wedge a run.
-      await wipeScratchpad(workdir);
+      // Unlike the sweep it is also gated on dryRun, for the same reason the
+      // sweep is: a preview must not mutate the tree. Absence and failure are
+      // tolerated inside wipeScratchpad() — a busy handle or a permission error
+      // must never wedge a run.
+      await wipeScratchpad(workdir, { dryRun: options.dryRun });
 
       // ── Detect project profile (US-003) and log explicit vs auto-detected values ──
       const existingProjectConfig = config.project ?? {};
