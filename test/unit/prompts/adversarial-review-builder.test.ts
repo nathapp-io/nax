@@ -52,7 +52,7 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     ["story title", () => STORY.title],
     ["story id", () => STORY.id],
     ["storyGitRef", () => STORY_GIT_REF],
-    ["git diff command", () => `git diff --relative --unified=3 ${STORY_GIT_REF}..HEAD`],
+    ["git diff command", () => `git diff --unified=3 ${STORY_GIT_REF}..HEAD`],
   ])("prompt contains %s", (_label, getValue) => {
     const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
     expect(result).toContain(getValue());
@@ -106,9 +106,10 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     expect(result).not.toContain("test/**/**.test.ts");
   });
 
-  test("every emitted diff and log command is package-relative and scoped (#2090)", () => {
+  test("package story: every diff command drops --relative and scopes to the package (#2090)", () => {
+    const packageStory: SemanticStory & { workdir: string } = { ...STORY, workdir: "packages/api" };
     const result = builder.buildAdversarialReviewPrompt(
-      STORY,
+      packageStory,
       { ...CONFIG, excludePatterns: [":!*.test.ts"] },
       {
         mode: "ref",
@@ -124,15 +125,12 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     expect(diffLines.length).toBeGreaterThan(0);
     expect(logLines.length).toBeGreaterThan(0);
     for (const line of diffLines) {
-      // Flags precede the refs (src/tools/git.ts:202). Assert flag presence and
-      // that no flag trails the revision range, so the next flag addition does
-      // not re-create this pressure.
-      expect(line).toContain("git diff --relative");
-      expect(line).toContain("-- .");
-      expect(line).not.toContain("..HEAD --relative");
+      expect(line).not.toContain("--relative");
+      expect(line).toContain("-- packages/api");
+      expect(line).not.toContain("-- .");
     }
     for (const line of logLines) {
-      // `git log --oneline` prints no paths, so `--relative` there is inert argv.
+      // `git log --oneline` prints no paths, so it takes no pathspec.
       expect(line).toContain(`git log --oneline ${STORY_GIT_REF}..HEAD`);
       expect(line).not.toContain("--relative");
     }
@@ -145,6 +143,7 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     const productionDiffCmd = /production deltas[^\n]*\n\s*`(git diff [^`]+)`/.exec(result)?.[1] ?? "";
     expect(fullDiffCmd).not.toContain(":!*.test.ts");
     expect(fullDiffCmd).toContain(":!.nax/");
+    expect(fullDiffCmd).toContain("packages/api");
     expect(addedFilesCmd).not.toContain(":!*.test.ts");
     expect(addedFilesCmd).toContain(":!.nax/");
     expect(productionDiffCmd).toContain(":!*.test.ts");
@@ -153,7 +152,22 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     const spec = JSON.parse(/<!--nax:diff-access:\S+ (\{.*?\})-->/.exec(result)?.[1] ?? "{}");
     expect(spec.fullExclude).not.toContain(":!*.test.ts");
     expect(spec.fullExclude).toContain(":!.nax/");
+    expect(spec.fullExclude).toContain("packages/api");
     expect(spec.productionExclude).toContain(":!*.test.ts");
+    expect(spec.productionExclude).toContain("packages/api");
+  });
+
+  test("repo-root story still renders the root pathspec (-- .)", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+    });
+    const diffLines = result.split("\n").filter((line) => line.includes("git diff "));
+    expect(diffLines.length).toBeGreaterThan(0);
+    for (const line of diffLines) {
+      expect(line).not.toContain("--relative");
+      expect(line).toContain("-- .");
+    }
   });
 });
 

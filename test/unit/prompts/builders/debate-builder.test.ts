@@ -3,8 +3,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Debater } from "@/debate/types";
-import type { PromptBuilderOptions, StageContext } from "@/prompts";
+import type { DebateResolverContext, Debater } from "@/debate/types";
+import type { PromptBuilderOptions, ReviewStoryContext, StageContext } from "@/prompts";
 import { DebatePromptBuilder } from "@/prompts";
 
 const debaters: Debater[] = [
@@ -86,5 +86,63 @@ describe("DebatePromptBuilder.proposeSlot — citationsRequired gate", () => {
     );
     const slot = builder.proposeSlot(0);
     expect(slot.task.content).toContain("unique-task-context-abc");
+  });
+});
+
+// ─── ref-mode diff frame (repo-rooted cwd) ───────────────────────────────────
+
+const REVIEW_STORY: ReviewStoryContext = {
+  id: "US-001",
+  title: "Scope the debate diff",
+  acceptanceCriteria: ["The diff is scoped to the story package"],
+};
+
+const RESOLVER_CTX: DebateResolverContext = { resolverType: "synthesis" };
+
+function resolverPrompt(pathspec: string): string {
+  return new DebatePromptBuilder(makeStageContext(), makeOptions()).buildResolverPrompt(
+    [{ debater: "claude", output: "{}" }],
+    [],
+    {
+      mode: "ref",
+      storyGitRef: "abc123",
+      stat: "1 file changed",
+      productionExcludePatterns: [":!*.test.ts"],
+      pathspec,
+    },
+    REVIEW_STORY,
+    RESOLVER_CTX,
+  );
+}
+
+describe("DebatePromptBuilder.buildResolverPrompt — ref-mode diff frame", () => {
+  test("package pathspec: every diff command drops --relative and scopes to the package", () => {
+    const prompt = resolverPrompt("packages/api");
+    const diffLines = prompt.split("\n").filter((line) => line.includes("git diff "));
+    const logLines = prompt.split("\n").filter((line) => line.includes("git log "));
+
+    expect(diffLines.length).toBeGreaterThan(0);
+    expect(logLines.length).toBeGreaterThan(0);
+    for (const line of diffLines) {
+      expect(line).not.toContain("--relative");
+      expect(line).toContain("-- packages/api");
+      expect(line).not.toContain("-- .");
+    }
+    for (const line of logLines) {
+      // `git log --oneline` prints no paths, so it takes no pathspec.
+      expect(line).toContain("git log --oneline abc123..HEAD");
+      expect(line).not.toContain("--relative");
+    }
+  });
+
+  test("repo-root pathspec still renders the root pathspec (-- .)", () => {
+    const diffLines = resolverPrompt(".")
+      .split("\n")
+      .filter((line) => line.includes("git diff "));
+    expect(diffLines.length).toBeGreaterThan(0);
+    for (const line of diffLines) {
+      expect(line).not.toContain("--relative");
+      expect(line).toContain("-- .");
+    }
   });
 });

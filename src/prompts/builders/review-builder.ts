@@ -20,6 +20,7 @@ import type { LLMFinding } from "@/review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 import { wrapJsonPrompt } from "@/utils/llm-json";
 import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
+import { type StoryWorkdirLike, storyWorkdir } from "@/utils/path-frame";
 import { buildReviewOutOfScopeBlock } from "../sections";
 import { DIFF_SCOPE_OMISSION_NOTICE, wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
@@ -148,9 +149,22 @@ export class ReviewPromptBuilder {
         : "";
     const priorIterationsBlock = buildPriorIterationsBlock(options.priorSemanticIterations ?? []);
 
+    // Structural-typing dependence: `story` is typed `SemanticStory`, which
+    // omits `workdir` (the weak-type check rejects passing it to
+    // `storyWorkdir` directly), but production callers pass a full `UserStory`.
+    // The intersection makes the cast an upcast: `workdir` is optional on it, so
+    // a `SemanticStory` still satisfies the target. At runtime this reads the
+    // real package, or falls back to "." when absent.
+    const pathspec = storyWorkdir(story as SemanticStory & StoryWorkdirLike);
+
     let diffSection: string;
     if (options.mode === "ref") {
-      diffSection = buildRefDiffSection(options.storyGitRef ?? "", options.stat ?? "", options.excludePatterns ?? []);
+      diffSection = buildRefDiffSection(
+        options.storyGitRef ?? "",
+        options.stat ?? "",
+        options.excludePatterns ?? [],
+        pathspec,
+      );
     } else {
       diffSection = buildEmbeddedDiffSection(options.diff ?? "");
     }
@@ -330,23 +344,26 @@ ${diff}\`\`\`
  * Build the diff section for "ref" mode.
  * Includes stat summary, git baseline ref, and pre-built self-serve commands.
  */
-function buildRefDiffSection(storyGitRef: string, stat: string, excludePatterns: string[]): string {
+function buildRefDiffSection(storyGitRef: string, stat: string, excludePatterns: string[], pathspec: string): string {
   const merged = [...new Set([...excludePatterns, ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS])];
   const excludeArgs = merged.map((p) => `'${p}'`).join(" ");
-  // The full diff is scoped to the cwd subtree but must keep test files, so it
-  // carries only the nax-metadata excludes — reusing `merged` would apply the
+  // The full diff is scoped by the story pathspec but must keep test files, so
+  // it carries only the nax-metadata excludes — reusing `merged` would apply the
   // caller's production/test exclusion set and make it identical to the
   // production diff its own label distinguishes it from.
   const naxExcludeArgs = NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS.map((p) => `'${p}'`).join(" ");
-  // These strings are the ACP arm. `--relative` makes git print paths relative
-  // to the package cwd the reviewer is contained at (#2090), and flags precede
-  // the ref because a flag after a revision list reads as a pathspec
-  // (src/tools/git.ts:202). `git log --oneline` prints no paths, so
-  // `--relative` is inert there and is omitted. The native rendering does not
-  // use these strings — it swaps in the Git tool, which applies `--relative`
-  // itself and carries the same pathspecs in the spec below.
-  const productionDiffCmd = `git diff --relative --unified=3 ${storyGitRef}..HEAD -- . ${excludeArgs}`;
-  const fullDiffCmd = `git diff --relative --unified=3 ${storyGitRef}..HEAD -- . ${naxExcludeArgs}`;
+  // These strings are the ACP arm. Since the single-frame redesign the
+  // reviewer's session cwd is the repo root, so `--relative` is gone: git's
+  // default repo-rooted framing already matches the native Read/Grep/Git tools.
+  // The pathspec (`pathspec`, the story's package dir or "." for a repo-root
+  // story) now does the scoping the old package cwd used to provide. Flags
+  // precede the ref because a flag after a revision list reads as a pathspec
+  // (src/tools/git.ts:202). `git log --oneline` prints no paths, so it takes no
+  // pathspec and no flags. The native rendering does not use these strings — it
+  // swaps in the Git tool, whose `paths` array carries the same `pathspec` as
+  // its base entry.
+  const productionDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD -- ${pathspec} ${excludeArgs}`;
+  const fullDiffCmd = `git diff --unified=3 ${storyGitRef}..HEAD -- ${pathspec} ${naxExcludeArgs}`;
   const logCmd = `git log --oneline ${storyGitRef}..HEAD`;
 
   // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
@@ -372,9 +389,10 @@ ${wrapDiffAccess(
   {
     ref: storyGitRef,
     // Native parity: the ACP full diff carries the nax excludes and no caller
-    // patterns, so the spec's fullExclude must match (M9).
-    fullExclude: [".", ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS],
-    productionExclude: [".", ...merged],
+    // patterns, so the spec's fullExclude must match (M9). `pathspec` is the
+    // repo-rooted base path the ACP `-- ${pathspec}` also scopes with.
+    fullExclude: [pathspec, ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS],
+    productionExclude: [pathspec, ...merged],
   },
   shellBody,
 )}`;
