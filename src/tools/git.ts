@@ -39,24 +39,6 @@ export const _gitToolDeps = { interceptor: undefined as CommandInterceptor | und
 export const GIT_READ_VERBS: readonly string[] = ["diff", "log", "show", "status", "blame"];
 
 /**
- * Verbs whose output prints "a/<path>"/"b/<path>" diff headers, which git
- * always frames relative to the repository top-level regardless of cwd
- * (confirmed independently by the porcelain-path comment in
- * `src/utils/git.ts`'s `autoCommitIfDirty`). Read/Grep/Glob resolve a path
- * relative to the permitted root (`ctx.root`), so when that root is a package
- * subdir the two frames diverge -- issue #1807.
- *
- * `--relative` (with no argument, so relative to cwd) makes git itself apply
- * that offset before it quotes a path, rather than after -- so it also
- * handles a non-ASCII path (which git quotes and octal-escapes, wrapping the
- * "a/" prefix) and a path containing a space (which a whitespace-delimited
- * regex can't span, and after which git appends a trailing tab). `status`
- * rejects the flag outright; `blame` never emits these headers, so neither
- * needs it.
- */
-const GIT_RELATIVE_VERBS: readonly string[] = ["diff", "log", "show"];
-
-/**
  * Typed flag fields, and the verbs each one is valid on.
  *
  * nax emits every one of these flags itself: a boolean or a closed enum comes
@@ -222,8 +204,11 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
   const refs = Array.isArray(input.refs) ? input.refs : [];
   const paths = Array.isArray(input.paths) ? input.paths : [];
 
+  // No `--relative` is injected. Since the single-frame redesign the permitted
+  // root is the repository root, so git's default repo-rooted path framing
+  // already agrees with Read/Grep/Glob. The flag only ever compensated for a
+  // package-subdir root (#1807); from the repo root it is wrong.
   const argv: string[] = [subcommand];
-  if (GIT_RELATIVE_VERBS.includes(subcommand)) argv.push("--relative");
 
   // Flags precede the refs. Git accepts them in either position, but a flag
   // placed after a revision list reads as a pathspec to anyone (model or

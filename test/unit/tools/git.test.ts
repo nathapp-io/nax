@@ -33,19 +33,12 @@ describe("buildGitArgv", () => {
   // the cwd, which is the permitted root. See the root-boundary tests below for
   // the two escapes this shape closes.
   test("scopes a plain diff to the root and terminates the revision list", () => {
-    expect(argvOf({ subcommand: "diff" })).toEqual([
-      "diff",
-      "--relative",
-      "--",
-      ".",
-      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
-    ]);
+    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--", ".", ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS]);
   });
 
   test("appends refs then paths after a '--' separator", () => {
     expect(argvOf({ subcommand: "diff", refs: ["HEAD~1", "HEAD"], paths: ["src/a.ts"] })).toEqual([
       "diff",
-      "--relative",
       "HEAD~1",
       "HEAD",
       "--",
@@ -53,17 +46,16 @@ describe("buildGitArgv", () => {
     ]);
   });
 
-  // #1807 — git frames diff-style "a/<path>"/"b/<path>" headers relative to the
-  // repository top-level regardless of cwd, which disagrees with Read/Grep/Glob
-  // whenever the permitted root is a package subdir. `--relative` makes git
-  // apply that offset itself, so it belongs only on the verbs that print those
-  // headers -- `status` rejects the flag outright, and `blame` never prints one.
-  test("adds --relative only to the verbs that print diff-style path headers", () => {
-    expect(argvOf({ subcommand: "diff" })).toContain("--relative");
-    expect(argvOf({ subcommand: "log" })).toContain("--relative");
-    expect(argvOf({ subcommand: "show" })).toContain("--relative");
-    expect(argvOf({ subcommand: "status" })).not.toContain("--relative");
-    expect(argvOf({ subcommand: "blame", paths: ["src/a.ts"] })).not.toContain("--relative");
+  // PR 2 (single-frame-redesign) — #1807's auto-`--relative` is gone. It made
+  // git reframe diff-style "a/<path>"/"b/<path>" headers onto a package-subdir
+  // permitted root; the permitted root is now the repository root, where git's
+  // own default framing already agrees with Read/Grep/Glob, so the flag would
+  // be wrong. Asserted on every read verb — including the diff-style ones that
+  // used to carry it — so a later refactor cannot quietly reintroduce it.
+  test("never injects --relative, on any read verb", () => {
+    for (const verb of GIT_READ_VERBS) {
+      expect(argvOf({ subcommand: verb })).not.toContain("--relative");
+    }
   });
 
   test("rejects a subcommand outside the read-only verb list", () => {
@@ -124,11 +116,10 @@ describe("buildGitArgv — nax-owned paths are excluded from the default view", 
     expect(argvOf({ subcommand: "status" })).toEqual(["status", "--", ".", ...GIT_EXCLUDES]);
   });
 
-  test("diff with no paths gets the exclusions, with --relative still ahead of the refs", () => {
-    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--relative", "--", ".", ...GIT_EXCLUDES]);
+  test("diff with no paths gets the exclusions, ahead of the refs", () => {
+    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--", ".", ...GIT_EXCLUDES]);
     expect(argvOf({ subcommand: "diff", refs: ["HEAD~1", "HEAD"] })).toEqual([
       "diff",
-      "--relative",
       "HEAD~1",
       "HEAD",
       "--",
@@ -142,13 +133,12 @@ describe("buildGitArgv — nax-owned paths are excluded from the default view", 
   });
 
   test("an explicitly named path is answered as given, with no exclusion injected", () => {
-    expect(argvOf({ subcommand: "diff", paths: ["src/a.ts"] })).toEqual(["diff", "--relative", "--", "src/a.ts"]);
+    expect(argvOf({ subcommand: "diff", paths: ["src/a.ts"] })).toEqual(["diff", "--", "src/a.ts"]);
   });
 
   test("an explicitly named .nax path still reaches the file", () => {
     expect(argvOf({ subcommand: "diff", paths: [".nax/features/f/prd.json"] })).toEqual([
       "diff",
-      "--relative",
       "--",
       ".nax/features/f/prd.json",
     ]);
@@ -236,7 +226,6 @@ describe("buildGitArgv — typed flag fields", () => {
   test("emits --name-only for diff and log", () => {
     expect(argvOf({ subcommand: "diff", nameOnly: true })).toEqual([
       "diff",
-      "--relative",
       "--name-only",
       "--",
       ".",
@@ -281,7 +270,6 @@ describe("buildGitArgv — typed flag fields", () => {
   test("places flags before the refs so they are never read as revisions", () => {
     expect(argvOf({ subcommand: "diff", nameOnly: true, diffFilter: "A", refs: ["abc..HEAD"], paths: ["."] })).toEqual([
       "diff",
-      "--relative",
       "--name-only",
       "--diff-filter=A",
       "abc..HEAD",
@@ -293,7 +281,6 @@ describe("buildGitArgv — typed flag fields", () => {
   test("a false or omitted boolean emits nothing", () => {
     expect(argvOf({ subcommand: "diff", nameOnly: false })).toEqual([
       "diff",
-      "--relative",
       "--",
       ".",
       ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
@@ -312,7 +299,6 @@ describe("buildGitArgv — typed flag fields", () => {
     ]);
     expect(argvOf({ subcommand: "diff", oneline: false })).toEqual([
       "diff",
-      "--relative",
       "--",
       ".",
       ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
@@ -445,14 +431,16 @@ describe("gitTool — the permitted root bounds the repository view", () => {
 });
 
 /**
- * #1807 — Git prints paths relative to the repository top-level regardless of
- * cwd, but Read/Grep/Glob resolve a path relative to the permitted root
- * (ctx.root). When the permitted root is a package subdir, a path copied out
- * of Git's own output is framed wrong for every other tool. Git's output must
- * be re-framed to the permitted root before it reaches the model.
+ * Single-frame-redesign PR 2 — the permitted root is the repository root, so
+ * the Git tool no longer injects `--relative`. #1807 added that flag because
+ * the root used to be a package subdir, which made git's repo-top-level path
+ * framing disagree with Read/Grep/Glob; with the root collapsed onto the repo
+ * root (Task 1), git's own default framing is already the frame every other
+ * tool uses. These tests pin the new contract: a file inside a package is
+ * reported with its repo-rooted path, not reframed onto the package.
  */
-describe("gitTool — output paths are framed relative to the permitted root", () => {
-  async function makeRepoWithPackageWorkdir(opts?: { fileName?: string }): Promise<{ repo: string; root: string }> {
+describe("gitTool — output paths are repo-rooted when the root is the repository root", () => {
+  async function makeRepoWithFileInPackage(opts?: { fileName?: string }): Promise<{ repo: string; root: string }> {
     const fileName = opts?.fileName ?? "f.txt";
     const repo = mkdtempSync(join(tmpdir(), "nax-git-frame-"));
     mkdirSync(join(repo, "packages", "pkg-a"), { recursive: true });
@@ -464,31 +452,29 @@ describe("gitTool — output paths are framed relative to the permitted root", (
     await run(["add", "-A"]).exited;
     await run(["commit", "-q", "-m", "seed"]).exited;
     writeFileSync(join(repo, "packages", "pkg-a", fileName), "two\n");
-    return { repo, root: join(repo, "packages", "pkg-a") };
+    return { repo, root: repo };
   }
 
-  test("diff headers are relative to the permitted root, not the repository root", async () => {
-    const { root } = await makeRepoWithPackageWorkdir();
+  test("diff headers keep the repo-rooted package path rather than reframing onto the package", async () => {
+    const { root } = await makeRepoWithFileInPackage();
     const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
 
     const content = contentOf(result);
-    expect(content).toContain("a/f.txt");
-    expect(content).toContain("b/f.txt");
-    expect(content).not.toContain("packages/pkg-a");
+    expect(content).toContain("a/packages/pkg-a/f.txt");
+    expect(content).toContain("b/packages/pkg-a/f.txt");
   });
 
-  test("show <ref> diff headers are relative to the permitted root, not the repository root", async () => {
-    const { root } = await makeRepoWithPackageWorkdir();
+  test("show <ref> diff headers keep the repo-rooted package path", async () => {
+    const { root } = await makeRepoWithFileInPackage();
     const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD"] });
 
     const content = contentOf(result);
-    expect(content).toContain("a/f.txt");
-    expect(content).toContain("b/f.txt");
-    expect(content).not.toContain("packages/pkg-a");
+    expect(content).toContain("a/packages/pkg-a/f.txt");
+    expect(content).toContain("b/packages/pkg-a/f.txt");
   });
 
   test("is a no-op when the permitted root is the repository root", async () => {
@@ -510,31 +496,30 @@ describe("gitTool — output paths are framed relative to the permitted root", (
     expect(content).toContain("b/f.txt");
   });
 
-  // Git quotes and octal-escapes any non-ASCII path (core.quotePath, on by
-  // default), with the quote wrapping the "a/" prefix itself. A prefix-strip
-  // that assumes an unquoted "a/<path>" shape never matches this line at all.
-  test("diff headers with a non-ASCII path are still relative to the permitted root", async () => {
-    const { root } = await makeRepoWithPackageWorkdir({ fileName: "café.txt" });
+  // Git still quotes and octal-escapes a non-ASCII path (core.quotePath, on by
+  // default). The tool passes that line through untouched rather than
+  // reframing it onto the package.
+  test("diff headers with a non-ASCII path are passed through repo-rooted", async () => {
+    const { root } = await makeRepoWithFileInPackage({ fileName: "café.txt" });
     const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
 
     const content = contentOf(result);
-    expect(content).not.toContain("packages/pkg-a");
+    expect(content).toContain("packages/pkg-a/caf");
   });
 
-  // A path containing a space defeats a whitespace-delimited token match, and
-  // git appends a trailing tab to the "---"/"+++" lines in that case too.
-  test("diff headers with a space in the path are still relative to the permitted root", async () => {
-    const { root } = await makeRepoWithPackageWorkdir({ fileName: "with space.txt" });
+  // A path containing a space still gets git's trailing tab on the "---"/"+++"
+  // lines; the tool passes it through repo-rooted.
+  test("diff headers with a space in the path are passed through repo-rooted", async () => {
+    const { root } = await makeRepoWithFileInPackage({ fileName: "with space.txt" });
     const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
 
     const content = contentOf(result);
-    expect(content).toContain("a/with space.txt");
-    expect(content).toContain("b/with space.txt");
-    expect(content).not.toContain("packages/pkg-a");
+    expect(content).toContain("a/packages/pkg-a/with space.txt");
+    expect(content).toContain("b/packages/pkg-a/with space.txt");
   });
 });
 
