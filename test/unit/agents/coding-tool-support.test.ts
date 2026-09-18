@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { realpath as realpathAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
@@ -272,6 +273,30 @@ describe("buildCodingToolSupport — declared-command seam and audit sink", () =
       sessionName: "s1",
     });
     expect(support?.auditSink).toBeDefined();
+  });
+});
+
+describe("buildCodingToolSupport — commandCwd reaches RunCommand (PR1)", () => {
+  test("a declared command runs at commandCwd, not root, when the two differ", async () => {
+    const containmentRoot = makeTempDir("nax-support-cwd-root-");
+    const packageCwd = makeTempDir("nax-support-cwd-pkg-");
+    try {
+      const support = buildCodingToolSupport({
+        root: containmentRoot,
+        commandCwd: packageCwd,
+        grants: runCommandGrants,
+        declared: ["RunCommand"],
+        declaredCommands: new Map([["where", "pwd"]]),
+      });
+      const result = await support?.runtime.callTool("RunCommand", { command: "where" });
+      expect(result?.kind).toBe("ok");
+      if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+      expect(result.content).toContain(await realpathAsync(packageCwd));
+      expect(result.content).not.toContain(await realpathAsync(containmentRoot));
+    } finally {
+      cleanupTempDir(containmentRoot);
+      cleanupTempDir(packageCwd);
+    }
   });
 });
 

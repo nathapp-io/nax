@@ -59,6 +59,16 @@ export function buildCodingToolSupport(args: {
    * single-package repos and non-isolated runs where the two coincide.
    */
   repoRoot?: string;
+  /**
+   * Execution cwd for RunCommand's DECLARED (non-Exec) branch, independent
+   * of `root` (tool containment). Falls back to `root` when absent.
+   *
+   * PRODUCER: resolveCodingToolSupport below, computed from
+   * `codingToolPackageDir` + `projectDir` (docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md
+   * PR 1) so it stays pointed at the story's package dir even after PR2
+   * repoints `codingToolRoot`/`root` at the repo root.
+   */
+  commandCwd?: string;
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
   /** Provider-supplied tools for this hop, looked up before the global registry. */
@@ -173,6 +183,7 @@ export function buildCodingToolSupport(args: {
         ? [
             createRunCommandTool(declaredCommands, {
               stripEnvVars: args.stripEnvVars,
+              commandCwd: args.commandCwd ?? args.root,
               ...(allowExec
                 ? {
                     exec: {
