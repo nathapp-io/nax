@@ -4,6 +4,8 @@
  * Story US-001-B
  */
 
+import { DANGEROUS_MERGE_KEYS } from "./merger";
+
 /**
  * Parses a dotenv value that starts with a quote character. Returns the
  * unescaped value (double-quoted values support `\"`, `\\`, `\n` escapes;
@@ -116,6 +118,13 @@ export function resolveEnvVars(config: unknown, env: Record<string, string>, pat
   if (config !== null && typeof config === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+      // SEC-09: assigning `__proto__` via `result[key] = ...` would swap the
+      // fresh object's prototype (and silently drop the literal key), while
+      // `constructor`/`prototype` would shadow the inherited properties.
+      // Reuse the merger's guard so the two paths cannot drift apart.
+      if (DANGEROUS_MERGE_KEYS.has(key)) {
+        continue;
+      }
       result[key] = resolveEnvVars(value, env, [...path, key]);
     }
     return result;
