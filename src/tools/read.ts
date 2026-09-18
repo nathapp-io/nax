@@ -21,7 +21,15 @@ const UNSUPPORTED_RANGE_ALIASES = ["start_line", "end_line", "start", "end", "li
 
 function truncate(body: string, maxBytes: number): string {
   if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
-  return `${Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8")}\n... [truncated at ${maxBytes} bytes]`;
+  const suffix = `\n... [truncated at ${maxBytes} bytes]`;
+  const suffixLen = Buffer.byteLength(suffix, "utf8");
+  // Ceiling too small to fit the marker -- return a plain slice with no suffix
+  // rather than exceeding maxBytes. The marker would be longer than the budget
+  // itself, so there is nothing to fit it after.
+  if (suffixLen >= maxBytes) return Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8");
+  // Reserve space for the suffix so head + suffix stays within maxBytes.
+  const budget = maxBytes - suffixLen;
+  return `${Buffer.from(body, "utf8").subarray(0, budget).toString("utf8")}${suffix}`;
 }
 
 /** A positive integer, or an error string naming which constraint failed. */

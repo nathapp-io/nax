@@ -31,9 +31,11 @@ describe("readTool", () => {
   });
 
   test("truncates beyond maxBytes and says so", async () => {
-    const res = await readTool.run({ path: "src/a.ts" }, ctx([join(root, "src", "a.ts")], 5));
-    expect(res.content.length).toBeLessThan(60);
+    const longPath = join(root, "long.ts");
+    writeFileSync(longPath, "x".repeat(200));
+    const res = await readTool.run({ path: "long.ts" }, ctx([longPath], 30));
     expect(res.content).toContain("truncated");
+    expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(30);
   });
 
   test("declares its path field so the policy can gate it", () => {
@@ -120,7 +122,7 @@ describe("readTool", () => {
     );
 
     test("truncation at maxBytes still applies to a ranged read", async () => {
-      const res = await readTool.run({ path: "many.txt", offset: 1, limit: 50 }, ctx([manyPath], 10));
+      const res = await readTool.run({ path: "many.txt", offset: 1, limit: 50 }, ctx([manyPath], 30));
       expect(res.content).toContain("truncated");
     });
   });
