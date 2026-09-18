@@ -199,7 +199,7 @@ describe("GitHistoryProvider — AC-55 historyScope", () => {
 
   test("historyScope 'repo' — a canonical set keeps a genuine repo-rooted path, no collision probe", async () => {
     // contextFilesCanonical asserts the plan-time write seam re-spelled every
-    // existing path, so a toPackageFrame miss is genuinely out-of-package. Even
+    // existing path, so an out-of-package file is genuinely repo-rooted. Even
     // with a same-named file under the package, the repo-rooted path stands.
     const queried: string[] = [];
     _gitHistoryDeps.gitWithTimeout = async (args: string[], _cwd: string) => {
@@ -248,26 +248,25 @@ describe("GitHistoryProvider — AC-55 historyScope", () => {
 
     expect(queried).toEqual(["package.json"]);
     expect(result.chunks[0]?.content).toContain("root-only history");
-    // Part A: an out-of-package file is marked, not silently re-rooted.
-    expect(result.chunks[0]?.content).toContain(
-      "package.json (other package - not readable from this story's workdir)",
-    );
+    // Single frame: the heading is repo-rooted verbatim, no marker appended.
+    expect(result.chunks[0]?.content).toContain("### package.json\n");
+    expect(result.chunks[0]?.content).not.toContain("(other package");
     expect(result.chunks[0]?.scopePaths).toEqual(["package.json"]);
     expect(logger.calls.some((call) => call.message.includes("colliding"))).toBe(false);
   });
 
-  test("historyScope 'package' — chunk heading is package-relative, scopePaths repo-rooted", async () => {
+  test("historyScope 'package' — chunk heading is repo-rooted and equals scopePath", async () => {
     mockGit(new Map([["packages/api/src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
     const p = new GitHistoryProvider({ historyScope: "package" } as GitHistoryProviderOptions);
     const result = await p.fetch(MONOREPO_REQUEST);
     expect(result.chunks).toHaveLength(1);
-    // H9: content crosses into the agent's prompt, whose file tools are rooted
-    // at the package dir — the heading must be package-relative to open.
-    expect(result.chunks[0]?.content).toContain("### src/service.ts");
-    expect(result.chunks[0]?.content).not.toContain("### packages/api/src/service.ts");
-    // ...while scopePaths is matched against the repo-framed diff and stays
-    // repo-rooted (code-neighbor-chunk.ts splits the two the same way).
+    // Single-frame redesign: content and scopePaths share one repo-rooted
+    // spelling, so the rendered heading is exactly the attribution key.
+    expect(result.chunks[0]?.content).toContain("### packages/api/src/service.ts");
     expect(result.chunks[0]?.scopePaths).toEqual(["packages/api/src/service.ts"]);
+    for (const path of result.chunks[0]?.scopePaths ?? []) {
+      expect(result.chunks[0]?.content).toContain(path);
+    }
   });
 
   test("non-monorepo: packageDir === repoRoot — every file stays in scope", async () => {

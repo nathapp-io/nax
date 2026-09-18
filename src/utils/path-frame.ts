@@ -91,6 +91,24 @@ export function toRepoFrame(path: string, workdir: string | null | undefined): s
 }
 
 /**
+ * True when a repo-rooted `path` lies within the package rooted at `workdir`
+ * (segment-boundary match, same boundary rule as toRepoFrame).
+ *
+ * Selector-contract primitive: answers "is this file inside my package",
+ * never re-spells. `workdir` "." (repo root) always matches.
+ */
+export function isWithinPackage(path: string, workdir: string | null | undefined): boolean {
+  const prefix = normalizeWorkdir(workdir);
+  if (prefix === ".") return true;
+  const normalized = path
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^(\.\/)+/, "")
+    .replace(/\/+$/, "");
+  return normalized === prefix || normalized.startsWith(`${prefix}/`);
+}
+
+/**
  * Re-spell a repo-rooted path for a consumer contained at `workdir`.
  *
  * Returns null when the path is not reachable from that root — callers render

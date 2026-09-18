@@ -8,12 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "@test/helpers";
 import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";
-import { UNREADABLE_MARKER } from "@/utils/path-frame";
 
 function makePatterns(globs: readonly string[]): ResolvedTestPatterns {
   return {
@@ -87,9 +85,9 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
   // repo-framed srcFile against a package-framed filePath, so a genuine
   // cross-package dependent matches NOTHING and is silently dropped; the
   // `srcFile === filePath` self-skip would have discarded it anyway had the
-  // frames agreed. Measured against the pre-fix code this returns no neighbour
-  // at all beyond the sibling-test hint.
-  test("a genuine cross-package dependent is found and marked unreadable", async () => {
+  // frames agreed. Single-frame: the neighbour renders repo-rooted, unmarked —
+  // the agent can open any repo path.
+  test("a genuine cross-package dependent is found and rendered repo-rooted", async () => {
     setupDeps(
       {
         "/repo/packages/app/src/index.ts": "export const app = 1;",
@@ -102,7 +100,7 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     const lines = neighborLines(result.chunks[0]?.content ?? "");
-    expect(lines).toContain(`- packages/lib/src/index.ts${UNREADABLE_MARKER}`);
+    expect(lines).toContain("- packages/lib/src/index.ts");
   });
 
   // The spec's #2074 worked example (design.md:386-389), restored here as an
@@ -154,9 +152,9 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     expect(repoLines).not.toContain("- src/index.ts");
   });
 
-  // A genuine same-package dependent found via a repo-rooted scan must come
-  // back package-relative, because the agent's file tools are rooted there.
-  test("a dependent inside the consumer's package renders package-relative", async () => {
+  // Single-frame: a dependent inside the consumer's package is rendered
+  // repo-rooted, the spelling the agent's file tools resolve.
+  test("a dependent inside the consumer's package renders repo-rooted", async () => {
     setupDeps(
       {
         "/repo/packages/app/src/index.ts": "export const app = 1;",
@@ -169,13 +167,12 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     const lines = neighborLines(result.chunks[0]?.content ?? "");
-    expect(lines).toContain("- src/user.ts");
-    expect(lines.some((line) => line.includes(UNREADABLE_MARKER))).toBe(false);
+    expect(lines).toContain("- packages/app/src/user.ts");
   });
 
-  // scopePaths is an attribution key, not prompt text: the marker must not leak
-  // into it, or the same file is attributed under two different strings.
-  test("scopePaths records the marked neighbour without the marker", async () => {
+  // scopePaths is an attribution key sharing the rendered spelling — no
+  // separate frame and no marker.
+  test("scopePaths records the same repo-rooted string the content renders", async () => {
     setupDeps(
       {
         "/repo/packages/app/src/index.ts": "export const app = 1;",
@@ -188,9 +185,7 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     expect(result.chunks[0]?.scopePaths).toContain("packages/lib/src/index.ts");
-    expect(result.chunks[0]?.scopePaths?.some((p) => p.includes(UNREADABLE_MARKER))).toBe(false);
-    // nax#2091: the touched file is attributed repo-rooted too, not in the
-    // package-relative spelling the agent prompt carries.
+    // The touched file is attributed repo-rooted too.
     expect(result.chunks[0]?.scopePaths).toContain("packages/app/src/index.ts");
     expect(result.chunks[0]?.scopePaths?.some((p) => p.startsWith("src/"))).toBe(false);
   });
@@ -211,18 +206,40 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
 
     const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
-    expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- src/dep.ts");
+    expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- packages/app/src/dep.ts");
+  });
+});
+
+describe("CodeNeighborProvider — heading == scopePath (single frame)", () => {
+  test("every scopePath is rendered verbatim in the chunk content", async () => {
+    setupDeps(
+      {
+        "/repo/packages/app/src/index.ts": 'import "./dep";',
+        "/repo/packages/app/src/dep.ts": "export const dep = 1;",
+      },
+      { "/repo": ["packages/app/src/index.ts", "packages/app/src/dep.ts"] },
+    );
+    const provider = new CodeNeighborProvider({ neighborScope: "repo" });
+
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
+
+    const chunk = result.chunks[0];
+    expect(chunk).toBeDefined();
+    const scope = chunk?.scopePaths ?? [];
+    expect(scope.length).toBeGreaterThan(0);
+    for (const path of scope) {
+      expect(chunk?.content).toContain(path);
+    }
   });
 });
 
 describe("CodeNeighborProvider — worktree isolation (nax#2088 follow-up)", () => {
-  // Under storyIsolation: "worktree", packageDir is `.nax-wt/<storyId>/<pkg>`
-  // while repoRoot stays the main checkout. Deriving the package frame as
-  // packageDirRelative(repoRoot, packageDir) yields ".nax-wt/<storyId>/<pkg>",
-  // which matches nothing in repo-rooted touchedFiles, so every file is
-  // marked unreachable and the provider returns zero chunks — silently. The
-  // fix threads story.workdir onto the request instead of deriving it.
-  test("touchedFiles resolve under storyIsolation: worktree via request.storyWorkdir", async () => {
+  // Under storyIsolation: "worktree", the story executes in its own tree and
+  // the agent's file tools are rooted there. The request carries that tree as
+  // repoRoot (storyExecRoot), so a repo-rooted touchedFile resolves inside it
+  // and neighbours are rendered relative to that same root. The main checkout
+  // is never consulted.
+  test("touchedFiles resolve against the story's execution root", async () => {
     setupDeps(
       {
         "/repo/.nax-wt/US-001/packages/app/src/index.ts": 'import "./dep";',
@@ -234,14 +251,14 @@ describe("CodeNeighborProvider — worktree isolation (nax#2088 follow-up)", () 
 
     const result = await provider.fetch(
       makeRequest({
-        repoRoot: "/repo",
+        repoRoot: "/repo/.nax-wt/US-001",
         packageDir: "/repo/.nax-wt/US-001/packages/app",
         storyWorkdir: "packages/app",
         touchedFiles: ["packages/app/src/index.ts"],
       }),
     );
 
-    expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- src/dep.ts");
+    expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- packages/app/src/dep.ts");
   });
 });
 
@@ -268,67 +285,5 @@ describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () =>
     await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
     expect(globbedRoots).toEqual(["/repo/packages/app"]);
-  });
-});
-
-describe("CodeNeighborProvider — H7: canonical is gated on provenance, drop is logged (path-frame follow-up)", () => {
-  let origGetLogger: typeof _codeNeighborDeps.getLogger;
-
-  beforeEach(() => {
-    origGetLogger = _codeNeighborDeps.getLogger;
-  });
-
-  afterEach(() => {
-    _codeNeighborDeps.getLogger = origGetLogger;
-  });
-
-  // Before this fix, `canonical: true` was passed unconditionally, so a
-  // pre-#2067 PRD's real, existing package-relative entry was dropped as
-  // "outside the package" with no diagnostic (H7).
-  test("without contextFilesCanonical, a package-relative touchedFile passes through unchanged (non-canonical)", async () => {
-    setupDeps(
-      { "/repo/packages/app/src/index.ts": "export const app = 1;" },
-      { "/repo/packages/app": ["src/index.ts"] },
-    );
-    const logger = makeLogger();
-    _codeNeighborDeps.getLogger = () => logger;
-
-    const result = await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["src/index.ts"] }));
-
-    // Passed through, not dropped: partitionPackageFrame with no `canonical`
-    // treats every entry as already in-frame.
-    expect(result.chunks.length).toBeGreaterThan(0);
-    expect(logger.calls.some((c) => c.level === "warn")).toBe(false);
-  });
-
-  test("with contextFilesCanonical, a genuinely out-of-package touchedFile is dropped AND logged with a count", async () => {
-    setupDeps(
-      { "/repo/packages/app/src/index.ts": "export const app = 1;" },
-      { "/repo/packages/app": ["src/index.ts"] },
-    );
-    const logger = makeLogger();
-    _codeNeighborDeps.getLogger = () => logger;
-
-    const result = await new CodeNeighborProvider().fetch(
-      makeRequest({
-        contextFilesCanonical: true,
-        touchedFiles: ["packages/other/src/unrelated.ts"],
-      }),
-    );
-
-    expect(result.chunks).toHaveLength(0);
-    const dropWarnings = logger.calls.filter(
-      (c) =>
-        c.level === "warn" &&
-        c.message === "code-neighbor touchedFiles could not be resolved inside this story's package and were dropped",
-    );
-    expect(dropWarnings).toHaveLength(1);
-    expect(dropWarnings[0]?.data?.count).toBe(1);
-    expect(dropWarnings[0]?.data?.storyId).toBe("US-001");
-    // monorepo-awareness.md §9 vocabulary: `packageDir` is the ABSOLUTE path to
-    // the story's package, `workdir` the repo-relative one. Logging the relative
-    // value under `packageDir` makes a JSONL reader applying §9 read it wrong.
-    expect(dropWarnings[0]?.data?.packageDir).toBe("/repo/packages/app");
-    expect(dropWarnings[0]?.data?.workdir).toBe("packages/app");
   });
 });

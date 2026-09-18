@@ -11,7 +11,7 @@
  * Scope: repo-scoped (anchor `repoRoot`). touchedFiles is REPO-ROOTED and git
  * ALWAYS runs at repoRoot against a repo-rooted pathspec; `historyScope` is a
  * post-filter over those entries, not a workdir switch. Chunk headings are
- * re-spelled for the package-contained consumer; `scopePaths` stay repo-rooted.
+ * rendered repo-rooted verbatim and `scopePaths` share that same spelling.
  *
  * Phase 3.
  *
@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { getLogger } from "@/logger";
 import { gitWithTimeout } from "@/utils/git";
-import { toPackageFrame, UNREADABLE_MARKER } from "@/utils/path-frame";
+import { isWithinPackage } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -76,28 +76,6 @@ function contentHash8(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
 }
 
-/**
- * The section heading rendered into chunk `content`.
- *
- * `content` crosses into a package-contained agent's prompt, and that agent's
- * file tools are rooted at `codingToolRoot` = the package dir
- * (src/agents/types.ts). A repo-rooted heading resolves to a real but WRONG
- * file under that root, so it must be re-spelled package-relative.
- * `code-neighbor-chunk.ts` splits content/scopePaths the same way: content for
- * the consumer, scopePaths repo-rooted for the diff match.
- *
- * A file the package cannot reach returns null from `toPackageFrame` — "cannot
- * be spelled for this consumer". Mark it rather than emit a bare path that
- * opens the wrong file (src/utils/path-frame.ts toPackageFrame docblock). Under
- * `historyScope: "package"` that case is unreachable (the post-filter already
- * dropped it); under `"repo"` marking keeps the whole point of the scope while
- * telling the agent the file exists but is not openable.
- */
-function renderHeading(filePath: string, packageWorkdir: string): string {
-  const framed = toPackageFrame(filePath, packageWorkdir);
-  return framed === null ? `${filePath}${UNREADABLE_MARKER}` : framed;
-}
-
 /** True when `path` has at least one commit in `repoRoot`'s history. */
 async function hasHistoryAt(path: string, repoRoot: string): Promise<boolean> {
   const { stdout, exitCode } = await _gitHistoryDeps.gitWithTimeout(["log", "--oneline", "-1", "--", path], repoRoot);
@@ -105,12 +83,13 @@ async function hasHistoryAt(path: string, repoRoot: string): Promise<boolean> {
 }
 
 /**
- * True when `file` (already a `toPackageFrame` miss) is ambiguous: a pre-#2067
- * package-relative legacy spelling for a file that ALSO reads as a repo-root
- * path. The string "src/client.ts" cannot distinguish "the root file" from
- * "the package's file spelled package-relative", so querying it at repoRoot
- * would surface the root file's history under this story's label — the #2088
- * sharper variant that `"package"` scope drops (M13). The caller drops it.
+ * True when `file` (already outside the package per `isWithinPackage`) is
+ * ambiguous: a pre-#2067 package-relative legacy spelling for a file that ALSO
+ * reads as a repo-root path. The string "src/client.ts" cannot distinguish
+ * "the root file" from "the package's file spelled package-relative", so
+ * querying it at repoRoot would surface the root file's history under this
+ * story's label — the #2088 sharper variant that `"package"` scope drops
+ * (M13). The caller drops it.
  *
  * Ambiguity is decided from HISTORY, not from the working tree. What this gates
  * is `git log --follow`, and the two disagree in both directions: a root file
@@ -120,10 +99,11 @@ async function hasHistoryAt(path: string, repoRoot: string): Promise<boolean> {
  * file's history to this story — the defect it was meant to prevent.
  *
  * Only consulted for a non-canonical set: `contextFilesCanonical` asserts the
- * plan-time write seam already re-spelled every existing path, so a miss there
- * is genuinely out-of-package and a repo-rooted query is correct. Unreachable
- * for a root story: `toPackageFrame(file, ".")` never returns null, so the
- * caller's filter excludes every file before this is consulted.
+ * plan-time write seam already re-spelled every existing path, so an
+ * out-of-package file there is genuinely repo-rooted and a repo-rooted query is
+ * correct. Unreachable for a root story: `isWithinPackage(file, ".")` always
+ * returns true, so the caller's filter excludes every file before this is
+ * consulted.
  */
 async function collidesWithPackageFile(file: string, packageWorkdir: string, repoRoot: string): Promise<boolean> {
   const [underPackage, atRoot] = await Promise.all([
@@ -137,8 +117,8 @@ async function collidesWithPackageFile(file: string, packageWorkdir: string, rep
  * Split `"repo"`-scope files into what to query and what to drop as ambiguous.
  *
  * A canonical set is repo-rooted by construction, so every file is kept. Else,
- * a `toPackageFrame` miss that also resolves beneath the package is a
- * collision (see `collidesWithPackageFile`) and is dropped.
+ * an out-of-package file that also resolves beneath the package is a collision
+ * (see `collidesWithPackageFile`) and is dropped.
  */
 async function repoScopeFiles(
   files: string[],
@@ -147,7 +127,7 @@ async function repoScopeFiles(
   canonical: boolean,
 ): Promise<{ kept: string[]; dropped: string[] }> {
   if (canonical) return { kept: files, dropped: [] };
-  const misses = files.filter((file) => toPackageFrame(file, packageWorkdir) === null);
+  const misses = files.filter((file) => !isWithinPackage(file, packageWorkdir));
   const collisions = await Promise.all(misses.map((file) => collidesWithPackageFile(file, packageWorkdir, repoRoot)));
   const dropped = misses.filter((_file, i) => collisions[i]);
   if (dropped.length === 0) return { kept: files, dropped: [] };
@@ -193,7 +173,7 @@ async function fetchFileHistory(
     return null;
   }
 
-  return `### ${renderHeading(filePath, packageWorkdir)}\n${trimmed}`;
+  return `### ${filePath}\n${trimmed}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -248,13 +228,13 @@ export class GitHistoryProvider implements IContextProvider {
     // entry. Same trap as nax#2069; see src/context/fragments/reframe.ts.
     // "." = repo root: a root story (or a caller with no story, e.g. a
     // pull-tool handler where packageDir already equals repoRoot) keeps every
-    // entry — toPackageFrame is identity for ".".
+    // entry — isWithinPackage always matches for ".".
     const packageWorkdir = request.storyWorkdir ?? ".";
     const safeFiles = touchedFiles.filter(isRelativeAndSafe);
     let inHistoryScope: string[];
     if (this.historyScope === "package") {
-      inHistoryScope = safeFiles.filter((file) => toPackageFrame(file, packageWorkdir) !== null);
-      const droppedByScope = safeFiles.filter((file) => toPackageFrame(file, packageWorkdir) === null);
+      inHistoryScope = safeFiles.filter((file) => isWithinPackage(file, packageWorkdir));
+      const droppedByScope = safeFiles.filter((file) => !isWithinPackage(file, packageWorkdir));
       if (droppedByScope.length > 0) {
         // Supplements the empty-stdout A5 warn below: that one can only fire
         // on files that reach fetchFileHistory. Files removed by THIS
