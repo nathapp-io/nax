@@ -169,7 +169,7 @@ Current call sites of the four symbols to delete
 |:---|:---|:---|
 | `src/utils/path-frame.ts` | declares all four (+`toRepoFrame`, kept) | **delete the four declarations in this task** (Task 5 does the header/docblock rewrite) |
 | `src/context/fragments/reframe.ts` | `normalizeWorkdir` (kept), `UNREADABLE_MARKER` | **delete whole file** (see below) |
-| `src/context/builder.ts` | `partitionPackageFrame`, `toPackageFrame`, `toRepoFrame` (kept) | PR 2 already flipped this (Task 0 gate) — **zero remaining hits on `partitionPackageFrame`/`toPackageFrame` expected**; if `reclassifyPlanTimeAbsentEntries` (current ~228-306) is still present but now unreachable dead code, delete it here (see below) |
+| `src/context/builder.ts` | `partitionPackageFrame`, `toPackageFrame`, `toRepoFrame` (kept) | PR 2 already flipped this AND deleted the local `reclassifyPlanTimeAbsentEntries` definition (its Task 3, revised) — **zero remaining hits on `partitionPackageFrame`/`toPackageFrame`/`reclassifyPlanTimeAbsentEntries` expected**; any remainder is a PR 2 gap, route back (see Task 4) |
 | `src/prompts/sections/story.ts` | `toPackageFrame` | PR 2 already flipped this (Task 0 gate) — **zero remaining hits expected** |
 | `src/context/engine/providers/code-neighbor-chunk.ts` | `stripUnreadableMarker`, `toRepoFrame` (kept), `UNREADABLE_MARKER` | **PR 4's own job** — see Task 3 |
 | `src/context/engine/providers/code-neighbor.ts` | `partitionPackageFrame`, `UNREADABLE_MARKER` | **PR 4's own job** — see Task 3 |
@@ -327,6 +327,12 @@ Two possible outcomes, and the concrete action for each:
    inside `policy.ts` that isn't trivially satisfiable by `root` post-PR2.
    Prefer outcome 1 unless outcome 2 is unambiguous from reading the code;
    do not guess.
+   Note (simplest sub-case of outcome 1): `buildCodingToolSupport` already
+   defaults `repoRoot: args.repoRoot ?? args.root` internally
+   (coding-tool-support.ts:~56-61,179). Post-PR2 (root === repoRoot always),
+   straight DELETION of the `:402` conditional spread — passing nothing and
+   letting the fallback supply `root` — is behavior-identical and less churn
+   than rewiring; take it when outcome 1 applies.
 
 - [ ] Read `src/tools/policy.ts` and `src/agents/coding-tool-support.ts` in
       full around every `repoRoot` occurrence, decide between outcome 1 and 2
@@ -370,30 +376,30 @@ Two possible outcomes, and the concrete action for each:
       ```
       grep -n "packageLabel\|function buildAgentScopeSection" src/prompts/sections/agent-scope.ts
       ```
-      The spec's PR 2 section says PR 2 already "Rewrite[s]
-      `src/prompts/sections/agent-scope.ts`: tools rooted at the repo root;
-      the story's package is `<workdir>`; spell paths repo-rooted." Two
-      possible states at PR-4 start:
-      (a) PR 2's rewrite deleted `packageLabel` entirely as part of the
-          rewrite (grep returns zero hits) — Task 2b is then a **no-op**;
-          record that in the commit and move on, do not invent work.
-      (b) PR 2's rewrite kept `packageLabel` (or an equivalent
-          worktree-prefix-stripping helper) defined but no longer called from
-          the new `buildAgentScopeSection` body (dead code left behind by the
-          rewrite) — delete it here, along with its own doc comments
-          (current lines 18-38 on the pre-PR2 file) and the
-          `WORKTREE_DIR` constant if nothing else in the file uses it.
-      Do not assume (a) or (b) — grep and read the real file before deciding
-      which branch of this task applies.
-- [ ] If (b): update `test/unit/prompts/sections/agent-scope.test.ts` (confirm
+      **Expected post-PR2 state (per PR 2's plan, Task 4):** the signature is
+      THREE params — `buildAgentScopeSection(root, repoRoot, workdirLabel)` —
+      with `root` and `repoRoot` always equal, `workdirLabel` the story's
+      package-relative workdir (from `storyWorkdir(story)`, unrelated to
+      `codingToolRepoRoot`), and `packageLabel(root, repoRoot)` deliberately
+      kept wired (behind `void label;`) precisely so THIS task deletes it as
+      one unit. This task's deletions therefore are:
+      - delete `packageLabel` (and its doc comment / the `WORKTREE_DIR`
+        constant if nothing else uses it);
+      - collapse the signature to TWO params —
+        `buildAgentScopeSection(root, workdirLabel)` — dropping the middle
+        `repoRoot` argument (now always equal to `root`), KEEPING
+        `workdirLabel` (it is the "which package are you in" source and is
+        NOT part of `codingToolRepoRoot`'s deletion).
+      If the grep shows a DIFFERENT shape than described (PR 2 drifted from
+      its plan), stop and reconcile against the real file rather than
+      following either description blind.
+- [ ] Update `test/unit/prompts/sections/agent-scope.test.ts` (confirm
       path via `find test -iname "*agent-scope*"`) to drop any case asserting
       the deleted worktree-strip defence-in-depth behavior, keeping every
       case asserting the current (post-PR2) repo-rooted scope-block text.
-- [ ] Run `bun run typecheck` — `tool-preamble.ts:35`'s call to
-      `buildAgentScopeSection(options.codingToolRoot, options.codingToolRepoRoot)`
-      must be updated in the same commit once `codingToolRepoRoot` is deleted
-      (Task 2 above); if `agent-scope.ts`'s post-PR2 signature already takes
-      only one root parameter, drop the second argument here too.
+- [ ] Run `bun run typecheck` — `tool-preamble.ts:35`'s call site
+      (post-PR2 it passes three args) must be updated in the same commit to
+      the two-arg form once `codingToolRepoRoot` is deleted (Task 2 above).
 - [ ] Commit: `refactor(agents): delete codingToolRepoRoot and agent-scope's dead package-label helper (PR4)`
 
 ---
@@ -498,11 +504,15 @@ the mistake to avoid:
       `unreachable.length > 0` warn-log branch. Replace
       `const filesToProcess = readable.filter(isRelativeAndSafe).slice(0, MAX_FILES);`
       with `const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);`.
-      Confirm `request.storyWorkdir`/`pkgDir` still has a live use elsewhere
-      in `fetch()` (it should — it is still threaded into `collectNeighbors`
-      as part of the selector/scan-root logic) before deleting the `pkgDir`
-      local entirely; if `pkgDir` becomes unused after this edit, delete it
-      too, but check first.
+      `pkgDir` (`request.storyWorkdir ?? "."`) has NO other live use in
+      `fetch()` after this task's edits — `collectNeighbors` takes
+      `request.packageDir` (a different variable) and the scan root comes
+      from `scanRoot`, not `pkgDir`. Once the partition call, the
+      unreachable-warn log, and the `packageWorkdir` chunk-input field are
+      gone, `pkgDir` is provably dead: **delete the local** (leaving it
+      defined-but-unused fails `bun run lint`). Confirm with
+      `grep -n "pkgDir" src/context/engine/providers/code-neighbor.ts`
+      after the edit — expect zero hits.
 - [ ] **Sub-concern 3 — git-history.ts render site (`renderHeading`).** Read
       the function (current lines ~89-103) and its docblock. Replace its
       body with a straight pass-through: `return filePath;` (the function
@@ -576,7 +586,13 @@ the mistake to avoid:
 - [ ] Delete or rewrite every existing test case in the three test files that
       specifically asserted the OLD reframe/marker behavior (e.g. "renders
       package-relative heading for the consumer" style assertions,
-      `UNREADABLE_MARKER`-suffix assertions) — read each file in full first;
+      `UNREADABLE_MARKER`-suffix assertions). ⚠️ The block most likely to be
+      wrongly preserved: `code-neighbor-frame.test.ts:274-334`,
+      `describe("CodeNeighborProvider — H7: canonical is gated on
+      provenance...")` — despite the word "canonical" it pins the
+      REACHABILITY-filtering mechanism (partition + unreachable log) that
+      this task deletes outright, NOT selector semantics; it goes. Read each
+      file in full first;
       these files are large (433 / 334 / 288 lines) and mix cases that will
       survive (selector semantics: `neighborScope`/`historyScope: "package"`
       dropping out-of-package files) with cases that must be deleted or
@@ -586,14 +602,15 @@ the mistake to avoid:
 
 ---
 
-## Task 4: `reclassifyPlanTimeAbsentEntries` and `builder-parent-frame.test.ts` — confirm covered by Task 1
+## Task 4: `reclassifyPlanTimeAbsentEntries` and `builder-parent-frame.test.ts` — confirm covered upstream
 
-This is a cross-reference, not new work: Task 1's steps already cover deleting
-`reclassifyPlanTimeAbsentEntries` from `builder.ts` if it is dead post-PR2/PR3.
-Restated here only so the task list is traceable against the spec's own PR-4
-bullet, which does not name this helper explicitly (it is a discovered
-consequence of reading `builder.ts` on the current tree, not a literal spec
-line item). No separate steps.
+Cross-reference, not new work. **PR 2's plan (Task 3, as revised in final
+review) deletes the local `reclassifyPlanTimeAbsentEntries` definition itself**
+— it is builder.ts-local and would fail lint if left uncalled. At PR-4 time
+expect `grep -n "reclassifyPlanTimeAbsentEntries" src/` to return ZERO hits;
+if any remain, that is a PR 2 gap — route it back to that phase's review
+rather than deleting here. `builder-parent-frame.test.ts` casualties are
+handled by Task 1's test sweep. No separate steps.
 
 ---
 

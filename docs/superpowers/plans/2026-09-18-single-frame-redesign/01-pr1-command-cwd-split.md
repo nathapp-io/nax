@@ -201,6 +201,7 @@ giving headroom for this PR and the ones after it.
         packageView,
         packageDir: "packages/api",
         config,
+        agentName: "claude", // required field on CallContext (types.ts:56)
       };
 
       const result = buildRunDispatchOptions(ctx, {
@@ -233,6 +234,7 @@ giving headroom for this PR and the ones after it.
         packageView,
         packageDir: "",
         config,
+        agentName: "claude", // required field on CallContext (types.ts:56)
       };
 
       const result = buildRunDispatchOptions(ctx, {
@@ -603,7 +605,7 @@ giving headroom for this PR and the ones after it.
   ```
 
   Then in the `extraTools` array's `createRunCommandTool` call (`:174-195`),
-  add `commandCwd` as the first option:
+  add `commandCwd` immediately after `stripEnvVars`:
 
   ```typescript
             createRunCommandTool(declaredCommands, {
@@ -650,14 +652,19 @@ giving headroom for this PR and the ones after it.
 
 - [ ] **5.1 — Write failing tests: per-package override wins, cache hit on second dispatch, parity with `loadConfigForPackage`.**
 
-  In `test/unit/agents/coding-tool-support.test.ts`, add these imports:
+  In `test/unit/agents/coding-tool-support.test.ts`, EXTEND the existing
+  `node:fs` import at line 2 (it already imports `existsSync, mkdtempSync,
+  writeFileSync` — adding a second `node:fs` import statement is a duplicate
+  identifier error) and add the config imports:
 
   ```typescript
-  import { mkdirSync, writeFileSync } from "node:fs";
-  import { join } from "node:path";
+  import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"; // extend line 2 in place
   import { loadConfigForPackage, packageConfigCache } from "@/config";
   import { _clearRootConfigCache } from "@/config/loader";
   ```
+
+  `join` may already be imported from `node:path` at `:4` — extend that
+  import in place too rather than adding a second statement.
 
   (`join` may already be imported at `:4` — extend that existing import
   rather than duplicating it if so; verify before editing.)

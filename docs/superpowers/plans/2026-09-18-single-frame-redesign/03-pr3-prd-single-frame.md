@@ -228,6 +228,19 @@ PRD single frame (closes #2125)".
 - `src/utils/path-frame.ts` (verified 199 lines) — `toRepoFrame` (:85-91), reused as the pure re-spell.
 - `test/unit/prd/workdir-canonical.test.ts` (verified 323 lines) — `canonicalizeDeclaredPath` describe block (:88-141) and every `canonicalizePrdWorkdirs` test that reads `collided`/`rootOnly` (:210-249).
 - `test/unit/debate/verifiers/checks.test.ts` (verified 327 lines exists) — call-site signature update.
+- Doc-comment corrections in files this task FALSIFIES (one sentence each; if
+  PR 2 has already rewritten/removed the passage, skip that item):
+  `src/prompts/sections/story.ts:27-31` ("the write seam never touches
+  `modifiedFiles`" — false after this task; correct to "the write seam
+  reframes `modifiedFiles` to the repo frame since the single-frame
+  redesign"), `src/utils/path-frame.ts` `partitionPackageFrame` docblock
+  (~:110-135, "Never use it on create-intent `expectedFiles`, whose
+  package-relative spelling is legal" — false once `expectedFiles` are
+  unconditionally repo-rooted; qualify it as describing pre-redesign PRDs
+  only), and `src/context/builder.ts:401-403` (the adjacent paragraph making
+  the same claim). These files are otherwise untouched by this task — edit
+  ONLY the falsified sentences, since leaving them contradicting the code
+  this PR ships would mislead the next reader.
 
 **Interfaces:**
 - Produces (breaking change, both call sites in this repo updated in this task):
@@ -416,6 +429,16 @@ visibly removed.
       ]);
     });
     ```
+  - Add a return-SHAPE assertion so the deleted fields cannot survive as
+    stubbed empties (the exact anti-pattern the Rationale above bans —
+    `collisions: []`/`rootOnly: []` would otherwise pass every test and grep
+    in this plan):
+    ```typescript
+    test("the result carries exactly { prd, defaulted } — collisions/rootOnly are gone, not stubbed", () => {
+      const result = canonicalizePrdWorkdirs(prdOf([makeStory({ workdir: "packages/app" })]), REPO, PACKAGES, probeOf());
+      expect(Object.keys(result).sort()).toEqual(["defaulted", "prd"]);
+    });
+    ```
 
 - [ ] 2.7 RED — cross-fs-state idempotency test (design §6, "the key spec test").
   Add to `workdir-canonical.test.ts`:
@@ -442,12 +465,24 @@ visibly removed.
     });
   });
   ```
-  `derive: false` is required here: `deriveWorkdir` genuinely still reads disk
-  (step 2.3 keeps that selector logic), so a disk-state-independence claim only
-  holds for the reframe itself, not for workdir SELECTION when the story states
-  no workdir — that is a documented, ruled exception (design §2 "Selector"),
-  not a bug this PR fixes. `derive: false` isolates exactly the claim in
-  design §6.
+  Note on `derive: false`: for THIS test it is inert — the story STATES
+  `workdir: "packages/app"`, and `decideWorkdir` (workdir-canonical.ts:168-173)
+  only calls `deriveWorkdir` (the disk-probing selector) when the workdir is
+  unstated. The flag documents intent, nothing more. To actually cover the
+  ruled exception (workdir SELECTION may read disk; the REFRAME may not —
+  design §2 "Selector"), add a second variant with an UNSTATED workdir:
+  ```typescript
+  test("with an unstated workdir and derive disabled, output is still disk-state-independent", () => {
+    const story = makeStory({ contextFiles: ["packages/app/src/a.ts"] }); // no workdir stated
+    const prd = prdOf([story]);
+    const resultA = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, probeOf("packages/app/src/a.ts"), { derive: false });
+    const resultB = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, probeOf(), { derive: false });
+    expect(JSON.stringify(resultA.prd)).toBe(JSON.stringify(resultB.prd));
+  });
+  ```
+  (With `derive: true` and an unstated workdir, output MAY legitimately differ
+  across disk states — that is the selector's documented, ruled exception,
+  not a defect this PR fixes.)
   Run: `bun test test/unit/prd/workdir-canonical.test.ts --timeout=30000`.
   FAIL reason expected (before step 2.2/2.3 land): the old existence-gated
   `canonicalizeDeclaredPath` produces DIFFERENT output for treeA (paths exist →
@@ -856,6 +891,18 @@ covers it.
 
 ## Task 5 — `context/builder.ts`: confirm the H4 residual is inert for new PRDs (no deletion)
 
+**SEQUENCING NOTE (integration branch runs PR 1 → 2 → 3 → 4):** this plan was
+written against the pre-PR-2 tree, but PR 2's Task 3 flips `builder.ts`'s
+rendering AND deletes the local `reclassifyPlanTimeAbsentEntries` function
+before this task runs. First re-grep:
+`grep -n "reclassifyPlanTimeAbsentEntries\|partitionPackageFrame" src/context/builder.ts`.
+If PR 2 already removed them (expected), this task collapses to: verify the
+tolerant legacy branch (`workdirSource === undefined` pass-through) still
+exists in whatever shape PR 2 left, and skip the inertness test below — the
+mechanism it would prove inert no longer exists. Only execute the steps below
+verbatim if PR 2 has NOT landed (out-of-order execution, which Task 0 of PR 2
+forbids anyway).
+
 **Files:**
 - `src/context/builder.ts` (verified 521 lines) — `canonical` flag (:404), `reclassifyPlanTimeAbsentEntries` (:271-306), its call site (:421-431).
 - `test/unit/context/builder-parent-frame.test.ts` (verified 388 lines).
@@ -1027,9 +1074,12 @@ existence-gated `canonicalizeDeclaredPath`), which is exactly why it is kept.
 - [ ] 7.3 `bun run check:file-sizes` — confirm no file crossed its cap; if
   `plan-builder.ts` grew past 600 lines (see Global Constraints), extract per
   that constraint's fallback plan before proceeding.
-- [ ] 7.4 Re-grep for the deleted shape to catch any missed call site:
+- [ ] 7.4 Re-grep for the deleted shape to catch any missed call site — and
+  for the fields surviving as stubbed object-literal KEYS (property-access
+  greps alone cannot see `collisions: []`):
   ```bash
   grep -rn "\.collided\b\|\.rootOnly\b" src/ test/ | grep -v node_modules
+  grep -rEn "collisions:\s*\[\]|rootOnly:\s*\[\]|collided:\s*(true|false)" src/prd/ src/plan/
   grep -rn "canonicalizeDeclaredPath(" src/ test/ | grep -v node_modules
   ```
   Every `canonicalizeDeclaredPath(...)` call site must now pass exactly 2

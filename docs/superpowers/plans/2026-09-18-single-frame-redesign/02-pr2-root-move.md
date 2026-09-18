@@ -338,22 +338,28 @@ silently code against a stale name.
       // repo root post-move, so every repo-rooted declared path is reachable
       // by construction — package reframing and the plan-time-absent
       // reclassification it depended on are retired for RENDERING purposes
-      // here. `reclassifyPlanTimeAbsentEntries` and `partitionPackageFrame`
-      // stay defined (PR 4 deletes them once nothing calls them at all) but
-      // this call site stops invoking them. `contextFiles`/`expectedFiles`
-      // pass straight through; nothing is dropped as unreachable.
+      // here. `contextFiles`/`expectedFiles` pass straight through; nothing
+      // is dropped as unreachable.
       const framedContextFiles = contextFiles;
       const framedExpectedFiles = expectedFiles;
       const unreachable: string[] = [];
       ```
-      Check whether `usedAutoDetect`, `reclassifyPlanTimeAbsentEntries`,
-      `partitionPackageFrame`, `parentFileSet` become unused in this file after
-      the change — if `reclassifyPlanTimeAbsentEntries` and
-      `partitionPackageFrame` are imported ONLY for this call site, remove the
-      now-dead imports (do not delete the functions themselves from their
-      source modules — PR 4's job, and other files may still import them);
-      run `bun run lint` to catch any biome unused-import warning if you miss
-      one.
+      Then clean up what this flip orphans, distinguishing two cases:
+      - `reclassifyPlanTimeAbsentEntries` is a LOCAL, non-exported function of
+        `builder.ts` (~:271-320) whose ONLY caller is the call site just
+        removed. Leaving it defined-but-uncalled fails `bun run lint`
+        (Biome's recommended unused-detection). **Delete the function
+        definition (and its doc comment) in THIS task** — it does not belong
+        to PR 4's shared-helper deletion, and PR 4's Task 0 preflight greps
+        `builder.ts` expecting ZERO `toPackageFrame` matches, which only
+        holds if this local body (which calls `toPackageFrame` at ~:290) is
+        gone.
+      - `partitionPackageFrame`/`toPackageFrame` are IMPORTED from
+        `@/utils/path-frame` — remove the now-dead imports from `builder.ts`,
+        but do NOT delete the functions from `path-frame.ts` (PR 4's job;
+        other files still import them until then).
+      Also check `usedAutoDetect`/`parentFileSet` for dead-ness after the
+      change; run `bun run lint` to catch anything missed.
 - [ ] The `if (unreachable.length > 0)` warning block immediately below stays
       — it is now permanently dead for this path (`unreachable` is always
       `[]`) but harmless; leave it rather than deleting the log statement,
@@ -562,6 +568,14 @@ selector but no longer justifies reframing).
 **Interfaces:**
 - Produces: `buildRefDiffSection(storyGitRef, stat, excludePatterns, pathspec)` (new 4th param, review-builder.ts's private helper), the equivalent private helper in adversarial-review-builder.ts gains `pathspec`, `buildDebateDiffSection(ctx)` — add `pathspec` to its `DiffContext` type instead of a bare param (keeps the existing single-object-arg shape).
 - Consumes: caller-supplied `pathspec: string` — the story's repo-relative package dir (e.g. `"packages/api"`) or `"."` for a repo-root story. Compute via `storyWorkdir(story)` (already imported in `src/utils/path-frame.ts`) at each public builder method's call site and thread it down to the private helper.
+- ⚠️ Typing caveat: `buildSemanticReviewPrompt`'s `story` parameter is typed
+  `SemanticStory` (`src/review/types.ts:66-80`), which has NO `workdir`
+  field — `storyWorkdir(story)` type-checks only because `StoryWorkdirLike`
+  makes `workdir` optional, and works at runtime only because production
+  callers pass a full `UserStory`. A test fixture built to the literal
+  `SemanticStory` shape silently yields pathspec `"."` (repo root). Test
+  fixtures for this task MUST include `workdir`, and add a one-line comment
+  at the call site noting the structural-typing dependence.
 
 **Rationale (confirm before editing):** these three files' diff-section
 strings are the **ACP-arm** rendering — the model runs the shell command
@@ -606,7 +620,7 @@ though the agent's cwd is now the repo root.
       thread `storyWorkdir(story)` (or `"."` fallback) as the new `pathspec`
       argument at that call site — the story object is in scope there.
 - [ ] Repeat the same shape of change in `adversarial-review-builder.ts`
-      (three `-- .` occurrences at what are currently lines 289, 295, 302, 306
+      (four `-- .` occurrences at what are currently lines 289, 295, 302, 306
       after the `--relative` removal shifts nothing on those specific lines
       since removal is same-line) and in `debate-builder.ts`'s
       `buildDebateDiffSection` (add `pathspec` to its `DiffContext` type,
@@ -703,7 +717,15 @@ Task 1's agent-root move).
       `--relative` in `scoped-lint.ts` and instead correct only the doc
       comment to state explicitly why this ONE site is exempt from the
       consolidation (its consumer does a path join that requires the
-      package-relative frame `--relative` produces) — write this as the
+      package-relative frame `--relative` produces). Note: while tracing
+      `filterFilesToScope` you WILL hit a pre-existing FIXME(#2087) at
+      `scoped-lint.ts:112-142` ("frame contradiction... Do not silently
+      rewire") about a second, repo-frame consumer (`findPackageDir` at
+      ~:136) that is currently unreachable dead code (its `projectDir`
+      inputs are never threaded from the real call site). Fixing #2087 is
+      OUT OF SCOPE for this PR — this task's keep-`--relative` conclusion is
+      compatible with the FIXME precisely because that repo-frame consumer
+      is dead today; leave the FIXME in place — write this as the
       test's actual assertion (assert `--relative` IS still present, with a
       comment citing the join-consumer reason) rather than removing it.
 - [ ] Run all tests; confirm PASS (including the scoped-lint.ts test that now
@@ -726,31 +748,30 @@ produces as a side effect).
       `workdir` sourced from the same value Task 1 changed
       (`codingToolRoot`/`ctx.packageDir`-derived) — read that call site before
       writing the test, to confirm the collapse actually reaches the pool.
-- [ ] Write a failing (well — this test should ALREADY pass numerically once
-      Task 1 lands, since the pool code itself needs no change; write it as a
-      regression pin, and if it unexpectedly still fails after Task 1, that
-      means the pool's `workdir` caller was NOT updated by Task 1 and needs a
-      follow-up fix here) test in `test/unit/mcp/pool.test.ts` (existing file
-      — extend): construct a pool with a fake `connectMcpServer` that counts
-      invocations. Call `pool.listTools("codebase-memory-mcp", workdirA)` and
-      `pool.listTools("codebase-memory-mcp", workdirB)` where `workdirA` and
-      `workdirB` are two DIFFERENT package dirs (`/repo/packages/api`,
-      `/repo/packages/web`) that share the SAME `storyExecRoot`
-      (`/repo`, i.e. simulate two stories/packages in the same worktree).
-      Prior to Task 1, this created TWO connections (package-dir-keyed).
-      Post-Task-1, the caller passes `storyExecRoot` as `workdir`
-      (confirmed by the trace above) so both calls use the SAME key and the
-      fake connector must be invoked exactly ONCE. Assert
-      `connectMcpServer` call count === 1.
-- [ ] Run it. If it fails (Task 1's collapse did not actually reach this
-      call site — e.g. the MCP pool caller reads `ctx.packageDir` directly
-      rather than `codingToolRoot`), trace the real call site and either (a)
-      confirm it already reads a value Task 1 changed and the test has a bug,
-      or (b) fix the call site to read the post-move root value, whichever is
-      true. Do not mark this task done on a passing test that isn't actually
-      exercising the collapse — cross-check by temporarily reverting Task 1's
-      `call.ts` change locally and confirming this new test FAILS, then
-      restore Task 1's change.
+- [ ] Write the regression pin. **The pool itself performs NO normalization**
+      — it keys connections by the literal `workdir` string it is handed
+      (`pool.ts:1-13`), so calling `pool.listTools` directly with two
+      different raw package-dir strings will ALWAYS create two connections,
+      before and after Task 1. A test written that way is unpassable and
+      proves nothing. The collapse happens UPSTREAM, in the caller that
+      computes the root (`resolveProviderTools`/`buildCodingToolSupport`
+      threading `args.root`, `coding-tool-support.ts:~362`). The test must
+      therefore exercise that chain: construct TWO `PackageView`s with
+      different relative `packageDir`s (`packages/api`, `packages/web`) over
+      the SAME `repoRoot`, resolve each one's pool `workdir` exactly the way
+      the production caller does post-Task-1 (`storyExecRoot(viewA)` /
+      `storyExecRoot(viewB)`, which are equal by construction), pass those
+      resolved values to `pool.listTools("codebase-memory-mcp", …)` with a
+      fake `connectMcpServer` counting invocations, and assert call count
+      === 1. Preferably drive it through `resolveCodingToolSupport` /
+      `resolveProviderTools` end-to-end so the caller-side derivation is what
+      the test pins, not a re-implementation of it inside the test.
+- [ ] Run it. Cross-check it is genuinely pinning Task 1's change: temporarily
+      revert Task 1's `call.ts`/root derivation locally (so the caller
+      resolves package dirs again), confirm the test then FAILS with call
+      count 2, and restore. If the test does not fail under the revert, it is
+      re-deriving the collapse inside itself instead of exercising the
+      production caller — rewrite it against the real chain.
 - [ ] `bun run typecheck && bun run lint`.
 - [ ] `git commit` — `test(mcp): pin one-connection-per-worktree collapse post-root-move`.
 
