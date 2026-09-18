@@ -181,7 +181,6 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
 
     let readCount = 0;
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
-    _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = async () => {
       readCount++;
       if (readCount === 1) return VALID_MANIFEST; // loadContextManifests pass
@@ -206,7 +205,6 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
     const written: string[] = [];
     let readCount = 0;
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json", "context-manifest-tdd.json"];
-    _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = async (path: string) => {
       readCount++;
       // First two reads: initial load for both manifests
@@ -248,7 +246,6 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
       return originalTokenize(text);
     };
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
-    _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = async () => {
       readCount++;
       return manifest;
@@ -289,7 +286,6 @@ describe("annotateManifestEffectiveness — PERF-1: invalidates provider weights
   function stubAnnotationWrite(readFile: () => Promise<string>): void {
     _effectivenessDeps.getLogger = () => makeLogger();
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
-    _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = readFile;
     _manifestStoreDeps.writeJson = async () => {};
   }

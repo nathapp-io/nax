@@ -28,7 +28,6 @@ describe("manifest-store", () => {
     };
     _manifestStoreDeps.listFeatureDirs = async () => ["feat-auth"];
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-review-semantic.json"];
-    _manifestStoreDeps.fileExists = async (path) => writes.has(path);
     _manifestStoreDeps.readFile = async (path) => writes.get(path) ?? "";
 
     await writeContextManifest("/repo", "feat-auth", "US-001", "review-semantic", {
@@ -95,7 +94,6 @@ describe("manifest-store", () => {
 
     _manifestStoreDeps.listFeatureDirs = async () => ["feat-auth"];
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-review-semantic.json"];
-    _manifestStoreDeps.fileExists = async (filePath) => writes.has(filePath);
     _manifestStoreDeps.readFile = async (filePath) => writes.get(filePath) ?? "";
 
     const manifests = await loadContextManifests("/repo", "US-001");
@@ -130,13 +128,50 @@ describe("manifest-store", () => {
 
     _manifestStoreDeps.listFeatureDirs = async () => ["feat-auth"];
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-review-semantic.json"];
-    _manifestStoreDeps.fileExists = async (filePath) => writes.has(filePath);
     _manifestStoreDeps.readFile = async (filePath) => writes.get(filePath) ?? "";
 
     const manifests = await loadContextManifests("/repo", "US-001");
     expect(manifests).toHaveLength(1);
     expect(manifests[0]?.manifest.repoRoot).toBe("/repo");
     expect(manifests[0]?.manifest.packageDir).toBe("/repo");
+  });
+
+  test("loadContextManifests skips a listed manifest whose read fails, without probing fileExists", async () => {
+    const presentPath = "/repo/.nax/features/feat-auth/stories/US-001/context-manifest-execution.json";
+    const vanishedPath = "/repo/.nax/features/feat-auth/stories/US-001/context-manifest-review-semantic.json";
+    let fileExistsCalls = 0;
+
+    _manifestStoreDeps.listFeatureDirs = async () => ["feat-auth"];
+    _manifestStoreDeps.listManifestFiles = async () => [
+      "context-manifest-execution.json",
+      "context-manifest-review-semantic.json",
+    ];
+    _manifestStoreDeps.fileExists = async () => {
+      fileExistsCalls++;
+      return true;
+    };
+    _manifestStoreDeps.readFile = async (filePath) => {
+      if (filePath === vanishedPath) {
+        throw Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+      }
+      return JSON.stringify({
+        requestId: "req-1",
+        stage: "execution",
+        totalBudgetTokens: 8_000,
+        usedTokens: 100,
+        includedChunks: [],
+        excludedChunks: [],
+        floorItems: [],
+        digestTokens: 0,
+        buildMs: 5,
+      });
+    };
+
+    const manifests = await loadContextManifests("/repo", "US-001");
+    expect(manifests).toHaveLength(1);
+    expect(manifests[0]?.path).toBe(presentPath);
+    expect(manifests[0]?.stage).toBe("execution");
+    expect(fileExistsCalls).toBe(0);
   });
 
   test("writeContextManifest rejects when the JSON write rejects", async () => {

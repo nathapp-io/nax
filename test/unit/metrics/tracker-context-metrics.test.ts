@@ -66,7 +66,6 @@ function makeManifest(overrides?: Partial<ContextManifest>): ContextManifest {
 
 let origListFeatureDirs: typeof _manifestStoreDeps.listFeatureDirs;
 let origListManifestFiles: typeof _manifestStoreDeps.listManifestFiles;
-let origFileExists: typeof _manifestStoreDeps.fileExists;
 let origReadFile: typeof _manifestStoreDeps.readFile;
 
 function mockManifests(manifests: Record<string, ContextManifest | string>) {
@@ -78,7 +77,6 @@ function mockManifests(manifests: Record<string, ContextManifest | string>) {
     Object.keys(manifests)
       .filter((k) => k.startsWith(`${FEATURE}/`))
       .map((k) => `context-manifest-${k.split("/")[1]}.json`);
-  _manifestStoreDeps.fileExists = async () => true;
   _manifestStoreDeps.readFile = async (path: string) => {
     const stage = path.replace(/.*context-manifest-/, "").replace(/\.json$/, "");
     const m = manifests[`${FEATURE}/${stage}`];
@@ -89,14 +87,12 @@ function mockManifests(manifests: Record<string, ContextManifest | string>) {
 beforeEach(() => {
   origListFeatureDirs = _manifestStoreDeps.listFeatureDirs;
   origListManifestFiles = _manifestStoreDeps.listManifestFiles;
-  origFileExists = _manifestStoreDeps.fileExists;
   origReadFile = _manifestStoreDeps.readFile;
 });
 
 afterEach(() => {
   _manifestStoreDeps.listFeatureDirs = origListFeatureDirs;
   _manifestStoreDeps.listManifestFiles = origListManifestFiles;
-  _manifestStoreDeps.fileExists = origFileExists;
   _manifestStoreDeps.readFile = origReadFile;
 });
 

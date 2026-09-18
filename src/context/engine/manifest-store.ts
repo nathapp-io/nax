@@ -192,7 +192,6 @@ async function loadStoryManifests(
 
   for (const fileName of manifestFiles) {
     const fullPath = join(storyDir, fileName);
-    if (!(await _manifestStoreDeps.fileExists(fullPath))) continue;
     try {
       const raw = await _manifestStoreDeps.readFile(fullPath);
       const parsed = JSON.parse(raw) as ContextManifest;
