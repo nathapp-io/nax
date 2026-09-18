@@ -10,10 +10,12 @@ import { join } from "node:path";
  * story execution root (the repo or worktree root), so a repo-rooted path is
  * directly addressable.
  *
- * `toRepoFrame` is a DEFENSIVE re-spell for a stray non-conforming input
- * (e.g. a legacy package-relative spelling), never a steady-state translation
- * step. `isWithinPackage` is a selector-contract primitive: a membership test
- * that never re-spells.
+ * `toRepoFrame` is not a mandatory boundary-translation step; it is the
+ * canonical-frame normalizer, used only where a package-scoped producer (a
+ * rule's package-relative `appliesTo:` literal, keyword auto-detect output,
+ * declared package sources) must be brought into the one repo frame. Every
+ * other path set is repo-rooted by construction. `isWithinPackage` is a
+ * selector-contract primitive: a membership test that never re-spells.
  *
  * `story.workdir` is a SELECTOR, not a frame boundary: it names which package's
  * rules, config, and command cwd apply — surfaced by `storyWorkdir`,

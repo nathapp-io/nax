@@ -225,7 +225,8 @@ export class GitHistoryProvider implements IContextProvider {
     // "worktree", packageDir is `<root>/.nax-wt/<storyId>/<pkg>` while repoRoot
     // is the main checkout, so that derivation yields `.nax-wt/<storyId>/<pkg>`,
     // matches nothing in repo-rooted touchedFiles, and silently drops every
-    // entry. Same trap as nax#2069; see src/utils/path-frame.ts.
+    // entry. Same trap as nax#2069; see the ContextRequest.storyWorkdir
+    // docblock in src/context/engine/types.ts.
     // "." = repo root: a root story (or a caller with no story, e.g. a
     // pull-tool handler where packageDir already equals repoRoot) keeps every
     // entry — isWithinPackage always matches for ".".
