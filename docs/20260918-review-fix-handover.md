@@ -8,6 +8,14 @@ Every finding here survived a second verification pass against source. The revie
 original severities and several of its proposed fixes did not survive, so **follow the rulings in
 this document, not the fix suggestions in the review doc where the two differ.**
 
+**Provenance of the citations below.** Every file:line referenced in a ruling was opened and read at
+`cf8c3baaa`, including on a third pass over this document itself, which corrected three of its own
+errors: the MEM-2 delegation did not typecheck, MEM-2 said "three maps" when there are nine, and
+SEC-9 said to import a constant that is module-private. Treat the code facts as proven. **One thing
+is explicitly NOT proven and is called out inline: whether `descriptor.handle` is populated for
+native sessions at teardown (MEM-2).** Verify that first - if it is not, the MEM-2 fix is inert and
+the design needs revisiting before you write it.
+
 ---
 
 ## Read this first: fixes that must NOT be applied
@@ -157,22 +165,66 @@ identical for both adapters and honors the ADR-011 ownership model. Do **not** i
 from `runtime.close()` - that leaves the contract asymmetric and does not fix the `keepOpen` path
 *during* a run.
 
-Two parts:
-1. Add `closePhysicalSession(handle, workdir, options)` to the native adapter, delegating to
-   `closeNativeSession(handle)`. Mirror the ACP adapter's signature exactly so the optional call site
-   binds.
-2. **Reorder `closeNativeSession`.** It currently performs `await retainTranscript(...)` /
-   `pruneRetainedTranscripts` at `:168-169` **before** the nine `delete` calls at `:174-182`. A throw
-   in that I/O skips every delete. Move the deletes ahead of the transcript I/O, or wrap the I/O so
-   the deletes run in a `finally`.
+#### The type contract - read before writing code
+
+The two functions do **not** have compatible signatures, so a naive delegation will not compile:
+
+```ts
+// agents/acp/adapter.ts:134 - the contract you must mirror
+async closePhysicalSession(handle: string, workdir: string,
+                           options?: { force?: boolean; signal?: AbortSignal }): Promise<void>
+
+// agents/native/session/session.ts:160 - takes an OBJECT, not a string
+export async function closeNativeSession(handle: SessionHandle, failed?: boolean): Promise<void>
+```
+
+`return closeNativeSession(handle)` does **not** typecheck. Resolve it this way, which the data
+model already supports:
+
+- Every native map is keyed by the **session-name string**, set in `openNativeSession(name, ...)`
+  (`session.ts:122-139`). `closeNativeSession` only ever reads `handle.id` - it never touches any
+  other field of `SessionHandle`.
+- `SessionHandle.id` is documented as "Protocol-agnostic session identifier"
+  (`agents/session-types.ts:29`), and `SessionManager.openSession` stores `handle: name`
+  (`manager.ts:493`) on the descriptor, agent-agnostically.
+- So `descriptor.handle` (the string passed to `closePhysicalSession`) **is** the same string the
+  maps are keyed by.
+
+**Ruling: extract the nine deletes into a string-keyed helper** (e.g.
+`clearNativeSessionState(sessionName: string)`), and have both `closeNativeSession` (passing
+`handle.id`) and the new `closePhysicalSession` (passing its `handle` string) call it. Do not
+reconstruct a synthetic `SessionHandle` just to satisfy the signature.
+
+**Verify before relying on it:** `session-manager-runtime.ts:10` returns early on
+`if (!descriptor.handle)`. Confirm a native session's descriptor actually carries `handle` at
+teardown - `manager.ts:493` sets it on the `openSession` create path, but `manager.ts:195`
+(`create({ handle: options.handle })`) allows it to be undefined. If it is ever undefined for native
+sessions, the new method is unreachable and the fix is inert, which is the defect class this finding
+is about in the first place.
+
+#### The two parts
+
+1. Add `closePhysicalSession` to the native adapter with the signature above, delegating to the new
+   string-keyed helper.
+2. **Reorder `closeNativeSession`.** It performs `await retainTranscript(...)` /
+   `pruneRetainedTranscripts` (`:168-169`) **before** the deletes (`:174-182`). A throw in that I/O
+   skips every delete. Put the deletes in a `finally` around the transcript I/O.
+
+**There are NINE maps/sets, not three.** The review doc quoted only the first three because it
+quoted a truncated line range. The full set, all in `session.ts`, all string-keyed:
+`nativeTranscriptDirs` (:28), `nativeSessionTimeouts` (:35), `nativeSessionStreamHooks` (:43),
+`nativeSessionFailed` (:66), `nativeSessionTranscriptOwners` (:76), `nativeSessionCompaction` (:79),
+`nativeSessionTransportRetry` (:85), `nativeSessionSpinBreaker` (:95), `nativeSessionLastUsage` (:106).
+The helper must clear all nine, matching the nine deletes at `:174-182`.
 
 Note the file's own docstring calls the retention "harmless in practice (a small in-memory map keyed
 by session name, not a handle to a real resource)". That is true of the *size*; the defect is the
 unreachable teardown path and the throw-skips-cleanup ordering, not the byte count.
 
-**Acceptance:** a test that opens a native session with `keepOpen`, runs story close, and asserts all
-three maps (`nativeTranscriptDirs`, `nativeSessionTimeouts`, `nativeSessionStreamHooks`) are empty;
-plus a test that a throwing `retainTranscript` still clears them.
+**Acceptance:** a test that opens a native session with `keepOpen`, runs story close, and asserts
+**all nine** maps are empty; plus a test that a throwing `retainTranscript` still clears them.
+Assert on the maps by iterating the exported bindings, not by naming three of them, so a tenth map
+added later fails the test rather than slipping through.
 
 ---
 
@@ -208,8 +260,8 @@ it would silently serve one profile's config to another run, which is the nax#21
 
 Scope this accurately when you write it up: it only fires for a monorepo package that actually ships
 `.nax/mono/<pkg>/config.json`. Non-monorepo and root stories return early at
-`iteration-runner.ts:129`, and a missing package config returns at `loader.ts:454` before any shim,
-merge, env-resolve or Zod parse.
+`iteration-runner.ts:129` (`storyPackageDir(story)` undefined), and a missing package config returns
+`rootConfig` at `loader.ts:453` before any shim, merge, env-resolve or Zod parse.
 
 ### 7. PERF-1 - `ProviderWeightsCache` invalidated where it is useless
 
@@ -285,8 +337,12 @@ which is at 591/600. This also fixes every other caller for free.
 prototype changes (object-local, **not** global pollution), and the config silently gains phantom
 inherited keys while losing the literal one. `merger.ts:21` `DANGEROUS_MERGE_KEYS` exists but does not
 cover this path.
-**Ruling:** skip `DANGEROUS_MERGE_KEYS` in the loop. Import the existing constant from `merger.ts` -
-do not define a second copy.
+**Ruling:** skip `DANGEROUS_MERGE_KEYS` in the loop, reusing the existing constant - do not define a
+second copy.
+**It is currently module-private**: `merger.ts:21` is `const DANGEROUS_MERGE_KEYS = ...`, not
+`export const`. Export it (and check `check:alias-internals` / the barrel conventions still pass), or
+move it to a shared leaf module if `merger.ts` should not widen its surface. Do not copy the literal
+set into `dotenv.ts` - two copies of a security constant is how one of them goes stale.
 
 ### 14. Correctness note - `memoizedLoadCanonicalRules` ignores its `options`
 
