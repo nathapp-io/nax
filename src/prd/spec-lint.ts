@@ -23,6 +23,17 @@
  * the author appears to have written. Re-implementing the grammar here would
  * create a second source of truth that drifts from the first, and a linter that
  * disagrees with the tool it guards is worse than no linter.
+ *
+ * Frame: as of the single-frame redesign (nax#2125), `### Modifies` and
+ * `### Context Files` entries are authored REPO-RELATIVE in a monorepo spec
+ * -- matching the planner's own contextFiles/expectedFiles convention
+ * (src/prompts/builders/plan-builder.ts). This linter's own checks
+ * (checkModifies, the Context Files mention check) validate EXTRACTION
+ * (did the grammar parse?), not frame -- a workdir-relative path extracts
+ * and lints clean, then silently mismatches downstream (see
+ * src/operations/plan-fidelity.ts warnOnDroppedContextFiles). There is no
+ * lint code for a frame mismatch; authoring convention is documentation,
+ * not a gate.
  */
 
 import { existsSync } from "node:fs";
