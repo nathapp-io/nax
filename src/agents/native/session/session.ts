@@ -19,9 +19,11 @@ import type { TurnRetryConfig } from "./turn-retry";
 /**
  * Session name -> transcript directory, so sendTurn and close can find it.
  *
- * Cleared only by `closeNativeSession`: a caller that opens a session and
- * never closes it (e.g. an early return, or a thrown error between open and
- * close) leaks an entry here for the lifetime of the process. Harmless in
+ * Cleared by every close path — `closeNativeSession` (in-process) and the
+ * adapter's `closePhysicalSession` (run teardown, which only has the name) —
+ * through the shared `clearNativeSessionState`. A caller that opens a session
+ * and never closes it (e.g. an early return, or a thrown error between open and
+ * close) still leaks an entry for the lifetime of the process. Harmless in
  * practice (it is a small in-memory map keyed by session name, not a handle
  * to a real resource), but worth knowing when debugging a growing map.
  */
@@ -152,6 +154,28 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
 }
 
 /**
+ * Clear every module-level entry for one session name.
+ *
+ * Extracted so both close paths share one source of truth. `closeNativeSession`
+ * has a `SessionHandle`; the adapter's `closePhysicalSession` gets only the
+ * handle string that run teardown carries (`descriptor.handle`). The two are
+ * the same string — every map is keyed by the session name, and `SessionHandle.id`
+ * is that name — but the signatures are not interchangeable, so this helper is
+ * string-keyed rather than reconstructed into a synthetic handle.
+ */
+export function clearNativeSessionState(sessionName: string): void {
+  nativeTranscriptDirs.delete(sessionName);
+  nativeSessionTimeouts.delete(sessionName);
+  nativeSessionTranscriptOwners.delete(sessionName);
+  nativeSessionStreamHooks.delete(sessionName);
+  nativeSessionFailed.delete(sessionName);
+  nativeSessionCompaction.delete(sessionName);
+  nativeSessionTransportRetry.delete(sessionName);
+  nativeSessionSpinBreaker.delete(sessionName);
+  nativeSessionLastUsage.delete(sessionName);
+}
+
+/**
  * Kept on failure, deleted on success. Every Phase B op is lifetime "fresh", so
  * the transcript survives exactly when it is worth reading. The kept-on-failure
  * set is otherwise unbounded, so a failed close also prunes the feature's
@@ -162,22 +186,19 @@ export async function closeNativeSession(handle: SessionHandle, failed?: boolean
   // An explicit argument wins; otherwise the last turn's own verdict decides.
   // The adapter passes nothing, because its interface has no failure signal.
   const treatAsFailed = failed ?? nativeSessionFailed.has(handle.id);
-  if (dir !== undefined) {
-    if (treatAsFailed) {
-      // Retain for a human, out of reach of the next session of this name.
-      await retainTranscript(dir, handle.id);
-      await pruneRetainedTranscripts(dir);
-    } else {
-      await deleteTranscript(dir, handle.id);
+  try {
+    if (dir !== undefined) {
+      if (treatAsFailed) {
+        // Retain for a human, out of reach of the next session of this name.
+        await retainTranscript(dir, handle.id);
+        await pruneRetainedTranscripts(dir);
+      } else {
+        await deleteTranscript(dir, handle.id);
+      }
     }
+  } finally {
+    // The deletes must run even when the transcript I/O throws: a failed
+    // cleanup step is no reason to strand the session's other state.
+    clearNativeSessionState(handle.id);
   }
-  nativeTranscriptDirs.delete(handle.id);
-  nativeSessionTimeouts.delete(handle.id);
-  nativeSessionTranscriptOwners.delete(handle.id);
-  nativeSessionStreamHooks.delete(handle.id);
-  nativeSessionFailed.delete(handle.id);
-  nativeSessionCompaction.delete(handle.id);
-  nativeSessionTransportRetry.delete(handle.id);
-  nativeSessionSpinBreaker.delete(handle.id);
-  nativeSessionLastUsage.delete(handle.id);
 }
