@@ -32,7 +32,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveDeclaredTools } from "../src/operations/types";
-import type { CodingToolName } from "../src/tools";
+import { type CodingToolName, getCodingTool, registerBuiltinCodingTools } from "../src/tools";
 import { byCodePoint } from "../src/utils/sort";
 
 const BASELINE_FILE = join(import.meta.dir, "baselines", "op-tool-capability-baseline.json");
@@ -92,8 +92,27 @@ interface Baseline {
   ops: string[];
 }
 
+/**
+ * The op's REPOSITORY-facing tools.
+ *
+ * `resolveDeclaredTools` also carries the ambient scratchpad tools: they are
+ * appended to every op at dispatch (`declaredWithProviders` in
+ * src/agents/coding-tool-support.ts), so an op that omits `tools` receives
+ * them alongside the read-only default. A tool with `scope.confineTo` set can
+ * only ever resolve paths under its own directory -- `ScratchpadWrite` can no
+ * more satisfy a role's `Write` requirement than `Read` can -- so it is not
+ * part of the surface this gate reports. Filtering on the scope rather than on
+ * the three scratchpad names keeps the rule true for any future confined tool.
+ */
+function repositoryTools(tools: readonly string[]): string[] {
+  return tools.filter((tool) => getCodingTool(tool)?.scope.confineTo === undefined);
+}
+
 /** Walk a module's exports for run operations, deduped by object identity. */
 export function collectOps(mod: Record<string, unknown>): OpRow[] {
+  // The scope lookup in repositoryTools() only sees built-ins once they are
+  // registered; every call is idempotent.
+  registerBuiltinCodingTools();
   const seen = new Set<unknown>();
   const rows: OpRow[] = [];
   for (const value of Object.values(mod)) {
@@ -104,7 +123,11 @@ export function collectOps(mod: Record<string, unknown>): OpRow[] {
     if (typeof role !== "string") continue;
     if (seen.has(value)) continue;
     seen.add(value);
-    rows.push({ name: op.name, role, tools: resolveDeclaredTools(op as { tools?: readonly CodingToolName[] }) });
+    rows.push({
+      name: op.name,
+      role,
+      tools: repositoryTools(resolveDeclaredTools(op as { tools?: readonly CodingToolName[] })),
+    });
   }
   return rows;
 }

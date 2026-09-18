@@ -3,7 +3,7 @@
   "feature": "native-agent-scratchpad",
   "branchName": "feat/native-agent-scratchpad",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-18T17:15:34.790Z",
+  "updatedAt": "2026-09-18T18:36:47.193Z",
   "userStories": [
     {
       "id": "US-001",
@@ -78,8 +78,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -130,11 +130,23 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "toAgent": "native",
+          "reason": "Rectification exhausted: The test `resolvePermissions — safe > grants read tools only` in `test/unit/config/scoped-permissions.test.ts` passes consistently (3/3 isolated runs, 9/9 tests passing, 11/11 expect() calls). The \"error\" supplied in the prompt — `(node:79387) Warning: [finish-pr] Failed to write PR title/body` — is a Node.js stderr warning from an unrelated orchestrator tool (`finish-pr`), not a test assertion failure. The test is flaky per the prompt's own definition (passes on every run here despite being reported as failing), and editing source to placate an unrelated tooling warning would hide a real defect in `finish-pr`, not in the permissions resolver.",
+          "timestamp": "2026-09-18T18:36:45.156Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "It changes permission and operation-declaration access control across support and runtime, including a direct-call regression path."
+        "reasoning": "It changes permission and operation-declaration access control across support and runtime, including a direct-call regression path.",
+        "initialComplexity": "complex",
+        "modelTier": "powerful",
+        "initialModelTier": "balanced",
+        "agent": "native"
       },
       "contextFiles": [
         "src/agents/coding-tool-support.ts",
@@ -154,9 +166,35 @@
         }
       ],
       "workdirSource": "defaulted",
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted: The test `resolvePermissions — safe > grants read tools only` in `test/unit/config/scoped-permissions.test.ts` passes consistently (3/3 isolated runs, 9/9 tests passing, 11/11 expect() calls). The \"error\" supplied in the prompt — `(node:79387) Warning: [finish-pr] Failed to write PR title/body` — is a Node.js stderr warning from an unrelated orchestrator tool (`finish-pr`), not a test assertion failure. The test is flaky per the prompt's own definition (passes on every run here despite being reported as failing), and editing source to placate an unrelated tooling warning would hide a real defect in `finish-pr`, not in the permissions resolver."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced [full-suite-gate-exhausted]: Rectification exhausted: The test `resolvePermissions — safe > grants read tools only` in `test/unit/config/scoped-permissions.test.ts` passes consistently (3/3 isolated runs, 9/9 tests passing, 11/11 expect() calls). The \"error\" supplied in the prompt — `(node:79387) Warning: [finish-pr] Failed to write PR title/body` — is a Node.js stderr warning from an unrelated orchestrator tool (`finish-pr`), not a test assertion failure. The test is flaky per the prompt's own definition (passes on every run here despite being reported as failing), and editing source to placate an unrelated tooling warning would hide a real defect in `finish-pr`, not in the permissions resolver.",
+          "cost": 4.851737099999999,
+          "timestamp": "2026-09-18T18:36:45.156Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "446eaea60524cd2db5a2128d9ae44ab6591639f6",
+      "repoScopedFixes": [
+        {
+          "triggeringTests": [
+            "test/unit/config/scoped-permissions.test.ts::resolvePermissions — safe > grants read tools only"
+          ],
+          "filesChanged": [
+            ".nax/features/native-agent-scratchpad/prd.json",
+            "src/agents/coding-tool-support.ts",
+            "src/config/permissions.ts",
+            "src/tools/scratchpad.ts"
+          ],
+          "findingsCleared": false
+        }
+      ]
     },
     {
       "id": "US-004",
