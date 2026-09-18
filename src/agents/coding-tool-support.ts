@@ -64,6 +64,20 @@ export function buildCodingToolSupport(args: {
    */
   repoRoot?: string;
   /**
+   * The story's ABSOLUTE package dir for Exec's `target: "package"` cwd.
+   *
+   * Post-root-move, `codingToolRoot` and `codingToolRepoRoot` are BOTH
+   * `storyExecRoot` (the repo/worktree root), so `args.root` can no longer
+   * stand in for the package dir: `run-command-exec.ts` computes
+   * `relative(repoRoot, packageWorkdir)`, which would always be "" and make
+   * `package-managers.ts`'s `effectiveTarget` collapse EVERY Exec call —
+   * `target: "package"` included — onto the repo root. It MUST be an
+   * absolute path: `packageWorkdir` is compared against the absolute
+   * `repoRoot`, so a relative value yields garbage. Falls back to `root`
+   * when absent (single-package repos, legacy callers, tests).
+   */
+  packageWorkdir?: string;
+  /**
    * Execution cwd for RunCommand's DECLARED (non-Exec) branch, independent
    * of `root` (tool containment). Falls back to `root` when absent.
    *
@@ -192,7 +206,7 @@ export function buildCodingToolSupport(args: {
                 ? {
                     exec: {
                       repoRoot: args.repoRoot ?? args.root,
-                      packageWorkdir: args.root,
+                      packageWorkdir: args.packageWorkdir ?? args.root,
                       allowScripts: args.allowScripts ?? false,
                       touchedPaths: execTouchedPaths,
                       // The compiled grant, not BUILT_IN_EXEC_PATTERNS -- a
@@ -477,6 +491,21 @@ export async function resolveCodingToolSupport(
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
+    // Task 10: Exec's package target needs the story's ABSOLUTE package dir.
+    // `codingToolPackageDir` is RELATIVE to projectDir (and worktree-prefixed
+    // in production), while Exec compares it against an absolute repoRoot —
+    // passing it raw would produce garbage. `commandCwd` is the same value
+    // already computed above via packageWorkdir({ packageDir, repoRoot:
+    // projectDir }): absolute and worktree-aware. Omitted when either input is
+    // unavailable, so buildCodingToolSupport falls back to `root` (correct for
+    // a single-package repo, where the two coincide).
+    ...(packageDir !== undefined &&
+    packageDir.trim() !== "" &&
+    packageDir !== "." &&
+    projectDir !== undefined &&
+    projectDir.trim() !== ""
+      ? { packageWorkdir: commandCwd }
+      : {}),
     commandCwd,
     grants: [...allow.grants, ...providerResult.grants],
     declared: declaredWithProviders,
