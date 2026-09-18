@@ -497,6 +497,10 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       if (opts?.parentSignal && parentAbortHandler) {
         opts.parentSignal.removeEventListener("abort", parentAbortHandler);
       }
+      // Run teardown: a pre-built AgentManager (opts.agentManager) may be reused
+      // across runs, so clear its per-run state — the per-story hop budget,
+      // cooldowns, and pruned fallback set — before releasing it. MEM-12.
+      agentManager.reset();
       agentManager.close();
       if (sessionManager instanceof SessionManager) sessionManager.close();
       await mcpPool.close();
