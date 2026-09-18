@@ -21,14 +21,12 @@ import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import {
   listFragmentStoryIds as listFragmentStoryIdsImpl,
   readFragment as readFragmentImpl,
-  reframeFilesTouched,
 } from "@/context/fragments";
 import { FeatureContextProvider as FeatureContextProviderV1 } from "@/context/providers/feature-context";
 import { getLogger } from "@/logger";
 import type { PRD, UserStory } from "@/prd";
 import { loadPRD as loadPRDImpl } from "@/prd";
 import { errorMessage } from "@/utils/errors";
-import { storyWorkdir } from "@/utils/path-frame";
 import { applyStaleness, detectContradictions, parseFeatureContextEntries, selectStaleByAge } from "../staleness";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -372,23 +370,10 @@ export class FeatureContextProviderV2 implements IContextProvider {
       const rawBody = await _featureContextV2Deps.readFragment(projectDir, featureId, storyId);
       if (rawBody === null) continue;
 
-      // nax#2072: the fragment records repo-rooted paths, but THIS story's
-      // file tools are contained at its package dir, so a dependency's
-      // `packages/lib/src/util.ts` resolves to `<pkg>/packages/lib/...` and
-      // ENOENTs. Re-spell what is reachable, mark what is not.
-      //
-      // Before the budget check, not after: the marker lengthens the body,
-      // and measuring the raw one under-counts `fragmentBudget`.
-      //
-      // The prefix is `story.workdir` (PRD-declared, repo-relative) and must
-      // stay so. `relative(request.repoRoot, request.packageDir)` is NOT
-      // equivalent: under worktree isolation `packageDir` is
-      // `<root>/.nax-wt/<storyId>/<pkg>` while `repoRoot` is the main
-      // checkout, so it yields `.nax-wt/<storyId>/<pkg>` and mis-classifies
-      // every entry. Same trap as nax#2069.
-      const body = reframeFilesTouched(rawBody, storyWorkdir(this.story));
-
-      const bodyTokens = estimateTokens(body);
+      // Fragment bodies record repo-rooted paths, and after the single-frame
+      // redesign the consuming story's file tools are rooted at the repo root
+      // too — so the entries are addressable as-is and pass through unreframed.
+      const bodyTokens = estimateTokens(rawBody);
       if (usedTokens + bodyTokens > fragmentBudget) {
         droppedForBudget++;
         continue;
@@ -400,7 +385,7 @@ export class FeatureContextProviderV2 implements IContextProvider {
         kind: "feature",
         scope: "feature",
         role: ["implementer", "reviewer", "tdd"],
-        content: body,
+        content: rawBody,
         tokens: bodyTokens,
         rawScore: decay ** distance,
       });
