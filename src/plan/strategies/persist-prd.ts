@@ -27,7 +27,7 @@ import type { AgentRoutingConfig, ModelsConfig } from "@/config";
 import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
 import { getLogger } from "@/logger";
 import { applyPlanFidelity } from "@/operations";
-import { canonicalizePrdWorkdirs } from "@/prd";
+import { canonicalizePrdWorkdirs, findNonCanonicalDeclaredPaths } from "@/prd";
 import type { PRD } from "@/prd/types";
 import { errorMessage } from "@/utils/errors";
 import { finalizePrdRouting } from "./finalize-routing";
@@ -105,23 +105,6 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
       derive: args.scope === undefined,
     });
     canonical = result.prd;
-    if (result.collisions.length > 0) {
-      getLogger().warn("plan", "declared path exists at both the repo root and the story package; took story-local", {
-        collisions: result.collisions,
-      });
-    }
-    // nax#2067: a declared path that resolves only at the repo root (not under
-    // the story's package) is a guess the planner could not have intended --
-    // the plan-builder prompt frames paths workdir-relative, so `P` means W/P.
-    // Package-contained consumers resolve against the package dir, so the file
-    // would never surface at runtime. Warn here, where the author can act.
-    if (result.rootOnly.length > 0) {
-      getLogger().warn(
-        "plan",
-        "declared paths resolve only at the repo root, outside the story's package -- package-scoped agents cannot read them; move the file under the package or root the story",
-        { rootOnly: result.rootOnly },
-      );
-    }
     // nax#2067: the only point in `nax plan` where "this story will be root-scoped"
     // is known. Both consequences are named because both are silent at every later
     // stage -- plan output, run log, and the completed run's artifacts.
@@ -134,6 +117,36 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     }
   } catch (err) {
     getLogger().warn("plan", "workdir canonicalization skipped", { error: errorMessage(err) });
+  }
+
+  // nax#2125: a story THIS pass canonicalized (workdirSource defined) should have
+  // every declared path already in the repo frame. Nothing on the happy path can
+  // violate this -- canonicalizePrdWorkdirs reframes unconditionally -- so a
+  // violation means a caller bypassed the seam or a reframing missed a field.
+  //
+  // nax#2080: only inspect stories this pass actually canonicalized. canonicalizePrdWorkdirs
+  // returns an out-of-`only` story by IDENTITY, and that story may carry a pre-PR3
+  // `workdirSource` stamp whose create-intent path the OLD existence-gated
+  // canonicalizer left workdir-relative. On a scoped write that is a legitimate
+  // legacy shape -- deliberately not reframed -- not a bypass or a missed field,
+  // so validating it would warn on exactly the legacy PRDs this change keeps
+  // loading. `args.scope` is therefore a filter here, not just a transformation
+  // guard. Unscoped writes (full `nax plan`) validate every stamped story.
+  //
+  // Sits outside the try/catch so it inspects the final `canonical` whether or
+  // not canonicalization threw, and returns rather than throws, so it needs no
+  // error handling.
+  const scope = args.scope;
+  const canonicalizedThisPass = scope
+    ? canonical.userStories.filter((story) => scope.has(story.id))
+    : canonical.userStories;
+  const nonCanonical = findNonCanonicalDeclaredPaths({ ...canonical, userStories: canonicalizedThisPass });
+  if (nonCanonical.length > 0) {
+    getLogger().warn(
+      "plan",
+      "declared paths remain outside the repo frame on a story this pass canonicalized -- a caller bypassed canonicalizePrdWorkdirs, reframing missed a field, or a pre-PR3 workdirSource stamp was carried through",
+      { nonCanonical },
+    );
   }
 
   const finalized = finalizePrdRouting(

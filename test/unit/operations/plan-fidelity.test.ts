@@ -215,6 +215,66 @@ describe("warnOnDroppedContextFiles — #1466", () => {
     );
     expect(rejectedWarning?.data).toMatchObject({ rejectedCount: 2 });
   });
+
+  test("a repo-rooted spec Context Files declaration matches a canonicalized monorepo story (nax#2125 / #1473)", () => {
+    const specContent = [
+      "## Stories",
+      "",
+      "### US-001: add a route",
+      "",
+      "### Context Files",
+      "",
+      "**US-001**",
+      "- `packages/api/src/routes/index.ts`",
+    ].join("\n");
+    const story = makeStory({
+      id: "US-001",
+      workdir: "packages/api",
+      workdirSource: "stated",
+      contextFiles: ["packages/api/src/routes/index.ts"], // already canonicalized, matching frame
+    });
+    const prd = makePRD({ userStories: [story] });
+
+    warnOnDroppedContextFiles(prd, specContent, "test-feature");
+
+    const dropWarnings = entries.filter(
+      (e) => e.level === "warn" && e.stage === "plan" && e.message.includes("Context Files entries absent"),
+    );
+    expect(dropWarnings).toEqual([]);
+  });
+
+  test("a workdir-relative spec declaration on a canonicalized monorepo story is correctly reported as not matching (post-redesign, spec must be repo-relative)", () => {
+    const specContent = [
+      "## Stories",
+      "",
+      "### US-001: add a route",
+      "",
+      "### Context Files",
+      "",
+      "**US-001**",
+      "- `src/routes/index.ts`",
+    ].join("\n");
+    const story = makeStory({
+      id: "US-001",
+      workdir: "packages/api",
+      workdirSource: "stated",
+      contextFiles: ["packages/api/src/routes/index.ts"],
+    });
+    const prd = makePRD({ userStories: [story] });
+
+    // A spec still written the OLD (workdir-relative) way genuinely will not
+    // match a repo-rooted PRD -- this is the expected, correct behavior under
+    // the new convention (the fix is "author specs repo-relative", not "make
+    // the comparison frame-aware"). This test pins that the warning path is
+    // intact, not broken by Task 1/2/4, so a genuine spec/PRD mismatch is
+    // still caught.
+    warnOnDroppedContextFiles(prd, specContent, "test-feature");
+
+    const dropWarnings = entries.filter(
+      (e) => e.level === "warn" && e.stage === "plan" && e.message.includes("Context Files entries absent"),
+    );
+    expect(dropWarnings.some((w) => w.data?.storyId === "US-001")).toBe(true);
+  });
 });
 
 describe("applyPlanFidelity", () => {

@@ -298,7 +298,13 @@ export function validateStory(raw: unknown, index: number, allIds: Set<string>, 
       })()
     : [];
 
-  // workdir — optional, relative path only, no traversal
+  // workdir — optional, relative path only, no traversal.
+  // Sibling contextFiles/expectedFiles/modifiedFiles entries on this story are
+  // REPO-ROOTED, not relative to this workdir (single-frame redesign, nax#2125).
+  // This is a plan-WRITE-time contract enforced by findNonCanonicalDeclaredPaths
+  // at the write seam (src/plan/strategies/persist-prd.ts), not here: PRD.parse()
+  // must keep accepting a legacy or hand-edited PRD whose paths predate this
+  // convention.
   const rawWorkdir = s.workdir;
   let workdir: string | undefined;
   if (rawWorkdir !== undefined && rawWorkdir !== null) {
@@ -340,6 +346,9 @@ export function validateStory(raw: unknown, index: number, allIds: Set<string>, 
   }
 
   // contextFiles — optional array of relative file paths (string or {path, factId?} objects)
+  // Repo-rooted for any story canonicalized by nax plan (nax#2125); accepted here
+  // regardless of frame — this validator only rejects malformed paths (absolute,
+  // '..'), never an un-canonicalized one.
   const rawContextFiles = s.contextFiles;
   const contextFiles: Array<string | ContextFileEntry> = [];
   if (Array.isArray(rawContextFiles)) {
@@ -392,6 +401,9 @@ export function validateStory(raw: unknown, index: number, allIds: Set<string>, 
   // expectedFiles — optional array of relative paths the story CREATES. Same
   // path rules as contextFiles, but plain strings only (no factId citations —
   // a file that does not exist yet cannot be grounded in the facts manifest).
+  // Repo-rooted for any story canonicalized by nax plan (nax#2125); accepted here
+  // regardless of frame — this validator only rejects malformed paths (absolute,
+  // '..'), never an un-canonicalized one.
   const rawExpectedFiles = s.expectedFiles;
   const expectedFiles: string[] = [];
   if (Array.isArray(rawExpectedFiles)) {

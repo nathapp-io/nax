@@ -12,6 +12,11 @@
  *
  * Grammar, fencing, and `**US-00N**` grouping are shared with `### Modifies` —
  * see `extractGroupedPathSection` in `./markdown-scan`.
+ *
+ * Frame: the paths are read verbatim from the spec and are expected to be
+ * REPO-RELATIVE as of the single-frame redesign (nax#2125) — spec-writing's
+ * authoring convention, not enforced by this pure extractor, which remains
+ * frame-agnostic by design.
  */
 
 import { extractGroupedPathSection, type GroupedPathEntry } from "./markdown-scan";

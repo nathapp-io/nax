@@ -38,6 +38,11 @@
  *
  * Reconciling extracted entries against a PRD lives in `./modifies`; this file
  * never sees a `PRD`. Pure and deterministic — no I/O, no LLM.
+ *
+ * Frame: the paths are read verbatim from the spec and are expected to be
+ * REPO-RELATIVE as of the single-frame redesign (nax#2125) — spec-writing's
+ * authoring convention, not enforced by this pure extractor, which remains
+ * frame-agnostic by design.
  */
 
 import { extractGroupedPathSection, type GroupedPathEntry } from "./markdown-scan";

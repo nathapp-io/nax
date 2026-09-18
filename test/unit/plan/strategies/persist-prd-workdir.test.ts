@@ -254,55 +254,6 @@ describe("finalizeAndWritePrd — defaulted-workdir warning (nax#2067)", () => {
   });
 });
 
-describe("finalizeAndWritePrd — root-only declared paths (nax#2067)", () => {
-  async function persist(overrides: Partial<Parameters<typeof finalizeAndWritePrd>[0]> = {}) {
-    return finalizeAndWritePrd({
-      prd: makePRD({ userStories: [makeStory({ workdir: "packages/app", contextFiles: ["tsconfig.base.json"] })] }),
-      specContent: "",
-      featureName: "f",
-      projectName: "p",
-      agentRouting: undefined,
-      profileName: undefined,
-      models: MODELS,
-      defaultAgent: "claude",
-      outputPath: "/repo/.nax/features/f/prd.json",
-      repoRoot: "/repo",
-      writeFile: async () => {},
-      ...overrides,
-    });
-  }
-
-  test("warns when a declared path resolves only at the repo root", async () => {
-    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
-    _persistPrdDeps.existsSync = (p: string) => p === "/repo/tsconfig.base.json"; // root-only
-
-    const cap = captureWarnings();
-    try {
-      await persist();
-    } finally {
-      cap.restore();
-    }
-
-    const warning = cap.calls.find((c) => c.message.includes("resolve only at the repo root"));
-    expect(warning).toBeDefined();
-    expect(warning?.data).toMatchObject({ rootOnly: ["US-001:tsconfig.base.json"] });
-  });
-
-  test("is silent when the declared path resolves under the story package", async () => {
-    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
-    _persistPrdDeps.existsSync = (p: string) => p === "/repo/packages/app/tsconfig.base.json"; // in-package
-
-    const cap = captureWarnings();
-    try {
-      await persist();
-    } finally {
-      cap.restore();
-    }
-
-    expect(cap.calls.find((c) => c.message.includes("resolve only at the repo root"))).toBeUndefined();
-  });
-});
-
 describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
   /** A PRD shaped like the one decompose hands the seam: one executed story, one fresh sub-story. */
   function makeMixedPrd(): PRD {
@@ -466,5 +417,109 @@ describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
     const parsed: PRD = JSON.parse(written);
     expect(parsed.project).toBe("decompose-project");
     expect(parsed.routingProfile).toBe("cross-agent");
+  });
+
+  test("does not flag an out-of-scope pre-PR3 stamped story as non-canonical", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = (p: string) => p === "/repo/packages/app/src/b.ts";
+
+    // US-001 carries a `workdirSource` stamp from the OLD existence-gated
+    // canonicalizer, so its create-intent path is still workdir-relative --
+    // exactly the legacy shape this PR promises to keep loading. Only US-001-A
+    // is in scope this pass, so US-001 must not be inspected and must not trip
+    // the bypass warning.
+    const prd = makePRD({
+      userStories: [
+        makeStory({
+          id: "US-001",
+          status: "decomposed",
+          workdir: "packages/app",
+          workdirSource: "stated",
+          contextFiles: ["src/a.ts"],
+        }),
+        makeStory({ id: "US-001-A", parentStoryId: "US-001", workdir: "packages/app", contextFiles: ["src/b.ts"] }),
+      ],
+    });
+
+    const cap = captureWarnings();
+    try {
+      const parsed = await persistScoped(prd, new Set(["US-001-A"]));
+      expect(cap.calls.some((c) => c.message.includes("outside the repo frame"))).toBe(false);
+      // The legacy out-of-scope story is written through untouched.
+      expect(parsed.userStories.find((s) => s.id === "US-001")?.contextFiles).toEqual(["src/a.ts"]);
+    } finally {
+      cap.restore();
+    }
+  });
+});
+
+describe("finalizeAndWritePrd — non-canonical declared-path warning (single-frame redesign, nax#2125)", () => {
+  /** A story already stamped by canonicalizePrdWorkdirs, so the validation inspects it. */
+  function stampedStory(overrides: Parameters<typeof makeStory>[0] = {}) {
+    return makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      contextFiles: ["packages/app/src/a.ts"],
+      ...overrides,
+    });
+  }
+
+  async function persist(prd: PRD): Promise<string> {
+    let written = "";
+    await finalizeAndWritePrd({
+      prd,
+      specContent: "",
+      featureName: "f",
+      projectName: "p",
+      agentRouting: undefined,
+      profileName: undefined,
+      models: MODELS,
+      defaultAgent: "claude",
+      outputPath: "/repo/.nax/features/f/prd.json",
+      repoRoot: "/repo",
+      writeFile: async (_path, content) => {
+        written = content;
+      },
+    });
+    return written;
+  }
+
+  test("stays silent when canonicalization leaves every declared path in the repo frame", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = (p: string) => p === "/repo/packages/app/src/a.ts";
+
+    const cap = captureWarnings();
+    let written = "";
+    try {
+      written = await persist(makePRD({ userStories: [stampedStory()] }));
+    } finally {
+      cap.restore();
+    }
+
+    expect(cap.calls.some((c) => c.message.includes("outside the repo frame"))).toBe(false);
+    const parsed: PRD = JSON.parse(written);
+    expect(parsed.userStories[0]?.contextFiles).toEqual(["packages/app/src/a.ts"]);
+  });
+
+  test("warns and still writes when packaging discovery throws and a pre-stamped story stays package-relative", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => {
+      throw new Error("boom");
+    };
+    _persistPrdDeps.existsSync = () => true;
+
+    const cap = captureWarnings();
+    let written = "";
+    try {
+      written = await persist(makePRD({ userStories: [stampedStory({ contextFiles: ["src/a.ts"] })] }));
+    } finally {
+      cap.restore();
+    }
+
+    expect(written).not.toBe("");
+    const warning = cap.calls.find((c) => c.message.includes("outside the repo frame"));
+    expect(warning).toBeDefined();
+    expect(warning?.data).toMatchObject({
+      nonCanonical: [{ storyId: "US-001", field: "contextFiles", path: "src/a.ts" }],
+    });
   });
 });

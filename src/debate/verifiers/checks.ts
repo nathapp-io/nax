@@ -20,12 +20,15 @@ export interface CheckDeps {
 /**
  * Flag contextFiles entries that resolve nowhere.
  *
- * `workdir` is the REPO ROOT (both call sites pass it): the planner emits
- * package-relative paths for monorepo stories before the write seam has
- * canonicalized them, so each declared path is canonicalized against the
- * story's own workdir first and then probed in the repo frame. A path that
- * resolves in either frame counts as existing; one that resolves in neither
- * still fires.
+ * `workdir` is the REPO ROOT (both call sites pass it): a spec authored under
+ * the old convention may still emit package-relative paths for monorepo stories
+ * before the write seam has canonicalized them, so each declared path is
+ * canonicalized against the story's own workdir first and then probed in the
+ * repo frame. A path that resolves in either frame counts as existing; one that
+ * resolves in neither still fires. Post-single-frame-redesign the planner emits
+ * repo-rooted paths directly, so this re-spell is a defensive no-op for a
+ * well-formed draft — kept because `checkFilesExist` runs on the PRE-write-seam
+ * draft during debate verification, before `canonicalizePrdWorkdirs` has run.
  */
 export function checkFilesExist(prd: PRD, workdir: string, deps?: CheckDeps): VerifierFinding[] {
   const existsSync = deps?.existsSync ?? defaultExistsSync;
@@ -36,7 +39,7 @@ export function checkFilesExist(prd: PRD, workdir: string, deps?: CheckDeps): Ve
     for (const entry of story.contextFiles) {
       const filePath = typeof entry === "string" ? entry : entry.path;
       const factId = typeof entry === "string" ? undefined : entry.factId;
-      const canonical = canonicalizeDeclaredPath(filePath, storyDir, workdir, existsSync).path;
+      const canonical = canonicalizeDeclaredPath(filePath, storyDir);
       if (existsSync(join(workdir, canonical))) continue;
 
       // An entry citing a manifest factId claims to be grounded in existing repo state.
