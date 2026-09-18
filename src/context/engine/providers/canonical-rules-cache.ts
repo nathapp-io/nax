@@ -5,6 +5,11 @@
  * story). Rules are immutable within a run, so this is pure repeat I/O.
  * Memoized per (workdir) for the process lifetime. `_resetCanonicalRulesCache`
  * exists for tests that mutate a rules dir mid-suite and need a fresh read.
+ *
+ * No `options` parameter: the cache key is the workdir alone, so a budget
+ * carried by a caller would otherwise be swallowed by whichever caller
+ * populated the entry first. Callers that need a budget call the unmemoized
+ * loader directly.
  */
 
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
@@ -12,13 +17,10 @@ import { loadCanonicalRules } from "@/context/rules/canonical-loader";
 
 const canonicalRulesCache = new Map<string, Promise<CanonicalRule[]>>();
 
-export function memoizedLoadCanonicalRules(
-  workdir: string,
-  options?: Parameters<typeof loadCanonicalRules>[1],
-): Promise<CanonicalRule[]> {
+export function memoizedLoadCanonicalRules(workdir: string): Promise<CanonicalRule[]> {
   const cached = canonicalRulesCache.get(workdir);
   if (cached) return cached;
-  const loaded = loadCanonicalRules(workdir, options);
+  const loaded = loadCanonicalRules(workdir);
   canonicalRulesCache.set(workdir, loaded);
   // Don't cache a rejection — a transient read failure shouldn't poison every
   // subsequent assembly for the rest of the run.
