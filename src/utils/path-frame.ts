@@ -113,21 +113,28 @@ export function toPackageFrame(path: string, workdir: string | null | undefined)
  *
  * `canonical: true` asserts the caller's paths came through the plan-time write
  * seam (story.workdirSource is stamped, src/prd/workdir-canonical.ts). That
- * seam stamps EVERY story, but it re-spells a declared path only when the path
- * resolved on disk at plan time; a path that existed nowhere is returned
- * UNCHANGED (canonicalizeDeclaredPath, src/prd/workdir-canonical.ts). So the
- * flag does not mean every path is repo-rooted: this story's create-intent
- * `expectedFiles`, and any `contextFiles` entry that was absent at plan time,
- * stay in the story's workdir-relative frame.
+ * seam stamps EVERY story, and since the single-frame redesign it re-spells
+ * every declared path — `contextFiles`, `expectedFiles` and `modifiedFiles`
+ * alike — unconditionally into the repo frame (canonicalizeDeclaredPath,
+ * src/prd/workdir-canonical.ts). On a PRD written by that seam, then, every
+ * path is repo-rooted.
+ *
+ * This is a property of the seam's current form, not of the flag. A pre-redesign
+ * PRD was canonicalized by a seam that re-spelled a declared path only when the
+ * path resolved on disk at plan time; a path that existed nowhere was returned
+ * UNCHANGED, so its create-intent `expectedFiles`, and any `contextFiles` entry
+ * absent at plan time, stayed in the story's workdir-relative frame. Read the
+ * paragraphs below in that light: they describe such pre-redesign PRDs only.
  *
  * A toPackageFrame miss is therefore only known out-of-package when the path set
  * genuinely carries repo-rooted paths. Use `canonical: true` ONLY on such sets --
  * the merged `contextFiles`, which carries repo-rooted parent outputs (nax#2089):
  * there a miss is a real out-of-package path that goes to `unreachable` rather
  * than being passed through as a path resolving to a real but WRONG file under
- * the consumer's root, exactly what toPackageFrame's docblock forbids. Never use
- * it on create-intent `expectedFiles`, whose package-relative spelling is legal
- * and whose miss would be wrongly dropped.
+ * the consumer's root, exactly what toPackageFrame's docblock forbids. On a
+ * pre-redesign PRD whose create-intent `expectedFiles` are still spelled
+ * package-relative, a miss would be wrongly dropped; the flag cannot tell the
+ * two frames apart from the string alone.
  *
  * Without the flag every entry lands in `readable` unchanged: a pre-#2067 PRD
  * may hold package-relative paths, and `src/x.ts` is genuinely ambiguous between

@@ -7,9 +7,9 @@
  * moment the repo is in the state the planner described — and re-spells the
  * story's declared paths into the canonical repo frame while it is there.
  *
- * Pure by construction: every function takes an `ExistsProbe` rather than
- * touching the filesystem, so the whole decision table is unit-testable without
- * fixtures. The caller supplies the real probe.
+ * Pure by construction: every filesystem-facing function takes an `ExistsProbe`
+ * rather than touching the filesystem, so the whole decision table is
+ * unit-testable without fixtures. The caller supplies the real probe.
  */
 
 import { join } from "node:path";
@@ -71,39 +71,24 @@ export function deriveWorkdir(
 }
 
 /**
- * Re-spell one declared path into the repo frame, per the spec's four outcomes:
+ * Re-spell a declared path into the repo frame (R3, single-frame redesign).
  *
- *   exists(repoRoot/P)   -> P unchanged        (already repo-rooted)
- *   exists(repoRoot/W/P) -> W + "/" + P        (re-spell)
- *   neither              -> P unchanged        (a file the story creates)
- *   both                 -> W + "/" + P        (story-local wins), collision reported
- *
- * `collided` is returned rather than logged so this stays pure; the caller logs.
- *
- * `rootOnly` is the same spelling as "already repo-rooted", but it is reported
- * distinctly because it is a guess: a planner working workdir-relative (the
- * plan-builder prompt's frame) wrote `P` meaning W/P, and the path resolves only
- * at the repo root. Package-contained consumers (v1 addFileElements,
- * GitHistoryProvider, CodeNeighborProvider) resolve against the package dir, so
- * such a declared file never surfaces at runtime. The caller warns at plan time,
- * where the author can still act (move the file under the package, or root the
- * story). A path already spelled repo-rooted (prefixed by `${workdir}/` on a
- * segment boundary) is NOT rootOnly — consumers can frame it back and read it.
- * For workdir "." the branch is unreachable — every path is reachable from the
- * root consumer.
+ * Unconditional pure-string normalization — no existence probe. Before this
+ * change the function probed the filesystem to decide whether a workdir-
+ * relative-looking path should be re-spelled, which is exactly the mechanism
+ * that produced #2125's mixed-frame PRD: a path absent at plan time (because
+ * the story creates it) was left workdir-relative rather than repo-rooted.
+ * The planner now emits repo-rooted paths directly (src/prompts/builders/
+ * plan-builder.ts, decompose-builder.ts), so this is a defensive re-spell for
+ * a stray package-relative spelling, not a disambiguation — there is nothing
+ * left to disambiguate. Delegates to toRepoFrame, which already implements
+ * the identical segment-boundary-safe re-spell; kept as a distinct named
+ * export because src/debate/verifiers/checks.ts and this module's own
+ * canonicalizePrdWorkdirs both call it as "the PRD write-time re-spell",
+ * a narrower and more discoverable name than the general-purpose toRepoFrame.
  */
-export function canonicalizeDeclaredPath(
-  path: string,
-  workdir: string,
-  repoRoot: string,
-  exists: ExistsProbe,
-): { path: string; collided: boolean; rootOnly: boolean } {
-  if (workdir === ".") return { path, collided: false, rootOnly: false };
-  const alreadyRepoRooted = path === workdir || path.startsWith(`${workdir}/`);
-  const atPackage = exists(join(repoRoot, workdir, path));
-  const atRoot = exists(join(repoRoot, path));
-  if (atPackage) return { path: toRepoFrame(path, workdir), collided: atRoot, rootOnly: false };
-  return { path, collided: false, rootOnly: atRoot && !alreadyRepoRooted };
+export function canonicalizeDeclaredPath(path: string, workdir: string): string {
+  return toRepoFrame(path, workdir);
 }
 
 /**
@@ -115,11 +100,13 @@ export function canonicalizeDeclaredPath(
  * on-disk shape for every single-package repo. `workdirSource` carries the
  * information instead.
  *
- * Collisions are returned as "storyId:path" strings, `defaulted` lists the ids of stories that
- * fell back to root, and `rootOnly` lists "storyId:path" entries that resolved only at the repo
- * root (see `canonicalizeDeclaredPath`). All three are RETURNED rather than logged here so this
- * module stays pure -- and, for `defaulted`, because this is the only point in `nax plan` where that
- * fact is known (see the RULING in the plan's Orientation section).
+ * `defaulted` lists the ids of stories that fell back to root. It is RETURNED
+ * rather than logged here so this module stays pure -- and because this is the
+ * only point in `nax plan` where that fact is known (see the RULING in the
+ * plan's Orientation section).
+ *
+ * Re-spelling is now a pure function of `path` and `workdir`; there is no
+ * longer a filesystem-dependent ambiguity to report.
  *
  * `opts.only` restricts the whole pass to a subset of stories and `opts.derive`
  * turns derivation off; see {@link CanonicalizeOptions} for why a scoped caller
@@ -157,10 +144,8 @@ export function canonicalizePrdWorkdirs(
   packages: readonly string[],
   exists: ExistsProbe,
   opts?: CanonicalizeOptions,
-): { prd: PRD; collisions: string[]; defaulted: string[]; rootOnly: string[] } {
-  const collisions: string[] = [];
+): { prd: PRD; defaulted: string[] } {
   const defaulted: string[] = [];
-  const rootOnly: string[] = [];
   const deriveEnabled = opts?.derive ?? true;
 
   // normalizeWorkdir collapses "", ".", "./" and absent to "." so a planner that
@@ -190,17 +175,13 @@ export function canonicalizePrdWorkdirs(
     const { workdir, source } = decideWorkdir(story, declared);
     if (source === "defaulted") defaulted.push(story.id);
 
-    const reframe = (path: string): string => {
-      const result = canonicalizeDeclaredPath(path, workdir, repoRoot, exists);
-      if (result.collided) collisions.push(`${story.id}:${path}`);
-      if (result.rootOnly) rootOnly.push(`${story.id}:${path}`);
-      return result.path;
-    };
+    const reframe = (path: string): string => canonicalizeDeclaredPath(path, workdir);
 
     const contextFiles = story.contextFiles?.map((entry) =>
       typeof entry === "string" ? reframe(entry) : { ...entry, path: reframe(entry.path) },
     );
     const expectedFiles = story.expectedFiles?.map(reframe);
+    const modifiedFiles = story.modifiedFiles?.map((entry) => ({ ...entry, path: reframe(entry.path) }));
 
     return {
       ...rest,
@@ -208,8 +189,9 @@ export function canonicalizePrdWorkdirs(
       workdirSource: source,
       ...(contextFiles !== undefined ? { contextFiles } : {}),
       ...(expectedFiles !== undefined ? { expectedFiles } : {}),
+      ...(modifiedFiles !== undefined ? { modifiedFiles } : {}),
     };
   });
 
-  return { prd: { ...prd, userStories }, collisions, defaulted, rootOnly };
+  return { prd: { ...prd, userStories }, defaulted };
 }

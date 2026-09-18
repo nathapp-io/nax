@@ -105,23 +105,6 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
       derive: args.scope === undefined,
     });
     canonical = result.prd;
-    if (result.collisions.length > 0) {
-      getLogger().warn("plan", "declared path exists at both the repo root and the story package; took story-local", {
-        collisions: result.collisions,
-      });
-    }
-    // nax#2067: a declared path that resolves only at the repo root (not under
-    // the story's package) is a guess the planner could not have intended --
-    // the plan-builder prompt frames paths workdir-relative, so `P` means W/P.
-    // Package-contained consumers resolve against the package dir, so the file
-    // would never surface at runtime. Warn here, where the author can act.
-    if (result.rootOnly.length > 0) {
-      getLogger().warn(
-        "plan",
-        "declared paths resolve only at the repo root, outside the story's package -- package-scoped agents cannot read them; move the file under the package or root the story",
-        { rootOnly: result.rootOnly },
-      );
-    }
     // nax#2067: the only point in `nax plan` where "this story will be root-scoped"
     // is known. Both consequences are named because both are silent at every later
     // stage -- plan output, run log, and the completed run's artifacts.
