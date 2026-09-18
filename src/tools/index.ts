@@ -9,6 +9,7 @@ export {
 export {
   _gitToolDeps,
   buildGitArgv,
+  DEFAULT_LOG_FORMAT,
   DEFAULT_LOG_MAX_COUNT,
   GIT_ESCAPE_FLAGS,
   GIT_READ_VERBS,

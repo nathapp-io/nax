@@ -536,3 +536,104 @@ describe("gitTool — output paths are framed relative to the permitted root", (
     expect(content).not.toContain("packages/pkg-a");
   });
 });
+
+/**
+ * US-002 — compact default `git log` rendering.
+ *
+ * Every read verb currently reaches git with no `--format`, so git picks its
+ * `medium` default — the commit subject, author, date, body, and a trailing
+ * patch if `-p` is also in effect. For an agent whose task is "what changed
+ * recently?", most of that is noise. The fix emits a compact `format:` line by
+ * default on `log` only, and lets the caller opt back in to git's medium via
+ * `fullMessage`.
+ *
+ * `format:` rather than `tformat:` or the bare form: it places the separator
+ * BETWEEN commits, so each `--name-only` file list stays grouped with the
+ * commit that produced it instead of being orphaned after a blank line.
+ */
+describe("US-002 — buildGitArgv compact log default", () => {
+  test("log with no other fields emits --format=format:%h %ad %s and --date=short", () => {
+    const argv = argvOf({ subcommand: "log" });
+    expect(argv).toContain("--format=format:%h %ad %s");
+    expect(argv).toContain("--date=short");
+  });
+
+  test("log's --format flag precedes refs so it is not read as a pathspec", () => {
+    const argv = argvOf({ subcommand: "log", refs: ["abc123..HEAD"] });
+    const formatIndex = argv.indexOf("--format=format:%h %ad %s");
+    const refIndex = argv.indexOf("abc123..HEAD");
+    expect(formatIndex).toBeGreaterThanOrEqual(0);
+    expect(refIndex).toBeGreaterThanOrEqual(0);
+    expect(formatIndex).toBeLessThan(refIndex);
+  });
+
+  test("log with fullMessage: true suppresses the default --format", () => {
+    const argv = argvOf({ subcommand: "log", fullMessage: true });
+    expect(argv.some((arg) => arg.startsWith("--format="))).toBe(false);
+  });
+
+  test("log with oneline: true emits --oneline and suppresses --format", () => {
+    const argv = argvOf({ subcommand: "log", oneline: true });
+    expect(argv).toContain("--oneline");
+    expect(argv.some((arg) => arg.startsWith("--format="))).toBe(false);
+  });
+
+  test("log with oneline: true and fullMessage: true returns an error naming both fields", () => {
+    const built = buildGitArgv({ subcommand: "log", oneline: true, fullMessage: true });
+    // No argv is built -- the contradiction is refused by name, not silently
+    // resolved. Composed by exclusion in the happy cases.
+    expect("error" in built).toBe(true);
+    if ("error" in built) {
+      expect(built.error).toContain("oneline");
+      expect(built.error).toContain("fullMessage");
+    }
+  });
+
+  test("diff with fullMessage: true returns an error naming fullMessage", () => {
+    const built = buildGitArgv({ subcommand: "diff", fullMessage: true });
+    expect(built).toEqual({ error: expect.stringContaining("fullMessage") });
+  });
+
+  test("log with fullMessage: 'yes' returns an error rather than coercing the value", () => {
+    const built = buildGitArgv({ subcommand: "log", fullMessage: "yes" });
+    expect("error" in built).toBe(true);
+    if ("error" in built) {
+      expect(built.error).toContain("fullMessage");
+    }
+  });
+
+  test("diff with no other fields emits no --format, so no verb other than log gains the default", () => {
+    const argv = argvOf({ subcommand: "diff" });
+    expect(argv.some((arg) => arg.startsWith("--format="))).toBe(false);
+  });
+
+  test("log with nameOnly: true and a pathspec still emits the compact format and --name-only", () => {
+    const argv = argvOf({ subcommand: "log", nameOnly: true, paths: ["src/a.ts"] });
+    expect(argv).toContain("--format=format:%h %ad %s");
+    expect(argv).toContain("--name-only");
+    for (const flag of GIT_ESCAPE_FLAGS) {
+      expect(argv.some((arg) => arg === flag || arg.startsWith(`${flag}=`))).toBe(false);
+    }
+  });
+
+  test("input schema advertises fullMessage so a model can reach the field", () => {
+    expect(gitTool.inputSchema).toMatchObject({
+      properties: {
+        fullMessage: { type: "boolean" },
+      },
+    });
+  });
+
+  test("log with maxCount: 3 composes --max-count=3 with the compact format", () => {
+    const argv = argvOf({ subcommand: "log", maxCount: 3 });
+    expect(argv).toContain("--max-count=3");
+    expect(argv).toContain("--format=format:%h %ad %s");
+  });
+
+  test("DEFAULT_LOG_FORMAT is the value the builder emits, not a second copy of the literal", async () => {
+    const { DEFAULT_LOG_FORMAT } = await import("@/tools");
+    expect(DEFAULT_LOG_FORMAT).toBe("format:%h %ad %s");
+    const argv = argvOf({ subcommand: "log" });
+    expect(argv).toContain(`--format=${DEFAULT_LOG_FORMAT}`);
+  });
+});
