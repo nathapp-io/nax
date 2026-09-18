@@ -132,7 +132,19 @@ Explicit rulings baked into this design:
 | `.nax` protection | `nax-owned-writes.ts` + containment accident | `nax-owned-writes.ts` alone (unchanged, now load-bearing) |
 | `story.workdir` | selector + frame + cwd + containment | selector + command cwd only |
 
-## 4. Delivery: four PRs
+## 4. Delivery: four phases on one integration branch
+
+**Strategy (ruled 2026-09-18):** `feat/single-frame-redesign` is the
+integration branch, based on `main` @ `fe11b0246`. **Main is frozen** for other
+merges until the arc completes, so no rebases are needed and the final merge is
+conflict-free. Each phase is built on its own child branch and lands into the
+integration branch via a phase-reviewed sub-PR. Live monorepo runs (§6) execute
+against the **completed** integration branch — the final state, not
+intermediate hybrids — and only then does one final PR merge the integration
+branch to main, without squash, linking the four phase reviews as the audit
+trail. Phase ordering still matters: each phase must leave the integration
+branch internally coherent, because phase reviews and targeted tests run
+against it.
 
 ### PR 1 — command-cwd split + per-package declared commands
 
@@ -150,6 +162,13 @@ time.
 - Per-package `quality.commands` / `acceptance.command` overrides in
   `.nax/mono/<pkg>/config.json` therefore take effect inside agent sessions,
   not only in pipeline stages.
+- Placement + cost: the per-package resolution lands in the **async outer**
+  `resolveCodingToolSupport`, never in the synchronous filesystem-free
+  `buildCodingToolSupport` hot seam, and it rides `packageConfigCache`
+  (`src/config/package-config-cache.ts`, keyed on
+  `(rootConfigPath, packageDir, profileKey)`) so per-dispatch cost stays
+  bounded. Add a test asserting the cache is hit on the second dispatch for
+  the same package/profile, not only that the correct command resolves.
 - `acceptance-setup.ts` is the reference implementation and should need no
   behavioral change here; add a test pinning that `RunCommand` and
   acceptance-setup resolve the same command for the same package.
@@ -158,7 +177,23 @@ time.
 
 - `codingToolRoot = storyExecRoot(ctx.packageView)` (R2) in
   `src/operations/call.ts`; ACP spawn cwd likewise (`ctx.packageDir` producer
-  in `src/pipeline/stages/execution.ts` / `call.ts`).
+  in `src/pipeline/stages/execution.ts` / `call.ts`). Note this is a
+  **collapse of two existing fields**, not a fresh redirect: `call.ts` already
+  produces both `codingToolRoot` (package dir) and `codingToolRepoRoot`
+  (`storyExecRoot`, post-#2093), threaded as the `root`/`repoRoot` pair through
+  `resolveCodingToolSupport` and `buildAgentScopeSection`. PR 2 sets both to
+  `storyExecRoot`; the `codingToolRepoRoot` field and agent-scope's
+  `packageLabel`/prefix-strip logic become redundant and are deleted in PR 4
+  (Exec's `target: "repoRoot"` keeps working off the unified root).
+- **The prompt-boundary reframes must flip in this PR, not PR 4** — they are
+  coupled to the root, and leaving them produces a frame-inverted state:
+  `modifiedFilesLines` (`src/prompts/sections/story.ts:56-61`) strips the
+  package prefix via `toPackageFrame`, so after the root move the agent would
+  resolve `src/foo.ts` against the repo root — a wrong-file authorization for
+  every monorepo story. Likewise the `partitionPackageFrame` consumption in
+  `src/context/builder.ts` (~:404-432) would mark repo-reachable files
+  unreachable. PR 2 switches both to repo-rooted rendering (pass-through);
+  PR 4 only deletes the then-unused helpers.
 - Rewrite `src/prompts/sections/agent-scope.ts`: tools rooted at the repo
   root; the story's package is `<workdir>`; spell paths repo-rooted; declared
   commands run in the package. This is the highest-leverage prompt change.
@@ -167,9 +202,14 @@ time.
   package-containment terms so a repo-rooted agent does not "correct" the path.
 - Mechanical follow-ons, each silent if missed — this list is the review
   checklist:
-  - MCP pool key `(serverId, workdir)` must not collide across packages once
-    workdir is uniform (`src/mcp/pool.ts`) — key on the selector workdir, not
-    the spawn cwd.
+  - MCP pool key `(serverId, workdir)`: the post-move collapse to **one
+    connection per worktree** is a fix, not a hazard — it is exactly the
+    pool's documented cost model (`src/mcp/pool.ts:1-14`: cwd-scoped servers
+    index a repository; "one subprocess per active worktree per server").
+    Today's package-dir key already violates that model (one subprocess per
+    package — a pre-existing duplication bug this PR retires as a
+    side-effect). Verify the collapse with a test: two packages, one
+    worktree, one connection.
   - Exec `packageRelPath` derivation: both targets must not collapse to
     repoRoot without the workspace flag (`src/quality/package-managers.ts`).
   - Verifier verdict handshake: write and read must use the same root
@@ -180,6 +220,14 @@ time.
     the prompt-embedded `--relative` from #2090
     (`review-builder.ts` ~:332-347, `adversarial-review-builder.ts`,
     `debate-builder.ts`) — with a repo cwd they invert into bugs.
+  - Same inversion in the **subprocess** diff collectors, not only prompt
+    strings: `src/review/diff-utils.ts` — `collectDiff` (:130),
+    `collectDiffStat` (:156), `computeTestInventory` (:262) all pass
+    `--relative` "because the reviewer's file tools are rooted at the package
+    dir" (their own comments), while `collectDiffFileList` deliberately does
+    not. Post-move, all four share `collectDiffFileList`'s no-`--relative`
+    behavior — consolidate rather than re-reason four functions. Audit the
+    parallel site `src/review/scoped-lint.ts:87` in the same pass.
   - `execTouchedPaths` carve-out in `policy.ts` becomes redundant (everything
     is in-root): retire it, with a test that GitCommit can stage a root
     manifest without it.
@@ -214,23 +262,25 @@ time.
   monorepo spec are written repo-relative. Update the spec-lint guidance and
   the #1473 drop-warning text, which today reads workdir-relative declarations
   as the norm.
-- `expectedFiles` consumers move onto the repo-framed path (`builder.ts`
-  ~:396-432): with a uniformly repo-rooted PRD, the `canonical` branching and
-  `reclassifyPlanTimeAbsentEntries` (H4 residual) are no longer needed for
-  newly-planned PRDs. Keep the legacy branch keyed off `workdirSource` for old
-  artifacts; PR 4 decides its retirement window.
+- With a uniformly repo-rooted PRD, the `canonical` branching and
+  `reclassifyPlanTimeAbsentEntries` (H4 residual) in `builder.ts` are no
+  longer needed for newly-planned PRDs (the rendering itself already flipped
+  in PR 2). **Legacy ruling:** the tolerant read branch keyed off
+  `workdirSource` is **kept, not retired in this arc** — old and hand-edited
+  PRDs stay loadable indefinitely; only write-side machinery is deleted.
 
 ### PR 4 — deletion pass
 
-Subtractive; lands after PR 2 + PR 3 have each been live-verified on a real
-monorepo run.
+Subtractive; the last phase on the integration branch, followed by the live
+verification of §6 before the final merge to main.
 
-- Delete `toPackageFrame` / `toPackageFrameFiles` / `partitionPackageFrame`'s
-  package-reframe half, `UNREADABLE_MARKER` + `stripUnreadableMarker`,
-  `context/fragments/reframe.ts`, and the prompt-boundary re-spells in
-  `src/context/builder.ts` and `src/prompts/sections/story.ts`
-  (`modifiedFilesLines` renders repo-rooted as stored, which also retires the
-  batch `rootWorkdir` hazard, #2085 H6).
+- Delete the helpers PR 2 made unused: `toPackageFrame` /
+  `toPackageFrameFiles` / `partitionPackageFrame`'s package-reframe half,
+  `UNREADABLE_MARKER` + `stripUnreadableMarker`,
+  `context/fragments/reframe.ts` (the rendering flips themselves happened in
+  PR 2; flipping `modifiedFilesLines` also retired the batch `rootWorkdir`
+  hazard, #2085 H6). Delete `codingToolRepoRoot` and agent-scope's
+  `packageLabel`/prefix-strip logic (redundant since PR 2).
 - Provider chunk headings (`code-neighbor`, `git-history`) render repo-rooted;
   chunk identity keys and `scopePaths` no longer differ from rendered text.
 - Retire the frame half of `scripts/check-story-workdir-access.ts`; the
@@ -250,10 +300,11 @@ monorepo run.
 | Custom-profile grant globs silently re-scope | Non-default profiles only | Changelog migration note; default `unrestricted` unaffected |
 | Prompt regressions (agent misplaces files) | Every session type | agent-scope rewrite first-class in PR 2; render-and-read rule for every touched prompt branch |
 | `--relative` inversions missed at one site | Empty or repo-noise diffs in reviews | PR 2 checklist enumerates all sites; live-verify a monorepo review session |
-| Legacy / hand-edited PRDs | Old artifacts still workdir-framed | Legacy branch keyed off `workdirSource` retained until PR 4's retirement window |
+| Legacy / hand-edited PRDs | Old artifacts still workdir-framed | Tolerant read branch keyed off `workdirSource` kept indefinitely (ruled; only write-side machinery is deleted) |
+| Root and prompt reframes decoupled mid-arc | Frame-inverted `modifiedFiles` authorization / false-unreachable context if the reframes lag the root move | Both flips are in PR 2 by ruling; PR 4 deletes helpers only |
 | Per-package config resolution dropping the profile chain (#2126 class) | PR 1 makes it more load-bearing | R4: `loadConfigForPackage` only; #2127's static gate covers new sites |
 | MCP cwd / Exec / verifier / git-pathspec follow-ons | Each silent | Named per-site in PR 2's checklist; each gets its own test |
-| Fix waves shipping the defect they close (happened twice) | Process risk | Post-merge review pass after PR 2 and PR 3, as the seam-closure arc required |
+| Fix waves shipping the defect they close (happened twice) | Process risk | Phase-scoped review on each sub-PR into the integration branch, plus a whole-arc review pass before the final merge to main |
 
 **What this dissolves:** the mixed-frame PRD (#2125), the `canonical` flag and
 its H4 runtime re-probe, the `relative(repoRoot, packageDir)` recurring defect
@@ -273,9 +324,12 @@ unparseable PRD) — separate defect in the same write path; fix independently.
   verbatim (root value changes); new tests per PR 2 checklist item; PR 3 pins
   "same spec planned against trees at two different points yields byte-identical
   declared-path frames".
-- Live (required before PR 4): one monorepo `nax run` per protocol arm on a
-  fixture copy — assert zero failed Reads from frame misses, review diffs
-  scoped to the story package, declared commands running the package's own
-  toolchain, and a worktree-isolated story writing only inside its worktree.
+- Live (required on the completed integration branch, before the final merge
+  to main): one monorepo `nax run` per protocol arm on a fixture copy, using
+  the local build with `naxCommit` verified on the `run.start` line — assert
+  zero failed Reads from frame misses, review diffs scoped to the story
+  package, declared commands running the package's own toolchain, and a
+  worktree-isolated story writing only inside its worktree. Judge by
+  artifacts, never exit codes.
 - The end-to-end metric the 09-16 arc deferred ("zero failed Read on monorepo
   stories") becomes this design's acceptance metric.
