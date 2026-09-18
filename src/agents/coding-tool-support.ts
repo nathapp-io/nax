@@ -201,6 +201,14 @@ export function buildCodingToolSupport(args: {
                 ? {
                     exec: {
                       repoRoot: args.repoRoot ?? args.root,
+                      // Post-root-move: `args.root` is the repo root, so the
+                      // fallback only matters for single-package repos where
+                      // the two coincide (and for tests not threading
+                      // `packageWorkdir`). Production always threads it via
+                      // `commandCwd` plumbing in `resolveCodingToolSupport`
+                      // (Task 10), which makes `effectiveTarget`'s
+                      // `packageRelPath === ""` collapse impossible for a
+                      // package story.
                       packageWorkdir: args.packageWorkdir ?? args.root,
                       allowScripts: args.allowScripts ?? false,
                       // The compiled grant, not BUILT_IN_EXEC_PATTERNS -- a
