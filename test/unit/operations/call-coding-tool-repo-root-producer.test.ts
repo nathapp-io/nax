@@ -83,8 +83,9 @@ describe("callOp produces AgentRunOptions.codingToolRepoRoot", () => {
     // root (the worktree root), NOT the main checkout the runtime was created in.
     expect(seen[0]?.codingToolRepoRoot).toBe(join(mainCheckout, ".nax-wt", storyId));
     expect(seen[0]?.codingToolRepoRoot).not.toBe(mainCheckout);
-    // Pin the relationship between the two seeded fields: the containment root
-    // is the package dir INSIDE that same worktree.
-    expect(seen[0]?.codingToolRoot).toBe(worktreePackageDir);
+    // Root collapse (single-frame redesign PR2): the containment root moved from
+    // the package dir to the story exec root, so it is now numerically identical
+    // to codingToolRepoRoot. Pre-PR2 this was `worktreePackageDir`.
+    expect(seen[0]?.codingToolRoot).toBe(join(mainCheckout, ".nax-wt", storyId));
   });
 });

@@ -12,7 +12,7 @@
 import type { ModelDef, ModelTier, NaxConfig } from "../config";
 import { DEFAULT_CONFIG } from "../config";
 import type { PipelineStage } from "../config/permissions";
-import { packageWorkdir, storyExecRoot } from "../runtime/packages";
+import { storyExecRoot } from "../runtime/packages";
 import type { SessionRole } from "../session/types";
 import type { CodingToolName, ToolPatternNarrowing } from "../tools";
 import type { CallContext } from "./types";
@@ -53,7 +53,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
   } = params;
   return {
     prompt,
-    workdir: ctx.packageDir,
+    workdir: storyExecRoot(ctx.packageView),
     modelTier: effectiveTier,
     modelDef: dispatchModelDef,
     timeoutSeconds:
@@ -73,7 +73,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     // both hops' comments warn about.
     ...(ctx.runtime.toolProviders.length > 0 ? { providers: ctx.runtime.toolProviders } : {}),
     ...(toolPatterns !== undefined ? { toolPatterns } : {}),
-    codingToolRoot: packageWorkdir(ctx.packageView),
+    codingToolRoot: storyExecRoot(ctx.packageView),
     ...(fileOutputPath !== undefined ? { codingToolFileOutput: fileOutputPath } : {}),
     codingToolRepoRoot: storyExecRoot(ctx.packageView),
     // PR1 (single-frame redesign): thread the repo root and the story's

@@ -7,6 +7,7 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { composeSections, join } from "../prompts/compose";
+import { storyExecRoot } from "../runtime/packages";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildHopCallback } from "./build-hop-callback";
@@ -123,7 +124,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       ...(resolved.modelTier !== undefined ? { modelTier: resolved.modelTier } : {}),
       pipelineStage: op.stage,
       storyId: ctx.storyId,
-      workdir: ctx.packageDir,
+      workdir: storyExecRoot(ctx.packageView),
       featureName: ctx.featureName,
       callId,
       ...(ctx.scopeId !== undefined ? { scopeId: ctx.scopeId } : {}),
@@ -252,7 +253,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     config,
     projectDir: ctx.runtime.projectDir,
     featureName: ctx.featureName ?? "",
-    workdir: ctx.packageDir,
+    workdir: storyExecRoot(ctx.packageView),
     // Pull counter for this story attempt. Forwarding it stops
     // pull.maxCallsPerRun resetting on every hop, and carries AC-18's
     // invocation records through to metrics. NOTE: despite the config key's

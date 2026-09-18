@@ -281,8 +281,9 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createRuntime = mock(() =>
+    _planDeps.createRuntime = mock((_cfg: unknown, wd: string) =>
       makeMockRuntime({
+        workdir: wd,
         agentManager: makeMockAgentManager({
           completeAsFn: async (_name: string, _prompt: string, opts) => {
             assertDefined(opts);
