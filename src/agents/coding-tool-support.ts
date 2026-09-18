@@ -34,9 +34,13 @@ import {
   type ToolGrant,
   type ToolPatternNarrowing,
 } from "@/tools";
+import type { NaxConfig } from "../config";
+import { loadConfigForPackage } from "../config";
 import { toolAuditDir } from "../config/paths";
 import { resolvePermissions } from "../config/permissions";
 import type { QualityCommandSpec } from "../quality";
+import { packageWorkdir } from "../runtime/packages";
+import { errorMessage } from "../utils/errors";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 
@@ -262,6 +266,11 @@ export function buildLedgerSessionName(opts: { storyId?: string; sessionRole?: s
   return opts.sessionRole === undefined ? base : `${base}-${opts.sessionRole}`;
 }
 
+/** Injectable deps for testability — mirrors the _agentManagerDeps pattern. */
+export const _codingToolSupportDeps = {
+  loadConfigForPackage,
+};
+
 export async function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
@@ -277,15 +286,58 @@ export async function resolveCodingToolSupport(
     | "sessionRole"
     | "featureName"
     | "config"
+    | "projectDir"
+    | "codingToolPackageDir"
   >,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
   const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
+  // PR1 (single-frame redesign, #2066 residual): resolve the declared-command
+  // map (and the quality-derived fields around it) from the STORY'S PACKAGE
+  // config when one is known, not the config this dispatch happened to be
+  // threaded with. loadConfigForPackage is the R4-mandated resolver — never
+  // loadConfigForWorkdir directly, never packageView.config
+  // (packages.resolve() misses under worktree/parallel isolation, #2069);
+  // its required `from` carries the --profile chain (#2126/#2127). Cheap on
+  // a hit: loadConfigForWorkdir's own packageConfigCache
+  // (rootConfigPath, packageDir, profileKey) serves every dispatch after the
+  // first for the same package/profile.
+  const packageDir = options.codingToolPackageDir;
+  const projectDir = options.projectDir;
+  let packageEffectiveConfig: NaxConfig | undefined;
+  if (
+    packageDir !== undefined &&
+    packageDir.trim() !== "" &&
+    packageDir !== "." &&
+    projectDir !== undefined &&
+    projectDir.trim() !== "" &&
+    options.config !== undefined
+  ) {
+    try {
+      packageEffectiveConfig = await _codingToolSupportDeps.loadConfigForPackage(
+        projectDir,
+        packageDir,
+        // RULING F2 (see below): options.config's declared type is a Pick,
+        // but at runtime both hops source it from the full NaxConfig.
+        options.config as unknown as NaxConfig,
+      );
+    } catch (err) {
+      getSafeLogger()?.warn("tools", "Per-package config failed to load for dispatch — using root config", {
+        storyId: options.storyId ?? "_dispatch",
+        packageDir,
+        error: errorMessage(err),
+      });
+    }
+  }
+
   // RULING F2: AgentRunOptions['config'] is typed as the agent-manager Pick
   // (agent/execution/profile), yet both hops source it from configLoader.current(),
   // so it carries the full NaxConfig at runtime — only the type lies. The read is
   // widened locally here; the shared agentManagerConfigSelector stays untouched.
-  const widenedConfig = options.config as
+  // Now sourced from packageEffectiveConfig when a package story resolved one
+  // above, so a per-package quality.commands/install override is honored —
+  // falls back to options.config for a root story or when resolution failed.
+  const widenedConfig = (packageEffectiveConfig ?? options.config) as
     | {
         quality?: { commands?: Partial<Record<string, QualityCommandSpec>>; stripEnvVars?: unknown; shell?: unknown };
         // AgentManagerConfig (agentManagerConfigSelector) only picks
@@ -303,10 +355,9 @@ export async function resolveCodingToolSupport(
     : [];
   const shell = typeof quality?.shell === "string" ? quality.shell : undefined;
   const allowScripts = widenedConfig?.install?.allowScripts ?? false;
-  // `execution` is already in agentManagerConfigSelector's pick, so this
-  // reads through the real (narrower) AgentRunOptions['config'] type -- no
-  // widening needed, unlike `install` above.
-  const denyPaths = options.config?.execution?.denyPaths;
+  // Same package-first fallback as widenedConfig above — a package can
+  // override execution.denyPaths too.
+  const denyPaths = (packageEffectiveConfig ?? options.config)?.execution?.denyPaths;
   const declaredCommands = new Map(
     Object.entries(commands).filter(
       (e): e is [string, QualityCommandSpec] => typeof e[1] === "string" || Array.isArray(e[1]),
@@ -322,6 +373,16 @@ export async function resolveCodingToolSupport(
     codingToolRoot: options.codingToolRoot,
   });
   const root = options.codingToolRoot;
+  // Independent of `root`: PR2 repoints `codingToolRoot` at the story's
+  // execution root, so declared commands must resolve their cwd from the
+  // story's own relative package dir + the (stable) project root rather
+  // than from whatever `root` means at dispatch time. Falls back to `root`
+  // when either input is unavailable (legacy callers, or a single-package
+  // repo where the two already coincide).
+  const commandCwd =
+    projectDir !== undefined && projectDir.trim() !== ""
+      ? packageWorkdir({ packageDir: packageDir ?? "", repoRoot: projectDir })
+      : root;
   const auditDir =
     root !== undefined && root.trim() !== ""
       ? toolAuditDir(
@@ -411,6 +472,7 @@ export async function resolveCodingToolSupport(
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
+    commandCwd,
     grants: [...allow.grants, ...providerResult.grants],
     declared: declaredWithProviders,
     extraTools: providerResult.tools,

@@ -1,10 +1,12 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { realpath as realpathAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { loadConfigForPackage, packageConfigCache } from "@/config";
+import { _clearRootConfigCache } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { verifierOp } from "@/operations";
@@ -442,5 +444,98 @@ describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
     // DEFAULT_CONFIG.execution.permissionProfile is "unrestricted"; the test's
     // quality override leaves it untouched, so that is the resolved value.
     expect(entry?.data?.permissionProfile).toBe("unrestricted");
+  });
+});
+
+describe("resolveCodingToolSupport — per-package declared commands (#2066 residual)", () => {
+  let tempDir: string;
+  let originalGlobalDir: string | undefined;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-coding-tool-pkg-");
+    originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+    mkdirSync(join(tempDir, "packages", "api"), { recursive: true });
+    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "echo PACKAGE" } } }),
+    );
+    _clearRootConfigCache();
+    packageConfigCache.clear();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+    if (originalGlobalDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    else process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+    _clearRootConfigCache();
+    packageConfigCache.clear();
+  });
+
+  test("a package story's RunCommand runs the PACKAGE override, not the root-only config a stale caller threaded", async () => {
+    const packageDir = join(tempDir, "packages", "api");
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand"],
+      codingToolRoot: packageDir,
+      codingToolPackageDir: "packages/api",
+      projectDir: tempDir,
+      pipelineStage: "run",
+      // Simulates the #2066 residual directly: options.config still carries
+      // a ROOT-only "test" command. resolveCodingToolSupport must resolve
+      // the PACKAGE override from disk rather than trusting this value.
+      config: makeNaxConfig({ quality: { commands: { test: "echo ROOT" } } }),
+    });
+    const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+    expect(result?.kind).toBe("ok");
+    if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+    expect(result.content).toContain("PACKAGE");
+    expect(result.content).not.toContain("ROOT");
+  });
+
+  test("the resolved package config is cached — second dispatch for the same package/profile hits packageConfigCache", async () => {
+    const packageDir = join(tempDir, "packages", "api");
+    const dispatch = () =>
+      resolveCodingToolSupport({
+        declaredTools: ["RunCommand"],
+        codingToolRoot: packageDir,
+        codingToolPackageDir: "packages/api",
+        projectDir: tempDir,
+        pipelineStage: "run",
+        config: makeNaxConfig(),
+      });
+
+    await dispatch();
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
+    const afterFirst = packageConfigCache.get(rootConfigPath, "packages/api", "");
+    expect(afterFirst).toBeDefined();
+
+    await dispatch();
+    const afterSecond = packageConfigCache.get(rootConfigPath, "packages/api", "");
+    // Reference equality: a cache HIT returns the exact object
+    // loadConfigForWorkdir built on the first call. A re-parse (cache MISS)
+    // would construct a fresh object via NaxConfigSchema.safeParse — deep-
+    // equal but a different reference — and fail this assertion.
+    expect(afterSecond).toBe(afterFirst);
+  });
+
+  test("RunCommand's resolved 'test' template equals loadConfigForPackage's — the resolver acceptance-setup.ts already uses", async () => {
+    const rootConfig = makeNaxConfig();
+    const acceptanceResolved = await loadConfigForPackage(tempDir, "packages/api", rootConfig);
+    expect(acceptanceResolved.quality.commands.test).toBe("echo PACKAGE");
+
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand"],
+      codingToolRoot: join(tempDir, "packages", "api"),
+      codingToolPackageDir: "packages/api",
+      projectDir: tempDir,
+      pipelineStage: "run",
+      config: rootConfig,
+    });
+    const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+    expect(result?.kind).toBe("ok");
+    if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+    expect(result.content).toContain("PACKAGE");
   });
 });
