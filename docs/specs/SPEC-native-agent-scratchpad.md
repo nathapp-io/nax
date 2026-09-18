@@ -189,10 +189,11 @@ export const scratchpadWriteTool: CodingTool = {
 | `ScratchpadRead` of a file larger than `ctx.maxBytes` | Content truncated to `maxBytes`, `resultBytesPreTruncation` set to the pre-truncation size. |
 | Run-start wipe fails (permissions, busy handle) | Logged at warn; `setupRun` continues. A scratch directory must never wedge a run. |
 
-File I/O uses `Bun.write()` / `Bun.file()` per the project's Bun-native rule
-(`fs.readFileSync` / `fs.writeFileSync` are banned); directory removal and listing may
-use `node:fs/promises`, which `src/session/scratch-writer.ts` already does with an
-explicit exception comment. Compliance is verified by `bun run lint`, not by an AC.
+File I/O follows the project's existing Bun-native file-API rule and its documented
+`node:fs/promises` exception for directory operations, the same way
+`src/session/scratch-writer.ts` already does. This paragraph is descriptive, not a
+contract: no specific API is mandated here, and conformance is a lint concern
+(`bun run lint`) rather than an acceptance criterion.
 
 ## Out of Scope
 
@@ -206,6 +207,8 @@ explicit exception comment. Compliance is verified by `bun run lint`, not by an 
 - Applying the new `confineTo` field to any existing tool is not part of this feature; only the three scratchpad tools declare it.
 - Migrating or changing the existing session-scratch subsystem (`src/session/scratch-writer.ts`, `scratch.jsonl`, the `query_scratch` pull tool) is not part of this feature.
 - Making scratchpad contents survive a worktree teardown is not part of this feature; a parallel story's worktree is force-removed and its scratchpad goes with it.
+- Coordinating concurrent writes to the same scratchpad path is not part of this feature; tool calls within a session are sequential and parallel stories write into separate worktrees, so last-write-wins is the accepted behaviour.
+- Bounding the total size or file count of the scratchpad directory is not part of this feature; only the per-file ceiling already carried by the run context's `maxFileBytes` applies, and the run-start wipe bounds accumulation.
 
 ## Stories
 
@@ -294,11 +297,11 @@ None. The story appends new names to open-ended lists. The registry unit test as
 
 **US-004**
 
-None. The gitignore unit test asserts against synthetic entries of its own construction, never against the contents of NAX_GITIGNORE_ENTRIES, so appending an entry does not break it.
+None, but not because the test ignores the constant — it reads it in six places, including a loop over every member. The new entry satisfies each invariant that suite asserts: it does not begin with a slash, it is unique, it contains neither the substring "mutation-journal" nor "fragments" that two lookup tests search for, and it matches no committed feature spec or PRD path in the git-behaviour test. Re-check these four if the entry's spelling changes.
 
 **US-005**
 
-None. The nax-artifacts prompt test uses substring assertions plus cross-variant equality. Both survive an exception clause, provided it is applied uniformly to every variant, which AC-2 of this story pins.
+None. The nax-artifacts prompt test asserts substring presence and determinism — that the same role yields the same text on repeated calls. It does not compare one variant against another, so it constrains an added exception clause only in that the clause must be deterministic. AC-2 of this story pins the stronger cross-variant property separately, which the current implementation already satisfies because it ignores its variant argument entirely.
 
 ### Seams
 
@@ -331,7 +334,8 @@ None. The nax-artifacts prompt test uses substring assertions plus cross-variant
 - **AC-8** `[unit]` Calling `ScratchpadList` after two `ScratchpadWrite` calls returns a non-error outcome whose content names both written paths.
 - **AC-9** `[unit]` Calling `ScratchpadList` when the scratchpad directory does not exist returns a non-error outcome reporting no entries.
 - **AC-10** `[unit]` Calling `ScratchpadWrite` with content whose byte length exceeds the run context's `maxFileBytes` returns an outcome flagged as an error whose message states the limit, and writes no file.
-- **AC-11** `[unit]` Calling `ScratchpadRead` on a file whose byte length exceeds the run context's `maxBytes` returns content truncated to at most `maxBytes` bytes and a `resultBytesPreTruncation` equal to the file's full byte length.
+- **AC-11** `[unit]` Calling `ScratchpadRead` through `callTool` on a file whose byte length exceeds the run context's `maxBytes` returns a non-error outcome whose content is at most `maxBytes` bytes.
+- **AC-11b** `[unit]` Invoking the `ScratchpadRead` tool's own `run` with a run context whose `maxBytes` is smaller than the target file returns a result whose `resultBytesPreTruncation` equals the file's full byte length. The assertion is made on the tool result rather than through `callTool`, because `CodingToolOutcome` carries only `kind` and `content` and drops the field.
 - **AC-12** `[unit]` After `registerBuiltinCodingTools()` runs, looking up each of the three scratchpad names in the tool registry returns a tool, and a third-party `registerCodingTool` call using the name `"ScratchpadWrite"` raises an error carrying the code `TOOL_NAME_RESERVED`.
 
 ### US-003 — Availability to every op
@@ -346,7 +350,7 @@ None. The nax-artifacts prompt test uses substring assertions plus cross-variant
 
 - **AC-1** `[unit]` Given a scratchpad directory under the run's workdir containing a file, `setupRun` completes and afterwards that file no longer exists.
 - **AC-2** `[unit]` Given no scratchpad directory under the run's workdir, `setupRun` completes without raising.
-- **AC-3** `[unit]` Given a directory-removal dependency that rejects, `setupRun` still returns its result and emits a warn-level log record whose stage is `"tools"` or `"setup"` and whose message names the scratchpad — the run is not wedged.
+- **AC-3** `[unit]` Given a directory-removal dependency that rejects, `setupRun` still returns its result and emits a warn-level log record whose stage is `"setup"` and whose message names the scratchpad — the run is not wedged.
 - **AC-4** `[unit]` `NAX_GITIGNORE_ENTRIES` contains the exact entry `"**/.nax/scratchpad/"`.
 
 ### US-005 — Agent awareness
