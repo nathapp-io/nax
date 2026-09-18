@@ -17,10 +17,20 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import { readPrefix } from "@/utils/bounded-io";
+import { resolveWithin } from "./policy";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 /** The canonical scratchpad path, written into the policy as `scope.confineTo`. */
 export const SCRATCHPAD_DIR = ".nax/scratchpad";
+
+/**
+ * Match cap for ScratchpadList. Mirrors `glob.ts`'s `MAX_MATCHES` -- a
+ * long-running session accumulates throwaway files by design, so an
+ * unbounded scan would feed an arbitrarily large listing back into model
+ * context, bypassing the `ctx.maxBytes` ceiling every other content-
+ * returning tool honours.
+ */
+const MAX_MATCHES = 500;
 
 /** Truncate content to `maxBytes` with a marker, preserving the byte ceiling. */
 function truncate(body: string, maxBytes: number): string {
@@ -139,14 +149,28 @@ export const scratchpadListTool: CodingTool = {
     if (!existsSync(scratchpad)) return { content: "(no entries)" };
 
     const entries = new Bun.Glob("**/*").scanSync({ cwd: scratchpad, absolute: false, onlyFiles: true });
-    const files = [...entries].sort();
+    // Mirror glob.ts: every match is re-checked through resolveWithin before
+    // it is emitted, so a directory symlink planted inside the scratchpad
+    // cannot leak external paths the policy never saw. resolveWithin runs
+    // the symlink through isInside(realOrRaw(...)), so a symlink to outside
+    // the policy root yields null and the entry is skipped.
+    //
+    // Sort first, then cap. Capping first would leak the scan's enumeration
+    // order into the model, which is not what any caller expects from a
+    // listing -- a deterministic alphabetical prefix is the useful signal
+    // when a scratchpad has grown past the cap. scanSync materializes the
+    // full list before we see it, so the sort/cap are bounded by what the
+    // scan produced, not by anything the tool itself decided to walk.
+    const sorted = [...entries].sort();
+    const files: string[] = [];
+    for (const hit of sorted) {
+      if (files.length >= MAX_MATCHES) break;
+      if (resolveWithin(ctx.root, hit) === null) continue;
+      files.push(hit.split(sep).join("/"));
+    }
     if (files.length === 0) return { content: "(no entries)" };
 
-    // Render relative to the scratchpad itself (so a Write at `a/b/notes.md`
-    // appears as `a/b/notes.md`, never as `.nax/scratchpad/a/b/notes.md`).
-    // One line per file, repo-relative paths use `/` regardless of host OS
-    // so the output is portable.
-    const lines = files.map((f) => f.split(sep).join("/"));
-    return { content: lines.join("\n") };
+    const rendered = files.join("\n");
+    return { content: truncate(rendered, ctx.maxBytes) };
   },
 };
