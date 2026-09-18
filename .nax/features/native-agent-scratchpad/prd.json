@@ -3,7 +3,7 @@
   "feature": "native-agent-scratchpad",
   "branchName": "feat/native-agent-scratchpad",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-18T16:35:20.967Z",
+  "updatedAt": "2026-09-18T16:45:19.984Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,7 +32,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "This changes the shared access-control containment seam and must preserve realpath, grants, deny rules, and legacy undefined-confineTo behavior."
+        "reasoning": "This changes the shared access-control containment seam and must preserve realpath, grants, deny rules, and legacy undefined-confineTo behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/tools/types.ts",
@@ -40,11 +43,11 @@
         "src/utils/realpath.ts",
         "test/unit/tools/policy.test.ts"
       ],
-      "outOfScope": [
-        "Applying the new `confineTo` field to any existing tool is not part of this feature; only the three scratchpad tools declare it.",
-        "Locating the scratchpad outside the repository, for example under `~/.nax/<project>/`, is not part of this feature; that would require a second containment domain in the policy."
-      ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fba4cd0c52a6502320cb5d9d0a0f48c8b40e785a"
     },
     {
       "id": "US-002",
@@ -95,11 +98,10 @@
         "src/tools/scratchpad.ts",
         "test/unit/tools/scratchpad.test.ts"
       ],
-      "outOfScope": [
-        "A `ScratchpadDelete` tool is not part of this feature; overwriting a file and the run-start wipe cover replacement and cleanup, and an unused tool costs prompt bytes on every hop.",
-        "Widening the `Bash` or `RunCommand` shell gate so a shell redirect can reach `.nax/scratchpad/` is not part of this feature; those tools carry no path fields and are gated by human-authored `Bash(...)` rules and the lexer, which is a different seam."
-      ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -137,9 +139,6 @@
         "src/tools/runtime.ts",
         "test/unit/agents/coding-tool-support.test.ts"
       ],
-      "outOfScope": [
-        "Granting the scratchpad tools automatically under the `scoped` permission profile is not part of this feature; `scoped` exists so a human enumerates every stage capability, and a project opts in by writing `ScratchpadWrite(*)` in its own `execution.permissions` block."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/config/permissions.test.ts",
@@ -150,7 +149,10 @@
           "reason": "asserts an op declaring `tools: [\"Read\"]` advertises exactly `[\"Read\"]`. Appending the scratchpad tools at the union necessarily breaks this. Replace it with an invariant that the advertised list contains `Read` and the three scratchpad tools, and contains no other repository tool the op did not declare."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -186,14 +188,10 @@
         "src/tools/scratchpad.ts",
         "test/unit/execution/lifecycle/run-setup.test.ts"
       ],
-      "outOfScope": [
-        "Persisting scratchpad contents across separate `nax run` invocations is not part of this feature; the directory is wiped at the start of every run.",
-        "Partitioning the scratchpad per session, per story, or per role is not part of this feature; one flat directory per run is the chosen granularity.",
-        "Migrating or changing the existing session-scratch subsystem (`src/session/scratch-writer.ts`, `scratch.jsonl`, the `query_scratch` pull tool) is not part of this feature.",
-        "Making scratchpad contents survive a worktree teardown is not part of this feature; a parallel story's worktree is force-removed and its scratchpad goes with it.",
-        "Bounding the total size or file count of the scratchpad directory is not part of this feature; only the per-file ceiling already carried by the run context's `maxFileBytes` applies, and the run-start wipe bounds accumulation."
-      ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -238,11 +236,10 @@
         "When a rectifier prompt is built, then it contains `.nax/scratchpad/`.",
         "When buildNaxArtifactsSection is rendered, then it does not authorize moving, renaming, or deleting any `.nax/` path other than scratchpad contents."
       ],
-      "outOfScope": [
-        "Feeding scratchpad contents back into agent prompts as context is not part of this feature; `.naxignore` already excludes `.nax/` from context indexing and no provider reads the scratchpad.",
-        "Migrating or changing the existing session-scratch subsystem (`src/session/scratch-writer.ts`, `scratch.jsonl`, the `query_scratch` pull tool) is not part of this feature."
-      ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Existing code is the target architecture. Tool names and ToolScope are defined in src/tools/types.ts:25-126; ToolScope currently has no confineTo. src/tools/policy.ts:85-92 is the one containment seam: resolveWithin() realpath-checks containment and excludes .git/config paths. compileToolPolicy() resolves the repository root at src/tools/policy.ts:136, so confineTo must change only the root passed to resolveWithin for pathFields, leaving later relative-path, grant, deny/ask, owned-write, and audit processing repository-root-relative. src/tools/read.ts:1-6 and src/tools/write.ts:8-47 establish the required pattern: tools consume ctx.resolvedPaths rather than resolving inputs; Write creates parents, enforces maxFileBytes, and returns ToolResult errors. Symlink escape tests must exercise the policy/runtime seam. This is an access-control boundary, so US-001 through US-003 require strict three-session TDD under the security override.\n\nRegistration is centralized in src/tools/runtime.ts:64-82 and is idempotent per getCodingTool(), names are reserved in src/tools/registry.ts:88-139, and src/tools/index.ts exports the public surface. ToolResult already supports resultBytesPreTruncation (src/tools/registry.ts:16-42). Implement scratchpad.ts using the Write/Read patterns, Bun file APIs where applicable and node:fs/promises for directory operations. New files are src/tools/scratchpad.ts, test/unit/tools/scratchpad.test.ts, src/prompts/sections/scratchpad.ts, and test/unit/prompts/sections/scratchpad.test.ts.\n\nAvailability is controlled both by DEFAULT_CODING_TOOLS (src/config/permissions.ts:105-117, consumed by safe and unrestricted at lines 229-251) and by declaredWithProviders in src/agents/coding-tool-support.ts. Direct runtime calls currently look up any registered tool and evaluate policy (src/tools/runtime.ts:218-244); therefore US-003 must make operation declaration an effective call ceiling for ordinary tools too, otherwise its required reviewer integration criterion cannot refuse direct Write under unrestricted. The three scratchpad names must be added to the declaration union before that ceiling is evaluated; scoped remains an explicit human-grant profile.\n\nsetupRun begins at src/execution/lifecycle/run-setup.ts:183 and has injectable dependencies at lines 35-40. Add an injectable scratchpad removal operation, wipe under workdir at setup without treating absence/failure as fatal, and warn using stage setup. NAX_GITIGNORE_ENTRIES is the shared ignore SSOT at src/utils/gitignore.ts:51-91; append exactly **/.nax/scratchpad/. src/session/scratch-purge.ts:10-37 is only a dependency-injection/removal precedent, not a subsystem to migrate.\n\nPrompt work changes src/prompts/sections/nax-artifacts.ts:18-35 and its TDD composition at src/prompts/builders/tdd-builder.ts:268-273. Semantic and adversarial prompts construct their own text (src/prompts/builders/review-builder.ts:140-178; src/prompts/builders/adversarial-review-builder.ts:361-432); rectification already composes artifacts in src/prompts/builders/rectifier-builder-helpers.ts:13,145. Add a section and compose it at all four surfaces. The change is additive with no migration: undefined confineTo preserves all existing scopes, scratchpad data is intentionally wiped between runs, and the session scratch.jsonl/query_scratch subsystem is unchanged.",
