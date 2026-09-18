@@ -10,17 +10,21 @@
  * remain unchanged.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { DEFAULT_TOOL_MAX_FILE_BYTES, readTool } from "@/tools";
 
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "nax-line-total-"));
+  root = makeTempDir("nax-line-total-");
   mkdirSync(root, { recursive: true });
+});
+
+afterEach(() => {
+  cleanupTempDir(root);
 });
 
 function ctx(paths: string[], maxBytes = 10_000, maxFileBytes: number = DEFAULT_TOOL_MAX_FILE_BYTES) {
@@ -81,7 +85,7 @@ describe("readTool — unranged line-total header", () => {
     const path = join(root, "oversize-trunc.txt");
     const line = "x".repeat(99);
     writeFileSync(path, `${line}\n`.repeat(30));
-    const res = await readTool.run({ path: "oversize.txt" }, ctx([path], 500));
+    const res = await readTool.run({ path: "oversize-trunc.txt" }, ctx([path], 500));
     expect(res.content).toContain("truncated");
     expect(res.content).toMatch(/^\[\d+\+ lines\]/);
   });
