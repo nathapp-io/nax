@@ -317,3 +317,40 @@ describe("US-004 — TddPromptBuilder scopes test-command key into isolation", (
     expect(prompt).toContain("<!--nax:run-test:");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Single-frame PR 2 (Task 16) — render-and-read: the composed story section
+// must pass repo-rooted paths through unchanged. The builder's own `workdir`
+// argument is the PROMPT-LOADER directory (src/prompts/loader.ts joins it with
+// the override path), NOT the agent containment root, so it must not re-frame
+// story paths. Both a package story and a root story are rendered and read.
+// ---------------------------------------------------------------------------
+
+describe("TddPromptBuilder.buildForRole — repo-rooted story frame post-root-move", () => {
+  test("package story renders its modifiedFiles entry repo-rooted, not re-prefixed by the package", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      acceptanceCriteria: ["AC-1: works"],
+      modifiedFiles: [{ path: "packages/app/src/index.ts", reason: "the assertion moved" }],
+    });
+
+    const prompt = await TddPromptBuilder.buildForRole("test-writer", "/repo", makeNaxConfig({}), story, {});
+
+    // Rendered repo-rooted exactly as stored...
+    expect(prompt).toContain("`packages/app/src/index.ts` — the assertion moved");
+    // ...never re-spelled against the package a second time.
+    expect(prompt).not.toContain("packages/app/packages/app/src/index.ts");
+  });
+
+  test("root story renders its modifiedFiles entry repo-rooted", async () => {
+    const story = makeStory({
+      workdir: ".",
+      acceptanceCriteria: ["AC-1: works"],
+      modifiedFiles: [{ path: "src/index.ts", reason: "root frame" }],
+    });
+
+    const prompt = await TddPromptBuilder.buildForRole("test-writer", "/repo", makeNaxConfig({}), story, {});
+
+    expect(prompt).toContain("`src/index.ts` — root frame");
+  });
+});
