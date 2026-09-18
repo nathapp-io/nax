@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import { buildScopedCommand } from "@/test-runners/scoped-selection";
@@ -763,5 +764,37 @@ describe("RunCommand — target is argv-only", () => {
     expect(result.isError).toBe(true);
     expect(result.content).toContain("unknown command");
     expect(result.content).not.toContain("target");
+  });
+});
+// PR1 (single-frame redesign): declared commands must run at a cwd
+// independent of ctx.root (tool containment), so PR2's later root move
+// (codingToolRoot -> the story's repo-rooted execution root) cannot turn a
+// package's declared "test" into a whole-repo run.
+describe("run() executes declared commands at commandCwd, not ctx.root", () => {
+  test("commandCwd wins over ctx.root when both are supplied", async () => {
+    const containmentRoot = await realpath(await mkdtemp(join(tmpdir(), "nax-runcmd-root-")));
+    const packageCwd = await realpath(await mkdtemp(join(tmpdir(), "nax-runcmd-pkg-")));
+    const tool = createRunCommandTool(new Map([["where", "pwd"]]), { commandCwd: packageCwd });
+
+    const result = await tool.run(
+      { command: "where" },
+      { root: containmentRoot, resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toContain(packageCwd);
+    expect(result.content).not.toContain(containmentRoot);
+  });
+
+  test("falls back to ctx.root when commandCwd is not supplied (back-compat)", async () => {
+    const containmentRoot = await realpath(await mkdtemp(join(tmpdir(), "nax-runcmd-fallback-")));
+    const tool = createRunCommandTool(new Map([["where", "pwd"]]));
+
+    const result = await tool.run(
+      { command: "where" },
+      { root: containmentRoot, resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+    );
+
+    expect(result.content).toContain(containmentRoot);
   });
 });
