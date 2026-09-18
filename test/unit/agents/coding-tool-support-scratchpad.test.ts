@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeNaxConfig } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
 
 let root: string;
 
@@ -148,5 +149,52 @@ describe("US-003 AC5: under unrestricted with a read-only review declaration, Sc
       content: "the review passed",
     });
     expect(outcome?.kind).toBe("ok");
+  });
+});
+
+/**
+ * Regression guard for the append's dedup branch.
+ *
+ * `declaredWithProviders` appends only the scratchpad names the declaration
+ * does not already carry. Without that filter a declaration holding a
+ * scratchpad name -- including the DEFAULT_CODING_TOOLS fallback
+ * `resolveDeclaredTools` returns for an op that omits `tools` -- would put the
+ * name into the union twice, and `runtime.advertised()` copies the list
+ * verbatim: two entries, and from there two ToolDefinitions in the provider
+ * request. AC1/AC6 above use `toContain`, which cannot see a duplicate, so
+ * these assert counts and distinctness instead.
+ */
+describe("US-003: the scratchpad append never duplicates a name the declaration already carries", () => {
+  test("a declaration naming one scratchpad tool advertises it once, with the other two appended once", async () => {
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["Read", "ScratchpadWrite"],
+      codingToolRoot: root,
+      pipelineStage: "review",
+      config: makeNaxConfig({ execution: { permissionProfile: "unrestricted" } }),
+    });
+    const advertised = support?.tools.map((t) => t.name) ?? [];
+    expect(advertised.filter((name) => name === "ScratchpadWrite")).toHaveLength(1);
+    expect(advertised.filter((name) => name === "ScratchpadRead")).toHaveLength(1);
+    expect(advertised.filter((name) => name === "ScratchpadList")).toHaveLength(1);
+    expect(advertised.filter((name) => name === "Read")).toHaveLength(1);
+  });
+
+  test("an op that omits `tools` (DEFAULT_CODING_TOOLS) advertises each scratchpad exactly once", async () => {
+    // This is the production shape the filter exists for: resolveDeclaredTools
+    // returns DEFAULT_CODING_TOOLS when an op omits `tools`, and that list
+    // already carries all three scratchpad names.
+    const support = await resolveCodingToolSupport({
+      declaredTools: DEFAULT_CODING_TOOLS,
+      codingToolRoot: root,
+      pipelineStage: "review",
+      config: makeNaxConfig({ execution: { permissionProfile: "unrestricted" } }),
+    });
+    const advertised = support?.tools.map((t) => t.name) ?? [];
+    // Every advertised name is distinct -- a duplicate means two
+    // ToolDefinitions for the same tool reach the provider.
+    expect(new Set(advertised).size).toBe(advertised.length);
+    expect(advertised.filter((name) => name === "ScratchpadWrite")).toHaveLength(1);
+    expect(advertised.filter((name) => name === "ScratchpadRead")).toHaveLength(1);
+    expect(advertised.filter((name) => name === "ScratchpadList")).toHaveLength(1);
   });
 });

@@ -289,6 +289,10 @@ describe("createSessionRunHop — declared coding tools", () => {
       expect(advertised).not.toContain("Write");
       expect(advertised).not.toContain("Edit");
       expect(advertised).not.toContain("Delete");
+      // Distinctness: no tool may appear twice in the advertised list -- a
+      // duplicate ships two ToolDefinitions for it to the provider. `toContain`
+      // cannot see that; the set-size check can.
+      expect(new Set(advertised).size).toBe(advertised.length);
       const response = await seen?.interactionHandler?.onInteraction({
         kind: "coding-tool",
         name: "Read",
