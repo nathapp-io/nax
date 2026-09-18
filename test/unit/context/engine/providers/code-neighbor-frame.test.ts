@@ -233,7 +233,7 @@ describe("CodeNeighborProvider — heading == scopePath (single frame)", () => {
   });
 });
 
-describe("CodeNeighborProvider — worktree isolation residual (PARKED, nax#2093 class)", () => {
+describe("CodeNeighborProvider — worktree isolation residual (PARKED, nax path-frame follow-up #1, nax#2093 class)", () => {
   // REAL production shape under storyIsolation: "worktree": `request.repoRoot`
   // is the MAIN CHECKOUT (`/repo`) while `packageDir` is the worktree package
   // (`/repo/.nax-wt/US-001/packages/app`). code-neighbor resolves disk paths
@@ -241,10 +241,14 @@ describe("CodeNeighborProvider — worktree isolation residual (PARKED, nax#2093
   // worktree the story actually executes in. This test CHARACTERIZES that
   // parked residual rather than hiding it.
   //
-  // PARKED by controller ruling: the fix (thread a worktree-aware exec root,
-  // `storyExecRoot`, onto `ContextRequest`) is out of PR4's subtractive scope.
-  // When it lands, resolution reads the worktree and this test must flip to
-  // assert `- packages/app/src/worktree-dep.ts` and the absence of
+  // PARKED by controller ruling: the fix is out of PR4's subtractive scope.
+  //
+  // FOLLOW-UP (nax path-frame follow-up #1): thread a worktree-aware exec root
+  // (`storyExecRoot`) onto `ContextRequest` — the same field git-history.ts's
+  // RESIDUAL asks for — and resolve disk paths against it. Spec §6's live run
+  // covers EXEC/WRITE containment, NOT context resolution, so it will not catch
+  // this. When the field lands, resolution reads the worktree and this test
+  // must flip to assert `- packages/app/src/worktree-dep.ts` and the absence of
   // `- packages/app/src/main-dep.ts`.
   test("resolution reads the main checkout, not the worktree (parked residual)", async () => {
     setupDeps(

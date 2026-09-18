@@ -212,7 +212,9 @@ function scanDirectory(
  * Single-frame (nax#2125): every path is repo-rooted. `filePath` is
  * repo-rooted (types.ts), `scannedDirs` files are relative to the glob root
  * (`scanRoot`, either the package dir or repoRoot), and the caller's
- * `repoRoot` is the one root every relative path is resolved against. Every
+ * `repoRoot` is the one root every relative path is resolved against — true
+ * only under `storyIsolation: "shared"`; under `"worktree"` see the parked
+ * residual at the call site below. Every
  * comparison is made on absolute paths, and the result is spelled
  * repo-rooted, relative to `repoRoot`, exactly once on return — the agent's
  * file tools are rooted at the story execution root, so no package frame or
@@ -400,11 +402,18 @@ export class CodeNeighborProvider implements IContextProvider {
       // `request.repoRoot`, which under storyIsolation: "worktree" is the MAIN
       // checkout, not the worktree the story executes in (`packageDir` =
       // `<root>/.nax-wt/<storyId>/<pkg>`). So disk reads/forward-dep resolution
-      // can hit the main checkout instead of the worktree. Follow-up threads a
-      // worktree-aware exec root (`storyExecRoot`) onto ContextRequest and
-      // resolves against it; see the characterization test "worktree isolation
-      // residual (PARKED, nax#2093 class)". Do not fix by deriving the root
-      // here (nax#2069).
+      // can hit the main checkout instead of the worktree.
+      //
+      // FOLLOW-UP (nax path-frame follow-up #1 — the same follow-up
+      // git-history.ts's RESIDUAL names): thread a worktree-aware exec root
+      // (`storyExecRoot`) onto `ContextRequest` and resolve against it. This is
+      // a request-type field both providers lack, not something to derive per
+      // provider; it is the same missing "worktree repo root" git-history.ts
+      // documents. Spec §6's live run asserts only EXEC/WRITE containment ("a
+      // worktree-isolated story writing only inside its worktree") — it does
+      // NOT exercise context resolution — so it will not catch this. See the
+      // characterization test "worktree isolation residual (PARKED, nax#2093
+      // class)". Do not fix by deriving the root here (nax#2069).
       const { neighbors, truncated } = await collectNeighbors(
         file,
         request.repoRoot,

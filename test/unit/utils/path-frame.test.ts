@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   isRootWorkdir,
+  isWithinPackage,
   normalizeWorkdir,
   storyAbsWorkdir,
   storyPackageDir,
@@ -63,11 +64,35 @@ describe("toRepoFrame", () => {
   });
 });
 
+describe("isWithinPackage", () => {
+  test("rejects a sibling package that shares a name prefix", () => {
+    // The exact boundary defect that recurred three times: "packages/application"
+    // must not be read as "packages/app" + "lication".
+    expect(isWithinPackage("packages/application/src/x.ts", "packages/app")).toBe(false);
+  });
+
+  test("accepts a file beneath the package", () => {
+    expect(isWithinPackage("packages/app/src/x.ts", "packages/app")).toBe(true);
+  });
+
+  test("accepts the package directory itself", () => {
+    // Intentional semantic delta from the deleted package-frame translation,
+    // which returned null for the package dir itself.
+    expect(isWithinPackage("packages/app", "packages/app")).toBe(true);
+  });
+
+  test.each([["."], [undefined], [""]])("treats repo-root workdir %p as containing every path", (workdir) => {
+    expect(isWithinPackage("src/a.ts", workdir as string | null | undefined)).toBe(true);
+  });
+});
+
 describe("module export surface (single-frame redesign)", () => {
   test("exposes toRepoFrame as the only frame primitive and no marker helper", async () => {
     const keys = Object.keys(await import("@/utils/path-frame"));
-    expect(keys.filter((k) => k.endsWith("Frame"))).toEqual(["toRepoFrame"]);
-    expect(keys.filter((k) => k.includes("Marker"))).toEqual([]);
+    // Catch any new *Frame* primitive, not only those ending in "Frame"
+    // (a reintroduced package-frame file helper must fail this pin).
+    expect(keys.filter((k) => k.includes("Frame"))).toEqual(["toRepoFrame"]);
+    expect(keys.filter((k) => /marker/i.test(k))).toEqual([]);
   });
 });
 
