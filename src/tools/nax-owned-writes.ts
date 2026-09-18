@@ -57,6 +57,16 @@ export function isNaxConfigFile(root: string, resolved: string): boolean {
 export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edit", "Delete", "GitCommit"]);
 
 /**
+ * nax's run-control files at the root: the command channel an agent could
+ * otherwise use to PAUSE, ABORT or SKIP stories without writing any code.
+ *
+ * `.queue.txt.processing` is the atomic-rename target the queue handler reads
+ * from (src/execution/queue-handler.ts), so guarding only `.queue.txt` would
+ * leave the same hole one rename downstream.
+ */
+const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", ".queue.txt.processing"]);
+
+/**
  * Why `tool` may not touch `rel`, or `undefined` when it may.
  *
  * `rel` MUST be the canonical, posix-separated, root-relative spelling the
@@ -68,10 +78,19 @@ export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edi
  * The PRD defines the acceptance criteria the story is judged against. An
  * agent that can rewrite it can pass any review without writing any code,
  * which defeats the review layer without touching a config file.
+ *
+ * The queue file is the other half of the same concern: it is the run-control
+ * channel, and a write there can pause, abort or skip stories outright.
  */
 export function naxOwnedWriteRefusal(tool: string, rel: string, exemptRel?: string): string | undefined {
   if (!NAX_OWNED_WRITE_TOOLS.has(tool)) return undefined;
   const segments = rel.split("/");
+  // SEC-5: the run-control file lives at the root, so match it exactly
+  // there and not at any other depth -- a nested `sub/.queue.txt` is an
+  // ordinary file, not the queue nax reads.
+  if (segments.length === 1 && QUEUE_CONTROL_FILES.has(segments[0] ?? "")) {
+    return `"${rel}" is nax's own run state: it carries the PAUSE/ABORT/SKIP commands that control this run, so no tool may modify it. Change the run through the queue command, not by writing its file.`;
+  }
   const isFeaturePrd =
     segments[0] === ".nax" && segments[1] === "features" && segments[segments.length - 1] === "prd.json";
   if (!isFeaturePrd) return undefined;

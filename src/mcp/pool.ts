@@ -15,6 +15,7 @@
 
 import type { McpServerConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
+import { cancellableDelay } from "@/utils/bun-deps";
 import { connectMcpServer } from "./client";
 import type { McpCallResult, McpConnection, McpToolDescriptor } from "./types";
 
@@ -158,18 +159,28 @@ export function createMcpPool(opts: {
         // transport wedged below the protocol layer (a child that accepted the
         // write and never answers) would otherwise hold the hop open. The
         // ceiling lives here so it is enforced whatever the transport does.
-        const deadline = new Promise<McpCallResult>((resolve) =>
-          setTimeout(
-            () =>
-              resolve({
+        //
+        // MEM-5: own the deadline through an AbortController so the `finally`
+        // clears cancellableDelay's internal setTimeout whichever side of the
+        // race wins. The prior inline `setTimeout(...).unref?.()` discarded the
+        // handle, so every call — instant returns included — left the timer
+        // armed for the full timeoutMs. Same fix shape as trackedSpawn (PERF-1).
+        const deadlineController = new AbortController();
+        const deadline = cancellableDelay(callOpts.timeoutMs, deadlineController.signal).catch(() => {});
+        try {
+          return await Promise.race([
+            resolved.connection.callTool(tool, input, callOpts),
+            deadline.then(
+              (): McpCallResult => ({
                 content: `MCP call ${serverId}__${tool} exceeded ${callOpts.timeoutMs}ms`,
                 isError: true,
                 bytesPreTruncation: 0,
               }),
-            callOpts.timeoutMs,
-          ).unref?.(),
-        );
-        return await Promise.race([resolved.connection.callTool(tool, input, callOpts), deadline]);
+            ),
+          ]);
+        } finally {
+          deadlineController.abort();
+        }
       } catch (error) {
         const content = `MCP server "${serverId}" is unavailable: ${String(error)}`;
         return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };

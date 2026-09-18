@@ -28,20 +28,17 @@ import type { PipelineContext } from "@/pipeline/types";
 
 let origListFeatureDirs: typeof _manifestStoreDeps.listFeatureDirs;
 let origListManifestFiles: typeof _manifestStoreDeps.listManifestFiles;
-let origFileExists: typeof _manifestStoreDeps.fileExists;
 let origReadFile: typeof _manifestStoreDeps.readFile;
 
 beforeEach(() => {
   origListFeatureDirs = _manifestStoreDeps.listFeatureDirs;
   origListManifestFiles = _manifestStoreDeps.listManifestFiles;
-  origFileExists = _manifestStoreDeps.fileExists;
   origReadFile = _manifestStoreDeps.readFile;
 });
 
 afterEach(() => {
   _manifestStoreDeps.listFeatureDirs = origListFeatureDirs;
   _manifestStoreDeps.listManifestFiles = origListManifestFiles;
-  _manifestStoreDeps.fileExists = origFileExists;
   _manifestStoreDeps.readFile = origReadFile;
 });
 
@@ -67,7 +64,6 @@ function makeManifest(providerResults: ContextManifest["providerResults"]): Cont
 function setupManifest(featureId: string, _storyId: string, manifest: ContextManifest) {
   _manifestStoreDeps.listFeatureDirs = async () => [featureId];
   _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-verify.json"];
-  _manifestStoreDeps.fileExists = async () => true;
   _manifestStoreDeps.readFile = async () => JSON.stringify(manifest);
 }
 
@@ -146,7 +142,6 @@ describe("AC-25: provider cost accounting in StoryMetrics", () => {
       "context-manifest-verify.json",
       "context-manifest-execution.json",
     ];
-    _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = async () => {
       return JSON.stringify(callCount++ === 0 ? manifest1 : manifest2);
     };

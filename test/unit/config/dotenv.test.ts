@@ -8,6 +8,10 @@ import { describe, expect, test } from "bun:test";
 import { assertCaughtInstanceOf } from "@test/helpers";
 import { parseDotenv, resolveEnvVars } from "@/config/dotenv";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 describe("parseDotenv", () => {
   test("parses standard dotenv content stripping comments, blank lines, export prefixes, and quotes", () => {
     const content = 'FOO=bar\n# comment\n\nexport BAZ=qux\nQUOTED="hello world"';
@@ -64,5 +68,31 @@ describe("resolveEnvVars", () => {
     expect(result).toBe(literal);
     expect(result).not.toBe("$HOME");
     expect(result).toContain("\x00");
+  });
+
+  test("SEC-9: a __proto__ key from config does not change the result's prototype, is not copied, and leaks no inherited keys", () => {
+    const config = JSON.parse('{"__proto__": {"polluted": true}, "safe": "$FOO"}');
+    const result = resolveEnvVars(config, { FOO: "x" });
+    if (!isRecord(result)) throw new Error("resolveEnvVars must return an object for object input");
+
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+    expect(Object.hasOwn(result, "__proto__")).toBe(false);
+    expect("polluted" in result).toBe(false);
+    expect(result.polluted).toBeUndefined();
+    expect(result.safe).toBe("x");
+  });
+
+  test("SEC-9: constructor and prototype keys from config are skipped", () => {
+    const config = {
+      constructor: { polluted: true },
+      prototype: { polluted: true },
+      safe: "kept",
+    };
+    const result = resolveEnvVars(config, {});
+    if (!isRecord(result)) throw new Error("resolveEnvVars must return an object for object input");
+
+    expect(Object.hasOwn(result, "constructor")).toBe(false);
+    expect(Object.hasOwn(result, "prototype")).toBe(false);
+    expect(result.safe).toBe("kept");
   });
 });

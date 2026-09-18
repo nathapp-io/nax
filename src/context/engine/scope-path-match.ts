@@ -47,7 +47,42 @@ export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.\//, "");
 }
 
+/**
+ * Compiled-pattern memo (PERF-12). `globToRegex` is called from inside
+ * `files.some(...)` within `appliesTo.some(...)` (`static-rules.ts`) and once
+ * per chunk in `effectiveness.ts` `pathMatchesScope`, so a run recompiled the
+ * same pattern once per pattern × scope-file pair.
+ *
+ * The key is the raw string the caller passes, and that space is NOT limited to
+ * authored config: `pathMatchesScope` is fed `manifest.chunkScopePaths`, which
+ * providers populate with RUNTIME file paths — e.g. `git-history.ts` pushes
+ * `entry.file` and `code-neighbor-chunk.ts` pushes `rendered.path`. A runtime
+ * path that happens to contain a glob metacharacter (`app/blog/[slug]/page.tsx`)
+ * passes `isGlobScopePath` and is compiled. The cap below therefore keeps the
+ * map from growing for the process lifetime; once it is full, a new pattern is
+ * still compiled (behavior unchanged) but not retained.
+ *
+ * Sharing one instance across callers is safe: the compiled regex has no
+ * global/sticky flag, so `.test()` carries no `lastIndex` state.
+ */
+export const MAX_GLOB_REGEX_CACHE_ENTRIES = 1024;
+
+const GLOB_REGEX_CACHE = new Map<string, RegExp>();
+
+/** Test seam: number of compiled patterns currently memoized. */
+export function _globRegexCacheSize(): number {
+  return GLOB_REGEX_CACHE.size;
+}
+
+/** Test seam: drop every memoized pattern. */
+export function _resetGlobRegexCache(): void {
+  GLOB_REGEX_CACHE.clear();
+}
+
 export function globToRegex(pattern: string): RegExp {
+  const cached = GLOB_REGEX_CACHE.get(pattern);
+  if (cached !== undefined) return cached;
+
   let regex = "";
   let i = 0;
   while (i < pattern.length) {
@@ -84,7 +119,11 @@ export function globToRegex(pattern: string): RegExp {
     }
     i++;
   }
-  return new RegExp(`(?:^|/)${regex}$`);
+  const compiled = new RegExp(`(?:^|/)${regex}$`);
+  if (GLOB_REGEX_CACHE.size < MAX_GLOB_REGEX_CACHE_ENTRIES) {
+    GLOB_REGEX_CACHE.set(pattern, compiled);
+  }
+  return compiled;
 }
 
 /**

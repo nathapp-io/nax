@@ -9,8 +9,11 @@
  * the feature: manifest reads grow quadratically across a full run.
  *
  * ProviderWeightsCache memoizes the derived weights per featureId for the
- * lifetime of one run. It is invalidated whenever a new manifest is written
- * for that feature so the next assembly re-derives with the fresh signal.
+ * lifetime of one run. It is invalidated by annotateManifestEffectiveness when
+ * it writes a manifest's chunkEffectiveness — the only field
+ * deriveProviderWeights reads — so the next assembly re-derives with the fresh
+ * signal. Writing a manifest at assembly time does not invalidate: that write
+ * carries no chunkEffectiveness and would discard a still-valid entry (PERF-1).
  */
 
 import { loadFeatureManifests } from "./manifest-store";

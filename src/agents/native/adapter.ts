@@ -462,4 +462,23 @@ export class NativeAgentAdapter implements AgentAdapter {
     // session -- the one the retry reloads and a human reads (nax#1838).
     return closeNativeSession(handle);
   }
+
+  /**
+   * Run teardown addresses a session the process no longer has a handle for,
+   * by id string (execution/session-manager-runtime.ts). Without this the
+   * native maps were unreachable at teardown: every `keepOpen` session was
+   * removed from SessionManager._sessions by closeStory while its nine entries
+   * stayed behind for the process lifetime.
+   *
+   * The ACP contract takes a handle string and closeNativeSession takes a
+   * SessionHandle, but the maps are keyed by the session-name string both
+   * carry, so clear by name rather than synthesising a handle.
+   */
+  async closePhysicalSession(
+    handle: string,
+    _workdir?: string,
+    _options?: { force?: boolean; signal?: AbortSignal },
+  ): Promise<void> {
+    return closeNativeSession({ id: handle, agentName: NATIVE_AGENT });
+  }
 }

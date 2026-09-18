@@ -49,7 +49,7 @@ const _gitRootCache = new Map<string, string>();
 
 /**
  * Clear the git-root memo cache.
- * Called by run-completion.ts to reset state between runs in the same process.
+ * Called by run-cleanup.ts to reset state between runs in the same process.
  */
 export function clearGitRootCache(): void {
   _gitRootCache.clear();

@@ -22,7 +22,6 @@ describe("manifest-store — US-002 chunkScopePaths round-trip", () => {
     };
     _manifestStoreDeps.listFeatureDirs = async () => ["feat-auth"];
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
-    _manifestStoreDeps.fileExists = async (path) => writes.has(path);
     _manifestStoreDeps.readFile = async (path) => writes.get(path) ?? "";
 
     // Glob strings contain the character sequence "*" "/" "*" "/" which is
@@ -78,7 +77,6 @@ describe("manifest-store — US-002 chunkScopePaths round-trip", () => {
     };
     _manifestStoreDeps.listFeatureDirs = async () => ["feat-auth"];
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
-    _manifestStoreDeps.fileExists = async (path) => writes.has(path);
     _manifestStoreDeps.readFile = async (path) => writes.get(path) ?? "";
 
     const manifest: ContextManifest = {

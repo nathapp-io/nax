@@ -17,8 +17,11 @@ import type { NaxConfig } from "./schema";
  * `prototype`). `JSON.parse('{"__proto__": {...}}')` creates `__proto__` as a
  * normal own data property — `Object.keys` includes it — so an untrusted
  * project/profile config can smuggle one of these in (SEC-07).
+ *
+ * Exported so `resolveEnvVars` (SEC-09) can reuse the same guard rather than
+ * duplicating the set (a second copy is how one of them goes stale).
  */
-const DANGEROUS_MERGE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+export const DANGEROUS_MERGE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 /**
  * Deep merge two configuration objects.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { redactSecrets } from "@/logger/redact";
+import { redactEntry, redactSecrets } from "@/logger/redact";
 
 describe("redactSecrets", () => {
   test("masks values of known secret keys", () => {
@@ -261,6 +261,72 @@ describe("redactSecrets", () => {
       }
 
       expect(() => redactSecrets(deep)).not.toThrow();
+    });
+  });
+
+  // SEC-3: SECRET_KEY_PATTERN missed authorization/cookie/credential keys, so
+  // `{authorization: ...}` and `Cookie: ...` reached the JSONL run log in
+  // cleartext. The addition is deliberately narrowed to
+  // AUTHORIZATION|COOKIE|CREDENTIAL|PASSWD — a broader AUTH|SESSION pattern
+  // would redact sessionName/sessionId/author, destroying the run log's
+  // primary correlation key (see prompt-auditor.ts:300-302).
+  describe("SEC-3 auth/cookie/credential keys", () => {
+    test.each([
+      "authorization",
+      "Authorization",
+      "authorizationHeader",
+      "cookie",
+      "Cookie",
+      "Set-Cookie",
+      "setCookie",
+      "cookieJar",
+      "credential",
+      "credentials",
+      "passwd",
+      "sessionToken",
+      "apiKey",
+      "GH_TOKEN",
+    ])("redacts the value of key %s", (key) => {
+      const out = redactSecrets({ [key]: "leaky-value" });
+      expect(out[key]).toBe("[REDACTED]");
+    });
+
+    test.each([
+      "sessionName",
+      "sessionId",
+      "session",
+      "sessionScratchDir",
+      "sessionManager",
+      "author",
+      "authorName",
+      "authors",
+      "agentName",
+      "storyId",
+      "recordId",
+      "url",
+      "status",
+      "workdir",
+      "featureName",
+    ])("does NOT redact the value of key %s", (key) => {
+      const out = redactSecrets({ [key]: "visible-value" });
+      expect(out[key]).toBe("visible-value");
+    });
+
+    test("round-trip: redactEntry redacts a Cookie: header in message while preserving sessionName in data", () => {
+      const out = redactEntry({
+        message: "agent stderr: Cookie: sessionid=abc123def456; csrftoken=zzz",
+        data: { sessionName: "my-session", storyId: "story-1" },
+      });
+      expect(out.message).not.toContain("sessionid=abc123def456");
+      expect(out.message).toContain("[REDACTED]");
+      expect(out.data?.sessionName).toBe("my-session");
+      expect(out.data?.storyId).toBe("story-1");
+    });
+
+    test("round-trip: redactEntry redacts a Set-Cookie: header in message", () => {
+      const out = redactEntry({ message: "Set-Cookie: session=abc123; HttpOnly" });
+      expect(out.message).not.toContain("abc123");
+      expect(out.message).toContain("[REDACTED]");
     });
   });
 });

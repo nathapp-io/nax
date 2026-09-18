@@ -302,7 +302,6 @@ export async function assembleForStage(
     const bundle = await orchestrator.assemble(request);
     if (ctx.projectDir && ctx.prd.feature) {
       await writeContextManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, stage, bundle.manifest);
-      ctx.providerWeightsCache?.invalidate(ctx.prd.feature);
     }
     return bundle;
   } catch (err) {

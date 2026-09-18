@@ -32,7 +32,7 @@ import type {
   IContextProvider,
   StoredContextManifest,
 } from "@/context/engine";
-import { ContextOrchestrator } from "@/context/engine";
+import { ContextOrchestrator, ProviderWeightsCache } from "@/context/engine";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 
@@ -348,5 +348,38 @@ describe("contextStage — loadFeatureManifests invocation (AC10)", () => {
 
     expect(deriveCallCount).toBe(1);
     expect(capturedFeatureId).toBe("_unattached");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERF-1 — the context stage must not invalidate provider weights
+//
+// writeContextManifest persists a manifest that carries no chunkEffectiveness,
+// so invalidating here discarded the weights loadOrGet had just computed
+// without gaining any fresh signal. Invalidation now lives in
+// annotateManifestEffectiveness, where the effectiveness data is written.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SpyProviderWeightsCache extends ProviderWeightsCache {
+  readonly invalidated: string[] = [];
+  override async loadOrGet(): Promise<Record<string, number>> {
+    return {};
+  }
+  override invalidate(featureId: string): void {
+    this.invalidated.push(featureId);
+  }
+}
+
+describe("contextStage — PERF-1: no useless provider-weights invalidation", () => {
+  test("does not call providerWeightsCache.invalidate after assembling", async () => {
+    const cache = new SpyProviderWeightsCache();
+
+    _contextStageDeps.loadFeatureManifests = (async () => []) as typeof _contextStageDeps.loadFeatureManifests;
+    _contextStageDeps.deriveProviderWeights = (() => ({})) as typeof _contextStageDeps.deriveProviderWeights;
+    captureContextRequest();
+
+    await contextStage.execute(makeCtx({ providerWeightsCache: cache }));
+
+    expect(cache.invalidated).toEqual([]);
   });
 });

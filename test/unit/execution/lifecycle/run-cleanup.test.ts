@@ -709,3 +709,48 @@ describe("cleanupRun — resets runtime-crash retry budget (BUG-15)", () => {
     }
   });
 });
+
+// ============================================================================
+// MEM-7: per-run detection memos are cleared on the cleanup (finally) path,
+// not only when completion succeeds
+// ============================================================================
+
+describe("cleanupRun — clears per-run detection memos (MEM-7)", () => {
+  const originalMemoDeps = {
+    clearLanguageCache: _runCleanupDeps.clearLanguageCache,
+    clearWorkspaceCache: _runCleanupDeps.clearWorkspaceCache,
+    clearGitRootCache: _runCleanupDeps.clearGitRootCache,
+    resetCanonicalRulesCache: _runCleanupDeps.resetCanonicalRulesCache,
+    clearPackageConfigCache: _runCleanupDeps.clearPackageConfigCache,
+  };
+
+  afterEach(() => {
+    Object.assign(_runCleanupDeps, originalMemoDeps);
+  });
+
+  test("clears all process-lifetime memo caches during teardown", async () => {
+    // runCompletionPhase is called INSIDE the runner try; cleanupRun is the
+    // finally. Clearing only in run-completion left these process-lifetime memos
+    // stale whenever setup or execution threw before completion was reached.
+    const clearLanguageCache = mock(() => {});
+    const clearWorkspaceCache = mock(() => {});
+    const clearGitRootCache = mock(() => {});
+    const resetCanonicalRulesCache = mock(() => {});
+    const clearPackageConfigCache = mock(() => {});
+    Object.assign(_runCleanupDeps, {
+      clearLanguageCache,
+      clearWorkspaceCache,
+      clearGitRootCache,
+      resetCanonicalRulesCache,
+      clearPackageConfigCache,
+    });
+
+    await cleanupRun(makeCleanupOptions());
+
+    expect(clearLanguageCache).toHaveBeenCalledTimes(1);
+    expect(clearWorkspaceCache).toHaveBeenCalledTimes(1);
+    expect(clearGitRootCache).toHaveBeenCalledTimes(1);
+    expect(resetCanonicalRulesCache).toHaveBeenCalledTimes(1);
+    expect(clearPackageConfigCache).toHaveBeenCalledTimes(1);
+  });
+});

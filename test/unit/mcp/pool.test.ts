@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { withTimerSpy } from "@test/helpers";
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
 import { createMcpPool } from "@/mcp/pool";
@@ -150,6 +151,21 @@ describe("createMcpPool", () => {
     const result = await pool.call("memory", "/w", "t", {}, { timeoutMs: 100, maxBytes: 1000 });
     expect(result.isError).toBe(true);
     expect(result.content).toContain("unavailable");
+    await pool.close();
+  });
+
+  // MEM-5: the deadline timer must be cleared when callTool wins the race. The
+  // prior inline `setTimeout(...).unref?.()` discarded the handle, so every
+  // call — including this instant return — left a timer armed for the full
+  // timeoutMs. `.unref()` does not release the allocation.
+  test("the per-call deadline timer is cleared when the call wins the race", async () => {
+    fakeSdk();
+    const pool = createMcpPool({ servers });
+    await pool.listTools("memory", "/w");
+    const { leaked } = await withTimerSpy(() =>
+      pool.call("memory", "/w", "t", {}, { timeoutMs: 60_000, maxBytes: 1000 }),
+    );
+    expect(leaked).toEqual([]);
     await pool.close();
   });
 

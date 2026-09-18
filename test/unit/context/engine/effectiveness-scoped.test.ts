@@ -596,7 +596,6 @@ describe("annotateManifestEffectiveness — AC10: persisted scope excludes all c
     let written: unknown = null;
 
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
-    _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = async () => VALID_SCOPED_MANIFEST;
     _manifestStoreDeps.writeJson = async (_path, data) => {
       written = data;
@@ -625,7 +624,6 @@ describe("annotateManifestEffectiveness — AC10: persisted scope excludes all c
 
     let written: unknown = null;
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
-    _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = async () => manifest;
     _manifestStoreDeps.writeJson = async (_path, data) => {
       written = data;

@@ -407,6 +407,31 @@ describe("CostAggregator", () => {
     _costAggDeps.write = origWrite;
   });
 
+  // --- MEM-13: drain() releases open scopes so a subsequent drain is silent ---
+  test("drain() clears open scopes so a second drain does not re-warn", async () => {
+    const origGetSafeLogger = _costAggDeps.getSafeLogger;
+    const origWrite = _costAggDeps.write;
+    _costAggDeps.write = async () => 0;
+
+    const warnCounts: number[] = [];
+    const mockLogger = makeLogger();
+    mockLogger.warn = mock((_stage: string, _msg: string, data: Record<string, unknown>) => {
+      if (typeof data.openScopeCount === "number") warnCounts.push(data.openScopeCount);
+    }) as typeof mockLogger.warn;
+    _costAggDeps.getSafeLogger = mock(() => mockLogger);
+
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    agg.openScope("unclosed-scope");
+    await agg.drain();
+    expect(warnCounts).toEqual([1]);
+
+    await agg.drain();
+    expect(warnCounts).toEqual([1]);
+
+    _costAggDeps.getSafeLogger = origGetSafeLogger;
+    _costAggDeps.write = origWrite;
+  });
+
   // --- US-005 AC1: byAgent() reflects errorCount when one cost event and one
   // error event share an agentName. byAgent() currently aggregates cost events
   // only, so an error event that matches an existing agent key must still

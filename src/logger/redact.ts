@@ -15,8 +15,14 @@
 // DATABASE_URL=postgres://admin:s3cret@db/prod passed through both redaction
 // layers (the KEY=value regex required SECRET|TOKEN|... before `=`, which
 // DATABASE_URL doesn't satisfy; the key pattern didn't match either).
+// SEC-3: AUTHORIZATION/COOKIE/CREDENTIAL/PASSWD were missing. Deliberately
+// narrowed — this is an unanchored substring test, so AUTH(?:ORIZATION)?
+// would also match author/authorName, and SESSION would match
+// sessionName/sessionId/sessionScratchDir, the run log's primary correlation
+// key (see prompt-auditor.ts:300-302). COOKIE already covers SET-COOKIE and
+// setCookie; sessionToken stays covered by the TOKEN branch.
 const SECRET_KEY_PATTERN =
-  /(SECRET|TOKEN(?!s\b)|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK|(?:\w+)?_URL|\w+_URI|\w+_DSN|CONNECTION\s*STRING)/i;
+  /(SECRET|TOKEN(?!s\b)|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK|AUTHORIZATION|COOKIE|CREDENTIAL|PASSWD|(?:\w+)?_URL|\w+_URI|\w+_DSN|CONNECTION\s*STRING)/i;
 
 /**
  * Patterns are reset via `re.lastIndex = 0` before every call because they carry
@@ -70,6 +76,12 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   // that SECRET_KEY_PATTERN's object-key check can't reach because the
   // key/value are both embedded in one free-text string (e.g. raw HTTP logs).
   /(?:x-api-key|api[_-]?key)\s*[:=]\s*[^\s"',]+/gi,
+  // SEC-3: Cookie / Set-Cookie headers interpolated into a free-text string
+  // (agent stderr is the common path) — SECRET_KEY_PATTERN only sees object
+  // keys, not header text. Consumes the rest of the line; cookie values are
+  // opaque and line-delimited in header dumps, so a narrower character class
+  // would only risk under-redacting the tail of a multi-cookie header.
+  /\b(?:Set-)?Cookie\s*:\s*[^\r\n]+/gi,
   // SEC-1 (Round 2 review): URL-embedded credentials (scheme://user:pass@host).
   // Matches a scheme name (lowercase letters, digits, +, ., -), then ://, then
   // optional user:password (no /, whitespace, or @), then @. The colon + @
