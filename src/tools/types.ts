@@ -38,7 +38,10 @@ export type CodingToolName =
   | "RunCommand"
   | "RequestCapability"
   | "Exec"
-  | "Bash";
+  | "Bash"
+  | "ScratchpadWrite"
+  | "ScratchpadRead"
+  | "ScratchpadList";
 
 /**
  * One declarative permission grant, as produced by resolvePermissions.
