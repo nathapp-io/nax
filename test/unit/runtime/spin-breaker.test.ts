@@ -182,12 +182,18 @@ describe("createSpinBreaker", () => {
         stopped = true;
         break;
       }
+      // nax#2120: the cumulative counter now needs a result to compare. Key A
+      // and key B each get a constant result; each distinct Read gets its own
+      // path-bearing string so it changes every time.
+      const resultText =
+        toolName === "Read" ? `contents of ${String((input as { path: unknown }).path)}` : "same output every time";
+      breaker.noteResult(toolName, input, resultText);
     }
 
     expect(stopped).toBe(true);
   });
 
-  test("stops at the 12th occurrence of one key regardless of what came between (cumulative counter)", () => {
+  test("stops at the 16th occurrence of one key regardless of what came between (cumulative result run)", () => {
     const breaker = createSpinBreaker(settings());
     const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
     const KEY_B = { command: "testScoped", values: { files: "b.test.ts" } };
@@ -197,7 +203,7 @@ describe("createSpinBreaker", () => {
     // reaches the threshold regardless of B interleaving.
     let aCount = 0;
     let stoppedAtA: number | undefined;
-    for (let cycle = 0; cycle < 6; cycle += 1) {
+    for (let cycle = 0; cycle < 8; cycle += 1) {
       // Three A's, then a B. Per cycle: A becomes cumulative (cycle*3 + 1..3).
       for (let i = 0; i < 3; i += 1) {
         aCount += 1;
@@ -206,6 +212,7 @@ describe("createSpinBreaker", () => {
           stoppedAtA = aCount;
           break;
         }
+        breaker.noteResult("RunCommand", KEY_A, "identical");
       }
       if (stoppedAtA !== undefined) break;
       const bVerdict = breaker.observe("RunCommand", KEY_B);
@@ -213,9 +220,13 @@ describe("createSpinBreaker", () => {
         // B has only fired once in this loop, so it can't be the trigger.
         throw new Error("Unexpected stop on B — A should have tripped first");
       }
+      breaker.noteResult("RunCommand", KEY_B, "identical");
     }
 
-    expect(stoppedAtA).toBe(12);
+    // nax#2120: the result axis lags the raw count by one call, so the ladder
+    // (12/13/14 nudge) now stops on the 16th occurrence of A rather than 15.
+    // The ladder must always render before a kill.
+    expect(stoppedAtA).toBe(16);
   });
 
   test("interleaving does not reset the cumulative counter (the laundering hole)", () => {
@@ -223,19 +234,26 @@ describe("createSpinBreaker", () => {
     const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
     const KEY_B = { command: "testScoped", values: { files: "b.test.ts" } };
 
-    // [A, B, A, B, ..., A] — A's count climbs to 12 while repeatsSinceProgress
-    // never exceeds 1. The default nudgeAfterRepeats=25 means the existing
-    // repeatsSinceProgress path cannot trip. The new cumulative check must.
-    let aCount = 0;
+    // [A, B, A, B, ...] — repeatsSinceProgress never exceeds 1, so the
+    // nudgeAfterRepeats=25 path can never trip. Only the cumulative check
+    // can end this, and it must, after spending the full ladder. Both keys
+    // climb together, so which one finally crosses is symmetric and not
+    // worth asserting; that the loop is bounded at all is the point.
     let stoppedAt: number | undefined;
-    for (let i = 0; i < 30 && stoppedAt === undefined; i += 1) {
-      const input = i % 2 === 0 ? KEY_A : KEY_B;
-      if (input === KEY_A) aCount += 1;
-      const verdict = breaker.observe("RunCommand", input);
-      if (verdict.action === "stop") stoppedAt = aCount;
+    for (let i = 0; i < 40 && stoppedAt === undefined; i += 1) {
+      const key = i % 2 === 0 ? KEY_A : KEY_B;
+      const verdict = breaker.observe("RunCommand", key);
+      if (verdict.action === "stop") {
+        stoppedAt = i + 1;
+        break;
+      }
+      breaker.noteResult("RunCommand", key, "identical");
     }
 
-    expect(stoppedAt).toBe(12);
+    // Both keys accumulate a same-result run and cross together; the one-call
+    // result lag shifts the stop from 26 to 28.
+    expect(stoppedAt).toBe(28);
+    expect(breaker.summary().nudges).toBe(3);
   });
 
   test("600 varied calls never trip (nax#2013 regression guard)", () => {
@@ -308,11 +326,11 @@ describe("createSpinBreaker", () => {
     expect(stops).toBeLessThanOrEqual(1); // 0 from cumulative, at most 1 from existing path
   });
 
-  test("stopAfterSameKeyRepeats defaults to 12 (sanity check that default trips at 12)", () => {
-    // With the default settings (stopAfterSameKeyRepeats=12) and 50 identical
-    // calls, the cumulative check must trip BEFORE repeatsSinceProgress
-    // reaches the first nudge point (25). If the cumulative path were off
-    // or defaulted too high, this would let 25+ identical calls through.
+  test("the cumulative path spends the nudge ladder before it stops (nax#2120)", () => {
+    // With the default settings the result-axis check engages at 12, but it
+    // must NOT kill cold: occurrences 12/13/14 nudge, and (with the one-call
+    // result lag) 16 stops. A same-key stop reached with nudges: 0 is the
+    // defect nax#2120 filed.
     const breaker = createSpinBreaker(settings());
     const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
 
@@ -321,10 +339,224 @@ describe("createSpinBreaker", () => {
     for (let i = 0; i < 50 && stoppedAt === undefined; i += 1) {
       const verdict = breaker.observe("RunCommand", KEY_A);
       if (verdict.action === "nudge") nudges += 1;
-      if (verdict.action === "stop") stoppedAt = i + 1;
+      if (verdict.action === "stop") {
+        stoppedAt = i + 1;
+        break;
+      }
+      breaker.noteResult("RunCommand", KEY_A, "identical");
     }
 
-    expect(stoppedAt).toBe(12);
-    expect(nudges).toBe(0);
+    expect(stoppedAt).toBe(16);
+    expect(nudges).toBe(3);
+  });
+
+  // nax#2120 defect 3 (the ratchet): the cumulative count latched at the
+  // threshold, so every later occurrence of that key re-killed instantly.
+  // The breaker is session-scoped by design (nax#2047), so "latched" meant
+  // every subsequent TURN died on its first re-occurrence of the key.
+  test("a cumulative stop resets that key's count, so the next occurrence does not re-kill", () => {
+    const breaker = createSpinBreaker(settings());
+
+    let firstStopAt: number | undefined;
+    for (let i = 0; i < 20 && firstStopAt === undefined; i += 1) {
+      const verdict = breaker.observe("RunCommand", TEST_CMD);
+      if (verdict.action === "stop") {
+        firstStopAt = i + 1;
+        break;
+      }
+      breaker.noteResult("RunCommand", TEST_CMD, "identical");
+    }
+    expect(firstStopAt).toBe(16);
+
+    // The 12 occurrences after the stop must all be allowed: the count
+    // restarts from zero and has to climb the full threshold again. The
+    // one-call result lag shifts the second stop from the 12th to the 13th.
+    for (let i = 0; i < 12; i += 1) {
+      const verdict = breaker.observe("RunCommand", TEST_CMD);
+      expect(verdict.action).not.toBe("stop");
+      breaker.noteResult("RunCommand", TEST_CMD, "identical");
+    }
+    // The 13th does fire again — a genuinely wedged session still dies.
+    expect(breaker.observe("RunCommand", TEST_CMD).action).toBe("stop");
+  });
+
+  test("a stop does not turn the key into a new-key event", () => {
+    const breaker = createSpinBreaker(settings());
+
+    for (let i = 0; i < 16; i += 1) {
+      const verdict = breaker.observe("RunCommand", TEST_CMD);
+      if (verdict.action === "stop") break;
+      breaker.noteResult("RunCommand", TEST_CMD, "identical");
+    }
+    const newKeysAfterStop = breaker.summary().newKeyEvents;
+    breaker.observe("RunCommand", TEST_CMD);
+
+    // Resetting the count must not look like progress: newKeyEvents is the
+    // "did something new happen" instrument and a re-issued key is not new.
+    expect(breaker.summary().newKeyEvents).toBe(newKeysAfterStop);
+  });
+
+  // nax#2120 defect 1: for a loop over 1-2 already-seen keys the first nudge
+  // point (25) was unreachable, because the cumulative stop returned before
+  // repeatsSinceProgress was incremented. The invariant is now in the
+  // mechanism: no config can produce a stop with nudges: 0.
+  test("never stops with nudges unspent, for any cycle length", () => {
+    const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
+    const KEY_B = { command: "testScoped", values: { files: "b.test.ts" } };
+    const KEY_C = { command: "testScoped", values: { files: "c.test.ts" } };
+    const cycles: ReadonlyArray<readonly unknown[]> = [[KEY_A], [KEY_A, KEY_B], [KEY_A, KEY_B, KEY_C]];
+
+    for (const cycle of cycles) {
+      const breaker = createSpinBreaker(settings());
+      let stopped = false;
+      for (let i = 0; i < 400 && !stopped; i += 1) {
+        if (breaker.observe("RunCommand", cycle[i % cycle.length]).action === "stop") stopped = true;
+      }
+      expect(stopped).toBe(true);
+      expect(breaker.summary().nudges).toBe(3);
+    }
+  });
+
+  test("a downgraded stop does not consume the cumulative evidence", () => {
+    // The Task 1 reset belongs to a REAL stop. If a nudge reset the count
+    // too, the threshold could never be reached a second time and the loop
+    // would nudge forever.
+    const breaker = createSpinBreaker(settings());
+    let stopped = false;
+    for (let i = 0; i < 20 && !stopped; i += 1) {
+      const verdict = breaker.observe("RunCommand", TEST_CMD);
+      if (verdict.action === "stop") {
+        stopped = true;
+        break;
+      }
+      breaker.noteResult("RunCommand", TEST_CMD, "identical");
+    }
+    expect(stopped).toBe(true);
+  });
+
+  // nax#2120 defect 2: the cumulative counter had no progress axis, so an
+  // edit -> re-run-scoped-test loop read identically to an idle re-run loop.
+  // Result identity is the axis the nudge copy already claims to measure.
+  test("an edit-test loop with changing results survives well past the same-result threshold", () => {
+    const breaker = createSpinBreaker(settings());
+
+    // 40 iterations of the shape that was killed: same scoped test command,
+    // a different failure each time. Bounded by the raw backstop at
+    // stopAfterRepeats=50, so this must stay under 50 iterations.
+    for (let i = 0; i < 40; i += 1) {
+      const verdict = breaker.observe("RunCommand", TEST_CMD);
+      expect(verdict.action).not.toBe("stop");
+      breaker.noteResult("RunCommand", TEST_CMD, `FAIL: expected ${i} to equal ${i + 1}`);
+    }
+  });
+
+  test("identical results still stop, spending the ladder first", () => {
+    const breaker = createSpinBreaker(settings());
+
+    let stoppedAt: number | undefined;
+    for (let i = 0; i < 40 && stoppedAt === undefined; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") stoppedAt = i + 1;
+      breaker.noteResult("RunCommand", TEST_CMD, "PASS 1 test, 0 failures");
+    }
+
+    // 16, not 15: `observe` runs pre-execution, so occurrence N's result is
+    // only known when N+1 is judged. sameResultRun therefore lags the raw
+    // count by exactly one call, and the whole ladder shifts with it.
+    expect(stoppedAt).toBe(16);
+  });
+
+  test("durations and timestamps do not count as a changed result", () => {
+    // A test runner prints an elapsed time on every run. Without
+    // normalisation, byte-identical work reads as a changed result and the
+    // whole check is defeated — this is the nax#2013 verifier's shape.
+    const breaker = createSpinBreaker(settings());
+
+    let stopped = false;
+    for (let i = 0; i < 40 && !stopped; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") stopped = true;
+      breaker.noteResult("RunCommand", TEST_CMD, `\x1b[32mPASS\x1b[0m 1 test in ${1.2 + i * 0.01}s`);
+    }
+
+    expect(stopped).toBe(true);
+  });
+
+  test("a changed failure count IS a changed result", () => {
+    // The normaliser must strip duration/timestamp tokens only. Blanking all
+    // digits would mask "2 failed" -> "1 failed", which is real progress.
+    const breaker = createSpinBreaker(settings());
+
+    for (let i = 0; i < 40; i += 1) {
+      const verdict = breaker.observe("RunCommand", TEST_CMD);
+      expect(verdict.action).not.toBe("stop");
+      breaker.noteResult("RunCommand", TEST_CMD, `FAIL ${40 - i} failed in 1.20s`);
+    }
+  });
+
+  test("a bare integer m/s token is a changed result, not a stripped duration (nax#2120 fix)", () => {
+    // A single-letter unit with no time context is ordinary content, not an
+    // elapsed time: `file-2m.ts` and `file-3m.ts` differ for real. If the
+    // normaliser stripped the `<int>m`/`<int>s` tokens the digests would be
+    // identical and this healthy loop would be stopped at 16.
+    for (const unit of ["m", "s"]) {
+      const breaker = createSpinBreaker(settings());
+      for (let i = 0; i < 40; i += 1) {
+        const verdict = breaker.observe("RunCommand", TEST_CMD);
+        expect(verdict.action).not.toBe("stop");
+        breaker.noteResult("RunCommand", TEST_CMD, `file-${i}${unit}.ts`);
+      }
+    }
+  });
+
+  test("the raw backstop still fires when results never repeat", () => {
+    // A call whose result is unique every time (a clock read, a random id)
+    // must not be immortal: stopAfterRepeats bounds the raw cumulative count.
+    const breaker = createSpinBreaker(settings());
+
+    let stopped = false;
+    for (let i = 0; i < 120 && !stopped; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") stopped = true;
+      breaker.noteResult("RunCommand", TEST_CMD, `unique-${i}-${i * 7}`);
+    }
+
+    expect(stopped).toBe(true);
+    expect(breaker.summary().nudges).toBe(3);
+  });
+
+  test("a key with no noted result falls back to the raw count", () => {
+    // Models a call that throws: an error string is not a result, so it never
+    // reaches noteResult and rides the raw backstop. (A DENIED call does feed
+    // noteResult — a stable denial is an unchanged result by design.) Still
+    // bounded, just on the raw backstop rather than the result axis.
+    const breaker = createSpinBreaker(settings());
+
+    let stopped = false;
+    for (let i = 0; i < 120 && !stopped; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") stopped = true;
+    }
+
+    expect(stopped).toBe(true);
+  });
+
+  // nax#2120 Important #1: a real stop must consume `repeatsSinceProgress`
+  // too, not just the per-key record. The breaker is session-scoped
+  // (nax#2047) and the first stop is reprieved (Task 4), so a latched run
+  // counter made the next turn stop on its first or second repeated call.
+  test("a repeat-run stop resets the run, so the next occurrence does not re-kill", () => {
+    // stopAfterSameKeyRepeats: 0 disables the result axis, so ONLY the
+    // repeat-run path (rsp >= stopAfterRepeats) can fire here.
+    const breaker = createSpinBreaker(settings({ stopAfterSameKeyRepeats: 0 }));
+
+    let firstStopAt: number | undefined;
+    for (let i = 0; i < 60 && firstStopAt === undefined; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") firstStopAt = i + 1;
+    }
+    expect(firstStopAt).toBe(51);
+
+    // The counter restarted at zero: the next 49 repeats are allowed again...
+    for (let i = 0; i < 49; i += 1) {
+      expect(breaker.observe("RunCommand", TEST_CMD).action).not.toBe("stop");
+    }
+    // ...and the 50th re-accumulates to the stop. A wedged loop still dies.
+    expect(breaker.observe("RunCommand", TEST_CMD).action).toBe("stop");
   });
 });

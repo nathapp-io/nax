@@ -83,9 +83,12 @@ export {
   createSpinBreaker,
   DEFAULT_SPIN_BREAKER_SETTINGS,
   type ResolvedSpinBreakerSettings,
+  SPIN_TERMINAL_NOTICE,
   type SpinBreaker,
+  type SpinStopReason,
   type SpinSummary,
   type SpinVerdict,
+  spinTerminalNotice,
 } from "./spin-breaker";
 export type { IUsageAuditor, UsageAuditEntry } from "./usage-auditor";
 export { _usageAuditorDeps, createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";

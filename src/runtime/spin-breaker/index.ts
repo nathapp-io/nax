@@ -19,6 +19,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { byCodePoint } from "@/utils/sort";
+import { stripControlChars } from "@/utils/strip-control-chars";
 
 export interface ResolvedSpinBreakerSettings {
   readonly enabled: boolean;
@@ -26,17 +27,25 @@ export interface ResolvedSpinBreakerSettings {
   readonly nudgeAfterRepeats: number;
   /** How many nudges to spend before the hard stop. */
   readonly maxNudges: number;
-  /** Repeats since the last new call at which the turn ends. */
+  /**
+   * Repeats since the last new call at which the turn ends, AND the raw
+   * per-key backstop. Overloaded: `stopAfterSameKeyRepeats` gates the
+   * consecutive-identical-result threshold, while the same key's raw
+   * cumulative count is separately capped here. That backstop is the only
+   * thing that bounds a call whose result changes every time (or never
+   * reaches `noteResult`), which the result axis cannot see.
+   */
   readonly stopAfterRepeats: number;
   /** How many recent distinct keys count as "already seen". */
   readonly recentKeyWindow: number;
   /**
-   * Cumulative repeats of the same call (counted across all interleavings)
-   * at which the turn ends. Closes the laundering hole that lets a single
-   * call shape repeat endlessly when a different key fires between
-   * occurrences — nax#2047 measured 69 identical calls and `maxRepeatRun=22`
-   * against a threshold of 25, so a 25-only check was one interleaving away
-   * from never tripping. `0` disables the cumulative check.
+   * Consecutive occurrences of the same call whose RESULT was unchanged at
+   * which the turn ends — the consecutive same-result run, NOT the raw
+   * per-key count (which `stopAfterRepeats` caps). This is the axis that
+   * closes the nax#2047 laundering hole (a different key firing between
+   * occurrences no longer resets the run) without killing a healthy
+   * edit -> re-run-test loop, whose result changes each iteration. `0`
+   * disables this axis.
    */
   readonly stopAfterSameKeyRepeats: number;
 }
@@ -50,10 +59,13 @@ export const DEFAULT_SPIN_BREAKER_SETTINGS: ResolvedSpinBreakerSettings = Object
   stopAfterSameKeyRepeats: 12,
 });
 
+/** Why the breaker ended the turn. Kept exhaustive so telemetry is accurate. */
+export type SpinStopReason = "repeat-run" | "same-key-cumulative" | "same-key-backstop";
+
 export type SpinVerdict =
   | { readonly action: "allow" }
   | { readonly action: "nudge"; readonly nudgeNumber: number; readonly repeats: number; readonly text: string }
-  | { readonly action: "stop"; readonly repeats: number; readonly reason: "repeat-run" | "same-key-cumulative" };
+  | { readonly action: "stop"; readonly repeats: number; readonly reason: SpinStopReason };
 
 export interface SpinSummary {
   readonly totalCalls: number;
@@ -83,6 +95,16 @@ export interface SpinSummary {
 
 export interface SpinBreaker {
   observe(toolName: string, input: unknown): SpinVerdict;
+  /**
+   * Feed back what a call returned. `observe` runs pre-execution, so the
+   * result of occurrence N is only known when occurrence N+1 is judged —
+   * that one-call lag is intentional and harmless at these thresholds.
+   * A call that throws never reaches here (an error string is not a result),
+   * so it falls back to the raw backstop inside `observe`. A DENIED call
+   * does reach here (turn-loop feeds `answer.answer`): a stable denial is an
+   * unchanged result and is intended to count toward the same-result run.
+   */
+  noteResult(toolName: string, input: unknown, resultText: string): void;
   summary(): SpinSummary;
 }
 
@@ -95,6 +117,28 @@ function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   const entries = Object.entries(value as Record<string, unknown>).sort((a, b) => byCodePoint(a[0], b[0]));
   return `{${entries.map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`).join(",")}}`;
+}
+
+/**
+ * Strips the tokens that differ between two byte-identical runs: elapsed
+ * times and clock timestamps (ANSI escapes are removed by
+ * `stripControlChars` first). Deliberately surgical rather than blanking
+ * every digit — "2 failed" -> "1 failed" is real progress and must survive
+ * normalisation, while "in 1.20s" -> "in 1.23s" must not.
+ *
+ * The single-letter `m`/`s` units are ambiguous with ordinary tokens
+ * (`file-2m.ts`, "expected 5 m"), so they are stripped only when the number
+ * is decimal (`1.2s`) or sits in a time context (`in`/`took`/`time`/
+ * `elapsed`/`duration`/`=`/`(`/`,`). `ms` and `min` are unambiguous and stay
+ * unconditional. The `ms|s|m|min` alternation is ordered so backtracking
+ * still reaches `min`.
+ */
+const DURATION_OR_TIMESTAMP =
+  /\b\d+\.\d+\s?(?:ms|s|m|min)\b|(?:\b(?:in|took|time|elapsed|duration)\s?|[=(,]\s?)\d+\s?[ms]\b|\b\d+(?:\.\d+)?\s?(?:ms|min)\b|\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b|\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g;
+
+function resultDigest(text: string): string {
+  const normalised = stripControlChars(text).replace(DURATION_OR_TIMESTAMP, "").replace(/\s+/g, " ").trim();
+  return String(Bun.hash(normalised));
 }
 
 /**
@@ -127,21 +171,53 @@ const NUDGE_ESCALATION: readonly string[] = [
   "Final warning: {repeats} repeated calls with no progress. The next repeated call ends this session with no answer recorded. Produce your final answer now.",
 ];
 
+/**
+ * Answered to every outstanding call when the breaker first decides to end a
+ * turn (nax#2120). The stop used to break with the call unexecuted and
+ * unanswered, so the turn was classified `fail-spin` and retried on the
+ * timeout lane — a FRESH session at a reduced budget, discarding everything
+ * the turn had accumulated. One terminal round trip lets the model close out
+ * instead. NUDGE_ESCALATION's final warning is one step ahead of the hard
+ * end, not literally true: the first stop only warns (this notice) and only a
+ * further stop verdict ends the turn.
+ */
+export const SPIN_TERMINAL_NOTICE =
+  "[nax] This turn is ending: you repeated the same call with no change in its result. " +
+  "This call was not executed. Produce your final answer now, in the exact format your " +
+  "instructions require. Any further repeated call ends the turn with no answer recorded.";
+
+const SPIN_RAW_BACKSTOP_TERMINAL_NOTICE =
+  "[nax] This turn is ending: the same call reached the safety call limit even though its results changed. " +
+  "This call was not executed. Produce your final answer now, in the exact format your " +
+  "instructions require. Any further repeated call ends the turn with no answer recorded.";
+
+export function spinTerminalNotice(reason: SpinStopReason): string {
+  return reason === "same-key-backstop" ? SPIN_RAW_BACKSTOP_TERMINAL_NOTICE : SPIN_TERMINAL_NOTICE;
+}
+
 function nudgeText(nudgeNumber: number, repeats: number): string {
   const template = NUDGE_ESCALATION[Math.min(nudgeNumber, NUDGE_ESCALATION.length) - 1] ?? NUDGE_ESCALATION[0];
   return (template ?? "").replace("{repeats}", String(repeats));
 }
 
+interface KeyRecord {
+  /** Raw cumulative occurrences — the backstop, and what `summary` reports. */
+  count: number;
+  /** Consecutive occurrences whose result digest was unchanged. */
+  sameResultRun: number;
+  digest?: string;
+}
+
 export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBreaker {
   const points = nudgePoints(settings);
   // Insertion-ordered and capped: a Map's iteration order gives the eviction
-  // order for free, so the window needs no second structure. The value is a
-  // cumulative count, so a re-issued key reads as a continuation of its
-  // prior count — but only for keys still in the window: an evicted key is
-  // gone, and the next sighting will start fresh at 1. That is the same
-  // windowing tradeoff `newKeyEvents` already documents, just on the count
-  // axis.
-  const recent = new Map<string, number>();
+  // order for free, so the window needs no second structure. The value carries
+  // the cumulative count and the same-result run, so a re-issued key reads as
+  // a continuation of its prior state — but only for keys still in the window:
+  // an evicted key is gone, and the next sighting will start fresh at 1. That
+  // is the same windowing tradeoff `newKeyEvents` already documents, just on
+  // the count axis.
+  const recent = new Map<string, KeyRecord>();
   let repeatsSinceProgress = 0;
   let totalCalls = 0;
   let newKeyEvents = 0;
@@ -150,7 +226,7 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
   let nudges = 0;
 
   function remember(key: string): void {
-    recent.set(key, 1);
+    recent.set(key, { count: 1, sameResultRun: 0 });
     newKeyEvents += 1;
     if (recent.size > settings.recentKeyWindow) {
       const oldest = recent.keys().next();
@@ -158,20 +234,65 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
     }
   }
 
-  function buildNudge(toolName: string): SpinVerdict {
+  function buildNudge(toolName: string, repeats: number): SpinVerdict {
     nudges += 1;
     getSafeLogger()?.warn("spin-breaker", "Repeated calls with no progress — nudging", {
       tool: toolName,
-      repeats: repeatsSinceProgress,
+      repeats,
       nudgeNumber: nudges,
       newKeyEvents,
     });
-    return {
-      action: "nudge",
-      nudgeNumber: nudges,
-      repeats: repeatsSinceProgress,
-      text: nudgeText(nudges, repeatsSinceProgress),
-    };
+    return { action: "nudge", nudgeNumber: nudges, repeats, text: nudgeText(nudges, repeats) };
+  }
+
+  /**
+   * Reason-specific stop messages: the raw backstop fires precisely when the
+   * results ARE changing, so reusing the no-progress copy there would invert
+   * the one diagnostic that matters.
+   */
+  const stopMessage: Readonly<Record<SpinStopReason, string>> = {
+    "repeat-run": "Ending the turn — repeated calls with no progress",
+    "same-key-cumulative": "Ending the turn — the same call returned the same result too many times",
+    "same-key-backstop":
+      "Ending the turn — the same call repeated too many times (raw backstop; results were changing)",
+  };
+
+  /**
+   * nax#2120: the escalation ladder must always render before a kill. The
+   * nudge points are derived from `repeatsSinceProgress`, but the cumulative
+   * per-key check runs on a different counter, so for a loop over 1-2
+   * already-seen keys the first nudge point was unreachable by arithmetic
+   * and the turn was killed cold with `nudges: 0`.
+   *
+   * Deliberately NOT a config refinement: reachability depends on the loop's
+   * CYCLE LENGTH, not on the knobs, so no cross-field inequality can express
+   * it. Spending a nudge instead costs at most `maxNudges` extra calls before
+   * a genuine nax#2047 kill, and makes `nudges: 0` on a stop unreachable for
+   * every configuration.
+   *
+   * `onStop` runs only when the verdict is a real stop — the Task 1 evidence
+   * reset must not fire on a downgrade, or the threshold could never be
+   * reached twice and the loop would nudge forever.
+   *
+   * A real stop also consumes `repeatsSinceProgress`, symmetric with the
+   * per-key reset. The breaker is session-scoped by design (nax#2047), and
+   * the first stop is now reprieved by the turn loop (nax#2120 Task 4): if
+   * the run counter stayed latched at the threshold, the next turn would stop
+   * cold on its first or second repeated call. It must re-accumulate in full.
+   */
+  function stopOrNudge(toolName: string, repeats: number, reason: SpinStopReason, onStop?: () => void): SpinVerdict {
+    if (nudges < settings.maxNudges) return buildNudge(toolName, repeats);
+    onStop?.();
+    repeatsSinceProgress = 0;
+    getSafeLogger()?.error("spin-breaker", stopMessage[reason], {
+      tool: toolName,
+      repeats,
+      reason,
+      newKeyEvents,
+      totalCalls,
+      nudges,
+    });
+    return { action: "stop", repeats, reason };
   }
 
   return {
@@ -180,50 +301,56 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
       totalCalls += 1;
       const key = callKey(toolName, input);
 
-      if (!recent.has(key)) {
+      const existing = recent.get(key);
+      if (existing === undefined) {
         remember(key);
         repeatsSinceProgress = 0;
         return { action: "allow" };
       }
+      const record = existing;
+      record.count += 1;
+      if (record.count > maxSameKeyRepeats) maxSameKeyRepeats = record.count;
 
-      const cumulativeCount = (recent.get(key) ?? 0) + 1;
-      recent.set(key, cumulativeCount);
-      if (cumulativeCount > maxSameKeyRepeats) maxSameKeyRepeats = cumulativeCount;
-
-      // Cumulative per-key stop comes first: a freshly-laundered loop is
-      // the shape we want to catch, and this fires before any nudge can be
-      // spent. Only check when the knob is non-zero — 0 disables.
-      if (settings.stopAfterSameKeyRepeats > 0 && cumulativeCount >= settings.stopAfterSameKeyRepeats) {
-        getSafeLogger()?.error("spin-breaker", "Ending the turn — same call repeated with no progress", {
-          tool: toolName,
-          repeats: cumulativeCount,
-          reason: "same-key-cumulative",
-          newKeyEvents,
-          totalCalls,
-          nudges,
+      // nax#2120: the cumulative threshold runs on the RESULT axis. Same call
+      // + same result N times is a spin whatever interleaved; same call with
+      // a changing result is an edit -> test loop, which is work. The raw
+      // count is kept as a backstop for a call whose result is unique every
+      // time, or which never reaches `noteResult` (a throw; a DENIAL does
+      // reach it) — `stopAfterRepeats` bounds it without adding a knob. The
+      // backstop fires while results are changing, hence its own reason.
+      if (settings.stopAfterSameKeyRepeats > 0 && record.sameResultRun >= settings.stopAfterSameKeyRepeats) {
+        return stopOrNudge(toolName, record.sameResultRun, "same-key-cumulative", () => {
+          record.count = 0;
+          record.sameResultRun = 0;
         });
-        return { action: "stop", repeats: cumulativeCount, reason: "same-key-cumulative" };
+      }
+      if (settings.stopAfterSameKeyRepeats > 0 && record.count >= settings.stopAfterRepeats) {
+        return stopOrNudge(toolName, record.count, "same-key-backstop", () => {
+          record.count = 0;
+          record.sameResultRun = 0;
+        });
       }
 
       repeatsSinceProgress += 1;
       if (repeatsSinceProgress > maxRepeatRun) maxRepeatRun = repeatsSinceProgress;
 
       if (repeatsSinceProgress >= settings.stopAfterRepeats) {
-        getSafeLogger()?.error("spin-breaker", "Ending the turn — repeated calls with no progress", {
-          tool: toolName,
-          repeats: repeatsSinceProgress,
-          reason: "repeat-run",
-          newKeyEvents,
-          totalCalls,
-          nudges,
-        });
-        return { action: "stop", repeats: repeatsSinceProgress, reason: "repeat-run" };
+        return stopOrNudge(toolName, repeatsSinceProgress, "repeat-run");
       }
 
       const isNudgePoint = points.includes(repeatsSinceProgress);
-      if (isNudgePoint && nudges < settings.maxNudges) return buildNudge(toolName);
+      if (isNudgePoint && nudges < settings.maxNudges) return buildNudge(toolName, repeatsSinceProgress);
 
       return { action: "allow" };
+    },
+
+    noteResult(toolName, input, resultText) {
+      if (!settings.enabled) return;
+      const record = recent.get(callKey(toolName, input));
+      if (record === undefined) return;
+      const digest = resultDigest(resultText);
+      record.sameResultRun = record.digest === digest ? record.sameResultRun + 1 : 1;
+      record.digest = digest;
     },
 
     summary() {
