@@ -12,6 +12,7 @@ import type { AcDroppedEntry, AcQuoteRejectionCode } from "@/review/ac-quote-val
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
+import { type StoryWorkdirLike, storyWorkdir } from "@/utils/path-frame";
 import { buildReviewOutOfScopeBlock } from "../sections";
 import { DIFF_SCOPE_OMISSION_NOTICE, wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
@@ -245,13 +246,22 @@ The configured blocking threshold is \`"${threshold}"\`. Findings with severity 
  * Build the diff section for "ref" mode.
  * Instructs the reviewer to self-serve the full diff (including tests) via git commands.
  * Always excludes .nax/ and .nax-pids metadata paths; test files are included.
+ *
+ * The shell body is the ACP rendering. Since the single-frame redesign the
+ * reviewer's session cwd is the repo root, so there is no `--relative`: git's
+ * default repo-rooted framing already matches the native Read/Grep/Git tools.
+ * The pathspec (`pathspec`, the story's package dir or "." at the repo root)
+ * scopes the diff now that the cwd no longer does. The native rendering swaps
+ * this body for the Git tool, whose `paths` array carries the same `pathspec`
+ * as its base entry.
  */
 function buildAdversarialRefDiffSection(
   storyGitRef: string,
-  stat?: string,
-  excludePatterns: string[] = [],
-  testGlobs: readonly string[] = [],
-  refExcludePatterns: readonly string[] = [],
+  stat: string | undefined,
+  excludePatterns: string[],
+  testGlobs: readonly string[],
+  refExcludePatterns: readonly string[],
+  pathspec: string,
 ): string {
   // The full diff (and the added-files audit) take nax metadata ONLY. A caller
   // excludePatterns is a production-scope filter: applying it here would hide
@@ -286,32 +296,32 @@ Recommended commands:
 
 \`\`\`bash
 # Full diff including tests (adversarial review sees everything except nax metadata):
-git diff --relative --unified=3 ${storyGitRef}..HEAD -- . ${fullExcludeArgs}
+git diff --unified=3 ${storyGitRef}..HEAD -- ${pathspec} ${fullExcludeArgs}
 
 # Commit history for this story:
 git log --oneline ${storyGitRef}..HEAD
 
 # Files added in this story (for test audit gap):
-git diff --relative --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${fullExcludeArgs}
+git diff --name-only --diff-filter=A ${storyGitRef}..HEAD -- ${pathspec} ${fullExcludeArgs}
 
 # Show a specific file's full content:
 cat path/to/file.ts
 \`\`\`
 
 **Test audit workflow:**
-1. Run: \`git diff --relative --name-only --diff-filter=A ${storyGitRef}..HEAD -- . ${fullExcludeArgs}\`
+1. Run: \`git diff --name-only --diff-filter=A ${storyGitRef}..HEAD -- ${pathspec} ${fullExcludeArgs}\`
 2. For each new source file, check whether a matching test file was added (patterns: ${testPatternGuide}).
 3. If a new exported module has no test file, flag it as \`"test-gap"\`.
 4. To focus only on production deltas while auditing test coverage, run:
-  \`git diff --relative --unified=3 ${storyGitRef}..HEAD -- . ${productionExcludeArgs}\`
+  \`git diff --unified=3 ${storyGitRef}..HEAD -- ${pathspec} ${productionExcludeArgs}\`
 
 `;
 
   return `${statBlock}${DIFF_SCOPE_OMISSION_NOTICE}\n\n${wrapDiffAccess(
     {
       ref: storyGitRef,
-      fullExclude: [".", ...fullExcludes],
-      productionExclude: [".", ...productionExcludes],
+      fullExclude: [pathspec, ...fullExcludes],
+      productionExclude: [pathspec, ...productionExcludes],
       testGlobs: [...testGlobs],
       testAudit: true,
     },
@@ -368,6 +378,14 @@ export class AdversarialReviewPromptBuilder {
 
     const priorFindingsBlock = buildPriorIterationsBlock(priorAdversarialIterations ?? []);
 
+    // Structural-typing dependence: `story` is typed `SemanticStory`, which
+    // omits `workdir` (the weak-type check rejects passing it to
+    // `storyWorkdir` directly), but production callers pass a full `UserStory`.
+    // The intersection makes the cast an upcast: `workdir` is optional on it, so
+    // a `SemanticStory` still satisfies the target. At runtime this reads the
+    // real package, or falls back to "." when absent.
+    const pathspec = storyWorkdir(story as SemanticStory & StoryWorkdirLike);
+
     const storyBlock = `## Story Under Review
 
 **ID:** ${story.id}
@@ -392,6 +410,7 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}${buildR
         excludePatterns ?? [],
         testGlobs ?? [],
         refExcludePatterns ?? [],
+        pathspec,
       );
     } else if (mode === "embedded" && diff) {
       diffBlock = buildAdversarialEmbeddedDiffSection(diff, testInventory);

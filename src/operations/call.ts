@@ -7,7 +7,7 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { composeSections, join } from "../prompts/compose";
-import { packageWorkdir, storyExecRoot } from "../runtime/packages";
+import { storyExecRoot } from "../runtime/packages";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { buildHopCallback } from "./build-hop-callback";
@@ -25,6 +25,7 @@ import {
   resolveTimeoutMs,
   synthesizeStory,
 } from "./call-resolvers";
+import { buildRunDispatchOptions } from "./call-run-options";
 import { makeVerifyCtx, runPostParse } from "./post-parse";
 import type { CallContext, CompleteOperation, DeterministicOperation, Operation, RunOperation } from "./types";
 import { resolveDeclaredTools } from "./types";
@@ -123,7 +124,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       ...(resolved.modelTier !== undefined ? { modelTier: resolved.modelTier } : {}),
       pipelineStage: op.stage,
       storyId: ctx.storyId,
-      workdir: ctx.packageDir,
+      workdir: storyExecRoot(ctx.packageView),
       featureName: ctx.featureName,
       callId,
       ...(ctx.scopeId !== undefined ? { scopeId: ctx.scopeId } : {}),
@@ -229,45 +230,20 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const fileOutputPath = runOp.fileOutput?.(input);
   const keepOpen = runOp.keepOpen?.(input, buildCtx) ?? runOp.session.lifetime === "warm";
 
-  const runOptions = {
+  const runOptions = buildRunDispatchOptions(ctx, {
     prompt,
-    workdir: ctx.packageDir,
-    modelTier: effectiveTier,
-    modelDef: dispatchModelDef,
-    timeoutSeconds:
-      timeoutMs !== undefined
-        ? Math.ceil(timeoutMs / 1000)
-        : (config.execution?.sessionTimeoutSeconds ?? DEFAULT_CONFIG.execution.sessionTimeoutSeconds),
-    pipelineStage: op.stage,
+    effectiveTier,
+    dispatchModelDef,
+    timeoutMs,
     config,
     sessionRole,
-    featureName: ctx.featureName,
-    storyId: ctx.storyId,
     callId,
+    pipelineStage: op.stage,
     declaredTools: resolveDeclaredTools(runOp),
-    // Both hops resolve providers from this one object (build-hop-callback and
-    // session-run-hop each take their options from here), so injecting once
-    // cannot leave the two paths advertising different tool sets — the drift
-    // both hops' comments warn about.
-    ...(ctx.runtime.toolProviders.length > 0 ? { providers: ctx.runtime.toolProviders } : {}),
-    ...(runOp.toolPatterns !== undefined ? { toolPatterns: runOp.toolPatterns } : {}),
-    codingToolRoot: packageWorkdir(ctx.packageView),
-    // nax#2115: the op's own declared output file; the policy exempts it from
-    // the nax-owned write refusal. See AgentRunOptions.codingToolFileOutput.
-    ...(fileOutputPath !== undefined ? { codingToolFileOutput: fileOutputPath } : {}),
-    codingToolRepoRoot: storyExecRoot(ctx.packageView),
-    // PRODUCER for AgentRunOptions.outputDir. Durable run artifacts (prompt-audit,
-    // review-audit, and now the tool-audit ledger) anchor here rather than under
-    // codingToolRoot, which is a package workdir inside the story's worktree and
-    // is removed by pipeline-result-handler.ts when the story completes.
-    outputDir: ctx.runtime.outputDir,
-    // Session reuse defaults from the op lifetime, but ops may override with a
-    // resolver when reuse depends on config or invocation context.
-    ...(keepOpen ? { keepOpen: true } : {}),
-    ...(ctx.scopeId !== undefined ? { scopeId: ctx.scopeId } : {}),
-    ...(ctx.interactionBridge ? { interactionBridge: ctx.interactionBridge } : {}),
-    ...(ctx.maxInteractionTurns !== undefined ? { maxInteractionTurns: ctx.maxInteractionTurns } : {}),
-  };
+    toolPatterns: runOp.toolPatterns,
+    fileOutputPath,
+    keepOpen,
+  });
 
   // Shared hop-callback context — everything except runOptions and hopBody.
   const hopCtx = {
@@ -277,7 +253,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     config,
     projectDir: ctx.runtime.projectDir,
     featureName: ctx.featureName ?? "",
-    workdir: ctx.packageDir,
+    workdir: storyExecRoot(ctx.packageView),
     // Pull counter for this story attempt. Forwarding it stops
     // pull.maxCallsPerRun resetting on every hop, and carries AC-18's
     // invocation records through to metrics. NOTE: despite the config key's

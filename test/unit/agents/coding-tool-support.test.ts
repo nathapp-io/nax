@@ -1,9 +1,12 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { realpath as realpathAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { _codingToolSupportDeps, buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { loadConfigForPackage, packageConfigCache } from "@/config";
+import { _clearRootConfigCache } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { verifierOp } from "@/operations";
@@ -275,6 +278,30 @@ describe("buildCodingToolSupport — declared-command seam and audit sink", () =
   });
 });
 
+describe("buildCodingToolSupport — commandCwd reaches RunCommand (PR1)", () => {
+  test("a declared command runs at commandCwd, not root, when the two differ", async () => {
+    const containmentRoot = makeTempDir("nax-support-cwd-root-");
+    const packageCwd = makeTempDir("nax-support-cwd-pkg-");
+    try {
+      const support = buildCodingToolSupport({
+        root: containmentRoot,
+        commandCwd: packageCwd,
+        grants: runCommandGrants,
+        declared: ["RunCommand"],
+        declaredCommands: new Map([["where", "pwd"]]),
+      });
+      const result = await support?.runtime.callTool("RunCommand", { command: "where" });
+      expect(result?.kind).toBe("ok");
+      if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+      expect(result.content).toContain(await realpathAsync(packageCwd));
+      expect(result.content).not.toContain(await realpathAsync(containmentRoot));
+    } finally {
+      cleanupTempDir(containmentRoot);
+      cleanupTempDir(packageCwd);
+    }
+  });
+});
+
 /**
  * End-to-end proof that an op's `toolPatterns` actually reach the compiled
  * policy at dispatch time (nax#2013) -- not just that `narrowGrants` behaves
@@ -386,6 +413,42 @@ describe("buildCodingToolSupport — Exec grant selection (findLast)", () => {
   });
 });
 
+/**
+ * PR4 deletion: the redundant repo-root input field is gone, so
+ * `resolveCodingToolSupport` passes no explicit `repoRoot` and
+ * `buildCodingToolSupport`'s
+ * `args.repoRoot ?? args.root` fallback supplies the unified `codingToolRoot`.
+ * Pin that Exec's `target: "repoRoot"` still resolves at that root — the
+ * regression this deletion could otherwise hide.
+ */
+describe("resolveCodingToolSupport — repoRoot falls back to the unified root (PR4)", () => {
+  test("Exec target 'repoRoot' resolves at codingToolRoot with no separate repoRoot input", async () => {
+    const repo = makeTempDir("nax-reporoot-fallback-");
+    try {
+      const execution: Record<string, unknown> = {
+        permissionProfile: "unrestricted",
+        permissions: { run: { allow: ["Exec(pwd)"] } },
+      };
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["RunCommand", "Exec"],
+        codingToolRoot: repo,
+        pipelineStage: "run",
+        config: makeNaxConfig({ execution }),
+      });
+      const result = await support?.runtime.callTool("RunCommand", { argv: ["pwd"], target: "repoRoot" });
+      expect(result?.kind).toBe("ok");
+      if (result?.kind !== "ok") throw new Error("expected Exec to succeed");
+      const lines = result.content
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+      expect(lines).toContain(await realpathAsync(repo));
+    } finally {
+      cleanupTempDir(repo);
+    }
+  });
+});
+
 describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
   let logCalls: LogEntry[];
 
@@ -417,5 +480,212 @@ describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
     // DEFAULT_CONFIG.execution.permissionProfile is "unrestricted"; the test's
     // quality override leaves it untouched, so that is the resolved value.
     expect(entry?.data?.permissionProfile).toBe("unrestricted");
+  });
+});
+
+describe("resolveCodingToolSupport — per-package declared commands (#2066 residual)", () => {
+  let tempDir: string;
+  let originalGlobalDir: string | undefined;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-coding-tool-pkg-");
+    originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+    mkdirSync(join(tempDir, "packages", "api"), { recursive: true });
+    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "echo PACKAGE" } } }),
+    );
+    _clearRootConfigCache();
+    packageConfigCache.clear();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+    if (originalGlobalDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    else process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+    _clearRootConfigCache();
+    packageConfigCache.clear();
+  });
+
+  test("a package story's RunCommand runs the PACKAGE override, not the root-only config a stale caller threaded", async () => {
+    const packageDir = join(tempDir, "packages", "api");
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand"],
+      codingToolRoot: packageDir,
+      codingToolPackageDir: "packages/api",
+      projectDir: tempDir,
+      pipelineStage: "run",
+      // Simulates the #2066 residual directly: options.config still carries
+      // a ROOT-only "test" command. resolveCodingToolSupport must resolve
+      // the PACKAGE override from disk rather than trusting this value.
+      config: makeNaxConfig({ quality: { commands: { test: "echo ROOT" } } }),
+    });
+    const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+    expect(result?.kind).toBe("ok");
+    if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+    expect(result.content).toContain("PACKAGE");
+    expect(result.content).not.toContain("ROOT");
+  });
+
+  test("the resolved package config is cached — second dispatch for the same package/profile hits packageConfigCache", async () => {
+    const packageDir = join(tempDir, "packages", "api");
+    const dispatch = () =>
+      resolveCodingToolSupport({
+        declaredTools: ["RunCommand"],
+        codingToolRoot: packageDir,
+        codingToolPackageDir: "packages/api",
+        projectDir: tempDir,
+        pipelineStage: "run",
+        config: makeNaxConfig(),
+      });
+
+    await dispatch();
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
+    const afterFirst = packageConfigCache.get(rootConfigPath, "packages/api", "");
+    expect(afterFirst).toBeDefined();
+
+    await dispatch();
+    const afterSecond = packageConfigCache.get(rootConfigPath, "packages/api", "");
+    // Reference equality: a cache HIT returns the exact object
+    // loadConfigForWorkdir built on the first call. A re-parse (cache MISS)
+    // would construct a fresh object via NaxConfigSchema.safeParse — deep-
+    // equal but a different reference — and fail this assertion.
+    expect(afterSecond).toBe(afterFirst);
+  });
+
+  test("RunCommand's resolved 'test' template equals loadConfigForPackage's — the resolver acceptance-setup.ts already uses", async () => {
+    const rootConfig = makeNaxConfig();
+    const acceptanceResolved = await loadConfigForPackage(tempDir, "packages/api", rootConfig);
+    expect(acceptanceResolved.quality.commands.test).toBe("echo PACKAGE");
+
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand"],
+      codingToolRoot: join(tempDir, "packages", "api"),
+      codingToolPackageDir: "packages/api",
+      projectDir: tempDir,
+      pipelineStage: "run",
+      config: rootConfig,
+    });
+    const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+    expect(result?.kind).toBe("ok");
+    if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+    expect(result.content).toContain("PACKAGE");
+  });
+
+  test("a per-package config load failure logs a warning and falls back to the root config without throwing", async () => {
+    resetLogger();
+    const logCalls: LogEntry[] = [];
+    initLogger({ level: "silent" });
+    const removeSink = addSink((entry) => logCalls.push(entry));
+    const originalLoad = _codingToolSupportDeps.loadConfigForPackage;
+    _codingToolSupportDeps.loadConfigForPackage = async () => {
+      throw new Error("simulated per-package config failure");
+    };
+    try {
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["RunCommand"],
+        codingToolRoot: join(tempDir, "packages", "api"),
+        codingToolPackageDir: "packages/api",
+        projectDir: tempDir,
+        pipelineStage: "run",
+        storyId: "US-FALLBACK",
+        config: makeNaxConfig({ quality: { commands: { test: "echo ROOT-FALLBACK" } } }),
+      });
+      const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+      expect(result?.kind).toBe("ok");
+      if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+      // The package override is unreachable, so the root-declared command runs.
+      expect(result.content).toContain("ROOT-FALLBACK");
+      expect(result.content).not.toContain("PACKAGE");
+
+      const warning = logCalls.find((entry) => entry.message.includes("Per-package config failed to load"));
+      expect(warning).toBeDefined();
+      expect(warning?.level).toBe("warn");
+      expect(warning?.stage).toBe("tools");
+      // storyId is the FIRST key of the structured payload, per log convention.
+      expect(Object.keys(warning?.data ?? {})[0]).toBe("storyId");
+      expect(warning?.data?.storyId).toBe("US-FALLBACK");
+      expect(warning?.data?.packageDir).toBe("packages/api");
+    } finally {
+      _codingToolSupportDeps.loadConfigForPackage = originalLoad;
+      removeSink();
+      resetLogger();
+    }
+  });
+
+  // C1 regression (final whole-branch review): under storyIsolation "worktree"
+  // PackageView.packageDir is `.nax-wt/<storyId>/<pkg>`. Passing it verbatim to
+  // loadConfigForPackage joined a missing `.nax/mono/.nax-wt/...` path, returned
+  // the ROOT config, and (being truthy) discarded the already-package options.config
+  // — so declared commands silently ran root templates. The fix strips the prefix
+  // for the override lookup only; commandCwd must keep it so the command runs in
+  // the story's worktree.
+  test("a worktree-prefixed package dir resolves the PACKAGE override and runs at the worktree cwd", async () => {
+    const worktreePkg = join(tempDir, ".nax-wt", "US-001", "packages", "api");
+    mkdirSync(worktreePkg, { recursive: true });
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "echo ROOT" } } }),
+    );
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "echo PACKAGE && pwd" } } }),
+    );
+    _clearRootConfigCache();
+    packageConfigCache.clear();
+
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand"],
+      codingToolRoot: worktreePkg,
+      codingToolPackageDir: ".nax-wt/US-001/packages/api",
+      projectDir: tempDir,
+      pipelineStage: "run",
+      config: makeNaxConfig({ quality: { commands: { test: "echo ROOT" } } }),
+    });
+    const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+    expect(result?.kind).toBe("ok");
+    if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+    // The package override ran, not the root template.
+    expect(result.content).toContain("PACKAGE");
+    expect(result.content).not.toContain("ROOT");
+    // commandCwd used the RAW worktree-prefixed dir, not the normalized key.
+    expect(result.content).toContain(await realpathAsync(worktreePkg));
+  });
+
+  // I1 / PR2 guard: once PR2 repoints codingToolRoot at the repo root, the
+  // declared-command cwd must still follow codingToolPackageDir + projectDir.
+  // Proving the shape end-to-end (root + package both wired to real dirs) is
+  // what keeps that repoint from silently running commands at the repo root.
+  test("commandCwd follows codingToolPackageDir even when codingToolRoot is the repo root", async () => {
+    const packagePath = join(tempDir, "packages", "api");
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "pwd" } } }),
+    );
+    _clearRootConfigCache();
+    packageConfigCache.clear();
+
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand"],
+      codingToolRoot: tempDir,
+      codingToolPackageDir: "packages/api",
+      projectDir: tempDir,
+      pipelineStage: "run",
+      config: makeNaxConfig(),
+    });
+    const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+    expect(result?.kind).toBe("ok");
+    if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+    // The command's cwd line is the PACKAGE dir, not the repo root it was
+    // handed as codingToolRoot — the PR2 repoint guard.
+    const cwdLines = result.content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+    expect(cwdLines).toContain(await realpathAsync(packagePath));
+    expect(cwdLines).not.toContain(await realpathAsync(tempDir));
   });
 });

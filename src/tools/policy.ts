@@ -8,15 +8,15 @@
  * the root is a boundary no PROFILE can widen. `unrestricted` means "any
  * tool, any path within the root", never "any path on the machine".
  *
- * The one exception is `execTouchedPaths` (Task 10), and it is not a profile
- * widening: see `resolveWithin` below for what it admits and why that is not
- * the same kind of hole.
+ * The `execTouchedPaths` carve-out (Task 10) was retired in the single-frame
+ * root move (PR2/Task 13): the containment root became the repo root, so a
+ * workspace install's root manifest is in-root by construction and no
+ * exception to the boundary is needed.
  */
 
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
-import { isKnownManifestOrLockfileName } from "./exec-touched-paths";
 import { isNaxConfigFile, naxOwnedWriteRefusal } from "./nax-owned-writes";
 import { pathListElements } from "./path-list";
 import { checkBashCommand } from "./policy-bash";
@@ -75,32 +75,20 @@ function entersGitMetadata(root: string, resolved: string): boolean {
  * skips glob matching entirely, so nothing downstream of this function would
  * catch it either.
  *
- * The one exception to the paragraph above, and it is not a profile widening:
- * a workspace package manager writes the root manifest and lockfile by design,
- * so an Exec that nax itself normalized and ran records those two paths in
- * `execTouchedPaths` (see `src/tools/run-command-exec.ts` and
- * `src/tools/exec-touched-paths.ts`). Nothing else is admitted, matching is
- * exact (never a prefix — a single touched path must never widen a whole
- * directory), and the set is session-scoped: it is built fresh for one
- * dispatch hop and shared only between that hop's Exec and GitCommit calls,
- * never persisted across stories or sessions. That carve-out needs no `.git/`
- * check of its own, and adding one would be dead code rather than defence in
- * depth: it is reached only when `isInside` is false, and `isInside` resolves
- * symlinks on BOTH sides (`src/utils/realpath.ts`), so any candidate whose
- * real path lands under `.git/` -- however it is spelled, symlink included --
- * is already refused by the branch above. A path that reaches the carve-out
- * has a real path outside the root, and `entersGitMetadata` reports false for
- * every such path by construction.
+ * Pre-single-frame, this seam carried one exception: an `execTouchedPaths` set
+ * (Task 10) admitted a workspace install's repo-ROOT manifest/lockfile even
+ * though it sat outside the containment root, which was then the story's
+ * package dir. The root move made the containment root the repo root, so the
+ * manifest is in-root by construction and that carve-out was retired
+ * (PR2/Task 13). There is no exception to this seam now.
  */
-export function resolveWithin(root: string, candidate: string, execTouchedPaths?: readonly string[]): string | null {
+export function resolveWithin(root: string, candidate: string): string | null {
   const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
   if (isInside(root, absolute)) {
     const resolved = realOrRaw(absolute);
     if (entersGitMetadata(root, resolved) || isNaxConfigFile(root, resolved)) return null;
     return resolved;
   }
-  const resolved = realOrRaw(absolute);
-  if (execTouchedPaths?.some((touched) => realOrRaw(touched) === resolved)) return resolved;
   return null;
 }
 
@@ -110,14 +98,6 @@ interface RuleState {
 }
 
 export interface ToolPolicyOptions {
-  /**
-   * Paths a prior, successfully-run allowlisted Exec call touched — the
-   * containment carve-out documented on `resolveWithin`. Read live, not
-   * copied: callers that build this once per dispatch hop and keep pushing
-   * into the same array (`src/agents/coding-tool-support.ts`) get updates
-   * reflected on every subsequent `check()` without recompiling the policy.
-   */
-  readonly execTouchedPaths?: readonly string[];
   /**
    * Stage deny rules (spec R6). Same {tool, patterns} shape as grants; matched
    * per branch and evaluated BEFORE ask and allow. A tool's unconditional
@@ -155,7 +135,6 @@ function isFieldlessScope(scope: ToolScope): boolean {
 
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string, options?: ToolPolicyOptions): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
-  const execTouchedPaths = options?.execTouchedPaths;
   // nax#2115: the SAME transform `relativeTo` applies to every checked path, so
   // the guard compares like with like. A path outside the root yields a
   // ".."-prefixed rel that can never equal a checked path's, exempting nothing.
@@ -242,20 +221,15 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * INSIDE the root, so "resolves outside the permitted root" would be
    * actively misleading rather than merely unhelpful.
    *
-   * For GitCommit specifically, when the refused path is not `.git/`-shaped
-   * but LOOKS like a manifest or lockfile (`isKnownManifestOrLockfileName`,
-   * the same closed table `recordExecTouchedPaths` writes from), the message
-   * explains the actual rule: only a manifest/lockfile an Exec call touched
-   * IN THIS TURN can be staged from outside the story's own package root, and
-   * even when that is not this call, the run's completion-phase auto-commit
-   * sweep (`autoCommitIfDirty`, `src/utils/git.ts`) stages root-level changes
-   * regardless, so the work is not silently lost.
+   * Every other refused path keeps the plain message. The GitCommit-specific
+   * manifest/lockfile message and its `isKnownManifestOrLockfileName` table
+   * were retired with the `execTouchedPaths` carve-out (PR2/Task 13): that
+   * message existed only to explain the carve-out's rule, and post root move
+   * a repo-root manifest is inside the root by construction, so there is no
+   * distinct rule left to explain.
    *
-   * Every other refused path — including a manifest-shaped path for a tool
-   * OTHER than GitCommit, and any non-manifest-shaped path at all — keeps the
-   * plain message. This must never get chattier for ordinary containment
-   * denials, and must never reveal repository structure for a path the model
-   * never touched.
+   * This must never get chattier for ordinary containment denials, and must
+   * never reveal repository structure for a path the model never touched.
    *
    * The root itself IS named, deliberately. The rule above -- never reveal
    * repository structure -- is about paths the model never touched; this path is
@@ -266,7 +240,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * message is where the agent first sees the absolute containment root -- and
    * naming a path the model itself handed in is the right disclosure.
    */
-  function outOfRootReason(tool: string, root: string, candidate: string): string {
+  function outOfRootReason(root: string, candidate: string): string {
     const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
     if (isInside(root, absolute) && isNaxConfigFile(root, realOrRaw(absolute))) {
       return (
@@ -282,17 +256,6 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
         "writing there can corrupt the repository beyond git's own recovery, and reading its " +
         "config is a route to influencing what nax executes without passing through Exec (nax#1943)"
       );
-    }
-    if (tool === "GitCommit") {
-      if (isKnownManifestOrLockfileName(basename(absolute))) {
-        return (
-          "lies outside this story's package root; only a manifest or lockfile touched by an " +
-          'Exec install in THIS turn can be staged from here (see Exec\'s `target: "repoRoot"` ' +
-          "form), and this call's containment carve-out does not cover it -- the run's " +
-          "completion-phase auto-commit sweep stages root-level changes regardless, so the " +
-          "work is not lost even if this commit is refused"
-        );
-      }
     }
     return `resolves outside the permitted root (${root}), which is the only directory this tool can reach`;
   }
@@ -383,7 +346,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       ...(denyEntry !== undefined ? { denyEntry } : {}),
       ...(askEntry !== undefined ? { askEntry } : {}),
       initialPath: resolvedRoot,
-      resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate), execTouchedPaths),
+      resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate)),
     });
     if (result.kind === "deny") return deny(result.reason, result.breach);
     if (result.kind === "ask") return askVerdict([], result.rule);
@@ -469,9 +432,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       if (value === undefined) continue;
       if (typeof value !== "string") return deny(`"${field}" must be a string path`);
 
-      const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
+      const resolved = resolveWithin(resolvedRoot, value);
       if (resolved === null) {
-        return deny(`path "${value}" ${outOfRootReason(tool, resolvedRoot, value)}`, true);
+        return deny(`path "${value}" ${outOfRootReason(resolvedRoot, value)}`, true);
       }
 
       const rel = relativeTo(resolved);
@@ -495,9 +458,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       if (elements === null) return deny(`"${field}" must be a string path or an array of string paths`);
 
       for (const element of elements) {
-        const resolved = resolveWithin(resolvedRoot, element, execTouchedPaths);
+        const resolved = resolveWithin(resolvedRoot, element);
         if (resolved === null) {
-          return deny(`path "${element}" ${outOfRootReason(tool, resolvedRoot, element)}`, true);
+          return deny(`path "${element}" ${outOfRootReason(resolvedRoot, element)}`, true);
         }
         const rel = relativeTo(resolved);
         const ruleDenial = applyPathRules(tool, rel, state);
@@ -516,9 +479,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
       for (const value of values) {
         if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
-        const resolved = resolveWithin(resolvedRoot, value, execTouchedPaths);
+        const resolved = resolveWithin(resolvedRoot, value);
         if (resolved === null) {
-          return deny(`"${field}" entry "${value}" ${outOfRootReason(tool, resolvedRoot, value)}`, true);
+          return deny(`"${field}" entry "${value}" ${outOfRootReason(resolvedRoot, value)}`, true);
         }
         const rel = relativeTo(resolved);
         const ruleDenial = applyPathRules(tool, rel, state);
@@ -542,9 +505,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
         const candidatePath = value.slice(colonAt + 1);
         if (candidatePath === "") continue; // e.g. "HEAD:" — no path to check
 
-        const resolved = resolveWithin(resolvedRoot, candidatePath, execTouchedPaths);
+        const resolved = resolveWithin(resolvedRoot, candidatePath);
         if (resolved === null) {
-          return deny(`"${field}" entry "${value}" ${outOfRootReason(tool, resolvedRoot, candidatePath)}`, true);
+          return deny(`"${field}" entry "${value}" ${outOfRootReason(resolvedRoot, candidatePath)}`, true);
         }
         const rel = relativeTo(resolved);
         const ruleDenial = applyPathRules(tool, rel, state);

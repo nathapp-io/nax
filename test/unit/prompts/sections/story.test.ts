@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
 import type { UserStory } from "@/prd/types";
 import { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "@/prompts/sections/story";
-import { UNREADABLE_MARKER } from "@/utils/path-frame";
 
 describe("buildStorySection", () => {
   const mockStory = makeStory({
@@ -189,31 +188,30 @@ describe("out-of-scope rendering", () => {
   });
 });
 
-// nax#2085: the write seam never touches `modifiedFiles` (it rides through the
-// fidelity pass that deliberately runs before canonicalization), so the frame
-// decision belongs here, at the prompt boundary. Per plan Ruling F this is the
-// default non-canonical passthrough: an in-package repo-rooted entry is
-// re-spelled, everything else is left untouched. No entry is ever dropped or
-// marked — this list is an authorisation, and dropping an entry revokes it.
-describe("modifiedFiles reframed at the prompt boundary (nax#2085)", () => {
+// nax single-frame redesign PR 2: the agent's file tools (Read/Write/Edit/Grep/
+// Git) are now rooted at the REPO root, so a repo-rooted `modifiedFiles` entry
+// is addressable as stored and must be rendered verbatim — no package reframe.
+// The old nax#2085 package-frame re-spelling is gone.
+describe("modifiedFiles rendered repo-rooted as stored (single-frame PR 2)", () => {
   const mod = (path: string, reason: string): { path: string; reason: string } => ({ path, reason });
 
-  test("re-spells an in-package repo-rooted entry for the story's package", () => {
+  test("renders an in-package repo-rooted entry repo-rooted, not package-relative", () => {
     const rendered = buildStorySection(
       makeStory({
         workdir: "packages/api",
         workdirSource: "stated",
         acceptanceCriteria: ["works"],
-        modifiedFiles: [mod("packages/api/src/x.ts", "the assertion moved")],
+        modifiedFiles: [mod("packages/api/src/foo.ts", "the assertion moved")],
       }),
     );
-    expect(rendered).toContain("- `src/x.ts` — the assertion moved");
-    expect(rendered).not.toContain("packages/api/src/x.ts");
+
+    expect(rendered).toContain("- `packages/api/src/foo.ts` — the assertion moved");
+    expect(rendered).not.toContain("- `src/foo.ts`");
   });
 
   // A legacy (pre-nax#2067) story has a workdir but no `workdirSource` stamp.
-  // Its package-relative entry is in a frame nothing can confirm, so it must
-  // pass through untouched — a `canonical` regression would drop it entirely.
+  // Its package-relative entry is passed through untouched: rendering as stored
+  // never drops or rewrites an entry, so the authorisation survives.
   test("leaves a legacy story's package-relative path untouched", () => {
     const rendered = buildStorySection(
       makeStory({
@@ -235,7 +233,7 @@ describe("modifiedFiles reframed at the prompt boundary (nax#2085)", () => {
       }),
     );
     expect(rendered).toContain("- `packages/web/src/x.ts` — neighbour change");
-    expect(rendered).not.toContain(UNREADABLE_MARKER);
+    expect(rendered).not.toContain("not readable");
   });
 
   test("leaves a root story's entries unchanged", () => {
@@ -251,9 +249,9 @@ describe("modifiedFiles reframed at the prompt boundary (nax#2085)", () => {
   });
 
   // A story's `modifiedFiles` list can carry more than one entry. Every case
-  // above has exactly one, so an index-based zip between the framed paths and
-  // the original reasons was never exercised — a desync would attach the wrong
-  // reason to the wrong path without any of those tests noticing.
+  // above has exactly one, so reason/path pairing across entries was never
+  // exercised — a desync would attach the wrong reason to the wrong path
+  // without any of those tests noticing.
   test("keeps each reason paired with its own path across multiple entries", () => {
     const rendered = buildStorySection(
       makeStory({
@@ -266,18 +264,16 @@ describe("modifiedFiles reframed at the prompt boundary (nax#2085)", () => {
         ],
       }),
     );
-    expect(rendered).toContain("- `src/in-package.ts` — in-package reason");
+    expect(rendered).toContain("- `packages/api/src/in-package.ts` — in-package reason");
     expect(rendered).toContain("- `packages/web/src/out-of-package.ts` — out-of-package reason");
     expect(rendered).not.toContain("undefined");
   });
 
-  // H6: a batch prompt has exactly one agent root — the FIRST story's package
-  // (src/execution/story-selector.ts takes storiesToExecute[0], and
-  // src/operations/call.ts derives codingToolRoot from it). Framing each
-  // story's modifiedFiles against its OWN workdir re-spells a second story's
-  // out-of-root entry as if it lived under the first story's package — a real
-  // but WRONG file the batch's single agent root can actually open.
-  test("buildBatchStorySection frames every story against the FIRST story's package, not its own", () => {
+  // nax#2085 H6 is moot under the single-frame redesign: with repo-rooted
+  // rendering there is no frame to pick, so a batch's single agent root no
+  // longer forces a per-batch anchor. Each story's entries render as stored,
+  // regardless of whose package the batch's agent happens to be rooted in.
+  test("buildBatchStorySection renders every story's entries as stored, no cross-frame re-spell", () => {
     const rendered = buildBatchStorySection([
       makeStory({
         id: "BATCH-001",
@@ -295,11 +291,10 @@ describe("modifiedFiles reframed at the prompt boundary (nax#2085)", () => {
       }),
     ]);
 
-    // First story re-spells against its own (and the batch's) root package.
-    expect(rendered).toContain("- `src/x.ts` — r-US-1");
-    // Second story's entry is out of the batch root's package: it must NOT be
-    // re-spelled into a same-named file the agent root could actually open.
-    expect(rendered).not.toContain("- `src/app.ts` — r-US-2");
+    expect(rendered).toContain("- `packages/api/src/x.ts` — r-US-1");
     expect(rendered).toContain("- `packages/web/src/app.ts` — r-US-2");
+    // No entry is re-spelled into a same-named path the batch root could open.
+    expect(rendered).not.toContain("- `src/x.ts` — r-US-1");
+    expect(rendered).not.toContain("- `src/app.ts` — r-US-2");
   });
 });

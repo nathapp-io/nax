@@ -318,25 +318,25 @@ export interface ContextRequest {
    * `src/utils/path-frame.ts`. Both build sites
    * (src/pipeline/stages/context.ts and stage-assembler.ts) pass the PRD's
    * repo-rooted `contextFiles` through unchanged. Providers resolve these
-   * against `request.repoRoot` and re-spell at their own output boundary:
-   * git-history.ts runs `git log` in repoRoot with the repo-rooted pathspec
-   * and applies `historyScope` as a post-filter; code-neighbor.ts partitions
-   * them into the package frame at the point of resolution in `fetch()`.
+   * against `request.repoRoot` and emit repo-rooted: git-history.ts runs
+   * `git log` in repoRoot with the repo-rooted pathspec and applies
+   * `historyScope` as a post-filter; code-neighbor.ts resolves and renders
+   * them repo-rooted at the point of resolution in `fetch()`.
    */
   touchedFiles?: string[];
   /**
    * The PRD-declared story workdir, repo-relative (e.g. "packages/api", or
    * "." for the repo root), from `storyWorkdir(story)` (@/utils/path-frame).
    *
-   * FRAME: this is the safe boundary for re-spelling `touchedFiles` (which is
-   * repo-rooted) into a package-contained provider's own frame. It must NOT
-   * be re-derived as `packageDirRelative(repoRoot, packageDir)` — under
+   * SELECTOR, not a frame boundary: consumers use it to decide which package's
+   * rules, config, and command cwd apply (`ruleMatchesPackage`, git-history's
+   * package post-filter, scratch-dir ignore patterns) while every path set
+   * stays repo-rooted. It must NOT be re-derived as
+   * `packageDirRelative(repoRoot, packageDir)` — under
    * `execution.storyIsolation: "worktree"`, `packageDir` is
    * `<root>/.nax-wt/<storyId>/<pkg>` while `repoRoot` is the main checkout,
    * so that derivation yields `.nax-wt/<storyId>/<pkg>`, matches nothing, and
-   * silently drops every entry (nax#2069, nax path-frame follow-up C1). See
-   * src/context/fragments/reframe.ts and providers/feature-context.ts, which
-   * already carry the story for exactly this reason.
+   * silently drops every entry (nax#2069, nax path-frame follow-up C1).
    *
    * Populated at request-build time by producers that have the story
    * (src/pipeline/stages/context.ts, src/context/engine/stage-assembler.ts).
@@ -351,11 +351,12 @@ export interface ContextRequest {
   /**
    * True when `touchedFiles` came through the plan-time write seam
    * (`story.workdirSource !== undefined`, src/prd/workdir-canonical.ts) and
-   * so may be safely partitioned with `partitionPackageFrame`'s
-   * `canonical: true` (src/utils/path-frame.ts) — treating a toPackageFrame
-   * MISS as a real, droppable cross-package path rather than passing it
-   * through as a path that would resolve to a real but WRONG file under
-   * this package (H7, path-frame follow-up to #2089).
+   * so is known repo-rooted: every path is in-frame, and an entry lying
+   * outside this package is genuinely repo-rooted rather than an ambiguous
+   * pre-#2067 legacy spelling. Consumers use this to skip collision/ambiguity
+   * handling — a MISS is a real, droppable cross-package path rather than a
+   * path that would resolve to a real but WRONG file under this package
+   * (H7, path-frame follow-up to #2089).
    *
    * Populated at the same two producer sites as `storyWorkdir`. Omit (or
    * leave false) rather than default it to `true`: an unbacked assertion
@@ -377,7 +378,8 @@ export interface ContextRequest {
    * Its neighbour `touchedFiles` is repo-rooted the same way: both
    * ContextRequest build sites (src/pipeline/stages/context.ts and
    * stage-assembler.ts) pass the PRD's repo-rooted `contextFiles` through
-   * unchanged, and each provider re-spells at its own output boundary.
+   * unchanged, and each provider resolves against repoRoot and emits
+   * repo-rooted.
    */
   scopeFiles?: string[];
   /**

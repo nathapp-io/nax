@@ -75,21 +75,20 @@ function appendFilesToCommand(command: QualityCommandSpec, files: readonly strin
 async function listChangedFiles(workdir: string, baseRef: string): Promise<string[] | null> {
   // BUG-31: route through gitWithTimeout so a wedged git (NFS / lock
   // contention) cannot stall the review's lint scope enumeration.
-  const { stdout, exitCode } = await gitWithTimeout(
-    [
-      // --relative: git emits paths relative to the repo root by default, even when run
-      // from a subdirectory. In a monorepo `workdir` is the package dir, and
-      // filterFilesToScope() below does `join(workdir, relPath)` — without --relative
-      // that double-prefixes every path (e.g. packages/api/packages/api/src/foo.ts),
-      // so every file fails the existence check and the scope comes back empty — a
-      // false-green "lint skipped" with zero lint actually run (BUG-31).
-      "diff",
-      "--relative",
-      "--name-only",
-      `${baseRef}..HEAD`,
-    ],
-    workdir,
-  );
+  //
+  // `--relative` is intentionally RETAINED here — the ONE site exempt from the
+  // diff-utils collectors' no-`--relative` consolidation. Its live consumer,
+  // filterFilesToScope() below, does `join(workdir, relPath)` (line ~146) and so
+  // requires package-relative paths. Without `--relative` git emits
+  // repo-root-relative paths while `workdir` is still the package dir, so that
+  // join double-prefixes every path (e.g. packages/api/packages/api/src/foo.ts),
+  // every file fails the existence check, and the scope comes back empty — a
+  // false-green "lint skipped" with zero lint actually run (BUG-31). The diff
+  // collectors only compare/report their pathspec, never re-join it onto
+  // `workdir`, so dropping the flag is safe for them but not here. See
+  // FIXME(#2087) at filterFilesToScope for the separate repo-frame consumer,
+  // which is dead today and out of scope.
+  const { stdout, exitCode } = await gitWithTimeout(["diff", "--relative", "--name-only", `${baseRef}..HEAD`], workdir);
   if (exitCode !== 0) return null;
   return stdout
     .split("\n")

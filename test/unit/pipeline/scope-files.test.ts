@@ -250,11 +250,11 @@ describe("resolveScopeFiles — nax#2071 canonical repo frame", () => {
   // Residual, blast radius nil today: a declared path that genuinely names a
   // SIBLING package is indistinguishable from a package-relative one, so
   // toRepoFrame prepends rather than passing it through. toRepoFrame only ever
-  // prepends -- it never slices (that is toPackageFrame, path-frame.ts:94) --
-  // and its segment-boundary test at path-frame.ts:77 is what decides "already
-  // framed" from "needs a prefix". For THIS input a looser startsWith(prefix)
-  // would happen to give the right answer; the boundary guard is justified by
-  // the case documented at path-frame.ts:63-66, not by this one.
+  // prepends -- it never slices -- and its segment-boundary test is what
+  // decides "already framed" from "needs a prefix". For THIS input a looser
+  // startsWith(prefix) would happen to give the right answer; the boundary
+  // guard is justified by the sibling-prefix case documented in path-frame.ts,
+  // not by this one.
   //
   // The fabricated path cannot exist, but nothing stats a scopeFiles entry, so
   // it can only match or fail to match a glob -- and it still matches the

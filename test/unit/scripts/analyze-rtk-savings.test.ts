@@ -19,8 +19,11 @@ describe("buildGitCorpus", () => {
   });
 
   test("entries carry the flags buildGitArgv always emits", () => {
+    // PR 2 (single-frame-redesign): the tool no longer injects `--relative`
+    // (the permitted root is the repo root, where git's default frame is already
+    // correct). `--` is still always emitted.
     const diff = buildGitCorpus().find((e) => e.verb === "diff");
-    expect(diff?.argv).toContain("--relative");
+    expect(diff?.argv).not.toContain("--relative");
     expect(diff?.argv).toContain("--");
   });
 

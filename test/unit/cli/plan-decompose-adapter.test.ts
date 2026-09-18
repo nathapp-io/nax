@@ -243,8 +243,9 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
 
-    _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
+    _planDeps.createRuntime = mock((_cfg: unknown, wd: string, _fn: unknown) =>
       makeMockRuntime({
+        workdir: wd,
         agentManager: makeMockDecomposeManager(async (_name: string, opts: CompleteOptions) => {
           capturedDecomposeOpts.push(opts);
           return { stories: makeDecomposeResult().stories };

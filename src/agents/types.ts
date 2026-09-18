@@ -173,27 +173,44 @@ export interface AgentRunOptions {
   /** Per-tool narrowing from the op's `toolPatterns`; applied to the resolved grants. */
   toolPatterns?: import("@/tools").ToolPatternNarrowing;
   /**
-   * Permitted root for coding tools.
+   * Permitted root for coding tools — the dispatch's single containment root.
    *
-   * Deliberately NOT `workdir`: that is `ctx.packageDir`, which is "" for the
-   * root package of a single-package repo. This carries
-   * packageWorkdir(ctx.packageView), which resolves that to repoRoot.
+   * Post single-frame redesign this is `storyExecRoot(ctx.packageView)`: the
+   * repo root, or the story's worktree root `<repoRoot>/.nax-wt/<storyId>` under
+   * story worktree isolation — NOT the main checkout, so a repo-scoped command
+   * never writes the user's real working tree (nax#2093). It is both the
+   * containment root for every path-bearing tool and Exec's
+   * `target: "repoRoot"` root; the story's package identity now comes from
+   * `codingToolPackageDir` (relative) + `projectDir`, not from this field.
+   *
+   * PRODUCER: src/operations/call-run-options.ts (`storyExecRoot` in
+   * src/runtime/packages.ts).
    */
   codingToolRoot?: string;
   /**
-   * Execution root for the same dispatch, when the story runs in a package.
+   * The story's package dir, RELATIVE to `projectDir` — `PackageView.packageDir`
+   * verbatim ("" for the root package, e.g. "packages/api" for a monorepo member).
    *
-   * `codingToolRoot` is the package workdir and is the containment root for
-   * every path-bearing tool. Exec's `target: "repoRoot"` needs the repo root as
-   * well, and it is not derivable from the package dir alone. Under story
-   * worktree isolation this is the story EXECUTION root — the worktree root
-   * `<repoRoot>/.nax-wt/<storyId>` — NOT the main checkout; a repo-scoped
-   * command must not write the user's real working tree (nax#2093).
+   * Independent of `codingToolRoot`: `resolveCodingToolSupport` uses it with
+   * `projectDir` to resolve the story's `.nax/mono/<pkg>/config.json` and
+   * declared commands' cwd. Under storyIsolation "worktree" it carries the
+   * `.nax-wt/<storyId>/` prefix; normalize it via `packageOverrideKey` before
+   * using it as an override key, but keep it RAW as a command cwd.
    *
-   * PRODUCER: src/operations/call.ts (`codingToolRepoRoot: storyExecRoot(...)`,
-   * resolved by `storyExecRoot` in src/runtime/packages.ts).
+   * PRODUCER: src/operations/call-run-options.ts (`ctx.packageView.packageDir`).
    */
-  codingToolRepoRoot?: string;
+  codingToolPackageDir?: string;
+  /**
+   * The story's package-relative workdir, `"."` for a repo-root story.
+   *
+   * `buildAgentScopeSection` reads it to name the package now that PR2 collapsed
+   * `codingToolRoot` and the ACP spawn cwd onto the story execution root, so
+   * `root === repoRoot` always. Unlike `codingToolPackageDir` it is the bare
+   * story workdir (no `.nax-wt/<id>/` prefix, "." at the repo root).
+   *
+   * PRODUCER: src/operations/call-run-options.ts.
+   */
+  codingToolWorkdirLabel?: string;
   /**
    * The absolute `fileOutput` path the dispatching op declared, when it declared
    * one (nax#2115).
@@ -204,7 +221,9 @@ export interface AgentRunOptions {
    * (`plan`, `plan-refine`, `debate-plan`) name a guarded path; every other
    * fileOutput path is unguarded and the exemption is inert for them.
    *
-   * PRODUCER: src/operations/call.ts (`runOp.fileOutput?.(input)`).
+   * PRODUCER: src/operations/call-run-options.ts
+   * (`codingToolFileOutput: fileOutputPath`, from `runOp.fileOutput?.(input)` at
+   * the call site).
    */
   codingToolFileOutput?: string;
   /**
@@ -217,7 +236,7 @@ export interface AgentRunOptions {
    * package workdir inside the story's git worktree, so `basename` of it would
    * silently disagree with the runtime whenever `config.name` is unset.
    *
-   * PRODUCER: src/operations/call.ts (`outputDir: ctx.runtime.outputDir`).
+   * PRODUCER: src/operations/call-run-options.ts (`outputDir: ctx.runtime.outputDir`).
    * A field with no producer is the nax#1744 / transcriptDir shape — every seam
    * passes its own test while the chain is dead end to end.
    */

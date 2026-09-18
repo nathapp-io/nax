@@ -5,7 +5,7 @@ import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { TddPromptBuilder } from "../prompts/builders/tdd-builder";
-import { packageWorkdir } from "../runtime/packages";
+import { storyExecRoot } from "../runtime/packages";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { FailureCategory, IsolationCheck } from "../tdd/types";
 import type { VerdictCategorization, VerifierVerdict } from "../tdd/verdict";
@@ -180,20 +180,34 @@ async function runVerifierIsolation(
     ctx.packageView.config.execution.smartTestRunner !== null
       ? ctx.packageView.config.execution.smartTestRunner.testFilePatterns
       : undefined;
+  // Isolation diffs the tree the agent actually modified, and the agent's tools
+  // are rooted at storyExecRoot — the same root recover reads the verdict from.
+  // It is a git-diff over that workdir, not a package-dir-scoped probe, so it
+  // shares `resolveAbsolutePackageDir` rather than needing a narrower value.
   return verifyImplementerIsolation(resolveAbsolutePackageDir(ctx), beforeRef, testFilePatterns);
 }
 
 /**
- * Resolve the ABSOLUTE package directory from a verify context's package view.
+ * Resolve the ABSOLUTE workdir the verifier actually reads from and writes to:
+ * the agent's ACTUAL Write/containment root post-single-frame-redesign, which
+ * is `storyExecRoot(packageView)` — the repo root, or the story's
+ * `.nax-wt/<storyId>` worktree root under isolation. It is NOT the package
+ * directory.
+ *
+ * The name `resolveAbsolutePackageDir` is now slightly misleading: the verifier's
+ * `toolPatterns: { Write: [VERDICT_FILE] }` grant is a bare filename resolved
+ * against the agent's tool root, so recover's disk read must join that filename
+ * onto the same root the agent wrote to. A follow-up (PR4) may rename this to
+ * `resolveVerifierWriteRoot`; it is left as-is here because a rename ripples
+ * through every call site and isn't required by this change.
+ *
  * `packageView.packageDir` is a RELATIVE key ("" for the repo root) — it must
  * never be probed/spawned against directly (see full-suite-gate / verify-scoped).
- * The verifier writes its verdict and runs isolation against the absolute
- * workdir, so recover/verify join the key onto the package view's repo root.
  * Tolerates callers that already pass an absolute `packageDir` (e.g. unit tests
  * that build a minimal package view without a repo root).
  */
 function resolveAbsolutePackageDir(ctx: VerifyContext<TddConfig>): string {
-  return packageWorkdir(ctx.packageView);
+  return storyExecRoot(ctx.packageView);
 }
 
 export const verifierOp: RunOperationWithHooks<VerifierInput, VerifierOutput, TddConfig, "verify" | "recover"> = {

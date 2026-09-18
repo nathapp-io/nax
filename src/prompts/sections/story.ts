@@ -5,7 +5,6 @@
  */
 
 import type { UserStory } from "@/prd/types";
-import { storyWorkdir, toPackageFrame } from "@/utils/path-frame";
 import { buildModifiedFilesLines } from "./modified-files";
 import { buildOutOfScopeLines } from "./out-of-scope";
 
@@ -24,45 +23,26 @@ function outOfScopeLines(story: UserStory): string[] {
  * read together: what this story must not do, then what it is permitted to
  * touch despite the file already existing.
  *
- * Re-spelled here, at the prompt boundary, because the write seam never touches
- * `modifiedFiles` — it is appended by the fidelity pass that deliberately runs
- * before canonicalization (src/plan/strategies/persist-prd.ts). A repo-rooted
- * entry names a path the agent's package-contained file tools cannot address,
- * so the authorisation would be unusable.
+ * Rendered repo-rooted exactly as stored. nax's single-frame redesign roots the
+ * agent's file tools (Read/Write/Edit/Grep/Git) at the repo root, so a
+ * repo-rooted entry names the frame the agent can already address. The old
+ * package-frame re-spelling is gone; it existed only because a
+ * package-contained agent could not open a repo-rooted path, and that premise
+ * no longer holds.
  *
- * `canonical` is deliberately NOT set (spec Ruling 8 / plan Ruling F):
- * `workdirSource` says nothing about this list's frame, and this is an
- * authorisation list — dropping or marking an entry would revoke permission the
- * spec granted. The default passthrough re-spells an in-package repo-rooted
- * entry and leaves everything else untouched.
- *
- * `rootWorkdir` is the frame to re-spell against — the workdir of the agent
- * that will actually read this prompt, which is NOT always `story`'s own
- * workdir. A batch prompt has exactly one agent root, the first story's
- * package (src/execution/story-selector.ts takes `storiesToExecute[0]`, and
- * src/operations/call.ts derives `codingToolRoot` from it), so every story in
- * the batch must be framed against that one root. Framing a second story
- * against its own workdir re-spelled a cross-package entry into a real but
- * WRONG file the batch's single agent root could actually open — nax#2085
- * H6. An entry outside `rootWorkdir` falls through unchanged, same as any
- * other out-of-package entry.
- *
- * Each entry is framed directly through `toPackageFrame` rather than via
- * `partitionPackageFrame` plus an index zip: a zip's index correspondence
- * would hold only by construction (every entry landing in one array), and a
- * future edit is one `{ canonical: true }` away from silently pairing reasons
- * with the wrong paths (nax#2085 M11). Mapping per entry cannot desync.
+ * `canonical` is deliberately NOT set (spec Ruling 8 / plan Ruling F): the frame
+ * is repo-rooted for any story canonicalized by the current write seam, and this
+ * is an authorisation list — dropping or marking an entry would revoke permission
+ * the spec granted. `modifiedFiles` is passed through as stored because it is now
+ * already repo-rooted, so there is no frame to correct and no entry to mark.
  */
-function modifiedFilesLines(story: UserStory, rootWorkdir: string): string[] {
+function modifiedFilesLines(story: UserStory): string[] {
   const entries = story.modifiedFiles;
   if (!entries || entries.length === 0) return [];
-  return buildModifiedFilesLines(
-    entries.map((entry) => ({ ...entry, path: toPackageFrame(entry.path, rootWorkdir) ?? entry.path })),
-  );
+  return buildModifiedFilesLines(entries);
 }
 
 export function buildBatchStorySection(stories: UserStory[]): string {
-  const rootWorkdir = stories.length > 0 ? storyWorkdir(stories[0] as UserStory) : ".";
   const storyBlocks = stories.map((story, i) => {
     const criteria = story.acceptanceCriteria.map((c, j) => `${j + 1}. ${c}`).join("\n");
     return [
@@ -73,7 +53,7 @@ export function buildBatchStorySection(stories: UserStory[]): string {
       "**Acceptance Criteria:**",
       criteria,
       ...outOfScopeLines(story),
-      ...modifiedFilesLines(story, rootWorkdir),
+      ...modifiedFilesLines(story),
     ].join("\n");
   });
 
@@ -112,7 +92,7 @@ export function buildStoryReminderSection(story: UserStory): string {
     "**Acceptance Criteria:**",
     criteria,
     ...outOfScopeLines(story),
-    ...modifiedFilesLines(story, storyWorkdir(story)),
+    ...modifiedFilesLines(story),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");
@@ -136,7 +116,7 @@ export function buildStorySection(story: UserStory): string {
     "**Acceptance Criteria:**",
     criteria,
     ...outOfScopeLines(story),
-    ...modifiedFilesLines(story, storyWorkdir(story)),
+    ...modifiedFilesLines(story),
     "",
     "<!-- END USER-SUPPLIED DATA -->",
   ].join("\n");

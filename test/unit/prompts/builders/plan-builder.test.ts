@@ -469,6 +469,39 @@ describe("PlanPromptBuilder.schemaRepair() — US-003", () => {
   });
 });
 
+// ─── Repo-rooted path frame (single-frame redesign) ────────────────────────
+
+describe("PlanPromptBuilder — repo-rooted path frame (single-frame redesign)", () => {
+  test("build() states contextFiles/expectedFiles are repo-rooted, not workdir-relative", () => {
+    const builder = new PlanPromptBuilder();
+    const { taskContext } = builder.build("spec content", "codebase context", "/tmp/out.json", ["packages/api"]);
+    expect(taskContext).toContain("relative to the REPO ROOT");
+    expect(taskContext).not.toContain("relative to this story's `workdir` when it has one");
+  });
+
+  test("build() workdirField no longer tells the planner paths are workdir-relative", () => {
+    const builder = new PlanPromptBuilder();
+    const { outputFormat } = builder.build("spec", "ctx", "/tmp/out.json", ["packages/api"]);
+    expect(outputFormat).not.toContain("Paths in contextFiles and expectedFiles are relative to THIS workdir");
+    expect(outputFormat).toContain("Paths in contextFiles and expectedFiles are relative to the REPO ROOT");
+  });
+
+  test("buildDraft() carries the same repo-rooted wording as build()", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "m",
+      specContent: "s",
+      codebaseContext: "c",
+      feature: "f",
+      branchName: "b",
+      citationThreshold: 0.8,
+      packages: ["packages/api"],
+    });
+    expect(task.content).toContain("relative to the REPO ROOT");
+    expect(task.content).not.toContain("Paths in contextFiles and expectedFiles are relative to THIS workdir");
+  });
+});
+
 // ─── PlanPromptBuilder.citationRepair() static method ──────────────────────
 
 describe("PlanPromptBuilder.citationRepair() — US-003", () => {

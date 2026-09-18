@@ -313,11 +313,11 @@ describe("semantic review prompt", () => {
   });
 });
 
-// ─── ref-mode git frame (#2090) ────────────────────────────────────────────────
+// ─── ref-mode git frame (repo-rooted cwd) ─────────────────────────────────────
 
-describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — ref-mode git frame (#2090)", () => {
-  const prompt = new ReviewPromptBuilder().buildSemanticReviewPrompt(
-    STORY,
+function refPrompt(story: SemanticStory): string {
+  return new ReviewPromptBuilder().buildSemanticReviewPrompt(
+    story,
     makeSemanticReviewConfig({ model: "balanced", diffMode: "ref", rules: [] }),
     {
       mode: "ref",
@@ -326,8 +326,13 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — ref-mode git frame
       excludePatterns: [":!test/", ":!*.test.ts", ":!*.spec.ts"],
     },
   );
+}
 
-  test("every emitted diff and log command is package-relative and scoped", () => {
+describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — ref-mode git frame", () => {
+  const packageStory: SemanticStory & { workdir: string } = { ...STORY, workdir: "packages/api" };
+
+  test("package story: every diff command drops --relative and scopes to the package", () => {
+    const prompt = refPrompt(packageStory);
     const lines = prompt.split("\n");
     const diffLines = lines.filter((line) => line.includes("git diff "));
     const logLines = lines.filter((line) => line.includes("git log "));
@@ -335,33 +340,41 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — ref-mode git frame
     expect(diffLines.length).toBeGreaterThan(0);
     expect(logLines.length).toBeGreaterThan(0);
     for (const line of diffLines) {
-      // Flags precede the refs (src/tools/git.ts:202). Assert flag presence and
-      // that no flag trails the revision range, so the next flag addition does
-      // not re-create this pressure.
-      expect(line).toContain("git diff --relative");
-      expect(line).toContain("-- .");
-      expect(line).not.toContain("..HEAD --relative");
+      expect(line).not.toContain("--relative");
+      expect(line).toContain("-- packages/api");
+      expect(line).not.toContain("-- .");
     }
     for (const line of logLines) {
-      // `git log --oneline` prints no paths, so `--relative` there is inert argv.
+      // `git log --oneline` prints no paths, so it takes no pathspec.
       expect(line).toContain("git log --oneline abc123..HEAD");
       expect(line).not.toContain("--relative");
     }
   });
 
+  test("repo-root story still renders the root pathspec (-- .)", () => {
+    const lines = refPrompt(STORY).split("\n");
+    const diffLines = lines.filter((line) => line.includes("git diff "));
+    expect(diffLines.length).toBeGreaterThan(0);
+    for (const line of diffLines) {
+      expect(line).not.toContain("--relative");
+      expect(line).toContain("-- .");
+    }
+  });
+
   test("the full diff keeps test files while the production diff excludes them", () => {
-    const lines = prompt.split("\n");
+    const lines = refPrompt(packageStory).split("\n");
     const productionDiffLine = lines.find((line) => line.includes("Full production diff"));
     const fullDiffLine = lines.find((line) => line.includes("Full diff (including tests)"));
     expect(productionDiffLine).toBeDefined();
     expect(fullDiffLine).toBeDefined();
 
-    expect(productionDiffLine).toContain("--relative");
+    expect(productionDiffLine).not.toContain("--relative");
+    expect(productionDiffLine).toContain("-- packages/api");
     expect(productionDiffLine).toContain(":!*.test.ts");
     expect(productionDiffLine).toContain(":!.nax/");
 
-    expect(fullDiffLine).toContain("--relative");
-    expect(fullDiffLine).toContain("-- .");
+    expect(fullDiffLine).not.toContain("--relative");
+    expect(fullDiffLine).toContain("-- packages/api");
     expect(fullDiffLine).toContain(":!.nax/");
     for (const pattern of [":!test/", ":!*.test.ts", ":!*.spec.ts"]) {
       expect(fullDiffLine).not.toContain(pattern);

@@ -55,7 +55,7 @@ function debatePrompt(): string {
   ).buildResolverPrompt(
     [],
     [],
-    { mode: "ref", storyGitRef: REF, stat: STAT, productionExcludePatterns: [":!*.test.ts"] },
+    { mode: "ref", storyGitRef: REF, stat: STAT, productionExcludePatterns: [":!*.test.ts"], pathspec: "." },
     { id: "US-001", title: "Story", acceptanceCriteria: ["AC"] },
     DEBATE_CTX,
   );

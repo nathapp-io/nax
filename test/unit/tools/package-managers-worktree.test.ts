@@ -8,7 +8,7 @@ import { normalizeExec } from "@/tools";
  * `repoRoot` is the story's worktree root — the value `storyExecRoot()` supplies
  * in `src/operations/call.ts` — cwd must stay inside `.nax-wt/<storyId>/` rather
  * than escaping to the main checkout. The producer seam itself is asserted in
- * test/unit/operations/call-coding-tool-repo-root-producer.test.ts.
+ * test/unit/operations/call-coding-tool-root-producer.test.ts.
  */
 const mainCheckout = "/repo";
 // Derived from the real producer rather than hardcoded: a hardcoded worktree

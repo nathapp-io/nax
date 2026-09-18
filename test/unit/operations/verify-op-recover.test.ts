@@ -4,6 +4,7 @@ import { assertDefined, cleanupTempDir, makeStory, makeTempDir } from "@test/hel
 import { type ConfigSelector, DEFAULT_CONFIG, tddConfigSelector } from "@/config";
 import { verifierOp } from "@/operations";
 import type { PackageView } from "@/runtime";
+import { storyExecRoot } from "@/runtime/packages";
 
 const STORY = makeStory({ id: "S1", title: "t" });
 
@@ -131,14 +132,18 @@ describe("verifierOp.recover", () => {
   });
 });
 
-describe("verifierOp.recover — resolveAbsolutePackageDir (repoRoot join)", () => {
-  test("joins repoRoot + relative packageDir to read the verdict from the absolute workdir", async () => {
+describe("verifierOp.recover — reads the agent's write root (storyExecRoot)", () => {
+  test("reads the verdict from storyExecRoot, not the package workdir, for a package story", async () => {
     const repoRoot = makeTempDir("verify-op-repo-");
     try {
       const relativePackageDir = "packages/api";
-      const absolutePackageDir = join(repoRoot, relativePackageDir);
-      await Bun.write(join(absolutePackageDir, ".keep"), "");
-      await writeVerdict(absolutePackageDir, {
+      const packageView = makePackageView(relativePackageDir, repoRoot);
+      // The verifier's Write grant is scoped to the bare VERDICT_FILE name and
+      // resolves against the agent's actual tool root = storyExecRoot(packageView)
+      // = repoRoot. packageWorkdir(packageView) is repoRoot/packages/api, where
+      // the pre-fix read looked and found nothing.
+      expect(storyExecRoot(packageView)).toBe(repoRoot);
+      await writeVerdict(storyExecRoot(packageView), {
         version: 1,
         approved: true,
         tests: { allPassing: true, passCount: 1, failCount: 0 },
@@ -149,6 +154,31 @@ describe("verifierOp.recover — resolveAbsolutePackageDir (repoRoot join)", () 
         reasoning: "ok",
       });
       const out = await runRecover({ story: STORY }, ctx(relativePackageDir, repoRoot));
+      assertDefined(out, "recover() result");
+      expect(out.success).toBe(true);
+    } finally {
+      cleanupTempDir(repoRoot);
+    }
+  });
+
+  test("worktree package key reads the verdict from the .nax-wt/<story> write root, not the package subdir", async () => {
+    const repoRoot = makeTempDir("verify-op-worktree-");
+    try {
+      const packageDir = ".nax-wt/S1/packages/api";
+      const packageView = makePackageView(packageDir, repoRoot);
+      const writeRoot = storyExecRoot(packageView);
+      expect(writeRoot).toBe(join(repoRoot, ".nax-wt", "S1"));
+      await writeVerdict(writeRoot, {
+        version: 1,
+        approved: true,
+        tests: { allPassing: true, passCount: 1, failCount: 0 },
+        testModifications: { detected: false, files: [], legitimate: true, reasoning: "" },
+        acceptanceCriteria: { allMet: true, criteria: [] },
+        quality: { rating: "good", issues: [] },
+        fixes: [],
+        reasoning: "ok",
+      });
+      const out = await runRecover({ story: STORY }, ctx(packageDir, repoRoot));
       assertDefined(out, "recover() result");
       expect(out.success).toBe(true);
     } finally {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger, makeNaxConfig } from "@test/helpers";
 import { createConfigLoader, pickSelector } from "@/config";
-import { _packagesDeps, createPackageRegistry } from "@/runtime/packages";
+import { _packagesDeps, createPackageRegistry, packageOverrideKey } from "@/runtime/packages";
 
 const minConfig = makeNaxConfig({ routing: { strategy: "keyword" } });
 const routingSel = pickSelector("routing-pkg-test", "routing");
@@ -322,5 +322,29 @@ describe("PackageRegistry — unknown package key is loud (#2069)", () => {
     await registry.hydrate(["apps/web-ui"], async () => null);
     registry.resolve(undefined);
     expect(warnings).toEqual([]);
+  });
+});
+
+// LOW-8 (whole-branch review, 2026-09-18): the worktree-prefix stripping was
+// extracted to a pure, exported helper — but only integration tests exercise
+// it via resolve() and hydrate(). Pin the helper directly so a future change
+// to slice indices, prefix matching, or the early-return guard is caught at
+// the unit boundary, not through a filesystem-backed resolve call.
+describe("packageOverrideKey — pure helper (LOW-8)", () => {
+  test.each([
+    // Canonical story-isolated worktree path: strips the `.nax-wt/<storyId>/` prefix.
+    [".nax-wt/US-001/packages/api", "packages/api"],
+    // Degenerate worktree (no package segment): slice(2) is [], join is "".
+    // Pinned as the CURRENT behavior — LOW-2 flagged it as a latent edge case
+    // but the user explicitly scoped this fix to LOW-8 only.
+    [".nax-wt/US-001", ""],
+    // Empty input: passed through unchanged (no first-segment match).
+    ["", ""],
+    // Non-worktree relative path: passed through unchanged.
+    ["packages/api", "packages/api"],
+    // Absolute non-worktree path: passed through unchanged.
+    ["/abs/path", "/abs/path"],
+  ])("packageOverrideKey(%j) === %j", (input, expected) => {
+    expect(packageOverrideKey(input)).toBe(expected);
   });
 });

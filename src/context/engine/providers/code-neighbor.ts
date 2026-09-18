@@ -11,7 +11,6 @@ import { join, relative, resolve } from "node:path";
 import { getLogger } from "@/logger";
 import { detectLanguage } from "@/project";
 import type { NaxIgnoreMatcher } from "@/utils/path-filters";
-import { partitionPackageFrame, UNREADABLE_MARKER } from "@/utils/path-frame";
 import { isRelativeAndSafe } from "@/utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
 import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";
@@ -207,48 +206,25 @@ function scanDirectory(
 }
 
 /**
- * Re-spell an absolute neighbour path for the consuming story (nax#2074).
- *
- * Inside the consumer's root -> package-relative, which is what the agent's
- * file tools can open (codingToolRoot, src/agents/types.ts:182-197).
- * Outside it -> repo-rooted and marked: a package-relative spelling would
- * resolve to a real but WRONG file under the consumer's root, so the path
- * carries the same UNREADABLE_MARKER nax#2072 already ships. A path beneath
- * neither root stays absolute -- rare, honest, and still marked.
- *
- * `relative()` on absolute paths is used rather than a derived string prefix:
- * under storyIsolation "worktree" the consumer root and the repo root are
- * different trees, and any prefix derivation silently matches nothing (nax#2069).
- */
-function spellForConsumer(absPath: string, consumerRoot: string, repoRoot: string): string {
-  const fromConsumer = relative(consumerRoot, absPath);
-  if (fromConsumer !== "" && !fromConsumer.startsWith("..")) return fromConsumer;
-  const fromRepo = relative(repoRoot, absPath);
-  const spelled = fromRepo !== "" && !fromRepo.startsWith("..") ? fromRepo : absPath;
-  return `${spelled}${UNREADABLE_MARKER}`;
-}
-
-/**
  * Collect neighbors for a single file: forward deps (JS/TS only), reverse deps
  * (language-aware glob, configurable cap), and sibling tests (ADR-009 SSOT).
  *
- * Two roots, deliberately distinct (nax#2074):
- *   - `consumerRoot` is the absolute dir `filePath` is relative to. It is ALWAYS
- *     `request.packageDir`: `fetch()` partitions the repo-rooted
- *     `request.touchedFiles` into the package frame at the point of resolution
- *     (nax#2088), so every `filePath` that reaches here is package-framed.
- *   - each `ScannedDir.workdir` is the root its `files` are relative to.
- *
- * Under `neighborScope: "repo"` those differ, so no two relative paths here are
- * mutually intelligible. Every comparison is therefore made on absolute paths,
- * and the result is re-spelled for the consumer exactly once, on return.
+ * Single-frame (nax#2125): every path is repo-rooted. `filePath` is
+ * repo-rooted (types.ts), `scannedDirs` files are relative to the glob root
+ * (`scanRoot`, either the package dir or repoRoot), and the caller's
+ * `repoRoot` is the one root every relative path is resolved against — true
+ * only under `storyIsolation: "shared"`; under `"worktree"` see the parked
+ * residual at the call site below. Every
+ * comparison is made on absolute paths, and the result is spelled
+ * repo-rooted, relative to `repoRoot`, exactly once on return — the agent's
+ * file tools are rooted at the story execution root, so no package frame or
+ * unreadable marker is needed.
  *
  * Accepts pre-scanned directory results and a shared content cache so that the
  * glob and file reads are not repeated across touched files in one fetch().
  */
 async function collectNeighbors(
   filePath: string,
-  consumerRoot: string,
   repoRoot: string,
   scannedDirs: ScannedDir[],
   contentCacheState: ContentCacheState,
@@ -259,14 +235,14 @@ async function collectNeighbors(
   const forwardNeighbors = new Set<string>();
   let anyTruncated = false;
 
-  const ownAbsPath = join(consumerRoot, filePath);
+  const ownAbsPath = join(repoRoot, filePath);
   if (await _codeNeighborDeps.fileExists(ownAbsPath)) {
     const ownContent = await readCached(ownAbsPath, contentCacheState, _codeNeighborDeps);
     if (ownContent !== null && ownContent.length > 0) {
       for (const spec of parseImportSpecifiers(ownContent)) {
-        const resolved = resolveImport(spec, filePath, consumerRoot);
+        const resolved = resolveImport(spec, filePath, repoRoot);
         if (resolved === null) continue;
-        const resolvedAbs = join(consumerRoot, resolved);
+        const resolvedAbs = join(repoRoot, resolved);
         if (resolvedAbs !== ownAbsPath) forwardNeighbors.add(resolvedAbs);
       }
     }
@@ -332,7 +308,7 @@ async function collectNeighbors(
     const candidates = deriveSiblingTestCandidates(filePath, siblingTestContext.globs);
     let chosen: string | null = null;
     for (const candidate of candidates) {
-      if (await _codeNeighborDeps.fileExists(join(consumerRoot, candidate))) {
+      if (await _codeNeighborDeps.fileExists(join(repoRoot, candidate))) {
         chosen = candidate;
         break;
       }
@@ -345,13 +321,11 @@ async function collectNeighbors(
       const mirrored = candidates.find((c, i) => i > 0 && c !== colocated);
       if (mirrored) chosen = mirrored;
     }
-    if (chosen !== null && chosen !== filePath) neighbors.add(join(consumerRoot, chosen));
+    if (chosen !== null && chosen !== filePath) neighbors.add(join(repoRoot, chosen));
   }
 
   return {
-    neighbors: [...neighbors]
-      .slice(0, MAX_NEIGHBORS_PER_FILE)
-      .map((abs) => spellForConsumer(abs, consumerRoot, repoRoot)),
+    neighbors: [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE).map((abs) => relative(repoRoot, abs)),
     truncated: anyTruncated,
   };
 }
@@ -386,43 +360,13 @@ export class CodeNeighborProvider implements IContextProvider {
       return { chunks: [], pullTools: [] };
     }
 
-    // nax#2088: touchedFiles is REPO-ROOTED (types.ts); re-spell into the
-    // package frame here — collectNeighbors joins onto consumerRoot === packageDir.
-    //
-    // pkgDir MUST come from request.storyWorkdir, not from
-    // packageDirRelative(request.repoRoot, request.packageDir): under
-    // storyIsolation: "worktree" that derivation yields
-    // ".nax-wt/<storyId>/<pkg>", matches nothing, and silently drops every
-    // touched file (nax#2069, path-frame follow-up C1). "." (no story, or a
-    // caller that already passes the resolved package root as repoRoot, e.g.
-    // handlers/query-neighbor.ts) is the safe fallback: toPackageFrame is
-    // identity for ".".
-    const pkgDir = request.storyWorkdir ?? ".";
-    // H7 (path-frame follow-up to #2089): `canonical: true` asserts
-    // touchedFiles came through the plan-time write seam
-    // (story.workdirSource !== undefined) — this provider cannot see that
-    // flag directly, only what the request producer threaded onto it. An
-    // unconditional `true` here was unbacked: for a pre-#2067 PRD holding a
-    // real, existing package-relative entry, it silently dropped the file as
-    // "outside the package" with no diagnostic.
-    const canonical = request.contextFilesCanonical ?? false;
-    const { readable, unreachable } = partitionPackageFrame(touchedFiles, pkgDir, { canonical });
-    if (unreachable.length > 0) {
-      _codeNeighborDeps
-        .getLogger()
-        .warn(
-          "context-v2",
-          "code-neighbor touchedFiles could not be resolved inside this story's package and were dropped",
-          {
-            storyId: request.storyId,
-            packageDir: request.packageDir,
-            workdir: pkgDir,
-            count: unreachable.length,
-            files: unreachable.slice(0, MAX_FILES),
-          },
-        );
-    }
-    const filesToProcess = readable.filter(isRelativeAndSafe).slice(0, MAX_FILES);
+    // Single-frame (nax#2125): touchedFiles is REPO-ROOTED (types.ts) and the
+    // agent's file tools can address any repo-rooted path, so every touched
+    // file is reachable. No package-frame partition or unreadable-marker
+    // bookkeeping is needed — the paths pass through as stored. (Under
+    // storyIsolation: "worktree" the agent's exec root is BELOW request.repoRoot;
+    // see the parked residual at the collectNeighbors call site below.)
+    const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
     // ADR-009: sibling-test derivation requires resolver output on the request.
     // When ContextRequest.resolvedTestPatterns is absent (e.g. legacy callers
@@ -454,9 +398,24 @@ export class CodeNeighborProvider implements IContextProvider {
       // PERF-2: cooperative cancellation — a timed-out fetch must stop doing
       // work instead of scanning/reading files the orchestrator no longer wants.
       if (signal?.aborted) break;
+      // PARKED residual (controller ruling, PR4 review): resolution uses
+      // `request.repoRoot`, which under storyIsolation: "worktree" is the MAIN
+      // checkout, not the worktree the story executes in (`packageDir` =
+      // `<root>/.nax-wt/<storyId>/<pkg>`). So disk reads/forward-dep resolution
+      // can hit the main checkout instead of the worktree.
+      //
+      // FOLLOW-UP (nax#2134 — the same follow-up git-history.ts's RESIDUAL
+      // names): thread a worktree-aware exec root
+      // (`storyExecRoot`) onto `ContextRequest` and resolve against it. This is
+      // a request-type field both providers lack, not something to derive per
+      // provider; it is the same missing "worktree repo root" git-history.ts
+      // documents. Spec §6's live run asserts only EXEC/WRITE containment ("a
+      // worktree-isolated story writing only inside its worktree") — it does
+      // NOT exercise context resolution — so it will not catch this. See the
+      // characterization test "worktree isolation residual (PARKED, nax#2134,
+      // nax#2093 class)". Do not fix by deriving the root here (nax#2069).
       const { neighbors, truncated } = await collectNeighbors(
         file,
-        request.packageDir,
         request.repoRoot,
         scannedDirs,
         contentCacheState,
@@ -478,7 +437,6 @@ export class CodeNeighborProvider implements IContextProvider {
       sections,
       truncated: anyTruncated,
       maxGlobFiles: this.maxGlobFiles,
-      packageWorkdir: pkgDir,
     });
     if (chunk === null) {
       return { chunks: [], pullTools: [] };

@@ -28,7 +28,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { stripUnreadableMarker, toRepoFrame, UNREADABLE_MARKER } from "@/utils/path-frame";
 import type { RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,7 +46,9 @@ export const MAX_CHUNK_TOKENS = 500;
  *
  * `file` is the touched file path; `neighbors` is the rendered list of
  * forward-deps, reverse-deps, and sibling-test hints (already resolved by
- * `collectNeighbors` upstream). Order within `neighbors` is preserved.
+ * `collectNeighbors` upstream). Both are repo-rooted — the agent's file tools
+ * are rooted at the story execution root, so no re-spelling happens here.
+ * Order within `neighbors` is preserved.
  */
 export interface NeighborSection {
   file: string;
@@ -61,14 +62,6 @@ export interface AssembleCodeNeighborChunkInput {
   truncated: boolean;
   /** The cap that produced `truncated` — surfaced in the truncation note. */
   maxGlobFiles: number;
-  /**
-   * Repo-relative package workdir ("." at the repo root). The rendered
-   * section file and unmarked neighbours are package-relative (the agent's
-   * file tools are rooted at the package); scopePaths is an attribution key
-   * compared against the repo-framed diff, so those paths are re-rooted
-   * here. Marked neighbours (UNREADABLE_MARKER) are already repo-rooted.
-   */
-  packageWorkdir: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,7 +109,7 @@ export function contentHash8(content: string): string {
  * fully-rendered neighbour.
  */
 export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput): RawChunk | null {
-  const { sections, truncated, maxGlobFiles, packageWorkdir } = input;
+  const { sections, truncated, maxGlobFiles } = input;
   if (sections.length === 0) return null;
 
   const header = "## Code Neighbors\n\nRelated files (imports, reverse-deps, tests):";
@@ -143,13 +136,12 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
     if (includedSections.length > 0 && candidateLength > maxChars) break;
 
     // Record path end-positions for this section (positions are in the
-    // final body, before the cap slice).
+    // final body, before the cap slice). The file string is rendered verbatim
+    // and recorded verbatim — content and scopePaths share one repo-rooted
+    // frame, so no re-spelling is needed.
     const sectionStart = body.length + separatorCost;
     renderedPaths.push({
-      // The section file is package-framed (partitionPackageFrame readable
-      // list); scopePaths is compared against the repo-framed diff, so it is
-      // re-rooted here. `end` still measures the RENDERED length.
-      path: toRepoFrame(section.file, packageWorkdir),
+      path: section.file,
       end: sectionStart + HEADER_PREFIX.length + section.file.length,
     });
     let cursor = sectionStart + fileText.length;
@@ -157,16 +149,9 @@ export function assembleCodeNeighborChunk(input: AssembleCodeNeighborChunkInput)
       const neighbor = section.neighbors[i];
       const prefixLen = i === 0 ? "- ".length : "\n- ".length;
       cursor += prefixLen;
-      // Attribution uses the bare path in the repo frame: the marker is
-      // prompt text (a scopePaths key carrying it would split one file into
-      // two identities), and the marker is also the frame discriminator — a
-      // marked neighbour is already repo-rooted, an unmarked one is
-      // package-relative. `end` still measures the RENDERED length, marker
-      // included.
-      const path = neighbor.endsWith(UNREADABLE_MARKER)
-        ? stripUnreadableMarker(neighbor)
-        : toRepoFrame(neighbor, packageWorkdir);
-      renderedPaths.push({ path, end: cursor + neighbor.length });
+      // The neighbour is rendered verbatim and attributed under the same
+      // repo-rooted string; `end` measures the RENDERED length.
+      renderedPaths.push({ path: neighbor, end: cursor + neighbor.length });
       cursor += neighbor.length;
     }
 

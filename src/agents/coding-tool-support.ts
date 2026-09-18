@@ -34,9 +34,13 @@ import {
   type ToolGrant,
   type ToolPatternNarrowing,
 } from "@/tools";
+import type { NaxConfig } from "../config";
+import { loadConfigForPackage } from "../config";
 import { toolAuditDir } from "../config/paths";
 import { resolvePermissions } from "../config/permissions";
 import type { QualityCommandSpec } from "../quality";
+import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
+import { errorMessage } from "../utils/errors";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 
@@ -49,16 +53,40 @@ export interface CodingToolSupport {
 export function buildCodingToolSupport(args: {
   root?: string;
   /**
-   * Execution root for Exec's `target: "repoRoot"` form, supplied by
-   * `storyExecRoot` in `src/operations/call.ts`.
+   * Execution root for Exec's `target: "repoRoot"` form.
    *
    * Under story worktree isolation this is the story's worktree root
    * (`<repo>/.nax-wt/<storyId>`), NOT the main checkout — a repo-scoped command
    * that used `PackageView.repoRoot` here wrote the user's real working tree
-   * (nax#2093). Falls back to `root` when absent, which is correct for
-   * single-package repos and non-isolated runs where the two coincide.
+   * (nax#2093). Falls back to `root` when absent. Post single-frame redesign
+   * (PR2) `root` is already `storyExecRoot`, so `resolveCodingToolSupport`
+   * passes no separate value and the fallback supplies it.
    */
   repoRoot?: string;
+  /**
+   * The story's ABSOLUTE package dir for Exec's `target: "package"` cwd.
+   *
+   * Post-root-move, `codingToolRoot` is `storyExecRoot` (the repo/worktree
+   * root), so `args.root` can no longer
+   * stand in for the package dir: `run-command-exec.ts` computes
+   * `relative(repoRoot, packageWorkdir)`, which would always be "" and make
+   * `package-managers.ts`'s `effectiveTarget` collapse EVERY Exec call —
+   * `target: "package"` included — onto the repo root. It MUST be an
+   * absolute path: `packageWorkdir` is compared against the absolute
+   * `repoRoot`, so a relative value yields garbage. Falls back to `root`
+   * when absent (single-package repos, legacy callers, tests).
+   */
+  packageWorkdir?: string;
+  /**
+   * Execution cwd for RunCommand's DECLARED (non-Exec) branch, independent
+   * of `root` (tool containment). Falls back to `root` when absent.
+   *
+   * PRODUCER: resolveCodingToolSupport below, computed from
+   * `codingToolPackageDir` + `projectDir` (docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md
+   * PR 1) so it stays pointed at the story's package dir even after PR2
+   * repoints `codingToolRoot`/`root` at the repo root.
+   */
+  commandCwd?: string;
   grants?: readonly ToolGrant[];
   declared: readonly CodingToolName[];
   /** Provider-supplied tools for this hop, looked up before the global registry. */
@@ -72,7 +100,12 @@ export function buildCodingToolSupport(args: {
   shell?: string;
   auditDir?: string;
   sessionName?: string;
-  /** Manifest name of the member at `root`; see `resolvePackageName`. */
+  /**
+   * Manifest name of the workspace member at the story's package dir
+   * (`packageWorkdir`/`commandCwd`), NOT at `root` — post-PR2 `root` is the
+   * repo root, so reading its manifest would scope workspace installs with the
+   * root name. See `resolvePackageName`.
+   */
   packageName?: string;
   /** `config.install.allowScripts` (Task 8 adds the field); defaults to false. */
   allowScripts?: boolean;
@@ -146,18 +179,8 @@ export function buildCodingToolSupport(args: {
     args.auditDir !== undefined
       ? createToolAuditSink({ dir: args.auditDir, sessionName: args.sessionName ?? "unattached" })
       : createNoOpToolAuditSink();
-  // Task 10: shared, mutable, and scoped to this one hop's dispatch -- a
-  // fresh array every call, never a module-level or story-keyed cache. Given
-  // by reference to BOTH the policy (read side, in `check()`) and the Exec
-  // branch's options (write side, in run-command-exec.ts) so a successful
-  // repoRoot install and a later GitCommit call within the SAME hop see the
-  // same set. A commit an agent defers to a later hop still has the
-  // completion-phase auto-commit sweep (`autoCommitIfDirty`, which already
-  // stages from the git root) as its backstop -- see task-10-report.md.
-  const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(narrowedGrants, args.root, {
-      execTouchedPaths,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
@@ -173,13 +196,21 @@ export function buildCodingToolSupport(args: {
         ? [
             createRunCommandTool(declaredCommands, {
               stripEnvVars: args.stripEnvVars,
+              commandCwd: args.commandCwd ?? args.root,
               ...(allowExec
                 ? {
                     exec: {
                       repoRoot: args.repoRoot ?? args.root,
-                      packageWorkdir: args.root,
+                      // Post-root-move: `args.root` is the repo root, so the
+                      // fallback only matters for single-package repos where
+                      // the two coincide (and for tests not threading
+                      // `packageWorkdir`). Production always threads it via
+                      // `commandCwd` plumbing in `resolveCodingToolSupport`
+                      // (Task 10), which makes `effectiveTarget`'s
+                      // `packageRelPath === ""` collapse impossible for a
+                      // package story.
+                      packageWorkdir: args.packageWorkdir ?? args.root,
                       allowScripts: args.allowScripts ?? false,
-                      touchedPaths: execTouchedPaths,
                       // The compiled grant, not BUILT_IN_EXEC_PATTERNS -- a
                       // project's own Exec(...) expression replaces that
                       // list rather than extending it (see the comment on
@@ -251,6 +282,11 @@ export function buildLedgerSessionName(opts: { storyId?: string; sessionRole?: s
   return opts.sessionRole === undefined ? base : `${base}-${opts.sessionRole}`;
 }
 
+/** Injectable deps for testability — mirrors the _agentManagerDeps pattern. */
+export const _codingToolSupportDeps = {
+  loadConfigForPackage,
+};
+
 export async function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
@@ -258,7 +294,6 @@ export async function resolveCodingToolSupport(
     | "providers"
     | "toolPatterns"
     | "codingToolRoot"
-    | "codingToolRepoRoot"
     | "codingToolFileOutput"
     | "outputDir"
     | "pipelineStage"
@@ -266,15 +301,63 @@ export async function resolveCodingToolSupport(
     | "sessionRole"
     | "featureName"
     | "config"
+    | "projectDir"
+    | "codingToolPackageDir"
   >,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
   const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
+  // PR1 (single-frame redesign, #2066 residual): resolve the declared-command
+  // map (and the quality-derived fields around it) from the STORY'S PACKAGE
+  // config when one is known, not the config this dispatch happened to be
+  // threaded with. loadConfigForPackage is the R4-mandated resolver — never
+  // loadConfigForWorkdir directly, never packageView.config
+  // (packages.resolve() misses under worktree/parallel isolation, #2069);
+  // its required `from` carries the --profile chain (#2126/#2127). Cheap on
+  // a hit: loadConfigForWorkdir's own packageConfigCache
+  // (rootConfigPath, packageDir, profileKey) serves every dispatch after the
+  // first for the same package/profile.
+  const packageDir = options.codingToolPackageDir;
+  const projectDir = options.projectDir;
+  let packageEffectiveConfig: NaxConfig | undefined;
+  if (
+    packageDir !== undefined &&
+    packageDir.trim() !== "" &&
+    packageDir !== "." &&
+    projectDir !== undefined &&
+    projectDir.trim() !== "" &&
+    options.config !== undefined
+  ) {
+    try {
+      packageEffectiveConfig = await _codingToolSupportDeps.loadConfigForPackage(
+        projectDir,
+        // Under storyIsolation "worktree" the package dir is prefixed with
+        // `.nax-wt/<storyId>/`, which never matches the plain `<pkg>` keys the
+        // per-package override lookup stored — normalize for the LOOKUP ONLY.
+        // commandCwd below keeps the RAW dir so the command runs in the story's
+        // worktree (see packageOverrideKey in src/runtime/packages.ts).
+        packageOverrideKey(packageDir),
+        // RULING F2 (see below): options.config's declared type is a Pick,
+        // but at runtime both hops source it from the full NaxConfig.
+        options.config as unknown as NaxConfig,
+      );
+    } catch (err) {
+      getSafeLogger()?.warn("tools", "Per-package config failed to load for dispatch — using root config", {
+        storyId: options.storyId ?? "_dispatch",
+        packageDir,
+        error: errorMessage(err),
+      });
+    }
+  }
+
   // RULING F2: AgentRunOptions['config'] is typed as the agent-manager Pick
   // (agent/execution/profile), yet both hops source it from configLoader.current(),
   // so it carries the full NaxConfig at runtime — only the type lies. The read is
   // widened locally here; the shared agentManagerConfigSelector stays untouched.
-  const widenedConfig = options.config as
+  // Now sourced from packageEffectiveConfig when a package story resolved one
+  // above, so a per-package quality.commands/install override is honored —
+  // falls back to options.config for a root story or when resolution failed.
+  const widenedConfig = (packageEffectiveConfig ?? options.config) as
     | {
         quality?: { commands?: Partial<Record<string, QualityCommandSpec>>; stripEnvVars?: unknown; shell?: unknown };
         // AgentManagerConfig (agentManagerConfigSelector) only picks
@@ -292,10 +375,9 @@ export async function resolveCodingToolSupport(
     : [];
   const shell = typeof quality?.shell === "string" ? quality.shell : undefined;
   const allowScripts = widenedConfig?.install?.allowScripts ?? false;
-  // `execution` is already in agentManagerConfigSelector's pick, so this
-  // reads through the real (narrower) AgentRunOptions['config'] type -- no
-  // widening needed, unlike `install` above.
-  const denyPaths = options.config?.execution?.denyPaths;
+  // Same package-first fallback as widenedConfig above — a package can
+  // override execution.denyPaths too.
+  const denyPaths = (packageEffectiveConfig ?? options.config)?.execution?.denyPaths;
   const declaredCommands = new Map(
     Object.entries(commands).filter(
       (e): e is [string, QualityCommandSpec] => typeof e[1] === "string" || Array.isArray(e[1]),
@@ -311,6 +393,16 @@ export async function resolveCodingToolSupport(
     codingToolRoot: options.codingToolRoot,
   });
   const root = options.codingToolRoot;
+  // Independent of `root`: PR2 repoints `codingToolRoot` at the story's
+  // execution root, so declared commands must resolve their cwd from the
+  // story's own relative package dir + the (stable) project root rather
+  // than from whatever `root` means at dispatch time. Falls back to `root`
+  // when either input is unavailable (legacy callers, or a single-package
+  // repo where the two already coincide).
+  const commandCwd =
+    projectDir !== undefined && projectDir.trim() !== ""
+      ? packageWorkdir({ packageDir: packageDir ?? "", repoRoot: projectDir })
+      : root;
   const auditDir =
     root !== undefined && root.trim() !== ""
       ? toolAuditDir(
@@ -328,9 +420,16 @@ export async function resolveCodingToolSupport(
   // and never touches the filesystem itself. Skipped unless the op declared
   // Exec — no reason to read a manifest off disk on every dispatch when
   // nothing downstream will use the result.
+  //
+  // The manifest is read from the STORY'S PACKAGE dir (`commandCwd`), never
+  // from `root`: post-PR2 `root` is `storyExecRoot` (the repo root), so
+  // resolving there would scope cargo/uv/yarn workspace installs with the
+  // root manifest's name — or deny outright for a virtual Cargo workspace.
+  // `commandCwd` is absolute and worktree-aware, and falls back to `root`
+  // when no package/project dir was supplied.
   const packageName =
     root !== undefined && root.trim() !== "" && declared.includes(EXEC_TOOL_NAME)
-      ? await resolvePackageName(root)
+      ? await resolvePackageName(commandCwd ?? root)
       : undefined;
   // Provider tools bypass the DECLARATION half of advertisement (spec R4):
   // operation declarations live in code, so requiring a code edit to use a
@@ -399,7 +498,24 @@ export async function resolveCodingToolSupport(
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
-    ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
+    // No `repoRoot`: post single-frame redesign (PR2) it equals `root`, so
+    // buildCodingToolSupport's `args.repoRoot ?? args.root` fallback supplies it.
+    // Task 10: Exec's package target needs the story's ABSOLUTE package dir.
+    // `codingToolPackageDir` is RELATIVE to projectDir (and worktree-prefixed
+    // in production), while Exec compares it against an absolute repoRoot —
+    // passing it raw would produce garbage. `commandCwd` is the same value
+    // already computed above via packageWorkdir({ packageDir, repoRoot:
+    // projectDir }): absolute and worktree-aware. Omitted when either input is
+    // unavailable, so buildCodingToolSupport falls back to `root` (correct for
+    // a single-package repo, where the two coincide).
+    ...(packageDir !== undefined &&
+    packageDir.trim() !== "" &&
+    packageDir !== "." &&
+    projectDir !== undefined &&
+    projectDir.trim() !== ""
+      ? { packageWorkdir: commandCwd }
+      : {}),
+    commandCwd,
     grants: [...allow.grants, ...providerResult.grants],
     declared: declaredWithProviders,
     extraTools: providerResult.tools,

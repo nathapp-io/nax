@@ -688,3 +688,36 @@ describe("buildPriorIterationsBlock — retired findings", () => {
     expect(aOccurrences).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Single-frame PR 2 (Task 16) — the `(workdir-global)` label.
+//
+// A finding with no `file` is labelled `(workdir-global)`. It is a LABEL for an
+// unanchored finding, not a path frame: the string is identical for a package
+// story and a repo-root story and is never combined with a package dir. This
+// pins the acknowledgement branch (retired, no file), which the verdict-list
+// branch test above does not reach.
+// ---------------------------------------------------------------------------
+
+describe("buildPriorIterationsBlock — (workdir-global) label", () => {
+  test("a retired finding with no file renders (workdir-global) in the acknowledgement only", () => {
+    const retired = makeFinding({
+      source: "adversarial-review",
+      message: "unanchored advisory",
+      category: "input",
+      meta: { recurrence: { disposition: "retired", rounds: 4, wasBlocking: false } },
+    });
+    const iter = makeIteration({
+      iterationNum: 1,
+      outcome: "unchanged",
+      findingsAfter: [retired],
+    });
+
+    const output = buildPriorIterationsBlock([iter]);
+
+    expect(output).toContain("Acknowledgement — closed findings");
+    expect(output).toContain("- `(workdir-global)` [input]");
+    // Retired findings are not listed as still-flaggable.
+    expect(output).not.toContain("Findings flagged previously:");
+  });
+});

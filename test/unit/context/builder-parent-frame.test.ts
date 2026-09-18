@@ -1,25 +1,19 @@
 /**
- * Builder frame-partition tests (nax#2089).
+ * Builder repo-rooted path tests (single-frame PR 2).
  *
- * A repo-root parent output (e.g. `package.json`) must not be re-spelled into
- * the consuming package and injected as if it were the file the parent touched:
- * `path.resolve(<pkg>, "package.json")` names a real but WRONG file. And because
- * the reframe preceded the `slice(0, FILE_INJECTION_MAX_FILES)`, each such path
- * also evicted a correct in-package file from the five available slots.
+ * Before PR 2 the agent's file tools were contained at the package dir, so
+ * declared paths were re-spelled into the package frame before being emitted
+ * (nax#2067/#2089). The agent's tools are now rooted at the repo root, so
+ * declared paths pass through as stored (repo-rooted) and are resolved against
+ * the repo root. Package-frame partitioning is retired: a repo-rooted path is
+ * reachable by construction, and a package's same-named file can no longer be
+ * injected under a repo-rooted label.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  cleanupTempDir,
-  makeConfigSlice,
-  makeLogger,
-  makePRD,
-  makeSparseNaxConfig,
-  makeStory,
-  makeTempDir,
-} from "@test/helpers";
+import { cleanupTempDir, makeConfigSlice, makePRD, makeSparseNaxConfig, makeStory, makeTempDir } from "@test/helpers";
 import { _contextBuilderDeps, buildContext } from "@/context/builder";
 import type { ContextBudget, StoryContext } from "@/context/types";
 import type { PRD } from "@/prd";
@@ -43,8 +37,8 @@ async function writeFiles(root: string, files: Record<string, string>): Promise<
 }
 
 /**
- * `workdir` here is the ABSOLUTE package dir for resolve/exists; the story's own
- * `workdir` (repo-relative) plus `workdirSource` drives the frame conversion.
+ * `workdir` here is the ABSOLUTE package dir for disk resolution; the story's
+ * own `workdir` (repo-relative) is what the builder walks back to the repo root.
  */
 function makeStoryContext(prd: PRD, absoluteWorkdir: string): StoryContext {
   return {
@@ -60,8 +54,8 @@ function makeStoryContext(prd: PRD, absoluteWorkdir: string): StoryContext {
   };
 }
 
-describe("context builder parent-frame partitioning (nax#2089)", () => {
-  test("drops a repo-root parent output instead of injecting the package's same-named file", async () => {
+describe("context builder — repo-rooted parent outputs (single-frame PR 2)", () => {
+  test("injects parent outputs repo-rooted, resolving them from the repo root", async () => {
     const tempDir = makeTempDir("nax-builder-frame-");
     try {
       await writeFiles(tempDir, {
@@ -79,65 +73,60 @@ describe("context builder parent-frame partitioning (nax#2089)", () => {
         dependencies: ["US-001"],
         workdir: API_WORKDIR,
         workdirSource: "stated",
-      });
-      const prd = makePRD({ userStories: [parent, consumer] });
-
-      const built = await buildContext(makeStoryContext(prd, path.join(tempDir, API_WORKDIR)), BUDGET);
-      const fileElements = built.elements.filter((e) => e.type === "file");
-
-      // (1) #2081's in-package fix must stay green.
-      expect(fileElements.map((e) => e.filePath)).toContain("src/client.ts");
-      // (2) The repo-root manifest must NOT be re-spelled to the package's own
-      //     package.json — that path resolves to a real but WRONG file.
-      expect(fileElements.some((e) => e.filePath === "package.json")).toBe(false);
-    } finally {
-      cleanupTempDir(tempDir);
-    }
-  });
-
-  test("unreachable parent paths do not consume file-injection slots", async () => {
-    const tempDir = makeTempDir("nax-builder-frame-");
-    try {
-      await writeFiles(tempDir, {
-        "package.json": JSON.stringify({ name: "repo-root-manifest" }),
-        "packages/api/package.json": JSON.stringify({ name: "api-package-manifest" }),
-        "packages/api/src/a.ts": "export const a = true;",
-        "packages/api/src/b.ts": "export const b = true;",
-        "packages/api/src/c.ts": "export const c = true;",
-        "packages/api/src/client.ts": "export const client = true;",
-      });
-
-      const parent = makeStory({
-        id: "US-001",
-        outputFiles: ["package.json", "packages/web/src/x.ts", "packages/api/src/client.ts"],
-      });
-      const consumer = makeStory({
-        id: "US-002",
-        dependencies: ["US-001"],
-        workdir: API_WORKDIR,
-        workdirSource: "stated",
-        contextFiles: ["packages/api/src/a.ts", "packages/api/src/b.ts", "packages/api/src/c.ts"],
       });
       const prd = makePRD({ userStories: [parent, consumer] });
 
       const built = await buildContext(makeStoryContext(prd, path.join(tempDir, API_WORKDIR)), BUDGET);
       const filePaths = built.elements.filter((e) => e.type === "file").map((e) => e.filePath);
 
-      // Every injected file is in-package (package-relative under src/).
-      expect(filePaths.every((p) => p?.startsWith("src/") === true)).toBe(true);
-      // The in-package parent output survives slot eviction.
-      expect(filePaths).toContain("src/client.ts");
+      // Repo-rooted as stored: the root manifest and the parent's in-package output.
+      expect(filePaths).toContain("package.json");
+      expect(filePaths).toContain("packages/api/src/client.ts");
+      // Declared but not created yet → passed through but absent on disk, so not emitted.
+      expect(filePaths).not.toContain("packages/web/src/x.ts");
     } finally {
       cleanupTempDir(tempDir);
     }
   });
 
-  test("keeps a canonical story's create-intent expectedFile in the package frame", async () => {
+  test("never injects a package's same-named file under a repo-rooted path absent at the root", async () => {
     const tempDir = makeTempDir("nax-builder-frame-");
     try {
-      // `src/new.ts` is intentionally NOT on disk: it is this story's own
-      // to-be-created output, authored workdir-relative. The write seam only
-      // re-spells paths that resolved on disk, so it stays package-relative.
+      // The parent's declared output "config/app.json" has NOT landed at the
+      // repo root, and the consuming package happens to hold an UNRELATED file
+      // at the same relative spelling. Because paths pass through repo-rooted
+      // and resolve against the repo root, the package file is never reached —
+      // there is no frame guessing to mislabel it as the parent's output.
+      await writeFiles(tempDir, {
+        "packages/api/config/app.json": JSON.stringify({ unrelated: true }),
+        "packages/api/src/client.ts": "export const client = true;",
+      });
+
+      const parent = makeStory({ id: "US-001", outputFiles: ["config/app.json"] });
+      const consumer = makeStory({
+        id: "US-002",
+        dependencies: ["US-001"],
+        workdir: API_WORKDIR,
+        workdirSource: "stated",
+        contextFiles: ["packages/api/src/client.ts"],
+      });
+      const prd = makePRD({ userStories: [parent, consumer] });
+
+      const built = await buildContext(makeStoryContext(prd, path.join(tempDir, API_WORKDIR)), BUDGET);
+      const filePaths = built.elements.filter((e) => e.type === "file").map((e) => e.filePath);
+
+      expect(filePaths).not.toContain("config/app.json");
+      expect(filePaths).toContain("packages/api/src/client.ts");
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  });
+});
+
+describe("context builder — repo-rooted expectedFiles create-intent", () => {
+  test("surfaces a declared-but-absent expectedFile as create-intent", async () => {
+    const tempDir = makeTempDir("nax-builder-frame-");
+    try {
       await writeFiles(tempDir, {
         "packages/api/src/existing.ts": "export const existing = true;",
       });
@@ -185,90 +174,7 @@ describe("context builder parent-frame partitioning (nax#2089)", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// path-frame follow-up: H4, H5, M16 — the canonical drop over-reaches
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("context builder — BLOCKER 1: merged parent outputs are never reclassified by provenance-blind probing", () => {
-  test("a parent output absent at the repo root is NOT reclassified to an unrelated same-named package file", async () => {
-    const tempDir = makeTempDir("nax-builder-frame-blocker1-");
-    try {
-      // The parent's declared output "config/app.json" has NOT landed at the
-      // repo root (story skipped/failed/not yet run) -- nothing is written
-      // there. The consuming package happens to contain an UNRELATED file at
-      // the same relative spelling. Reclassifying by "exists at package,
-      // does not exist at repo root" alone re-spells this into
-      // "packages/api/config/app.json" and injects it labelled as the
-      // parent's output -- a real but WRONG file, exactly the #2089 failure
-      // mode reached from the other direction. Provenance (own declared vs.
-      // merged parent output) is the only safe discriminator: outputFiles is
-      // not guaranteed repo-rooted (Ruling 8/E), so this entry's frame is
-      // simply unknown and must not be guessed.
-      await writeFiles(tempDir, {
-        "packages/api/config/app.json": JSON.stringify({ unrelated: true }),
-        "packages/api/src/client.ts": "export const client = true;",
-      });
-
-      const parent = makeStory({
-        id: "US-001",
-        outputFiles: ["config/app.json"],
-      });
-      const consumer = makeStory({
-        id: "US-002",
-        dependencies: ["US-001"],
-        workdir: API_WORKDIR,
-        workdirSource: "stated",
-        contextFiles: ["src/client.ts"],
-      });
-      const prd = makePRD({ userStories: [parent, consumer] });
-
-      const built = await buildContext(makeStoryContext(prd, path.join(tempDir, API_WORKDIR)), BUDGET);
-      const filePaths = built.elements.filter((e) => e.type === "file").map((e) => e.filePath);
-
-      // The unrelated package file must NOT be injected under the parent's label.
-      expect(filePaths).not.toContain("config/app.json");
-      // The story's own declared file is unaffected.
-      expect(filePaths).toContain("src/client.ts");
-    } finally {
-      cleanupTempDir(tempDir);
-    }
-  });
-});
-
-describe("context builder — H4: reclassify a plan-time-absent contextFiles entry", () => {
-  test("a contextFiles entry that exists ONLY inside the package (not at the repo root) is injected, not dropped", async () => {
-    const tempDir = makeTempDir("nax-builder-frame-h4-");
-    try {
-      // `canonicalizeDeclaredPath` (src/prd/workdir-canonical.ts) leaves a
-      // declared path unchanged when it did not resolve on disk AT PLAN TIME.
-      // This story's own write-seam pass never re-spelled "src/gen.ts" because
-      // nothing existed at either frame back then — an EARLIER STORY IN THIS
-      // RUN has since created it under the package. At consumption time
-      // (now) it exists ONLY at packages/api/src/gen.ts, never at the repo
-      // root, so the reclassification is unambiguous.
-      await writeFiles(tempDir, {
-        "packages/api/src/gen.ts": "export const generated = true;",
-      });
-
-      const consumer = makeStory({
-        id: "US-002",
-        workdir: API_WORKDIR,
-        workdirSource: "stated",
-        contextFiles: ["src/gen.ts"],
-      });
-      const prd = makePRD({ userStories: [consumer] });
-
-      const built = await buildContext(makeStoryContext(prd, path.join(tempDir, API_WORKDIR)), BUDGET);
-      const filePaths = built.elements.filter((e) => e.type === "file").map((e) => e.filePath);
-
-      expect(filePaths).toContain("src/gen.ts");
-    } finally {
-      cleanupTempDir(tempDir);
-    }
-  });
-});
-
-describe("context builder — H5: auto-detected contextFiles are never canonically dropped", () => {
+describe("context builder — auto-detected contextFiles are repo-rooted (single-frame PR 2)", () => {
   let origAutoDetect: typeof _contextBuilderDeps.autoDetectContextFiles;
 
   beforeEach(() => {
@@ -279,26 +185,23 @@ describe("context builder — H5: auto-detected contextFiles are never canonical
     _contextBuilderDeps.autoDetectContextFiles = origAutoDetect;
   });
 
-  test("a canonical story (workdirSource stamped) under keyword fileInjection still surfaces auto-detected files", async () => {
-    const tempDir = makeTempDir("nax-builder-frame-h5-");
+  test("scans at the package dir but emits repo-rooted paths", async () => {
+    const tempDir = makeTempDir("nax-builder-auto-detect-");
     try {
       await writeFiles(tempDir, {
         "packages/api/src/handler.ts": "export const handler = true;",
       });
 
-      // autoDetectContextFiles runs `git grep` at the ABSOLUTE package dir
-      // (src/context/auto-detect.ts), so its output is PACKAGE-RELATIVE by
-      // construction — never repo-rooted, regardless of what the story's
-      // workdirSource says. Mocked here rather than exercised via real git
-      // grep: the point under test is the FRAME the builder treats this set
-      // as, not auto-detect's own keyword matching.
-      _contextBuilderDeps.autoDetectContextFiles = async () => ["src/handler.ts"];
+      // Auto-detect output is relative to the workdir it is given. The scan
+      // must stay PACKAGE-scoped (pre-PR discovery scope), and its
+      // package-relative output must be re-spelled into the repo frame before
+      // it is emitted/resolved.
+      const seenWorkdirs: string[] = [];
+      _contextBuilderDeps.autoDetectContextFiles = async (opts) => {
+        seenWorkdirs.push(opts.workdir);
+        return ["src/handler.ts"];
+      };
 
-      // Canonical story: workdirSource IS stamped. Before this fix, this set
-      // took `canonical: true` unconditionally on this basis, and
-      // partitionPackageFrame's repo-rooted assumption dropped every
-      // auto-detected entry as "outside the package" — the feature silently
-      // no-op'd for every canonical monorepo story under keyword injection.
       const consumer = makeStory({
         id: "US-002",
         workdir: API_WORKDIR,
@@ -322,65 +225,12 @@ describe("context builder — H5: auto-detected contextFiles are never canonical
       const built = await buildContext(storyContext, BUDGET);
       const filePaths = built.elements.filter((e) => e.type === "file").map((e) => e.filePath);
 
-      expect(filePaths).toContain("src/handler.ts");
-    } finally {
-      cleanupTempDir(tempDir);
-    }
-  });
-});
-
-describe("context builder — M16: the canonical drop is logged", () => {
-  let origLogger: typeof _contextBuilderDeps.getLogger;
-
-  beforeEach(() => {
-    origLogger = _contextBuilderDeps.getLogger;
-  });
-
-  afterEach(() => {
-    _contextBuilderDeps.getLogger = origLogger;
-  });
-
-  test("warns once with a count and the workdir/packageDir fields when entries are dropped", async () => {
-    const tempDir = makeTempDir("nax-builder-frame-m16-");
-    try {
-      // Nothing on disk at either frame for "package.json" or
-      // "packages/web/src/x.ts" — both stay genuinely unreachable from the
-      // "packages/api" consumer and must be dropped.
-      await writeFiles(tempDir, {
-        "packages/api/src/client.ts": "export const client = true;",
-      });
-
-      const logger = makeLogger();
-      _contextBuilderDeps.getLogger = () => logger;
-
-      const parent = makeStory({
-        id: "US-001",
-        outputFiles: ["package.json", "packages/web/src/x.ts", "packages/api/src/client.ts"],
-      });
-      const consumer = makeStory({
-        id: "US-002",
-        dependencies: ["US-001"],
-        workdir: API_WORKDIR,
-        workdirSource: "stated",
-      });
-      const prd = makePRD({ userStories: [parent, consumer] });
-
-      await buildContext(makeStoryContext(prd, path.join(tempDir, API_WORKDIR)), BUDGET);
-
-      const dropWarnings = logger.calls.filter(
-        (c) =>
-          c.level === "warn" &&
-          c.message === "Context files could not be resolved inside this story's package and were dropped",
-      );
-      expect(dropWarnings).toHaveLength(1);
-      const data = dropWarnings[0]?.data;
-      expect(data?.storyId).toBe("US-002");
-      expect(data?.count).toBe(2);
-      // M-3: vocabulary per .nax/rules/monorepo-awareness.md §"Path Variable
-      // Vocabulary" -- packageDir is ABSOLUTE, story.workdir (logged as
-      // `workdir`) is RELATIVE. These two assertions were previously swapped.
-      expect(data?.packageDir).toBe(path.join(tempDir, API_WORKDIR));
-      expect(data?.workdir).toBe(API_WORKDIR);
+      // Scan cwd is the ABSOLUTE package dir (discovery scope unchanged).
+      expect(seenWorkdirs).toEqual([path.join(tempDir, API_WORKDIR)]);
+      // Emitted path is re-spelled repo-rooted, and the package-relative
+      // spelling is not emitted.
+      expect(filePaths).toContain("packages/api/src/handler.ts");
+      expect(filePaths).not.toContain("src/handler.ts");
     } finally {
       cleanupTempDir(tempDir);
     }

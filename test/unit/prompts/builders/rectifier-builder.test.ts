@@ -670,3 +670,57 @@ describe("RectifierPromptBuilder.failingTestRectification", () => {
     expect(result).not.toContain("mock_structure");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Single-frame PR 2 (Task 16) — render-and-read for the four scope-constraint
+// sites. `storyPackageDir(story)` returns the story's REPO-ROOTED package dir
+// (or undefined at the repo root), so post-root-move these constraints are
+// already correct: a package story names `packages/app/`, a root story names no
+// package at all, and neither is re-spelled. Pinned here so a future reframe
+// cannot silently double-prefix or drop the repo-rooted frame.
+// ---------------------------------------------------------------------------
+
+describe("RectifierPromptBuilder — scope-constraint frame post-root-move", () => {
+  const packageStory = () => makeBaseStory({ workdir: "packages/app" });
+  const rootStory = () => makeBaseStory({ workdir: "." });
+
+  test("write-failing-test mode: package story renders a repo-rooted constraint, root story falls back to no package path", () => {
+    const checks = [makeCheckWithFindings("adversarial", "bug output")];
+
+    const pkg = RectifierPromptBuilder.testWriterRectification(checks, packageStory(), { mode: "write-failing-test" });
+    expect(pkg).toContain("Only create or modify test files within `packages/app/`.");
+    expect(pkg).not.toContain("packages/app/packages/app");
+
+    const root = RectifierPromptBuilder.testWriterRectification(checks, rootStory(), { mode: "write-failing-test" });
+    expect(root).toContain("Only create or modify test files. Do NOT touch source implementation files.");
+    expect(root).not.toContain("within `packages");
+  });
+
+  test("reviewRectification: constraint is repo-rooted for a package story and absent for a root story", () => {
+    const pkg = RectifierPromptBuilder.reviewRectification([makeCheckWithFindings("semantic", "out")], packageStory());
+    expect(pkg).toContain("Only modify files within `packages/app/`.");
+    expect(pkg).not.toContain("packages/app/packages/app");
+
+    const root = RectifierPromptBuilder.reviewRectification([makeCheckWithFindings("semantic", "out")], rootStory());
+    expect(root).not.toContain("Only modify files within");
+  });
+
+  test("dialogueAwareRectification: constraint is repo-rooted for a package story and absent for a root story", () => {
+    const opts = { findingReasoning: new Map<string, string>(), history: [] };
+
+    const pkg = RectifierPromptBuilder.dialogueAwareRectification(
+      [makeCheckWithFindings("semantic", "out")],
+      packageStory(),
+      opts,
+    );
+    expect(pkg).toContain("Only modify files within `packages/app/`.");
+    expect(pkg).not.toContain("packages/app/packages/app");
+
+    const root = RectifierPromptBuilder.dialogueAwareRectification(
+      [makeCheckWithFindings("semantic", "out")],
+      rootStory(),
+      opts,
+    );
+    expect(root).not.toContain("Only modify files within");
+  });
+});

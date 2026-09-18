@@ -1,14 +1,19 @@
 /**
- * The PRODUCER for `AgentRunOptions.codingToolRepoRoot`.
+ * The PRODUCER for `AgentRunOptions.codingToolRoot`.
  *
- * Exec's `target: "repoRoot"` resolves its cwd from this field. `call.ts` must
- * supply `storyExecRoot(ctx.packageView)`, not `ctx.packageView.repoRoot`:
- * under story worktree isolation the latter is the MAIN CHECKOUT, so a
- * repo-scoped command wrote the user's real working tree (nax#2093). The helper
- * test (test/unit/runtime/story-exec-root.test.ts) pins the resolution logic and
- * the boundary test pins normalizeExec, but neither exercises the wiring — so
- * this asserts on what actually reaches `runWithFallback`, the seam through
- * which production dispatch carries the field.
+ * Post single-frame redesign (PR2) this is the unified containment root AND
+ * Exec's `target: "repoRoot"` root, so `call-run-options.ts` must supply
+ * `storyExecRoot(ctx.packageView)`, not `ctx.packageView.repoRoot`: under story
+ * worktree isolation the latter is the MAIN CHECKOUT, so a repo-scoped command
+ * wrote the user's real working tree (nax#2093). The helper test
+ * (test/unit/runtime/story-exec-root.test.ts) pins the resolution logic and the
+ * boundary test pins normalizeExec, but neither exercises the wiring — so this
+ * asserts on what actually reaches `runWithFallback`, the seam through which
+ * production dispatch carries the field.
+ *
+ * Renamed from `call-coding-tool-repo-root-producer.test.ts` when PR4 deleted
+ * the redundant repo-root producer field; the worktree-escape guarantee now
+ * rides on the unified root itself.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
@@ -18,7 +23,7 @@ import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { callOp, type RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
-const testSel = pickSelector("coding-tool-repo-root-producer-test", "routing");
+const testSel = pickSelector("coding-tool-root-producer-test", "routing");
 const createdRuntimes: NaxRuntime[] = [];
 
 // The main checkout the runtime was created with. The story's worktree lives
@@ -35,7 +40,7 @@ afterEach(async () => {
 function makeOp(): RunOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
   return {
     kind: "run",
-    name: "coding-tool-repo-root-producer",
+    name: "coding-tool-root-producer",
     stage: "run",
     config: testSel,
     session: { role: "implementer", lifetime: "fresh" },
@@ -47,8 +52,8 @@ function makeOp(): RunOperation<string, string, Pick<typeof DEFAULT_CONFIG, "rou
   };
 }
 
-describe("callOp produces AgentRunOptions.codingToolRepoRoot", () => {
-  test("points Exec's repoRoot at the story worktree, not the main checkout", async () => {
+describe("callOp produces AgentRunOptions.codingToolRoot", () => {
+  test("points the containment root at the story worktree, not the main checkout", async () => {
     const seen: AgentRunOptions[] = [];
     const runtime = makeMockRuntime({
       workdir: mainCheckout,
@@ -79,12 +84,11 @@ describe("callOp produces AgentRunOptions.codingToolRepoRoot", () => {
     await callOp({ runtime, packageView, packageDir: worktreePackageDir, agentName: "claude" }, makeOp(), "input");
 
     expect(seen.length).toBe(1);
-    // The field Exec reads for target:"repoRoot" must be the story's execution
-    // root (the worktree root), NOT the main checkout the runtime was created in.
-    expect(seen[0]?.codingToolRepoRoot).toBe(join(mainCheckout, ".nax-wt", storyId));
-    expect(seen[0]?.codingToolRepoRoot).not.toBe(mainCheckout);
-    // Pin the relationship between the two seeded fields: the containment root
-    // is the package dir INSIDE that same worktree.
-    expect(seen[0]?.codingToolRoot).toBe(worktreePackageDir);
+    // The unified root Exec reads for target:"repoRoot", and the containment
+    // root for every path-bearing tool, must be the story's execution root (the
+    // worktree root), NOT the main checkout the runtime was created in. Pre-PR2
+    // this was `worktreePackageDir`.
+    expect(seen[0]?.codingToolRoot).toBe(join(mainCheckout, ".nax-wt", storyId));
+    expect(seen[0]?.codingToolRoot).not.toBe(mainCheckout);
   });
 });

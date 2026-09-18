@@ -2,11 +2,6 @@ export { _bashToolDeps, BASH_TIMEOUT_MS, createBashTool, DEFAULT_BASH_SHELL } fr
 export { deleteTool } from "./delete";
 export { editTool } from "./edit";
 export {
-  isKnownManifestOrLockfileName,
-  recordExecTouchedPaths,
-  snapshotExecTouchedPaths,
-} from "./exec-touched-paths";
-export {
   _gitToolDeps,
   buildGitArgv,
   DEFAULT_LOG_FORMAT,

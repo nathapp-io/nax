@@ -71,7 +71,7 @@ For each story, provide:
 5. tags: Array of routing tags (e.g., ["security", "api"])
 6. dependencies: Array of story IDs this depends on (e.g., ["US-001"])
 7. complexity: "simple" | "medium" | "complex" | "expert"
-8. contextFiles: Array of file paths to inject into agent prompt before execution
+8. contextFiles: Array of repo-rooted relative file paths to inject into agent prompt before execution
 9. reasoning: Why this complexity level
 10. estimatedLOC: Estimated lines of code to change
 11. risks: Array of implementation risks
