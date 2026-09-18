@@ -48,6 +48,15 @@ describe("resolvePathOwners", () => {
     const exists = probeOf("packages/application/src/c.ts");
     expect(resolvePathOwners("packages/application/src/c.ts", REPO, ["packages/app"], exists)).toEqual([]);
   });
+
+  test("a repo-rooted input path is correctly attributed even when another package's name is a prefix", () => {
+    // "packages/app" must not falsely claim "packages/application/x.ts" when
+    // both packages are declared workspace packages.
+    const exists = probeOf("packages/application/src/c.ts");
+    expect(
+      resolvePathOwners("packages/application/src/c.ts", REPO, ["packages/app", "packages/application"], exists),
+    ).toEqual(["packages/application"]);
+  });
 });
 
 describe("deriveWorkdir", () => {
