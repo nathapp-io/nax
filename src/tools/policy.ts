@@ -14,7 +14,7 @@
  * exception to the boundary is needed.
  */
 
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
 import { isNaxConfigFile, naxOwnedWriteRefusal } from "./nax-owned-writes";
@@ -414,6 +414,13 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * grant declares no path globs, leaving the root as the only bound --
    * unchanged behaviour, now an authoring choice rather than something the
    * grant syntax could not express.
+   *
+   * `confineTo` (tool-declared, see `ToolScope`) shifts the root passed to
+   * `resolveWithin` from `<root>` to `<root>/<confineTo>`: containment stays
+   * the one seam, and only its ROOT changes. `relativeTo` keeps rooting at
+   * `resolvedRoot` so grant globs, deny rules and `naxOwnedWriteRefusal`
+   * continue to see the canonical repo-root-relative spelling -- authors
+   * write `.nax/scratchpad/**`, never `**`, regardless of `confineTo`.
    */
   function pathsBranch(
     tool: string,
@@ -423,6 +430,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     state: RuleState,
   ): PolicyVerdict {
     const globs = pathMatchers(grant.matchers, scope);
+    const effectiveRoot = scope.confineTo === undefined ? resolvedRoot : realOrRaw(join(resolvedRoot, scope.confineTo));
     const relativeTo = (resolved: string) => relative(resolvedRoot, resolved).split(sep).join("/");
     const restrictPaths = !grant.unconditional && globs.length > 0;
     const resolvedPaths: string[] = [];
@@ -432,9 +440,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       if (value === undefined) continue;
       if (typeof value !== "string") return deny(`"${field}" must be a string path`);
 
-      const resolved = resolveWithin(resolvedRoot, value);
+      const resolved = resolveWithin(effectiveRoot, value);
       if (resolved === null) {
-        return deny(`path "${value}" ${outOfRootReason(resolvedRoot, value)}`, true);
+        return deny(`path "${value}" ${outOfRootReason(effectiveRoot, value)}`, true);
       }
 
       const rel = relativeTo(resolved);
@@ -451,16 +459,16 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       if (value === undefined) continue;
       const elements =
         typeof value === "string"
-          ? pathListElements(value, resolvedRoot)
+          ? pathListElements(value, effectiveRoot)
           : Array.isArray(value) && value.every((element) => typeof element === "string")
             ? value
             : null;
       if (elements === null) return deny(`"${field}" must be a string path or an array of string paths`);
 
       for (const element of elements) {
-        const resolved = resolveWithin(resolvedRoot, element);
+        const resolved = resolveWithin(effectiveRoot, element);
         if (resolved === null) {
-          return deny(`path "${element}" ${outOfRootReason(resolvedRoot, element)}`, true);
+          return deny(`path "${element}" ${outOfRootReason(effectiveRoot, element)}`, true);
         }
         const rel = relativeTo(resolved);
         const ruleDenial = applyPathRules(tool, rel, state);
@@ -479,9 +487,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
       for (const value of values) {
         if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
-        const resolved = resolveWithin(resolvedRoot, value);
+        const resolved = resolveWithin(effectiveRoot, value);
         if (resolved === null) {
-          return deny(`"${field}" entry "${value}" ${outOfRootReason(resolvedRoot, value)}`, true);
+          return deny(`"${field}" entry "${value}" ${outOfRootReason(effectiveRoot, value)}`, true);
         }
         const rel = relativeTo(resolved);
         const ruleDenial = applyPathRules(tool, rel, state);
@@ -505,9 +513,9 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
         const candidatePath = value.slice(colonAt + 1);
         if (candidatePath === "") continue; // e.g. "HEAD:" — no path to check
 
-        const resolved = resolveWithin(resolvedRoot, candidatePath);
+        const resolved = resolveWithin(effectiveRoot, candidatePath);
         if (resolved === null) {
-          return deny(`"${field}" entry "${value}" ${outOfRootReason(resolvedRoot, candidatePath)}`, true);
+          return deny(`"${field}" entry "${value}" ${outOfRootReason(effectiveRoot, candidatePath)}`, true);
         }
         const rel = relativeTo(resolved);
         const ruleDenial = applyPathRules(tool, rel, state);
