@@ -3,7 +3,7 @@
   "feature": "native-agent-scratchpad",
   "branchName": "feat/native-agent-scratchpad",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-18T19:08:12.847Z",
+  "updatedAt": "2026-09-18T19:33:26.659Z",
   "userStories": [
     {
       "id": "US-001",
@@ -214,8 +214,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -265,7 +265,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A new prompt section is composed into several existing builders while preserving the negative immutability guard."
+        "reasoning": "A new prompt section is composed into several existing builders while preserving the negative immutability guard.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/prompts/sections/nax-artifacts.ts",
@@ -285,7 +288,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "84a4bd4d8ff8ba68779af22e084b969a2261a4eb"
     }
   ],
   "analysis": "Existing code is the target architecture. Tool names and ToolScope are defined in src/tools/types.ts:25-126; ToolScope currently has no confineTo. src/tools/policy.ts:85-92 is the one containment seam: resolveWithin() realpath-checks containment and excludes .git/config paths. compileToolPolicy() resolves the repository root at src/tools/policy.ts:136, so confineTo must change only the root passed to resolveWithin for pathFields, leaving later relative-path, grant, deny/ask, owned-write, and audit processing repository-root-relative. src/tools/read.ts:1-6 and src/tools/write.ts:8-47 establish the required pattern: tools consume ctx.resolvedPaths rather than resolving inputs; Write creates parents, enforces maxFileBytes, and returns ToolResult errors. Symlink escape tests must exercise the policy/runtime seam. This is an access-control boundary, so US-001 through US-003 require strict three-session TDD under the security override.\n\nRegistration is centralized in src/tools/runtime.ts:64-82 and is idempotent per getCodingTool(), names are reserved in src/tools/registry.ts:88-139, and src/tools/index.ts exports the public surface. ToolResult already supports resultBytesPreTruncation (src/tools/registry.ts:16-42). Implement scratchpad.ts using the Write/Read patterns, Bun file APIs where applicable and node:fs/promises for directory operations. New files are src/tools/scratchpad.ts, test/unit/tools/scratchpad.test.ts, src/prompts/sections/scratchpad.ts, and test/unit/prompts/sections/scratchpad.test.ts.\n\nAvailability is controlled both by DEFAULT_CODING_TOOLS (src/config/permissions.ts:105-117, consumed by safe and unrestricted at lines 229-251) and by declaredWithProviders in src/agents/coding-tool-support.ts. Direct runtime calls currently look up any registered tool and evaluate policy (src/tools/runtime.ts:218-244); therefore US-003 must make operation declaration an effective call ceiling for ordinary tools too, otherwise its required reviewer integration criterion cannot refuse direct Write under unrestricted. The three scratchpad names must be added to the declaration union before that ceiling is evaluated; scoped remains an explicit human-grant profile.\n\nsetupRun begins at src/execution/lifecycle/run-setup.ts:183 and has injectable dependencies at lines 35-40. Add an injectable scratchpad removal operation, wipe under workdir at setup without treating absence/failure as fatal, and warn using stage setup. NAX_GITIGNORE_ENTRIES is the shared ignore SSOT at src/utils/gitignore.ts:51-91; append exactly **/.nax/scratchpad/. src/session/scratch-purge.ts:10-37 is only a dependency-injection/removal precedent, not a subsystem to migrate.\n\nPrompt work changes src/prompts/sections/nax-artifacts.ts:18-35 and its TDD composition at src/prompts/builders/tdd-builder.ts:268-273. Semantic and adversarial prompts construct their own text (src/prompts/builders/review-builder.ts:140-178; src/prompts/builders/adversarial-review-builder.ts:361-432); rectification already composes artifacts in src/prompts/builders/rectifier-builder-helpers.ts:13,145. Add a section and compose it at all four surfaces. The change is additive with no migration: undefined confineTo preserves all existing scopes, scratchpad data is intentionally wiped between runs, and the session scratch.jsonl/query_scratch subsystem is unchanged.",
