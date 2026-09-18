@@ -4,7 +4,9 @@
  * Caches detection results by workdir + manifest mtimes to avoid
  * re-running detection on every pipeline invocation.
  *
- * Location: .nax/cache/test-patterns.json (gitignored)
+ * Location: .nax/cache/test-patterns.json — gitignored by the `.nax/cache/`
+ *   entry (glob-prefixed for monorepo packages) in NAX_GITIGNORE_ENTRIES,
+ *   src/utils/gitignore.ts. That entry is what makes this line true.
  * Invalidation: any manifest mtime change triggers a cache miss.
  * Concurrency: last-write-wins; no file lock (derived data, cheap to rebuild).
  */

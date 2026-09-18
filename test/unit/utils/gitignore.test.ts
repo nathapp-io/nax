@@ -57,30 +57,42 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
     expect(new Set(NAX_GITIGNORE_ENTRIES).size).toBe(NAX_GITIGNORE_ENTRIES.length);
   });
 
-  test("git ignores a feature's run artifacts but not its committed spec and prd", async () => {
-    // Asked of git itself rather than of the list, because the failure this
-    // pins was invisible in the list: a blanket `<features>/*/` entry reads as
+  test("git ignores nax's run artifacts and caches, but not a feature's committed spec and prd", async () => {
+    // Asked of git itself rather than of the list, because the failures this
+    // pins were invisible in the list: a blanket `<features>/*/` entry reads as
     // one more artifact rule, and only git reveals that it also swallows
     // spec.md and prd.json — silently, since git never reports ignored files.
+    // The same blindness hid a missing entry entirely (nax#2137): the
+    // detection cache documented itself as gitignored while nothing covered it.
     await withTempDir(async (dir) => {
       Bun.spawnSync(["git", "init", "-q", dir], { cwd: dir });
       await Bun.write(join(dir, ".gitignore"), `${NAX_GITIGNORE_ENTRIES.join("\n")}\n`);
 
       const isIgnored = (path: string) =>
         Bun.spawnSync(["git", "check-ignore", "-q", path], { cwd: dir }).exitCode === 0;
+      const expectIgnored = (path: string, want: boolean) =>
+        expect(`${path}: ${isIgnored(path)}`).toBe(`${path}: ${want}`);
 
       const feature = ".nax/features/my-feature";
       for (const committed of ["spec.md", "prd.json", "prd-fidelity-report.md", "acceptance-meta.json"]) {
-        expect(`${committed}: ${isIgnored(`${feature}/${committed}`)}`).toBe(`${committed}: false`);
+        expectIgnored(`${feature}/${committed}`, false);
       }
       for (const artifact of ["status.json", "progress.txt", "plan/x.jsonl", "fragments/US-001.md", "prd.json.bak"]) {
-        expect(`${artifact}: ${isIgnored(`${feature}/${artifact}`)}`).toBe(`${artifact}: true`);
+        expectIgnored(`${feature}/${artifact}`, true);
       }
 
-      // Same rules must hold for a monorepo package's own .nax/, which is
-      // where nax writes when a story carries a workdir.
-      expect(isIgnored(`packages/api/${feature}/spec.md`)).toBe(false);
-      expect(isIgnored(`packages/api/${feature}/status.json`)).toBe(true);
+      // Derived caches. nax#2137: `.nax/cache/test-patterns.json` is written per
+      // workdir by src/test-runners/detect/cache.ts. Under storyIsolation
+      // "worktree" an unignored copy lands untracked in the main checkout and
+      // committed inside the story worktree, so the merge back aborts on an
+      // untracked overwrite and strands nax/<storyId> (nax#2136).
+      expectIgnored(".nax/cache/test-patterns.json", true);
+
+      // Same rules must hold for a monorepo package's own .nax/, which is where
+      // nax writes when a story carries a workdir — and is the case that breaks.
+      expectIgnored(`packages/api/${feature}/spec.md`, false);
+      expectIgnored(`packages/api/${feature}/status.json`, true);
+      expectIgnored("packages/lib/.nax/cache/test-patterns.json", true);
     });
   });
 });
