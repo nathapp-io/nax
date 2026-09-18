@@ -289,7 +289,15 @@ describe("canonicalizePrdWorkdirs — scoped canonicalization (nax#2080)", () =>
 
   test("is a fixed point over an already-canonical story", () => {
     const prd = makePRD({
-      userStories: [makeStory({ id: "US-001", workdir: "packages/app", contextFiles: ["src/a.ts"] })],
+      userStories: [
+        makeStory({
+          id: "US-001",
+          workdir: "packages/app",
+          contextFiles: ["src/a.ts"],
+          expectedFiles: ["src/new.ts"],
+          modifiedFiles: [{ path: "src/b.ts", reason: "r" }],
+        }),
+      ],
     });
     const exists = probeOf("packages/app/src/a.ts");
 
@@ -297,6 +305,9 @@ describe("canonicalizePrdWorkdirs — scoped canonicalization (nax#2080)", () =>
     const twice = canonicalizePrdWorkdirs(once, REPO, PACKAGES, exists).prd;
 
     expect(twice.userStories[0]).toEqual(once.userStories[0]);
+    // Pin the new reframe's idempotency explicitly: a re-spell that is not a
+    // fixed point would double-prefix modifiedFiles on the second pass.
+    expect(twice.userStories[0]?.modifiedFiles).toEqual([{ path: "packages/app/src/b.ts", reason: "r" }]);
   });
 });
 
@@ -341,6 +352,39 @@ describe("findNonCanonicalDeclaredPaths — plan-write-time validation (single-f
     });
     const violations = findNonCanonicalDeclaredPaths(prdOf([story]));
     expect(violations).toEqual([{ storyId: story.id, field: "contextFiles", path: "src/a.ts" }]);
+  });
+
+  test("flags an expectedFiles entry that is not repo-rooted", () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      expectedFiles: ["src/new.ts"],
+    });
+    expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([
+      { storyId: story.id, field: "expectedFiles", path: "src/new.ts" },
+    ]);
+  });
+
+  test("flags a modifiedFiles entry that is not repo-rooted", () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      modifiedFiles: [{ path: "src/b.ts", reason: "r" }],
+    });
+    expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([
+      { storyId: story.id, field: "modifiedFiles", path: "src/b.ts" },
+    ]);
+  });
+
+  test("flags a non-string contextFiles entry whose path is not repo-rooted", () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      contextFiles: [{ path: "src/a.ts", factId: "F-1" }],
+    });
+    expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([
+      { storyId: story.id, field: "contextFiles", path: "src/a.ts" },
+    ]);
   });
 
   test("is silent for a properly repo-rooted story", () => {

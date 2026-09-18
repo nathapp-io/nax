@@ -109,12 +109,14 @@ function normalizeContextPath(path: string): string {
  * REPO-ROOTED as of this PRD's generation — `extractSpecContextFiles` reads
  * whatever the spec's `### Context Files` section says verbatim (spec-writing
  * now authors those repo-relative, matching plan-builder.ts's
- * CONTEXT_VS_EXPECTED_FILES_RULE), and `getContextFiles(story)` is
- * unconditionally repo-rooted post-canonicalizePrdWorkdirs. Before this
- * redesign a monorepo spec's workdir-relative declarations never matched the
- * (sometimes-repo-rooted, sometimes-not) PRD entries, so this comparison
- * false-positived on nearly every monorepo story (#1473). normalizeContextPath
- * intentionally does NO frame translation -- it does not need to anymore.
+ * CONTEXT_VS_EXPECTED_FILES_RULE), and the planner now emits `contextFiles`
+ * repo-rooted directly. This runs inside `applyPlanFidelity`, BEFORE
+ * `canonicalizePrdWorkdirs`, so the agreement is a property of the planner's
+ * output, not of canonicalization. Before this redesign a monorepo spec's
+ * workdir-relative declarations never matched the (sometimes-repo-rooted,
+ * sometimes-not) PRD entries, so this comparison false-positived on nearly
+ * every monorepo story (#1473). normalizeContextPath intentionally does NO
+ * frame translation -- it does not need to anymore.
  *
  * `declaredCount` / `presentCount` ride along with every drop warning so a
  * reader can tell "evicted at the 5-file cap" (`presentCount === 5`) from

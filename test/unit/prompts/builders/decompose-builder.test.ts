@@ -11,6 +11,6 @@ import { buildDecomposePromptSync } from "@/prompts";
 describe("decompose-builder — repo-rooted path frame (single-frame redesign)", () => {
   test("spec-mode instructions state contextFiles is repo-rooted", () => {
     const prompt = buildDecomposePromptSync({ specContent: "spec", codebaseContext: "ctx" });
-    expect(prompt).toContain("repo-rooted");
+    expect(prompt).toContain("contextFiles: Array of repo-rooted relative file paths");
   });
 });

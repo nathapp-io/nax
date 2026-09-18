@@ -31,10 +31,11 @@ function outOfScopeLines(story: UserStory): string[] {
  * package-contained agent could not open a repo-rooted path, and that premise
  * no longer holds.
  *
- * `canonical` is deliberately NOT set (spec Ruling 8 / plan Ruling F):
- * `workdirSource` says nothing about this list's frame, and this is an
- * authorisation list — dropping or marking an entry would revoke permission the
- * spec granted. Passing entries through as stored never drops or marks one.
+ * `canonical` is deliberately NOT set (spec Ruling 8 / plan Ruling F): the frame
+ * is repo-rooted for any story canonicalized by the current write seam, and this
+ * is an authorisation list — dropping or marking an entry would revoke permission
+ * the spec granted. `modifiedFiles` is passed through as stored because it is now
+ * already repo-rooted, so there is no frame to correct and no entry to mark.
  *
  * `rootWorkdir` is kept as an unused parameter so this signature and every call
  * site survive unchanged; PR 4 deletes both. Its old batch-anchor rationale —
