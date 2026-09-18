@@ -263,7 +263,6 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     ctx.contextBundle = bundle;
     if (ctx.prd.feature) {
       await writeContextManifest(ctx.projectDir, ctx.prd.feature, ctx.story.id, "context", bundle.manifest);
-      ctx.providerWeightsCache?.invalidate(ctx.prd.feature);
     }
 
     // Phase 2: persist digest for next pipeline pass or crash resume.

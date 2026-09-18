@@ -103,6 +103,9 @@ export const completionStage: PipelineStage = {
           agentOutput: ctx.agentResult?.output ?? "",
           diffText,
           findingMessages: (ctx.reviewFindings ?? []).map((f) => f.message),
+          // PERF-1: this is the only writer of manifest.chunkEffectiveness, so
+          // the provider-weights cache is invalidated here — not at assembly.
+          providerWeightsCache: ctx.providerWeightsCache,
         });
       } catch (err) {
         logger.debug("completion", "Effectiveness annotation failed — non-fatal", {

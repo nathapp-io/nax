@@ -178,8 +178,10 @@ export interface PipelineContext extends DispatchContext {
    * providerWeightsCache.loadOrGet() instead of loadFeatureManifests() +
    * deriveProviderWeights() directly, so a feature's manifests are read and
    * parsed once per run instead of once per story per stage. Invalidated by
-   * providerWeightsCache.invalidate() whenever a new manifest is written for
-   * the feature, so the next assembly picks up the fresh signal.
+   * annotateManifestEffectiveness after it persists a manifest's
+   * chunkEffectiveness (the only field deriveProviderWeights reads), so the
+   * next assembly picks up the fresh signal — assembly-time manifest writes
+   * carry no chunkEffectiveness and must not discard the entry (PERF-1).
    */
   providerWeightsCache?: import("../context/engine").ProviderWeightsCache;
   /**

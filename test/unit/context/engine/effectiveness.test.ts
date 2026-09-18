@@ -12,10 +12,12 @@ import { makeLogger, withDepsRestore } from "@test/helpers";
 import * as EngineBarrel from "@/context/engine";
 import {
   _effectivenessDeps,
+  _providerWeightsCacheDeps,
   annotateManifestEffectiveness,
   buildEvidenceTerms,
   // Barrel import — this is the production public API (used in AC1 tests)
   classifyWithTerms,
+  ProviderWeightsCache,
 } from "@/context/engine";
 // AC2: must import directly from effectiveness.ts to verify direct-vs-barrel equivalence
 import { classifyWithTerms as classifyWithTermsDirect } from "@/context/engine/effectiveness";
@@ -264,6 +266,85 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
     // added-lines, and one finding tokenization — each shared evidence term
     // set is still tokenized exactly once across all included chunks.
     expect(tokenizeCalls).toBe(7);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERF-1 — invalidation must land where the effectiveness data is written
+//
+// deriveProviderWeights reads only manifest.chunkEffectiveness, and that field
+// is written solely here, post-story. Invalidation used to run in the context
+// stage / stage assembler immediately after writeContextManifest — on the same
+// key loadOrGet had just populated, and on a manifest that carries no
+// chunkEffectiveness — so it silently discarded the cache on every assembly
+// and the learned weights never survived to the next score. It now runs only
+// after this function actually persists effectiveness.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("annotateManifestEffectiveness — PERF-1: invalidates provider weights where effectiveness lands", () => {
+  withDepsRestore(_manifestStoreDeps);
+  withDepsRestore(_effectivenessDeps);
+  withDepsRestore(_providerWeightsCacheDeps);
+
+  function stubAnnotationWrite(readFile: () => Promise<string>): void {
+    _effectivenessDeps.getLogger = () => makeLogger();
+    _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
+    _manifestStoreDeps.fileExists = async () => true;
+    _manifestStoreDeps.readFile = readFile;
+    _manifestStoreDeps.writeJson = async () => {};
+  }
+
+  test("invalidates the feature's cache entry so the next loadOrGet re-derives", async () => {
+    const cache = new ProviderWeightsCache();
+    let loads = 0;
+    _providerWeightsCacheDeps.loadFeatureManifests = (async () => {
+      loads++;
+      return [];
+    }) as typeof _providerWeightsCacheDeps.loadFeatureManifests;
+    _providerWeightsCacheDeps.deriveProviderWeights =
+      (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
+
+    await cache.loadOrGet("feat", "/repo");
+    expect(loads).toBe(1);
+
+    stubAnnotationWrite(async () => VALID_MANIFEST);
+
+    await annotateManifestEffectiveness("/repo", "feat", "US-001", {
+      agentOutput: "jwt authentication session management tokens",
+      diffText: "+jwt auth",
+      findingMessages: [],
+      providerWeightsCache: cache,
+    });
+
+    await cache.loadOrGet("feat", "/repo");
+    expect(loads).toBe(2);
+  });
+
+  test("leaves the cache intact when no effectiveness was written", async () => {
+    const cache = new ProviderWeightsCache();
+    let loads = 0;
+    _providerWeightsCacheDeps.loadFeatureManifests = (async () => {
+      loads++;
+      return [];
+    }) as typeof _providerWeightsCacheDeps.loadFeatureManifests;
+    _providerWeightsCacheDeps.deriveProviderWeights =
+      (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
+
+    await cache.loadOrGet("feat", "/repo");
+
+    stubAnnotationWrite(async () =>
+      JSON.stringify({ ...JSON.parse(VALID_MANIFEST), includedChunks: [], chunkSummaries: {} }),
+    );
+
+    await annotateManifestEffectiveness("/repo", "feat", "US-001", {
+      agentOutput: "",
+      diffText: "",
+      findingMessages: [],
+      providerWeightsCache: cache,
+    });
+
+    await cache.loadOrGet("feat", "/repo");
+    expect(loads).toBe(1);
   });
 });
 

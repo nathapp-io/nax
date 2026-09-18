@@ -14,6 +14,7 @@
 import { getLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import { _manifestStoreDeps, loadContextManifests } from "./manifest-store";
+import type { ProviderWeightsCache } from "./provider-weights-cache";
 import { globToRegex, normalizePath } from "./providers/static-rules";
 import { isGlobScopePath } from "./scope-path-match";
 import type { ChunkEffectiveness } from "./types";
@@ -437,14 +438,25 @@ export async function annotateManifestEffectiveness(
     agentOutput,
     diffText,
     findingMessages,
+    providerWeightsCache,
   }: {
     agentOutput: string;
     diffText: string;
     findingMessages: string[];
+    /**
+     * Per-run effectiveness cache. This function is the only writer of
+     * `manifest.chunkEffectiveness`, which `deriveProviderWeights` reads — so
+     * this is where the cache must be invalidated. Invalidation used to run in
+     * the context stage / stage assembler right after writeContextManifest, on
+     * a manifest that carries no chunkEffectiveness: it discarded the weights
+     * loadOrGet had just computed and bought no fresher signal (PERF-1).
+     */
+    providerWeightsCache?: ProviderWeightsCache;
   },
 ): Promise<void> {
   const stored = await loadContextManifests(projectDir, storyId, featureId);
   let evidenceTerms: EffectivenessEvidenceTerms | undefined;
+  let wroteEffectiveness = false;
   // US-003: split the diff once per story, not once per scoped chunk. The
   // per-chunk scope only selects which pre-split sections contribute evidence.
   const splitSections = splitDiffByFile(diffText);
@@ -473,6 +485,7 @@ export async function annotateManifestEffectiveness(
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       parsed.chunkEffectiveness = effectiveness;
       await _manifestStoreDeps.writeJson(item.path, parsed);
+      wroteEffectiveness = true;
     } catch (err) {
       _effectivenessDeps.getLogger().warn("context-v2", "Failed to annotate chunk effectiveness", {
         path: item.path,
@@ -480,4 +493,8 @@ export async function annotateManifestEffectiveness(
       });
     }
   }
+
+  // Only a run that persisted new effectiveness changes the weights input, so
+  // only then is dropping the cached entry useful.
+  if (wroteEffectiveness) providerWeightsCache?.invalidate(featureId);
 }
