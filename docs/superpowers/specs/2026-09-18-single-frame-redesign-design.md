@@ -310,7 +310,7 @@ verification of §6 before the final merge to main.
 | Custom-profile grant globs silently re-scope | Non-default profiles only | Changelog migration note; default `unrestricted` unaffected |
 | Prompt regressions (agent misplaces files) | Every session type | agent-scope rewrite first-class in PR 2; render-and-read rule for every touched prompt branch |
 | `--relative` inversions missed at one site | Empty or repo-noise diffs in reviews | PR 2 checklist enumerates all sites; live-verify a monorepo review session |
-| Legacy / hand-edited PRDs | Old artifacts still workdir-framed | Tolerant read branch keyed off `workdirSource` kept indefinitely (ruled; only write-side machinery is deleted) |
+| Legacy / hand-edited PRDs | Old artifacts still workdir-framed | Tolerant read branch keyed off `workdirSource` kept indefinitely (ruled; only write-side machinery is deleted). **Covers the PRD read path only — NOT the context providers:** `contextFilesCanonical` is consulted in `git-history.ts` but not `code-neighbor.ts`, which asserts the repo frame unconditionally, so a legacy story renders neighbour paths that do not resolve. Verified live (§6, 2026-09-18) on both protocol arms. Advisory context only; legacy PRDs do not self-heal (`canonicalizePrdWorkdirs` runs at plan-write time only). Folded into nax#2134. |
 | Root and prompt reframes decoupled mid-arc | Frame-inverted `modifiedFiles` authorization / false-unreachable context if the reframes lag the root move | Both flips are in PR 2 by ruling; PR 4 deletes helpers only |
 | Per-package config resolution dropping the profile chain (#2126 class) | PR 1 makes it more load-bearing | R4: `loadConfigForPackage` only; #2127's static gate covers new sites |
 | MCP cwd / Exec / verifier / git-pathspec follow-ons | Each silent | Named per-site in PR 2's checklist; each gets its own test |
@@ -343,3 +343,34 @@ unparseable PRD) — separate defect in the same write path; fix independently.
   artifacts, never exit codes.
 - The end-to-end metric the 09-16 arc deferred ("zero failed Read on monorepo
   stories") becomes this design's acceptance metric.
+
+### Live verification result (2026-09-18) — PASS
+
+Six `nax run`s on the `monorepo-tiny` fixture, local build `naxCommit bb902fd41`
+(`v0.82.0-canary.16`), model `minimax/MiniMax-M3`, $2.03 total. Three arms
+(native/shared, acp/shared, native/worktree) x two PRD variants (legacy, repo-framed).
+All six passed 2/2. Judged by artifacts (`~/.nax/<project>/{prompt,tool}-audit`), not exit
+codes.
+
+| assertion | result |
+|:---|:---|
+| zero failed Reads from frame misses | **PASS** on every repo-framed arm (0 failed Reads). The 2 failures on the native legacy arm were an acceptance-scaffold probe and a guessed `bun.lock` — neither a frame miss. |
+| review diffs scoped to the story package | **PASS** — US-001 touched only `packages/lib/*`, US-002 only `packages/app/*`; zero cross-package leakage. |
+| declared commands run the package's own toolchain | **PASS** |
+| worktree-isolated story writes only inside its worktree | **PASS** — agent root `.nax-wt/<storyId>/packages/<pkg>`; merge back clean. |
+
+Two caveats on the metric itself, both surfaced by this run:
+
+1. **The metric cannot see a dangling advisory path.** A neighbour path that does not
+   resolve produces no failed Read, because the agent never attempts it. Recommend adding:
+   *every path rendered in a `## Code Neighbors` chunk must resolve from the agent's
+   execution root.* That assertion is what caught the legacy-frame gap in §5's table.
+2. **The metric is unmeasurable on the ACP arm** — ACP delegates file tools to the external
+   agent, so nax's tool-audit records zero Reads at all, and the arm can only ever read as
+   vacuously clean.
+
+nax#2134 was **not reproduced and not refuted**: the fixture has no reverse-deps for the
+glob branch to spell `.nax-wt/...`, and the stories passed first try so no post-creation
+context rebuild occurred. A real reproduction needs a repo-framed PRD **plus** either real
+reverse-deps or a story that fails once after creating a file. Note that the legacy frame
+*masks* #2134 — reproducing it against a legacy PRD yields a false negative.
