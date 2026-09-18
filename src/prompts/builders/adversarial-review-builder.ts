@@ -13,7 +13,7 @@ import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import { type StoryWorkdirLike, storyWorkdir } from "@/utils/path-frame";
-import { buildReviewOutOfScopeBlock } from "../sections";
+import { buildReviewOutOfScopeBlock, buildScratchpadSection } from "../sections";
 import { DIFF_SCOPE_OMISSION_NOTICE, wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
@@ -423,6 +423,8 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}${buildR
       "\n\n",
       priorFindingsBlock,
       storyBlock,
+      buildScratchpadSection(),
+      "\n\n",
       ADVERSARIAL_INSTRUCTIONS,
       "\n\n",
       customRulesBlock,

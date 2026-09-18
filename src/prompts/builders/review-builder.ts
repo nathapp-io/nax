@@ -21,7 +21,7 @@ import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 import { wrapJsonPrompt } from "@/utils/llm-json";
 import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import { type StoryWorkdirLike, storyWorkdir } from "@/utils/path-frame";
-import { buildReviewOutOfScopeBlock } from "../sections";
+import { buildReviewOutOfScopeBlock, buildScratchpadSection } from "../sections";
 import { DIFF_SCOPE_OMISSION_NOTICE, wrapDiffAccess } from "../sections/diff-access";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
@@ -179,6 +179,8 @@ ${story.description}
 ### Acceptance Criteria
 ${acList}${buildReviewOutOfScopeBlock(story.outOfScope)}
 ${customRulesBlock}${priorIterationsBlock}
+${buildScratchpadSection()}
+
 ${SEMANTIC_INSTRUCTIONS}
 ${SEMANTIC_OUTPUT_SCHEMA}
 

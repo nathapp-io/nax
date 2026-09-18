@@ -14,6 +14,20 @@ Implement LLM-based semantic review for story diffs.
 1. LLM is called with story diff
 2. Findings are returned as structured JSON
 
+# Scratchpad
+
+You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
+command output you want to re-read, and intermediate lists. Write to it with \`ScratchpadWrite\`,
+read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
+to the scratchpad.
+
+Its contents are wiped at the start of each run and are never committed. Nothing there survives the
+run, reaches the repository, or is read by another step — treat every file as disposable, and
+overwrite freely.
+
+\`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
+must still never be moved, renamed, or deleted.
+
 ## Instructions
 
 For each acceptance criterion, verify the current codebase implements it correctly. Use the diff to identify changed files and code paths, not as the only source of truth.
@@ -114,6 +128,20 @@ Implement LLM-based semantic review for story diffs.
 ## Additional Review Rules
 1. Do not flag style issues
 2. Verify AC 1 using GREP before flagging
+
+# Scratchpad
+
+You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
+command output you want to re-read, and intermediate lists. Write to it with \`ScratchpadWrite\`,
+read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
+to the scratchpad.
+
+Its contents are wiped at the start of each run and are never committed. Nothing there survives the
+run, reaches the repository, or is read by another step — treat every file as disposable, and
+overwrite freely.
+
+\`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
+must still never be moved, renamed, or deleted.
 
 ## Instructions
 

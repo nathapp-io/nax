@@ -7,6 +7,11 @@
  * also clarifies that a `.nax/` test does not replace a source-tree test, and
  * a source-tree test does not justify removing a `.nax/` test.
  *
+ * `.nax/scratchpad/` is named as the one exception — without it the prohibition
+ * reads as absolute and contradicts the scratchpad tools' invitation to write
+ * there (see `./scratchpad.ts`). It is an exception to *modifying*, not to
+ * moving/renaming/deleting the other artifacts, so the standing rule still holds.
+ *
  * Mirrors `buildBehavioralGuardrailsSection`'s signature for the role arg
  * and accepts (but currently ignores) `_variant` / `_isolation` so future
  * rule differentiation stays signature-compatible.
@@ -27,6 +32,9 @@ export function buildNaxArtifactsSection(
 Files under \`.nax/\` are nax's own artifacts (acceptance scaffolds, plan state, generated acceptance
 tests). They must NEVER be moved, renamed, or deleted — \`.nax/\` is a tool-managed directory and
 modifying it breaks the orchestrator.
+
+The one exception is \`.nax/scratchpad/\` — a throwaway directory you may write to and overwrite
+freely. Every other path under \`.nax/\` stays off limits.
 
 - A test under \`.nax/\` is NOT a reason to skip writing source-tree tests. \`.nax/\` is generated
   scaffolding, not real coverage of the package's code.

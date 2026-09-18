@@ -39,6 +39,7 @@ import {
   buildIsolationSection,
   buildNaxArtifactsSection,
   buildRoleTaskSection,
+  buildScratchpadSection,
   buildSelfVerificationSection,
   buildStoryReminderSection,
   buildStorySection,
@@ -269,6 +270,12 @@ export class TddPromptBuilder {
     // alongside the guardrails block; not config-gated.
     const naxArtifacts = buildNaxArtifactsSection(this.role as GuardrailRole, guardrailVariant, guardrailIsolation);
     if (naxArtifacts) acc.add(this.s("nax-artifacts", naxArtifacts));
+
+    // (6.72) Scratchpad awareness — the artifacts section names
+    // `.nax/scratchpad/` as its one exception; this section explains what the
+    // directory is for. Composed wherever the artifacts section is, so the
+    // exception never dangles.
+    acc.add(this.s("scratchpad", buildScratchpadSection()));
 
     // (6.8) Test-quality pre-brief — adversarial test-gap lenses forwarded to
     // test-authoring roles (July 2026 audit: test-gap was 67% of adversarial
