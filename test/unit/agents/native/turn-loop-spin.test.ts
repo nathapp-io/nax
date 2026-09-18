@@ -82,12 +82,9 @@ describe("runNativeTurn — spin breaker", () => {
 
     expect(result.spinStopped).toBe(true);
     expect(result.turnIncomplete).toBe(true);
-    // nax#2120 Important #1: the first stop is reprieved and now resets
-    // `repeatsSinceProgress` (real-stop consumption). The same looping model
-    // must therefore re-accumulate the raw per-key count to
-    // stopAfterRepeats=6 before the hard stop, landing at 12 round trips,
-    // not the pre-fix 8 (where the latched run counter stopped it immediately).
-    expect(result.internalRoundTrips).toBe(12);
+    // The terminal warning gets exactly one answer-only round trip. The next
+    // tool call ends the turn before the breaker starts a new accumulation.
+    expect(result.internalRoundTrips).toBe(7);
   });
 
   test("prepends the nudge to the real tool result instead of replacing it", async () => {
@@ -216,5 +213,78 @@ describe("runNativeTurn — spin breaker", () => {
     });
 
     expect(result.spinStopped).toBe(true);
+  });
+
+  test("a different tool call after the terminal notice is stopped without execution", async () => {
+    let call = 0;
+    let executed = 0;
+    let executedBeforeWarning: number | undefined;
+    const result = await runTurnWithSpin({
+      complete: async (messages) => {
+        call += 1;
+        const warned = messages.some((m) => typeof m.content === "string" && m.content.includes("This turn is ending"));
+        if (warned) executedBeforeWarning = executed;
+        return {
+          text: "",
+          toolCalls: [
+            {
+              id: `c${call}`,
+              name: warned ? "Read" : "RunCommand",
+              input: warned ? { path: "src/other.ts" } : { command: "testScoped" },
+            },
+          ],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costUsd: 0,
+        };
+      },
+      answer: () => {
+        executed += 1;
+        return "same result";
+      },
+      spinBreaker: createSpinBreaker({
+        ...DEFAULT_SPIN_BREAKER_SETTINGS,
+        nudgeAfterRepeats: 3,
+        stopAfterRepeats: 6,
+        maxNudges: 1,
+      }),
+    });
+
+    expect(result.spinStopped).toBe(true);
+    // The post-notice Read must never be dispatched to the interaction handler.
+    if (executedBeforeWarning === undefined) throw new Error("Expected the terminal warning round trip");
+    expect(executed).toBe(executedBeforeWarning);
+  });
+
+  test("a raw-backstop terminal warning does not claim that results were unchanged", async () => {
+    let answer = 0;
+    const toolResults: string[] = [];
+    const result = await runTurnWithSpin({
+      complete: async (messages) => {
+        const warned = messages.some((m) => typeof m.content === "string" && m.content.includes("This turn is ending"));
+        if (warned) return { text: "final answer", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 };
+        return {
+          text: "",
+          toolCalls: [{ id: `c${answer}`, name: "RunCommand", input: { command: "testScoped" } }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costUsd: 0,
+        };
+      },
+      answer: () => {
+        answer += 1;
+        return `changed result ${answer}`;
+      },
+      onToolResult: (content) => toolResults.push(content),
+      spinBreaker: createSpinBreaker({
+        ...DEFAULT_SPIN_BREAKER_SETTINGS,
+        nudgeAfterRepeats: 2,
+        stopAfterRepeats: 6,
+        maxNudges: 0,
+      }),
+    });
+
+    const terminalNotice = toolResults.find((content) => content.includes("This turn is ending"));
+    expect(result.output).toBe("final answer");
+    expect(terminalNotice).toContain("call limit");
+    expect(terminalNotice).not.toContain("no change in its result");
   });
 });

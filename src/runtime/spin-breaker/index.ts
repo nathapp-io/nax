@@ -186,6 +186,15 @@ export const SPIN_TERMINAL_NOTICE =
   "This call was not executed. Produce your final answer now, in the exact format your " +
   "instructions require. Any further repeated call ends the turn with no answer recorded.";
 
+const SPIN_RAW_BACKSTOP_TERMINAL_NOTICE =
+  "[nax] This turn is ending: the same call reached the safety call limit even though its results changed. " +
+  "This call was not executed. Produce your final answer now, in the exact format your " +
+  "instructions require. Any further repeated call ends the turn with no answer recorded.";
+
+export function spinTerminalNotice(reason: SpinStopReason): string {
+  return reason === "same-key-backstop" ? SPIN_RAW_BACKSTOP_TERMINAL_NOTICE : SPIN_TERMINAL_NOTICE;
+}
+
 function nudgeText(nudgeNumber: number, repeats: number): string {
   const template = NUDGE_ESCALATION[Math.min(nudgeNumber, NUDGE_ESCALATION.length) - 1] ?? NUDGE_ESCALATION[0];
   return (template ?? "").replace("{repeats}", String(repeats));

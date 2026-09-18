@@ -88,6 +88,7 @@ export {
   type SpinStopReason,
   type SpinSummary,
   type SpinVerdict,
+  spinTerminalNotice,
 } from "./spin-breaker";
 export type { IUsageAuditor, UsageAuditEntry } from "./usage-auditor";
 export { _usageAuditorDeps, createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";

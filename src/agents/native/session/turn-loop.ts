@@ -17,7 +17,7 @@ import { inputClassTokens } from "@/agents/cost";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { SPIN_TERMINAL_NOTICE } from "@/runtime/spin-breaker";
+import { spinTerminalNotice } from "@/runtime/spin-breaker";
 // `spin-breaker` is its own nested barrel (src/runtime/spin-breaker/index.ts),
 // not an internal file reached through the parent — an EXACT barrel match is
 // legal for a value import even though it bypasses @/runtime, the same
@@ -347,6 +347,13 @@ export async function runNativeTurn(
       }
 
       for (const call of res.toolCalls) {
+        if (spinWarned) {
+          spinStopped = true;
+          // The terminal round trip is answer-only. Any subsequent tool call
+          // is neither executed nor answered; the fail-spin retry starts from
+          // a fresh session and deliberately drops this unanswered request.
+          break;
+        }
         deps.onActivity?.({ kind: "tool", toolName: call.name });
         try {
           if (call.name === ASK_HUMAN_TOOL_NAME) {
@@ -391,18 +398,6 @@ export async function runNativeTurn(
           }
           const verdict = spinBreaker?.observe(call.name, call.input) ?? { action: "allow" as const };
           if (verdict.action === "stop") {
-            if (spinWarned) {
-              spinStopped = true;
-              // Second stop: the model ignored the notice. The call is
-              // deliberately NOT executed and NOT answered — the turn is over
-              // and a tool-result nobody will read only grows the transcript
-              // the retry drops anyway. The `fail-spin` -> fresh-session
-              // timeout lane is load-bearing here: it drops the transcript
-              // that carries the unanswered call. Any future same-session
-              // resume lane for `fail-spin` must answer this call, or it
-              // silently persists a tool_call with no matching tool-result.
-              break;
-            }
             spinWarned = true;
             // Every outstanding call in THIS batch is answered, not just the
             // triggering one: the next `complete()` would otherwise be sent a
@@ -411,7 +406,7 @@ export async function runNativeTurn(
               messages.push({
                 role: "tool-result",
                 toolCallId: outstanding.id,
-                content: SPIN_TERMINAL_NOTICE,
+                content: spinTerminalNotice(verdict.reason),
                 isError: true,
               });
             }
