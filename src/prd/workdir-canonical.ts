@@ -116,13 +116,13 @@ export function canonicalizeDeclaredPath(path: string, workdir: string): string 
 export interface CanonicalizeOptions {
   /**
    * Restrict canonicalization to these story ids. A story outside the set is
-   * returned by IDENTITY -- not respread -- and contributes to none of the three
-   * returned reports.
+   * returned by IDENTITY -- not respread -- and does not contribute to the
+   * returned report.
    *
    * `nax plan --decompose` (nax#2080) writes into a PRD whose other stories may
    * already have executed. Re-spelling their paths is harmless, but re-deciding
    * anything about them is not, and one scope for the whole write is simpler to
-   * reason about than three separate guards.
+   * reason about than separate guards.
    */
   readonly only?: ReadonlySet<string>;
   /**
@@ -194,4 +194,40 @@ export function canonicalizePrdWorkdirs(
   });
 
   return { prd: { ...prd, userStories }, defaulted };
+}
+
+/** One declared path on a canonicalized story that is not in the repo frame. */
+export interface NonCanonicalDeclaredPath {
+  readonly storyId: string;
+  readonly field: "contextFiles" | "expectedFiles" | "modifiedFiles";
+  readonly path: string;
+}
+
+/**
+ * Plan-WRITE-time invariant check (design §4 PR3 bullet 3): every declared path
+ * on a story that canonicalizePrdWorkdirs has stamped (workdirSource defined)
+ * should already be in the repo frame -- a path is canonical iff re-applying
+ * canonicalizeDeclaredPath to it is a no-op. This is NOT a PRD.parse()-time
+ * schema rule: a legacy PRD (workdirSource undefined) is skipped entirely, so
+ * hand-edited and pre-#2125 PRDs keep loading.
+ *
+ * Returns violations rather than throwing -- the caller (finalizeAndWritePrd)
+ * logs and continues, matching nax plan's recovery-tolerant contract
+ * (src/operations/plan-fidelity.ts header comment).
+ */
+export function findNonCanonicalDeclaredPaths(prd: PRD): NonCanonicalDeclaredPath[] {
+  const violations: NonCanonicalDeclaredPath[] = [];
+  for (const story of prd.userStories) {
+    if (story.workdirSource === undefined) continue;
+    const workdir = normalizeWorkdir(story.workdir);
+    const check = (field: NonCanonicalDeclaredPath["field"], path: string): void => {
+      if (canonicalizeDeclaredPath(path, workdir) !== path) {
+        violations.push({ storyId: story.id, field, path });
+      }
+    };
+    for (const entry of story.contextFiles ?? []) check("contextFiles", typeof entry === "string" ? entry : entry.path);
+    for (const path of story.expectedFiles ?? []) check("expectedFiles", path);
+    for (const entry of story.modifiedFiles ?? []) check("modifiedFiles", entry.path);
+  }
+  return violations;
 }

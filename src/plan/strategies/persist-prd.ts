@@ -27,7 +27,7 @@ import type { AgentRoutingConfig, ModelsConfig } from "@/config";
 import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
 import { getLogger } from "@/logger";
 import { applyPlanFidelity } from "@/operations";
-import { canonicalizePrdWorkdirs } from "@/prd";
+import { canonicalizePrdWorkdirs, findNonCanonicalDeclaredPaths } from "@/prd";
 import type { PRD } from "@/prd/types";
 import { errorMessage } from "@/utils/errors";
 import { finalizePrdRouting } from "./finalize-routing";
@@ -117,6 +117,22 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     }
   } catch (err) {
     getLogger().warn("plan", "workdir canonicalization skipped", { error: errorMessage(err) });
+  }
+
+  // nax#2125: a story the write seam stamped (workdirSource defined) should have
+  // every declared path already in the repo frame. Nothing on the happy path can
+  // violate this -- canonicalizePrdWorkdirs reframes unconditionally -- so a
+  // violation means a caller bypassed the seam or a reframing missed a field.
+  // Sits outside the try/catch so it inspects the final `canonical` whether or
+  // not canonicalization threw, and returns rather than throws, so it needs no
+  // error handling.
+  const nonCanonical = findNonCanonicalDeclaredPaths(canonical);
+  if (nonCanonical.length > 0) {
+    getLogger().warn(
+      "plan",
+      "declared paths remain outside the repo frame on a canonicalized story -- a caller bypassed canonicalizePrdWorkdirs or reframing missed a field",
+      { nonCanonical },
+    );
   }
 
   const finalized = finalizePrdRouting(

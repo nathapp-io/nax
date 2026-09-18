@@ -49,8 +49,8 @@ export type {
 } from "./types";
 export { generateHumanHaltSummary, getContextFiles, getExpectedFiles, isStalled, markStoryAsBlocked } from "./types";
 export { assertPrdCommitted, validateStoryId } from "./validate";
-export type { CanonicalizeOptions, ExistsProbe } from "./workdir-canonical";
-export { canonicalizeDeclaredPath, canonicalizePrdWorkdirs } from "./workdir-canonical";
+export type { CanonicalizeOptions, ExistsProbe, NonCanonicalDeclaredPath } from "./workdir-canonical";
+export { canonicalizeDeclaredPath, canonicalizePrdWorkdirs, findNonCanonicalDeclaredPaths } from "./workdir-canonical";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;

@@ -419,3 +419,74 @@ describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
     expect(parsed.routingProfile).toBe("cross-agent");
   });
 });
+
+describe("finalizeAndWritePrd — non-canonical declared-path warning (single-frame redesign, nax#2125)", () => {
+  /** A story already stamped by canonicalizePrdWorkdirs, so the validation inspects it. */
+  function stampedStory(overrides: Parameters<typeof makeStory>[0] = {}) {
+    return makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      contextFiles: ["packages/app/src/a.ts"],
+      ...overrides,
+    });
+  }
+
+  async function persist(prd: PRD): Promise<string> {
+    let written = "";
+    await finalizeAndWritePrd({
+      prd,
+      specContent: "",
+      featureName: "f",
+      projectName: "p",
+      agentRouting: undefined,
+      profileName: undefined,
+      models: MODELS,
+      defaultAgent: "claude",
+      outputPath: "/repo/.nax/features/f/prd.json",
+      repoRoot: "/repo",
+      writeFile: async (_path, content) => {
+        written = content;
+      },
+    });
+    return written;
+  }
+
+  test("stays silent when canonicalization leaves every declared path in the repo frame", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/app"];
+    _persistPrdDeps.existsSync = (p: string) => p === "/repo/packages/app/src/a.ts";
+
+    const cap = captureWarnings();
+    let written = "";
+    try {
+      written = await persist(makePRD({ userStories: [stampedStory()] }));
+    } finally {
+      cap.restore();
+    }
+
+    expect(cap.calls.some((c) => c.message.includes("outside the repo frame"))).toBe(false);
+    const parsed: PRD = JSON.parse(written);
+    expect(parsed.userStories[0]?.contextFiles).toEqual(["packages/app/src/a.ts"]);
+  });
+
+  test("warns and still writes when packaging discovery throws and a pre-stamped story stays package-relative", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => {
+      throw new Error("boom");
+    };
+    _persistPrdDeps.existsSync = () => true;
+
+    const cap = captureWarnings();
+    let written = "";
+    try {
+      written = await persist(makePRD({ userStories: [stampedStory({ contextFiles: ["src/a.ts"] })] }));
+    } finally {
+      cap.restore();
+    }
+
+    expect(written).not.toBe("");
+    const warning = cap.calls.find((c) => c.message.includes("outside the repo frame"));
+    expect(warning).toBeDefined();
+    expect(warning?.data).toMatchObject({
+      nonCanonical: [{ storyId: "US-001", field: "contextFiles", path: "src/a.ts" }],
+    });
+  });
+});

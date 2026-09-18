@@ -11,6 +11,7 @@ import {
   canonicalizeDeclaredPath,
   canonicalizePrdWorkdirs,
   deriveWorkdir,
+  findNonCanonicalDeclaredPaths,
   resolvePathOwners,
 } from "@/prd/workdir-canonical";
 
@@ -317,5 +318,40 @@ describe("canonicalizePrdWorkdirs — frame is independent of disk state (single
     const resultA = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, probeOf("packages/app/src/a.ts"), { derive: false });
     const resultB = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, probeOf(), { derive: false });
     expect(JSON.stringify(resultA.prd)).toBe(JSON.stringify(resultB.prd));
+  });
+});
+
+describe("findNonCanonicalDeclaredPaths — plan-write-time validation (single-frame redesign)", () => {
+  const prdOf = (stories: UserStory[]) => makePRD({ userStories: stories });
+
+  test("flags a contextFiles entry that is not repo-rooted on a canonicalized story", () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      contextFiles: ["src/a.ts"], // should have been "packages/app/src/a.ts"
+    });
+    const violations = findNonCanonicalDeclaredPaths(prdOf([story]));
+    expect(violations).toEqual([{ storyId: story.id, field: "contextFiles", path: "src/a.ts" }]);
+  });
+
+  test("is silent for a properly repo-rooted story", () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      contextFiles: ["packages/app/src/a.ts"],
+      expectedFiles: ["packages/app/src/new.ts"],
+      modifiedFiles: [{ path: "packages/app/src/b.ts", reason: "r" }],
+    });
+    expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([]);
+  });
+
+  test("skips a legacy story with no workdirSource stamped", () => {
+    const story = makeStory({ workdir: "packages/app", contextFiles: ["src/a.ts"] });
+    expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([]);
+  });
+
+  test("is silent at the repo root — every path is trivially canonical", () => {
+    const story = makeStory({ workdirSource: "defaulted", contextFiles: ["src/a.ts"] });
+    expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([]);
   });
 });
