@@ -350,7 +350,15 @@ None. The nax-artifacts prompt test asserts substring presence and determinism �
 - **AC-2** `[unit]` Resolving permissions under the `safe` profile yields tool grants whose tool names include `ScratchpadWrite`, `ScratchpadRead` and `ScratchpadList`, and include none of `Write`, `Edit`, `Delete`, `GitCommit`, `RunCommand` or `Exec`.
 - **AC-3** `[unit]` Resolving permissions under the `unrestricted` profile yields tool grants whose tool names include the three scratchpad tools.
 - **AC-4** `[unit]` Under the `scoped` profile with no rule naming a scratchpad tool, calling `ScratchpadWrite` through `callTool` returns a refused outcome whose reason names the tool, rather than raising or silently succeeding.
-- **AC-5** `[integration]` For an operation declaring the read-only review shape `tools: ["Read", "Glob", "Grep", "Git"]` under the `unrestricted` profile, calling `ScratchpadWrite` through `callTool` with `path` `"findings.md"` returns a non-error outcome, while calling `Write` with a repository path returns a refused outcome.
+- **AC-5** `[integration]` For an operation declaring the read-only review shape `tools: ["Read", "Glob", "Grep", "Git"]` under the `unrestricted` profile, calling `ScratchpadWrite` through `callTool` with `path` `"findings.md"` returns a non-error outcome.
+- **AC-6** `[unit]` For that same declaration, the advertised tool list contains the three scratchpad tools and contains none of `Write`, `Edit` or `Delete`.
+
+The read-only review op is kept away from repository writes by **what it is
+advertised**, not by a refusal at call time: `advertised(declared)` intersects the
+op's declaration with the policy's grants, while `callTool` consults the policy
+alone and never reads the declaration. So under `unrestricted` a direct
+`callTool("Write", …)` would succeed — the declaration is not a call-time gate, and
+no AC should claim it is. AC-6 asserts the property that actually holds.
 
 ### US-004 — Run-start wipe and ignore coverage
 
