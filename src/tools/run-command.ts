@@ -66,6 +66,18 @@ export interface RunCommandToolOptions {
   readonly stripEnvVars?: readonly string[];
   /** See `RunCommandExecOptions`. */
   readonly exec?: RunCommandExecOptions;
+  /**
+   * Execution cwd for the DECLARED (non-Exec) branch below, independent of
+   * `ctx.root` (tool containment). Falls back to `ctx.root` when absent —
+   * every caller today passes the package workdir either way, so the
+   * fallback is a no-op until PR2
+   * (docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md)
+   * repoints `ctx.root` at the story's repo-rooted execution root.
+   *
+   * PRODUCER: src/agents/coding-tool-support.ts (`buildCodingToolSupport`'s
+   * `commandCwd` arg).
+   */
+  readonly commandCwd?: string;
 }
 
 function quoteAt(template: string, end: number): "single" | "double" | undefined {
@@ -425,7 +437,7 @@ export function createRunCommandTool(
       const result = await runQualityCommand({
         commandName: key,
         command,
-        workdir: ctx.root,
+        workdir: opts.commandCwd ?? ctx.root,
         stripEnvVars: [...(opts.stripEnvVars ?? [])],
         // The agent's own iteration loop, not a harness gate: kept in the JSONL
         // at debug, off the console. Its outcome reaches the agent through the
