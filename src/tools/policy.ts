@@ -421,6 +421,15 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * `resolvedRoot` so grant globs, deny rules and `naxOwnedWriteRefusal`
    * continue to see the canonical repo-root-relative spelling -- authors
    * write `.nax/scratchpad/**`, never `**`, regardless of `confineTo`.
+   *
+   * `confineTo` is bound to stay INSIDE `resolvedRoot`: an authoring typo of
+   * `..` or `../shared` would otherwise widen the containment root past the
+   * policy boundary and re-scope `resolveWithin`'s `.git/`-metadata and
+   * `isNaxConfigFile` protections to a root that no longer aligns with the
+   * segments those checks assume -- the repo's own `.nax/config.json` would
+   stop being segment-matched against `.nax`. The boundary is the policy
+   root's invariant, so an out-of-root confineTo refuses the call outright
+   rather than silently widening.
    */
   function pathsBranch(
     tool: string,
@@ -430,7 +439,15 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     state: RuleState,
   ): PolicyVerdict {
     const globs = pathMatchers(grant.matchers, scope);
-    const effectiveRoot = scope.confineTo === undefined ? resolvedRoot : realOrRaw(join(resolvedRoot, scope.confineTo));
+    let effectiveRoot = resolvedRoot;
+    if (scope.confineTo !== undefined) {
+      effectiveRoot = realOrRaw(join(resolvedRoot, scope.confineTo));
+      if (!isInside(resolvedRoot, effectiveRoot)) {
+        return deny(
+          `${tool} declares confineTo "${scope.confineTo}" which resolves outside the policy root "${resolvedRoot}" -- confineTo must be a path INSIDE the policy root, never one that widens it`,
+        );
+      }
+    }
     const relativeTo = (resolved: string) => relative(resolvedRoot, resolved).split(sep).join("/");
     const restrictPaths = !grant.unconditional && globs.length > 0;
     const resolvedPaths: string[] = [];
