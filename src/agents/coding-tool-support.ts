@@ -287,6 +287,17 @@ export const _codingToolSupportDeps = {
   loadConfigForPackage,
 };
 
+/**
+ * Tools appended to the declaration of every op that receives coding tools.
+ *
+ * Kept separate from DEFAULT_CODING_TOOLS (which is also the fallback
+ * `resolveDeclaredTools` returns for an op that omits `tools`) so the append
+ * can filter out the copies such a declaration already carries: advertising a
+ * name twice puts two entries into `runtime.advertised()`'s output, and from
+ * there a duplicate ToolDefinition in the provider request.
+ */
+const UNIVERSAL_CODING_TOOLS: readonly CodingToolName[] = ["ScratchpadWrite", "ScratchpadRead", "ScratchpadList"];
+
 export async function resolveCodingToolSupport(
   options: Pick<
     AgentRunOptions,
@@ -475,10 +486,19 @@ export async function resolveCodingToolSupport(
           providerIdByTool: new Map<string, string>(),
           entries: [],
         };
+  // The scratchpad tools are the universal layer every op receives. The
+  // append only fires when the op declared any built-in names OR a provider
+  // contributed names — an op that declared nothing and has no providers is
+  // a no-op hop that should NOT receive coding-tool support (it would force
+  // `buildCodingToolSupport` to throw CODING_TOOL_ROOT_MISSING when the
+  // caller has no root to give it, which breaks the dispatch shape these
+  // tests pin). Filtered against `declared` because an op that omits `tools`
+  // resolves to DEFAULT_CODING_TOOLS, which already carries all three.
+  const universalTools = UNIVERSAL_CODING_TOOLS.filter((name) => !declared.includes(name));
   const declaredWithProviders = [
     ...declared,
     ...providerResult.tools.map((t) => t.name),
-    ...(["ScratchpadWrite", "ScratchpadRead", "ScratchpadList"] as const),
+    ...(declared.length > 0 || providerResult.tools.length > 0 ? universalTools : []),
   ] as readonly CodingToolName[];
   // Logged before the empty-union return: a provider-only op whose only
   // provider failed must still say so, not vanish silently. A no-op when
