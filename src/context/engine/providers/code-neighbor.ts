@@ -359,10 +359,11 @@ export class CodeNeighborProvider implements IContextProvider {
     }
 
     // Single-frame (nax#2125): touchedFiles is REPO-ROOTED (types.ts) and the
-    // agent's file tools are rooted at the story execution root, at or above
-    // the repo root, so every touched file is reachable. No package-frame
-    // partition or unreadable-marker bookkeeping is needed — the paths pass
-    // through as stored.
+    // agent's file tools can address any repo-rooted path, so every touched
+    // file is reachable. No package-frame partition or unreadable-marker
+    // bookkeeping is needed — the paths pass through as stored. (Under
+    // storyIsolation: "worktree" the agent's exec root is BELOW request.repoRoot;
+    // see the parked residual at the collectNeighbors call site below.)
     const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
     // ADR-009: sibling-test derivation requires resolver output on the request.
@@ -395,6 +396,15 @@ export class CodeNeighborProvider implements IContextProvider {
       // PERF-2: cooperative cancellation — a timed-out fetch must stop doing
       // work instead of scanning/reading files the orchestrator no longer wants.
       if (signal?.aborted) break;
+      // PARKED residual (controller ruling, PR4 review): resolution uses
+      // `request.repoRoot`, which under storyIsolation: "worktree" is the MAIN
+      // checkout, not the worktree the story executes in (`packageDir` =
+      // `<root>/.nax-wt/<storyId>/<pkg>`). So disk reads/forward-dep resolution
+      // can hit the main checkout instead of the worktree. Follow-up threads a
+      // worktree-aware exec root (`storyExecRoot`) onto ContextRequest and
+      // resolves against it; see the characterization test "worktree isolation
+      // residual (PARKED, nax#2093 class)". Do not fix by deriving the root
+      // here (nax#2069).
       const { neighbors, truncated } = await collectNeighbors(
         file,
         request.repoRoot,

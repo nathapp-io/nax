@@ -233,32 +233,47 @@ describe("CodeNeighborProvider — heading == scopePath (single frame)", () => {
   });
 });
 
-describe("CodeNeighborProvider — worktree isolation (nax#2088 follow-up)", () => {
-  // Under storyIsolation: "worktree", the story executes in its own tree and
-  // the agent's file tools are rooted there. The request carries that tree as
-  // repoRoot (storyExecRoot), so a repo-rooted touchedFile resolves inside it
-  // and neighbours are rendered relative to that same root. The main checkout
-  // is never consulted.
-  test("touchedFiles resolve against the story's execution root", async () => {
+describe("CodeNeighborProvider — worktree isolation residual (PARKED, nax#2093 class)", () => {
+  // REAL production shape under storyIsolation: "worktree": `request.repoRoot`
+  // is the MAIN CHECKOUT (`/repo`) while `packageDir` is the worktree package
+  // (`/repo/.nax-wt/US-001/packages/app`). code-neighbor resolves disk paths
+  // against `repoRoot` (Task 3 / PR4), so it reads the main checkout, not the
+  // worktree the story actually executes in. This test CHARACTERIZES that
+  // parked residual rather than hiding it.
+  //
+  // PARKED by controller ruling: the fix (thread a worktree-aware exec root,
+  // `storyExecRoot`, onto `ContextRequest`) is out of PR4's subtractive scope.
+  // When it lands, resolution reads the worktree and this test must flip to
+  // assert `- packages/app/src/worktree-dep.ts` and the absence of
+  // `- packages/app/src/main-dep.ts`.
+  test("resolution reads the main checkout, not the worktree (parked residual)", async () => {
     setupDeps(
       {
-        "/repo/.nax-wt/US-001/packages/app/src/index.ts": 'import "./dep";',
-        "/repo/.nax-wt/US-001/packages/app/src/dep.ts": "export const dep = 1;",
+        // Main checkout copy — what `request.repoRoot` points at.
+        "/repo/packages/app/src/index.ts": 'import "./main-dep";',
+        "/repo/packages/app/src/main-dep.ts": "export const mainDep = 1;",
+        // Worktree copy — where the story actually executes.
+        "/repo/.nax-wt/US-001/packages/app/src/index.ts": 'import "./worktree-dep";',
+        "/repo/.nax-wt/US-001/packages/app/src/worktree-dep.ts": "export const worktreeDep = 1;",
       },
-      { "/repo/.nax-wt/US-001/packages/app": ["src/index.ts", "src/dep.ts"] },
+      { "/repo/.nax-wt/US-001/packages/app": ["src/index.ts", "src/worktree-dep.ts"] },
     );
     const provider = new CodeNeighborProvider();
 
     const result = await provider.fetch(
       makeRequest({
-        repoRoot: "/repo/.nax-wt/US-001",
+        repoRoot: "/repo",
         packageDir: "/repo/.nax-wt/US-001/packages/app",
         storyWorkdir: "packages/app",
         touchedFiles: ["packages/app/src/index.ts"],
       }),
     );
 
-    expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- packages/app/src/dep.ts");
+    const lines = neighborLines(result.chunks[0]?.content ?? "");
+    // Documented residual: the main checkout's neighbour is surfaced...
+    expect(lines).toContain("- packages/app/src/main-dep.ts");
+    // ...and the worktree-only neighbour the story actually depends on is not.
+    expect(lines.some((line) => line.includes("worktree-dep"))).toBe(false);
   });
 });
 

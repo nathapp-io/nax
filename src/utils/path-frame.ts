@@ -100,11 +100,7 @@ export function toRepoFrame(path: string, workdir: string | null | undefined): s
 export function isWithinPackage(path: string, workdir: string | null | undefined): boolean {
   const prefix = normalizeWorkdir(workdir);
   if (prefix === ".") return true;
-  const normalized = path
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^(\.\/)+/, "")
-    .replace(/\/+$/, "");
+  const normalized = toPosix(path);
   return normalized === prefix || normalized.startsWith(`${prefix}/`);
 }
 
