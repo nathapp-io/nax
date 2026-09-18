@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeConfigSlice } from "@test/helpers";
+import { makeConfigSlice, makeSpawn } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _reconcileDeps } from "@/execution/lifecycle/run-initialization";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { _reviewGitDeps } from "@/review/runner";
 import { _scopedLintDeps, runScopedLintCheck } from "@/review/scoped-lint";
 import type { ReviewConfig } from "@/review/types";
+import { _gitDeps } from "@/utils/git";
 
 const baseReviewConfig: ReviewConfig = makeConfigSlice("review", {
   enabled: true,
@@ -13,6 +14,39 @@ const baseReviewConfig: ReviewConfig = makeConfigSlice("review", {
   commands: {
     lint: "eslint --max-warnings=0",
   },
+});
+
+// Captured before any test replaces `_scopedLintDeps.listChangedFiles`, so the
+// argv-retention test below exercises the real implementation.
+const realListChangedFiles = _scopedLintDeps.listChangedFiles;
+
+// scoped-lint is the ONE collector that intentionally RETAINS `--relative` — a
+// ruled exemption from diff-utils' no-`--relative` consolidation. Its live
+// consumer, filterFilesToScope(), does `join(workdir, relPath)` and therefore
+// needs package-relative paths. Unlike diff-utils' collectors (which only
+// compare/report the pathspec, never re-join it onto `workdir`), dropping the
+// flag here would double-prefix every path and silently skip all lint (BUG-31).
+describe("listChangedFiles() --relative retention (scoped-lint exemption)", () => {
+  let originalSpawn: typeof _gitDeps.spawn;
+
+  beforeEach(() => {
+    originalSpawn = _gitDeps.spawn;
+  });
+
+  afterEach(() => {
+    _gitDeps.spawn = originalSpawn;
+  });
+
+  test("keeps --relative because filterFilesToScope joins relPath onto workdir", async () => {
+    const stub = makeSpawn(() => "src/a.ts\n");
+    _gitDeps.spawn = stub.spawn;
+
+    const files = await realListChangedFiles("/repo/packages/api", "abc123");
+
+    expect(stub.calls[0]?.cmd).toContain("--relative");
+    expect(stub.calls[0]?.cmd).toEqual(["git", "diff", "--relative", "--name-only", "abc123..HEAD"]);
+    expect(files).toEqual(["src/a.ts"]);
+  });
 });
 
 /**

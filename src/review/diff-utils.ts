@@ -107,6 +107,20 @@ export interface TestInventory {
 }
 
 /**
+ * Build the shared `git diff` argv for the story-range collectors below.
+ *
+ * All four converge on the same shape and deliberately omit `--relative`: the
+ * agent's file tools are repo-rooted after the single-frame redesign, so
+ * repo-root-relative paths are read directly. Each collector's own cwd
+ * (`workdir` — still the package dir for a package story) scopes the bare
+ * `-- .` pathspec, exactly the convention `collectDiffFileList` always used.
+ * `excludePathspecs` ride as trailing `:!` pathspec exclusions.
+ */
+function buildDiffArgv(flags: readonly string[], ref: string, excludePathspecs: readonly string[] = []): string[] {
+  return ["git", "diff", ...flags, `${ref}..HEAD`, "--", ".", ...excludePathspecs];
+}
+
+/**
  * Collect git diff for the story range.
  * excludePatterns: pathspec exclusions (e.g. test files for semantic). Pass [] for adversarial (sees all).
  * Always excludes .nax/ and .nax-pids regardless of caller config.
@@ -121,13 +135,12 @@ export async function collectDiff(
   const merged = [...new Set([...excludePatterns, ...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
   // BUG-31: route through runGitWithTimeout — a wedged git (NFS / lock
   // contention) must not stall the review stage indefinitely.
-  // `--relative` makes git emit paths relative to `workdir` instead of the repo
-  // root. A monorepo story's reviewer has its file tools rooted at the package
-  // dir, so a repo-rooted "packages/lib/src/util.ts" resolves to
-  // <pkg>/packages/lib/... and ENOENTs — one wasted round trip per file
-  // (nax#2066 follow-on). At the repo root it is a no-op.
+  // No `--relative`: the agent's file tools are repo-rooted post-single-frame
+  // redesign, so repo-root-relative paths are read directly. The collector's own
+  // cwd (`workdir`, still the package dir) scopes the bare `-- .` pathspec —
+  // the same no-`--relative` convention collectDiffFileList already used.
   const { stdout, stderr, exitCode } = await runGitWithTimeout(
-    ["git", "diff", "--relative", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged],
+    buildDiffArgv(["--unified=3"], storyGitRef, merged),
     workdir,
   );
 
@@ -151,11 +164,8 @@ export async function collectDiffStat(
   const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
   const merged = [...new Set([...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
   // BUG-31: route through runGitWithTimeout — same convention as collectDiff.
-  // --relative: same convention as collectDiff above.
-  const { stdout, exitCode } = await runGitWithTimeout(
-    ["git", "diff", "--relative", "--stat", `${storyGitRef}..HEAD`, "--", ".", ...merged],
-    workdir,
-  );
+  // No `--relative` — shares collectDiffFileList's repo-rooted convention.
+  const { stdout, exitCode } = await runGitWithTimeout(buildDiffArgv(["--stat"], storyGitRef, merged), workdir);
 
   return exitCode === 0 ? stdout.trim() : "";
 }
@@ -258,8 +268,10 @@ export async function computeTestInventory(
   testFilePatterns?: readonly string[],
   options?: DiffIgnoreOptions,
 ): Promise<TestInventory> {
+  // No `--relative` — shares collectDiffFileList's repo-rooted convention; the
+  // bare `-- .` pathspec scopes to this collector's cwd (`workdir`).
   const { stdout, exitCode } = await runGitWithTimeout(
-    ["git", "diff", "--relative", "--name-only", "--diff-filter=A", `${storyGitRef}..HEAD`, "--", "."],
+    buildDiffArgv(["--name-only", "--diff-filter=A"], storyGitRef),
     workdir,
   );
 
@@ -302,12 +314,11 @@ export async function computeTestInventory(
  * declared sources. Returns `undefined` on git failure so callers can degrade
  * rather than treat "git failed" as "nothing changed".
  *
- * DELIBERATELY WITHOUT `--relative`, unlike its three siblings above. Those feed
- * the AGENT, whose file tools are contained at the package, so they must emit
- * package-relative paths. This one feeds `scopeFiles`, which is repo-rooted by
+ * DELIBERATELY WITHOUT `--relative`, the convention all four collectors above
+ * now share. Those feed the AGENT, whose file tools are repo-rooted after the
+ * single-frame redesign. This one feeds `scopeFiles`, which is repo-rooted by
  * the path-frame convention (nax#2071), so repo-rooted output is the correct
- * spelling and the caller frames the declared side to match. Adding `--relative`
- * here to "fix the inconsistency" re-introduces the mixed-frame union. The `-- .`
+ * spelling and the caller frames the declared side to match. The `-- .`
  * pathspec already restricts output to the cwd subtree, so `--relative` would
  * change the spelling only, never the file set.
  */
@@ -319,10 +330,7 @@ export async function collectDiffFileList(
   const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
   const merged = [...new Set([...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
   // BUG-31: route through runGitWithTimeout.
-  const { stdout, exitCode } = await runGitWithTimeout(
-    ["git", "diff", "--name-only", `${storyGitRef}..HEAD`, "--", ".", ...merged],
-    workdir,
-  );
+  const { stdout, exitCode } = await runGitWithTimeout(buildDiffArgv(["--name-only"], storyGitRef, merged), workdir);
 
   if (exitCode !== 0) return undefined;
   return stdout
