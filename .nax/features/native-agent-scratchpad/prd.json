@@ -3,7 +3,7 @@
   "feature": "native-agent-scratchpad",
   "branchName": "feat/native-agent-scratchpad",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-18T19:33:26.659Z",
+  "updatedAt": "2026-09-18T20:00:42.142Z",
   "userStories": [
     {
       "id": "US-001",
@@ -249,7 +249,9 @@
         "When buildScratchpadSection() is called, then it names `.nax/scratchpad/`, states contents are wiped at the start of each run, and states they are never committed.",
         "When TddPromptBuilder.build() builds an implementer prompt, then it contains `.nax/scratchpad/`.",
         "When buildSemanticReviewPrompt builds a prompt, then it contains `.nax/scratchpad/`.",
-        "When buildAdversarialReviewPrompt builds a prompt, then it contains `.nax/scratchpad/.`"
+        "When buildAdversarialReviewPrompt builds a prompt, then it contains `.nax/scratchpad/.`",
+        "When a rectifier prompt is built, then it contains `.nax/scratchpad/`.",
+        "When buildNaxArtifactsSection is rendered, then it does not authorize moving, renaming, or deleting any `.nax/` path other than scratchpad contents."
       ],
       "tags": [
         "feature",
@@ -258,8 +260,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -280,10 +282,6 @@
       "expectedFiles": [
         "src/prompts/sections/scratchpad.ts",
         "test/unit/prompts/sections/scratchpad.test.ts"
-      ],
-      "suggestedCriteria": [
-        "When a rectifier prompt is built, then it contains `.nax/scratchpad/`.",
-        "When buildNaxArtifactsSection is rendered, then it does not authorize moving, renaming, or deleting any `.nax/` path other than scratchpad contents."
       ],
       "workdirSource": "defaulted",
       "priorErrors": [],
