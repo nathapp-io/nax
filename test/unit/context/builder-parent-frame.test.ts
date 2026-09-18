@@ -185,20 +185,21 @@ describe("context builder — auto-detected contextFiles are repo-rooted (single
     _contextBuilderDeps.autoDetectContextFiles = origAutoDetect;
   });
 
-  test("runs detection at the repo root and emits repo-rooted paths", async () => {
+  test("scans at the package dir but emits repo-rooted paths", async () => {
     const tempDir = makeTempDir("nax-builder-auto-detect-");
     try {
       await writeFiles(tempDir, {
         "packages/api/src/handler.ts": "export const handler = true;",
       });
 
-      // Auto-detect output is relative to the workdir it is given. Rooting it
-      // at the repo root is what keeps the emitted set repo-rooted and
-      // resolvable against the agent's post-move tool root.
+      // Auto-detect output is relative to the workdir it is given. The scan
+      // must stay PACKAGE-scoped (pre-PR discovery scope), and its
+      // package-relative output must be re-spelled into the repo frame before
+      // it is emitted/resolved.
       const seenWorkdirs: string[] = [];
       _contextBuilderDeps.autoDetectContextFiles = async (opts) => {
         seenWorkdirs.push(opts.workdir);
-        return ["packages/api/src/handler.ts"];
+        return ["src/handler.ts"];
       };
 
       const consumer = makeStory({
@@ -224,8 +225,12 @@ describe("context builder — auto-detected contextFiles are repo-rooted (single
       const built = await buildContext(storyContext, BUDGET);
       const filePaths = built.elements.filter((e) => e.type === "file").map((e) => e.filePath);
 
-      expect(seenWorkdirs).toEqual([tempDir]);
+      // Scan cwd is the ABSOLUTE package dir (discovery scope unchanged).
+      expect(seenWorkdirs).toEqual([path.join(tempDir, API_WORKDIR)]);
+      // Emitted path is re-spelled repo-rooted, and the package-relative
+      // spelling is not emitted.
       expect(filePaths).toContain("packages/api/src/handler.ts");
+      expect(filePaths).not.toContain("src/handler.ts");
     } finally {
       cleanupTempDir(tempDir);
     }

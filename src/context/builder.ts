@@ -5,7 +5,7 @@
  */
 
 import path from "node:path";
-import { storyWorkdir } from "@/utils/path-frame";
+import { storyWorkdir, toRepoFrame } from "@/utils/path-frame";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
@@ -260,11 +260,12 @@ async function addFileElements(
 
   // Auto-detect only when keyword mode is enabled and no explicit files are provided (BUG-006)
   // Single-frame PR 2: `autoDetectContextFiles` runs `git grep -l` with cwd =
-  // the workdir it is given (auto-detect.ts), so its output is relative to that
-  // root. Rooting detection at the REPO root keeps every nax-internal path set
-  // repo-rooted, matching the agent's post-move tool root and the pass-through
-  // below; feeding it the package dir would emit package-relative paths that
-  // then fail to resolve against the repo root.
+  // the workdir it is given (auto-detect.ts) and returns paths relative to it.
+  // The scan stays PACKAGE-scoped (`storyContext.workdir`) so discovery scope
+  // is unchanged from pre-PR — a repo-root scan would let one package's story
+  // surface another package's files and consume the `maxFiles` budget. Its
+  // output is then re-spelled into the repo frame, so the emitted paths match
+  // the agent's post-move tool root and the pass-through below.
   const workdirRel = storyWorkdir(story);
   if (
     contextFiles.length === 0 &&
@@ -278,16 +279,17 @@ async function addFileElements(
       typeof smartRunner === "object" && smartRunner !== null ? smartRunner.testFilePatterns : undefined;
     try {
       const detected = await _contextBuilderDeps.autoDetectContextFiles({
-        workdir: repoRootFromPackage(storyContext.workdir, workdirRel),
+        workdir: storyContext.workdir,
         storyTitle: story.title,
         maxFiles: autoDetectConfig?.maxFiles ?? 5,
         traceImports: autoDetectConfig?.traceImports ?? false,
         testFilePatterns,
       });
       if (detected.length > 0) {
-        contextFiles = detected;
+        const framed = detected.map((filePath) => toRepoFrame(filePath, workdirRel));
+        contextFiles = framed;
         const logger = _contextBuilderDeps.getLogger();
-        logger.info("context", "Auto-detected context files", { storyId: story.id, files: detected });
+        logger.info("context", "Auto-detected context files", { storyId: story.id, files: framed });
       }
     } catch (error) {
       const logger = _contextBuilderDeps.getLogger();
