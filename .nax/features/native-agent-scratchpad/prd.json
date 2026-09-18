@@ -1,0 +1,264 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "native-agent-scratchpad",
+  "branchName": "feat/native-agent-scratchpad",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-09-18T16:35:20.967Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add tool-declared path confinement",
+      "description": "**Goal** — Add structural, tool-declared path confinement while preserving the policy as the single containment seam.\n\n**Motivation** — Every path-bearing coding tool is contained to the permitted root, so there is no writing to `/tmp`.\n\n**Approach** — Containment is the load-bearing decision, and there were three candidates:\n\n1. **The tools resolve and contain their own paths.** Rejected: `src/tools/read.ts` states the invariant — \"The tool never resolves a path itself: it uses `ctx.resolvedPaths`, which the policy produced. That is what keeps containment in one seam.\" This would create a second containment implementation and hide the path from the policy entirely, so deny/ask rules and the audit ledger would never see it.\n2. **Ordinary `pathFields` plus a `ScratchpadWrite(.nax/scratchpad/**)` grant.** Rejected: containment becomes *config*. A mis-set grant repoints the tools at the repository, which destroys the two properties the rest of this design rests on — that the read-only review ops and the `safe` profile can hold these tools safely.\n3. **A tool-declared confinement on `ToolScope` (chosen).** The tool declares `confineTo`, and the policy resolves against `<root>/<confineTo>` instead of `<root>`. Containment stays in the one seam, the declaration is structural rather than configurable, and it mirrors how `allowedVerbs` already works — per `src/tools/registry.ts`, \"a verb-gated tool must declare the verbs it permits so the policy can never be granted a subcommand the tool itself disallows.\"\n\n**Scope** — In: ToolScope and policy pathFields resolution. Out: scratchpad tools (US-002), applying confineTo to existing tools, and a second containment domain.\n\n**Interface** — `readonly confineTo?: string` — a root-relative subdirectory the tool's `pathFields` are confined to. Tool-declared, never config-declared.\n\n**Approach** — The only change to `src/tools/policy.ts` is the root passed to `resolveWithin`. The grant-matching spelling stays repo-root-relative, so existing grant globs, deny rules and `naxOwnedWriteRefusal` continue to see the canonical path.\n```ts\nconst effectiveRoot =\n  scope.confineTo === undefined ? resolvedRoot : realOrRaw(join(resolvedRoot, scope.confineTo));\nfor (const field of scope.pathFields) {\n  const value = pathFieldValue(input, field);\n  if (value === undefined) continue;\n  if (typeof value !== \"string\") return deny(`\"${field}\" must be a string path`);\n  const resolved = resolveWithin(effectiveRoot, value);\n  if (resolved === null) return deny(`path \"${value}\" ${outOfRootReason(effectiveRoot, value)}`, true);\n  const rel = relativeTo(resolved); // still relative to resolvedRoot\n}\n```",
+      "acceptanceCriteria": [
+        "Given an unconditional grant and `pathFields: [\"path\"]`, `confineTo: \".nax/scratchpad\"`, when policy checks `path: \"notes.md\"`, then its allowed verdict has exactly `<root>/.nax/scratchpad/notes.md` as the single resolved path.",
+        "Given that scope, when policy checks `path: \"../../src/index.ts\"`, then it returns a refused verdict with `breach: true` and a reason including the requested path.",
+        "Given that scope, when policy checks an absolute path outside the confined directory, then it returns a refused verdict with `breach: true`.",
+        "Given a symlink inside the confined directory targeting outside the repository root, when policy checks its path, then it returns a refused verdict.",
+        "Given a scope omitting `confineTo`, when policy checks `path: \"src/index.ts\"`, then it returns an allowed verdict resolved against the policy root.",
+        "Given grant `[\".nax/scratchpad/**\"]` and `confineTo: \".nax/scratchpad\"`, when policy checks `notes.md`, then it returns an allowed verdict using repository-root-relative grant spelling.",
+        "Given deny rule `[\".nax/scratchpad/secret*\"]`, when policy checks confined `secret.txt`, then it returns a refused verdict.",
+        "Given that deny rule, when policy checks confined `notes.md`, then it returns an allowed verdict."
+      ],
+      "tags": [
+        "feature",
+        "policy",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "This changes the shared access-control containment seam and must preserve realpath, grants, deny rules, and legacy undefined-confineTo behavior."
+      },
+      "contextFiles": [
+        "src/tools/types.ts",
+        "src/tools/policy.ts",
+        "src/utils/realpath.ts",
+        "test/unit/tools/policy.test.ts"
+      ],
+      "outOfScope": [
+        "Applying the new `confineTo` field to any existing tool is not part of this feature; only the three scratchpad tools declare it.",
+        "Locating the scratchpad outside the repository, for example under `~/.nax/<project>/`, is not part of this feature; that would require a second containment domain in the policy."
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Implement scratchpad coding tools",
+      "description": "**Goal** — Add confined write, read, and list tools for agent-owned throwaway files.\n\n**Motivation** — A nax agent has nowhere to put throwaway work.\n\n**Scope** — In: scratchpad.ts, registration/reservation/type/barrel integration, byte bounds, and tool tests. Out: default availability (US-003), wipe/ignore (US-004), awareness prompts (US-005), and ScratchpadDelete.\n\n**Interface** — `CodingToolName` gains `\"ScratchpadWrite\" | \"ScratchpadRead\" | \"ScratchpadList\"`; `RESERVED_TOOL_NAMES` gains the three appended names; `registerBuiltinCodingTools()` registers all three under the same `getCodingTool(name) === undefined` idempotence guard.\n\n**Approach** —\n```ts\nexport const SCRATCHPAD_DIR = \".nax/scratchpad\";\nexport const scratchpadWriteTool: CodingTool = {\n  name: \"ScratchpadWrite\",\n  description: \"Write a throwaway file to your scratchpad at .nax/scratchpad/. Use it for notes to yourself, command output you want to re-read, or intermediate lists. It is never committed and is wiped at the start of each run. Paths are relative to the scratchpad and cannot reach the repository.\",\n  inputSchema: { type: \"object\", properties: { path: { type: \"string\" }, content: { type: \"string\" } }, required: [\"path\", \"content\"] },\n  scope: { pathFields: [\"path\"], confineTo: SCRATCHPAD_DIR },\n  async run(input, ctx) { /* uses ctx.resolvedPaths[0], never resolves itself */ },\n};\n```\nScratchpadRead reports missing files as `isError`, List reports an absent directory as successful empty output, Write creates parent directories and rejects oversize content before writing, and Read truncates to maxBytes with `resultBytesPreTruncation` equal to the full byte count.",
+      "acceptanceCriteria": [
+        "When `SCRATCHPAD_DIR` is imported from the tools barrel, then it equals `.nax/scratchpad`.",
+        "When each scratchpad tool is inspected, then `scope.confineTo` equals `SCRATCHPAD_DIR`.",
+        "When ScratchpadWrite and ScratchpadRead are inspected, then each `pathFields` contains `path`.",
+        "When runtime `callTool(\"ScratchpadWrite\", {path:\"notes.md\",content:\"hello\"})` is invoked, then it returns a non-error outcome and `<root>/.nax/scratchpad/notes.md` contains exactly `hello`.",
+        "When ScratchpadWrite writes `a/b/notes.md`, then it returns a non-error outcome and creates intermediate directories.",
+        "Given a preceding ScratchpadWrite, when ScratchpadRead reads that path, then its non-error content equals the written content.",
+        "When ScratchpadRead reads a nonexistent path, then it returns `isError: true` content naming that requested path without throwing.",
+        "When runtime ScratchpadWrite receives `../../src/index.ts`, then it returns a refused outcome and creates no file anywhere under the repository root outside `.nax/scratchpad/`.",
+        "Given two ScratchpadWrite calls, when ScratchpadList runs, then its non-error content names both written paths.",
+        "When ScratchpadList runs without a scratchpad directory, then it returns a non-error outcome reporting no entries.",
+        "When ScratchpadWrite content exceeds `ctx.maxFileBytes`, then it returns `isError: true` content stating the limit and writes no file.",
+        "When runtime ScratchpadRead reads a file larger than `ctx.maxBytes`, then its non-error content is at most `ctx.maxBytes` bytes.",
+        "When `scratchpadReadTool.run` receives `maxBytes` smaller than the target file, then `resultBytesPreTruncation` equals the file's full byte length.",
+        "When `registerBuiltinCodingTools()` runs, then lookup returns each of ScratchpadWrite, ScratchpadRead, and ScratchpadList.",
+        "When third-party `registerCodingTool` uses `ScratchpadWrite`, then it throws with code `TOOL_NAME_RESERVED`."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "security"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New path-confined read/write tools cross the policy access-control boundary and integrate filesystem limits, registry, runtime, and exports."
+      },
+      "contextFiles": [
+        "src/tools/read.ts",
+        "src/tools/write.ts",
+        "src/tools/registry.ts",
+        "src/tools/runtime.ts",
+        "src/tools/index.ts"
+      ],
+      "expectedFiles": [
+        "src/tools/scratchpad.ts",
+        "test/unit/tools/scratchpad.test.ts"
+      ],
+      "outOfScope": [
+        "A `ScratchpadDelete` tool is not part of this feature; overwriting a file and the run-start wipe cover replacement and cleanup, and an unused tool costs prompt bytes on every hop.",
+        "Widening the `Bash` or `RunCommand` shell gate so a shell redirect can reach `.nax/scratchpad/` is not part of this feature; those tools carry no path fields and are gated by human-authored `Bash(...)` rules and the lexer, which is a different seam."
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Make scratchpad tools available to every operation",
+      "description": "**Goal** — Advertise the scratchpad tools for every op while preserving operation declarations as the repository-tool ceiling.\n\n**Motivation** — `adversarialReviewOp` and `semanticReviewOp` declare `tools: [\"Read\", \"Glob\", \"Grep\", \"Git\"]` — no write surface at all.\n\n**Scope** — In: append the three tools at `declaredWithProviders`, add them to DEFAULT_CODING_TOOLS, update closed-world tests to safety invariants, and ensure direct calls to undeclared repository tools are refused so the review-op ceiling is effective. Out: automatic scoped grants and tool implementation.\n\n**Interface** — `DEFAULT_CODING_TOOLS` changes from `[\"Read\", \"Glob\", \"Grep\"]` to `[\"Read\", \"Glob\", \"Grep\", \"ScratchpadWrite\", \"ScratchpadRead\", \"ScratchpadList\"]`. This does not weaken `safe`: the profile promises the agent cannot modify the repository, and a tool confined to `.nax/scratchpad/` does not modify it.\n\n**Design notes** — `scoped` exists so a human enumerates every stage capability, and a project opts in by writing `ScratchpadWrite(*)` in its own `execution.permissions` block. Replace exact-list tests with invariants that safe has the six read/scratchpad names and no Write/Edit/Delete/GitCommit/RunCommand/Exec, and that a Read-only declaration gets Scratchpad tools but no other undeclared repository tool.",
+      "acceptanceCriteria": [
+        "Given an operation declaring `[\"Read\"]`, when coding-tool support resolves, then advertised tools contain Read, ScratchpadWrite, ScratchpadRead, and ScratchpadList.",
+        "When `safe` permissions resolve, then grant names include all three scratchpad tools and include none of Write, Edit, Delete, GitCommit, RunCommand, or Exec.",
+        "When `unrestricted` permissions resolve, then grant names include ScratchpadWrite, ScratchpadRead, and ScratchpadList.",
+        "Given scoped permissions with no scratchpad rule, when ScratchpadWrite is called through callTool, then it returns a refused outcome whose reason names the tool rather than raising or silently succeeding.",
+        "Given a read-only review declaration `[\"Read\",\"Glob\",\"Grep\",\"Git\"]` under unrestricted, when ScratchpadWrite writes `findings.md`, then it returns a non-error outcome.",
+        "Given that review declaration, when Write is called with a repository path, then it returns a refused outcome."
+      ],
+      "tags": [
+        "feature",
+        "permissions",
+        "security"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "It changes permission and operation-declaration access control across support and runtime, including a direct-call regression path."
+      },
+      "contextFiles": [
+        "src/agents/coding-tool-support.ts",
+        "src/config/permissions.ts",
+        "src/operations/adversarial-review.ts",
+        "src/tools/runtime.ts",
+        "test/unit/agents/coding-tool-support.test.ts"
+      ],
+      "outOfScope": [
+        "Granting the scratchpad tools automatically under the `scoped` permission profile is not part of this feature; `scoped` exists so a human enumerates every stage capability, and a project opts in by writing `ScratchpadWrite(*)` in its own `execution.permissions` block."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/config/permissions.test.ts",
+          "reason": "asserts the `safe` profile's grants are exactly `[\"Read\", \"Glob\", \"Grep\"]`. Adding the scratchpad tools to `DEFAULT_CODING_TOOLS` necessarily breaks this closed-world list. Replace it with an invariant that the list contains the three read tools and the three scratchpad tools, and contains no repository-mutating tool (`Write`, `Edit`, `Delete`, `GitCommit`, `RunCommand`, `Exec`) — which is the property `safe` actually guarantees."
+        },
+        {
+          "path": "test/unit/agents/coding-tool-support.test.ts",
+          "reason": "asserts an op declaring `tools: [\"Read\"]` advertises exactly `[\"Read\"]`. Appending the scratchpad tools at the union necessarily breaks this. Replace it with an invariant that the advertised list contains `Read` and the three scratchpad tools, and contains no other repository tool the op did not declare."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Wipe and ignore the scratchpad",
+      "description": "**Goal** — Wipe scratchpad data at run start and prevent it from entering Git.\n\n**Motivation** — An agent that wants to keep a note, park a list of files to revisit, or stash a chunk of command output writes it into the working tree — where it lands in the diff, the commit, and the review.\n\n**Scope** — In: setupRun wipe using SCRATCHPAD_DIR, tolerated absence/failure with a setup warning, and the nested-worktree ignore entry. Out: persistence, partitioning, session-scratch migration, worktree survival, and directory-wide quotas.\n\n**Interface** — NAX_GITIGNORE_ENTRIES gains `\"**/.nax/scratchpad/\"`. The `**/` prefix is required, not cosmetic — it follows `**/.nax/cache/` (nax#2136/#2137), whose comment records the failure a bare entry reproduces: \"generated untracked in the main checkout and committed inside the story worktree, so the merge back aborts on an untracked overwrite and strands the story branch.\"\n\n**Approach** — Wipe `.nax/scratchpad/` in `setupRun`, tolerating both absence and failure. On permissions or a busy handle, log at warn and continue: a scratch directory must never wedge a run. Use SCRATCHPAD_DIR exported by US-002 rather than duplicating the literal.",
+      "acceptanceCriteria": [
+        "Given a run workdir whose scratchpad contains a file, when setupRun completes, then that file no longer exists.",
+        "Given no scratchpad directory, when setupRun runs, then it completes without raising.",
+        "Given injected directory removal rejects, when setupRun runs, then it still returns its result and emits a warn-level record with stage `setup` whose message names the scratchpad.",
+        "When NAX_GITIGNORE_ENTRIES is read, then it contains exactly `**/.nax/scratchpad/`."
+      ],
+      "tags": [
+        "feature",
+        "lifecycle",
+        "gitignore"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One lifecycle integration adds a tolerant cleanup branch and one shared ignore-list entry."
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/run-setup.ts",
+        "src/utils/gitignore.ts",
+        "src/session/scratch-purge.ts",
+        "src/tools/scratchpad.ts",
+        "test/unit/execution/lifecycle/run-setup.test.ts"
+      ],
+      "outOfScope": [
+        "Persisting scratchpad contents across separate `nax run` invocations is not part of this feature; the directory is wiped at the start of every run.",
+        "Partitioning the scratchpad per session, per story, or per role is not part of this feature; one flat directory per run is the chosen granularity.",
+        "Migrating or changing the existing session-scratch subsystem (`src/session/scratch-writer.ts`, `scratch.jsonl`, the `query_scratch` pull tool) is not part of this feature.",
+        "Making scratchpad contents survive a worktree teardown is not part of this feature; a parallel story's worktree is force-removed and its scratchpad goes with it.",
+        "Bounding the total size or file count of the scratchpad directory is not part of this feature; only the per-file ceiling already carried by the run context's `maxFileBytes` applies, and the run-start wipe bounds accumulation."
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-005",
+      "title": "Add scratchpad prompt awareness",
+      "description": "**Goal** — Carve the usable scratchpad out of .nax immutability guidance and introduce it to implementation and review agents.\n\n**Motivation** — These are the longest analytical turns in the pipeline, and the fix cannot be \"grant them `Write`\": that hands a reviewer the ability to edit the code it is judging.\n\n**Scope** — In: artifacts exception, scratchpad section/barrel, and TDD, rectifier, semantic-review, and adversarial-review composition. Out: feeding scratchpad contents as context, session-scratch changes, and persistence.\n\n**Interface** — `buildNaxArtifactsSection(role, _variant?, _isolation?): string` retains the same signature and returns the existing prohibition plus `.nax/scratchpad/` as its one exception. Without this the agent holds two opposite instructions and the likely resolution is that it obeys the standing prohibition and never uses the scratchpad.\n\n**Approach** — Carve `.nax/scratchpad/` out of the `.nax/` immutability section, add a `buildScratchpadSection()` introducing the scratchpad, and wire it into the TDD, rectifier, semantic-review and adversarial-review builders — the review builders included, because they do not compose `buildNaxArtifactsSection` and would otherwise never learn the scratchpad exists.",
+      "acceptanceCriteria": [
+        "When buildNaxArtifactsSection is called for implementer, then it names `.nax/scratchpad/` as an exception and still states files under `.nax/` must never be moved, renamed, or deleted.",
+        "When buildNaxArtifactsSection is called for standard and lite variants, then it returns identical text.",
+        "When buildScratchpadSection() is called, then it names `.nax/scratchpad/`, states contents are wiped at the start of each run, and states they are never committed.",
+        "When TddPromptBuilder.build() builds an implementer prompt, then it contains `.nax/scratchpad/`.",
+        "When buildSemanticReviewPrompt builds a prompt, then it contains `.nax/scratchpad/`.",
+        "When buildAdversarialReviewPrompt builds a prompt, then it contains `.nax/scratchpad/.`"
+      ],
+      "tags": [
+        "feature",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A new prompt section is composed into several existing builders while preserving the negative immutability guard."
+      },
+      "contextFiles": [
+        "src/prompts/sections/nax-artifacts.ts",
+        "src/prompts/builders/tdd-builder.ts",
+        "src/prompts/builders/review-builder.ts",
+        "src/prompts/builders/adversarial-review-builder.ts",
+        "src/prompts/builders/rectifier-builder-helpers.ts"
+      ],
+      "expectedFiles": [
+        "src/prompts/sections/scratchpad.ts",
+        "test/unit/prompts/sections/scratchpad.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a rectifier prompt is built, then it contains `.nax/scratchpad/`.",
+        "When buildNaxArtifactsSection is rendered, then it does not authorize moving, renaming, or deleting any `.nax/` path other than scratchpad contents."
+      ],
+      "outOfScope": [
+        "Feeding scratchpad contents back into agent prompts as context is not part of this feature; `.naxignore` already excludes `.nax/` from context indexing and no provider reads the scratchpad.",
+        "Migrating or changing the existing session-scratch subsystem (`src/session/scratch-writer.ts`, `scratch.jsonl`, the `query_scratch` pull tool) is not part of this feature."
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing code is the target architecture. Tool names and ToolScope are defined in src/tools/types.ts:25-126; ToolScope currently has no confineTo. src/tools/policy.ts:85-92 is the one containment seam: resolveWithin() realpath-checks containment and excludes .git/config paths. compileToolPolicy() resolves the repository root at src/tools/policy.ts:136, so confineTo must change only the root passed to resolveWithin for pathFields, leaving later relative-path, grant, deny/ask, owned-write, and audit processing repository-root-relative. src/tools/read.ts:1-6 and src/tools/write.ts:8-47 establish the required pattern: tools consume ctx.resolvedPaths rather than resolving inputs; Write creates parents, enforces maxFileBytes, and returns ToolResult errors. Symlink escape tests must exercise the policy/runtime seam. This is an access-control boundary, so US-001 through US-003 require strict three-session TDD under the security override.\n\nRegistration is centralized in src/tools/runtime.ts:64-82 and is idempotent per getCodingTool(), names are reserved in src/tools/registry.ts:88-139, and src/tools/index.ts exports the public surface. ToolResult already supports resultBytesPreTruncation (src/tools/registry.ts:16-42). Implement scratchpad.ts using the Write/Read patterns, Bun file APIs where applicable and node:fs/promises for directory operations. New files are src/tools/scratchpad.ts, test/unit/tools/scratchpad.test.ts, src/prompts/sections/scratchpad.ts, and test/unit/prompts/sections/scratchpad.test.ts.\n\nAvailability is controlled both by DEFAULT_CODING_TOOLS (src/config/permissions.ts:105-117, consumed by safe and unrestricted at lines 229-251) and by declaredWithProviders in src/agents/coding-tool-support.ts. Direct runtime calls currently look up any registered tool and evaluate policy (src/tools/runtime.ts:218-244); therefore US-003 must make operation declaration an effective call ceiling for ordinary tools too, otherwise its required reviewer integration criterion cannot refuse direct Write under unrestricted. The three scratchpad names must be added to the declaration union before that ceiling is evaluated; scoped remains an explicit human-grant profile.\n\nsetupRun begins at src/execution/lifecycle/run-setup.ts:183 and has injectable dependencies at lines 35-40. Add an injectable scratchpad removal operation, wipe under workdir at setup without treating absence/failure as fatal, and warn using stage setup. NAX_GITIGNORE_ENTRIES is the shared ignore SSOT at src/utils/gitignore.ts:51-91; append exactly **/.nax/scratchpad/. src/session/scratch-purge.ts:10-37 is only a dependency-injection/removal precedent, not a subsystem to migrate.\n\nPrompt work changes src/prompts/sections/nax-artifacts.ts:18-35 and its TDD composition at src/prompts/builders/tdd-builder.ts:268-273. Semantic and adversarial prompts construct their own text (src/prompts/builders/review-builder.ts:140-178; src/prompts/builders/adversarial-review-builder.ts:361-432); rectification already composes artifacts in src/prompts/builders/rectifier-builder-helpers.ts:13,145. Add a section and compose it at all four surfaces. The change is additive with no migration: undefined confineTo preserves all existing scopes, scratchpad data is intentionally wiped between runs, and the session scratch.jsonl/query_scratch subsystem is unchanged.",
+  "outOfScope": [
+    "A `ScratchpadDelete` tool is not part of this feature; overwriting a file and the run-start wipe cover replacement and cleanup, and an unused tool costs prompt bytes on every hop.",
+    "Widening the `Bash` or `RunCommand` shell gate so a shell redirect can reach `.nax/scratchpad/` is not part of this feature; those tools carry no path fields and are gated by human-authored `Bash(...)` rules and the lexer, which is a different seam.",
+    "Granting the scratchpad tools automatically under the `scoped` permission profile is not part of this feature; `scoped` exists so a human enumerates every stage capability, and a project opts in by writing `ScratchpadWrite(*)` in its own `execution.permissions` block.",
+    "Persisting scratchpad contents across separate `nax run` invocations is not part of this feature; the directory is wiped at the start of every run.",
+    "Feeding scratchpad contents back into agent prompts as context is not part of this feature; `.naxignore` already excludes `.nax/` from context indexing and no provider reads the scratchpad.",
+    "Partitioning the scratchpad per session, per story, or per role is not part of this feature; one flat directory per run is the chosen granularity.",
+    "Locating the scratchpad outside the repository, for example under `~/.nax/<project>/`, is not part of this feature; that would require a second containment domain in the policy.",
+    "Applying the new `confineTo` field to any existing tool is not part of this feature; only the three scratchpad tools declare it.",
+    "Migrating or changing the existing session-scratch subsystem (`src/session/scratch-writer.ts`, `scratch.jsonl`, the `query_scratch` pull tool) is not part of this feature.",
+    "Making scratchpad contents survive a worktree teardown is not part of this feature; a parallel story's worktree is force-removed and its scratchpad goes with it.",
+    "Coordinating concurrent writes to the same scratchpad path is not part of this feature; tool calls within a session are sequential and parallel stories write into separate worktrees, so last-write-wins is the accepted behaviour.",
+    "Bounding the total size or file count of the scratchpad directory is not part of this feature; only the per-file ceiling already carried by the run context's `maxFileBytes` applies, and the run-start wipe bounds accumulation."
+  ],
+  "routingProfile": "native"
+}

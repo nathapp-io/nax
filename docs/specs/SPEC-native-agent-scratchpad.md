@@ -266,10 +266,16 @@ never learn the scratchpad exists. Depends on US-002.
 
 **US-005**
 - `src/prompts/sections/nax-artifacts.ts` — the prohibition to carve out.
-- `src/prompts/sections/index.ts` — section barrel.
 - `src/prompts/builders/tdd-builder.ts` — composition site at `build()`.
+- `src/prompts/builders/rectifier-builder-helpers.ts` — the second existing composition site.
 - `src/prompts/builders/review-builder.ts` — `buildSemanticReviewPrompt`.
 - `src/prompts/builders/adversarial-review-builder.ts` — `buildAdversarialReviewPrompt`.
+
+`src/prompts/sections/index.ts` is deliberately absent from this read list despite
+being edited: the builders import sections from that barrel, so exporting the new
+section is forced by AC-4 and AC-5 rather than being a separate thing to discover, and
+the list is capped at five reads. All four composition sites are listed instead,
+because a builder that is never edited is a site the agent will not find by pattern.
 
 ### Creates
 
