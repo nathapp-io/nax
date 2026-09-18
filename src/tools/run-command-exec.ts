@@ -18,14 +18,13 @@
  * `src/tools/policy.ts`. It is re-checked here too, because this function
  * must also be safe to call directly, bypassing the runtime (as this file's
  * own tests do). Then `deniedFlag` (source/destination-redirecting flags a
- * verb-prefix grant cannot see), then `classifyExec`/`normalizeExec`
- * (install-shaped hardening and workspace scoping), then `runArgv`.
+ * verb-prefix grant cannot see), then `normalizeExec` (install-shaped
+ * hardening and workspace scoping), then `runArgv`.
  */
 import { relative } from "node:path";
 import { runArgv } from "../utils/argv-exec";
 import { deniedFlag, validateArgv } from "./exec-guard";
-import { recordExecTouchedPaths, snapshotExecTouchedPaths } from "./exec-touched-paths";
-import { classifyExec, normalizeExec, normalizeManagerBinary } from "./package-managers";
+import { normalizeExec } from "./package-managers";
 import type { ExecTarget } from "./package-managers-types";
 import type { ToolResult, ToolRunContext } from "./registry";
 import type { RunCommandToolOptions } from "./run-command";
@@ -74,11 +73,6 @@ export async function runExecBranch(
     ...(opts.exec.packageName !== undefined ? { packageName: opts.exec.packageName } : {}),
   });
   if ("error" in normalized) return { content: normalized.error, isError: true };
-  const classification = classifyExec(argv);
-  const touchedBefore =
-    opts.exec.touchedPaths !== undefined && classification === "install"
-      ? await snapshotExecTouchedPaths(normalizeManagerBinary(binary), normalized.cwd)
-      : undefined;
 
   try {
     const result = await runArgv({
@@ -92,30 +86,6 @@ export async function runExecBranch(
     const body = result.timedOut
       ? `timed out after ${EXEC_TIMEOUT_MS}ms`
       : `exit ${result.exitCode}\n${result.stdout}\n${result.stderr}`;
-
-    // Task 10: the containment carve-out's write side. Recorded only for a
-    // REAL success (not timed out, exit 0) of an argv `classifyExec` already
-    // recognized as install-shaped -- never for a generic call, and never
-    // from anything the model supplied itself (the filenames come from
-    // `recordExecTouchedPaths`'s own table, keyed by the manager binary this
-    // module already validated and normalized above). `normalized.cwd` is
-    // the cwd nax itself computed, not one the model could redirect (see
-    // `package-managers.ts`'s directory-redirect screens).
-    if (opts.exec.touchedPaths !== undefined && !result.timedOut && result.exitCode === 0) {
-      if (classification === "install" && touchedBefore !== undefined) {
-        // Deliberately `binary` (from the ORIGINAL argv), not
-        // `normalized.argv[0]`: manager identity is invariant under
-        // normalization (normalizeExec only ever appends a scoping/
-        // no-scripts flag or rewrites arguments after argv[0]; it never
-        // changes the binary itself), so the two would name the same
-        // manager here -- but every other read in this function uses
-        // `normalized` for the values normalization actually changes
-        // (cwd, env). Using the pre-normalization binary keeps that
-        // distinction visible instead of reaching into `normalized.argv`
-        // for a value it never touches.
-        await recordExecTouchedPaths(opts.exec.touchedPaths, touchedBefore);
-      }
-    }
 
     return {
       content: body.slice(0, ctx.maxBytes),

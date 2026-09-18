@@ -174,18 +174,8 @@ export function buildCodingToolSupport(args: {
     args.auditDir !== undefined
       ? createToolAuditSink({ dir: args.auditDir, sessionName: args.sessionName ?? "unattached" })
       : createNoOpToolAuditSink();
-  // Task 10: shared, mutable, and scoped to this one hop's dispatch -- a
-  // fresh array every call, never a module-level or story-keyed cache. Given
-  // by reference to BOTH the policy (read side, in `check()`) and the Exec
-  // branch's options (write side, in run-command-exec.ts) so a successful
-  // repoRoot install and a later GitCommit call within the SAME hop see the
-  // same set. A commit an agent defers to a later hop still has the
-  // completion-phase auto-commit sweep (`autoCommitIfDirty`, which already
-  // stages from the git root) as its backstop -- see task-10-report.md.
-  const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(narrowedGrants, args.root, {
-      execTouchedPaths,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
@@ -208,7 +198,6 @@ export function buildCodingToolSupport(args: {
                       repoRoot: args.repoRoot ?? args.root,
                       packageWorkdir: args.packageWorkdir ?? args.root,
                       allowScripts: args.allowScripts ?? false,
-                      touchedPaths: execTouchedPaths,
                       // The compiled grant, not BUILT_IN_EXEC_PATTERNS -- a
                       // project's own Exec(...) expression replaces that
                       // list rather than extending it (see the comment on
