@@ -81,6 +81,14 @@ export const NAX_GITIGNORE_ENTRIES = [
   // the story's worktree, where the flow's `git add -A` would otherwise sweep
   // it into the feature branch.
   ".nax/tool-audit/",
+  // Test-pattern detection cache, written per workdir by
+  // src/test-runners/detect/cache.ts (which documents itself as gitignored --
+  // this entry is what makes that true). Derived data, cheap to rebuild.
+  // The `**/` prefix covers a monorepo package's own `.nax/`, which is the case
+  // that breaks worktree merges (nax#2136/#2137): generated untracked in the
+  // main checkout and committed inside the story worktree, so the merge back
+  // aborts on an untracked overwrite and strands the story branch.
+  "**/.nax/cache/",
 ];
 
 /**

@@ -83,6 +83,27 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
       expect(isIgnored(`packages/api/${feature}/status.json`)).toBe(true);
     });
   });
+
+  test("git ignores the detection cache, including a monorepo package's own .nax (nax#2137)", async () => {
+    // Asked of git for the same reason as the test above: the failure was
+    // invisible in the list. `.nax/cache/test-patterns.json` is written per
+    // workdir by src/test-runners/detect/cache.ts, whose docblock called it
+    // gitignored while no entry covered it. Under storyIsolation "worktree"
+    // that lands untracked in the main checkout and committed inside the story
+    // worktree, so the merge back aborts on an untracked overwrite and strands
+    // nax/<storyId> (nax#2136). The package-scoped case is the one that breaks.
+    await withTempDir(async (dir) => {
+      Bun.spawnSync(["git", "init", "-q", dir], { cwd: dir });
+      await Bun.write(join(dir, ".gitignore"), `${NAX_GITIGNORE_ENTRIES.join("\n")}\n`);
+
+      const isIgnored = (path: string) =>
+        Bun.spawnSync(["git", "check-ignore", "-q", path], { cwd: dir }).exitCode === 0;
+
+      for (const cache of [".nax/cache/test-patterns.json", "packages/lib/.nax/cache/test-patterns.json"]) {
+        expect(`${cache}: ${isIgnored(cache)}`).toBe(`${cache}: true`);
+      }
+    });
+  });
 });
 
 describe("NAX_NAXIGNORE_ENTRIES", () => {
