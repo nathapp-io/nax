@@ -53,21 +53,21 @@ export interface CodingToolSupport {
 export function buildCodingToolSupport(args: {
   root?: string;
   /**
-   * Execution root for Exec's `target: "repoRoot"` form, supplied by
-   * `storyExecRoot` in `src/operations/call.ts`.
+   * Execution root for Exec's `target: "repoRoot"` form.
    *
    * Under story worktree isolation this is the story's worktree root
    * (`<repo>/.nax-wt/<storyId>`), NOT the main checkout — a repo-scoped command
    * that used `PackageView.repoRoot` here wrote the user's real working tree
-   * (nax#2093). Falls back to `root` when absent, which is correct for
-   * single-package repos and non-isolated runs where the two coincide.
+   * (nax#2093). Falls back to `root` when absent. Post single-frame redesign
+   * (PR2) `root` is already `storyExecRoot`, so `resolveCodingToolSupport`
+   * passes no separate value and the fallback supplies it.
    */
   repoRoot?: string;
   /**
    * The story's ABSOLUTE package dir for Exec's `target: "package"` cwd.
    *
-   * Post-root-move, `codingToolRoot` and `codingToolRepoRoot` are BOTH
-   * `storyExecRoot` (the repo/worktree root), so `args.root` can no longer
+   * Post-root-move, `codingToolRoot` is `storyExecRoot` (the repo/worktree
+   * root), so `args.root` can no longer
    * stand in for the package dir: `run-command-exec.ts` computes
    * `relative(repoRoot, packageWorkdir)`, which would always be "" and make
    * `package-managers.ts`'s `effectiveTarget` collapse EVERY Exec call —
@@ -294,7 +294,6 @@ export async function resolveCodingToolSupport(
     | "providers"
     | "toolPatterns"
     | "codingToolRoot"
-    | "codingToolRepoRoot"
     | "codingToolFileOutput"
     | "outputDir"
     | "pipelineStage"
@@ -499,7 +498,8 @@ export async function resolveCodingToolSupport(
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
-    ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
+    // No `repoRoot`: post single-frame redesign (PR2) it equals `root`, so
+    // buildCodingToolSupport's `args.repoRoot ?? args.root` fallback supplies it.
     // Task 10: Exec's package target needs the story's ABSOLUTE package dir.
     // `codingToolPackageDir` is RELATIVE to projectDir (and worktree-prefixed
     // in production), while Exec compares it against an absolute repoRoot —

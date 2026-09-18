@@ -173,28 +173,20 @@ export interface AgentRunOptions {
   /** Per-tool narrowing from the op's `toolPatterns`; applied to the resolved grants. */
   toolPatterns?: import("@/tools").ToolPatternNarrowing;
   /**
-   * Permitted root for coding tools.
+   * Permitted root for coding tools — the dispatch's single containment root.
    *
-   * Deliberately NOT `workdir`: that is `ctx.packageDir`, which is "" for the
-   * root package of a single-package repo. This carries
-   * packageWorkdir(ctx.packageView), which resolves that to repoRoot.
-   */
-  codingToolRoot?: string;
-  /**
-   * Execution root for the same dispatch, when the story runs in a package.
+   * Post single-frame redesign this is `storyExecRoot(ctx.packageView)`: the
+   * repo root, or the story's worktree root `<repoRoot>/.nax-wt/<storyId>` under
+   * story worktree isolation — NOT the main checkout, so a repo-scoped command
+   * never writes the user's real working tree (nax#2093). It is both the
+   * containment root for every path-bearing tool and Exec's
+   * `target: "repoRoot"` root; the story's package identity now comes from
+   * `codingToolPackageDir` (relative) + `projectDir`, not from this field.
    *
-   * `codingToolRoot` is the package workdir and is the containment root for
-   * every path-bearing tool. Exec's `target: "repoRoot"` needs the repo root as
-   * well, and it is not derivable from the package dir alone. Under story
-   * worktree isolation this is the story EXECUTION root — the worktree root
-   * `<repoRoot>/.nax-wt/<storyId>` — NOT the main checkout; a repo-scoped
-   * command must not write the user's real working tree (nax#2093).
-   *
-   * PRODUCER: src/operations/call-run-options.ts
-   * (`codingToolRepoRoot: storyExecRoot(...)`, resolved by `storyExecRoot` in
+   * PRODUCER: src/operations/call-run-options.ts (`storyExecRoot` in
    * src/runtime/packages.ts).
    */
-  codingToolRepoRoot?: string;
+  codingToolRoot?: string;
   /**
    * The story's package dir, RELATIVE to `projectDir` — `PackageView.packageDir`
    * verbatim ("" for the root package, e.g. "packages/api" for a monorepo member).

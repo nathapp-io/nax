@@ -7,8 +7,8 @@ import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/codin
 import { _argvExecDeps } from "@/utils/argv-exec";
 
 /**
- * Task 10 (PR2 root move): post-Task-1 `codingToolRoot` and `codingToolRepoRoot`
- * are BOTH `storyExecRoot` (the repo/worktree root). If Exec's `packageWorkdir`
+ * Task 10 (PR2 root move): post-Task-1 `codingToolRoot` is `storyExecRoot` (the
+ * repo/worktree root), the single containment root. If Exec's `packageWorkdir`
  * is still derived from `root`, `relative(repoRoot, packageWorkdir)` is always
  * "" and `package-managers.ts`'s `effectiveTarget` collapse sends EVERY Exec
  * call — `target: "package"` included — to the repo root. These tests pin the
@@ -100,7 +100,6 @@ describe("resolveCodingToolSupport — Exec package workdir is ABSOLUTE (Task 10
       const support = await resolveCodingToolSupport({
         declaredTools: ["RunCommand", "Exec"],
         codingToolRoot: repo,
-        codingToolRepoRoot: repo,
         // RELATIVE to projectDir and worktree-shaped in production; feeding it
         // raw to Exec would make `relative(absoluteRepoRoot, relativeValue)`
         // garbage. resolveCodingToolSupport must convert it via packageWorkdir.
@@ -152,7 +151,6 @@ describe("resolveCodingToolSupport — Exec package name from the story package 
       const support = await resolveCodingToolSupport({
         declaredTools: ["RunCommand", "Exec"],
         codingToolRoot: projectDir,
-        codingToolRepoRoot: projectDir,
         codingToolPackageDir: "packages/api",
         projectDir,
         pipelineStage: "run",
