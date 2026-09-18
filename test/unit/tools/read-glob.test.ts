@@ -49,13 +49,13 @@ describe("readTool", () => {
       writeFileSync(manyPath, `${lines.join("\n")}\n`);
     });
 
-    test("no range supplied is byte-identical to today's whole-prefix read", async () => {
+    test("no range supplied carries a [N lines] header, and an empty input equals an explicit path input", async () => {
       const withRange = await readTool.run({ path: "many.txt" }, ctx([manyPath]));
       const noInput = await readTool.run({}, ctx([manyPath]));
       expect(withRange.content).toBe(noInput.content);
       expect(withRange.content).toContain("line 1");
       expect(withRange.content).toContain("line 50");
-      expect(withRange.content).not.toContain("[lines");
+      expect(withRange.content.startsWith("[50 lines]\n")).toBe(true);
     });
 
     test("offset alone returns from that 1-based line to the end", async () => {

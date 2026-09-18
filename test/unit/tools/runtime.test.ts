@@ -332,7 +332,9 @@ describe("createCodingToolRuntime — invocation logging", () => {
       storyId: "US-002",
       tool: "Read",
       outcome: "ok",
-      resultBytes: "const a = 1;\n".length,
+      // The unranged Read now leads with a `[N lines]\n` header, so the
+      // measured result size is the header plus the body.
+      resultBytes: "[1 lines]\n".length + "const a = 1;\n".length,
     });
   });
 
