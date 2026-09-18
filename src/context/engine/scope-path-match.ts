@@ -47,7 +47,22 @@ export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.\//, "");
 }
 
+/**
+ * Compiled-pattern memo (PERF-12). `globToRegex` is called from inside
+ * `files.some(...)` within `appliesTo.some(...)` (`static-rules.ts`) and once
+ * per chunk in `effectiveness.ts` `pathMatchesScope`, so a run recompiled the
+ * same handful of authored patterns once per pattern × scope-file pair. The
+ * key is the pattern string exactly as passed; the compiled regex has no
+ * global/sticky flag, so `.test()` carries no `lastIndex` state and sharing
+ * one instance across callers is safe. Patterns are authored frontmatter, so
+ * the map is bounded by the rule set.
+ */
+const GLOB_REGEX_CACHE = new Map<string, RegExp>();
+
 export function globToRegex(pattern: string): RegExp {
+  const cached = GLOB_REGEX_CACHE.get(pattern);
+  if (cached !== undefined) return cached;
+
   let regex = "";
   let i = 0;
   while (i < pattern.length) {
@@ -84,7 +99,9 @@ export function globToRegex(pattern: string): RegExp {
     }
     i++;
   }
-  return new RegExp(`(?:^|/)${regex}$`);
+  const compiled = new RegExp(`(?:^|/)${regex}$`);
+  GLOB_REGEX_CACHE.set(pattern, compiled);
+  return compiled;
 }
 
 /**
