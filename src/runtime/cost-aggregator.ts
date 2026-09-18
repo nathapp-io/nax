@@ -587,6 +587,7 @@ export class CostAggregator implements ICostAggregator {
       this._errors.push(...committedErrors);
     } finally {
       this._draining = false;
+      this._openScopes.clear();
     }
   }
 }
