@@ -190,10 +190,28 @@ export interface AgentRunOptions {
    * `<repoRoot>/.nax-wt/<storyId>` — NOT the main checkout; a repo-scoped
    * command must not write the user's real working tree (nax#2093).
    *
-   * PRODUCER: src/operations/call.ts (`codingToolRepoRoot: storyExecRoot(...)`,
-   * resolved by `storyExecRoot` in src/runtime/packages.ts).
+   * PRODUCER: src/operations/call-run-options.ts
+   * (`codingToolRepoRoot: storyExecRoot(...)`, resolved by `storyExecRoot` in
+   * src/runtime/packages.ts).
    */
   codingToolRepoRoot?: string;
+  /**
+   * The story's package dir, RELATIVE to `projectDir` — `PackageView.packageDir`
+   * verbatim ("" for the root package of a single-package repo, e.g.
+   * "packages/api" for a monorepo member).
+   *
+   * Independent of `codingToolRoot`: PR2
+   * (docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md)
+   * repoints `codingToolRoot` at the story's repo-rooted execution root, so
+   * this field — combined with `projectDir` below — is what
+   * `resolveCodingToolSupport` uses to resolve the story's own
+   * `.nax/mono/<pkg>/config.json` and to compute declared commands'
+   * execution cwd, without depending on what `codingToolRoot` means at
+   * dispatch time.
+   *
+   * PRODUCER: src/operations/call-run-options.ts (`ctx.packageView.packageDir`).
+   */
+  codingToolPackageDir?: string;
   /**
    * The absolute `fileOutput` path the dispatching op declared, when it declared
    * one (nax#2115).
@@ -204,7 +222,9 @@ export interface AgentRunOptions {
    * (`plan`, `plan-refine`, `debate-plan`) name a guarded path; every other
    * fileOutput path is unguarded and the exemption is inert for them.
    *
-   * PRODUCER: src/operations/call.ts (`runOp.fileOutput?.(input)`).
+   * PRODUCER: src/operations/call-run-options.ts
+   * (`codingToolFileOutput: fileOutputPath`, from `runOp.fileOutput?.(input)` at
+   * the call site).
    */
   codingToolFileOutput?: string;
   /**
@@ -217,7 +237,7 @@ export interface AgentRunOptions {
    * package workdir inside the story's git worktree, so `basename` of it would
    * silently disagree with the runtime whenever `config.name` is unset.
    *
-   * PRODUCER: src/operations/call.ts (`outputDir: ctx.runtime.outputDir`).
+   * PRODUCER: src/operations/call-run-options.ts (`outputDir: ctx.runtime.outputDir`).
    * A field with no producer is the nax#1744 / transcriptDir shape — every seam
    * passes its own test while the chain is dead end to end.
    */
