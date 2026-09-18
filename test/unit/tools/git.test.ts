@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   buildGitArgv,
   compileToolPolicy,
@@ -635,5 +636,90 @@ describe("US-002 — buildGitArgv compact log default", () => {
     expect(DEFAULT_LOG_FORMAT).toBe("format:%h %ad %s");
     const argv = argvOf({ subcommand: "log" });
     expect(argv).toContain(`--format=${DEFAULT_LOG_FORMAT}`);
+  });
+});
+
+/**
+ * US-002 runtime — the argv-shape tests above prove nax composes the right
+ * flags, but the load-bearing claim in the DEFAULT_LOG_FORMAT doc comment
+ * (that `format:` places the separator BETWEEN commits, so each --name-only
+ * file list stays grouped with the commit that produced it) is a git
+ * rendering property. It must be observed against a real repository, not
+ * inferred from argv strings.
+ */
+describe("gitTool — log renders the compact format and keeps --name-only grouped", () => {
+  const repos: string[] = [];
+
+  afterEach(() => {
+    for (const dir of repos.splice(0)) cleanupTempDir(dir);
+  });
+
+  /** Commits two files in one commit, then a second commit touching one of them. */
+  async function makeRepoWithCommits(): Promise<string> {
+    const repo = makeTempDir("nax-git-log-format-");
+    repos.push(repo);
+    mkdirSync(join(repo, "src"), { recursive: true });
+    writeFileSync(join(repo, "src", "a.ts"), "a1\n");
+    writeFileSync(join(repo, "src", "b.ts"), "b1\n");
+    const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    await run(["init", "-q"]).exited;
+    await run(["config", "user.email", "t@e.com"]).exited;
+    await run(["config", "user.name", "T"]).exited;
+    await run(["add", "-A"]).exited;
+    await run(["commit", "-q", "-m", "first commit"]).exited;
+    writeFileSync(join(repo, "src", "a.ts"), "a2\n");
+    await run(["add", "-A"]).exited;
+    await run(["commit", "-q", "-m", "second commit"]).exited;
+    return repo;
+  }
+
+  test("a default log renders one compact line per commit (short hash + short date + subject)", async () => {
+    const repo = await makeRepoWithCommits();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const content = contentOf(await rt.callTool("Git", { subcommand: "log" }));
+
+    // `--date=short` renders YYYY-MM-DD; the compact format puts it between the
+    // short hash and the subject. Two lines for two commits.
+    const lines = content.split("\n").filter((line) => line.length > 0);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line).toMatch(/^[0-9a-f]{7,} \d{4}-\d{2}-\d{2} (first|second) commit$/);
+    }
+    // git's medium rendering, which this default replaced, prints these headers.
+    expect(content).not.toContain("Author:");
+  });
+
+  test("a default log with --name-only keeps each file list grouped with its commit", async () => {
+    const repo = await makeRepoWithCommits();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const content = contentOf(await rt.callTool("Git", { subcommand: "log", nameOnly: true, paths: ["src"] }));
+
+    // Asserted against the RAW content, blank lines included. `format:` and
+    // `tformat:` both render one line per commit plus its file list, so a view
+    // that filters empty lines cannot tell them apart -- the difference IS the
+    // blank line. `format:` puts its separator BETWEEN entries, leaving each
+    // file list on the line directly after its own commit header; `tformat:`
+    // (and the bare `--format=` form) terminates the header and orphans the
+    // list one line below it, which is the shape the negative assertion pins.
+    expect(content).toContain("second commit\nsrc/a.ts");
+    expect(content).toContain("first commit\nsrc/a.ts\nsrc/b.ts");
+    expect(content).not.toContain("second commit\n\nsrc/a.ts");
+    // Newest first, so the two lists above are not one commit's under two names.
+    expect(content.indexOf("second commit")).toBeLessThan(content.indexOf("first commit"));
+  });
+
+  test("fullMessage: true restores git's medium commit body on log", async () => {
+    const repo = await makeRepoWithCommits();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const content = contentOf(await rt.callTool("Git", { subcommand: "log", fullMessage: true }));
+
+    // Git's medium default emits author and date headers — neither is present
+    // in the compact format. Their presence proves the default was actually
+    // suppressed (the runtime is reaching git, not just building argv).
+    expect(content).toContain("Author:");
+    expect(content).toContain("Date:");
   });
 });
