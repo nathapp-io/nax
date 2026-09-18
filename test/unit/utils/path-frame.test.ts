@@ -61,13 +61,13 @@ describe("toRepoFrame", () => {
   test("normalizes a leading ./ on the input path", () => {
     expect(toRepoFrame("./src/index.ts", "packages/app")).toBe("packages/app/src/index.ts");
   });
+});
 
-  test("is the only re-framing primitive exported by the module", async () => {
-    const mod = await import("@/utils/path-frame");
-    expect(Object.keys(mod)).not.toContain("toPackageFrame");
-    expect(Object.keys(mod)).not.toContain("partitionPackageFrame");
-    expect(Object.keys(mod)).not.toContain("UNREADABLE_MARKER");
-    expect(Object.keys(mod)).not.toContain("stripUnreadableMarker");
+describe("module export surface (single-frame redesign)", () => {
+  test("exposes toRepoFrame as the only frame primitive and no marker helper", async () => {
+    const keys = Object.keys(await import("@/utils/path-frame"));
+    expect(keys.filter((k) => k.endsWith("Frame"))).toEqual(["toRepoFrame"]);
+    expect(keys.filter((k) => k.includes("Marker"))).toEqual([]);
   });
 });
 

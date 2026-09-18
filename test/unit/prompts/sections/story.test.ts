@@ -233,6 +233,7 @@ describe("modifiedFiles rendered repo-rooted as stored (single-frame PR 2)", () 
       }),
     );
     expect(rendered).toContain("- `packages/web/src/x.ts` — neighbour change");
+    expect(rendered).not.toContain("not readable");
   });
 
   test("leaves a root story's entries unchanged", () => {
