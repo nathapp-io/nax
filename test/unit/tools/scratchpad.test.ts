@@ -27,7 +27,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { CodingTool, ToolRunContext } from "@/tools";
-import * as toolsNamespace from "@/tools";
 import {
   _resetBuiltinsForTest,
   _resetRegistryForTest,
@@ -39,24 +38,13 @@ import {
   RESERVED_TOOL_NAMES,
   registerBuiltinCodingTools,
   registerCodingTool,
+  SCRATCHPAD_DIR,
+  scratchpadListTool,
+  scratchpadReadTool,
+  scratchpadWriteTool,
 } from "@/tools";
 
 let root: string;
-
-// The four missing exports the story requires (SCRATCHPAD_DIR and the three
-// scratchpad tool exports) are not on the barrel type yet, but they ARE the
-// surface the ACs pin. A typed view over the namespace lets the test code
-// reference them without `as any` and without a `@ts-expect-error`, so the
-// file typechecks cleanly apart from the missing-feature error, and the
-// assertions still fail at runtime when the barrel lacks the export. This is
-// the documented test-writer pattern for "feature pinned at the public
-// surface": the type assertion is a deliberate shape, not a fallback.
-const tools = toolsNamespace as typeof toolsNamespace & {
-  readonly SCRATCHPAD_DIR: string;
-  readonly scratchpadWriteTool: CodingTool;
-  readonly scratchpadReadTool: CodingTool;
-  readonly scratchpadListTool: CodingTool;
-};
 
 beforeEach(() => {
   _resetRegistryForTest();
@@ -104,7 +92,7 @@ function ctx(target: string, opts: { maxBytes?: number; maxFileBytes?: number } 
  */
 describe("AC1: SCRATCHPAD_DIR is exported from the tools barrel and equals .nax/scratchpad", () => {
   test("the exported constant equals '.nax/scratchpad'", () => {
-    expect(tools.SCRATCHPAD_DIR).toBe(".nax/scratchpad");
+    expect(SCRATCHPAD_DIR).toBe(".nax/scratchpad");
   });
 });
 
@@ -117,12 +105,12 @@ describe("AC1: SCRATCHPAD_DIR is exported from the tools barrel and equals .nax/
  */
 describe("AC2: every scratchpad tool declares scope.confineTo === SCRATCHPAD_DIR", () => {
   const cases: Array<[string, CodingTool]> = [
-    ["ScratchpadWrite", tools.scratchpadWriteTool],
-    ["ScratchpadRead", tools.scratchpadReadTool],
-    ["ScratchpadList", tools.scratchpadListTool],
+    ["ScratchpadWrite", scratchpadWriteTool],
+    ["ScratchpadRead", scratchpadReadTool],
+    ["ScratchpadList", scratchpadListTool],
   ];
   test.each(cases)("%s.scope.confineTo === SCRATCHPAD_DIR", (_name, tool) => {
-    expect(tool.scope.confineTo).toBe(tools.SCRATCHPAD_DIR);
+    expect(tool.scope.confineTo).toBe(SCRATCHPAD_DIR);
   });
 });
 
@@ -134,8 +122,8 @@ describe("AC2: every scratchpad tool declares scope.confineTo === SCRATCHPAD_DIR
  */
 describe("AC3: ScratchpadWrite and ScratchpadRead each declare pathFields containing 'path'", () => {
   const cases: Array<[string, CodingTool]> = [
-    ["ScratchpadWrite", tools.scratchpadWriteTool],
-    ["ScratchpadRead", tools.scratchpadReadTool],
+    ["ScratchpadWrite", scratchpadWriteTool],
+    ["ScratchpadRead", scratchpadReadTool],
   ];
   test.each(cases)("%s.scope.pathFields contains 'path'", (_name, tool) => {
     expect(tool.scope.pathFields).toContain("path");
@@ -243,9 +231,9 @@ describe("AC7: ScratchpadRead on a missing path returns isError naming the path"
   // cannot mask a missing-file handling defect at the tool layer.
   test("scratchpadReadTool.run on a missing path returns isError naming the path without throwing", async () => {
     const target = join(root, ".nax", "scratchpad", "absent.md");
-    let promise!: ReturnType<NonNullable<typeof tools.scratchpadReadTool>["run"]>;
+    let promise!: ReturnType<NonNullable<typeof scratchpadReadTool>["run"]>;
     expect(() => {
-      promise = tools.scratchpadReadTool.run({ path: "absent.md" }, ctx(target));
+      promise = scratchpadReadTool.run({ path: "absent.md" }, ctx(target));
     }).not.toThrow();
     const settled = await promise;
     expect(settled.isError).toBe(true);
@@ -344,7 +332,7 @@ describe("AC10: ScratchpadList on a missing directory returns non-error with no 
   // path is covered above; this pins that the tool itself is the source of
   // the empty-listing contract, not a runtime adapter.
   test("scratchpadListTool.run on a missing scratchpad directory returns a non-error empty result", async () => {
-    const result = await tools.scratchpadListTool.run({}, ctx(join(root, ".nax", "scratchpad")));
+    const result = await scratchpadListTool.run({}, ctx(join(root, ".nax", "scratchpad")));
     expect(result.isError).toBeFalsy();
   });
 });
@@ -363,7 +351,7 @@ describe("AC11: ScratchpadWrite over maxFileBytes returns isError naming the lim
     // checks `>=` instead of `>` would still trip on this case.
     const maxFileBytes = 64;
     const oversized = "x".repeat(maxFileBytes + 1);
-    const result = await tools.scratchpadWriteTool.run(
+    const result = await scratchpadWriteTool.run(
       { path: "huge.md", content: oversized },
       ctx(target, { maxFileBytes }),
     );
@@ -379,10 +367,7 @@ describe("AC11: ScratchpadWrite over maxFileBytes returns isError naming the lim
     const target = join(root, ".nax", "scratchpad", "edge.md");
     const maxFileBytes = 64;
     const atLimit = "y".repeat(maxFileBytes);
-    const result = await tools.scratchpadWriteTool.run(
-      { path: "edge.md", content: atLimit },
-      ctx(target, { maxFileBytes }),
-    );
+    const result = await scratchpadWriteTool.run({ path: "edge.md", content: atLimit }, ctx(target, { maxFileBytes }));
     expect(result.isError).toBeFalsy();
     expect(existsSync(target)).toBe(true);
     expect(readFileSync(target, "utf8")).toBe(atLimit);
@@ -407,7 +392,7 @@ describe("AC12: ScratchpadRead on a file larger than maxBytes returns at most ma
     mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
     writeFileSync(target, fileBytes);
 
-    const result = await tools.scratchpadReadTool.run({ path: "big.md" }, ctx(target, { maxBytes }));
+    const result = await scratchpadReadTool.run({ path: "big.md" }, ctx(target, { maxBytes }));
     expect(result.isError).toBeFalsy();
     expect(Buffer.byteLength(result.content, "utf8")).toBeLessThanOrEqual(maxBytes);
   });
@@ -422,9 +407,36 @@ describe("AC12: ScratchpadRead on a file larger than maxBytes returns at most ma
     mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
     writeFileSync(target, fileBytes);
 
-    const result = await tools.scratchpadReadTool.run({ path: "small.md" }, ctx(target, { maxBytes }));
+    const result = await scratchpadReadTool.run({ path: "small.md" }, ctx(target, { maxBytes }));
     expect(result.isError).toBeFalsy();
     expect(result.content).toBe(fileBytes);
+  });
+
+  // Discriminating boundary: multi-byte UTF-8 content whose raw-byte slice
+  // lands in the middle of a codepoint. A byte-aligned slice (`Buffer.subarray
+  // (0, budget).toString("utf8")`) leaves a lone leading byte, which the
+  // UTF-8 decoder substitutes with U+FFFD (encoded as 3 bytes). The
+  // resulting string is therefore LONGER than the byte budget, and the
+  // AC12 "at most maxBytes bytes" assertion catches it. This is the case
+  // the duplicate `truncate` between read.ts and scratchpad.ts most easily
+  // diverges on: a codepoint-aware fix that lands in one and not the other
+  // would make this test green on the fixed side and still red here, which
+  // is exactly the regression class the reviewer flagged.
+  test("multi-byte UTF-8 content stays within maxBytes when the slice would otherwise land mid-codepoint", async () => {
+    // 20 "é" = 40 bytes; maxBytes=5 makes a 5-byte raw slice land inside
+    // the 3rd codepoint. The suffix marker is 26 bytes -- longer than
+    // maxBytes -- so the truncation path returns a plain 5-byte slice
+    // without a marker, isolating the mid-codepoint question from the
+    // suffix-budget question.
+    const fileBytes = "é".repeat(20);
+    const maxBytes = 5;
+    const target = join(root, ".nax", "scratchpad", "utf8.md");
+    mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
+    writeFileSync(target, fileBytes);
+
+    const result = await scratchpadReadTool.run({ path: "utf8.md" }, ctx(target, { maxBytes }));
+    expect(result.isError).toBeFalsy();
+    expect(Buffer.byteLength(result.content, "utf8")).toBeLessThanOrEqual(maxBytes);
   });
 });
 
@@ -442,7 +454,7 @@ describe("AC13: ScratchpadRead reports resultBytesPreTruncation === full file by
     mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
     writeFileSync(target, fileBytes);
 
-    const result = await tools.scratchpadReadTool.run({ path: "t.md" }, ctx(target, { maxBytes }));
+    const result = await scratchpadReadTool.run({ path: "t.md" }, ctx(target, { maxBytes }));
     expect(result.isError).toBeFalsy();
     expect(result.resultBytesPreTruncation).toBe(Buffer.byteLength(fileBytes, "utf8"));
   });
@@ -459,7 +471,7 @@ describe("AC13: ScratchpadRead reports resultBytesPreTruncation === full file by
     mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
     writeFileSync(target, fileBytes);
 
-    const result = await tools.scratchpadReadTool.run({ path: "tiny.md" }, ctx(target, { maxBytes }));
+    const result = await scratchpadReadTool.run({ path: "tiny.md" }, ctx(target, { maxBytes }));
     expect(result.isError).toBeFalsy();
     expect(result.resultBytesPreTruncation).toBe(Buffer.byteLength(fileBytes, "utf8"));
   });
