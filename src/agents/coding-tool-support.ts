@@ -100,7 +100,12 @@ export function buildCodingToolSupport(args: {
   shell?: string;
   auditDir?: string;
   sessionName?: string;
-  /** Manifest name of the member at `root`; see `resolvePackageName`. */
+  /**
+   * Manifest name of the workspace member at the story's package dir
+   * (`packageWorkdir`/`commandCwd`), NOT at `root` — post-PR2 `root` is the
+   * repo root, so reading its manifest would scope workspace installs with the
+   * root name. See `resolvePackageName`.
+   */
   packageName?: string;
   /** `config.install.allowScripts` (Task 8 adds the field); defaults to false. */
   allowScripts?: boolean;
@@ -408,9 +413,16 @@ export async function resolveCodingToolSupport(
   // and never touches the filesystem itself. Skipped unless the op declared
   // Exec — no reason to read a manifest off disk on every dispatch when
   // nothing downstream will use the result.
+  //
+  // The manifest is read from the STORY'S PACKAGE dir (`commandCwd`), never
+  // from `root`: post-PR2 `root` is `storyExecRoot` (the repo root), so
+  // resolving there would scope cargo/uv/yarn workspace installs with the
+  // root manifest's name — or deny outright for a virtual Cargo workspace.
+  // `commandCwd` is absolute and worktree-aware, and falls back to `root`
+  // when no package/project dir was supplied.
   const packageName =
     root !== undefined && root.trim() !== "" && declared.includes(EXEC_TOOL_NAME)
-      ? await resolvePackageName(root)
+      ? await resolvePackageName(commandCwd ?? root)
       : undefined;
   // Provider tools bypass the DECLARATION half of advertisement (spec R4):
   // operation declarations live in code, so requiring a code edit to use a
