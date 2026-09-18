@@ -55,10 +55,10 @@ ${TEST_STRATEGY_GUIDE}`;
  */
 const CONTEXT_VS_EXPECTED_FILES_RULE = `**\`contextFiles\` rule — files readable when this story runs.** List paths that already exist in the repo today, PLUS any file an UPSTREAM dependency story creates (it does not exist now but will exist by the time this story runs, because dependencies execute first). The pipeline verifies every \`contextFiles\` entry against the filesystem; a path that exists neither on disk nor in an upstream dependency's outputs is treated as a missing-context warning.
 
-**\`expectedFiles\` rule — files THIS story CREATES.** List every NEW file this story authors (relative paths). A file this story creates belongs here, NEVER in \`contextFiles\` — these are the story's outputs, not files to read first. A file created by an upstream dependency and only read/modified here belongs in \`contextFiles\`, NOT here (this story does not author it). A single path may appear in \`contextFiles\` (an existing sibling to mirror) AND \`expectedFiles\` (the new file itself), but the same path must never be in both. Every path in both fields is relative to this story's \`workdir\` when it has one, and to the repo root otherwise.`;
+**\`expectedFiles\` rule — files THIS story CREATES.** List every NEW file this story authors. A file this story creates belongs here, NEVER in \`contextFiles\` — these are the story's outputs, not files to read first. A file created by an upstream dependency and only read/modified here belongs in \`contextFiles\`, NOT here (this story does not author it). A single path may appear in \`contextFiles\` (an existing sibling to mirror) AND \`expectedFiles\` (the new file itself), but the same path must never be in both. Every path in both fields is relative to the REPO ROOT — including a file this story creates inside its own \`workdir\` package (e.g. a story scoped to \`packages/api\` that creates \`src/routes/users.ts\` writes \`packages/api/src/routes/users.ts\`, never the bare \`src/routes/users.ts\`).`;
 
 /** Output-schema line for the `expectedFiles` field, shared by both prompts. */
-const EXPECTED_FILES_SCHEMA_FIELD = `"expectedFiles": ["string — NEW files this story creates (relative paths, omit if none)"],`;
+const EXPECTED_FILES_SCHEMA_FIELD = `"expectedFiles": ["string — NEW files this story creates (repo-rooted relative paths, omit if none)"],`;
 
 /**
  * Top-level `outOfScope` field. Carries the spec's "Out of Scope" / "Non-Goals"
@@ -323,7 +323,7 @@ Do not output the PRD in chat. After writing the file, reply with a brief text c
       : "";
 
     const workdirField = isMonorepo
-      ? `\n      "workdir": "string — the package this story is scoped to, relative to the REPO ROOT (e.g. \\"packages/api\\"). Set it whenever every file the story touches lives in one package; omit ONLY for a story that genuinely spans packages. Omitting it gives the story the whole repo's rules and the root build commands. Paths in contextFiles and expectedFiles are relative to THIS workdir.",`
+      ? `\n      "workdir": "string — the package this story is scoped to, relative to the REPO ROOT (e.g. \\"packages/api\\"). Set it whenever every file the story touches lives in one package; omit ONLY for a story that genuinely spans packages. Omitting it gives the story the whole repo's rules and the root build commands. Paths in contextFiles and expectedFiles are relative to the REPO ROOT, not to this workdir.",`
       : "";
 
     const taskContext = `You are a senior software architect generating a product requirements document (PRD) as JSON.
@@ -396,7 +396,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "title": "string — concise story title",
       "description": "string — detailed description of the story",
       "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC — but keep a trailing clause that qualifies that assertion (e.g. preserving/unchanged/existing behaviour), it is not a second assertion. Never include quality gates."],${suggestedCriteriaField}
-      "contextFiles": ["string — EXISTING source files the agent should read (max 5, relative paths)"],
+      "contextFiles": ["string — EXISTING source files the agent should read (max 5, repo-rooted relative paths)"],
       ${EXPECTED_FILES_SCHEMA_FIELD}
       ${STORY_OUT_OF_SCOPE_SCHEMA_FIELD}
       "tags": ["string — routing tags, e.g. feature, security, api"],
@@ -458,7 +458,7 @@ ${outputDirective}`;
         : "";
 
     const workdirField = isMonorepo
-      ? `\n      "workdir": "string — the package this story is scoped to, relative to the REPO ROOT (e.g. \\"packages/api\\"). Set it whenever every file the story touches lives in one package; omit ONLY for a story that genuinely spans packages. Omitting it gives the story the whole repo's rules and the root build commands. Paths in contextFiles and expectedFiles are relative to THIS workdir.",`
+      ? `\n      "workdir": "string — the package this story is scoped to, relative to the REPO ROOT (e.g. \\"packages/api\\"). Set it whenever every file the story touches lives in one package; omit ONLY for a story that genuinely spans packages. Omitting it gives the story the whole repo's rules and the root build commands. Paths in contextFiles and expectedFiles are relative to the REPO ROOT, not to this workdir.",`
       : "";
 
     const suggestedCriteriaField = input.specContent.trim()
@@ -508,7 +508,7 @@ Produce a JSON object with this exact structure. Field names are mandatory — d
       "title": "string — concise story title",
       "description": "string — detailed description of what to implement",
       "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item — but keep a trailing clause that qualifies that assertion (e.g. preserving/unchanged/existing behaviour), it is not a second assertion."],${suggestedCriteriaField}
-      "contextFiles": ["string — EXISTING relative paths the implementer should read (max 5)"],
+      "contextFiles": ["string — EXISTING repo-rooted relative paths the implementer should read (max 5)"],
       ${EXPECTED_FILES_SCHEMA_FIELD}
       ${STORY_OUT_OF_SCOPE_SCHEMA_FIELD}
       "tags": ["string"],
