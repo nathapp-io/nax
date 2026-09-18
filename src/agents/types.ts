@@ -203,11 +203,17 @@ export interface AgentRunOptions {
    * Independent of `codingToolRoot`: PR2
    * (docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md)
    * repoints `codingToolRoot` at the story's repo-rooted execution root, so
-   * this field — combined with `projectDir` below — is what
+   * this field — combined with `projectDir` above — is what
    * `resolveCodingToolSupport` uses to resolve the story's own
    * `.nax/mono/<pkg>/config.json` and to compute declared commands'
    * execution cwd, without depending on what `codingToolRoot` means at
    * dispatch time.
+   *
+   * Under `storyIsolation: "worktree"` this value carries the
+   * `.nax-wt/<storyId>/` prefix (e.g. `.nax-wt/US-001/packages/api`).
+   * Consumers using it as a `.nax/mono/<pkg>` override key MUST normalize it —
+   * see `packageOverrideKey` in src/runtime/packages.ts. `commandCwd`
+   * consumers use it RAW, so the command runs inside the story's worktree.
    *
    * PRODUCER: src/operations/call-run-options.ts (`ctx.packageView.packageDir`).
    */

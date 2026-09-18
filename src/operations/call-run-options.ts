@@ -67,6 +67,10 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     storyId: ctx.storyId,
     callId,
     declaredTools,
+    // Both hops resolve providers from this one object (build-hop-callback and
+    // session-run-hop each take their options from here), so injecting once
+    // cannot leave the two paths advertising different tool sets — the drift
+    // both hops' comments warn about.
     ...(ctx.runtime.toolProviders.length > 0 ? { providers: ctx.runtime.toolProviders } : {}),
     ...(toolPatterns !== undefined ? { toolPatterns } : {}),
     codingToolRoot: packageWorkdir(ctx.packageView),
