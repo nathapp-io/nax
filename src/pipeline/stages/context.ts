@@ -124,8 +124,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // Phase 3: derive files touched by this story for git history + neighbor providers.
   // Path-frame convention (nax#2071): nax-internal path sets are REPO-ROOTED.
   // The PRD's declared paths pass through in the canonical repo frame; providers
-  // re-spell at their own output boundary (git-history.ts runs git in repoRoot;
-  // code-neighbor.ts partitions into the package frame in fetch()).
+  // resolve against repoRoot and emit repo-rooted (git-history.ts runs git in
+  // repoRoot; code-neighbor.ts resolves and renders repo-rooted in fetch()).
   const touchedFiles = getContextFiles(ctx.story);
 
   // Resolve the complete evidence set of files a story touches for SCOPING

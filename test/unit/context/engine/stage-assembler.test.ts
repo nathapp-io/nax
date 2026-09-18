@@ -684,8 +684,8 @@ describe("assembleForStage — publishes storyScratchDirs (US-005)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // nax#2067 + nax#2088: touchedFiles is REPO-ROOTED (path-frame convention).
 // assembleForStage passes the declared files through in the canonical repo
-// frame; the providers re-spell at their own output boundary (git-history.ts
-// runs git in repoRoot, code-neighbor.ts partitions in fetch()).
+// frame; the providers resolve against repoRoot and emit repo-rooted
+// (git-history.ts runs git in repoRoot, code-neighbor.ts resolves in fetch()).
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("assembleForStage — nax#2088 touchedFiles repo-frame", () => {

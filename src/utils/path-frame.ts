@@ -1,16 +1,24 @@
 import { join } from "node:path";
 
 /**
- * Path-frame SSOT (nax#2067, #2071, #2074).
+ * Path-frame SSOT (nax#2067, #2071, #2074; single-frame redesign 2026-09-18).
  *
- * nax holds relative file paths in two frames:
- *   - REPO-ROOTED     "packages/app/src/index.ts"
- *   - PACKAGE-RELATIVE "src/index.ts"
+ * nax holds relative file paths in ONE canonical frame, REPO-ROOTED
+ * ("packages/app/src/index.ts"), for every nax-internal path set. The earlier
+ * package-relative frame — and the translation layer that shuttled paths into
+ * it at the agent boundary — is retired: agent file tools are rooted at the
+ * story execution root (the repo or worktree root), so a repo-rooted path is
+ * directly addressable.
  *
- * The convention: every nax-internal path set is REPO-ROOTED. Package-relative
- * spelling appears only where a path crosses into a package-contained agent's
- * prompt, because agent file tools are rooted at `codingToolRoot` = the package
- * dir (src/agents/types.ts:182-197).
+ * `toRepoFrame` is a DEFENSIVE re-spell for a stray non-conforming input
+ * (e.g. a legacy package-relative spelling), never a steady-state translation
+ * step. `isWithinPackage` is a selector-contract primitive: a membership test
+ * that never re-spells.
+ *
+ * `story.workdir` is a SELECTOR, not a frame boundary: it names which package's
+ * rules, config, and command cwd apply — surfaced by `storyWorkdir`,
+ * `storyPackageDir`, `storyAbsWorkdir`, and `isWithinPackage` — while every
+ * path set stays repo-rooted.
  *
  * `workdir` is always a string here. "." means the repo root. null, undefined
  * and "" are normalised away so no consumer has to invent its own spelling for
@@ -19,7 +27,10 @@ import { join } from "node:path";
  * Pure by contract: no I/O, no config, no logging. Ambiguity that needs the
  * filesystem to resolve is handled at PRD write time, not here.
  *
- * See docs/superpowers/specs/2026-09-16-path-frame-convention-design.md.
+ * Current SSOT:
+ * docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md.
+ * Historical background (superseded):
+ * docs/superpowers/specs/2026-09-16-path-frame-convention-design.md.
  */
 
 /** Posix separators, no leading "./", no trailing "/". */

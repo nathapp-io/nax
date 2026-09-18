@@ -190,11 +190,11 @@ describe("CodeNeighborProvider — path frame (nax#2074)", () => {
     expect(result.chunks[0]?.scopePaths?.some((p) => p.startsWith("src/"))).toBe(false);
   });
 
-  // The touched file is repo-rooted by contract (types.ts); fetch() re-spells
-  // it into the package frame before collectNeighbors runs. Under
-  // neighborScope "repo" the OLD code resolved a package-framed path against
-  // repoRoot and read nothing, so forward deps silently vanished.
-  test("forward deps are resolved against packageDir even when the scan root is the repo", async () => {
+  // The touched file is repo-rooted by contract (types.ts); fetch() resolves it
+  // against repoRoot with no package-frame re-spelling. Under neighborScope
+  // "repo" the OLD code resolved a package-framed path against repoRoot (the
+  // sibling frame) and read nothing, so forward deps silently vanished.
+  test("forward deps are resolved repo-rooted even when the scan root is the repo", async () => {
     setupDeps(
       {
         "/repo/packages/app/src/index.ts": 'import "./dep";',

@@ -169,10 +169,10 @@ describe("CodeNeighborProvider", () => {
 
   // ─────────────────────────────────────────────────────────────────────────────
   // nax#2067 + nax#2088: touchedFiles is REPO-ROOTED (types.ts). fetch()
-  // partitions it into the package frame at the point of resolution, so a
-  // repo-rooted path from a canonicalized PRD resolves against packageDir and
-  // yields neighbors; the package-framed spelling (what OLD request builders
-  // sent) names a repo-root file outside the package and is dropped.
+  // resolves it against repoRoot with no package-frame re-spelling, so a
+  // repo-rooted path from a canonicalized PRD resolves as-is and yields
+  // neighbors; the package-framed spelling (what OLD request builders sent)
+  // names a repo-root file that does not exist here and is dropped.
   // ─────────────────────────────────────────────────────────────────────────────
 
   describe("nax#2067 touchedFiles frame contract", () => {
