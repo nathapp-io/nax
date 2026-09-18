@@ -452,6 +452,7 @@ describe("buildResolverPrompt()", () => {
         storyGitRef: "abc123",
         stat: "1 file changed",
         productionExcludePatterns: [":!*_test.go", ":!tests/test_*.py"],
+        pathspec: ".",
       },
       REVIEW_STORY,
       ctx,
@@ -462,7 +463,7 @@ describe("buildResolverPrompt()", () => {
     expect(prompt).not.toContain(":!*.spec.ts");
   });
 
-  test("ref mode commands are package-relative; full diff excludes only nax metadata (#2090)", () => {
+  test("ref mode commands drop --relative; full diff excludes only nax metadata", () => {
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
     const prompt = makeBuilder().buildResolverPrompt(
       LABELED_PROPOSALS,
@@ -472,6 +473,7 @@ describe("buildResolverPrompt()", () => {
         storyGitRef: "abc123",
         stat: "1 file changed",
         productionExcludePatterns: [":!*_test.go", ":!tests/test_*.py"],
+        pathspec: "packages/api",
       },
       REVIEW_STORY,
       ctx,
@@ -483,23 +485,20 @@ describe("buildResolverPrompt()", () => {
     expect(diffLines.length).toBeGreaterThan(0);
     expect(logLines.length).toBeGreaterThan(0);
     for (const line of diffLines) {
-      // Flags precede the refs (src/tools/git.ts:202). Assert flag presence and
-      // that no flag trails the revision range, so the next flag addition does
-      // not re-create this pressure.
-      expect(line).toContain("git diff --relative");
-      expect(line).toContain("-- .");
-      expect(line).not.toContain("..HEAD --relative");
+      expect(line).not.toContain("--relative");
+      expect(line).toContain("-- packages/api");
+      expect(line).not.toContain("-- .");
     }
     for (const line of logLines) {
-      // `git log --oneline` prints no paths, so `--relative` there is inert argv.
+      // `git log --oneline` prints no paths, so it takes no pathspec.
       expect(line).toContain("git log --oneline abc123..HEAD");
       expect(line).not.toContain("--relative");
     }
 
     const fullDiffLine = lines.find((line) => line.includes("Full diff:"));
     expect(fullDiffLine).toBeDefined();
-    expect(fullDiffLine).toContain("--relative");
-    expect(fullDiffLine).toContain("-- .");
+    expect(fullDiffLine).not.toContain("--relative");
+    expect(fullDiffLine).toContain("-- packages/api");
     expect(fullDiffLine).not.toContain(":!*_test.go");
     expect(fullDiffLine).not.toContain(":!tests/test_*.py");
     expect(fullDiffLine).toContain(":!.nax/");

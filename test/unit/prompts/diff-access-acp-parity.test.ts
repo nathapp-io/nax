@@ -76,9 +76,10 @@ describe("ACP parity — the region leaves the pre-change prompt unchanged", () 
   test.each([
     ["semantic", semanticAcp],
     ["adversarial", adversarialAcp],
-  ])("%s: the shell commands are still the ones ACP had", (_label, render) => {
+  ])("%s: the shell commands are repo-rooted and scoped (no --relative)", (_label, render) => {
     const prompt = render();
-    expect(prompt).toContain(`git diff --relative --unified=3 ${REF}..HEAD`);
+    expect(prompt).toContain(`git diff --unified=3 ${REF}..HEAD -- .`);
+    expect(prompt).not.toContain("--relative");
     expect(prompt).toContain(`git log --oneline ${REF}..HEAD`);
   });
 

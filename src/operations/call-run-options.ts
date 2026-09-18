@@ -12,9 +12,10 @@
 import type { ModelDef, ModelTier, NaxConfig } from "../config";
 import { DEFAULT_CONFIG } from "../config";
 import type { PipelineStage } from "../config/permissions";
-import { packageWorkdir, storyExecRoot } from "../runtime/packages";
+import { packageOverrideKey, storyExecRoot } from "../runtime/packages";
 import type { SessionRole } from "../session/types";
 import type { CodingToolName, ToolPatternNarrowing } from "../tools";
+import { storyWorkdir } from "../utils/path-frame";
 import type { CallContext } from "./types";
 
 export interface RunDispatchOptionsParams {
@@ -53,7 +54,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
   } = params;
   return {
     prompt,
-    workdir: ctx.packageDir,
+    workdir: storyExecRoot(ctx.packageView),
     modelTier: effectiveTier,
     modelDef: dispatchModelDef,
     timeoutSeconds:
@@ -73,7 +74,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     // both hops' comments warn about.
     ...(ctx.runtime.toolProviders.length > 0 ? { providers: ctx.runtime.toolProviders } : {}),
     ...(toolPatterns !== undefined ? { toolPatterns } : {}),
-    codingToolRoot: packageWorkdir(ctx.packageView),
+    codingToolRoot: storyExecRoot(ctx.packageView),
     ...(fileOutputPath !== undefined ? { codingToolFileOutput: fileOutputPath } : {}),
     codingToolRepoRoot: storyExecRoot(ctx.packageView),
     // PR1 (single-frame redesign): thread the repo root and the story's
@@ -83,6 +84,13 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     // at dispatch time (PR2 repoints it at storyExecRoot).
     projectDir: ctx.runtime.projectDir,
     codingToolPackageDir: ctx.packageView.packageDir,
+    // PR2 (single-frame redesign): post-move root === repoRoot, so the scope
+    // block can only learn "which package" from the story's own workdir.
+    // Prefer the story when in scope; otherwise fall back to the package view's
+    // dir, stripping the `.nax-wt/<id>/` worktree prefix (ad-hoc callers with
+    // no story). "." means the repo root, matching storyWorkdir's contract.
+    codingToolWorkdirLabel:
+      ctx.story !== undefined ? storyWorkdir(ctx.story) : packageOverrideKey(ctx.packageView.packageDir) || ".",
     outputDir: ctx.runtime.outputDir,
     ...(keepOpen ? { keepOpen: true } : {}),
     ...(ctx.scopeId !== undefined ? { scopeId: ctx.scopeId } : {}),

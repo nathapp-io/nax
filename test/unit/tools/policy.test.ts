@@ -29,8 +29,8 @@ beforeAll(() => {
   mkdirSync(join(root, "vendor", "nested-repo", ".git"), { recursive: true });
   writeFileSync(join(root, "vendor", "nested-repo", ".git", "config"), "[core]\n");
   symlinkSync(join(root, ".git", "index"), join(root, "link-into-git"));
-  // Lives OUTSIDE the root and resolves INTO .git/, which is the only shape
-  // that reaches resolveWithin's execTouchedPaths branch at all.
+  // Lives OUTSIDE the root and resolves INTO .git/, exercising the seam's
+  // symlink resolution from an out-of-root spelling.
   symlinkSync(join(root, ".git", "index"), join(outside, "touched-link"));
 });
 
@@ -334,14 +334,12 @@ describe("compileToolPolicy — .git/ is excluded at the resolveWithin seam", ()
 
   test("a path spelled from OUTSIDE the root that resolves into .git/ is refused", () => {
     // `isInside` resolves symlinks on both sides, so this is caught by the
-    // in-root branch rather than falling through to the execTouchedPaths
-    // carve-out -- which is precisely why that carve-out needs no .git check
-    // of its own. Passing the touched path too asserts it cannot re-admit the
-    // path by a route the in-root spelling would not have.
-    const gitIndex = join(root, ".git", "index");
+    // in-root branch rather than needing a `.git/` check of its own.
+    // PR2/Task 13: the execTouchedPaths carve-out that used to re-admit such
+    // a path from an out-of-root spelling is retired, so there is no second
+    // route to assert against.
     const viaOutside = join(outside, "touched-link");
     expect(resolveWithin(root, viaOutside)).toBeNull();
-    expect(resolveWithin(root, viaOutside, [gitIndex])).toBeNull();
   });
 
   test("check() denies a .git/ path even under an unconditional '*' grant", () => {

@@ -38,16 +38,6 @@ export interface RunCommandExecOptions {
   readonly packageName?: string;
   readonly allowScripts: boolean;
   /**
-   * The containment carve-out's write side (Task 10). When present, a
-   * successful install-shaped Exec call appends the manifest/lockfile it
-   * wrote to this array — see `recordExecTouchedPaths` in
-   * `src/tools/exec-touched-paths.ts`. The SAME array reference must be
-   * given to `compileToolPolicy`'s `execTouchedPaths` option so a later
-   * GitCommit call in this dispatch hop can see the update; omitted
-   * entirely means no carve-out is offered for this session.
-   */
-  readonly touchedPaths?: string[];
-  /**
    * The Exec tool's compiled grant patterns, as `resolvePermissions` produced
    * them for THIS project/stage -- not `BUILT_IN_EXEC_PATTERNS` imported
    * directly, because a project's own `Exec(...)` expression REPLACES that
@@ -69,10 +59,13 @@ export interface RunCommandToolOptions {
   /**
    * Execution cwd for the DECLARED (non-Exec) branch below, independent of
    * `ctx.root` (tool containment). Falls back to `ctx.root` when absent —
-   * every caller today passes the package workdir either way, so the
-   * fallback is a no-op until PR2
-   * (docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md)
-   * repoints `ctx.root` at the story's repo-rooted execution root.
+   * post-PR2 (single-frame redesign) `ctx.root` is the story's repo-rooted
+   * execution root, so an omitted `commandCwd` runs the declared command at
+   * the repo root, NOT the package dir. Every production caller threads
+   * `commandCwd` (see the `buildCodingToolSupport` producer below); the
+   * fallback is effectively unreachable in production and only fires from
+   * tests that bypass the support seam — see the use site for the exact
+   * behavior.
    *
    * PRODUCER: src/agents/coding-tool-support.ts (`buildCodingToolSupport`'s
    * `commandCwd` arg).
@@ -437,6 +430,10 @@ export function createRunCommandTool(
       const result = await runQualityCommand({
         commandName: key,
         command,
+        // Post-PR2 `ctx.root` is the repo root (not the package dir), so an
+        // omitted `commandCwd` runs the declared command at the repo root —
+        // every production caller threads `commandCwd` via `buildCodingToolSupport`;
+        // this fallback only fires from tests that bypass the support seam.
         workdir: opts.commandCwd ?? ctx.root,
         stripEnvVars: [...(opts.stripEnvVars ?? [])],
         // The agent's own iteration loop, not a harness gate: kept in the JSONL

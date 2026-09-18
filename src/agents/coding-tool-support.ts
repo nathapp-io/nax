@@ -64,6 +64,20 @@ export function buildCodingToolSupport(args: {
    */
   repoRoot?: string;
   /**
+   * The story's ABSOLUTE package dir for Exec's `target: "package"` cwd.
+   *
+   * Post-root-move, `codingToolRoot` and `codingToolRepoRoot` are BOTH
+   * `storyExecRoot` (the repo/worktree root), so `args.root` can no longer
+   * stand in for the package dir: `run-command-exec.ts` computes
+   * `relative(repoRoot, packageWorkdir)`, which would always be "" and make
+   * `package-managers.ts`'s `effectiveTarget` collapse EVERY Exec call —
+   * `target: "package"` included — onto the repo root. It MUST be an
+   * absolute path: `packageWorkdir` is compared against the absolute
+   * `repoRoot`, so a relative value yields garbage. Falls back to `root`
+   * when absent (single-package repos, legacy callers, tests).
+   */
+  packageWorkdir?: string;
+  /**
    * Execution cwd for RunCommand's DECLARED (non-Exec) branch, independent
    * of `root` (tool containment). Falls back to `root` when absent.
    *
@@ -86,7 +100,12 @@ export function buildCodingToolSupport(args: {
   shell?: string;
   auditDir?: string;
   sessionName?: string;
-  /** Manifest name of the member at `root`; see `resolvePackageName`. */
+  /**
+   * Manifest name of the workspace member at the story's package dir
+   * (`packageWorkdir`/`commandCwd`), NOT at `root` — post-PR2 `root` is the
+   * repo root, so reading its manifest would scope workspace installs with the
+   * root name. See `resolvePackageName`.
+   */
   packageName?: string;
   /** `config.install.allowScripts` (Task 8 adds the field); defaults to false. */
   allowScripts?: boolean;
@@ -160,18 +179,8 @@ export function buildCodingToolSupport(args: {
     args.auditDir !== undefined
       ? createToolAuditSink({ dir: args.auditDir, sessionName: args.sessionName ?? "unattached" })
       : createNoOpToolAuditSink();
-  // Task 10: shared, mutable, and scoped to this one hop's dispatch -- a
-  // fresh array every call, never a module-level or story-keyed cache. Given
-  // by reference to BOTH the policy (read side, in `check()`) and the Exec
-  // branch's options (write side, in run-command-exec.ts) so a successful
-  // repoRoot install and a later GitCommit call within the SAME hop see the
-  // same set. A commit an agent defers to a later hop still has the
-  // completion-phase auto-commit sweep (`autoCommitIfDirty`, which already
-  // stages from the git root) as its backstop -- see task-10-report.md.
-  const execTouchedPaths: string[] = [];
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(narrowedGrants, args.root, {
-      execTouchedPaths,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
@@ -192,9 +201,16 @@ export function buildCodingToolSupport(args: {
                 ? {
                     exec: {
                       repoRoot: args.repoRoot ?? args.root,
-                      packageWorkdir: args.root,
+                      // Post-root-move: `args.root` is the repo root, so the
+                      // fallback only matters for single-package repos where
+                      // the two coincide (and for tests not threading
+                      // `packageWorkdir`). Production always threads it via
+                      // `commandCwd` plumbing in `resolveCodingToolSupport`
+                      // (Task 10), which makes `effectiveTarget`'s
+                      // `packageRelPath === ""` collapse impossible for a
+                      // package story.
+                      packageWorkdir: args.packageWorkdir ?? args.root,
                       allowScripts: args.allowScripts ?? false,
-                      touchedPaths: execTouchedPaths,
                       // The compiled grant, not BUILT_IN_EXEC_PATTERNS -- a
                       // project's own Exec(...) expression replaces that
                       // list rather than extending it (see the comment on
@@ -405,9 +421,16 @@ export async function resolveCodingToolSupport(
   // and never touches the filesystem itself. Skipped unless the op declared
   // Exec — no reason to read a manifest off disk on every dispatch when
   // nothing downstream will use the result.
+  //
+  // The manifest is read from the STORY'S PACKAGE dir (`commandCwd`), never
+  // from `root`: post-PR2 `root` is `storyExecRoot` (the repo root), so
+  // resolving there would scope cargo/uv/yarn workspace installs with the
+  // root manifest's name — or deny outright for a virtual Cargo workspace.
+  // `commandCwd` is absolute and worktree-aware, and falls back to `root`
+  // when no package/project dir was supplied.
   const packageName =
     root !== undefined && root.trim() !== "" && declared.includes(EXEC_TOOL_NAME)
-      ? await resolvePackageName(root)
+      ? await resolvePackageName(commandCwd ?? root)
       : undefined;
   // Provider tools bypass the DECLARATION half of advertisement (spec R4):
   // operation declarations live in code, so requiring a code edit to use a
@@ -477,6 +500,21 @@ export async function resolveCodingToolSupport(
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
     ...(options.codingToolRepoRoot !== undefined ? { repoRoot: options.codingToolRepoRoot } : {}),
+    // Task 10: Exec's package target needs the story's ABSOLUTE package dir.
+    // `codingToolPackageDir` is RELATIVE to projectDir (and worktree-prefixed
+    // in production), while Exec compares it against an absolute repoRoot —
+    // passing it raw would produce garbage. `commandCwd` is the same value
+    // already computed above via packageWorkdir({ packageDir, repoRoot:
+    // projectDir }): absolute and worktree-aware. Omitted when either input is
+    // unavailable, so buildCodingToolSupport falls back to `root` (correct for
+    // a single-package repo, where the two coincide).
+    ...(packageDir !== undefined &&
+    packageDir.trim() !== "" &&
+    packageDir !== "." &&
+    projectDir !== undefined &&
+    projectDir.trim() !== ""
+      ? { packageWorkdir: commandCwd }
+      : {}),
     commandCwd,
     grants: [...allow.grants, ...providerResult.grants],
     declared: declaredWithProviders,

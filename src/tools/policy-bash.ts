@@ -13,8 +13,7 @@
  *
  * Containment is INJECTED (`resolvePath`), not imported: `policy.ts` imports
  * this module, so importing `resolveWithin` back would be a cycle. The single
- * owner of the root boundary, the `.git/` refusal and the execTouchedPaths
- * carve-out therefore remains `policy.ts`.
+ * owner of the root boundary and the `.git/` refusal therefore remains `policy.ts`.
  */
 
 import type { BashSegment, BashToken } from "@/permissions";

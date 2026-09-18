@@ -482,19 +482,25 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// nax#2072: fragment paths are reframed for the consuming story's package
+// Single-frame PR2: fragment files-touched lists pass through unreframed.
+//
+// Fragment bodies are already repo-rooted at capture time, and after the
+// single-frame redesign the consuming story's file tools are rooted at the
+// REPO root too — not at its package dir — so repo-rooted entries resolve
+// as-is. The old nax#2072 re-spelling (package-relative for the consumer's
+// package, marked-unreadable for others) would now corrupt working paths.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("FeatureContextProviderV2 — fragment path reframing (nax#2072)", () => {
+describe("FeatureContextProviderV2 — fragment files-touched pass through unreframed", () => {
   const dependencyFragment =
     "# US-001 — Add isBlank\n\n" +
     "## Files touched\n" +
-    "- packages/lib/src/util.ts\n" +
-    "- packages/app/src/index.ts\n\n" +
+    "- packages/api/src/x.ts\n" +
+    "- packages/other/src/y.ts\n\n" +
     "## Acceptance criteria\n" +
     "- isBlank works\n";
 
-  /** US-002 (in packages/app) depends on US-001 (in packages/lib). */
+  /** US-002 (in packages/api) depends on US-001. */
   async function fetchForConsumer(consumerWorkdir: string | undefined): Promise<RawChunk[]> {
     mockV1Empty();
     mockLoadPRD(prdWith([storyWith("US-001"), storyWith("US-002", ["US-001"])]));
@@ -507,16 +513,16 @@ describe("FeatureContextProviderV2 — fragment path reframing (nax#2072)", () =
     return fragmentChunks(result.chunks);
   }
 
-  test("marks the cross-package entry and re-spells the in-package one", async () => {
-    const chunks = await fetchForConsumer("packages/app");
+  test("keeps repo-rooted entries for a package-scoped consumer", async () => {
+    const chunks = await fetchForConsumer("packages/api");
     const chunk = chunks[0];
     assertDefined(chunk);
 
-    expect(chunk.content).toContain(
-      "- packages/lib/src/util.ts (other package - not readable from this story's workdir)",
-    );
-    expect(chunk.content).toContain("- src/index.ts");
-    expect(chunk.content).not.toContain("- packages/app/src/index.ts");
+    // Repo-rooted entries are addressable as-is, so the body is byte-identical.
+    expect(chunk.content).toBe(dependencyFragment);
+    expect(chunk.content).toContain("- packages/api/src/x.ts");
+    expect(chunk.content).not.toContain("- src/x.ts");
+    expect(chunk.content).not.toContain("(other package");
   });
 
   test("leaves the fragment untouched for a root-package consumer", async () => {
@@ -527,14 +533,14 @@ describe("FeatureContextProviderV2 — fragment path reframing (nax#2072)", () =
     expect(chunk.content).toBe(dependencyFragment);
   });
 
-  test("tokens measure the reframed body, not the raw one", async () => {
-    const chunks = await fetchForConsumer("packages/app");
+  test("tokens measure the rendered body, not the raw one", async () => {
+    const chunks = await fetchForConsumer("packages/api");
     const chunk = chunks[0];
     assertDefined(chunk);
 
-    // The marker makes the body longer than what was read from disk; a
-    // measurement taken before the transform would under-count the budget.
+    // The rendered body IS the raw body now; the measurement must still match
+    // exactly what is emitted, with no transform applied in between.
     expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
-    expect(chunk.tokens).toBeGreaterThan(Math.ceil(dependencyFragment.length / 4));
+    expect(chunk.tokens).toBe(Math.ceil(dependencyFragment.length / 4));
   });
 });

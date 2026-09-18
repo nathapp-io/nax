@@ -117,19 +117,19 @@ describe("collectDiff()", () => {
     expect(captured.value).toContain(":!.nax-pids");
   });
 
-  // nax#2066 follow-on: git reports paths relative to the REPO ROOT, but a
-  // monorepo story's reviewer has its file tools rooted at the PACKAGE dir.
-  // Without --relative the prompt says "packages/lib/src/util.ts", the agent
-  // resolves it under its own root and reads <pkg>/packages/lib/src/util.ts —
-  // ENOENT, one wasted round trip per file. Observed live in a monorepo-tiny
-  // run (both shared and worktree isolation).
-  test("passes --relative so emitted paths match the cwd's containment root", async () => {
+  // Single-frame redesign: the agent's file tools are now repo-rooted, so the
+  // reviewer can read repo-root-relative paths directly. These collectors share
+  // collectDiffFileList's no---relative convention; the collector's own cwd
+  // (`workdir`, still the package dir) scopes the bare `-- .` pathspec.
+  test("omits --relative because the agent's tools are repo-rooted; bare -- . scopes to cwd", async () => {
     const captured: { value?: string[] } = {};
     _diffUtilsDeps.spawn = makeCapturingSpawnMock("diff output", captured);
 
     await collectDiff("/repo/packages/lib", "abc123", []);
 
-    expect(captured.value).toContain("--relative");
+    expect(captured.value).not.toContain("--relative");
+    expect(captured.value).toContain("--");
+    expect(captured.value).toContain(".");
   });
 
   test("returns stdout string on exit code 0; null on non-zero", async () => {
@@ -155,13 +155,15 @@ describe("collectDiffStat()", () => {
     expect(captured.value).toContain("abc123..HEAD");
   });
 
-  test("passes --relative so emitted paths match the cwd's containment root", async () => {
+  // Same consolidation as collectDiff above: repo-rooted agent tools, cwd-scoped
+  // bare `-- .` pathspec, no --relative.
+  test("omits --relative (shares collectDiffFileList's convention)", async () => {
     const captured: { value?: string[] } = {};
     _diffUtilsDeps.spawn = makeCapturingSpawnMock("stat output", captured);
 
     await collectDiffStat("/repo/packages/lib", "abc123");
 
-    expect(captured.value).toContain("--relative");
+    expect(captured.value).not.toContain("--relative");
   });
 
   test("returns trimmed stdout on success; empty string on non-zero exit code", async () => {
@@ -202,17 +204,17 @@ describe("truncateDiff()", () => {
 // ─── computeTestInventory ─────────────────────────────────────────────────────
 
 describe("computeTestInventory() path convention", () => {
-  // Its output is rendered next to the (package-relative) embedded diff in the
-  // adversarial prompt, as paths the agent is told to inspect. Repo-rooted
-  // entries there are unreadable from a package-contained root, and without a
-  // pathspec it also reports files from OTHER packages entirely.
-  test("scopes to the workdir and emits workdir-relative paths", async () => {
+  // Single-frame redesign: this inventory is rendered alongside the embedded
+  // diff as paths the (now repo-rooted) agent is told to inspect. It shares
+  // collectDiffFileList's no---relative convention; the bare `-- .` pathspec
+  // still scopes output to the collector's cwd (`workdir`).
+  test("scopes to the workdir via bare -- . and emits no --relative", async () => {
     const captured: { value?: string[] } = {};
     _diffUtilsDeps.spawn = makeCapturingSpawnMock("", captured);
 
     await computeTestInventory("/repo/packages/lib", "abc123");
 
-    expect(captured.value).toContain("--relative");
+    expect(captured.value).not.toContain("--relative");
     expect(captured.value).toContain("--");
     expect(captured.value).toContain(".");
   });

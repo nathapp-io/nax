@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` config fields removed. Use `agent.default` and `agent.fallback.map` instead (ADR-012 Phase 6). Loading a config containing any of these keys throws `NaxError CONFIG_LEGACY_AGENT_KEYS` with a per-key migration pointer.
+- **BREAKING (custom permission profiles only):** the agent's file-tool containment root moved from the
+  story's package directory to the repo root (single-frame redesign). A custom `scoped` permission
+  profile's grant globs (e.g. `Write(src/**)`) now match against REPO-ROOTED paths instead of
+  package-relative paths — `Write(src/**)` that used to scope a grant to the package's own `src/` now
+  matches `src/**` at the repo root only; a monorepo profile author who wants the old scoping must
+  rewrite the glob as `Write(packages/*/src/**)` or the specific package path. The default `unrestricted`
+  profile is unaffected (it skips glob matching entirely). No config schema change; this is a semantic
+  shift in what an existing glob string matches.
 
 ### Fixed
 

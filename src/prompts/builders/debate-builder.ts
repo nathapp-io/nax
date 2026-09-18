@@ -446,17 +446,21 @@ function buildDebateDiffSection(ctx: DiffContext): string {
     // production diff), so it carries only the nax-metadata excludes.
     const naxExcludeArgs = NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS.map((p) => `'${p}'`).join(" ");
     // The shell text is the ACP rendering; dispatch swaps it for a tool-shaped
-    // one on the native protocol (src/prompts/sections/diff-access.ts).
-    // `--relative` makes git print package-cwd paths to the reviewer (#2090),
-    // and flags precede the ref because a flag after a revision list reads as a
-    // pathspec (src/tools/git.ts:202). `git log --oneline` prints no paths, so
-    // `--relative` is inert there and is omitted.
+    // one on the native protocol (src/prompts/sections/diff-access.ts). Since
+    // the single-frame redesign the reviewer's cwd is the repo root, so there is
+    // no `--relative`: git's default repo-rooted framing already matches the
+    // native tools. `ctx.pathspec` (the story's package dir, or "." at the repo
+    // root) scopes the diff now that the cwd no longer does; flags precede the
+    // ref because a flag after a revision list reads as a pathspec
+    // (src/tools/git.ts:202). `git log --oneline` prints no paths, so it takes
+    // no pathspec and no flags. The native rendering's `paths` array carries
+    // the same `pathspec` as its base entry.
     const shellBody = [
       `## Git Baseline: \`${ref}\``,
       "",
       "To inspect the implementation:",
-      `- Full diff: \`git diff --relative --unified=3 ${ref}..HEAD -- . ${naxExcludeArgs}\``,
-      `- Production diff: \`git diff --relative --unified=3 ${ref}..HEAD -- . ${excludeArgs}\``,
+      `- Full diff: \`git diff --unified=3 ${ref}..HEAD -- ${ctx.pathspec} ${naxExcludeArgs}\``,
+      `- Production diff: \`git diff --unified=3 ${ref}..HEAD -- ${ctx.pathspec} ${excludeArgs}\``,
       `- Commit history: \`git log --oneline ${ref}..HEAD\``,
       "",
       "Use these commands to inspect the code. Do NOT rely solely on the file list above.",
@@ -474,8 +478,10 @@ function buildDebateDiffSection(ctx: DiffContext): string {
           ref,
           // Native parity: ACP's full diff carries the nax excludes and no
           // caller patterns, so the spec's fullExclude must match (M9).
-          fullExclude: [".", ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS],
-          productionExclude: [".", ...excludes],
+          // `ctx.pathspec` is the repo-rooted base path the ACP commands scope
+          // with.
+          fullExclude: [ctx.pathspec, ...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS],
+          productionExclude: [ctx.pathspec, ...excludes],
         },
         shellBody,
       ),

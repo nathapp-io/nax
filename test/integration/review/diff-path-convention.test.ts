@@ -1,20 +1,19 @@
 /**
  * The review diff collectors' path convention, against a real git repository.
  *
- * `test/unit/review/diff-utils.test.ts` asserts that `--relative` appears in
- * the argv. That cannot catch the bug this exists for, and it cannot catch the
- * risk the fix introduced: `--relative` both re-spells paths AND restricts them
- * to the cwd, so an argv-shape assertion would stay green if the flag silently
- * dropped changed files out of the reviewer's view.
+ * Single-frame redesign: the agent's file tools are repo-rooted, so the three
+ * collectors (`collectDiff`, `collectDiffStat`, `computeTestInventory`) omit
+ * `--relative` and emit repo-rooted paths like `packages/lib/src/util.ts`.
+ * `test/unit/review/diff-utils.test.ts` pins the argv shape; this suite pins
+ * git's actual behaviour over a real two-package repo.
  *
- * The bug: git reports paths relative to the repository top-level regardless of
- * cwd. A monorepo story's reviewer has its file tools contained at the package
- * dir, so a repo-rooted "packages/lib/src/util.ts" in the prompt resolves to
- * <pkg>/packages/lib/src/util.ts and ENOENTs — one wasted round trip per file.
+ * `workdir` is still the package dir (the collector's cwd), so the bare `-- .`
+ * pathspec keeps output scoped to that package's subtree: the spelling is
+ * repo-rooted, but the file SET stays package-scoped. These tests assert both —
+ * the spelling is repo-rooted, and the sibling package is still excluded.
  *
- * So these tests run the real collectors over a real two-package repo and pin
- * git's behaviour: the spelling changes, the file SET does not, and the repo
- * root is unaffected.
+ * (`scoped-lint.ts` is the ruled exception: it retains `--relative` because its
+ * live consumer joins paths onto `workdir`; see src/review/scoped-lint.ts.)
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -77,11 +76,11 @@ afterEach(() => {
 });
 
 describe("review diff path convention (real git)", () => {
-  test("collectDiffStat spells paths relative to a package workdir", async () => {
+  test("collectDiffStat spells repo-rooted paths even from a package workdir", async () => {
     const stat = await collectDiffStat(libDir(), baseSha);
 
-    expect(stat).toContain("src/util.ts");
-    expect(stat).not.toContain("packages/lib/src/util.ts");
+    expect(stat).toContain("packages/lib/src/util.ts");
+    expect(stat).not.toContain("packages/app/src/index.ts");
   });
 
   test("collectDiffStat keeps repo-rooted spelling when the workdir IS the repo root", async () => {
@@ -94,28 +93,31 @@ describe("review diff path convention (real git)", () => {
   test("collectDiffStat scopes to the package without dropping that package's files", async () => {
     const stat = await collectDiffStat(libDir(), baseSha);
 
-    // Both of the package's changed files survive the re-spelling...
-    expect(stat).toContain("src/util.ts");
-    expect(stat).toContain("src/util.test.ts");
-    // ...and the sibling package, which the contained agent could not read
-    // anyway, is not offered to it.
+    // Both of the package's changed files survive the repo-rooted re-spelling...
+    expect(stat).toContain("packages/lib/src/util.ts");
+    expect(stat).toContain("packages/lib/src/util.test.ts");
+    // ...and the sibling package, which the package-scoped bare `-- .` pathspec
+    // excludes, is not offered to it.
     expect(stat).not.toContain("index.ts");
   });
 
-  test("collectDiff emits package-relative diff headers", async () => {
+  test("collectDiff emits repo-rooted diff headers", async () => {
     const diff = await collectDiff(libDir(), baseSha, []);
 
     expect(diff).not.toBeNull();
-    expect(diff).toContain("a/src/util.ts");
-    expect(diff).not.toContain("a/packages/lib/src/util.ts");
+    expect(diff).toContain("a/packages/lib/src/util.ts");
+    expect(diff).toContain("b/packages/lib/src/util.ts");
+    // The package-scoped bare `-- .` pathspec still excludes the sibling package.
+    expect(diff).not.toContain("packages/app/src/index.ts");
   });
 
-  test("computeTestInventory reports package-relative paths and ignores sibling packages", async () => {
+  test("computeTestInventory reports repo-rooted paths and ignores sibling packages", async () => {
     const inventory = await computeTestInventory(libDir(), baseSha);
 
-    expect(inventory.addedTestFiles).toContain("src/util.test.ts");
+    expect(inventory.addedTestFiles).toContain("packages/lib/src/util.test.ts");
     for (const f of [...inventory.addedTestFiles, ...inventory.newSourceFilesWithoutTests]) {
-      expect(f.startsWith("packages/")).toBe(false);
+      expect(f.startsWith("packages/lib/")).toBe(true);
+      expect(f).not.toContain("packages/app/");
     }
   });
 });

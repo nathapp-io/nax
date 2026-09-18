@@ -197,27 +197,28 @@ export interface AgentRunOptions {
   codingToolRepoRoot?: string;
   /**
    * The story's package dir, RELATIVE to `projectDir` — `PackageView.packageDir`
-   * verbatim ("" for the root package of a single-package repo, e.g.
-   * "packages/api" for a monorepo member).
+   * verbatim ("" for the root package, e.g. "packages/api" for a monorepo member).
    *
-   * Independent of `codingToolRoot`: PR2
-   * (docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md)
-   * repoints `codingToolRoot` at the story's repo-rooted execution root, so
-   * this field — combined with `projectDir` above — is what
-   * `resolveCodingToolSupport` uses to resolve the story's own
-   * `.nax/mono/<pkg>/config.json` and to compute declared commands'
-   * execution cwd, without depending on what `codingToolRoot` means at
-   * dispatch time.
-   *
-   * Under `storyIsolation: "worktree"` this value carries the
-   * `.nax-wt/<storyId>/` prefix (e.g. `.nax-wt/US-001/packages/api`).
-   * Consumers using it as a `.nax/mono/<pkg>` override key MUST normalize it —
-   * see `packageOverrideKey` in src/runtime/packages.ts. `commandCwd`
-   * consumers use it RAW, so the command runs inside the story's worktree.
+   * Independent of `codingToolRoot`: `resolveCodingToolSupport` uses it with
+   * `projectDir` to resolve the story's `.nax/mono/<pkg>/config.json` and
+   * declared commands' cwd. Under storyIsolation "worktree" it carries the
+   * `.nax-wt/<storyId>/` prefix; normalize it via `packageOverrideKey` before
+   * using it as an override key, but keep it RAW as a command cwd.
    *
    * PRODUCER: src/operations/call-run-options.ts (`ctx.packageView.packageDir`).
    */
   codingToolPackageDir?: string;
+  /**
+   * The story's package-relative workdir, `"."` for a repo-root story.
+   *
+   * `buildAgentScopeSection` reads it to name the package now that PR2 collapsed
+   * `codingToolRoot` and the ACP spawn cwd onto the story execution root, so
+   * `root === repoRoot` always. Unlike `codingToolPackageDir` it is the bare
+   * story workdir (no `.nax-wt/<id>/` prefix, "." at the repo root).
+   *
+   * PRODUCER: src/operations/call-run-options.ts.
+   */
+  codingToolWorkdirLabel?: string;
   /**
    * The absolute `fileOutput` path the dispatching op declared, when it declared
    * one (nax#2115).

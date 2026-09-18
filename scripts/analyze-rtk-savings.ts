@@ -7,8 +7,8 @@
  * Corpus note: run JSONLs record tool NAME and resultBytes but not INPUT, and
  * the tool-audit sink is not retained locally, so git argv cannot be replayed
  * from history. It is synthesised through the real `buildGitArgv` instead,
- * which guarantees verb coverage and reproduces the `--relative` / `--` / `.`
- * that defeat rtk's compact paths.
+ * which guarantees verb coverage and reproduces the `--` / `.` shape that
+ * defeats rtk's compact paths.
  */
 import { NaxError } from "../src/errors";
 import { buildGitArgv } from "../src/tools/git";
