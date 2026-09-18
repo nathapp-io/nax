@@ -78,6 +78,44 @@ describe("naxOwnedWriteRefusal", () => {
   });
 });
 
+describe("naxOwnedWriteRefusal — queue run-control file (SEC-5)", () => {
+  test("refuses Write to .queue.txt", () => {
+    expect(naxOwnedWriteRefusal("Write", ".queue.txt")).toBeDefined();
+  });
+
+  test("refuses Edit to the atomic-rename target .queue.txt.processing", () => {
+    expect(naxOwnedWriteRefusal("Edit", ".queue.txt.processing")).toBeDefined();
+  });
+
+  test("refuses the whole mutating set to both queue files", () => {
+    for (const tool of ["Write", "Edit", "Delete", "GitCommit"]) {
+      expect(naxOwnedWriteRefusal(tool, ".queue.txt")).toBeDefined();
+      expect(naxOwnedWriteRefusal(tool, ".queue.txt.processing")).toBeDefined();
+    }
+  });
+
+  test("allows reads of the queue file — Read/Grep are not refused", () => {
+    for (const tool of ["Read", "Grep", "Glob", "Git"]) {
+      expect(naxOwnedWriteRefusal(tool, ".queue.txt")).toBeUndefined();
+      expect(naxOwnedWriteRefusal(tool, ".queue.txt.processing")).toBeUndefined();
+    }
+  });
+
+  test("leaves an unrelated .txt at root writable", () => {
+    expect(naxOwnedWriteRefusal("Write", "notes.txt")).toBeUndefined();
+  });
+
+  test("does not refuse a .queue.txt nested in a subdirectory", () => {
+    expect(naxOwnedWriteRefusal("Write", "sub/.queue.txt")).toBeUndefined();
+  });
+
+  test("the reason names the path and says why", () => {
+    const reason = naxOwnedWriteRefusal("Write", ".queue.txt");
+    expect(reason).toContain(".queue.txt");
+    expect(reason).toContain("run state");
+  });
+});
+
 describe("naxOwnedWriteRefusal — plan-op exemption (nax#2115)", () => {
   const PRD = ".nax/features/auth/prd.json";
 
