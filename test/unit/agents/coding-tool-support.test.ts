@@ -4,7 +4,7 @@ import { realpath as realpathAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { _codingToolSupportDeps, buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
 import { loadConfigForPackage, packageConfigCache } from "@/config";
 import { _clearRootConfigCache } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -537,5 +537,46 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
     expect(result?.kind).toBe("ok");
     if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
     expect(result.content).toContain("PACKAGE");
+  });
+
+  test("a per-package config load failure logs a warning and falls back to the root config without throwing", async () => {
+    resetLogger();
+    const logCalls: LogEntry[] = [];
+    initLogger({ level: "silent" });
+    const removeSink = addSink((entry) => logCalls.push(entry));
+    const originalLoad = _codingToolSupportDeps.loadConfigForPackage;
+    _codingToolSupportDeps.loadConfigForPackage = async () => {
+      throw new Error("simulated per-package config failure");
+    };
+    try {
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["RunCommand"],
+        codingToolRoot: join(tempDir, "packages", "api"),
+        codingToolPackageDir: "packages/api",
+        projectDir: tempDir,
+        pipelineStage: "run",
+        storyId: "US-FALLBACK",
+        config: makeNaxConfig({ quality: { commands: { test: "echo ROOT-FALLBACK" } } }),
+      });
+      const result = await support?.runtime.callTool("RunCommand", { command: "test" });
+      expect(result?.kind).toBe("ok");
+      if (result?.kind !== "ok") throw new Error("expected RunCommand to succeed");
+      // The package override is unreachable, so the root-declared command runs.
+      expect(result.content).toContain("ROOT-FALLBACK");
+      expect(result.content).not.toContain("PACKAGE");
+
+      const warning = logCalls.find((entry) => entry.message.includes("Per-package config failed to load"));
+      expect(warning).toBeDefined();
+      expect(warning?.level).toBe("warn");
+      expect(warning?.stage).toBe("tools");
+      // storyId is the FIRST key of the structured payload, per log convention.
+      expect(Object.keys(warning?.data ?? {})[0]).toBe("storyId");
+      expect(warning?.data?.storyId).toBe("US-FALLBACK");
+      expect(warning?.data?.packageDir).toBe("packages/api");
+    } finally {
+      _codingToolSupportDeps.loadConfigForPackage = originalLoad;
+      removeSink();
+      resetLogger();
+    }
   });
 });
