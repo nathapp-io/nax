@@ -1,0 +1,125 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "read-totals-and-log-format",
+  "branchName": "feat/read-totals-and-log-format",
+  "createdAt": "2026-09-15T00:00:00.000Z",
+  "updatedAt": "2026-09-18T03:35:55.384Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Report line totals on unranged Read calls",
+      "description": "**Goal** — Give unranged `Read` results a leading, ceiling-aware line-count header while retaining the bounded prefix body.\n\n**Motivation** — `scripts/check-file-sizes.ts` enforces a hard line-count ratchet — 600 lines for `src/`, 800 for `test/`, with oversized files grandfathered at their recorded size — and no tool available to an agent counts lines.\n\n**Approach** — `readTool.run(input, ctx)`, the branch at `read.ts:67-71` taken when neither `offset` nor `limit` is supplied.\n  - **Baseline:** returns `{ content: truncate(await readPrefix(target, ctx.maxBytes), ctx.maxBytes) }` — a prefix with no header and no line count.\n  - **Target:** same signature and same bytes read. It counts the lines of the prefix it already has, builds a leading `[N lines]` header, and returns\n    `{ content: truncate(`${header}${body}`, ctx.maxBytes) }`. When the prefix overran the\n    ceiling the count is a floor and the header reads `[N+ lines]`.\n\n  Two details this branch must not inherit from the ranged branch. First, the overrun test\n  compares against **`ctx.maxBytes`**, because that is the ceiling this branch reads with;\n  `read.ts:93` compares against `ctx.maxFileBytes` only because the ranged branch reads with\n  `maxFileBytes` at `read.ts:88`. Copying that line unchanged would make the floor marker\n  never fire. Second, a prefix that overran its ceiling almost always ends mid-line, so the\n  final element of the split is a partial line. Counting it is correct: the partial belongs to\n  a real line, so the count remains a true floor, which is all `[N+ lines]` claims.\n\nThe count is deliberately derived from the `maxBytes` prefix rather than from a second,\nlarger read. Across this repository's 2,650 TypeScript files only 3 exceed 40,000 bytes, and\n**none** of the 157 files in the 550-800 line band that the ratchet actually threatens do. A\n`maxFileBytes` read would buy an exact total for 0.1% of files at the cost of loading up to\n2 MB on every unranged read — which is the precise regression\n`test/unit/tools/buffering-ceilings.test.ts` was written to prevent (\"Ceilings bound the\nWORK, not just the answer\").\n\nThe header leads and `truncate()` wraps the whole body, following `src/tools/grep.ts:172-177`:\nappended after truncation a caveat both overruns `maxBytes` and is the first thing lost on\nexactly the results that need it most.\n\n**Scope** — In: modify the no-range branch in `src/tools/read.ts` and its existing Read tests. Out: compact Git log rendering belongs to US-002; changing the byte ceilings themselves: `DEFAULT_TOOL_MAX_BYTES` (40,000) and `DEFAULT_TOOL_MAX_FILE_BYTES` (2,000,000) keep their current values and meanings; reporting an exact line total for a file whose bytes exceed `maxBytes`: such a file reports a floor (`N+`), and this feature does not add a second, larger disk read to resolve it; adding `wc` or any other shell utility to the `RunCommand` allowlist: nax#2010 explicitly rejects this, and that list stays limited to semantic build verbs.\n\n**Interface**\n```typescript\nreadTool.run(input, ctx)\n```\n\n**Failure handling** — Unranged read of an empty file returns the header `[0 lines]` and no body. Not an error. Unranged read whose prefix hit the byte ceiling reports a floor, `[N+ lines]`, never a total. A false total is the defect class nax#1923 was fixed to avoid, and `read.ts:89-92` records the rule. If `maxBytes` is too small to hold the header, `truncate()` applies to header-plus-body, so the result stays within the ceiling and carries the truncation marker. The header is not exempt from the budget. An unreadable file remains a tool error the model can react to, never a denial (`read.ts:112-115`).",
+      "acceptanceCriteria": [
+        "When `readTool.run` reads a 50-line file with neither `offset` nor `limit`, then the first content line is `[50 lines]`.",
+        "When `readTool.run` reads that 50-line file with neither `offset` nor `limit`, then its content contains both the first and last file lines, so the header is additive rather than a replacement for the body.",
+        "When `readTool.run` reads a three-line file with no trailing newline and neither `offset` nor `limit`, then it reports `[3 lines]`, not `[4 lines]`.",
+        "When `readTool.run` reads an empty file with neither `offset` nor `limit`, then it returns `[0 lines]` with no body and is not an error.",
+        "When `readTool.run` reads a file whose size exceeds context `maxBytes` with neither `offset` nor `limit`, then its header matches `[<digits>+ lines]`, where the trailing `+` marks the count as a floor rather than a total.",
+        "When `readTool.run` reads a file whose size exceeds context `maxBytes` with neither `offset` nor `limit`, then its content contains `truncated`, so the floor header and truncation marker coexist.",
+        "When `readTool.run` reads with `maxBytes` of 5, then its content is no longer than 60 characters, so the header is inside the byte budget rather than added on top of it.",
+        "When `readTool.run` reads with `offset` 10 and `limit` 5, then it returns `[lines 10-14 of 50]`, so the ranged branch's existing header is unchanged by this story.",
+        "When `readTool.run` reads with an offset past the end of a 50-line file, then it returns a non-error result naming line count 50, unchanged by this story.",
+        "When `readTool.run` cannot read an approved file, then it returns an error result the model can react to rather than a denial, unchanged by this story."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "read",
+        "bounded-io"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change is confined to an existing tool and test suite, using established bounded-I/O and range patterns, while empty, trailing-newline, and byte-floor boundaries merit focused test-first work.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/tools/read.ts",
+        "src/utils/bounded-io.ts",
+        "src/tools/grep.ts",
+        "test/unit/tools/read-glob.test.ts",
+        "test/unit/tools/buffering-ceilings.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/read-glob.test.ts",
+          "reason": "the test named \"no range supplied is byte-identical to today's whole-prefix read\" asserts `expect(withRange.content).not.toContain(\"[lines\")` and compares two unranged reads for equality. Both assertions still hold after this story, since the new header reads `[50 lines]` rather than `[lines …]` and both sides of the comparison gain it equally — but the invariant the test is named for, that an unranged read returns the prefix unadorned, is exactly what this story ends. Rename it and replace the guard with an assertion that the unranged read now carries the `[N lines]` header, so the file stops documenting an invariant that no longer holds."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "686468594d2f2c4a2d7e60d6361e99d582dfcdb1"
+    },
+    {
+      "id": "US-002",
+      "title": "Use compact default Git log rendering",
+      "description": "**Goal** — Make agent-facing `git log` emit a compact dated commit line by default and expose a typed opt-in for full commit bodies.\n\n**Motivation** — The real defect is that `buildGitArgv` never passes `--format`, so every `log` renders in git's default `medium` format.\n\n**Approach** — `buildGitArgv(input: Record<string, unknown>): string[] | { error: string }` (`git.ts:190`).\n  - **Baseline:** for `log`, emits `[\"log\", \"--relative\", ...flags, \"--max-count=20\", \"--\", ...]`\n    with no `--format`, so git applies its `medium` default.\n  - **Target:** same signature. For `log` with neither `oneline` nor `fullMessage` set, the\n    flags block additionally emits `--format=format:%h %ad %s` and `--date=short`. `oneline`\n    and `fullMessage` each suppress it. The two are mutually exclusive and a request for both\n    is an error. No other verb is affected.\n- `gitTool.inputSchema.properties` (`git.ts:291`).\n  - **Baseline:** advertises `subcommand`, `refs`, `paths`, `nameOnly`, `diffFilter`,\n    `oneline`, `maxCount`. `nameOnly`'s description asserts that on `log` \"every file in each\n    of those commits is then listed — not just the pathspec\", and directs the reader to\n    `maxCount` to narrow it.\n  - **Target:** additionally advertises a `fullMessage` boolean. `nameOnly`'s description\n    states what was measured: the file list is restricted to the pathspec, `log` renders a\n    compact commit line by default, and `fullMessage` restores full bodies. The\n    `maxCount`-narrows-the-per-commit-output claim is replaced by what was measured:\n    `maxCount` bounds how many commits are selected, and was byte-neutral for this case when\n    nax#2011 was filed.\n\nThe format flag is emitted from the existing flags block, before the refs, for the reason\nalready recorded at `git.ts:203-205`: a flag placed after a revision list reads as a pathspec\nto anyone — model or human — scanning the tool-audit ledger.\n\n`--oneline` and `--format` are last-wins on the same argv, so they are composed by exclusion\nrather than by ordering. `oneline` continues to win where it is set, because it is a caller's\nexplicit request; `fullMessage` suppresses the default because its whole purpose is to\nrestore git's. Asking for both is a contradiction and is refused by name rather than resolved\nsilently, matching how `flagFromBoolean` treats a non-boolean and how `policy.ts` treats a\ndenied argv.\n\n**Scope** — In: modify `src/tools/git.ts`, re-export the new tool constant from `src/tools/index.ts`, and extend existing Git output-bound tests. Out: Read line totals belong to US-001; applying the compact commit format to `git show`: `show` renders a single commit and its message is usually the reason for the call, so its default rendering is unchanged by this feature; post-filtering `git log --name-only` output against the pathspec: this was nax#2011's first proposed remedy and is retracted, because git already restricts the file list to the pathspec; refusing the `nameOnly` plus `paths` combination on `log`: this was nax#2011's recommended remedy and is retracted for the same reason; the combination is correct today and is made useful by this feature; changing the order in which `gitWithTimeout` bounds stdout relative to `postProcess`: the truncation limitation documented at `src/tools/git.ts:366-370` is untouched; emitting a marker when `--max-count` drops commits: the asymmetry noted in `DEFAULT_LOG_MAX_COUNT`'s doc comment, where a byte truncation is marked but a commit cap is not, is left as it stands.\n\n**Interface**\n```typescript\nbuildGitArgv(input: Record<string, unknown>): string[] | { error: string }\n\n/**\n * Compact commit rendering for `log`.\n *\n * `format:` rather than `tformat:` or the bare form: it places the separator\n * BETWEEN commits, so each --name-only file list stays grouped with the commit\n * that produced it instead of being orphaned after a blank line.\n */\nexport const DEFAULT_LOG_FORMAT = \"format:%h %ad %s\";\n```\n\n**Failure handling** — `fullMessage` that is not a boolean makes `buildGitArgv` return `{ error }` naming the field; the tool surfaces it as an error result, not a denial. `fullMessage` on a verb other than `log` makes `buildGitArgv` return `{ error }` naming the field and the verbs it applies to. `fullMessage` and `oneline` both true makes `buildGitArgv` return `{ error }` naming both fields. No argv is built.",
+      "acceptanceCriteria": [
+        "When `buildGitArgv` is called with `{ subcommand: \"log\" }`, then its argv contains `--format=format:%h %ad %s` and `--date=short`.",
+        "When `buildGitArgv` is called with log refs `[\"abc123..HEAD\"]`, then the `--format=` element has a lower index than `abc123..HEAD`, so the flag precedes the revision list.",
+        "When `buildGitArgv` is called with log `fullMessage: true`, then its argv contains no element beginning `--format=`.",
+        "When `buildGitArgv` is called with log `oneline: true`, then its argv contains `--oneline` and no element beginning `--format=`.",
+        "When `buildGitArgv` is called with log `oneline: true` and `fullMessage: true`, then it returns an error naming both `oneline` and `fullMessage` and no argv.",
+        "When `buildGitArgv` is called with diff `fullMessage: true`, then it returns an error naming `fullMessage`.",
+        "When `buildGitArgv` is called with log `fullMessage: \"yes\"`, then it returns an error rather than treating the value as true.",
+        "When `buildGitArgv` is called with `{ subcommand: \"diff\" }`, then its argv contains no element beginning `--format=`, so no verb other than `log` gains the default.",
+        "When `buildGitArgv` is called with log `nameOnly: true` and paths `[\"src/a.ts\"]`, then its argv contains `--format=format:%h %ad %s`, contains `--name-only`, and contains no elements of `GIT_ESCAPE_FLAGS`.",
+        "When the Git tool input schema is advertised, then it exposes a `fullMessage` property of type boolean, so a model can reach the field at all.",
+        "When `buildGitArgv` is called with log `maxCount: 3`, then its argv contains both `--max-count=3` and `--format=format:%h %ad %s`, so the commit bound and commit format compose.",
+        "When `DEFAULT_LOG_FORMAT` is imported from the tools module, then it equals `format:%h %ad %s` and an argv built for log with no other fields contains `--format=` concatenated with `DEFAULT_LOG_FORMAT`, so the constant is the value the builder actually emits rather than a second copy of the literal."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "git",
+        "argv"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a small extension of the existing typed argv and schema patterns across the tool barrel and focused tests, with no new abstraction or external integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/tools/git.ts",
+        "src/tools/index.ts",
+        "src/tools/git-flags/index.ts",
+        "test/unit/tools/git-output-bounds.test.ts",
+        "test/unit/tools/git.test.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "922f7cf88598e8d310cf01235ad4dec1c504dfdc"
+    }
+  ],
+  "analysis": "This is an enhancement to two independent agent-facing TypeScript tools; the stories share no symbols or implementation dependency. `readTool.run`'s no-offset/no-limit branch at `src/tools/read.ts:67-71` currently returns only `truncate(await readPrefix(target, ctx.maxBytes), ctx.maxBytes)`. The ranged path at `src/tools/read.ts:73-111` supplies the line-splitting, trailing-newline, floor-label, range-header, and past-EOF patterns, but its empty-string split must not be copied as-is because an empty unranged file must report `[0 lines]`. `readPrefix` reads no more than maxBytes + 1 bytes (`src/utils/bounded-io.ts:18-25`), so the new path must preserve that work bound, determine overrun against `ctx.maxBytes` (not `ctx.maxFileBytes`), count an incomplete final line as part of the floor, and truncate header plus body together. `src/tools/grep.ts:172-177` establishes that an additive caveat must lead and be inside `truncate`; `test/unit/tools/buffering-ceilings.test.ts:32-51` guards the no-whole-file-read invariant. Extend and rename the obsolete no-range test in `test/unit/tools/read-glob.test.ts`; retain the existing range regressions. Unreadable approved files remain tool errors rather than denials (`src/tools/read.ts:112-115`).\n\n`buildGitArgv` in `src/tools/git.ts:190-267` is the sole argv builder used by `gitTool.run` (`src/tools/git.ts:327-328`). It uses `flagFromBoolean` (`src/tools/git.ts:169-188`) for typed, verb-gated boolean flags, places flags before refs, and applies the separate unscoped-log max-count default. Implement `fullMessage` through that same validation/gating pattern; reject a true `fullMessage` with true `oneline`; emit compact `--format` and `--date` only for log with neither explicit output mode. The schema at `src/tools/git.ts:291-314` needs the new boolean and corrected pathspec/nameOnly wording. `--format` and `--date` must not enter the escape-flag list defined by `src/tools/git-flags/index.ts:1-10`; the interceptor operates on argv arrays, not shell strings. Because the tool barrel has explicit exports (`src/tools/index.ts:8-17`), re-export `DEFAULT_LOG_FORMAT` there to meet the public import requirement. Extend `test/unit/tools/git-output-bounds.test.ts`; the pre-existing tail regression in `test/unit/tools/git.test.ts:157-160` remains compatible because new flags are before refs. No migration/configuration is needed: default log output intentionally changes to compact lines, and clients needing default git bodies use `fullMessage`. `show`, byte ceilings, execution/post-process ordering, and escape protections remain unchanged.\n\nAudit: all nine US-001 spec criteria are retained (50-line header/body, no-final-newline count, empty read, byte-ceiling floor and marker, tiny budget, ranged header, and past-EOF regression), plus the failure-table unreadable-file error case. All twelve US-002 criteria are retained: the first criterion is represented by the two observable required argv elements in a single criterion, followed by format ordering, both opt-outs and their contradiction/error paths, non-log isolation, nameOnly/path safety, schema exposure, maxCount composition, and exported-constant anchoring. Every criterion is observable from `readTool.run`, `buildGitArgv`, or `gitTool.inputSchema`; each story has negative-path criteria. The feature-level Out of Scope list is preserved verbatim below.",
+  "outOfScope": [
+    "Applying the compact commit format to `git show`: `show` renders a single commit and its message is usually the reason for the call, so its default rendering is unchanged by this feature.",
+    "Changing the byte ceilings themselves: `DEFAULT_TOOL_MAX_BYTES` (40,000) and `DEFAULT_TOOL_MAX_FILE_BYTES` (2,000,000) keep their current values and meanings.",
+    "Reporting an exact line total for a file whose bytes exceed `maxBytes`: such a file reports a floor (`N+`), and this feature does not add a second, larger disk read to resolve it.",
+    "Adding `wc` or any other shell utility to the `RunCommand` allowlist: nax#2010 explicitly rejects this, and that list stays limited to semantic build verbs.",
+    "Post-filtering `git log --name-only` output against the pathspec: this was nax#2011's first proposed remedy and is retracted, because git already restricts the file list to the pathspec.",
+    "Refusing the `nameOnly` plus `paths` combination on `log`: this was nax#2011's recommended remedy and is retracted for the same reason; the combination is correct today and is made useful by this feature.",
+    "Changing the order in which `gitWithTimeout` bounds stdout relative to `postProcess`: the truncation limitation documented at `src/tools/git.ts:366-370` is untouched.",
+    "Emitting a marker when `--max-count` drops commits: the asymmetry noted in `DEFAULT_LOG_MAX_COUNT`'s doc comment, where a byte truncation is marked but a commit cap is not, is left as it stands."
+  ],
+  "routingProfile": "native"
+}

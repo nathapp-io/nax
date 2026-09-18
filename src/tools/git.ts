@@ -118,6 +118,32 @@ const GIT_MAX_COUNT_VERBS: readonly string[] = ["log"];
 export const DEFAULT_LOG_MAX_COUNT = 20;
 
 /**
+ * Compact commit rendering for `log`.
+ *
+ * `format:` rather than `tformat:` or the bare form: it places the separator
+ * BETWEEN commits, so each --name-only file list stays grouped with the commit
+ * that produced it instead of being orphaned after a blank line. Observed
+ * against a real repo, `format:%h %ad %s --name-only` renders the file list on
+ * the line directly after its commit's header; `tformat:` (which is what a bare
+ * `--format=` means) leaves a blank line between the two.
+ *
+ * `--date=short` pairs with it: `%ad` renders in whatever form `--date`
+ * selects, and the default is the raw commit timestamp
+ * (`Thu Apr 7 15:13:13 2005 -0700`) -- more noise than the compact line is
+ * meant to carry. (`%ai`/`%as` would be the ISO-8601 spellings; neither is
+ * used here.)
+ */
+export const DEFAULT_LOG_FORMAT = "format:%h %ad %s";
+
+/**
+ * `fullMessage` opts back in to git's `medium` default by suppressing the
+ * compact `--format=`. It only makes sense for `log`: `show` renders a single
+ * commit whose message is usually the reason for the call, and the other
+ * read verbs do not render commit messages at all.
+ */
+const GIT_FULL_MESSAGE_VERBS: readonly string[] = ["log"];
+
+/**
  * git parses `--max-count` into a C int, so INT_MAX is the real ceiling.
  *
  * Above it the field would defeat its own purpose: `Number.isInteger(1e21)` is
@@ -220,9 +246,45 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
     argv.push(`--diff-filter=${diffFilter}`);
   }
 
+  // `fullMessage` is validated first, before `oneline` is pushed into argv, so
+  // the contradiction refusal is the actual return and the local argv is
+  // never built. The non-boolean check precedes the verb gate for the same
+  // reason `flagFromBoolean` does: a non-boolean still names the field it's
+  // about.
+  const fullMessage = input.fullMessage;
+  if (fullMessage !== undefined) {
+    if (typeof fullMessage !== "boolean") {
+      return { error: `"fullMessage" must be a boolean` };
+    }
+    if (fullMessage) {
+      if (input.oneline === true) {
+        // Both at once is a contradiction: `oneline` requests a one-line
+        // commit list, `fullMessage` requests git's medium default (subject,
+        // author, date, body). Refused by name rather than resolved silently.
+        return {
+          error: `"oneline" and "fullMessage" cannot both be true; pick one`,
+        };
+      }
+      if (!GIT_FULL_MESSAGE_VERBS.includes(subcommand)) {
+        return {
+          error: `"fullMessage" is not valid for "${subcommand}" (valid for: ${GIT_FULL_MESSAGE_VERBS.join(", ")})`,
+        };
+      }
+    }
+  }
+
   const oneline = flagFromBoolean(input, "oneline", subcommand, GIT_ONELINE_VERBS, "--oneline");
   if (oneline !== null && typeof oneline === "object") return oneline;
   if (oneline !== null) argv.push(oneline);
+
+  // `--oneline` and `--format=` are last-wins on the same argv; `oneline`
+  // continuing to win is intentional — it is the caller's explicit request.
+  // `fullMessage` suppresses the default because its whole purpose is to
+  // restore git's medium rendering.
+  if (subcommand === "log" && oneline === null && fullMessage !== true) {
+    argv.push(`--format=${DEFAULT_LOG_FORMAT}`);
+    argv.push("--date=short");
+  }
 
   const maxCount = flagFromPositiveInteger(input, "maxCount", subcommand, GIT_MAX_COUNT_VERBS, "--max-count");
   if (maxCount !== null && typeof maxCount === "object") return maxCount;
@@ -285,7 +347,7 @@ function truncate(body: string, maxBytes: number): string {
 export const gitTool: CodingTool = {
   name: "Git",
   description:
-    "Run a read-only git command (diff, log, show, status, blame) in the repository. Supply refs and pathspecs as arrays, not as a command line. Command-line flags are not accepted in any field; use the nameOnly, diffFilter, oneline and maxCount fields instead.",
+    "Run a read-only git command (diff, log, show, status, blame) in the repository. Supply refs and pathspecs as arrays, not as a command line. Command-line flags are not accepted in any field; use the nameOnly, diffFilter, oneline, fullMessage and maxCount fields instead.",
   inputSchema: {
     type: "object",
     properties: {
@@ -295,7 +357,7 @@ export const gitTool: CodingTool = {
       nameOnly: {
         type: "boolean",
         description:
-          "List file names only, no content (diff, log, show). On log a pathspec selects which commits to show, and every file in each of those commits is then listed — not just the pathspec; narrow with maxCount, or use oneline to see only the commits.",
+          "List file names only, no content (diff, log, show). On log the file list is restricted to the pathspec; log renders a compact commit line by default — set fullMessage to restore full commit bodies.",
       },
       diffFilter: {
         type: "string",
@@ -303,6 +365,11 @@ export const gitTool: CodingTool = {
         description: "Select only files Added (A), Modified (M), Deleted (D) or Renamed (R) (diff)",
       },
       oneline: { type: "boolean", description: "One line per commit (log)" },
+      fullMessage: {
+        type: "boolean",
+        description:
+          "Restore git's medium commit rendering on log (subject, author, date, body). The default is a compact one-line form; set this to opt back in to the full message.",
+      },
       maxCount: {
         type: "integer",
         description: `Maximum commits to return, newest first (log). A log with no refs defaults to ${DEFAULT_LOG_MAX_COUNT}; a log with a ref range is left unbounded. Raise it to walk further back.`,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   buildGitArgv,
   compileToolPolicy,
@@ -534,5 +535,191 @@ describe("gitTool — output paths are framed relative to the permitted root", (
     expect(content).toContain("a/with space.txt");
     expect(content).toContain("b/with space.txt");
     expect(content).not.toContain("packages/pkg-a");
+  });
+});
+
+/**
+ * US-002 — compact default `git log` rendering.
+ *
+ * Every read verb currently reaches git with no `--format`, so git picks its
+ * `medium` default — the commit subject, author, date, body, and a trailing
+ * patch if `-p` is also in effect. For an agent whose task is "what changed
+ * recently?", most of that is noise. The fix emits a compact `format:` line by
+ * default on `log` only, and lets the caller opt back in to git's medium via
+ * `fullMessage`.
+ *
+ * `format:` rather than `tformat:` or the bare form: it places the separator
+ * BETWEEN commits, so each `--name-only` file list stays grouped with the
+ * commit that produced it instead of being orphaned after a blank line.
+ */
+describe("US-002 — buildGitArgv compact log default", () => {
+  test("log with no other fields emits --format=format:%h %ad %s and --date=short", () => {
+    const argv = argvOf({ subcommand: "log" });
+    expect(argv).toContain("--format=format:%h %ad %s");
+    expect(argv).toContain("--date=short");
+  });
+
+  test("log's --format flag precedes refs so it is not read as a pathspec", () => {
+    const argv = argvOf({ subcommand: "log", refs: ["abc123..HEAD"] });
+    const formatIndex = argv.indexOf("--format=format:%h %ad %s");
+    const refIndex = argv.indexOf("abc123..HEAD");
+    expect(formatIndex).toBeGreaterThanOrEqual(0);
+    expect(refIndex).toBeGreaterThanOrEqual(0);
+    expect(formatIndex).toBeLessThan(refIndex);
+  });
+
+  test("log with fullMessage: true suppresses the default --format", () => {
+    const argv = argvOf({ subcommand: "log", fullMessage: true });
+    expect(argv.some((arg) => arg.startsWith("--format="))).toBe(false);
+  });
+
+  test("log with oneline: true emits --oneline and suppresses --format", () => {
+    const argv = argvOf({ subcommand: "log", oneline: true });
+    expect(argv).toContain("--oneline");
+    expect(argv.some((arg) => arg.startsWith("--format="))).toBe(false);
+  });
+
+  test("log with oneline: true and fullMessage: true returns an error naming both fields", () => {
+    const built = buildGitArgv({ subcommand: "log", oneline: true, fullMessage: true });
+    // No argv is built -- the contradiction is refused by name, not silently
+    // resolved. Composed by exclusion in the happy cases.
+    expect("error" in built).toBe(true);
+    if ("error" in built) {
+      expect(built.error).toContain("oneline");
+      expect(built.error).toContain("fullMessage");
+    }
+  });
+
+  test("diff with fullMessage: true returns an error naming fullMessage", () => {
+    const built = buildGitArgv({ subcommand: "diff", fullMessage: true });
+    expect(built).toEqual({ error: expect.stringContaining("fullMessage") });
+  });
+
+  test("log with fullMessage: 'yes' returns an error rather than coercing the value", () => {
+    const built = buildGitArgv({ subcommand: "log", fullMessage: "yes" });
+    expect("error" in built).toBe(true);
+    if ("error" in built) {
+      expect(built.error).toContain("fullMessage");
+    }
+  });
+
+  test("diff with no other fields emits no --format, so no verb other than log gains the default", () => {
+    const argv = argvOf({ subcommand: "diff" });
+    expect(argv.some((arg) => arg.startsWith("--format="))).toBe(false);
+  });
+
+  test("log with nameOnly: true and a pathspec still emits the compact format and --name-only", () => {
+    const argv = argvOf({ subcommand: "log", nameOnly: true, paths: ["src/a.ts"] });
+    expect(argv).toContain("--format=format:%h %ad %s");
+    expect(argv).toContain("--name-only");
+    for (const flag of GIT_ESCAPE_FLAGS) {
+      expect(argv.some((arg) => arg === flag || arg.startsWith(`${flag}=`))).toBe(false);
+    }
+  });
+
+  test("input schema advertises fullMessage so a model can reach the field", () => {
+    expect(gitTool.inputSchema).toMatchObject({
+      properties: {
+        fullMessage: { type: "boolean" },
+      },
+    });
+  });
+
+  test("log with maxCount: 3 composes --max-count=3 with the compact format", () => {
+    const argv = argvOf({ subcommand: "log", maxCount: 3 });
+    expect(argv).toContain("--max-count=3");
+    expect(argv).toContain("--format=format:%h %ad %s");
+  });
+
+  test("DEFAULT_LOG_FORMAT is the value the builder emits, not a second copy of the literal", async () => {
+    const { DEFAULT_LOG_FORMAT } = await import("@/tools");
+    expect(DEFAULT_LOG_FORMAT).toBe("format:%h %ad %s");
+    const argv = argvOf({ subcommand: "log" });
+    expect(argv).toContain(`--format=${DEFAULT_LOG_FORMAT}`);
+  });
+});
+
+/**
+ * US-002 runtime — the argv-shape tests above prove nax composes the right
+ * flags, but the load-bearing claim in the DEFAULT_LOG_FORMAT doc comment
+ * (that `format:` places the separator BETWEEN commits, so each --name-only
+ * file list stays grouped with the commit that produced it) is a git
+ * rendering property. It must be observed against a real repository, not
+ * inferred from argv strings.
+ */
+describe("gitTool — log renders the compact format and keeps --name-only grouped", () => {
+  const repos: string[] = [];
+
+  afterEach(() => {
+    for (const dir of repos.splice(0)) cleanupTempDir(dir);
+  });
+
+  /** Commits two files in one commit, then a second commit touching one of them. */
+  async function makeRepoWithCommits(): Promise<string> {
+    const repo = makeTempDir("nax-git-log-format-");
+    repos.push(repo);
+    mkdirSync(join(repo, "src"), { recursive: true });
+    writeFileSync(join(repo, "src", "a.ts"), "a1\n");
+    writeFileSync(join(repo, "src", "b.ts"), "b1\n");
+    const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    await run(["init", "-q"]).exited;
+    await run(["config", "user.email", "t@e.com"]).exited;
+    await run(["config", "user.name", "T"]).exited;
+    await run(["add", "-A"]).exited;
+    await run(["commit", "-q", "-m", "first commit"]).exited;
+    writeFileSync(join(repo, "src", "a.ts"), "a2\n");
+    await run(["add", "-A"]).exited;
+    await run(["commit", "-q", "-m", "second commit"]).exited;
+    return repo;
+  }
+
+  test("a default log renders one compact line per commit (short hash + short date + subject)", async () => {
+    const repo = await makeRepoWithCommits();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const content = contentOf(await rt.callTool("Git", { subcommand: "log" }));
+
+    // `--date=short` renders YYYY-MM-DD; the compact format puts it between the
+    // short hash and the subject. Two lines for two commits.
+    const lines = content.split("\n").filter((line) => line.length > 0);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line).toMatch(/^[0-9a-f]{7,} \d{4}-\d{2}-\d{2} (first|second) commit$/);
+    }
+    // git's medium rendering, which this default replaced, prints these headers.
+    expect(content).not.toContain("Author:");
+  });
+
+  test("a default log with --name-only keeps each file list grouped with its commit", async () => {
+    const repo = await makeRepoWithCommits();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const content = contentOf(await rt.callTool("Git", { subcommand: "log", nameOnly: true, paths: ["src"] }));
+
+    // Asserted against the RAW content, blank lines included. `format:` and
+    // `tformat:` both render one line per commit plus its file list, so a view
+    // that filters empty lines cannot tell them apart -- the difference IS the
+    // blank line. `format:` puts its separator BETWEEN entries, leaving each
+    // file list on the line directly after its own commit header; `tformat:`
+    // (and the bare `--format=` form) terminates the header and orphans the
+    // list one line below it, which is the shape the negative assertion pins.
+    expect(content).toContain("second commit\nsrc/a.ts");
+    expect(content).toContain("first commit\nsrc/a.ts\nsrc/b.ts");
+    expect(content).not.toContain("second commit\n\nsrc/a.ts");
+    // Newest first, so the two lists above are not one commit's under two names.
+    expect(content.indexOf("second commit")).toBeLessThan(content.indexOf("first commit"));
+  });
+
+  test("fullMessage: true restores git's medium commit body on log", async () => {
+    const repo = await makeRepoWithCommits();
+    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+
+    const content = contentOf(await rt.callTool("Git", { subcommand: "log", fullMessage: true }));
+
+    // Git's medium default emits author and date headers — neither is present
+    // in the compact format. Their presence proves the default was actually
+    // suppressed (the runtime is reaching git, not just building argv).
+    expect(content).toContain("Author:");
+    expect(content).toContain("Date:");
   });
 });

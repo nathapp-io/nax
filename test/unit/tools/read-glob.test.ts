@@ -31,9 +31,11 @@ describe("readTool", () => {
   });
 
   test("truncates beyond maxBytes and says so", async () => {
-    const res = await readTool.run({ path: "src/a.ts" }, ctx([join(root, "src", "a.ts")], 5));
-    expect(res.content.length).toBeLessThan(60);
+    const longPath = join(root, "long.ts");
+    writeFileSync(longPath, "x".repeat(200));
+    const res = await readTool.run({ path: "long.ts" }, ctx([longPath], 30));
     expect(res.content).toContain("truncated");
+    expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(30);
   });
 
   test("declares its path field so the policy can gate it", () => {
@@ -49,13 +51,13 @@ describe("readTool", () => {
       writeFileSync(manyPath, `${lines.join("\n")}\n`);
     });
 
-    test("no range supplied is byte-identical to today's whole-prefix read", async () => {
+    test("no range supplied carries a [N lines] header, and an empty input equals an explicit path input", async () => {
       const withRange = await readTool.run({ path: "many.txt" }, ctx([manyPath]));
       const noInput = await readTool.run({}, ctx([manyPath]));
       expect(withRange.content).toBe(noInput.content);
       expect(withRange.content).toContain("line 1");
       expect(withRange.content).toContain("line 50");
-      expect(withRange.content).not.toContain("[lines");
+      expect(withRange.content.startsWith("[50 lines]\n")).toBe(true);
     });
 
     test("offset alone returns from that 1-based line to the end", async () => {
@@ -120,7 +122,7 @@ describe("readTool", () => {
     );
 
     test("truncation at maxBytes still applies to a ranged read", async () => {
-      const res = await readTool.run({ path: "many.txt", offset: 1, limit: 50 }, ctx([manyPath], 10));
+      const res = await readTool.run({ path: "many.txt", offset: 1, limit: 50 }, ctx([manyPath], 30));
       expect(res.content).toContain("truncated");
     });
   });

@@ -21,7 +21,15 @@ const UNSUPPORTED_RANGE_ALIASES = ["start_line", "end_line", "start", "end", "li
 
 function truncate(body: string, maxBytes: number): string {
   if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
-  return `${Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8")}\n... [truncated at ${maxBytes} bytes]`;
+  const suffix = `\n... [truncated at ${maxBytes} bytes]`;
+  const suffixLen = Buffer.byteLength(suffix, "utf8");
+  // Ceiling too small to fit the marker -- return a plain slice with no suffix
+  // rather than exceeding maxBytes. The marker would be longer than the budget
+  // itself, so there is nothing to fit it after.
+  if (suffixLen >= maxBytes) return Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8");
+  // Reserve space for the suffix so head + suffix stays within maxBytes.
+  const budget = maxBytes - suffixLen;
+  return `${Buffer.from(body, "utf8").subarray(0, budget).toString("utf8")}${suffix}`;
 }
 
 /** A positive integer, or an error string naming which constraint failed. */
@@ -29,6 +37,13 @@ function parsePositiveInt(value: unknown, field: string): number | string {
   if (typeof value !== "number" || !Number.isInteger(value)) return `${field} must be an integer`;
   if (value < 1) return `${field} must be >= 1`;
   return value;
+}
+
+/** Count lines in a UTF-8 string. Empty string returns 0. Trailing newline is not a line. */
+function countLines(prefix: string): number {
+  if (prefix === "") return 0;
+  const trimmed = prefix.endsWith("\n") ? prefix.slice(0, -1) : prefix;
+  return trimmed.split("\n").length;
 }
 
 export const readTool: CodingTool = {
@@ -65,9 +80,17 @@ export const readTool: CodingTool = {
 
     try {
       if (!hasOffset && !hasLimit) {
-        // Byte-identical to pre-#1923 behaviour: a prefix, not the file, since
-        // the result is truncated to the same ceiling either way.
-        return { content: truncate(await readPrefix(target, ctx.maxBytes), ctx.maxBytes) };
+        // Leading [N lines] header so an agent has a way to count the lines it
+        // is reading. The count comes from the maxBytes prefix, not a second,
+        // larger read: readPrefix asks for maxBytes + 1 and the overshoot byte
+        // is what tells us the prefix hit the ceiling -- in that case the count
+        // is a floor and we mark it with '+'. The ranged branch reads with
+        // maxFileBytes and compares against maxFileBytes for the same reason.
+        const prefix = await readPrefix(target, ctx.maxBytes);
+        const bounded = Buffer.byteLength(prefix, "utf8") > ctx.maxBytes;
+        const lineCount = countLines(prefix);
+        const header = `[${bounded ? `${lineCount}+` : `${lineCount}`} lines]`;
+        return { content: truncate(prefix === "" ? header : `${header}\n${prefix}`, ctx.maxBytes) };
       }
 
       let offset = 1;
