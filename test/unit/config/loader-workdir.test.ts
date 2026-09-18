@@ -7,6 +7,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { _clearRootConfigCache, loadConfigForWorkdir } from "@/config/loader";
+import { _clearPackageConfigCache } from "@/config/package-config-cache";
 import { addSink, getLogger, initLogger, resetLogger } from "@/logger";
 
 describe("loadConfigForWorkdir", () => {
@@ -19,6 +20,7 @@ describe("loadConfigForWorkdir", () => {
     originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
     process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
     _clearRootConfigCache();
+    _clearPackageConfigCache();
   });
 
   afterEach(() => {
@@ -331,6 +333,53 @@ describe("loadConfigForWorkdir", () => {
 
       const chainWarnings = captured.filter((msg) => msg.includes("quality.commands.test"));
       expect(chainWarnings).toHaveLength(1);
+    });
+  });
+
+  describe("PERF-3 — merged per-package config result cache", () => {
+    test("reuses the merged result: a package config edit is not seen until the cache is cleared", async () => {
+      writeFileSync(
+        join(tempDir, ".nax", "config.json"),
+        JSON.stringify({ quality: { commands: { test: "bun test" } } }),
+      );
+      mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+      const packageConfigPath = join(tempDir, ".nax", "mono", "packages", "api", "config.json");
+      writeFileSync(packageConfigPath, JSON.stringify({ quality: { commands: { test: "bun test:api-v1" } } }));
+
+      const rootConfigPath = join(tempDir, ".nax", "config.json");
+      const first = await loadConfigForWorkdir(rootConfigPath, "packages/api");
+      expect(first.quality.commands.test).toBe("bun test:api-v1");
+
+      writeFileSync(packageConfigPath, JSON.stringify({ quality: { commands: { test: "bun test:api-v2" } } }));
+      const cached = await loadConfigForWorkdir(rootConfigPath, "packages/api");
+      expect(cached.quality.commands.test).toBe("bun test:api-v1");
+
+      _clearPackageConfigCache();
+      const fresh = await loadConfigForWorkdir(rootConfigPath, "packages/api");
+      expect(fresh.quality.commands.test).toBe("bun test:api-v2");
+    });
+
+    test("keys the cache by profile chain: different profiles resolve independently", async () => {
+      writeFileSync(
+        join(tempDir, ".nax", "config.json"),
+        JSON.stringify({ quality: { commands: { test: "root-test" } } }),
+      );
+      mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+      writeFileSync(
+        join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+        JSON.stringify({ routing: { strategy: "keyword" } }),
+      );
+      const profilesDir = join(tempDir, ".nax", "profiles");
+      mkdirSync(profilesDir, { recursive: true });
+      writeFileSync(join(profilesDir, "ci.json"), JSON.stringify({ quality: { commands: { test: "ci-test" } } }));
+      writeFileSync(join(profilesDir, "dev.json"), JSON.stringify({ quality: { commands: { test: "dev-test" } } }));
+
+      const rootConfigPath = join(tempDir, ".nax", "config.json");
+      const ci = await loadConfigForWorkdir(rootConfigPath, "packages/api", { profile: "ci" });
+      expect(ci.quality.commands.test).toBe("ci-test");
+
+      const dev = await loadConfigForWorkdir(rootConfigPath, "packages/api", { profile: "dev" });
+      expect(dev.quality.commands.test).toBe("dev-test");
     });
   });
 });

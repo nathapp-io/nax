@@ -26,6 +26,7 @@ import {
 import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
+import { packageConfigCache } from "./package-config-cache";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
 import { globalConfigDir, PROJECT_NAX_DIR } from "./paths";
 import {
@@ -437,6 +438,9 @@ export async function loadConfigForWorkdir(
     return rootConfig;
   }
 
+  const cachedPackageConfig = packageConfigCache.get(resolvedRootConfigPath, packageDir, profileKey);
+  if (cachedPackageConfig) return cachedPackageConfig;
+
   const repoRoot = dirname(rootNaxDir);
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
 
@@ -540,13 +544,10 @@ export async function loadConfigForWorkdir(
           { stage: "config", profileName: name, packageDir, varName, path, cause: err },
         );
       }
-      // #1620: same chain as the root profile layer (BUG-51) — a per-package
-      // profile can carry the same legacy shapes as any other layer.
+      // #1620: same chain as the root profile layer (BUG-51).
       const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, logger, warnDedupe);
-      // nax#1990 — same per-layer scoping as the package overlay above: a
-      // package profile can introduce its own chained command, and this must
-      // run on the profile's own data, not the accumulating `rawMerged`,
-      // for the same not-inherited-from-root reason.
+      // nax#1990 — same per-layer scoping as the package overlay above: run the
+      // check on the profile's own data, never the accumulating `rawMerged`.
       warnQualityCommandChains(shimmedProfileData, warnDedupe.warn);
       rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, shimmedProfileData);
     }
@@ -595,6 +596,5 @@ export async function loadConfigForWorkdir(
     );
   }
   merged = result.data as NaxConfig;
-
-  return merged;
+  return packageConfigCache.set(resolvedRootConfigPath, packageDir, profileKey, merged);
 }
