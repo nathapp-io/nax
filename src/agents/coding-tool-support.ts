@@ -39,7 +39,7 @@ import { loadConfigForPackage } from "../config";
 import { toolAuditDir } from "../config/paths";
 import { resolvePermissions } from "../config/permissions";
 import type { QualityCommandSpec } from "../quality";
-import { packageWorkdir } from "../runtime/packages";
+import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
@@ -316,7 +316,12 @@ export async function resolveCodingToolSupport(
     try {
       packageEffectiveConfig = await _codingToolSupportDeps.loadConfigForPackage(
         projectDir,
-        packageDir,
+        // Under storyIsolation "worktree" the package dir is prefixed with
+        // `.nax-wt/<storyId>/`, which never matches the plain `<pkg>` keys the
+        // per-package override lookup stored — normalize for the LOOKUP ONLY.
+        // commandCwd below keeps the RAW dir so the command runs in the story's
+        // worktree (see packageOverrideKey in src/runtime/packages.ts).
+        packageOverrideKey(packageDir),
         // RULING F2 (see below): options.config's declared type is a Pick,
         // but at runtime both hops source it from the full NaxConfig.
         options.config as unknown as NaxConfig,

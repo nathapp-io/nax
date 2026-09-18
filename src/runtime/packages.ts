@@ -87,6 +87,29 @@ function stripLeadingSlash(p: string): string {
   return p.startsWith("./") ? p.slice(2) : p === "." ? "" : p;
 }
 
+/**
+ * Normalize a package key for the `.nax/mono/<pkg>` OVERRIDE LOOKUP.
+ *
+ * Worktrees live at `<repoRoot>/.nax-wt/<storyId>/` (worktree/manager.ts), so a
+ * story's package key reads `.nax-wt/<storyId>/<pkg>` — which never matches the
+ * plain `<pkg>` keys hydrate() stored, silently yielding root config (nax#2069).
+ * This strips that leading `.nax-wt/<storyId>/` segment so consumers resolving a
+ * per-package config from a worktree-prefixed dir hit the right override.
+ *
+ * The key itself must stay as-is for path tools: packageWorkdir() joins it onto
+ * repoRoot, and shortening it would point every file tool at the main checkout
+ * instead of the worktree. Normalize ONLY the override key, never the cwd.
+ *
+ * The guard rests on `.nax-wt` being a reserved nax worktree directory
+ * (gitignored, hidden, and never a workspace package path), so a first path
+ * segment of `.nax-wt` is treated as the worktree prefix.
+ */
+export function packageOverrideKey(packageDir: string): string {
+  const segments = packageDir.split("/");
+  if (segments[0] !== ".nax-wt") return packageDir;
+  return segments.slice(2).join("/");
+}
+
 export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): PackageRegistry {
   const cache = new Map<string, PackageView>();
   const mergedConfigs = new Map<string, NaxConfig>();
@@ -108,24 +131,9 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     return packageDir;
   }
 
-  /**
-   * Worktrees live at `<repoRoot>/.nax-wt/<storyId>/` (worktree/manager.ts), so a
-   * story's package resolves to `.nax-wt/<storyId>/<pkg>` — which never matches the
-   * plain `<pkg>` keys hydrate() stored, silently yielding root config (nax#2069).
-   *
-   * This strips the worktree prefix for the OVERRIDE LOOKUP ONLY. The key itself
-   * stays as-is: resolve() passes it to createPackageView as `packageDir`, and
-   * packageWorkdir() joins that onto repoRoot — shortening it would point every
-   * file tool at the main checkout instead of the worktree.
-   *
-   * The guard rests on `.nax-wt` being a reserved nax worktree directory
-   * (gitignored, hidden, and never a workspace package path), so a first path
-   * segment of `.nax-wt` is treated as the worktree prefix.
-   */
+  /** Delegate to the exported packageOverrideKey so there is one implementation. */
   function toOverrideKey(relativeKey: string): string {
-    const segments = relativeKey.split("/");
-    if (segments[0] !== ".nax-wt") return relativeKey;
-    return segments.slice(2).join("/");
+    return packageOverrideKey(relativeKey);
   }
 
   function resolve(packageDir?: string): PackageView {
