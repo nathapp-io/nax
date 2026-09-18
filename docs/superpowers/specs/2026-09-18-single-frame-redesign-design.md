@@ -211,7 +211,9 @@ time.
     side-effect). Verify the collapse with a test: two packages, one
     worktree, one connection.
   - Exec `packageRelPath` derivation: both targets must not collapse to
-    repoRoot without the workspace flag (`src/quality/package-managers.ts`).
+    repoRoot without the workspace flag (`src/tools/run-command-exec.ts` +
+    `src/tools/package-managers.ts` — corrected from the draft's
+    `src/quality/` citation, which does not exist).
   - Verifier verdict handshake: write and read must use the same root
     (`src/operations/verify.ts`).
   - Git tool default pathspec `"."` now means the whole repo — scope
@@ -227,7 +229,15 @@ time.
     dir" (their own comments), while `collectDiffFileList` deliberately does
     not. Post-move, all four share `collectDiffFileList`'s no-`--relative`
     behavior — consolidate rather than re-reason four functions. Audit the
-    parallel site `src/review/scoped-lint.ts:87` in the same pass.
+    parallel site `src/review/scoped-lint.ts:87` in the same pass —
+    audited during plan-writing: it KEEPS `--relative` (ruled exception),
+    because its consumer `filterFilesToScope` joins the package-relative
+    result onto the workdir; removing it there breaks the join.
+  - Third coupled reframe found during plan-writing:
+    `reframeFilesTouched` at
+    `src/context/engine/providers/feature-context.ts:389` (fragment
+    "Files touched" bodies re-spelled package-relative) — flips in PR 2
+    (plan Task 3b); `reframe.ts` itself is deleted in PR 4.
   - `execTouchedPaths` carve-out in `policy.ts` becomes redundant (everything
     is in-root): retire it, with a test that GitCommit can stage a root
     manifest without it.
@@ -283,10 +293,10 @@ verification of §6 before the final merge to main.
   `packageLabel`/prefix-strip logic (redundant since PR 2).
 - Provider chunk headings (`code-neighbor`, `git-history`) render repo-rooted;
   chunk identity keys and `scopePaths` no longer differ from rendered text.
-- Retire the frame half of `scripts/check-story-workdir-access.ts`; the
-  selector half stays. Any gate change must keep the frozen-v1-regex superset
-  test green — a rewrite that cannot show it dominates v1 is a regression
-  regardless of mechanism.
+- `scripts/check-story-workdir-access.ts`: verified during plan-writing to be
+  **pure selector-accessor enforcement — it has no frame half to retire**.
+  Zero gate-logic changes; documentation update only, with the frozen-v1-regex
+  superset test re-run unchanged as verification.
 - Update `src/utils/path-frame.ts` header and the 09-16 design spec status
   block; `path-frame.ts` shrinks to `toRepoFrame`, the workdir accessors, and
   the selector contract.
@@ -309,7 +319,7 @@ verification of §6 before the final merge to main.
 **What this dissolves:** the mixed-frame PRD (#2125), the `canonical` flag and
 its H4 runtime re-probe, the `relative(repoRoot, packageDir)` recurring defect
 class, `UNREADABLE_MARKER` machinery, prompt-boundary reframes, `--relative`
-injections, and the frame half of the workdir gate. The diff is net-subtractive
+injections, and the `canonical`-era gate documentation. The diff is net-subtractive
 outside PR 1.
 
 **Out of scope:** `story.workdir` as selector (rules/context/config scoping) —
