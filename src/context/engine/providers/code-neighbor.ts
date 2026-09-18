@@ -404,16 +404,16 @@ export class CodeNeighborProvider implements IContextProvider {
       // `<root>/.nax-wt/<storyId>/<pkg>`). So disk reads/forward-dep resolution
       // can hit the main checkout instead of the worktree.
       //
-      // FOLLOW-UP (nax path-frame follow-up #1 — the same follow-up
-      // git-history.ts's RESIDUAL names): thread a worktree-aware exec root
+      // FOLLOW-UP (nax#2134 — the same follow-up git-history.ts's RESIDUAL
+      // names): thread a worktree-aware exec root
       // (`storyExecRoot`) onto `ContextRequest` and resolve against it. This is
       // a request-type field both providers lack, not something to derive per
       // provider; it is the same missing "worktree repo root" git-history.ts
       // documents. Spec §6's live run asserts only EXEC/WRITE containment ("a
       // worktree-isolated story writing only inside its worktree") — it does
       // NOT exercise context resolution — so it will not catch this. See the
-      // characterization test "worktree isolation residual (PARKED, nax#2093
-      // class)". Do not fix by deriving the root here (nax#2069).
+      // characterization test "worktree isolation residual (PARKED, nax#2134,
+      // nax#2093 class)". Do not fix by deriving the root here (nax#2069).
       const { neighbors, truncated } = await collectNeighbors(
         file,
         request.repoRoot,

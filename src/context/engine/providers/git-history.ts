@@ -209,7 +209,7 @@ export class GitHistoryProvider implements IContextProvider {
     // historyScope is a post-filter, not a workdir switch: under "package" only
     // entries beneath request.packageDir are kept.
     //
-    // RESIDUAL (nax path-frame follow-up #1): workdir stays request.repoRoot,
+    // RESIDUAL (nax#2134): workdir stays request.repoRoot,
     // the MAIN checkout, even under storyIsolation: "worktree". ContextRequest
     // carries no separate "worktree repo root" distinct from packageDir (which
     // already includes the package suffix), so there is nowhere safe to derive
