@@ -199,6 +199,13 @@ export interface Finding {
   acDropped?: boolean;
 
   /**
+   * Disposition set by `applyBaselineDispositions` (verification/test-baseline.ts):
+   * "introduced" / "pre-existing" / "earlier-story" / "unattributed". Absent on
+   * findings that have not yet been classified against a baseline.
+   */
+  baselineDisposition?: "introduced" | "pre-existing" | "earlier-story" | "unattributed";
+
+  /**
    * Producer-specific extras — semantic review's verifiedBy evidence,
    * raw tool output, AC text, TS span, etc.
    *
