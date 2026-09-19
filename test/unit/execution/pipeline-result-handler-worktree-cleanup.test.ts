@@ -176,6 +176,36 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
     const worktreeRemoveCalls = spawnCalls.filter((a) => a.includes("worktree") && a.includes("remove"));
     expect(worktreeRemoveCalls.length).toBe(0);
   });
+
+  // Adversarial finding (US-002): the pause path reaches removeWorktreeDirectory,
+  // which writes the orphan ref UNCONDITIONALLY. When a paused story is later
+  // resumed, iteration-runner.ts calls create(), whose Step 3 force-deletes
+  // `nax/<storyId>` on the orphan-ref evidence — silently discarding the WIP
+  // branch the pause path documented as preserved. Gate the orphan ref on a
+  // successful `git worktree remove` so only the fail path writes it.
+  test("does NOT call git update-ref on 'pause' finalAction (orphan ref is a fail-path artifact only)", async () => {
+    const story = makeStory({ id: "US-001", status: "in-progress" });
+    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
+    _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
+
+    const spawnCalls: string[][] = [];
+    _resultHandlerDeps.spawn = mockSpawnCapturingCalls(spawnCalls);
+
+    const pauseResult: PipelineRunResult = {
+      success: false,
+      finalAction: "pause",
+      reason: "Semantic review paused",
+      context: makeTestContext({ agentResult: makeAgentResult() }),
+    };
+
+    await handlePipelineFailure(ctx, pauseResult);
+
+    // Even when a worktree exists and removeWorktreeDirectory is called on
+    // pause, no orphan-ref update-ref should fire — the ref is scoped to
+    // the fail path per AC-1/AC-4/AC-5/AC-6.
+    const updateRefCalls = spawnCalls.filter((a) => a[0] === "git" && a[1] === "update-ref");
+    expect(updateRefCalls.length).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -233,6 +263,60 @@ describe("US-002 handlePipelineFailure — record nax ownership of orphan branch
     // Verify the ownership-record git call was attempted.
     const updateRefCalls = spawnCalls.filter((a) => a[0] === "git" && a[1] === "update-ref");
     expect(updateRefCalls.length).toBeGreaterThan(0);
+  });
+
+  // Adversarial finding (US-002): the orphan ref is written UNCONDITIONALLY
+  // after `git worktree remove`, even when git reported a non-zero exit. In
+  // that case the branch is still checked out in a (surviving) live worktree,
+  // so claiming nax ownership of an "orphan" is a false record. Gate the
+  // orphan ref on exitCode === 0.
+  test("does NOT call git update-ref when git worktree remove itself failed", async () => {
+    const story = makeStory({
+      id: "US-001",
+      status: "pending",
+      passes: false,
+      attempts: 2,
+    });
+    const ctx = makeCtx(story, {
+      config: {
+        ...WORKTREE_CONFIG,
+        execution: {
+          ...WORKTREE_CONFIG.execution,
+          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+        },
+      },
+    });
+    _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
+
+    const spawnCalls: string[][] = [];
+    _resultHandlerDeps.spawn = makeSpawn(({ cmd }) => {
+      spawnCalls.push(cmd);
+      // `git worktree remove` fails (e.g. NFS hang, locked ref) — the
+      // worktree directory and branch are both still in place.
+      if (cmd[0] === "git" && cmd[1] === "worktree" && cmd[2] === "remove") {
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: "fatal: could not lock ref",
+        };
+      }
+      return {};
+    }).spawn;
+
+    const failResult: PipelineRunResult = {
+      success: false,
+      finalAction: "fail",
+      reason: "Tests failed",
+      context: makeTestContext({ agentResult: makeAgentResult() }),
+    };
+
+    await handlePipelineFailure(ctx, failResult);
+
+    // The orphan ref must NOT be written when worktree remove failed —
+    // claiming nax owns an orphan when the branch is still in a live
+    // worktree is a false record that would mislead the next create().
+    const updateRefCalls = spawnCalls.filter((a) => a[0] === "git" && a[1] === "update-ref");
+    expect(updateRefCalls.length).toBe(0);
   });
 });
 

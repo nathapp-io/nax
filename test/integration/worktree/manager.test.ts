@@ -549,20 +549,25 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
     _resultHandlerDeps.existsSync = (p) => existsSync(p);
     // Pass-through to real git for everything — no `_deps` mock needed,
     // because the orphan ref + worktree removal are both real git commands.
-    // We rely on `git worktree remove --force` to also clean up the
-    // directory; the assertion that follows confirms the directory is gone.
-    // If git fails to remove (e.g. on systems where `--force` leaves the
-    // directory), we fall back to rmSync after the fact.
+    // We rely on `git worktree remove --force` to clean up the directory.
+    // If git fails (e.g. on systems where `--force` leaves the directory
+    // behind), the test wrapper falls back to rmSync — but only on a
+    // non-zero exit, so a successful git removal is not masked.
     _resultHandlerDeps.spawn = ((cmd: string[], opts: Record<string, unknown>) => {
       if (cmd[0] === "git" && cmd[1] === "worktree" && cmd[2] === "remove") {
         const proc = Bun.spawn(cmd, { ...opts, stdout: "pipe", stderr: "pipe" });
-        proc.exited.then(() => {
-          // Best-effort: ensure the directory is gone even if `git
-          // worktree remove` left it behind.
-          try {
-            rmSync(worktreePath, { recursive: true, force: true });
-          } catch {
-            // ignore
+        proc.exited.then((exitCode) => {
+          // Only fall back to rmSync when git's own removal failed — a
+          // non-zero exit may leave the directory behind even with --force.
+          // A zero exit means git already cleaned up, and rmSync is
+          // unnecessary; running it anyway masks a failure that the
+          // production code would surface as a stale directory.
+          if (exitCode !== 0) {
+            try {
+              rmSync(worktreePath, { recursive: true, force: true });
+            } catch {
+              // ignore
+            }
           }
         });
         return proc;
