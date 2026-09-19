@@ -5,7 +5,8 @@
  *   (1) Constitution
  *   (2) Role task body  (user disk override OR default template)
  *   (3) Story context             [non-overridable]
- *   (3.5) Acceptance test context [non-overridable, when provided]
+ *   (3.5) Test baseline           [non-overridable, when a baseline was resolved]
+ *   (3.6) Acceptance test context [non-overridable, when provided]
  *   (4) Verdict section           [verifier only, non-overridable]
  *   (5) Isolation rules           [non-overridable]
  *   (5.5) TDD language convention [non-overridable, when language is set]
@@ -24,9 +25,12 @@
 import type { PromptLoaderConfig } from "@/config/selectors";
 import type { NaxConfig } from "@/config/types";
 import { filterContextByRole, truncateToContextBudget } from "@/context";
+import { getSafeLogger } from "@/logger";
 import type { UserStory } from "@/prd";
 import { commandSpecIncludes, renderCommandSpec } from "@/quality/command-spec";
 import type { SelfVerificationPromptInput } from "@/quality/self-verification";
+import { errorMessage } from "@/utils/errors";
+import { resolveStoryBaseline, type TestBaseline } from "@/verification";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";
 import type { AcceptanceEntry, GuardrailRole } from "../sections";
@@ -44,6 +48,7 @@ import {
   buildStoryReminderSection,
   buildStorySection,
   buildTddLanguageSection,
+  buildTestBaselineSection,
   buildTestQualitySection,
   buildVerdictSection,
 } from "../sections";
@@ -73,6 +78,8 @@ export class TddPromptBuilder {
   private noTestJustification_: string | undefined;
   private acceptanceEntries_: AcceptanceEntry[] | undefined;
   private selfVerification_: SelfVerificationPromptInput | undefined;
+  /** US-004 — the story's persisted baseline. Rendered as one bounded upfront section. */
+  private testBaseline_: TestBaseline | undefined;
 
   private constructor(role: PromptRole, options: PromptOptions = {}) {
     this.role = role;
@@ -172,6 +179,17 @@ export class TddPromptBuilder {
   }
 
   /**
+   * US-004 — the story's persisted baseline artifact. `build()` renders one
+   * bounded `# Test Baseline` section when a value is set. `undefined` (or no
+   * call at all) renders no section, so a caller that cannot resolve an
+   * artifact produces today's prompt byte-for-byte.
+   */
+  testBaseline(baseline: TestBaseline | undefined): this {
+    this.testBaseline_ = baseline;
+    return this;
+  }
+
+  /**
    * Compose and return the final prompt string.
    *
    * A fresh SectionAccumulator is created on each call so that calling build()
@@ -194,7 +212,15 @@ export class TddPromptBuilder {
       acc.add(this.s("story", buildStorySection(this.story_)));
     }
 
-    // (3.5) Acceptance test context
+    // (3.5) Test baseline — upfront, before feature context and every rule: the
+    // agent should know what was already red before it starts editing. Rendered
+    // only when a baseline (or a `no-baseline` marker) was resolved.
+    if (this.testBaseline_ !== undefined) {
+      const baselineSection = buildTestBaselineSection(this.testBaseline_);
+      if (baselineSection) acc.add(this.s("test-baseline", baselineSection));
+    }
+
+    // (3.6) Acceptance test context
     if (this.acceptanceEntries_ && this.acceptanceEntries_.length > 0) {
       const content = buildAcceptanceSection(this.acceptanceEntries_);
       if (content) acc.add(this.s("acceptance", content));
@@ -307,7 +333,7 @@ export class TddPromptBuilder {
     return acc.join();
   }
 
-  static buildForRole(
+  static async buildForRole(
     role: PromptRole,
     workdir: string,
     config: NaxConfig,
@@ -318,8 +344,13 @@ export class TddPromptBuilder {
       featureContextMarkdown?: string;
       contextBundle?: import("@/context/engine").ContextBundle;
       constitution?: string;
+      /** Repo root where `.nax/` lives — anchors the story baseline artifact read (US-004). */
+      root?: string;
+      /** Feature id segmenting the baseline artifact tree (US-004). */
+      featureId?: string;
     },
   ): Promise<string> {
+    const testBaseline = await resolveTestBaselineForPrompt(opts.root, opts.featureId, story.id);
     const variant: "standard" | "lite" | undefined =
       role === "implementer" ? (opts.lite ? "lite" : "standard") : undefined;
     const isolation: "strict" | "lite" | undefined =
@@ -327,6 +358,7 @@ export class TddPromptBuilder {
     return TddPromptBuilder.for(role, { variant, isolation })
       .withLoader(workdir, config)
       .story(story)
+      .testBaseline(testBaseline)
       .context(opts.contextMarkdown)
       .v2FeatureContext(opts.contextBundle?.pushMarkdown)
       .featureContext(opts.contextBundle ? undefined : opts.featureContextMarkdown)
@@ -416,5 +448,38 @@ export class TddPromptBuilder {
       this.noTestJustification_,
       this.story_?.id,
     );
+  }
+}
+
+/**
+ * US-004 — resolve the baseline artifact a prompt should carry.
+ *
+ * Missing, unreadable, and unparseable all mean the same thing here: no
+ * section. Only a persisted `no-baseline` marker renders one, with its reason —
+ * "no snapshot exists" is a read-path fact the builder absorbs, while "the
+ * snapshot says nothing was failing" is the artifact's own claim to make.
+ *
+ * Reads the story artifact in `"sequential"` mode, exactly like the gate's
+ * labeling (`labelFindingsWithBaseline`): parallel runs never write a per-story
+ * artifact, so both modes resolve to the same run-start capture through this
+ * one call.
+ */
+async function resolveTestBaselineForPrompt(
+  root: string | undefined,
+  featureId: string | undefined,
+  storyId: string,
+): Promise<TestBaseline | undefined> {
+  if (!root || !featureId) return undefined;
+  try {
+    return await resolveStoryBaseline(root, featureId, storyId, "sequential");
+  } catch (err) {
+    // A malformed feature id or an unreadable file must not stop a prompt from
+    // being built — but the reason is logged so a missing baseline section is
+    // traceable rather than invisible.
+    getSafeLogger()?.warn("prompts", "Test baseline artifact unreadable — no baseline section rendered", {
+      storyId,
+      error: errorMessage(err),
+    });
+    return undefined;
   }
 }

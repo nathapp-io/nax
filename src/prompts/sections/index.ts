@@ -33,5 +33,6 @@ export { buildScratchpadSection } from "./scratchpad";
 export { buildSelfVerificationSection } from "./self-verification";
 export { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "./story";
 export { buildTddLanguageSection } from "./tdd-conventions";
+export { buildTestBaselineSection, MAX_BASELINE_SECTION_CHARS } from "./test-baseline";
 export { buildTestQualitySection } from "./test-quality";
 export { buildVerdictSection } from "./verdict";

@@ -209,6 +209,13 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     featureContextMarkdown: ctx.featureContextMarkdown,
     contextBundle: ctx.contextBundle,
     constitution: ctx.constitution?.content,
+    // US-004 — anchors the story's persisted test-baseline artifact, which
+    // `buildForRole` renders as an upfront section. `projectDir` is the repo
+    // root where `.nax/` lives (the same root the full-suite gate and the
+    // run-start capture use); `ctx.workdir` is the story's package in monorepo
+    // mode and would look for the artifact in the wrong tree.
+    root: ctx.projectDir,
+    featureId: ctx.prd.feature,
   };
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
     ? await Promise.all([

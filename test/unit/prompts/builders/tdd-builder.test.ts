@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { cleanupTempDir, makeNaxConfig, makeStory, makeTempDir } from "@test/helpers";
+import { featureDir } from "@/config";
 import { TddPromptBuilder } from "@/prompts/builders/tdd-builder";
+import type { BaselineEntry, TestBaseline } from "@/verification";
+import { writeStoryBaseline } from "@/verification";
 
 describe("TddPromptBuilder.buildForRole", () => {
   test("builds a non-empty prompt for test-writer", async () => {
@@ -374,5 +377,215 @@ describe("TddPromptBuilder.buildForRole — repo-rooted story frame post-root-mo
     const prompt = await TddPromptBuilder.buildForRole("test-writer", "/repo", makeNaxConfig({}), story, {});
 
     expect(prompt).toContain("`src/index.ts` — root frame");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-004 — bounded upfront test-baseline section.
+//
+// The section is fed by `.testBaseline()`; `buildForRole` resolves the value
+// from the persisted artifact. Both ends are pinned here because AC1–AC6 are
+// about `build()` and AC7 is about the production `buildForRole` path.
+// ---------------------------------------------------------------------------
+
+const BASELINE_FEATURE = "feature-us004";
+const BASELINE_STORY = "US-004";
+
+function capturedBaseline(entries: BaselineEntry[]): TestBaseline {
+  return {
+    kind: "captured",
+    source: "preflight",
+    capturedAt: "2026-01-15T00:00:00.000Z",
+    baseRef: "base-0001",
+    entries,
+  };
+}
+
+const NO_BASELINE_MARKER: TestBaseline = {
+  kind: "no-baseline",
+  reason: "timeout",
+  capturedAt: "2026-01-15T00:00:00.000Z",
+};
+
+function builderWith(role: "implementer" | "test-writer") {
+  return TddPromptBuilder.for(role, { variant: "standard" })
+    .story(makeStory({ id: BASELINE_STORY }))
+    .withLoader("/tmp", makeNaxConfig({}));
+}
+
+describe("US-004 — TddPromptBuilder test baseline section", () => {
+  test("AC1: a captured baseline renders the base ref, the failure count, and each failing file", async () => {
+    const prompt = await builderWith("implementer")
+      .testBaseline(
+        capturedBaseline([
+          { file: "test/unit/alpha.test.ts", testName: "alpha fails" },
+          { file: "test/unit/beta.test.ts", testName: "beta fails" },
+        ]),
+      )
+      .build();
+
+    expect(prompt).toContain("# Test Baseline");
+    expect(prompt).toContain("base-0001");
+    expect(prompt).toContain("2 failing test(s)");
+    expect(prompt).toContain("test/unit/alpha.test.ts");
+    expect(prompt).toContain("test/unit/beta.test.ts");
+  });
+
+  test("AC2: a captured baseline with zero entries states it is green and blames any failure on this story", async () => {
+    const prompt = await builderWith("implementer").testBaseline(capturedBaseline([])).build();
+
+    expect(prompt).toContain("# Test Baseline");
+    expect(prompt).toContain("green at `base-0001`");
+    expect(prompt).toContain("introduced by this story");
+  });
+
+  test("AC3: a no-baseline marker renders the section with its reason", async () => {
+    const prompt = await builderWith("implementer").testBaseline(NO_BASELINE_MARKER).build();
+
+    expect(prompt).toContain("# Test Baseline");
+    expect(prompt).toContain("No baseline available");
+    expect(prompt).toContain("timeout");
+  });
+
+  test("AC4: without .testBaseline() the prompt contains no baseline section", async () => {
+    const prompt = await builderWith("implementer").build();
+
+    expect(prompt).not.toContain("# Test Baseline");
+  });
+
+  test("AC4: .testBaseline(undefined) renders byte-identical output to omitting the call", async () => {
+    const omitted = await builderWith("implementer").build();
+    const explicitUndefined = await builderWith("implementer").testBaseline(undefined).build();
+
+    expect(explicitUndefined).toBe(omitted);
+    expect(explicitUndefined).not.toContain("# Test Baseline");
+  });
+
+  test("AC5: the rendered section carries the authoritative / do-not-re-run directive", async () => {
+    const prompt = await builderWith("implementer")
+      .testBaseline(capturedBaseline([{ file: "test/unit/alpha.test.ts" }]))
+      .build();
+
+    expect(prompt).toContain("authoritative");
+    expect(prompt).toContain("do not re-run the full test suite");
+  });
+
+  test("AC6: an oversized baseline is bounded, keeps the count and leading files, and ends with 'and N more'", async () => {
+    const files = Array.from({ length: 200 }, (_, i) => ({
+      file: `test/unit/deeply/nested/directory/number-${String(i).padStart(3, "0")}/a-descriptively-named-suite.test.ts`,
+    }));
+    const prompt = await builderWith("implementer").testBaseline(capturedBaseline(files)).build();
+
+    expect(prompt).toContain("# Test Baseline");
+    expect(prompt).toContain("200 failing test(s)");
+    expect(prompt).toContain("number-000");
+    expect(prompt).toMatch(/and \d+ more/);
+    // The cap actually bit: the trailing file never reached the prompt.
+    expect(prompt).not.toContain("number-199");
+  });
+
+  test("the baseline section is rendered for the test-writer role too", async () => {
+    const prompt = await builderWith("test-writer")
+      .testBaseline(capturedBaseline([{ file: "test/unit/alpha.test.ts" }]))
+      .build();
+
+    expect(prompt).toContain("# Test Baseline");
+    expect(prompt).toContain("test/unit/alpha.test.ts");
+  });
+});
+
+describe("US-004 — buildForRole resolves the story baseline artifact", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = makeTempDir("nax-test-us004-baseline-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempRoot);
+  });
+
+  test("AC7: a seeded story baseline artifact reaches the implementer prompt", async () => {
+    await writeStoryBaseline(
+      tempRoot,
+      BASELINE_FEATURE,
+      BASELINE_STORY,
+      capturedBaseline([{ file: "test/unit/alpha.test.ts", testName: "alpha fails" }]),
+    );
+
+    const prompt = await TddPromptBuilder.buildForRole(
+      "implementer",
+      tempRoot,
+      makeNaxConfig({}),
+      makeStory({ id: BASELINE_STORY }),
+      { root: tempRoot, featureId: BASELINE_FEATURE },
+    );
+
+    expect(prompt).toContain("# Test Baseline");
+    expect(prompt).toContain("base-0001");
+    expect(prompt).toContain("test/unit/alpha.test.ts");
+  });
+
+  test("a missing artifact renders no baseline section", async () => {
+    const prompt = await TddPromptBuilder.buildForRole(
+      "implementer",
+      tempRoot,
+      makeNaxConfig({}),
+      makeStory({ id: BASELINE_STORY }),
+      { root: tempRoot, featureId: BASELINE_FEATURE },
+    );
+
+    expect(prompt).not.toContain("# Test Baseline");
+  });
+
+  test("a persisted no-baseline marker renders the section with its reason", async () => {
+    await writeStoryBaseline(tempRoot, BASELINE_FEATURE, BASELINE_STORY, NO_BASELINE_MARKER);
+
+    const prompt = await TddPromptBuilder.buildForRole(
+      "implementer",
+      tempRoot,
+      makeNaxConfig({}),
+      makeStory({ id: BASELINE_STORY }),
+      { root: tempRoot, featureId: BASELINE_FEATURE },
+    );
+
+    expect(prompt).toContain("# Test Baseline");
+    expect(prompt).toContain("No baseline available");
+    expect(prompt).toContain("timeout");
+  });
+
+  test("without an artifact root the prompt falls back to no baseline section", async () => {
+    await writeStoryBaseline(
+      tempRoot,
+      BASELINE_FEATURE,
+      BASELINE_STORY,
+      capturedBaseline([{ file: "test/unit/alpha.test.ts" }]),
+    );
+
+    const prompt = await TddPromptBuilder.buildForRole(
+      "implementer",
+      tempRoot,
+      makeNaxConfig({}),
+      makeStory({ id: BASELINE_STORY }),
+      {},
+    );
+
+    expect(prompt).not.toContain("# Test Baseline");
+  });
+
+  test("a corrupt artifact is treated as no baseline rather than failing the prompt build", async () => {
+    const artifact = `${featureDir(tempRoot, BASELINE_FEATURE)}/stories/${BASELINE_STORY}/test-baseline.json`;
+    await writeStoryBaseline(tempRoot, BASELINE_FEATURE, BASELINE_STORY, capturedBaseline([]));
+    await Bun.write(artifact, "{ not json");
+
+    const prompt = await TddPromptBuilder.buildForRole(
+      "implementer",
+      tempRoot,
+      makeNaxConfig({}),
+      makeStory({ id: BASELINE_STORY }),
+      { root: tempRoot, featureId: BASELINE_FEATURE },
+    );
+
+    expect(prompt).not.toContain("# Test Baseline");
   });
 });
