@@ -146,6 +146,20 @@ the record cannot outlive what it records. A user branch never acquires one.
   satisfy at the point of the edit, not after the story is otherwise green; keep the docblock
   terse and cross-reference `storyExecRoot` rather than restating the frame rules.
 
+### Reachability of the cleanup path
+
+`removeWorktreeDirectory` is reached from `handlePipelineFailure` on exactly two branches —
+`finalAction: "pause"` (`pipeline-result-handler.ts:357`) and the tier-exhausted
+`finalAction: "fail"` (`:394`) — and both are gated on `hasWorktree(ctx.workdir, storyId)`, which
+is `existsSync(join(projectRoot, ".nax-wt", storyId))` (`:47`).
+
+**The gate is the worktree directory, not `execution.storyIsolation`.** Per MEM-6 the cleanup keys
+off whether a worktree actually exists, "regardless of `storyIsolation` mode". A test that sets
+only the config takes the short-circuit branch and never reaches the cleanup path — which is why
+`pipeline-result-handler-worktree-cleanup.test.ts:88` sets
+`_resultHandlerDeps.existsSync = () => true` explicitly and pins `maxAttemptsTotal: 1` to force
+tier exhaustion. Every US-002 AC below states both preconditions for this reason.
+
 ### Failure Handling
 
 | condition | behaviour |
@@ -274,20 +288,22 @@ constructs — so no closed-world assertion in `test/unit/execution/worktree-man
 
 ### US-002
 
-1. `[integration]` After `handlePipelineFailure` runs in worktree mode for story `US-001` on a
-   repository where the worktree was created by `WorktreeManager.create`, calling
-   `WorktreeManager.create(projectRoot, "US-001")` a second time completes without throwing, and a
-   worktree directory exists at `.nax-wt/US-001`.
+1. `[integration]` Given `WorktreeManager.create` created the worktree so `.nax-wt/US-001` exists,
+   after `handlePipelineFailure` runs with `finalAction: "fail"` and tiers exhausted for story
+   `US-001`, calling `WorktreeManager.create(projectRoot, "US-001")` a second time completes
+   without throwing, and a worktree directory exists at `.nax-wt/US-001`.
 2. `[unit]` Given a branch `nax/US-001` that exists with no worktree record and no nax ownership
    record — the user-branch shape BUG-28 guards — `WorktreeManager.create(projectRoot, "US-001")`
    does not invoke `git branch -D`, and the branch still resolves to its original commit after the
    call returns.
-3. `[unit]` After `handlePipelineFailure` runs in worktree mode for story `US-001`, the branch
-   `nax/US-001` still resolves to a commit — the branch is retained for diagnostics, not deleted.
+3. `[unit]` Given `.nax-wt/US-001` exists, after `handlePipelineFailure` runs with
+   `finalAction: "fail"` and tiers exhausted for story `US-001`, the branch `nax/US-001` still
+   resolves to a commit — the branch is retained for diagnostics, not deleted.
 4. `[unit]` When the ownership record is consumed by `WorktreeManager.create`, the record is
    removed: after the call, resolving `refs/nax/orphan/US-001` fails.
-5. `[unit]` When the ownership-record git call fails, `handlePipelineFailure` returns without
-   throwing and a `warn` log is emitted on stage `worktree` carrying the story id.
+5. `[unit]` Given `.nax-wt/US-001` exists and the ownership-record git call fails,
+   `handlePipelineFailure` with `finalAction: "fail"` and tiers exhausted returns without throwing
+   and a `warn` log is emitted on stage `worktree` carrying the story id.
 6. `[unit]` `naxOrphanRefName("US-001")` returns `refs/nax/orphan/US-001`, and throws for a story
    id `validateStoryId` rejects.
 7. `[unit]` Given an ownership record for `US-001` but no branch `nax/US-001`,
