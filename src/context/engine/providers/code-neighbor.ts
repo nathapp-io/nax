@@ -218,16 +218,32 @@ function scanDirectory(
  * agent's file tools are rooted at the story execution root, so no package
  * frame or unreadable marker is needed.
  *
+ * `packageDir` and `neighborScope` are threaded through to keep AC5's
+ * "same neighbours as today" behaviour under the default package scope:
+ * when `neighborScope === "package"`, candidate files outside `packageDir`
+ * (relative to execRoot) are dropped — the scan glob still runs at
+ * execRoot so worktree-only neighbours stay in scope (AC3), but cross-
+ * package importers do not leak into the chunk (AC5).
+ *
  * Accepts pre-scanned directory results and a shared content cache so that the
  * glob and file reads are not repeated across touched files in one fetch().
  */
 async function collectNeighbors(
   filePath: string,
   execRoot: string,
+  packageDir: string,
+  neighborScope: "repo" | "package",
   scannedDirs: ScannedDir[],
   contentCacheState: ContentCacheState,
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
 ): Promise<{ neighbors: string[]; truncated: boolean }> {
+  // AC5: package-scope filter applies the legacy "scan only this package"
+  // partition as a post-filter on the execRoot-rooted scan, NOT as a
+  // partition of the scan root itself. The relative packageDir is computed
+  // here so the same `srcFile` strings the glob returns can be matched
+  // without a second join.
+  const relPackageDir = neighborScope === "package" ? relative(execRoot, packageDir).replace(/\\/g, "/") : "";
+  const packagePrefix = relPackageDir.endsWith("/") ? relPackageDir : `${relPackageDir}/`;
   // Forward/reverse deps use independent budgets so import-heavy files can't
   // starve the reverse-dep scan (#1611).
   const forwardNeighbors = new Set<string>();
@@ -255,6 +271,12 @@ async function collectNeighbors(
     if (truncated) anyTruncated = true;
     for (const srcFile of srcFiles) {
       if (reverseNeighbors.size >= MAX_NEIGHBORS_PER_FILE) break outer;
+      // AC5 package-scope filter: under the default package scope, drop any
+      // candidate file whose `srcFile` (relative to execRoot) lies outside
+      // the package's relative path. The scan runs at execRoot so worktree-
+      // only files in the package stay in scope (AC3), but cross-package
+      // importers do not (AC5).
+      if (relPackageDir && !srcFile.startsWith(packagePrefix) && srcFile !== relPackageDir) continue;
       const srcAbs = join(scanWorkdir, srcFile);
       // Absolute self-skip. Comparing `srcFile === filePath` skipped a SIBLING's
       // identically-spelled file and let a sibling's `./index` count as a
@@ -410,6 +432,8 @@ export class CodeNeighborProvider implements IContextProvider {
       const { neighbors, truncated } = await collectNeighbors(
         file,
         execRoot,
+        request.packageDir,
+        this.neighborScope,
         scannedDirs,
         contentCacheState,
         siblingTestContext,
