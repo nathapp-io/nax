@@ -21,10 +21,8 @@ Use these instead of mutating `Bun.spawn` globally (see `docs/architecture/conve
 | `src/tdd/isolation.ts` | `_isolationDeps.spawn` | `git diff` in `getChangedFiles` |
 | `src/tdd/cleanup.ts` | `_cleanupDeps.spawn/sleep/kill` | `ps`, `Bun.sleep`, `process.kill` in `cleanupProcessTree` |
 | `src/tdd/rollback.ts` | `_rollbackDeps.spawn` | `git reset`/`clean` in `rollbackToRef` |
-| `src/tdd/rectification-gate.ts` | `_rectificationGateDeps.executeWithTimeout/parseBunTestOutput/shouldRetryRectification` | Gate logic |
 | `src/utils/git.ts` | `_gitDeps.spawn` | All git commands |
 | `src/verification/executor.ts` | `_executorDeps.spawn` | Shell test command execution |
-| `src/verification/strategies/acceptance.ts` | `_acceptanceDeps.spawn` | Acceptance test runner |
 
 For orchestrator/multi-module tests, use the shared helper:
 ```typescript

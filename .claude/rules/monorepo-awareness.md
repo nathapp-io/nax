@@ -72,7 +72,7 @@ Every file that needs to know "what package is this file in?" or "what packages 
 | "Which packages exist in the repo?" | `discoverWorkspacePackages(repoRoot)` — `src/test-runners/detect/workspace.ts` |
 | "Which package does this file belong to?" | `findPackageDir(filePath, repoRoot)` — `src/test-runners/resolver.ts` |
 | "What language is this package?" | `detectLanguage(packageDir)` — `src/project/detector.ts` |
-| "What test framework?" | `detectTestFramework(packageDir)` — `src/test-runners/detect/framework.ts` |
+| "What test framework?" | `detectTestFramework(packageDir)` — `src/project/detector.ts` |
 
 Do not duplicate package-boundary marker lookups (`package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`) in new code. Extend the existing detectors.
 
