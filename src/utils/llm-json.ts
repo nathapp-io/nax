@@ -215,29 +215,73 @@ export function wrapJsonPrompt(prompt: string): string {
   return `IMPORTANT: Your entire response must be a single JSON object or array. Do not explain your reasoning. Do not use markdown formatting. Output ONLY the JSON.\n\n${prompt.trim()}\n\nYOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text.`;
 }
 
+/** JSON's named escapes for the control characters that have one. */
+const CONTROL_CHAR_ESCAPES: Record<string, string> = {
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+};
+
+/**
+ * Escape control characters (U+0000–U+001F) that appear literally INSIDE a JSON
+ * string.
+ *
+ * JSON forbids them unescaped, so a model that emits a real newline inside a
+ * prose field produces a payload every parser rejects with "Unterminated
+ * string" — while the rest of it is structurally intact and recoverable
+ * (#2124: one raw newline in `analysis` made a complete 17.6 KB PRD
+ * unparseable).
+ *
+ * Only in-string characters are rewritten. Outside a string the same bytes are
+ * insignificant whitespace, and rewriting them could only mask a genuinely
+ * malformed payload. Valid JSON therefore comes back unchanged — which is what
+ * makes this safe to run as a second attempt after a failed parse, and lets
+ * callers use `repaired !== original` to tell whether anything was repaired.
+ */
+export function escapeRawControlChars(text: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+
+  for (const ch of text) {
+    if (inString && escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (inString && ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      out += ch;
+      continue;
+    }
+    if (inString && ch < "\u0020") {
+      out += CONTROL_CHAR_ESCAPES[ch] ?? `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
+      continue;
+    }
+    out += ch;
+  }
+
+  return out;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // High-level SSOT parsers
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Parse JSON from raw LLM output using multi-tier extraction.
- *
- * Tier 1:   Direct JSON.parse (clean responses)
- * Tier 1.5: Explicit ```json fence — prioritised over generic fences to avoid
- *           matching an earlier plain ``` fence (e.g. bun test output blocks)
- * Tier 2:   Generic markdown fence — non-anchored, handles preamble text
- * Tier 3a:  Bare JSON object extraction — first { … last }
- * Tier 3b:  Bare JSON array extraction — first [ … last ] (fallback)
- *
- * Tier 3 tries objects before arrays because almost all LLM responses are
- * objects; this avoids the bug where "[7.00ms]" in assistant narration is
- * mistaken for the start of a JSON array.
- *
- * @throws {SyntaxError} when all tiers fail to produce valid JSON
+ * Run the extraction tiers once over already-trimmed text.
+ * Returns undefined when every tier fails — JSON.parse can never produce
+ * undefined, so the sentinel is unambiguous (the same idiom
+ * `parseFirstBalancedJsonCandidate` already uses).
  */
-export function parseLLMJson<T = unknown>(text: string): T {
-  const trimmed = text.trim();
-
+function parseJsonTiers<T>(trimmed: string): T | undefined {
   // Tier 1: direct parse
   try {
     return JSON.parse(trimmed) as T;
@@ -271,8 +315,41 @@ export function parseLLMJson<T = unknown>(text: string): T {
   if (objResult !== undefined) return objResult;
 
   // Tier 3b: bare JSON array — fallback to a bracket-balanced [ … ] scan
-  const arrResult = parseFirstBalancedJsonCandidate<T>(trimmed, "[");
-  if (arrResult !== undefined) return arrResult;
+  return parseFirstBalancedJsonCandidate<T>(trimmed, "[");
+}
+
+/**
+ * Parse JSON from raw LLM output using multi-tier extraction.
+ *
+ * Tier 1:   Direct JSON.parse (clean responses)
+ * Tier 1.5: Explicit ```json fence — prioritised over generic fences to avoid
+ *           matching an earlier plain ``` fence (e.g. bun test output blocks)
+ * Tier 2:   Generic markdown fence — non-anchored, handles preamble text
+ * Tier 3a:  Bare JSON object extraction — first { … last }
+ * Tier 3b:  Bare JSON array extraction — first [ … last ] (fallback)
+ * Tier 4:   Repair raw in-string control characters, then re-run tiers 1–3b
+ *           (#2124 — a literal newline inside a string value)
+ *
+ * Tier 3 tries objects before arrays because almost all LLM responses are
+ * objects; this avoids the bug where "[7.00ms]" in assistant narration is
+ * mistaken for the start of a JSON array.
+ *
+ * @throws {SyntaxError} when all tiers fail to produce valid JSON
+ */
+export function parseLLMJson<T = unknown>(text: string): T {
+  const trimmed = text.trim();
+
+  const parsed = parseJsonTiers<T>(trimmed);
+  if (parsed !== undefined) return parsed;
+
+  // Tier 4: repair raw in-string control characters and re-run every tier.
+  // Only reached once all tiers have already failed, so a well-formed response
+  // never pays for it (#2124).
+  const repaired = escapeRawControlChars(trimmed);
+  if (repaired !== trimmed) {
+    const fromRepair = parseJsonTiers<T>(repaired);
+    if (fromRepair !== undefined) return fromRepair;
+  }
 
   throw new SyntaxError("[llm-json] Failed to parse LLM response as JSON");
 }

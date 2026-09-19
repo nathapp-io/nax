@@ -548,23 +548,24 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     // When retryStrategy engaged but provided no fallback, prefer op.recover before
     // falling back to envelope passthrough. recover is the disk-recovery escape hatch
     // (#993: silently returning a TurnResult typed-as-O corrupted prd.json).
+    let recoverOutcome: "not-declared" | "returned-null" = "not-declared";
     if (op.recover) {
       const verifyCtx = makeVerifyCtx(buildCtx);
       const recovered = await op.recover(input, verifyCtx);
       if (recovered !== null) return recovered;
+      recoverOutcome = "returned-null";
     }
 
     if (lastRetryTurn !== undefined) {
-      // Last-resort envelope passthrough. Logged so silent corruption stops being silent.
-      getSafeLogger()?.warn(
-        "callop",
-        "Op exhausted retries with no fallback and no recover — returning raw TurnResult",
-        {
-          storyId: ctx.storyId,
-          opName: op.name,
-          site: "run" as const,
-        },
-      );
+      // Last-resort envelope passthrough. Logged so silent corruption stops being
+      // silent — and `recover` distinguishes "none declared" from "ran and found
+      // nothing usable on disk", which the old wording conflated (#2124).
+      getSafeLogger()?.warn("callop", "Op exhausted retries with no fallback — returning raw TurnResult", {
+        storyId: ctx.storyId,
+        opName: op.name,
+        site: "run" as const,
+        recover: recoverOutcome,
+      });
       return lastRetryTurn as unknown as O;
     }
     throw _parseErr;

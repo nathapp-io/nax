@@ -5,7 +5,12 @@
  */
 
 import { NaxError } from "../errors";
-import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
+import {
+  escapeRawControlChars,
+  extractJsonFromMarkdown,
+  extractJsonObject,
+  stripTrailingCommas,
+} from "../utils/llm-json";
 import { assertNoDependencyCycle } from "./dependency-cycle";
 import { normalizeOutOfScopeList } from "./out-of-scope";
 import { normalizeStoryId, validateStory } from "./schema-story";
@@ -75,6 +80,20 @@ function parseRawString(text: string): unknown {
   try {
     return JSON.parse(sanitized);
   } catch (err) {
+    // Second attempt: a control character sitting literally inside a string —
+    // a real newline in `analysis` is the observed case (#2124) — makes the
+    // whole payload unparseable even when nothing else is wrong. The repair is
+    // a no-op on valid JSON, so it only ever runs here, and a payload broken
+    // for any other reason still reports the ORIGINAL parse error.
+    const repaired = escapeRawControlChars(sanitized);
+    if (repaired !== sanitized) {
+      try {
+        return JSON.parse(repaired);
+      } catch {
+        /* control characters were not the only defect — fall through */
+      }
+    }
+
     const parseErr = err as SyntaxError;
     throw new NaxError(`[schema] Failed to parse JSON: ${parseErr.message}`, "SCHEMA_VALIDATION_FAILED", {
       stage: "schema",
