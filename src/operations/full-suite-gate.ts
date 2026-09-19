@@ -82,6 +82,15 @@ export interface FullSuiteGateOutput {
    * (flake triage) can run `detectFramework()` without re-running the suite.
    */
   readonly rawOutput: string;
+  /**
+   * Parsed test-runner summary — every failing test with `file` + `testName`. US-002
+   * reads this on the post-run roll-forward hook to persist the next story's
+   * `roll-forward` baseline. Absent on the skipped path (gate disabled) and on the
+   * synthetic `execution-failed` / `passed-on-timeout` paths where the parser did
+   * not run or did not produce structured failures — the post-run hook then writes
+   * a `no-gate-parse` marker instead.
+   */
+  readonly parsedSummary?: TestSummary;
 }
 
 const fullSuiteGateConfigSelector = rectificationGateConfigSelector;
@@ -238,6 +247,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [],
         rawOutput: "",
+        // parsedSummary intentionally omitted — no suite ran, so no summary.
       };
     }
 
@@ -269,6 +279,12 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [],
         rawOutput: testResult.output,
+        // US-002 — post-run roll-forward needs `parsedSummary` even on a clean
+        // pass (the next-story baseline is a captured snapshot, not a no-baseline
+        // marker, when the suite is green). The parser ran and parsed zero
+        // failures — surface the empty summary so callers can build a captured
+        // baseline with `entries: []`.
+        parsedSummary: testResult.parsedSummary,
       };
     }
 
@@ -287,6 +303,7 @@ export const fullSuiteGateOp: DeterministicOperation<
           attempts: 0,
           findings: [],
           rawOutput: testResult.output,
+          // No parsedSummary on timeout — the runner bailed before the parser ran.
         };
       }
       logger.warn("verify[regression]", "Full-suite timed out (failing)", {
@@ -300,6 +317,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [],
         rawOutput: testResult.output,
+        // No parsedSummary on timeout — same reason.
       };
     }
 
@@ -332,6 +350,9 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [synth],
         rawOutput: testResult.output,
+        // No parsedSummary — the parser ran but produced zero structured failures
+        // (environmental failure shape). The post-run roll-forward hook treats
+        // `parsedSummary` missing as `no-gate-parse`.
       };
     }
 
@@ -343,6 +364,7 @@ export const fullSuiteGateOp: DeterministicOperation<
       attempts: 0,
       findings,
       rawOutput: testResult.output,
+      parsedSummary: testResult.parsedSummary,
     };
   },
 };

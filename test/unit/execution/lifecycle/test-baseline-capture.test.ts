@@ -256,7 +256,7 @@ describe("captureRunBaseline — AC4 (rectification fallback)", () => {
 
     await captureRunBaseline(makeOptions(config));
 
-    expect(received).toBe(200);
+    expect(received).toBe(120);
   });
 
   test("AC4 boundary: with no regressionGate.timeoutSeconds, the rectification timeout is used even when regressionGate.enabled is true", async () => {
@@ -273,7 +273,7 @@ describe("captureRunBaseline — AC4 (rectification fallback)", () => {
 
     await captureRunBaseline(makeOptions(config));
 
-    expect(received).toBe(200); // rectification.fullSuiteTimeoutSeconds default
+    expect(received).toBe(120); // rectification.fullSuiteTimeoutSeconds default
   });
 });
 

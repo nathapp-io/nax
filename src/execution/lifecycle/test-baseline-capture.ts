@@ -14,7 +14,10 @@
  */
 
 import type { NaxConfig } from "@/config";
-import { type TestBaseline, writeRunBaseline, writeStoryBaseline } from "@/verification";
+import { resolveQualityTestCommands } from "@/quality";
+import { parseTestOutput, type TestSummary } from "@/test-runners";
+import { executeWithTimeout, type TestBaseline, writeRunBaseline, writeStoryBaseline } from "@/verification";
+import { captureRunStartRef } from "../deferred-review";
 
 /** Subset of TestExecutionResult the capture step actually reads. */
 export interface CaptureRunnerResult {
@@ -54,17 +57,56 @@ export interface TestBaselineCaptureDeps {
   regressionGateEnabled: (config: NaxConfig) => boolean;
 }
 
+/** Schema default for the gate timeout (matches `regressionGate.timeoutSeconds` schema floor). */
+const DEFAULT_GATE_TIMEOUT_SECONDS = 300;
+
+/**
+ * Production wiring: production code reads from this object; tests override
+ * individual members. All external calls (process spawn, file IO, git) live
+ * behind the dep so `_captureDeps.runCommand` / `writeRunBaseline` etc. are
+ * the only injection points — no `mock.module()` required.
+ */
 export const _captureDeps: TestBaselineCaptureDeps = {
-  resolveTestCommands: async () => undefined,
-  runCommand: async () => ({ success: false, output: "", timedOut: false }),
-  captureGitRef: async () => "",
-  parseTestOutput: () => ({ passed: 0, failed: 0, failures: [] }),
+  resolveTestCommands: async (config, workdir) => {
+    const { testCommand } = await resolveQualityTestCommands(config, workdir);
+    if (testCommand === undefined) return undefined;
+    return typeof testCommand === "string" ? testCommand : testCommand.join(" && ");
+  },
+  runCommand: async (command, timeoutSeconds) => {
+    const result = await executeWithTimeout(command, timeoutSeconds, undefined, {
+      // Pre-existing failures in the captured baseline are environmental, not code
+      // defects — same posture as the full-suite gate: accept-on-timeout is irrelevant
+      // here because we only read `output`/`success`/`timedOut`, but we keep the
+      // executor's default behaviour (no accept-on-timeout semantics at this layer).
+      cwd: undefined,
+    });
+    return {
+      success: result.success,
+      output: result.output ?? "",
+      timedOut: result.timeout,
+      ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+    };
+  },
+  captureGitRef: captureRunStartRef,
+  parseTestOutput: (output) => adaptTestSummary(parseTestOutput(output)),
   writeRunBaseline,
   writeStoryBaseline,
   now: () => new Date().toISOString(),
-  resolveGateTimeoutSeconds: () => 300,
-  regressionGateEnabled: () => true,
+  resolveGateTimeoutSeconds: (config) =>
+    config.execution?.regressionGate?.timeoutSeconds ??
+    config.execution?.rectification?.fullSuiteTimeoutSeconds ??
+    DEFAULT_GATE_TIMEOUT_SECONDS,
+  regressionGateEnabled: (config) => config.execution?.regressionGate?.enabled ?? true,
 };
+
+/** Strip the runtime-only fields the capture step never reads. */
+function adaptTestSummary(summary: TestSummary): CaptureParsedSummary {
+  return {
+    passed: summary.passed,
+    failed: summary.failed,
+    failures: summary.failures.map((f) => ({ file: f.file, testName: f.testName })),
+  };
+}
 
 /** Options for the run-start capture step. */
 export interface CaptureRunBaselineOptions {
@@ -130,39 +172,133 @@ export async function invokeRollForwardFromContext(ctx: RollForwardContext): Pro
   });
 }
 
+/** Resolve the suite command via the production resolver; returns `undefined` when no command is configured. */
+async function resolveSuiteCommand(config: NaxConfig, workdir: string): Promise<string | undefined> {
+  return _captureDeps.resolveTestCommands(config, workdir);
+}
+
+/** Write a `no-baseline` marker with the given reason. Single persistence seam for every degraded path. */
+async function writeNoBaseline(
+  kind: "run" | "story",
+  root: string,
+  featureId: string,
+  storyId: string | undefined,
+  reason: "gate-disabled" | "no-test-command" | "timeout" | "unparseable" | "error" | "no-gate-parse",
+): Promise<void> {
+  const baseline: TestBaseline = {
+    kind: "no-baseline",
+    reason,
+    capturedAt: _captureDeps.now(),
+  };
+  if (kind === "run") {
+    await _captureDeps.writeRunBaseline(root, featureId, baseline);
+  } else {
+    if (storyId === undefined) return;
+    await _captureDeps.writeStoryBaseline(root, featureId, storyId, baseline);
+  }
+}
+
 /**
  * Captures the suite once and persists the run-start baseline. Never blocks
  * or fails the run — every degraded path resolves normally with a `no-baseline`
  * marker so the capture step is observable but never a tripwire.
  *
- * STUB — implementer replaces this body with the full capture-and-persist
- * logic. The stub writes a `no-baseline` marker so the call sites in
- * `runExecutionPhase` are observable end-to-end (AC11) and so every other AC
- * fails its assertion rather than timing out.
+ * Decision tree (per AC1–AC10, AC17):
+ *   1. `regressionGate.enabled === false` → `no-baseline: gate-disabled` (no spawn).
+ *   2. No resolvable test command → `no-baseline: no-test-command` (no spawn).
+ *   3. Runner throws → catch, `no-baseline: error`, resolve normally.
+ *   4. Runner result `timedOut` → `no-baseline: timeout`.
+ *   5. Runner result `!success && failures.length === 0` → `no-baseline: unparseable`.
+ *   6. Otherwise (suite ran and parser produced failures, or green suite) →
+ *      `captured` with `source: "preflight"`, `baseRef` from `captureGitRef`,
+ *      one entry per parsed failure. Green suites carry `entries: []` — the
+ *      baseline is the empty set, not a missing baseline (AC5).
  */
 export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promise<void> {
-  await _captureDeps.writeRunBaseline(opts.root, opts.featureId, {
-    kind: "no-baseline",
-    reason: "error",
-    capturedAt: _captureDeps.now(),
+  const { root, featureId, config, workdir } = opts;
+
+  // AC6 — gate disabled, no spawn.
+  if (!_captureDeps.regressionGateEnabled(config)) {
+    await writeNoBaseline("run", root, featureId, undefined, "gate-disabled");
+    return;
+  }
+
+  // AC7 — no resolvable command, no spawn.
+  const command = await resolveSuiteCommand(config, workdir);
+  if (command === undefined) {
+    await writeNoBaseline("run", root, featureId, undefined, "no-test-command");
+    return;
+  }
+
+  const timeoutSeconds = _captureDeps.resolveGateTimeoutSeconds(config);
+  const capturedAt = _captureDeps.now();
+
+  // AC10 — runner throws, catch and resolve normally.
+  let result: CaptureRunnerResult;
+  try {
+    result = await _captureDeps.runCommand(command, timeoutSeconds);
+  } catch {
+    await writeNoBaseline("run", root, featureId, undefined, "error");
+    return;
+  }
+
+  // AC8 — runner timed out.
+  if (result.timedOut) {
+    await writeNoBaseline("run", root, featureId, undefined, "timeout");
+    return;
+  }
+
+  const summary = _captureDeps.parseTestOutput(result.output);
+
+  // AC9 — runner exited non-zero but parser produced zero structured failures.
+  if (!result.success && summary.failed === 0) {
+    await writeNoBaseline("run", root, featureId, undefined, "unparseable");
+    return;
+  }
+
+  // AC1 + AC5 — green suite (success + zero failures) writes a captured baseline
+  // with `entries: []` rather than a `no-baseline` marker; non-zero failures
+  // produce one entry per parsed failure.
+  const baseRef = await _captureDeps.captureGitRef(workdir);
+  await _captureDeps.writeRunBaseline(root, featureId, {
+    kind: "captured",
+    source: "preflight",
+    capturedAt,
+    baseRef,
+    entries: summary.failures.map((f) => ({ file: f.file, testName: f.testName })),
   });
 }
 
 /**
  * Persists the next-story roll-forward baseline after a sequential story
  * completes. Skipped entirely in parallel mode (every parallel story inherits
- * the run-start baseline).
+ * the run-start baseline) and on the last story in the PRD (no next story to
+ * roll forward to).
  *
- * STUB — implementer replaces this body. The stub only writes when
- * `nextStoryId` is set, so parallel mode is naturally a no-op (AC14) and the
- * remaining ACs fail their assertion on the wrong shape.
+ * Decision tree (per AC12–AC14):
+ *   1. Parallel mode → no-op.
+ *   2. No `nextStoryId` → no-op (last story).
+ *   3. `summary` provided → `captured` with `source: "roll-forward"`, one
+ *      entry per failure.
+ *   4. `summary` undefined → `no-baseline: no-gate-parse`.
  */
 export async function persistNextStoryRollForward(opts: RollForwardOptions): Promise<void> {
-  if (opts.nextStoryId === undefined) return;
+  // AC14 — parallel mode skips entirely.
   if (opts.executionMode === "parallel") return;
+  // Last story — no next story to write for.
+  if (opts.nextStoryId === undefined) return;
+
+  // AC13 — no usable gate parse → no-gate-parse marker.
+  if (opts.summary === undefined) {
+    await writeNoBaseline("story", opts.root, opts.featureId, opts.nextStoryId, "no-gate-parse");
+    return;
+  }
+
+  // AC12 — summary carries parsed failures → captured roll-forward baseline.
   await _captureDeps.writeStoryBaseline(opts.root, opts.featureId, opts.nextStoryId, {
-    kind: "no-baseline",
-    reason: "error",
+    kind: "captured",
+    source: "roll-forward",
     capturedAt: _captureDeps.now(),
+    entries: opts.summary.failures.map((f) => ({ file: f.file, testName: f.testName })),
   });
 }
