@@ -13,7 +13,7 @@
  * `patchIgnoreFile` is the shared, additive reconciler both use.
  */
 
-import { PROJECT_FEATURES_DIR } from "@/config";
+import { PROJECT_FEATURES_DIR } from "@/config/paths";
 
 /**
  * Run artifacts written inside `<features>/<name>/`.

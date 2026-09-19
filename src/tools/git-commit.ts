@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitWithTimeout } from "@/utils/git";
+import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 export function buildCommitArgvs(
@@ -58,13 +59,6 @@ export function buildCommitArgvs(
  */
 async function partitionNaxOwnedPaths(root: string, paths: string[]): Promise<{ kept: string[]; skipped: string[] }> {
   if (paths.length === 0) return { kept: [], skipped: [] };
-
-  // Dynamic import, not a top-level one: `@/utils/gitignore` imports
-  // `PROJECT_FEATURES_DIR` from `@/config`, and `@/config` (config-guards.ts,
-  // permissions.ts) imports from `@/tools` -- a top-level import here would
-  // close that cycle back onto this same module and throw
-  // "Cannot access 'PROJECT_FEATURES_DIR' before initialization" at load time.
-  const { NAX_GITIGNORE_ENTRIES } = await import("@/utils/gitignore");
 
   const excludeDir = mkdtempSync(join(tmpdir(), "nax-commit-filter-"));
   const excludeFile = join(excludeDir, "exclude");

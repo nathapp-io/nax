@@ -25,7 +25,7 @@ import { join, relative } from "node:path";
 const SCAN_ROOTS = ["src"] as const;
 
 /** The helpers' own definitions, and the gate's own test fixtures. */
-const ALLOWED_FILES = new Set(["src/config/paths.ts", "test/unit/scripts/check-feature-dir-ssot.test.ts"]);
+const ALLOWED_FILES = new Set(["src/config/paths/index.ts", "test/unit/scripts/check-feature-dir-ssot.test.ts"]);
 
 /**
  * Everything under `src/prompts/` is LLM instruction text. Those prompts
@@ -111,7 +111,7 @@ export function findFeatureDirViolations(repoRoot: string): FeatureDirViolation[
 
 export function formatFeatureDirViolationReport(violations: readonly FeatureDirViolation[]): string {
   if (violations.length === 0) {
-    return "[OK] No open-coded .nax/features paths outside src/config/paths.ts";
+    return "[OK] No open-coded .nax/features paths outside src/config/paths/index.ts";
   }
 
   const lines = [

@@ -6,7 +6,7 @@
 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { NaxError } from "../errors";
+import { NaxError } from "@/errors";
 
 const GLOBAL_CONFIG_DIR_ENV = "NAX_GLOBAL_CONFIG_DIR";
 

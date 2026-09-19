@@ -80,8 +80,12 @@ describe("findFeatureDirViolations", () => {
     expect(findFeatureDirViolations(tempDir)).toEqual([]);
   });
 
-  test("exempts src/config/paths.ts, which defines the helpers", () => {
-    writeFileSync(join(tempDir, "src", "config", "paths.ts"), 'export const PROJECT_FEATURES_DIR = ".nax/features";\n');
+  test("exempts src/config/paths/index.ts, which defines the helpers", () => {
+    mkdirSync(join(tempDir, "src", "config", "paths"), { recursive: true });
+    writeFileSync(
+      join(tempDir, "src", "config", "paths", "index.ts"),
+      'export const PROJECT_FEATURES_DIR = ".nax/features";\n',
+    );
 
     expect(findFeatureDirViolations(tempDir)).toEqual([]);
   });
