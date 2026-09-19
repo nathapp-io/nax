@@ -5,7 +5,6 @@ appliesTo:
 stages:
   - "context"
   - "tdd-test-writer"
-  - "tdd-implementer"
   - "rectify"
   - "review"
 description: "Test debt ratchets (as-unknown-as casts, escape hatches), the hard tsconfig.test.json gate that replaced the typecheck ratchet, and when to move the baselines"

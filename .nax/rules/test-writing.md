@@ -6,7 +6,6 @@ stages:
   - "context"
   - "execution"
   - "tdd-test-writer"
-  - "tdd-implementer"
   - "tdd-verifier"
   - "rectify"
   - "review-semantic"
