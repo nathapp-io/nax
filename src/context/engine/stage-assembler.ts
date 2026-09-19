@@ -21,6 +21,7 @@ import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import { getContextFiles } from "@/prd";
+import { storyExecRoot } from "@/runtime";
 import { errorMessage } from "@/utils/errors";
 import { storyWorkdir } from "@/utils/path-frame";
 import { estimateAvailableBudgetTokens } from "./available-budget";
@@ -213,12 +214,22 @@ export async function assembleForStage(
     // do not re-join story.workdir here or the path will be doubled in monorepo mode.
     const targetAgentId = ctx.routing.agent ?? ctx.agentManager?.getDefault() ?? "claude";
 
+    // nax#2134 (US-001): thread the story execution root so context providers
+    // resolve and spell against the directory the agent actually executes in.
+    // The spec requires execRoot be set from `storyExecRoot(ctx.packageView)`
+    // and OMITTED when packageView is undefined (AC10 / pull-tool handlers).
+    // Production wiring of `ctx.packageView` is iteration-runner.ts's job
+    // (out of scope for this story); when that wiring is in place, execRoot
+    // carries the worktree root under storyIsolation: "worktree".
+    const execRoot = ctx.packageView ? storyExecRoot(ctx.packageView) : undefined;
+
     const stageOverrides = ctx.config.context?.v2?.stages?.[stage];
     const request: ContextRequest = {
       storyId: ctx.story.id,
       featureId: ctx.prd.feature,
       repoRoot: ctx.projectDir,
       packageDir: ctx.workdir,
+      ...(execRoot !== undefined && { execRoot }),
       storyWorkdir: storyWorkdir(ctx.story),
       contextFilesCanonical: ctx.story.workdirSource !== undefined,
       // BUG-1 fix: thread the runtime output dir so providers that read

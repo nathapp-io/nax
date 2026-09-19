@@ -233,40 +233,59 @@ describe("CodeNeighborProvider — heading == scopePath (single frame)", () => {
   });
 });
 
-describe("CodeNeighborProvider — worktree isolation residual (PARKED, nax#2134, nax#2093 class)", () => {
-  // REAL production shape under storyIsolation: "worktree": `request.repoRoot`
-  // is the MAIN CHECKOUT (`/repo`) while `packageDir` is the worktree package
-  // (`/repo/.nax-wt/US-001/packages/app`). code-neighbor resolves disk paths
-  // against `repoRoot` (Task 3 / PR4), so it reads the main checkout, not the
-  // worktree the story actually executes in. This test CHARACTERIZES that
-  // parked residual rather than hiding it.
-  //
-  // PARKED by controller ruling: the fix is out of PR4's subtractive scope.
-  //
-  // FOLLOW-UP (nax#2134): thread a worktree-aware exec root
-  // (`storyExecRoot`) onto `ContextRequest` — the same field git-history.ts's
-  // RESIDUAL asks for — and resolve disk paths against it. Spec §6's live run
-  // covers EXEC/WRITE containment, NOT context resolution, so it will not catch
-  // this. When the field lands, resolution reads the worktree and this test
-  // must flip to assert `- packages/app/src/worktree-dep.ts` and the absence of
-  // `- packages/app/src/main-dep.ts`.
-  test("resolution reads the main checkout, not the worktree (parked residual)", async () => {
+describe("CodeNeighborProvider — execRoot thread-through (nax#2134)", () => {
+  // US-001 / AC1-AC5: when `ContextRequest.execRoot` is set to a worktree root
+  // and `repoRoot` is the main checkout, fetch() must read disk from the
+  // worktree, render neighbours relative to it, and surface the worktree-only
+  // neighbour as the resolution target. AC5: with execRoot UNSET, behaviour is
+  // unchanged (fallback to repoRoot).
+
+  /** Files keyed by absolute path; glob cwd → repo-relative-to-cwd list. */
+  function setupWorktreeDeps(): void {
     setupDeps(
       {
-        // Main checkout copy — what `request.repoRoot` points at.
+        // Main checkout: a SAME-NAMED neighbour with the same import shape.
+        // If fetch() reads the main checkout instead of the worktree, this is
+        // the file that would appear.
         "/repo/packages/app/src/index.ts": 'import "./main-dep";',
         "/repo/packages/app/src/main-dep.ts": "export const mainDep = 1;",
-        // Worktree copy — where the story actually executes.
+        // Worktree-only: the touched file and its forward dep + a sibling
+        // test, plus a reverse-dep consumer.
         "/repo/.nax-wt/US-001/packages/app/src/index.ts": 'import "./worktree-dep";',
         "/repo/.nax-wt/US-001/packages/app/src/worktree-dep.ts": "export const worktreeDep = 1;",
+        "/repo/.nax-wt/US-001/packages/app/src/user.ts": 'import "./index";',
+        "/repo/.nax-wt/US-001/packages/app/src/index.test.ts": "",
       },
-      { "/repo/.nax-wt/US-001/packages/app": ["src/index.ts", "src/worktree-dep.ts"] },
+      {
+        // US-001: scanRoot derives from execRoot. The glob mock returns the
+        // worktree's package dir contents regardless of whether the worktree
+        // root or the package dir is the scan cwd (both resolve to the same
+        // file set for the reverse-dep probe). The sibling-test probe also
+        // runs fileExists against execRoot.
+        "/repo/.nax-wt/US-001": [
+          "packages/app/src/index.ts",
+          "packages/app/src/worktree-dep.ts",
+          "packages/app/src/user.ts",
+          "packages/app/src/index.test.ts",
+        ],
+        "/repo/.nax-wt/US-001/packages/app": [
+          "src/index.ts",
+          "src/worktree-dep.ts",
+          "src/user.ts",
+          "src/index.test.ts",
+        ],
+      },
     );
+  }
+
+  test("AC1: forward dep that exists only under execRoot is returned", async () => {
+    setupWorktreeDeps();
     const provider = new CodeNeighborProvider();
 
     const result = await provider.fetch(
       makeRequest({
         repoRoot: "/repo",
+        execRoot: "/repo/.nax-wt/US-001",
         packageDir: "/repo/.nax-wt/US-001/packages/app",
         storyWorkdir: "packages/app",
         touchedFiles: ["packages/app/src/index.ts"],
@@ -274,22 +293,152 @@ describe("CodeNeighborProvider — worktree isolation residual (PARKED, nax#2134
     );
 
     const lines = neighborLines(result.chunks[0]?.content ?? "");
-    // Documented residual: the main checkout's neighbour is surfaced...
-    expect(lines).toContain("- packages/app/src/main-dep.ts");
-    // ...and the worktree-only neighbour the story actually depends on is not.
-    expect(lines.some((line) => line.includes("worktree-dep"))).toBe(false);
+    // AC1: forward dep neighbour is listed.
+    expect(lines).toContain("- packages/app/src/worktree-dep.ts");
+    // The main checkout's copy of the touched file imports ./main-dep — a
+    // same-shaped decoy that exists there and nowhere else. It must never
+    // appear: its presence would mean disk resolution ran against repoRoot.
+    expect(lines).not.toContain("- packages/app/src/main-dep.ts");
+  });
+
+  test("AC2: returned neighbour paths are relative to execRoot and never begin with .nax-wt/", async () => {
+    setupWorktreeDeps();
+    const provider = new CodeNeighborProvider();
+
+    const result = await provider.fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        execRoot: "/repo/.nax-wt/US-001",
+        packageDir: "/repo/.nax-wt/US-001/packages/app",
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
+
+    const lines = neighborLines(result.chunks[0]?.content ?? "");
+    // AC2: the worktree-only forward dep is present, spelled relative to
+    // execRoot — not as `.nax-wt/US-001/packages/app/src/worktree-dep.ts` and
+    // not with any leaked prefix.
+    expect(lines).toContain("- packages/app/src/worktree-dep.ts");
+    // AC2: nothing in the chunk — section headings (`### <path>`) and neighbour
+    // bullets (`- <path>`) alike — carries a `.nax-wt/` segment. A leak here
+    // means a path was spelled relative to something other than execRoot
+    // (absolute, repoRoot-relative, or worktree-prefixed).
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).not.toContain(".nax-wt/");
+    // scopePaths is the chunk's attribution key and must share that spelling.
+    const scopePaths = result.chunks[0]?.scopePaths ?? [];
+    expect(scopePaths.length).toBeGreaterThan(0);
+    for (const path of scopePaths) {
+      expect(path).not.toContain(".nax-wt/");
+    }
+  });
+
+  test("AC3: a worktree-only reverse-dep (importer) is returned as a neighbour", async () => {
+    setupWorktreeDeps();
+    const provider = new CodeNeighborProvider();
+
+    const result = await provider.fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        execRoot: "/repo/.nax-wt/US-001",
+        packageDir: "/repo/.nax-wt/US-001/packages/app",
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
+
+    const lines = neighborLines(result.chunks[0]?.content ?? "");
+    // AC3: src/user.ts imports the touched file and exists only in the
+    // worktree. It must appear as a reverse-dep neighbour.
+    expect(lines).toContain("- packages/app/src/user.ts");
+  });
+
+  test("AC4: a sibling test that exists only under execRoot is returned", async () => {
+    setupWorktreeDeps();
+    const provider = new CodeNeighborProvider();
+
+    const result = await provider.fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        execRoot: "/repo/.nax-wt/US-001",
+        packageDir: "/repo/.nax-wt/US-001/packages/app",
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
+
+    const lines = neighborLines(result.chunks[0]?.content ?? "");
+    // AC4: src/index.test.ts is a colocated sibling test (not the mirrored
+    // layout), and it exists only in the worktree. ADR-009 picks the
+    // colocated candidate when it exists on disk.
+    expect(lines).toContain("- packages/app/src/index.test.ts");
+  });
+
+  // US-001 (review finding): `packageDir` and `execRoot` need not be in the
+  // same frame. `packageDir` is documented as the package dir — under worktree
+  // isolation a producer may stamp the MAIN checkout's package dir while
+  // `execRoot` carries the worktree root. Deriving the package-scope filter as
+  // `relative(execRoot, packageDir)` then yields an escaping path
+  // ("../../packages/app"), which matches no scanned file and silently drops
+  // EVERY reverse-dep candidate. The package's identity must be derived in the
+  // frame that `packageDir` and the scanned files actually share.
+  test("AC3: reverse deps survive a main-checkout packageDir with a worktree execRoot", async () => {
+    setupWorktreeDeps();
+    const provider = new CodeNeighborProvider();
+
+    const result = await provider.fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        execRoot: "/repo/.nax-wt/US-001",
+        // The frame mismatch under test: main-checkout package dir.
+        packageDir: "/repo/packages/app",
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
+
+    const lines = neighborLines(result.chunks[0]?.content ?? "");
+    expect(lines).toContain("- packages/app/src/user.ts");
+    // The worktree-only forward dep must survive too — the same filter guards
+    // the reverse scan, but the forward path must not regress alongside it.
+    expect(lines).toContain("- packages/app/src/worktree-dep.ts");
+  });
+
+  test("AC5: with execRoot unset, fetch resolves against repoRoot (unchanged behaviour)", async () => {
+    setupDeps(
+      {
+        "/repo/packages/app/src/index.ts": 'import "./dep";',
+        "/repo/packages/app/src/dep.ts": "export const dep = 1;",
+      },
+      { "/repo": ["packages/app/src/index.ts", "packages/app/src/dep.ts"] },
+    );
+    const provider = new CodeNeighborProvider();
+
+    const result = await provider.fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        // execRoot intentionally omitted — AC5's fallback.
+        packageDir: "/repo/packages/app",
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
+
+    // AC5: identical neighbour set as today's repoRoot-resolved behaviour.
+    const lines = neighborLines(result.chunks[0]?.content ?? "");
+    expect(lines).toContain("- packages/app/src/dep.ts");
   });
 });
 
 describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () => {
-  // parseImportSpecifiers keeps only "."-prefixed specifiers, so a real
-  // cross-package import is never collected and the sibling scan could only
-  // ever produce false matches. It must not run, and must not be paid for.
-  test("package scope globs only the story's own package, never a sibling", async () => {
+  // US-001: scanRoot derives from execRoot (which falls back to repoRoot when
+  // unset). The reverse-dep glob runs once at that single root — a partition
+  // by neighbour-scope option was the pre-US-001 shape that left
+  // worktree-only neighbours out of scope (nax#2134).
+  test("reverse-dep glob runs once at execRoot — single scan root, not partitioned by neighbour-scope", async () => {
     const globbedRoots: string[] = [];
     const globByCwd: Record<string, string[]> = {
-      "/repo/packages/app": ["src/index.ts"],
-      "/repo/packages/lib": ["src/helper.ts"],
       "/repo": ["packages/app/src/index.ts", "packages/lib/src/helper.ts"],
     };
     setupDeps({ "/repo/packages/app/src/index.ts": "export const app = 1;" }, globByCwd);
@@ -303,6 +452,48 @@ describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () =>
 
     await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
-    expect(globbedRoots).toEqual(["/repo/packages/app"]);
+    expect(globbedRoots).toEqual(["/repo"]);
+  });
+
+  // US-001 (AC1-AC4): with execRoot SET, the reverse-dep glob must run at the
+  // story's worktree root — not repoRoot, and not the package dir. The AC1-AC4
+  // tests do fail if scanRoot regresses (verified by reverting it to both
+  // repoRoot and packageDir), but only incidentally: their fixture keys
+  // `globByCwd` by cwd, so a wrong cwd yields an empty file list rather than a
+  // wrong one. This test pins the cwd itself, which is the behavior US-001 adds
+  // and the only spelling that makes the scan root explicit.
+  test("reverse-dep glob runs at the worktree root when execRoot is set", async () => {
+    const globbedRoots: string[] = [];
+    const worktreeRoot = "/repo/.nax-wt/US-001";
+    const globByCwd: Record<string, string[]> = {
+      [worktreeRoot]: ["packages/app/src/index.ts", "packages/app/src/user.ts"],
+    };
+    setupDeps(
+      {
+        [`${worktreeRoot}/packages/app/src/index.ts`]: "export const app = 1;",
+        [`${worktreeRoot}/packages/app/src/user.ts`]: 'import "./index";',
+      },
+      globByCwd,
+    );
+    _codeNeighborDeps.glob = (_pattern: string, cwd: string) => {
+      globbedRoots.push(cwd);
+      return { files: globByCwd[cwd] ?? [], truncated: false };
+    };
+
+    const result = await new CodeNeighborProvider().fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        execRoot: worktreeRoot,
+        packageDir: `${worktreeRoot}/packages/app`,
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
+
+    // The scan ran at the worktree root — not "/repo" (main checkout) and not
+    // the package dir.
+    expect(globbedRoots).toEqual([worktreeRoot]);
+    // ...and the reverse dep that scan found is surfaced.
+    expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- packages/app/src/user.ts");
   });
 });

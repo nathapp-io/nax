@@ -570,3 +570,61 @@ describe("GitHistoryProvider — drop diagnostics (M14)", () => {
     expect(logger.calls.filter((call) => call.message.includes("outside package scope"))).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 / AC6-AC7: GitHistoryProvider uses request.execRoot as its cwd when
+// set, falling back to request.repoRoot otherwise. The worktree follow-up
+// (nax#2134 RESIDUAL) is closed by reading the same root the story's agent
+// actually executes in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("GitHistoryProvider — US-001 execRoot workdir", () => {
+  test("AC6: with execRoot set, git is invoked with cwd = execRoot", async () => {
+    const cwds: string[] = [];
+    _gitHistoryDeps.gitWithTimeout = async (_args: string[], cwd: string) => {
+      cwds.push(cwd);
+      return { stdout: "abc1234 feat: service impl", stderr: "", exitCode: 0 };
+    };
+
+    const provider = new GitHistoryProvider();
+    await provider.fetch({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      execRoot: "/repo/.nax-wt/US-001",
+      packageDir: "/repo/.nax-wt/US-001/packages/app",
+      storyWorkdir: "packages/app",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8_000,
+      touchedFiles: ["packages/app/src/service.ts"],
+    });
+
+    // AC6: cwd matches the worktree root, not the main checkout.
+    expect(cwds).toContain("/repo/.nax-wt/US-001");
+    expect(cwds).not.toContain("/repo");
+  });
+
+  test("AC7: with execRoot unset, git is invoked with cwd = repoRoot", async () => {
+    const cwds: string[] = [];
+    _gitHistoryDeps.gitWithTimeout = async (_args: string[], cwd: string) => {
+      cwds.push(cwd);
+      return { stdout: "abc1234 feat: service impl", stderr: "", exitCode: 0 };
+    };
+
+    const provider = new GitHistoryProvider();
+    await provider.fetch({
+      storyId: "US-001",
+      repoRoot: "/repo",
+      // execRoot intentionally omitted — AC7's fallback.
+      packageDir: "/repo/packages/app",
+      storyWorkdir: "packages/app",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8_000,
+      touchedFiles: ["packages/app/src/service.ts"],
+    });
+
+    // AC7: cwd matches repoRoot — today's behaviour, unchanged.
+    expect(cwds).toEqual(["/repo"]);
+  });
+});

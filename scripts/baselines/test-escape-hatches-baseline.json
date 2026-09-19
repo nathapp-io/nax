@@ -1,8 +1,8 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 25,
-    "looseCast": 1593
+    "ratchetAllow": 26,
+    "looseCast": 1595
   },
   "updatedAt": "2026-09-10T12:00:00.000Z",
   "byFile": {
@@ -167,6 +167,10 @@
     },
     "test/integration/pipeline/reporter-lifecycle-resilience.test.ts": {
       "looseCast": 3
+    },
+    "test/integration/worktree/manager.test.ts": {
+      "looseCast": 1,
+      "ratchetAllow": 1
     },
     "test/unit/session/manager.test.ts": {
       "looseCast": 1

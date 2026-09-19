@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { join } from "node:path";
+import { assertDefined, cleanupTempDir, makeDispatchContext, makeMockRuntime, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _parallelWorkerDeps, executeParallelBatch, executeStoryInWorktree } from "@/execution/parallel-worker";
@@ -7,6 +8,7 @@ import { defaultPipeline } from "@/pipeline/stages";
 import type { PipelineContext, PipelineStage } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 import type { RoutingDecision } from "@/routing/decision";
+import { storyExecRoot } from "@/runtime";
 import { byCodePoint } from "@/utils/sort";
 import type { WorktreeDependencyContext } from "@/worktree/types";
 
@@ -28,6 +30,7 @@ function makeStory(id: string): UserStory {
 
 function makeContext(
   config: NaxConfig = DEFAULT_CONFIG as NaxConfig,
+  workdir = "/tmp/test",
 ): Omit<PipelineContext, "story" | "stories" | "workdir" | "routing"> {
   return {
     config,
@@ -36,6 +39,12 @@ function makeContext(
     hooks: {} as PipelineContext["hooks"],
     plugins: {} as PipelineContext["plugins"],
     storyStartTime: new Date().toISOString(),
+    // DispatchContext fields. `runtime` is required by the PipelineContext type
+    // and is read by executeStoryInWorktree (US-001: the story's package view),
+    // so the fixture must supply it rather than cast past it. `workdir` roots
+    // the mock runtime's package registry — the repo the view is resolved
+    // against, which callers passing a real temp repo must keep in sync.
+    ...makeDispatchContext({ runtime: makeMockRuntime({ workdir }) }),
   } as Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">;
 }
 
@@ -209,6 +218,63 @@ describe("executeParallelBatch", () => {
     expect(result.pipelinePassed).toEqual([]);
     expect(result.failed).toEqual([{ story, error: "verify gate failed", pipelineResult: undefined }]);
     expect(result.storyCosts.get(story.id)).toBeCloseTo(0.1, 5);
+  });
+});
+
+describe("executeStoryInWorktree — US-001 stamps packageView for the context producers", () => {
+  // Parallel mode ALWAYS executes a story inside a worktree, so this builder is
+  // the one that must hand the context producers a worktree-rooted packageView.
+  // Without it every stage-assembly omits ContextRequest.execRoot and both
+  // context providers silently resolve against the MAIN checkout.
+  let workdir: string;
+  let originalStages: PipelineStage[];
+
+  function withFakeStage(stage: PipelineStage): void {
+    defaultPipeline.length = 0;
+    defaultPipeline.push(stage);
+  }
+
+  beforeEach(() => {
+    originalStages = [...defaultPipeline];
+  });
+
+  afterEach(() => {
+    defaultPipeline.length = 0;
+    defaultPipeline.push(...originalStages);
+  });
+
+  test("the pipeline context carries a packageView that resolves to the story's worktree", async () => {
+    workdir = makeTempDir("nax-parallel-worker-execroot-");
+    const worktreeRoot = join(workdir, ".nax-wt", "US-001");
+    let captured: PipelineContext | undefined;
+
+    withFakeStage({
+      name: "capture-context-stage",
+      enabled: () => true,
+      async execute(ctx: PipelineContext) {
+        captured = ctx;
+        return { action: "continue" };
+      },
+    });
+
+    try {
+      const story = makeStory("US-001");
+      const dependencyContext: WorktreeDependencyContext = { cwd: worktreeRoot };
+
+      await executeStoryInWorktree(story, worktreeRoot, dependencyContext, makeContext(undefined, workdir), {
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "test-after",
+        reasoning: "",
+      });
+
+      const packageView = captured?.packageView;
+      assertDefined(packageView, "pipelineContext.packageView");
+      // The root the story's agent executes in — not the main checkout.
+      expect(storyExecRoot(packageView)).toBe(worktreeRoot);
+    } finally {
+      cleanupTempDir(workdir);
+    }
   });
 });
 

@@ -18,11 +18,13 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeContextOrchestrator, makeNaxConfig, makeStory } from "@test/helpers";
+import type { ConfigSelector } from "@/config";
 import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { _scopeFilesDeps } from "@/pipeline";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
+import type { PackageView } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -98,6 +100,18 @@ function makeCtx(story: UserStory, workdir: string): PipelineContext {
   } as PipelineContext;
 }
 
+/** Build a PackageView fixture without `as` casts. */
+function makePackageView(packageDir: string, repoRoot: string, config: PipelineContext["config"]): PackageView {
+  return {
+    packageDir,
+    relativeFromRoot: packageDir,
+    repoRoot,
+    hasOverride: false,
+    config,
+    select: <C>(selector: ConfigSelector<C>) => selector.select(config),
+  };
+}
+
 /** Captures the ContextRequest the contextStage hands to orchestrator.assemble(). */
 function captureContextRequest(): {
   captured: ContextRequest | null;
@@ -147,5 +161,66 @@ describe("contextStage — producer pins storyWorkdir / contextFilesCanonical (B
 
     expect(capture.captured?.storyWorkdir).toBe(".");
     expect(capture.captured?.contextFilesCanonical).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 / AC8-AC10 (context stage side): pin the producer of ContextRequest's
+// new `execRoot` field. Mirrors `assembleForStage`'s producer at stage-
+// assembler.ts:215 — same `storyExecRoot(ctx.packageView)` derivation. Two
+// producers must agree on the spelling; the context stage builds the FIRST
+// ContextRequest for every story, and a producer regression here is exactly
+// the "silently dropped field" defect that BLOCKER 2 was written to catch
+// for `storyWorkdir`/`contextFilesCanonical`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("contextStage — producer pins execRoot (US-001)", () => {
+  test("with a worktree-prefixed packageView, execRoot = <root>/.nax-wt/<storyId>", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      contextFiles: ["packages/app/src/a.ts"],
+    });
+    const capture = captureContextRequest();
+
+    const ctx = makeCtx(story, "/repo/.nax-wt/US-001/packages/app");
+    ctx.packageView = makePackageView(".nax-wt/US-001/packages/app", "/repo", ctx.config);
+
+    await contextStage.execute(ctx);
+
+    expect(capture.captured?.execRoot).toBe("/repo/.nax-wt/US-001");
+  });
+
+  test("with a non-worktree packageView, execRoot = repoRoot", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      workdirSource: "stated",
+      contextFiles: ["packages/app/src/a.ts"],
+    });
+    const capture = captureContextRequest();
+
+    const ctx = makeCtx(story, "/repo/packages/app");
+    ctx.packageView = makePackageView("packages/app", "/repo", ctx.config);
+
+    await contextStage.execute(ctx);
+
+    expect(capture.captured?.execRoot).toBe("/repo");
+  });
+
+  test("with no packageView on the pipeline context, execRoot is unset", async () => {
+    const story = makeStory({
+      contextFiles: ["src/a.ts"],
+    });
+    const capture = captureContextRequest();
+
+    // Pull-tool handlers carry no story and no packageView — their
+    // ContextRequest must NOT carry execRoot, so consumers fall back to
+    // repoRoot (today's behaviour).
+    const ctx = makeCtx(story, "/repo");
+    ctx.packageView = undefined;
+
+    await contextStage.execute(ctx);
+
+    expect(capture.captured?.execRoot).toBeUndefined();
   });
 });

@@ -62,6 +62,7 @@ export async function executeStoryInWorktree(
       }
     }
 
+    const resolvedWorkdir = dependencyContext.cwd ?? storyAbsWorkdir(worktreePath, story);
     const pipelineContext: PipelineContext = {
       ...buildWorktreePipelineContext(context, story),
       config: context.config,
@@ -69,7 +70,15 @@ export async function executeStoryInWorktree(
       story,
       stories: [story],
       projectDir: context.projectDir,
-      workdir: dependencyContext.cwd ?? storyAbsWorkdir(worktreePath, story),
+      workdir: resolvedWorkdir,
+      // US-001: mirror iteration-runner's producer (see the note there). Parallel
+      // mode ALWAYS runs the story inside a worktree, so omitting the view here
+      // left every stage-assembly without an execRoot and both context providers
+      // resolving against the main checkout. The view comes from the runtime's
+      // own registry, which normalizes this absolute worktree path back to its
+      // relative `.nax-wt/<storyId>/...` key — so `storyExecRoot` returns the
+      // worktree root. No path is re-derived by joining or slicing (nax#2069).
+      packageView: context.runtime.packages.resolve(resolvedWorkdir),
       worktreeDependencyContext: dependencyContext,
       routing,
       storyGitRef: storyGitRef ?? undefined,

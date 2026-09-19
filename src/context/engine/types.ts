@@ -246,6 +246,16 @@ export interface ContextRequest {
    */
   packageDir: string;
   /**
+   * Story execution root (nax#2134, US-001): the directory the story's agent
+   * actually executes in. Under `execution.storyIsolation: "worktree"` this is
+   * `<repoRoot>/.nax-wt/<storyId>`; otherwise it equals `repoRoot`. Set by
+   * producers that hold a `PipelineContext` via `storyExecRoot(ctx.packageView)`
+   * (see `src/runtime/packages.ts:227`); omitted by pull-tool handlers that
+   * pass a pre-resolved root as both `repoRoot` and `packageDir`. Consumers
+   * fall back to `request.repoRoot` when this field is absent.
+   */
+  execRoot?: string;
+  /**
    * Runtime output directory where run artefacts (metrics.json, cost/, prompt-audit/)
    * are written. Defaults to `~/.nax/<projectKey>`; overridable via
    * `config.outputDir` (absolute or `~/...`).

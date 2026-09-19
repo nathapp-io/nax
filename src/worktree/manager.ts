@@ -7,6 +7,7 @@ import { validateStoryId } from "../prd/validate";
 import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
+import { naxOrphanRefName } from "./nax-orphan-ref";
 import type { WorktreeInfo } from "./types";
 
 /**
@@ -109,6 +110,39 @@ export class WorktreeManager {
   }
 
   /**
+   * US-002: checks for a nax-owned orphan ref on `refs/nax/orphan/<storyId>`.
+   * Written by `removeWorktreeDirectory` in `pipeline-result-handler.ts` when
+   * a non-conflict merge failure leaves a worktree-less branch behind. Read
+   * here as Step-3 evidence that the branch `nax/<storyId>` was created by a
+   * prior nax run — so the force-delete in Step 3 is known-orphaned rather
+   * than a guess. The ref cannot outlive what it records (it is removed in
+   * the same step that deletes the branch), so reading it always describes
+   * state that existed between this run and the previous one.
+   */
+  private async hasNaxOwnershipRecord(projectRoot: string, storyId: string): Promise<boolean> {
+    const orphanRef = naxOrphanRefName(storyId);
+    try {
+      const { exitCode } = await _worktreeManagerDeps.gitWithTimeout(["cat-file", "-e", orphanRef], projectRoot);
+      return exitCode === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private async resolveGitRef(projectRoot: string, refName: string): Promise<string | undefined> {
+    try {
+      const { exitCode, stdout } = await _worktreeManagerDeps.gitWithTimeout(
+        ["rev-parse", "--verify", refName],
+        projectRoot,
+      );
+      const resolved = stdout.trim();
+      return exitCode === 0 && resolved ? resolved : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>.
    * Dependency preparation is handled outside WorktreeManager; only non-dependency
    * runtime files such as .env are mirrored here when present.
@@ -121,6 +155,7 @@ export class WorktreeManager {
 
     const worktreePath = join(projectRoot, ".nax-wt", storyId);
     const branchName = `nax/${storyId}`;
+    const orphanRef = naxOrphanRefName(storyId);
 
     // BUG-28: Step 3 below force-deletes `branchName` when remove() (Step 2)
     // found no live worktree to remove it via — that path used to run
@@ -130,14 +165,29 @@ export class WorktreeManager {
     // still counts as proof this branch pair was actually created by nax's
     // own create() — only then is Step 3's force-delete "known-orphaned"
     // rather than a guess.
+    //
+    // US-002: `hasNaxOwnershipRecord` is the second form of evidence the
+    // owning run may have left behind. `removeWorktreeDirectory` writes
+    // `refs/nax/orphan/<storyId>` after a non-conflict merge failure, so
+    // a retry path can still distinguish a nax-created orphan from a user
+    // branch. Step 3 fires on EITHER signal; the orphan ref is cleared in
+    // the same step that deletes the branch, so the record cannot outlive
+    // what it records. A user branch named `nax/<storyId>` that nax never
+    // created has neither form of evidence and is still never force-deleted.
     const hadWorktreeRecord = await this.hasWorktreeRecord(projectRoot, branchName);
+    const hadNaxOwnershipRecord = await this.hasNaxOwnershipRecord(projectRoot, storyId);
+    const orphanCommit = hadNaxOwnershipRecord ? await this.resolveGitRef(projectRoot, orphanRef) : undefined;
+    const branchRef = `refs/heads/${branchName}`;
+    const branchCommit = await this.resolveGitRef(projectRoot, branchRef);
+    const orphanMatchesBranch = orphanCommit !== undefined && orphanCommit === branchCommit;
 
     // Clean up any stale worktree/branch from a previous crashed run.
     // Three cleanup steps handle all orphaned-worktree scenarios:
     // 1. `git worktree prune` — removes admin refs whose directories no longer exist
     // 2. `git worktree remove --force` — removes worktree (and its branch) if directory still exists
     // 3. `git branch -D` — removes a leftover branch whose worktree directory is already
-    //    gone, but ONLY when hadWorktreeRecord proved it as a nax-created orphan
+    //    gone, but ONLY when hadWorktreeRecord OR hadNaxOwnershipRecord proved it
+    //    as a nax-created orphan. The orphan ref is then cleared with `git update-ref -d`.
     try {
       // Step 1: Prune orphaned worktree references (dir deleted but .git/worktrees/ entry remains)
       // BUG-5: route through gitWithTimeout so a wedged git (NFS hang) can't stall create().
@@ -168,15 +218,39 @@ export class WorktreeManager {
       }
     }
 
-    if (!removedLiveWorktree && hadWorktreeRecord) {
+    let clearedBranch = removedLiveWorktree;
+    if (!removedLiveWorktree && (hadWorktreeRecord || orphanMatchesBranch)) {
+      // Step 3: the worktree directory is already gone (remove() found
+      // nothing), but hadWorktreeRecord OR hadNaxOwnershipRecord proves
+      // this branch/worktree pair was created by a prior nax run — safe
+      // to force-delete the orphan. BUG-5: route through gitWithTimeout
+      // so a wedged git can't stall create().
+      if (orphanMatchesBranch) {
+        const result = await _worktreeManagerDeps
+          .gitWithTimeout(["update-ref", "-d", branchRef, orphanCommit], projectRoot)
+          .catch(() => undefined);
+        clearedBranch = result?.exitCode === 0;
+      } else {
+        const result = await _worktreeManagerDeps
+          .gitWithTimeout(["branch", "-D", branchName], projectRoot)
+          .catch(() => undefined);
+        clearedBranch = result?.exitCode === 0;
+      }
+    }
+
+    // US-002: Always clear the orphan ref at the end of cleanup, regardless
+    // of which step fired. The record cannot outlive what it records — and
+    // if Step 2 succeeded, `remove()` already deleted the branch, so the ref
+    // would be dangling at a now-unreachable commit. If neither step fired
+    // (no evidence), `update-ref -d` is a no-op (the ref doesn't exist).
+    // Best-effort: a stale ref that survives one more run is acceptable;
+    // a dangling ref that misleads Step-3 evidence on a *later* run is
+    // not — that is the BUG-28 hole this record was designed to close.
+    if (hadNaxOwnershipRecord && (clearedBranch || !orphanMatchesBranch)) {
       try {
-        // Step 3: the worktree directory is already gone (remove() found
-        // nothing), but hadWorktreeRecord proves this branch/worktree pair
-        // was created by a prior nax run — safe to force-delete the orphan.
-        // BUG-5: route through gitWithTimeout so a wedged git can't stall create().
-        await _worktreeManagerDeps.gitWithTimeout(["branch", "-D", branchName], projectRoot);
+        await _worktreeManagerDeps.gitWithTimeout(["update-ref", "-d", orphanRef], projectRoot);
       } catch {
-        // branch may not exist — that's fine
+        // ref may already be absent
       }
     }
 

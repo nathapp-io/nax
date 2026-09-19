@@ -25,7 +25,7 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
 import { storyPackageDir } from "../utils/path-frame";
-import { MergeEngine, WorktreeManager } from "../worktree";
+import { MergeEngine, naxOrphanRefName, WorktreeManager } from "../worktree";
 import { handleTierEscalation, verifyEscalationQuotes } from "./escalation";
 import { appendProgress } from "./progress";
 
@@ -52,8 +52,18 @@ function hasWorktree(projectRoot: string, storyId: string): boolean {
  * EXEC-002: Remove a worktree directory from git's worktree tracking without deleting
  * the branch. This preserves `nax/<storyId>` in git for diagnostics and re-run cleanup
  * while reclaiming disk space. Best-effort — errors are logged but not thrown.
+ *
+ * US-002: On a successful removal, additionally record nax ownership of the
+ * surviving branch by writing `refs/nax/orphan/<storyId>` to point at the
+ * branch tip. The retry path consumes this ref as Step-3 evidence so the
+ * next `WorktreeManager.create()` can force-delete the branch. The record
+ * lives in the same git store as the thing it describes and is removed with
+ * `git update-ref -d` in the same step that deletes the branch — so it
+ * cannot outlive what it records. A user branch named `nax/<storyId>` that
+ * nax never created never acquires one, so BUG-28's user-branch guard is
+ * unchanged.
  */
-async function removeWorktreeDirectory(projectRoot: string, storyId: string): Promise<void> {
+async function removeWorktreeDirectory(projectRoot: string, storyId: string): Promise<boolean> {
   const logger = getSafeLogger();
   const worktreePath = join(projectRoot, ".nax-wt", storyId);
   try {
@@ -81,11 +91,54 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
         exitCode,
         stderr: stderr.slice(0, 500),
       });
+      return false;
     }
+    return true;
   } catch (error) {
     logger?.warn("worktree", "Failed to remove worktree directory (non-fatal)", {
       storyId,
       worktreePath,
+      error: String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * US-002: Write `refs/nax/orphan/<storyId>` to point at the surviving
+ * `nax/<storyId>` branch tip. Best-effort: a non-zero exit logs at warn on
+ * stage `worktree` (carrying `storyId`) and returns — matches the existing
+ * contract of `removeWorktreeDirectory` above.
+ */
+async function recordNaxOrphanOwnership(projectRoot: string, storyId: string): Promise<void> {
+  const logger = getSafeLogger();
+  const orphanRef = naxOrphanRefName(storyId);
+  const sourceBranch = `refs/heads/nax/${storyId}`;
+  try {
+    const proc = _resultHandlerDeps.spawn(["git", "update-ref", orphanRef, sourceBranch], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, _stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text().catch(() => ""),
+      new Response(proc.stderr).text().catch(() => ""),
+    ] as const);
+    if (exitCode !== 0) {
+      logger?.warn("worktree", "Failed to record nax orphan ownership ref (non-fatal)", {
+        storyId,
+        orphanRef,
+        sourceBranch,
+        exitCode,
+        stderr: stderr.slice(0, 500),
+      });
+    }
+  } catch (error) {
+    logger?.warn("worktree", "Failed to record nax orphan ownership ref (non-fatal)", {
+      storyId,
+      orphanRef,
+      sourceBranch,
       error: String(error),
     });
   }
@@ -250,8 +303,12 @@ export async function handlePipelineSuccess(
       await failStoryAfterMerge(ctx, prd, reason);
       // Nothing will revisit this worktree — no rectification pass is coming —
       // so reclaim the directory. The branch stays for diagnostics, exactly as
-      // the `case "fail"` arm does.
-      await removeWorktreeDirectory(ctx.workdir, story.id);
+      // the `case "fail"` arm does. US-002: on successful removal, also record
+      // nax ownership so the retry can clean up the branch.
+      const removeSucceeded = await removeWorktreeDirectory(ctx.workdir, story.id);
+      if (removeSucceeded) {
+        await recordNaxOrphanOwnership(ctx.workdir, story.id);
+      }
       return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
     }
     if (!mergeResult.success) {
@@ -354,6 +411,10 @@ export async function handlePipelineFailure(
       prdDirty = true;
       logger?.warn("pipeline", "Story paused", { storyId: ctx.story.id, reason: pipelineResult.reason });
       // EXEC-002: Remove worktree directory on pause (keep branch for diagnostics).
+      // US-002: Pause path does NOT write the orphan ref — only the fail
+      // path does. Writing it here would make a later resume silently
+      // discard the WIP branch via Step-3, instead of failing loudly at
+      // `worktree add -b`.
       if (hasWorktree(ctx.workdir, ctx.story.id)) {
         await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
       }
@@ -391,8 +452,26 @@ export async function handlePipelineFailure(
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
       // EXEC-002: All tiers exhausted — remove the worktree directory but keep the branch
       // (nax/<storyId>) so the failed commits are preserved for diagnostics and re-run cleanup.
+      //
+      // US-002: On a successful removal, additionally record nax ownership of
+      // the surviving branch by writing `refs/nax/orphan/<storyId>` to point
+      // at the branch tip. The retry path consumes this ref as Step-3 evidence
+      // so the next `WorktreeManager.create()` can force-delete the branch.
+      // The record lives in the same git store as the thing it describes and
+      // is removed with `git update-ref -d` in the same step that deletes the
+      // branch — so it cannot outlive what it records.
+      //
+      // The orphan ref is scoped to the fail path. The pause path does NOT
+      // write it (preserving the "keep branch for diagnostics" promise on
+      // resume). A failed `git worktree remove` does NOT write it either —
+      // the branch is still checked out in a (surviving) live worktree, so
+      // claiming nax owns an orphan would be a false record that misleads
+      // the next create().
       if (hasWorktree(ctx.workdir, ctx.story.id)) {
-        await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
+        const removeSucceeded = await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
+        if (removeSucceeded) {
+          await recordNaxOrphanOwnership(ctx.workdir, ctx.story.id);
+        }
         logger?.info("worktree", "Kept failed story branch", {
           storyId: ctx.story.id,
           branch: `nax/${ctx.story.id}`,

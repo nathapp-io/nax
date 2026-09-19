@@ -1,7 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeTempDir } from "@test/helpers";
+import {
+  makeAgentResult,
+  makeMockRuntime,
+  makePRD,
+  makeStory,
+  makeTempDir,
+  makeTestContext,
+  waitForCondition,
+} from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { _resultHandlerDeps, handlePipelineFailure, type PipelineHandlerContext } from "@/execution";
+import type { PipelineRunResult } from "@/pipeline/runner";
+import { PluginRegistry } from "@/plugins/registry";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import { WorktreeManager } from "@/worktree/manager";
 
@@ -424,5 +436,177 @@ describe("WorktreeManager", () => {
       expect(ourWorktree?.path).toBeTruthy();
       expect(ourWorktree?.branch).toBe(`nax/${storyId}`);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002 — retryable failed worktrees retain ownership evidence (AC-1)
+//
+// Integration: WorktreeManager.create creates the worktree so .nax-wt/US-001
+// exists. handlePipelineFailure runs with finalAction 'fail' and tiers
+// exhausted. Then WorktreeManager.create runs a second time and must complete
+// without throwing, leaving a worktree directory at .nax-wt/US-001.
+// ---------------------------------------------------------------------------
+
+describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integration)", () => {
+  let testDir: string;
+  let projectRoot: string;
+  let resultSpawn: typeof _resultHandlerDeps.spawn;
+  let resultExistsSync: typeof _resultHandlerDeps.existsSync;
+
+  beforeEach(async () => {
+    resultSpawn = _resultHandlerDeps.spawn;
+    resultExistsSync = _resultHandlerDeps.existsSync;
+    // Create a temporary directory and git repo for each test
+    testDir = makeTempDir("worktree-test-");
+    projectRoot = join(testDir, "test-project");
+    mkdirSync(projectRoot, { recursive: true });
+
+    // Initialize a git repository using Bun.spawn
+    const initProc = Bun.spawn(["git", "init"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await initProc.exited;
+    const emailProc = Bun.spawn(["git", "config", "user.email", "test@example.com"], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await emailProc.exited;
+    const nameProc = Bun.spawn(["git", "config", "user.name", "Test User"], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await nameProc.exited;
+
+    // Create an initial commit (required for worktree creation)
+    writeFileSync(join(projectRoot, "README.md"), "# Test Project");
+    const addProc = Bun.spawn(["git", "add", "README.md"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await addProc.exited;
+    const commitProc = Bun.spawn(["git", "commit", "-m", "Initial commit"], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await commitProc.exited;
+  });
+
+  afterEach(() => {
+    _resultHandlerDeps.spawn = resultSpawn;
+    _resultHandlerDeps.existsSync = resultExistsSync;
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  test("AC-1: handlePipelineFailure leaves an orphan ref; create() succeeds on retry", async () => {
+    const manager = new WorktreeManager();
+    const storyId = "US-001";
+    const worktreePath = join(projectRoot, ".nax-wt", storyId);
+
+    // First create() — establishes the worktree.
+    await manager.create(projectRoot, storyId);
+    expect(existsSync(worktreePath)).toBe(true);
+
+    // Simulate handlePipelineFailure with finalAction 'fail' and tiers
+    // exhausted, on a story that has a worktree directory. The result is
+    // a recorded nax ownership ref on `refs/nax/orphan/US-001` and the
+    // worktree directory is removed (branch preserved).
+    const story = makeStory({ id: storyId, status: "pending", passes: false, attempts: 2 });
+    const ctx = {
+      config: {
+        ...DEFAULT_CONFIG,
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          storyIsolation: "worktree" as const,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+        },
+      },
+      prd: makePRD({ userStories: [story] }),
+      prdPath: "/tmp/prd.json",
+      workdir: projectRoot,
+      hooks: { hooks: {} },
+      feature: "test-feature",
+      totalCost: 0,
+      startTime: Date.now(),
+      runId: "run-001",
+      pluginRegistry: new PluginRegistry([]),
+      story,
+      storiesToExecute: [story],
+      routing: { complexity: "simple", modelTier: "standard", testStrategy: "test-after", reasoning: "" },
+      isBatchExecution: false,
+      allStoryMetrics: [],
+      storyGitRef: "abc123",
+      runtime: makeMockRuntime(),
+    } as unknown as PipelineHandlerContext; // test-ratchet-allow: as-unknown-as
+
+    const failResult: PipelineRunResult = {
+      success: false,
+      finalAction: "fail",
+      reason: "Tests failed",
+      context: makeTestContext({ agentResult: makeAgentResult() }),
+    };
+
+    _resultHandlerDeps.existsSync = (p) => existsSync(p);
+    // Pass-through to real git for everything — no `_deps` mock needed,
+    // because the orphan ref + worktree removal are both real git commands.
+    // We rely on `git worktree remove --force` to clean up the directory.
+    // If git fails (e.g. on systems where `--force` leaves the directory
+    // behind), the test wrapper falls back to rmSync — but only on a
+    // non-zero exit, so a successful git removal is not masked.
+    _resultHandlerDeps.spawn = ((cmd: string[], opts: Record<string, unknown>) => {
+      if (cmd[0] === "git" && cmd[1] === "worktree" && cmd[2] === "remove") {
+        const proc = Bun.spawn(cmd, { ...opts, stdout: "pipe", stderr: "pipe" });
+        proc.exited.then((exitCode) => {
+          // Only fall back to rmSync when git's own removal failed — a
+          // non-zero exit may leave the directory behind even with --force.
+          // A zero exit means git already cleaned up, and rmSync is
+          // unnecessary; running it anyway masks a failure that the
+          // production code would surface as a stale directory.
+          if (exitCode !== 0) {
+            try {
+              rmSync(worktreePath, { recursive: true, force: true });
+            } catch {
+              // ignore
+            }
+          }
+        });
+        return proc;
+      }
+      return Bun.spawn(cmd, { ...opts, stdout: "pipe", stderr: "pipe" });
+    }) as typeof _resultHandlerDeps.spawn;
+    // Cast above: `_resultHandlerDeps.spawn` is typed as `typeof Bun.spawn`,
+    // whose signature is heavily overloaded; a custom mock that wraps
+    // Bun.spawn for a single purpose cannot satisfy the structural type
+    // without a one-line assertion. The mock here passes through to the
+    // real Bun.spawn except for the worktree-remove case where it also
+    // cleans up the directory, so the cast is safe.
+
+    await handlePipelineFailure(ctx, failResult);
+
+    // Wait for the rmSync side effect to settle (the fire-and-forget then()).
+    await waitForCondition(() => !existsSync(worktreePath), 2_000);
+
+    // The retry should test the orphan ref scenario. To exercise that
+    // path specifically (and not BUG-28's existing record-of-worktree
+    // path), we delete the .git/worktrees/US-001 admin refs after the
+    // failure — leaving only the orphan ref as evidence that nax created
+    // the branch.
+    const wtAdminDir = join(projectRoot, ".git", "worktrees", storyId);
+    if (existsSync(wtAdminDir)) {
+      rmSync(wtAdminDir, { recursive: true, force: true });
+    }
+
+    // After failure: the worktree directory should be removed.
+    expect(existsSync(worktreePath)).toBe(false);
+
+    // Second create() — should NOT throw; the orphan ref is consumed.
+    try {
+      await manager.create(projectRoot, storyId);
+    } catch (err) {
+      throw new Error(`Second create() failed: ${(err as Error).message}`);
+    }
+
+    // And a worktree directory now exists again at .nax-wt/US-001.
+    expect(existsSync(worktreePath)).toBe(true);
   });
 });
