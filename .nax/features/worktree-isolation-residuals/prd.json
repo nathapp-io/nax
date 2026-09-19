@@ -3,7 +3,7 @@
   "feature": "worktree-isolation-residuals",
   "branchName": "feat/worktree-isolation-residuals",
   "createdAt": "2026-09-19T00:00:00.000Z",
-  "updatedAt": "2026-09-19T13:37:53.645Z",
+  "updatedAt": "2026-09-19T14:31:02.710Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,11 +31,23 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "toAgent": "native",
+          "reason": "Rectification exhausted with unfixed findings",
+          "timestamp": "2026-09-19T14:31:00.667Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The change threads one optional field through five existing files and redirects two established provider paths using an existing root helper; it has clear regression seams but introduces no new subsystem."
+        "reasoning": "The change threads one optional field through five existing files and redirects two established provider paths using an existing root helper; it has clear regression seams but introduces no new subsystem.",
+        "initialComplexity": "medium",
+        "modelTier": "powerful",
+        "initialModelTier": "balanced",
+        "agent": "native"
       },
       "contextFiles": [
         "src/context/engine/types.ts",
@@ -44,19 +56,31 @@
         "src/context/engine/stage-assembler.ts",
         "src/pipeline/stages/context.ts"
       ],
-      "outOfScope": [
-        "US-002's orphan-branch ownership and retry cleanup.",
-        "Any change to `historyScope` semantics, or to the `storyWorkdir` selector, including the package post-filter that consumes it.",
-        "Re-deriving a worktree root from `repoRoot` and `packageDir` by joining or slicing path segments. This is the nax#2069 trap and is forbidden; the root comes from `storyExecRoot`.",
-        "Extending the single-frame design's §6 live verification to cover worktree-isolated context resolution. Spec §6 currently asserts exec/write containment only; annotating or extending it is tracked on nax#2134 and is not implemented by this spec."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/context/engine/providers/code-neighbor-frame.test.ts",
           "reason": "the PARKED characterization test at `:253` (\"resolution reads the main checkout, not the worktree\") asserts that a worktree-only neighbour is **absent** (`:280`) and that main-checkout resolution is the behaviour. A correct implementation necessarily inverts both assertions. Replace them with the worktree-correct invariant: with `execRoot` set to the worktree, the worktree-only neighbour is present and no heading carries a `.nax-wt/` prefix. Rename the `describe` block to drop \"PARKED\"."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted with unfixed findings"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted with unfixed findings",
+          "cost": 6.777890572499996,
+          "timestamp": "2026-09-19T14:31:00.667Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "c9145baca5da7726f21f2b611e18c628955eae25",
+      "outOfScope": [
+        "US-002's orphan-branch ownership and retry cleanup."
+      ]
     },
     {
       "id": "US-002",
@@ -96,12 +120,13 @@
         "test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts",
         "test/unit/execution/worktree-manager.test.ts"
       ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
-        "US-001's ContextRequest execution-root threading and provider resolution.",
-        "Any change to the default `execution.storyIsolation` value, which stays `\"shared\"`.",
-        "Merge-conflict handling. This spec covers non-conflict merge failures only; a genuine content conflict already has its own path."
-      ],
-      "workdirSource": "defaulted"
+        "US-001's ContextRequest execution-root threading and provider resolution."
+      ]
     }
   ],
   "analysis": "Audit result: all 16 spec acceptance criteria are retained. US-001 retains forward dependencies, execution-root relative headings, reverse dependencies, sibling tests, repoRoot fallback, both GitHistory cwd branches, and all three assembleForStage packageView shapes. The GitHistory dual-case criterion is split into two independently observable assertions. US-002 retains retry creation, BUG-28 user-branch safety, diagnostic branch retention, consumed-ref removal, update-ref failure warning/continuation, both valid and invalid helper outcomes, and stale-record removal; the two conjunctions that contain independent observations are split without adding behavior. Negative paths are explicitly covered by US-001's unset execRoot/packageView and US-002's unowned branch, record-write failure, invalid story id, and missing branch.\n\nUS-001 is an existing five-source-file context-engine change. `ContextRequest` currently has `repoRoot` and `packageDir` but no execution-tree field (`src/context/engine/types.ts:228-354`); its `storyWorkdir` contract explicitly prohibits deriving a worktree frame from those fields (`src/context/engine/types.ts:319-354`). Both request producers are typed PipelineContext: the initial V2 context stage (`src/pipeline/stages/context.ts:168-215`) and `assembleForStage` (`src/context/engine/stage-assembler.ts:214-279`). The established source for the actual agent root is `storyExecRoot`, which returns a `.nax-wt/<storyId>` root for worktree-relative package paths, an absolute package path unchanged, or repoRoot otherwise (`src/runtime/packages.ts:227-239`). Add optional `execRoot` only when `ctx.packageView` exists and derive it only with this helper. This keeps pull-tool and legacy ContextRequest behavior via `request.execRoot ?? request.repoRoot`. The type file is 578 lines (`src/context/engine/types.ts:1-578`) and the lint size gate is 600, so field documentation must be terse.\n\nCodeNeighborProvider currently uses `request.packageDir`/`request.repoRoot` for its scan root but resolves touched files, imports, sibling probes, and output relative paths with `request.repoRoot` (`src/context/engine/providers/code-neighbor.ts:228-341`, `:354-447`), mixing main and worktree frames. It must use one effective execution root for scan, resolution, disk probes, and rendered headings while retaining repo-rooted touched-file identifiers and the unchanged storyWorkdir selector. GitHistoryProvider documents this residual and always uses repoRoot as git cwd (`src/context/engine/providers/git-history.ts:200-235`); only its cwd changes to the fallback expression. The parked regression characterization that asserts main-checkout resolution is in `test/unit/context/engine/providers/code-neighbor-frame.test.ts:236-282` and must invert. Existing GitHistory provider tests and stage-assembler tests already provide seams (`test/unit/context/engine/providers/git-history.test.ts:367-399`, `test/unit/context/engine/stage-assembler.test.ts`). Primary regression risks are shared-mode behavior and `.nax-wt`-prefixed, unreadable agent headings; fallback requests and explicit shared-mode tests protect compatibility.\n\nUS-002 is an existing two-source-file worktree lifecycle change. The private cleanup function runs its best-effort git worktree removal through `_resultHandlerDeps.spawn` and currently retains a branch with no ownership evidence (`src/execution/pipeline-result-handler.ts:31-91`); its exported `handlePipelineFailure` path invokes it (`src/execution/pipeline-result-handler.ts:254`, `:358`, `:395`). `WorktreeManager.create` validates story IDs, snapshots `git worktree list --porcelain` evidence before cleanup, and gates Step 3 `git branch -D` on that evidence (`src/worktree/manager.ts:119-183`). Add the required shared exported `naxOrphanRefName` helper in the existing worktree implementation path, using `validateStoryId`, so cleanup writes and manager reads exactly the same ref name. After a successful removal, cleanup records `refs/nax/orphan/<storyId>` using source-ref `git update-ref`; manager treats the ref as additional Step-3 evidence and deletes it regardless of a swallowed missing-branch deletion failure. Every subprocess stays on the existing module seam: result handler spawn and manager gitWithTimeout. Never infer ownership from branch naming: the BUG-28 user branch must remain untouched. Existing cleanup tests use `handlePipelineFailure` and the spawn seam (`test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts:1-171`); manager tests cover current worktree behavior (`test/unit/execution/worktree-manager.test.ts:1-210`). This is a backward-compatible durable local git-state addition with no migration: refs created after failure are consumed by the next retry.\n\nBoth stories are independent, share no source file or symbol, create no files, and have no dependencies. ContextFiles preserve the spec's complete US-001 source list and both US-002 source files; existing test files are included only where they are the critical established seam.",
