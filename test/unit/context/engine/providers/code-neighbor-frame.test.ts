@@ -454,4 +454,46 @@ describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () =>
 
     expect(globbedRoots).toEqual(["/repo"]);
   });
+
+  // US-001 (AC1-AC4): with execRoot SET, the reverse-dep glob must run at the
+  // story's worktree root — not repoRoot, and not the package dir. The AC1-AC4
+  // tests do fail if scanRoot regresses (verified by reverting it to both
+  // repoRoot and packageDir), but only incidentally: their fixture keys
+  // `globByCwd` by cwd, so a wrong cwd yields an empty file list rather than a
+  // wrong one. This test pins the cwd itself, which is the behavior US-001 adds
+  // and the only spelling that makes the scan root explicit.
+  test("reverse-dep glob runs at the worktree root when execRoot is set", async () => {
+    const globbedRoots: string[] = [];
+    const worktreeRoot = "/repo/.nax-wt/US-001";
+    const globByCwd: Record<string, string[]> = {
+      [worktreeRoot]: ["packages/app/src/index.ts", "packages/app/src/user.ts"],
+    };
+    setupDeps(
+      {
+        [`${worktreeRoot}/packages/app/src/index.ts`]: "export const app = 1;",
+        [`${worktreeRoot}/packages/app/src/user.ts`]: 'import "./index";',
+      },
+      globByCwd,
+    );
+    _codeNeighborDeps.glob = (_pattern: string, cwd: string) => {
+      globbedRoots.push(cwd);
+      return { files: globByCwd[cwd] ?? [], truncated: false };
+    };
+
+    const result = await new CodeNeighborProvider().fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        execRoot: worktreeRoot,
+        packageDir: `${worktreeRoot}/packages/app`,
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
+
+    // The scan ran at the worktree root — not "/repo" (main checkout) and not
+    // the package dir.
+    expect(globbedRoots).toEqual([worktreeRoot]);
+    // ...and the reverse dep that scan found is surfaced.
+    expect(neighborLines(result.chunks[0]?.content ?? "")).toContain("- packages/app/src/user.ts");
+  });
 });

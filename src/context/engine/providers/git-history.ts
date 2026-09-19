@@ -9,7 +9,9 @@
  * Returns empty when touchedFiles is absent or git fails.
  *
  * Scope: repo-scoped (anchor `repoRoot`). touchedFiles is REPO-ROOTED and git
- * ALWAYS runs at repoRoot against a repo-rooted pathspec; `historyScope` is a
+ * runs at `request.execRoot ?? request.repoRoot` — the story execution root,
+ * which under `storyIsolation: "worktree"` is the worktree rather than the main
+ * checkout (nax#2134) — against those repo-rooted paths. `historyScope` is a
  * post-filter over those entries, not a workdir switch. Chunk headings are
  * rendered repo-rooted verbatim and `scopePaths` share that same spelling.
  *
@@ -33,8 +35,9 @@ import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk 
 export interface GitHistoryProviderOptions {
   /**
    * Scope of the git history query (AC-55, nax#2088).
-   * git ALWAYS runs in repoRoot against repo-rooted pathspecs; this option is
-   * a post-filter, not a workdir switch:
+   * git runs against repo-rooted pathspecs in the story execution root
+   * (`request.execRoot ?? request.repoRoot`); this option is a post-filter,
+   * not a workdir switch:
    *   "repo" — every touched file is queried (full repo history).
    *   "package" — only files beneath packageDir are queried (monorepo package
    *     boundary).
@@ -200,19 +203,20 @@ export class GitHistoryProvider implements IContextProvider {
       return { chunks: [], pullTools: [] };
     }
 
-    // nax#2088: touchedFiles is REPO-ROOTED (types.ts) and git ALWAYS runs in
-    // repoRoot against the repo-rooted pathspec. Running `git log` in packageDir
-    // while the paths stay repo-framed made the pathspec resolve to nothing
-    // (exit 0, empty stdout — silently dropping the file) or, worse, to an
-    // unrelated root-level file under the story's label.
+    // nax#2088: touchedFiles is REPO-ROOTED (types.ts) and git runs against the
+    // repo-rooted pathspec in the story execution root. Running `git log` in
+    // packageDir while the paths stay repo-framed made the pathspec resolve to
+    // nothing (exit 0, empty stdout — silently dropping the file) or, worse, to
+    // an unrelated root-level file under the story's label.
     //
     // historyScope is a post-filter, not a workdir switch: under "package" only
     // entries beneath request.packageDir are kept.
     //
     // nax#2134 (US-001): workdir is request.execRoot ?? request.repoRoot so a
     // worktree-isolated story runs git inside the worktree the agent is rooted
-    // at. Producers without a story (pull-tool handlers) omit execRoot and
-    // transparently fall back to repoRoot — today's behaviour.
+    // at — NOT the main checkout this comment used to assert. Producers without
+    // a story (pull-tool handlers) omit execRoot and transparently fall back to
+    // repoRoot — today's behaviour.
     const workdir = request.execRoot ?? request.repoRoot;
     // request.storyWorkdir is the PRD-declared story workdir (repo-relative),
     // threaded onto the request by the callers that build it from a story

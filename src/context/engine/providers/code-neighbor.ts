@@ -27,8 +27,12 @@ export { createContentCacheState } from "./code-neighbor-cache";
 export interface CodeNeighborProviderOptions {
   /**
    * Scope of the working directory for neighbor discovery (AC-56).
-   * "repo" — scans from repoRoot (full repo).
-   * "package" — scans from packageDir (monorepo package boundary, default).
+   * Since nax#2134 this is a POST-FILTER over the execRoot scan, not a scan
+   * partition: the reverse-dep glob always runs at the story execution root
+   * (`request.execRoot ?? request.repoRoot`), and this option only decides
+   * whether candidates outside the package are dropped from the result.
+   *   "repo" — every candidate the execRoot scan found is kept.
+   *   "package" — candidates outside `packageDir` are dropped (default).
    */
   neighborScope?: "repo" | "package";
   /**
@@ -237,12 +241,12 @@ function packageScopeRelative(execRoot: string, packageDir: string): string {
  *
  * Single-frame (nax#2125): every path is repo-rooted. `filePath` is
  * repo-rooted (types.ts), `scannedDirs` files are relative to the glob root
- * (`scanRoot`, either the package dir or repoRoot), and `execRoot` is the
- * directory the story's agent actually executes in — `request.execRoot ?? request.repoRoot`
- * at the call site. Every comparison is made on absolute paths, and the
- * result is spelled relative to `execRoot`, exactly once on return — the
- * agent's file tools are rooted at the story execution root, so no package
- * frame or unreadable marker is needed.
+ * (`scanRoot` — since nax#2134 unconditionally the story execution root), and
+ * `execRoot` is that same root, the directory the story's agent actually
+ * executes in (`request.execRoot ?? request.repoRoot` at the call site). Every
+ * comparison is made on absolute paths, and the result is spelled relative to
+ * `execRoot`, exactly once on return — the agent's file tools are rooted at the
+ * story execution root, so no package frame or unreadable marker is needed.
  *
  * `packageDir` and `neighborScope` are threaded through to keep AC5's
  * "same neighbours as today" behaviour under the default package scope:
