@@ -14,14 +14,17 @@
  *   - AC10  runner throws → resolves normally, no-baseline reason error
  *   - AC17  every degraded capture outcome resolves normally without rejecting
  *
- * The harness stub in `captureRunBaseline` writes a `no-baseline` marker for
- * every call, so each AC test asserts on the SHAPE the implementer must
- * produce and fails its assertion until the implementer wires the right
- * branch in.
+ * Posture: impure deps (spawn / file IO / git) are stubbed so no test touches
+ * a subprocess or the filesystem. The config-derived resolvers —
+ * `resolveGateTimeoutSeconds` / `regressionGateEnabled` — are deliberately NOT
+ * stubbed: AC3/AC4/AC6 must exercise the SHIPPED wiring. A test-local copy of
+ * that logic asserts against itself, so a regression in `_captureDeps` (wrong
+ * key order, dropped `?? DEFAULT_GATE_TIMEOUT_SECONDS` fallback) would sail
+ * through the suite (adversarial review, US-002).
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig, makeSparseNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import {
   _captureDeps,
@@ -36,7 +39,7 @@ import type { TestBaseline } from "@/verification";
 // Fixture helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeBaselineConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig {
+function makeBaselineConfig(overrides: DeepPartial<NaxConfig["execution"]> = {}): NaxConfig {
   return makeNaxConfig({
     execution: {
       regressionGate: { enabled: true, timeoutSeconds: 60 },
@@ -53,6 +56,17 @@ function makeOptions(config: NaxConfig = makeBaselineConfig()): CaptureRunBaseli
   return { root: "/tmp/repo", featureId: "feat-x", config, workdir: "/tmp/repo" };
 }
 
+/**
+ * The SHIPPED config resolvers, captured before any test can replace them.
+ * `_captureDeps` is a module-level singleton, so restoring a locally
+ * re-implemented copy after every test would silently substitute test logic for
+ * production logic. AC3/AC4/AC6 run against these originals.
+ */
+const shippedResolvers = {
+  resolveGateTimeoutSeconds: _captureDeps.resolveGateTimeoutSeconds,
+  regressionGateEnabled: _captureDeps.regressionGateEnabled,
+};
+
 function resetCaptureDeps(): void {
   _captureDeps.resolveTestCommands = async (_config: NaxConfig, _workdir: string) => undefined;
   _captureDeps.runCommand = async (_command: string, _timeoutSeconds: number) => ({
@@ -67,9 +81,10 @@ function resetCaptureDeps(): void {
     failures: [],
   });
   _captureDeps.now = () => "2026-01-15T00:00:00.000Z";
-  _captureDeps.resolveGateTimeoutSeconds = (config: NaxConfig) =>
-    config.execution?.regressionGate?.timeoutSeconds ?? config.execution?.rectification?.fullSuiteTimeoutSeconds ?? 300;
-  _captureDeps.regressionGateEnabled = (config: NaxConfig) => config.execution?.regressionGate?.enabled ?? true;
+  // Restore the production functions — never a test-local re-implementation of
+  // the timeout precedence / gate-enabled logic (see the file header).
+  _captureDeps.resolveGateTimeoutSeconds = shippedResolvers.resolveGateTimeoutSeconds;
+  _captureDeps.regressionGateEnabled = shippedResolvers.regressionGateEnabled;
   _captureDeps.writeRunBaseline = async (_root: string, _featureId: string, _baseline: TestBaseline) => undefined;
   _captureDeps.writeStoryBaseline = async (
     _root: string,
@@ -196,43 +211,39 @@ describe("captureRunBaseline — AC2 (command forwarded to runner)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("captureRunBaseline — AC3 (regressionGate.timeoutSeconds)", () => {
-  test("AC3: runner receives the regressionGate timeout when set", async () => {
+  test("AC3: runner receives regressionGate.timeoutSeconds via the shipped resolver", async () => {
     let received = 0;
     _captureDeps.resolveTestCommands = async () => "bun test";
     _captureDeps.runCommand = async (_command, timeout) => {
       received = timeout;
       return { success: true, output: "", timedOut: false };
     };
-    // Production resolver: prefer regressionGate, fall back to rectification.
-    _captureDeps.resolveGateTimeoutSeconds = (config) =>
-      config.execution?.regressionGate?.timeoutSeconds ??
-      config.execution?.rectification?.fullSuiteTimeoutSeconds ??
-      300;
-    const config = makeBaselineConfig();
+    // 42 is distinct from both the rectification value (120 by default) and the
+    // resolver's 300 fallback, so a resolver that misses the regressionGate
+    // branch cannot pass this assertion by coincidence.
+    const config = makeBaselineConfig({ regressionGate: { enabled: true, timeoutSeconds: 42 } });
 
     await captureRunBaseline(makeOptions(config));
 
-    expect(received).toBe(60); // makeBaselineConfig default for regressionGate.timeoutSeconds
+    expect(received).toBe(42);
   });
 
-  test("AC3 boundary: regressionGate timeout takes precedence over the rectification fallback", async () => {
+  test("AC3 boundary: regressionGate wins when rectification.fullSuiteTimeoutSeconds is also set", async () => {
     let received = 0;
     _captureDeps.resolveTestCommands = async () => "bun test";
     _captureDeps.runCommand = async (_command, timeout) => {
       received = timeout;
       return { success: true, output: "", timedOut: false };
     };
-    _captureDeps.resolveGateTimeoutSeconds = (config) =>
-      config.execution?.regressionGate?.timeoutSeconds ??
-      config.execution?.rectification?.fullSuiteTimeoutSeconds ??
-      300;
-    const config = makeBaselineConfig();
+    const config = makeBaselineConfig({
+      regressionGate: { enabled: true, timeoutSeconds: 42 },
+      rectification: { fullSuiteTimeoutSeconds: 77 },
+    });
 
     await captureRunBaseline(makeOptions(config));
 
-    // regressionGate wins — its value (60) is what reached the runner, not the
-    // rectification fallback.
-    expect(received).toBe(60);
+    // regressionGate wins the precedence: 42 reached the runner, not 77.
+    expect(received).toBe(42);
   });
 });
 
@@ -241,39 +252,44 @@ describe("captureRunBaseline — AC3 (regressionGate.timeoutSeconds)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("captureRunBaseline — AC4 (rectification fallback)", () => {
-  test("AC4: when no regressionGate timeout, runner receives the rectification timeout", async () => {
+  test("AC4: with regressionGate.timeoutSeconds absent, runner receives rectification.fullSuiteTimeoutSeconds", async () => {
     let received = 0;
     _captureDeps.resolveTestCommands = async () => "bun test";
     _captureDeps.runCommand = async (_command, timeout) => {
       received = timeout;
       return { success: true, output: "", timedOut: false };
     };
-    // The harness's resolveGateTimeoutSeconds intentionally ignores
-    // regressionGate.timeoutSeconds to simulate its absence.
-    _captureDeps.resolveGateTimeoutSeconds = (config) =>
-      config.execution?.rectification?.fullSuiteTimeoutSeconds ?? 300;
-    const config = makeBaselineConfig();
+    // The fallback's precondition: the gate timeout is absent while the gate
+    // itself stays enabled and the rectification timeout is configured.
+    // `makeNaxConfig` deep-merges this explicit `undefined` over DEFAULT_CONFIG
+    // — the schema's own 120 default must not win here. The shipped resolver
+    // must therefore answer 77: not that default, and not the 300 fallback.
+    const config = makeBaselineConfig({
+      regressionGate: { timeoutSeconds: undefined },
+      rectification: { fullSuiteTimeoutSeconds: 77 },
+    });
 
     await captureRunBaseline(makeOptions(config));
 
-    expect(received).toBe(120);
+    expect(received).toBe(77);
   });
 
-  test("AC4 boundary: with no regressionGate.timeoutSeconds, the rectification timeout is used even when regressionGate.enabled is true", async () => {
+  test("AC4 boundary: with neither timeout configured, runner receives the shipped 300s fallback", async () => {
     let received = 0;
     _captureDeps.resolveTestCommands = async () => "bun test";
     _captureDeps.runCommand = async (_command, timeout) => {
       received = timeout;
       return { success: true, output: "", timedOut: false };
     };
-    // Resolve as if regressionGate.timeoutSeconds were undefined:
-    _captureDeps.resolveGateTimeoutSeconds = (config) =>
-      config.execution?.rectification?.fullSuiteTimeoutSeconds ?? 300;
-    const config = makeBaselineConfig();
+    // No `execution` subtree at all — both documented fallbacks are absent, so
+    // the shipped `?? DEFAULT_GATE_TIMEOUT_SECONDS` branch has to answer. A
+    // sparse config is the only way to reach it: the schema always populates
+    // both keys on a parsed config.
+    const config = makeSparseNaxConfig({});
 
     await captureRunBaseline(makeOptions(config));
 
-    expect(received).toBe(120); // rectification.fullSuiteTimeoutSeconds default
+    expect(received).toBe(300);
   });
 });
 
@@ -324,18 +340,20 @@ describe("captureRunBaseline — AC5 (green suite → empty entries)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("captureRunBaseline — AC6 (gate-disabled)", () => {
-  test("AC6: gate disabled → runner not invoked, no-baseline marker with reason gate-disabled", async () => {
+  test("AC6: gate disabled in config → runner not invoked, no-baseline marker with reason gate-disabled", async () => {
     const writes: TestBaseline[] = [];
     const runnerCalls: unknown[] = [];
     _captureDeps.writeRunBaseline = async (_root, _featureId, baseline) => {
       writes.push(baseline);
     };
-    _captureDeps.regressionGateEnabled = () => false;
     _captureDeps.runCommand = async () => {
       runnerCalls.push("ran");
       return { success: false, output: "", timedOut: false };
     };
-
+    // `regressionGateEnabled` is NOT stubbed: the shipped resolver must read
+    // `execution.regressionGate.enabled` off this config. A resolver that
+    // returned `true` would fall through to the command resolver (stubbed to
+    // `undefined`) and write `no-test-command` — failing the reason assertion.
     await captureRunBaseline(
       makeOptions(makeBaselineConfig({ regressionGate: { enabled: false, timeoutSeconds: 60 } })),
     );
@@ -348,9 +366,10 @@ describe("captureRunBaseline — AC6 (gate-disabled)", () => {
     }
   });
 
-  test("AC6 boundary: gate-disabled still resolves without throwing when no other deps are set", async () => {
-    // Most pessimistic setup — only `now` and `writeRunBaseline` are real.
-    _captureDeps.regressionGateEnabled = () => false;
+  test("AC6 boundary: gate-disabled config still resolves without throwing when the resolver/runner would throw", async () => {
+    // Most pessimistic setup — only `now` and `writeRunBaseline` are real. The
+    // throwing stubs prove neither the command resolver nor the runner is
+    // reached on the disabled path.
     _captureDeps.resolveTestCommands = async () => {
       throw new Error("resolver must not be called when gate is disabled");
     };
@@ -358,7 +377,9 @@ describe("captureRunBaseline — AC6 (gate-disabled)", () => {
       throw new Error("runner must not be called when gate is disabled");
     };
 
-    await expect(captureRunBaseline(makeOptions())).resolves.toBeUndefined();
+    await expect(
+      captureRunBaseline(makeOptions(makeBaselineConfig({ regressionGate: { enabled: false, timeoutSeconds: 60 } }))),
+    ).resolves.toBeUndefined();
   });
 });
 
