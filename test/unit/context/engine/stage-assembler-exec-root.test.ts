@@ -47,13 +47,12 @@ function makeCtx(overrides: { projectDir?: string; workdir?: string; storyWorkdi
   });
 }
 
-// AC10 was originally "no packageView → execRoot unset". The story's
-// adversarial review (nax#2134 production-wiring) requires that the producers
-// not be a dead thread: when runtime is present (the production shape),
-// execRoot must derive from it even without packageView, mirroring
-// `execution.ts:88`. The runtime-less shape is exercised by the context stage
-// test in `context-request-workdir-fields.test.ts`, which uses the local makeCtx
-// (no runtime, no DispatchContext fields).
+// AC10 is read strictly: with no packageView on the PipelineContext the
+// producer omits `execRoot` entirely (the `storyExecRoot(ctx.packageView)`
+// derivation has no input), so consumers fall back to repoRoot — today's
+// behaviour for the pull-tool handlers, which carry no story and no
+// packageView. The context stage's producer is pinned to the same strict
+// shape in `context-request-workdir-fields.test.ts`.
 
 /** Build a PackageView fixture for the worktree-resolution tests. */
 function makePackageView(packageDir: string, repoRoot: string, config: PipelineContext["config"]): PackageView {

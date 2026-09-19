@@ -295,6 +295,10 @@ describe("CodeNeighborProvider — execRoot thread-through (nax#2134)", () => {
     const lines = neighborLines(result.chunks[0]?.content ?? "");
     // AC1: forward dep neighbour is listed.
     expect(lines).toContain("- packages/app/src/worktree-dep.ts");
+    // The main checkout's copy of the touched file imports ./main-dep — a
+    // same-shaped decoy that exists there and nowhere else. It must never
+    // appear: its presence would mean disk resolution ran against repoRoot.
+    expect(lines).not.toContain("- packages/app/src/main-dep.ts");
   });
 
   test("AC2: returned neighbour paths are relative to execRoot and never begin with .nax-wt/", async () => {
@@ -312,16 +316,22 @@ describe("CodeNeighborProvider — execRoot thread-through (nax#2134)", () => {
     );
 
     const lines = neighborLines(result.chunks[0]?.content ?? "");
-    // AC2: every neighbour heading is spelled `packages/...`, not `.nax-wt/...`.
-    for (const line of lines) {
-      expect(line.startsWith("- .nax-wt/")).toBe(false);
-      // Also covers the section heading (### <path>) since that line would
-      // also start with `.nax-wt/` if paths were absolute.
-      expect(line.includes(".nax-wt/")).toBe(false);
+    // AC2: the worktree-only forward dep is present, spelled relative to
+    // execRoot — not as `.nax-wt/US-001/packages/app/src/worktree-dep.ts` and
+    // not with any leaked prefix.
+    expect(lines).toContain("- packages/app/src/worktree-dep.ts");
+    // AC2: nothing in the chunk — section headings (`### <path>`) and neighbour
+    // bullets (`- <path>`) alike — carries a `.nax-wt/` segment. A leak here
+    // means a path was spelled relative to something other than execRoot
+    // (absolute, repoRoot-relative, or worktree-prefixed).
+    const content = result.chunks[0]?.content ?? "";
+    expect(content).not.toContain(".nax-wt/");
+    // scopePaths is the chunk's attribution key and must share that spelling.
+    const scopePaths = result.chunks[0]?.scopePaths ?? [];
+    expect(scopePaths.length).toBeGreaterThan(0);
+    for (const path of scopePaths) {
+      expect(path).not.toContain(".nax-wt/");
     }
-    // The worktree-only forward dep is spelled relative to execRoot, not as
-    // `.nax-wt/US-001/packages/app/src/worktree-dep.ts`.
-    expect(lines.some((line) => line.includes("worktree-dep"))).toBe(true);
   });
 
   test("AC3: a worktree-only reverse-dep (importer) is returned as a neighbour", async () => {
