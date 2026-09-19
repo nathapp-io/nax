@@ -196,6 +196,20 @@ export async function runIteration(
     providerWeightsCache: ctx.providerWeightsCache,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
     runtime: ctx.runtime,
+    // US-001: the context producers derive ContextRequest.execRoot from
+    // `storyExecRoot(ctx.packageView)` — the documented producer of that field
+    // is HERE (`pipeline/types.ts`: "Set once per story in iteration-runner.ts").
+    // Omitting it left the whole execRoot thread dead in production: every
+    // stage-assembly silently omitted execRoot, so under storyIsolation
+    // "worktree" both context providers resolved against the MAIN checkout —
+    // the stale-or-absent-context defect US-001 exists to fix.
+    //
+    // `resolvedWorkdir` is the dial to turn: under worktree isolation it is
+    // inside `.nax-wt/<storyId>/`, so the registry key it resolves to carries
+    // that prefix and `storyExecRoot` returns the worktree root; under shared
+    // isolation it resolves to the repo root. Both spellings come from the
+    // runtime's own registry — no path is re-derived here (nax#2069).
+    packageView: ctx.runtime.packages.resolve(resolvedWorkdir),
   };
 
   ctx.statusWriter.setPrd(prd);

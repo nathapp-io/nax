@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeContextBundle,
   makeDispatchContext,
@@ -30,9 +31,10 @@ import { _iterationRunnerDeps, releaseHeavyPipelineContext, runIteration } from 
 import type { IsolationCheck } from "@/execution/types";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineRunResult } from "@/pipeline/runner";
-import type { PipelineContext, RoutingResult } from "@/pipeline/types";
+import type { PipelineContext, PipelineStage, RoutingResult } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 import type { SelfVerificationResult } from "@/quality";
+import { storyExecRoot } from "@/runtime";
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
@@ -227,6 +229,94 @@ describe("runIteration", () => {
     await expect(
       runIteration(ctx, prd, { story, storiesToExecute: [story], routing: ROUTING, isBatchExecution: false }, 1, 0, []),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("runIteration — US-001 stamps packageView for the context producers", () => {
+  let tempDir: string;
+  let origRunPipeline: typeof _iterationRunnerDeps.runPipeline;
+  let origExistsSync: typeof _iterationRunnerDeps.existsSync;
+  let origPrepareDeps: typeof _iterationRunnerDeps.prepareWorktreeDependencies;
+  let story: UserStory;
+  let prd: PRD;
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-iteration-runner-execroot-");
+    origRunPipeline = _iterationRunnerDeps.runPipeline;
+    origExistsSync = _iterationRunnerDeps.existsSync;
+    origPrepareDeps = _iterationRunnerDeps.prepareWorktreeDependencies;
+    story = makeStory({ id: "US-001", title: "Story one" });
+    prd = makePRD({ userStories: [story] });
+  });
+
+  afterEach(() => {
+    _iterationRunnerDeps.runPipeline = origRunPipeline;
+    _iterationRunnerDeps.existsSync = origExistsSync;
+    _iterationRunnerDeps.prepareWorktreeDependencies = origPrepareDeps;
+    cleanupTempDir(tempDir);
+  });
+
+  /** Capture the PipelineContext handed to runPipeline. */
+  function capturePipelineContext(): { captured: PipelineContext | null } {
+    const ref: { captured: PipelineContext | null } = { captured: null };
+    _iterationRunnerDeps.runPipeline = mock(async (_stages: PipelineStage[], ctx: PipelineContext) => {
+      ref.captured = ctx;
+      return makePipelineResult({ success: true, finalAction: "complete" }, { prd });
+    });
+    return ref;
+  }
+
+  test("under worktree isolation the pipeline context carries a packageView rooted at the story's worktree", async () => {
+    const capture = capturePipelineContext();
+    // Worktree already exists → reuse it (skip create()).
+    _iterationRunnerDeps.existsSync = () => true;
+    _iterationRunnerDeps.prepareWorktreeDependencies = (async () => ({
+      cwd: join(tempDir, ".nax-wt", story.id),
+    })) as typeof _iterationRunnerDeps.prepareWorktreeDependencies;
+
+    const ctx = makeCtx(tempDir, {
+      config: makeNaxConfig({ execution: { storyIsolation: "worktree" } }),
+    });
+
+    await runIteration(
+      ctx,
+      prd,
+      { story, storiesToExecute: [story], routing: ROUTING, isBatchExecution: false },
+      1,
+      0,
+      [],
+    );
+
+    // US-001 Motivation: the context producers derive ContextRequest.execRoot
+    // from ctx.packageView. If this producer omits the field, execRoot is
+    // ALWAYS undefined in production and both providers silently resolve
+    // against the MAIN checkout — the stale-or-absent-context defect.
+    const packageView = capture.captured?.packageView;
+    assertDefined(packageView, "pipelineContext.packageView");
+    // storyExecRoot(packageView) must land on the worktree root the agent
+    // actually executes in, not the main checkout.
+    expect(storyExecRoot(packageView)).toBe(join(tempDir, ".nax-wt", story.id));
+  });
+
+  test("under shared isolation the packageView resolves to the main checkout", async () => {
+    const capture = capturePipelineContext();
+
+    const ctx = makeCtx(tempDir, {
+      config: makeNaxConfig({ execution: { storyIsolation: "shared" } }),
+    });
+
+    await runIteration(
+      ctx,
+      prd,
+      { story, storiesToExecute: [story], routing: ROUTING, isBatchExecution: false },
+      1,
+      0,
+      [],
+    );
+
+    const packageView = capture.captured?.packageView;
+    assertDefined(packageView, "pipelineContext.packageView");
+    expect(storyExecRoot(packageView)).toBe(tempDir);
   });
 });
 

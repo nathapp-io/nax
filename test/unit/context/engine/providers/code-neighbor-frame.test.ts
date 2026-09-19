@@ -375,6 +375,36 @@ describe("CodeNeighborProvider — execRoot thread-through (nax#2134)", () => {
     expect(lines).toContain("- packages/app/src/index.test.ts");
   });
 
+  // US-001 (review finding): `packageDir` and `execRoot` need not be in the
+  // same frame. `packageDir` is documented as the package dir — under worktree
+  // isolation a producer may stamp the MAIN checkout's package dir while
+  // `execRoot` carries the worktree root. Deriving the package-scope filter as
+  // `relative(execRoot, packageDir)` then yields an escaping path
+  // ("../../packages/app"), which matches no scanned file and silently drops
+  // EVERY reverse-dep candidate. The package's identity must be derived in the
+  // frame that `packageDir` and the scanned files actually share.
+  test("AC3: reverse deps survive a main-checkout packageDir with a worktree execRoot", async () => {
+    setupWorktreeDeps();
+    const provider = new CodeNeighborProvider();
+
+    const result = await provider.fetch(
+      makeRequest({
+        repoRoot: "/repo",
+        execRoot: "/repo/.nax-wt/US-001",
+        // The frame mismatch under test: main-checkout package dir.
+        packageDir: "/repo/packages/app",
+        storyWorkdir: "packages/app",
+        touchedFiles: ["packages/app/src/index.ts"],
+      }),
+    );
+
+    const lines = neighborLines(result.chunks[0]?.content ?? "");
+    expect(lines).toContain("- packages/app/src/user.ts");
+    // The worktree-only forward dep must survive too — the same filter guards
+    // the reverse scan, but the forward path must not regress alongside it.
+    expect(lines).toContain("- packages/app/src/worktree-dep.ts");
+  });
+
   test("AC5: with execRoot unset, fetch resolves against repoRoot (unchanged behaviour)", async () => {
     setupDeps(
       {

@@ -7,7 +7,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §CodeNeighborProvider
  */
 
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { getLogger } from "@/logger";
 import { detectLanguage } from "@/project";
 import type { NaxIgnoreMatcher } from "@/utils/path-filters";
@@ -206,6 +206,32 @@ function scanDirectory(
 }
 
 /**
+ * The package's path RELATIVE TO THE SCAN ROOT, or "" when the two are not
+ * comparable.
+ *
+ * `relative(execRoot, packageDir)` is only meaningful when both name the same
+ * tree. `packageDir` may be stamped from the MAIN checkout while `execRoot`
+ * names the worktree (US-001), and the naive `relative()` then returns an
+ * escaping path ("../../packages/app") that matches no scanned file — silently
+ * dropping EVERY reverse-dep candidate rather than merely widening the scan.
+ *
+ * An escaping result therefore means "no usable package frame", and the
+ * caller skips the filter. Failing open is deliberate: a wider neighbour set
+ * is a recall cost the consumer can absorb, while a silently empty one is the
+ * stale-or-absent-context defect this provider exists to prevent.
+ */
+function packageScopeRelative(execRoot: string, packageDir: string): string {
+  if (!packageDir) return "";
+  // A relative packageDir is already in the scan frame (it is a repo-relative
+  // key); relative() against it would resolve the second argument against the
+  // process cwd instead, so pass it through untouched.
+  const rel = isAbsolute(packageDir) ? relative(execRoot, packageDir) : packageDir;
+  const normalized = rel.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (normalized === "" || normalized === "." || normalized.startsWith("..")) return "";
+  return normalized;
+}
+
+/**
  * Collect neighbors for a single file: forward deps (JS/TS only), reverse deps
  * (language-aware glob, configurable cap), and sibling tests (ADR-009 SSOT).
  *
@@ -223,7 +249,10 @@ function scanDirectory(
  * when `neighborScope === "package"`, candidate files outside `packageDir`
  * (relative to execRoot) are dropped — the scan glob still runs at
  * execRoot so worktree-only neighbours stay in scope (AC3), but cross-
- * package importers do not leak into the chunk (AC5).
+ * package importers do not leak into the chunk (AC5). The relative package
+ * path is derived by `packageScopeRelative`, which yields "" (filter
+ * skipped) rather than a path that cannot match, so a packageDir in a
+ * different frame cannot silently empty the neighbour set.
  *
  * Accepts pre-scanned directory results and a shared content cache so that the
  * glob and file reads are not repeated across touched files in one fetch().
@@ -242,7 +271,7 @@ async function collectNeighbors(
   // partition of the scan root itself. The relative packageDir is computed
   // here so the same `srcFile` strings the glob returns can be matched
   // without a second join.
-  const relPackageDir = neighborScope === "package" ? relative(execRoot, packageDir).replace(/\\/g, "/") : "";
+  const relPackageDir = neighborScope === "package" ? packageScopeRelative(execRoot, packageDir) : "";
   const packagePrefix = relPackageDir.endsWith("/") ? relPackageDir : `${relPackageDir}/`;
   // Forward/reverse deps use independent budgets so import-heavy files can't
   // starve the reverse-dep scan (#1611).
