@@ -92,8 +92,8 @@ Error: Stack overflow
 
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].stackTrace).toHaveLength(5);
-    expect(result.failures[0].stackTrace[0]).toBe("at line1 (/path/to/file.ts:1:1)");
-    expect(result.failures[0].stackTrace[4]).toBe("at line5 (/path/to/file.ts:5:5)");
+    expect(result.failures[0].stackTrace?.[0]).toBe("at line1 (/path/to/file.ts:1:1)");
+    expect(result.failures[0].stackTrace?.[4]).toBe("at line5 (/path/to/file.ts:5:5)");
   });
 
   test("handles empty/malformed input", () => {

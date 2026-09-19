@@ -18,7 +18,11 @@ import type { Finding } from "../types";
 const MAX_FRAMES_IN_MESSAGE = 2;
 
 export function testFailureToFinding(failure: TestFailure): Finding {
-  const frames = failure.stackTrace.slice(0, MAX_FRAMES_IN_MESSAGE);
+  // `stackTrace` is typed required on `TestFailure`, but e2e fixtures and
+  // construction sites outside the parser populate the field as undefined
+  // via narrow structurally-typed object literals (#2150). The adapter is a
+  // boundary — defend against missing frames rather than throwing here.
+  const frames = (failure.stackTrace ?? []).slice(0, MAX_FRAMES_IN_MESSAGE);
   const message = frames.length > 0 ? `${failure.error}\n${frames.join("\n")}` : failure.error;
 
   return {

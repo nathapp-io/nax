@@ -57,6 +57,22 @@ describe("testFailureToFinding", () => {
     expect(f.message.endsWith("\n")).toBe(false);
   });
 
+  test("a failure with stackTrace left undefined renders the message alone (no crash, no stray newline)", () => {
+    // e2e fixtures (#2150) build TestFailure-shaped objects via narrow
+    // structurally-typed object literals that omit `stackTrace`. The adapter
+    // is a boundary and must defend against that shape — if it dereferenced
+    // `failure.stackTrace` directly, the full-suite-rectify path crashes
+    // with "stackTrace.slice of undefined". Pin the forgiving behaviour.
+    const partial: TestFailure = {
+      file: BASE.file,
+      testName: BASE.testName,
+      error: BASE.error,
+    };
+    const f = testFailureToFinding(partial);
+    expect(f.message).toBe(BASE.error);
+    expect(f.message.endsWith("\n")).toBe(false);
+  });
+
   test("file, rule, source, severity and category are unchanged", () => {
     const f = testFailureToFinding(BASE);
     expect(f.file).toBe(BASE.file);

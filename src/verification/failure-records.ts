@@ -15,12 +15,16 @@ function truncateUnmappedFailureOutput(output: string): string {
 
 export function buildFailureRecords(testSummary: TestSummary, rawOutput?: string): FailureRecord[] {
   if (testSummary.failures.length > 0) {
-    return testSummary.failures.map((failure) => ({
-      test: failure.testName,
-      file: failure.file,
-      message: failure.error,
-      output: failure.stackTrace.length > 0 ? failure.stackTrace.join("\n") : undefined,
-    }));
+    return testSummary.failures.map((failure) => {
+      // `stackTrace` is optional (#2150) — defend at this rendering boundary.
+      const stackTrace = failure.stackTrace ?? [];
+      return {
+        test: failure.testName,
+        file: failure.file,
+        message: failure.error,
+        output: stackTrace.length > 0 ? stackTrace.join("\n") : undefined,
+      };
+    });
   }
 
   if (testSummary.failed === 0) {

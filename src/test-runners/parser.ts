@@ -425,7 +425,9 @@ export function formatFailureSummary(failures: TestFailure[], maxChars = 2000): 
 
     const header = `${num}. ${failure.file} > ${failure.testName}`;
     const errorLine = `   Error: ${failure.error}`;
-    const stackLine = failure.stackTrace.length > 0 ? `   ${failure.stackTrace[0]}` : "";
+    // `stackTrace` is optional (#2150) — defend at this rendering boundary.
+    const stackTrace = failure.stackTrace ?? [];
+    const stackLine = stackTrace.length > 0 ? `   ${stackTrace[0]}` : "";
 
     const blockLines = [header, errorLine];
     if (stackLine) blockLines.push(stackLine);

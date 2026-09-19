@@ -299,8 +299,8 @@ FAIL
     expect(result.failures[0].testName).toBe("TestFoo");
     expect(result.failures[0].error).toBe("first error");
     expect(result.failures[0].stackTrace).toHaveLength(2);
-    expect(result.failures[0].stackTrace[0]).toBe("foo_test.go:20: first error");
-    expect(result.failures[0].stackTrace[1]).toBe("foo_test.go:21: second error");
+    expect(result.failures[0].stackTrace?.[0]).toBe("foo_test.go:20: first error");
+    expect(result.failures[0].stackTrace?.[1]).toBe("foo_test.go:21: second error");
 
     expect(result.failures[1].testName).toBe("TestBar");
     expect(result.failures[1].file).toBe("bar_test.go");
