@@ -14,9 +14,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  checkIgnoreRuleStatus,
   findTrackedNaxArtifacts,
   formatTrackedNaxArtifactsReport,
-  isIgnoredByRepo,
 } from "@scripts/check-nax-artifacts-untracked";
 
 const tempDirs: string[] = [];
@@ -113,7 +113,7 @@ describe("formatTrackedNaxArtifactsReport", () => {
   // never committed, only staged. The message must say which case actually
   // holds, per violating path.
   test("when the ignore rule is missing, says so and points at nax's reconcile / nax init — not git rm --cached alone", () => {
-    const report = formatTrackedNaxArtifactsReport([".nax/scratchpad/notes.md"], () => false);
+    const report = formatTrackedNaxArtifactsReport([".nax/scratchpad/notes.md"], () => "missing");
 
     expect(report).toContain("have no ignore rule yet");
     expect(report).toContain("nax init");
@@ -121,7 +121,7 @@ describe("formatTrackedNaxArtifactsReport", () => {
   });
 
   test("when the ignore rule is already in place, says the file is merely still in the index", () => {
-    const report = formatTrackedNaxArtifactsReport([".nax/features/demo/status.json"], () => true);
+    const report = formatTrackedNaxArtifactsReport([".nax/features/demo/status.json"], () => "in-place");
 
     expect(report).toContain("already have an ignore rule in place");
     expect(report).toContain("does not");
@@ -132,7 +132,7 @@ describe("formatTrackedNaxArtifactsReport", () => {
   test("a mixed set reports both cases, each with its own count", () => {
     const report = formatTrackedNaxArtifactsReport(
       [".nax/features/demo/status.json", ".nax/scratchpad/notes.md"],
-      (path) => path === ".nax/features/demo/status.json",
+      (path) => (path === ".nax/features/demo/status.json" ? "in-place" : "missing"),
     );
 
     expect(report).toContain("1 already have an ignore rule in place");
@@ -148,20 +148,26 @@ describe("formatTrackedNaxArtifactsReport", () => {
     expect(report).toContain("have no ignore rule yet");
     expect(report).not.toContain("already have an ignore rule in place");
   });
+
+  // Critical 2 (code review): "unknown" is its own bucket. It must never be
+  // folded into "missing" (that would recommend adding a rule that might
+  // already exist) or "in-place" (that would recommend `git rm --cached` on
+  // a status nobody actually confirmed).
+  test("an unresolved status gets its own bucket, and recommends neither remedy outright", () => {
+    const report = formatTrackedNaxArtifactsReport([".nax/scratchpad/notes.md"], () => "unknown");
+
+    expect(report).toContain("could not be checked");
+    expect(report).toContain("check-ignore");
+    expect(report).not.toContain("already have an ignore rule in place");
+    expect(report).not.toContain("have no ignore rule yet");
+  });
 });
 
-describe("isIgnoredByRepo", () => {
-  test("is true for a path an active .gitignore rule covers", () => {
-    const root = makeRepo({});
-    writeFileSync(join(root, ".gitignore"), "**/.nax/scratchpad/\n", "utf8");
-
-    expect(isIgnoredByRepo(root, ".nax/scratchpad/notes.md")).toBe(true);
-  });
-
-  test("is false for a path no ignore rule covers", () => {
+describe("checkIgnoreRuleStatus", () => {
+  test("is 'missing' for a path no ignore rule covers", () => {
     const root = makeRepo({});
 
-    expect(isIgnoredByRepo(root, ".nax/scratchpad/notes.md")).toBe(false);
+    expect(checkIgnoreRuleStatus(root, ".nax/scratchpad/notes.md")).toBe("missing");
   });
 
   test("does not false-positive on a path that merely looks similar to an ignored one", () => {
@@ -171,14 +177,57 @@ describe("isIgnoredByRepo", () => {
     const root = makeRepo({});
     writeFileSync(join(root, ".gitignore"), "**/.nax/scratchpad/\n", "utf8");
 
-    expect(isIgnoredByRepo(root, "packages/app/.nax/scratchpad-backup/x")).toBe(false);
+    expect(checkIgnoreRuleStatus(root, "packages/app/.nax/scratchpad-backup/x")).toBe("missing");
   });
 
-  test("is true for a path covered only by .git/info/exclude (worktree reconcile)", () => {
+  test("is 'in-place' for a path covered only by .git/info/exclude (worktree reconcile)", () => {
     const root = makeRepo({});
     mkdirSync(join(root, ".git", "info"), { recursive: true });
     writeFileSync(join(root, ".git", "info", "exclude"), "**/.nax/scratchpad/\n", "utf8");
 
-    expect(isIgnoredByRepo(root, ".nax/scratchpad/notes.md")).toBe(true);
+    expect(checkIgnoreRuleStatus(root, ".nax/scratchpad/notes.md")).toBe("in-place");
+  });
+
+  // Critical 2 (code review): every real call site passes a path from
+  // findTrackedNaxArtifacts, which only ever returns TRACKED paths — but the
+  // original implementation was missing --no-index, and git check-ignore does
+  // NOT report a tracked file as ignored without it, so the "in-place" branch
+  // was unreachable in production. This test drives the real failure
+  // condition (a genuinely tracked file), not the untracked happy path the
+  // earlier version of this suite exercised.
+  test("is 'in-place' for a TRACKED file a .gitignore rule covers — the real call-site shape", () => {
+    const root = makeRepo({ ".nax/scratchpad/notes.md": "scratch note\n" });
+    writeFileSync(join(root, ".gitignore"), "**/.nax/scratchpad/\n", "utf8");
+    git(root, "add", ".gitignore");
+    // Confirm the fixture actually reproduces the call-site shape: the file
+    // must be tracked, or this test proves nothing.
+    expect(findTrackedNaxArtifacts(root)).toContain(".nax/scratchpad/notes.md");
+
+    expect(checkIgnoreRuleStatus(root, ".nax/scratchpad/notes.md")).toBe("in-place");
+
+    // And the report built from that status recommends the ONE correct
+    // remedy for a tracked-plus-ignored file: untrack it. It must not claim
+    // the rule is missing.
+    const report = formatTrackedNaxArtifactsReport([".nax/scratchpad/notes.md"], (path) =>
+      checkIgnoreRuleStatus(root, path),
+    );
+    expect(report).toContain("already have an ignore rule in place");
+    expect(report).toContain("git rm --cached");
+    expect(report).not.toContain("have no ignore rule yet");
+  });
+
+  test("is 'unknown' for a fatal git error (path escapes the repo)", () => {
+    const root = makeRepo({});
+
+    // check-ignore rejects a pathspec that resolves outside the repository
+    // with a fatal error (exit 128) — not "not ignored".
+    expect(checkIgnoreRuleStatus(root, "../../etc/passwd")).toBe("unknown");
+  });
+
+  test("is 'unknown', not 'missing', when git itself cannot answer (not a repo at all)", () => {
+    const notARepo = mkdtempSync(join(tmpdir(), "nax-artifacts-not-a-repo-"));
+    tempDirs.push(notARepo);
+
+    expect(checkIgnoreRuleStatus(notARepo, "anything.txt")).toBe("unknown");
   });
 });

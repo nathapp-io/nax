@@ -36,6 +36,12 @@ export function buildCommitArgvs(
   return { add, commit: ["commit", "-m", message] };
 }
 
+/** One unresolved path, and why `partitionNaxOwnedPaths` could not classify it. */
+export interface UnknownPathResult {
+  path: string;
+  reason: string;
+}
+
 /**
  * Split `paths` into ones GitCommit may stage and ones it must refuse, per
  * `NAX_GITIGNORE_ENTRIES` -- the same SSOT `nax init`, `WorktreeManager`, and
@@ -56,9 +62,31 @@ export function buildCommitArgvs(
  * re-implementing pattern matching. `--no-index` is required: a path GitCommit
  * is being asked to stage for the first time is not yet in the index, and
  * `check-ignore` without it can decline to answer for such a path.
+ *
+ * THREE-STATE, fail-closed (code review, post-Fix-3): `git check-ignore`
+ * exits 0 (ignored), 1 (not ignored) or 128 (fatal -- e.g. path outside the
+ * repo, or not a git repo at all). `gitWithTimeout` additionally collapses a
+ * hung subprocess to `exitCode: 1` with `timedOut: true` -- so `exitCode ===
+ * 1` ALONE is not "not ignored", it is ALSO what a timeout looks like. Reading
+ * it as "not ignored" without checking `timedOut` first put a nax-owned path
+ * straight into `kept` on any error or timeout: fail-OPEN, silently, exactly
+ * the class of bug this tool exists to prevent -- and under exactly the
+ * contention (parallel worktrees stressing git) most likely to produce one.
+ * A path that cannot be classified goes to neither `kept` nor `skipped`; it
+ * is reported by the caller, loudly, as its own category.
+ *
+ * One `check-ignore` subprocess per path (not batched into one call): batching
+ * would collapse this exact three-state distinction, since git's exit code for
+ * a multi-path invocation reflects "at least one path matched", not a per-path
+ * verdict, and a single fatal path (exit 128) would poison every other path in
+ * the batch as unknown even when they are perfectly answerable individually.
+ * Fine for the batch sizes a single commit call names.
  */
-async function partitionNaxOwnedPaths(root: string, paths: string[]): Promise<{ kept: string[]; skipped: string[] }> {
-  if (paths.length === 0) return { kept: [], skipped: [] };
+async function partitionNaxOwnedPaths(
+  root: string,
+  paths: string[],
+): Promise<{ kept: string[]; skipped: string[]; unknown: UnknownPathResult[] }> {
+  if (paths.length === 0) return { kept: [], skipped: [], unknown: [] };
 
   const excludeDir = mkdtempSync(join(tmpdir(), "nax-commit-filter-"));
   const excludeFile = join(excludeDir, "exclude");
@@ -70,17 +98,30 @@ async function partitionNaxOwnedPaths(root: string, paths: string[]): Promise<{ 
         // which `scripts/check-nax-artifacts-untracked.ts` uses) -- pointing
         // `core.excludesFile` at the temp file via `-c` is the documented way
         // to feed it an arbitrary pattern list.
-        const { exitCode } = await gitWithTimeout(
+        const { exitCode, timedOut, stderr } = await gitWithTimeout(
           ["-c", `core.excludesFile=${excludeFile}`, "check-ignore", "--no-index", "-q", "--", path],
           root,
         );
-        return { path, ignored: exitCode === 0 };
+        if (timedOut) return { path, status: "unknown" as const, reason: "git check-ignore timed out" };
+        if (exitCode === 0) return { path, status: "ignored" as const };
+        if (exitCode === 1) return { path, status: "not-ignored" as const };
+        const detail = stderr.trim();
+        return {
+          path,
+          status: "unknown" as const,
+          reason: `git check-ignore exited ${exitCode}${detail ? `: ${detail}` : ""}`,
+        };
       }),
     );
     const kept: string[] = [];
     const skipped: string[] = [];
-    for (const { path, ignored } of results) (ignored ? skipped : kept).push(path);
-    return { kept, skipped };
+    const unknown: UnknownPathResult[] = [];
+    for (const result of results) {
+      if (result.status === "ignored") skipped.push(result.path);
+      else if (result.status === "not-ignored") kept.push(result.path);
+      else unknown.push({ path: result.path, reason: result.reason });
+    }
+    return { kept, skipped, unknown };
   } finally {
     rmSync(excludeDir, { recursive: true, force: true });
   }
@@ -113,18 +154,31 @@ export const gitCommitTool: CodingTool = {
     const rawPaths = Array.isArray(input.paths) ? input.paths : [];
     let effectiveInput = input;
     let skipped: string[] = [];
+    let unknown: UnknownPathResult[] = [];
     if (rawPaths.length > 0 && rawPaths.every((path) => typeof path === "string")) {
       const partition = await partitionNaxOwnedPaths(ctx.root, rawPaths as string[]);
       skipped = partition.skipped;
-      if (skipped.length > 0) {
-        if (partition.kept.length === 0) {
-          return {
-            content: `Every supplied path is a nax-owned run artifact and was not staged: ${skipped.join(", ")}`,
-            isError: true,
-          };
+      unknown = partition.unknown;
+      // Fail CLOSED: an unresolved path is refused, exactly like a nax-owned
+      // one -- it never reaches `kept`, so it can never reach `git add`.
+      if (partition.kept.length === 0) {
+        const refusals: string[] = [];
+        if (skipped.length > 0) {
+          refusals.push(`${skipped.length} nax-owned run artifact(s), not staged: ${skipped.join(", ")}`);
         }
-        effectiveInput = { ...input, paths: partition.kept };
+        if (unknown.length > 0) {
+          refusals.push(
+            `${unknown.length} path(s) whose ignore status could not be determined, refused to stage them: ${unknown
+              .map((u) => `${u.path} (${u.reason})`)
+              .join("; ")}`,
+          );
+        }
+        return {
+          content: `Nothing was staged -- every supplied path was refused: ${refusals.join("; ")}`,
+          isError: true,
+        };
       }
+      effectiveInput = { ...input, paths: partition.kept };
     }
 
     const built = buildCommitArgvs(effectiveInput);
@@ -141,10 +195,18 @@ export const gitCommitTool: CodingTool = {
         isError: true,
       };
     }
-    const skipNote =
-      skipped.length > 0
-        ? `\n\n[nax] Skipped ${skipped.length} nax-owned run artifact(s) -- not staged: ${skipped.join(", ")}`
-        : "";
+    const notes: string[] = [];
+    if (skipped.length > 0) {
+      notes.push(`[nax] Skipped ${skipped.length} nax-owned run artifact(s) -- not staged: ${skipped.join(", ")}`);
+    }
+    if (unknown.length > 0) {
+      notes.push(
+        `[nax] REFUSED to stage ${unknown.length} path(s) with an unresolved ignore status (fail-closed): ${unknown
+          .map((u) => `${u.path} (${u.reason})`)
+          .join("; ")}`,
+      );
+    }
+    const skipNote = notes.length > 0 ? `\n\n${notes.join("\n")}` : "";
     return { content: committed.stdout.trim().slice(0, ctx.maxBytes) + skipNote };
   },
 };

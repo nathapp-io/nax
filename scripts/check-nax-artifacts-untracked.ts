@@ -67,6 +67,9 @@ function countByBasename(violations: readonly string[]): Array<[string, number]>
   return [...counts.entries()].sort(([a], [b]) => byCodePoint(a, b));
 }
 
+/** Whether an ignore rule already covers a violating path — three-state, never guessed. */
+export type IgnoreRuleStatus = "in-place" | "missing" | "unknown";
+
 /**
  * Whether `path` is ignored by the repo's REAL ignore rule stack — `.gitignore`
  * plus `.git/info/exclude`, evaluated by git itself — as opposed to the
@@ -79,22 +82,42 @@ function countByBasename(violations: readonly string[]): Array<[string, number]>
  * (only `git rm --cached` fixes it), or a file no ignore rule covers yet
  * (the rule itself is the gap; nax's own run-start reconcile or `nax init`
  * closes it, and only then does `git rm --cached` apply).
+ *
+ * `--no-index` is REQUIRED (code review, post-original-fix): every path this
+ * function is called with is, by construction, tracked (`findTrackedNaxArtifacts`
+ * finds them via `git ls-files -i -c`). Without `--no-index`, `git check-ignore`
+ * does not report a TRACKED file as ignored even when a matching rule exists —
+ * verified in a scratch repo: file tracked + `**\/.nax/scratchpad/` rule present,
+ * `git check-ignore -q` exits 1, `git check-ignore --no-index -q` exits 0. Without
+ * it, the `"in-place"` branch below was unreachable at every real call site, and
+ * the gate always printed "no ignore rule yet" even when the rule existed and
+ * `git rm --cached` was the only correct remedy — the opposite of the accuracy
+ * this function exists to provide.
+ *
+ * THREE-STATE, matching `partitionNaxOwnedPaths` in `src/tools/git-commit.ts`:
+ * exit 0 is `"in-place"`, exit 1 is `"missing"`, and anything else — a fatal
+ * error (128: not a git repo, path outside the repo) or a genuinely unexpected
+ * code — is `"unknown"`. `"unknown"` is never silently folded into `"missing"`;
+ * see {@link formatTrackedNaxArtifactsReport} for what the report does with it.
  */
-export function isIgnoredByRepo(repoRoot: string, path: string): boolean {
-  const proc = Bun.spawnSync(["git", "check-ignore", "-q", "--", path], { cwd: repoRoot });
-  return proc.exitCode === 0;
+export function checkIgnoreRuleStatus(repoRoot: string, path: string): IgnoreRuleStatus {
+  const proc = Bun.spawnSync(["git", "check-ignore", "--no-index", "-q", "--", path], { cwd: repoRoot });
+  if (proc.exitCode === 0) return "in-place";
+  if (proc.exitCode === 1) return "missing";
+  return "unknown";
 }
 
 export function formatTrackedNaxArtifactsReport(
   violations: readonly string[],
-  isRuleInPlace: (path: string) => boolean = () => false,
+  ruleStatus: (path: string) => IgnoreRuleStatus = () => "missing",
 ): string {
   if (violations.length === 0) {
     return "[OK] No tracked file matches a nax gitignore entry";
   }
 
-  const ruleAlreadyInPlace = violations.filter((path) => isRuleInPlace(path));
-  const ruleMissing = violations.filter((path) => !isRuleInPlace(path));
+  const ruleAlreadyInPlace = violations.filter((path) => ruleStatus(path) === "in-place");
+  const ruleMissing = violations.filter((path) => ruleStatus(path) === "missing");
+  const ruleUnknown = violations.filter((path) => ruleStatus(path) === "unknown");
 
   const lines = [
     `[FAIL] ${violations.length} tracked file(s) match a nax gitignore entry`,
@@ -119,6 +142,15 @@ export function formatTrackedNaxArtifactsReport(
       "  git rm --cached -- <paths>",
     );
   }
+  if (ruleUnknown.length > 0) {
+    lines.push(
+      "",
+      `${ruleUnknown.length} could not be checked — \`git check-ignore\` did not give a clear answer`,
+      "(a fatal error, e.g. path outside the repo, or a repo git could not read). Do not assume",
+      "either remedy: run `git check-ignore --no-index -v -- <path>` yourself for each one before",
+      "deciding whether it needs the ignore rule added, `git rm --cached`, or both.",
+    );
+  }
 
   lines.push("", "Per-basename breakdown:");
   for (const [name, count] of countByBasename(violations)) {
@@ -138,7 +170,7 @@ export async function main(): Promise<void> {
     console.error(`[FAIL] ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
-  const report = formatTrackedNaxArtifactsReport(violations, (path) => isIgnoredByRepo(repoRoot, path));
+  const report = formatTrackedNaxArtifactsReport(violations, (path) => checkIgnoreRuleStatus(repoRoot, path));
   if (violations.length > 0) {
     console.error(report);
     process.exit(1);
