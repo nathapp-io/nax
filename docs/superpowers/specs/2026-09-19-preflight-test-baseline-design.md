@@ -63,6 +63,11 @@ LLM session) runs once before the first story:
   `execution.rectification.fullSuiteTimeoutSeconds`). On timeout, non-zero-exit with an
   unparseable output, or a missing test command, it persists an explicit `no-baseline`
   marker with the reason and the run continues. The preflight never blocks a run.
+- `execution.regressionGate.enabled: false` disables the gate entirely (issue #1116,
+  `full-suite-gate.ts`) — a user who turned it off opted out of harness-driven suite
+  runs. The preflight short-circuits under the same flag and persists the
+  `no-baseline` marker with reason `gate-disabled`. (Downstream stays consistent: with
+  the gate off there are no gate failures to label.)
 
 ### 3.2 Roll-forward (reuse, no new runs)
 
@@ -74,6 +79,23 @@ next story's baseline. Steady-state cost: zero extra suite runs.
 
 If a story completes without a usable gate parse (gate skipped, degraded parse), the
 next story gets the `no-baseline` marker rather than a stale or guessed baseline.
+
+### 3.3 Execution modes — roll-forward is sequential-only
+
+Roll-forward assumes a total order of stories. That holds for sequential execution
+(shared isolation, and `storyIsolation: "worktree"`, where each story branches from
+main HEAD after the previous story's merge). It does **not** hold for parallel
+execution (`src/execution/parallel.ts`): stories run in concurrent git worktrees,
+grouped by dependencies and merged in dependency order — "the previous story" is
+undefined.
+
+In parallel mode, a story's baseline is **the capture at its worktree's branch
+point**: the run-start preflight baseline for stories branching from the run's base,
+or — when a dependency group's worktree is created after its dependencies merged — a
+capture at that post-merge ref if one is available, else the run-start baseline. No
+roll-forward between siblings. The *caused by an earlier story in this run* label
+(§5.1) is sequential-only; in parallel mode a failure introduced by a sibling story's
+merge is labeled **unattributed** rather than misattributed.
 
 ## 4. Persistence
 
@@ -107,12 +129,24 @@ is tagged with exactly one label by diffing against the baseline:
 
 - **introduced by your changes** — not in the baseline.
 - **pre-existing at baseRef** — in the story's own baseline.
-- **caused by an earlier story in this run** — story ≥ 2 only: absent from the run's
-  first baseline but present in this story's rolled-forward baseline.
+- **caused by an earlier story in this run** — sequential mode, story ≥ 2 only:
+  absent from the run's first baseline but present in this story's rolled-forward
+  baseline (§3.3: never emitted in parallel mode).
 - **unattributed** — the baseline is the `no-baseline` marker.
 
 Labels only, never filtering. A pre-existing failure an acceptance criterion requires
 fixing must stay visible.
+
+Implementation constraint: the two sites take different types —
+`formatFailingTestsList` takes `Finding[]`, `renderPrioritizedFailures` takes
+`ReviewCheckResult[]`. The baseline diff is computed once, upstream of both (attach
+the label where findings/check results are produced), with each site rendering the
+already-attached label. Do not unify the two types to share a signature.
+
+The *earlier story* label compares this story's rolled-forward baseline against the
+**run's first baseline**, so the run-start (`source: preflight`) artifact must be
+retained for the whole run — roll-forward writes a new per-story artifact and never
+overwrites it.
 
 ### 5.2 Upfront section
 
