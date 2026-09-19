@@ -25,8 +25,7 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
 import { storyPackageDir } from "../utils/path-frame";
-import { MergeEngine, WorktreeManager } from "../worktree";
-import { naxOrphanRefName } from "../worktree/nax-orphan-ref";
+import { MergeEngine, naxOrphanRefName, WorktreeManager } from "../worktree";
 import { handleTierEscalation, verifyEscalationQuotes } from "./escalation";
 import { appendProgress } from "./progress";
 

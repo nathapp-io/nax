@@ -225,6 +225,51 @@ describe("US-002 WorktreeManager — retryable failed worktrees retain ownership
     expect(updateRefDeleteCalls.length).toBe(1);
   });
 
+  test("does not delete a reused user branch when its tip differs from the orphan record", async () => {
+    const calls: string[][] = [];
+    const orphanRef = naxOrphanRefName("US-001");
+    _worktreeManagerDeps.gitWithTimeout = (async (args: string[]) => {
+      calls.push(args);
+      if (args[0] === "worktree" && args[1] === "list") return { exitCode: 0, stdout: "", stderr: "" };
+      if (args[0] === "cat-file") return { exitCode: 0, stdout: "", stderr: "" };
+      if (args[0] === "rev-parse" && args[2] === orphanRef) return { exitCode: 0, stdout: "nax-tip\n", stderr: "" };
+      if (args[0] === "rev-parse") return { exitCode: 0, stdout: "user-tip\n", stderr: "" };
+      if (args[0] === "worktree" && args[1] === "remove") {
+        return { exitCode: 1, stdout: "", stderr: "fatal: '/fake/project/.nax-wt/US-001' is not a working tree" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }) as typeof _worktreeManagerDeps.gitWithTimeout;
+
+    await new WorktreeManager().create("/fake/project", "US-001");
+
+    expect(calls).not.toContainEqual(["branch", "-D", "nax/US-001"]);
+    expect(calls).not.toContainEqual(["update-ref", "-d", "refs/heads/nax/US-001", "nax-tip"]);
+    expect(calls).toContainEqual(["update-ref", "-d", orphanRef]);
+  });
+
+  test("retains the orphan record when atomic branch cleanup fails and the branch remains", async () => {
+    const calls: string[][] = [];
+    const orphanRef = naxOrphanRefName("US-001");
+    _worktreeManagerDeps.gitWithTimeout = (async (args: string[]) => {
+      calls.push(args);
+      if (args[0] === "worktree" && args[1] === "list") return { exitCode: 0, stdout: "", stderr: "" };
+      if (args[0] === "cat-file") return { exitCode: 0, stdout: "", stderr: "" };
+      if (args[0] === "rev-parse") return { exitCode: 0, stdout: "nax-tip\n", stderr: "" };
+      if (args[0] === "worktree" && args[1] === "remove") {
+        return { exitCode: 1, stdout: "", stderr: "fatal: '/fake/project/.nax-wt/US-001' is not a working tree" };
+      }
+      if (args[0] === "update-ref" && args[2] === "refs/heads/nax/US-001") {
+        return { exitCode: 1, stdout: "", stderr: "fatal: cannot lock ref" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }) as typeof _worktreeManagerDeps.gitWithTimeout;
+
+    await new WorktreeManager().create("/fake/project", "US-001");
+
+    expect(calls).toContainEqual(["update-ref", "-d", "refs/heads/nax/US-001", "nax-tip"]);
+    expect(calls).not.toContainEqual(["update-ref", "-d", orphanRef]);
+  });
+
   test("AC-5 (Step-2 path): clears refs/nax/orphan/US-001 when Step 2 removes a live worktree", async () => {
     // The orphan ref exists AND the worktree directory still exists. Step 2's
     // `remove()` succeeds — it removes the worktree AND its branch, setting
