@@ -31,6 +31,7 @@ export {
 } from "./detect";
 export type { Framework } from "./detector";
 export { buildTestFrameworkHint, detectFramework, isTestFile } from "./detector";
+export { parseBunOutput } from "./parse-bun";
 export { parseMochaOutput } from "./parse-mocha";
 export { parseRustTestOutput } from "./parse-rust";
 export { analyzeTestExitCode, formatFailureSummary, parseBunTestOutput, parseTestOutput } from "./parser";
