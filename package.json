@@ -76,7 +76,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@nathapp/nax-ai": "0.1.11",
+    "@nathapp/nax-ai": "0.1.12",
     "chalk": "^5.6.2",
     "commander": "^13.1.0",
     "ink": "^6.7.0",
