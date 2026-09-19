@@ -70,7 +70,10 @@ export interface BaselineEntry {
 ```
 
 Functions (all exported): `writeRunBaseline`, `readRunBaseline`, `writeStoryBaseline`,
-`readStoryBaseline`, `applyBaselineDispositions(findings, storyBaseline, runBaseline)`.
+`readStoryBaseline`, `resolveStoryBaseline(root, featureId, storyId, executionMode)` —
+the one read path consumers use: returns the story artifact in sequential modes and
+the run-start baseline in parallel mode — and
+`applyBaselineDispositions(findings, storyBaseline, runBaseline)`.
 Artifact paths are built with the `featureDir()` helpers from `@/config`
 (`scripts/check-feature-dir-ssot.ts` forbids open-coding them): the run-start baseline
 at the feature root, per-story roll-forward baselines under the feature's `stories/`
@@ -194,6 +197,21 @@ red/green iteration is a different job from full-suite attribution.
 
 In every degraded case the run proceeds; the feature fails open to "no attribution",
 never to a blocked run.
+
+### File-size constraints (the 600-line gate)
+
+`bun run check:file-sizes` blocks growth of grandfathered files and caps new growth at
+600 lines. Two touched files are at or near the limit:
+
+- `src/prompts/builders/rectifier-builder.ts` is **903 lines (grandfathered — may not
+  grow at all)**. US-003's tag rendering for `renderPrioritizedFailures` must not add
+  net lines there: put the tag-formatting helper in
+  `rectifier-builder-helpers.ts` (566/600) or the new baseline module, and keep the
+  edit inside `rectifier-builder.ts` to same-line changes.
+- `src/execution/post-run.ts` is at **596/600**. US-002's roll-forward hook must be a
+  single delegated call into `test-baseline-capture.ts`; if that still breaches the
+  cap, extract an existing self-contained block from `post-run.ts` into a sibling
+  module first.
 
 ## Out of Scope
 
@@ -351,8 +369,9 @@ existing `_postRunDeps` construction sites and builder tests that never call
 - [unit] `applyBaselineDispositions` returns new finding objects with every original
   field preserved, does not mutate its input array or elements, and returns exactly
   one output finding per input finding.
-- [unit] Importing `TestBaseline`, `BaselineEntry`, `BaselineDisposition`, and the five
-  functions from the `src/verification` barrel succeeds and each function is callable.
+- [unit] Importing `TestBaseline`, `BaselineEntry`, `BaselineDisposition`, and the six
+  functions (including `resolveStoryBaseline`) from the `src/verification` barrel
+  succeeds and each function is callable.
 
 ### US-002
 
@@ -387,7 +406,7 @@ existing `_postRunDeps` construction sites and builder tests that never call
 - [unit] A story completing with no usable gate parse writes the next story's baseline
   as a `no-baseline` marker with reason `no-gate-parse`.
 - [unit] In parallel execution mode the roll-forward writer is not invoked, and
-  resolving a story's baseline returns the run-start baseline.
+  `resolveStoryBaseline` returns the run-start baseline instead of a story artifact.
 - [unit] Roll-forward writes for successive stories never overwrite the run-start
   artifact: after two story writes, `readRunBaseline` still returns the original
   `source: "preflight"` value.
