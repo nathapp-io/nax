@@ -15,6 +15,7 @@ import {
   escapeHatchFor,
   exceptionCountWord,
   formatBaselineDispositionTag,
+  formatCheckFinding,
   formatFailingTestsList,
   implementerOwnsTests,
   testEditHeadline,
@@ -522,6 +523,23 @@ describe("formatFailingTestsList — baseline disposition tags (US-003)", () => 
     expect(formatBaselineDispositionTag(unclassified)).toBe("");
     expect(formatBaselineDispositionTag({ ...unclassified, baselineDisposition: "earlier-story" })).toBe(
       " [caused by an earlier story in this run]",
+    );
+  });
+
+  test("formatCheckFinding — omits the line segment when the finding carries none (gate shape)", () => {
+    const gateShaped: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: "test A",
+      file: "test/unit/a.test.ts",
+      message: "err A",
+      baselineDisposition: "pre-existing",
+    };
+
+    expect(formatCheckFinding(gateShaped)).toBe("- [error] test/unit/a.test.ts [pre-existing at baseRef] — err A");
+    expect(formatCheckFinding({ ...gateShaped, line: 42 })).toBe(
+      "- [error] test/unit/a.test.ts:42 [pre-existing at baseRef] — err A",
     );
   });
 

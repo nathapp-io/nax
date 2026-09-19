@@ -532,6 +532,38 @@ describe("resolveStoryBaseline — execution mode", () => {
     const result = await resolveStoryBaseline(tempRoot, "feature-x", "US-XYZ", "sequential");
     expect(result).toBeUndefined();
   });
+
+  test("US-003 — falls back to the run-start capture when no per-story artifact was written", async () => {
+    // The expected state for story 1 (roll-forward starts at story 2) and for
+    // parallel runs, whose stories branch from the run's base ref.
+    const runBaseline = makeCapturedRunBaseline();
+    await writeRunBaseline(tempRoot, "feature-1", runBaseline);
+
+    const result = await resolveStoryBaseline(tempRoot, "feature-1", "US-001", "sequential");
+    expect(result).toEqual(runBaseline);
+  });
+
+  test("US-003 — a corrupt per-story artifact resolves to undefined, not the run-start capture", async () => {
+    // An unparseable artifact is a capture fault: it must classify as
+    // `unattributed` (US-001 AC7/AC15) rather than be replaced by the older
+    // run-start snapshot, whose intervening stories would be re-attributed.
+    await writeRunBaseline(tempRoot, "feature-1", makeCapturedRunBaseline());
+    await writeStoryBaseline(tempRoot, "feature-1", "US-001", makeCapturedStoryBaseline());
+    const storyPath = join(tempRoot, ".nax", "features", "feature-1", "stories", "US-001", "test-baseline.json");
+    await Bun.write(storyPath, "{ not json");
+
+    const result = await resolveStoryBaseline(tempRoot, "feature-1", "US-001", "sequential");
+    expect(result).toBeUndefined();
+  });
+
+  test("US-003 — an explicit no-baseline marker is returned as-is, never the run-start capture", async () => {
+    await writeRunBaseline(tempRoot, "feature-1", makeCapturedRunBaseline());
+    const marker = makeNoBaseline();
+    await writeStoryBaseline(tempRoot, "feature-1", "US-001", marker);
+
+    const result = await resolveStoryBaseline(tempRoot, "feature-1", "US-001", "sequential");
+    expect(result).toEqual(marker);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import type { DeepPartial } from "@test/helpers";
 import {
   assertDefined,
@@ -10,6 +11,7 @@ import {
   makeTestRuntime,
 } from "@test/helpers";
 import type { ConfigSelector, NaxConfig } from "@/config";
+import { featureDir } from "@/config";
 import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
 import { testSummaryToFindings } from "@/findings";
 import type { CallContext, FullSuiteGateDeps, FullSuiteGateInput } from "@/operations";
@@ -491,6 +493,42 @@ describe("fullSuiteGateOp — baseline disposition labeling (US-003)", () => {
   });
 
   test("US-003 — with no baseline artifacts at all the findings read unattributed", async () => {
+    const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    expect(out.status).toBe("failed");
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["unattributed", "unattributed"]);
+  });
+
+  test("US-003 — a roll-forward entry missing from the run start reads earlier-story", async () => {
+    // Both artifacts present: this combination is what the `earlier-story` vs
+    // `pre-existing` refinement is resolved from.
+    await writeRunBaseline(tempRoot, FEATURE_ID, {
+      kind: "captured",
+      source: "preflight",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      entries: [],
+    });
+    await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
+
+    const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    // `test A` was already failing when this story started but was not failing at
+    // the run's base ref — an earlier story broke it, not this one.
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["earlier-story", "introduced"]);
+  });
+
+  test("US-003 — a corrupt per-story artifact reads unattributed rather than the stale run snapshot", async () => {
+    // The run-start capture holds `test A`, so substituting it would label the
+    // finding `pre-existing`; a capture fault must not fabricate attribution.
+    await writeRunBaseline(tempRoot, FEATURE_ID, {
+      kind: "captured",
+      source: "preflight",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      entries: [{ file: "test/a.test.ts", testName: "test A" }],
+    });
+    await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
+    await Bun.write(join(featureDir(tempRoot, FEATURE_ID), "stories", STORY_ID, "test-baseline.json"), "{ not json");
+
     const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
 
     expect(out.status).toBe("failed");

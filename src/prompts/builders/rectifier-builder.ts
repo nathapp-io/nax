@@ -38,8 +38,8 @@ import {
   exceptionCountWord,
   type FailingTestRectificationOptions,
   failingTestRectification,
-  formatBaselineDispositionTag,
   formatCheckErrors,
+  formatCheckFinding,
   formatFailingTestsList,
   mechanicalRectification,
   semanticRectification,
@@ -147,9 +147,7 @@ function renderCheckBlock(check: ReviewCheckResult, opts?: RectifierRenderOpts):
   const blocking = (check.findings ?? []).filter((f) => isBlockingSeverity(f.severity, threshold));
   if (blocking.length > 0) {
     parts.push("Structured findings:\n");
-    for (const f of blocking) {
-      parts.push(`- [${f.severity}] ${f.file}:${f.line}${formatBaselineDispositionTag(f)} — ${f.message}\n`);
-    }
+    parts.push(`${blocking.map(formatCheckFinding).join("\n")}\n`);
   }
 
   return parts.join("\n");

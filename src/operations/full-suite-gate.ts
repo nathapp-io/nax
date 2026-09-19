@@ -31,7 +31,7 @@ import { renderCommandSpec } from "../quality/command-spec";
 import type { TestSummary } from "../test-runners";
 import { errorMessage } from "../utils/errors";
 import { storyPackageDir } from "../utils/path-frame";
-import { applyBaselineDispositions, readRunBaseline, readStoryBaseline } from "../verification";
+import { applyBaselineDispositions, readRunBaseline, resolveStoryBaseline } from "../verification";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -210,15 +210,16 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
 /**
  * Label every structured full-suite failure with its baseline disposition.
  *
- * The story's baseline is its own `roll-forward` artifact when one was written
- * (sequential stories ≥ 2). Otherwise the run-start (`preflight`) capture is
- * inherited — that capture is the parallel-mode story baseline and the baseline
- * of the first story in a run, since roll-forward is sequential-only (design:
- * docs/superpowers/specs/2026-09-19-preflight-test-baseline-design.md §3.3). A
- * `no-baseline` marker is honoured as-is (every finding reads `unattributed`)
- * rather than replaced by the run-start snapshot: that snapshot predates the
- * stories in between, so substituting it would label their failures as this
- * story's.
+ * `resolveStoryBaseline` is the single authority for "which baseline does this
+ * story see?" — the story's own `roll-forward` artifact when one was written,
+ * else the run-start capture (which is the parallel-mode baseline, and the
+ * baseline of a story whose artifact was never written; design:
+ * docs/superpowers/specs/2026-09-19-preflight-test-baseline-design.md §3.2–§3.3).
+ * The gate has no execution-mode signal of its own and needs none: parallel runs
+ * never write a per-story artifact, so both branches resolve to the same
+ * artifact there. A `no-baseline` marker — and an artifact that exists but does
+ * not parse — returns as-is, so those findings read `unattributed` rather than
+ * being measured against the older run-start snapshot.
  *
  * Labels never filter: the result holds exactly one finding per input finding.
  * Absent feature context — or any read failure — degrades to the unlabeled
@@ -229,12 +230,15 @@ async function labelFindingsWithBaseline(input: FullSuiteGateInput, findings: Fi
   const featureId = input.featureName;
   if (!root || !featureId) return findings;
   try {
-    const runBaseline = await readRunBaseline(root, featureId);
-    const storyBaseline = (await readStoryBaseline(root, featureId, input.story.id)) ?? runBaseline;
+    const [storyBaseline, runBaseline] = await Promise.all([
+      resolveStoryBaseline(root, featureId, input.story.id, "sequential"),
+      readRunBaseline(root, featureId),
+    ]);
     return applyBaselineDispositions(findings, storyBaseline, runBaseline);
   } catch (err) {
     getLogger().warn("verify[regression]", "Baseline labeling failed — findings left unlabeled", {
       storyId: input.story.id,
+      packageDir: storyPackageDir(input.story),
       error: errorMessage(err),
     });
     return findings;

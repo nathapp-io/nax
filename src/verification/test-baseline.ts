@@ -14,12 +14,14 @@
  *                           run-start baseline.
  *
  * This module owns artifact IO and pure classification. It does NOT execute
- * tests or capture outputs (US-002); it does NOT attach to gate decisions
- * (US-003); it does NOT render prompts (US-004). All path IO goes through
- * `featureDir()` so feature-tree open-coding stays gated by
- * `scripts/check-feature-dir-ssot.ts`.
+ * tests or capture outputs (US-002); it does NOT attach dispositions to gate
+ * findings (US-003 attaches them at the consuming gate,
+ * `src/operations/full-suite-gate.ts`); it does NOT render prompts (US-004).
+ * All path IO goes through `featureDir()` so feature-tree open-coding stays
+ * gated by `scripts/check-feature-dir-ssot.ts`.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { featureDir } from "@/config";
@@ -135,10 +137,19 @@ export async function readStoryBaseline(
 }
 
 /**
- * The one read path consumers use. Returns the story artifact in sequential
- * modes and the run-start baseline in parallel mode — escalation and fallback
- * swaps rebuild their prompts from this resolved artifact, so they inherit
- * whichever snapshot their session's mode dictates.
+ * The one read path consumers use. Returns the story artifact for sequential
+ * stories that have one, and the run-start baseline otherwise — the run-start
+ * capture is the parallel-mode story baseline, and it is also the baseline of a
+ * story whose per-story artifact was never written (roll-forward only starts at
+ * story 2), so the same rule serves both modes and callers with no execution-mode
+ * signal of their own. Escalation and fallback swaps rebuild their prompts from
+ * this resolved artifact, so they inherit whichever snapshot their session's
+ * mode dictates.
+ *
+ * An artifact that exists but does not parse is NOT treated as absent: a capture
+ * fault must classify as `unattributed` (see `applyBaselineDispositions`) rather
+ * than be replaced by the older run-start snapshot, whose intervening stories
+ * would then be re-attributed to this one.
  */
 export async function resolveStoryBaseline(
   root: string,
@@ -149,7 +160,10 @@ export async function resolveStoryBaseline(
   if (executionMode === "parallel") {
     return readRunBaseline(root, featureId);
   }
-  return readStoryBaseline(root, featureId, storyId);
+  const story = await readStoryBaseline(root, featureId, storyId);
+  if (story !== undefined) return story;
+  if (existsSync(storyBaselinePath(root, featureId, storyId))) return undefined;
+  return readRunBaseline(root, featureId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { basename } from "node:path";
 import {
   assertDefined,
   assertNaxError,
@@ -23,7 +24,7 @@ import {
   makeStory,
   makeTestContext,
 } from "@test/helpers";
-import { DEFAULT_CONFIG, type NaxConfig } from "@/config";
+import { DEFAULT_CONFIG, featureDir, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "@/execution";
 import type { PipelineContext } from "@/pipeline/types";
@@ -294,6 +295,49 @@ describe("assemblePlanInputs - edge cases", () => {
 
     const result = assemblePlanInputs(story, config);
     expect(result.config.agent?.default).toBe("claude");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 — the fullSuiteGate slot must carry the same coordinates the baseline
+// artifact writers use. If any of the three spellings diverges, every gate
+// finding silently degrades to `unattributed` while the suite stays green.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assemblePlanInputsFromCtx — fullSuiteGate baseline coordinates (US-003)", () => {
+  function makeTddCtx(): PipelineContext {
+    const config = makeNaxConfig();
+    const prd = makePRD({ feature: "feat-labels" });
+    return makeTestContext({
+      story: makeStory({ id: "US-001", title: "Test" }),
+      prd,
+      config,
+      rootConfig: config,
+      routing: { ...DEFAULT_TEST_ROUTING, testStrategy: "three-session-tdd", agent: "claude" },
+      projectDir: "/tmp/proj",
+      workdir: "/tmp/repo",
+      featureDir: featureDir("/tmp/proj", prd.feature),
+      prompt: "do the thing",
+      featureContextMarkdown: "feat",
+      constitution: { content: "", tokens: 0, truncated: false },
+    });
+  }
+
+  test("carries the root and feature id the run-start capture and roll-forward write use", async () => {
+    const ctx = makeTddCtx();
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+
+    const gateInput = inputs.fullSuiteGate;
+    assertDefined(gateInput, "inputs.fullSuiteGate");
+    assertDefined(ctx.featureDir, "ctx.featureDir");
+
+    // Run-start capture (runner-execution): root = the run's workdir, featureId = the
+    // CLI feature. Roll-forward write (post-run): root = ctx.projectDir, featureId =
+    // basename(ctx.featureDir) ?? ctx.prd.feature. All three must agree with the
+    // gate's read coordinates — `projectDir` + the feature id.
+    expect(gateInput.projectDir).toBe(ctx.projectDir);
+    expect(gateInput.featureName).toBe(basename(ctx.featureDir));
+    expect(gateInput.featureName).toBe(ctx.prd.feature);
   });
 });
 

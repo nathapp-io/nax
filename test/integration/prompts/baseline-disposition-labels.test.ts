@@ -77,7 +77,8 @@ describe("baseline disposition labels — gate to prompt", () => {
     expect(failingTestPrompt).toContain("- test/unit/a.test.ts [pre-existing at baseRef]");
     expect(failingTestPrompt).toContain("- test/unit/b.test.ts [introduced by your changes]");
 
-    // Surface 2 — the prioritized-failure render.
+    // Surface 2 — the prioritized-failure render, with the shape the gate actually
+    // produces: `file` and `rule`, no `line`.
     const check: ReviewCheckResult = {
       check: "test",
       success: false,
@@ -88,7 +89,8 @@ describe("baseline disposition labels — gate to prompt", () => {
       findings: out.findings,
     };
     const prioritizedPrompt = RectifierPromptBuilder.firstAttemptDelta([check], 2);
-    expect(prioritizedPrompt).toContain("[pre-existing at baseRef]");
-    expect(prioritizedPrompt).toContain("[introduced by your changes]");
+    expect(prioritizedPrompt).toContain("- [error] test/unit/a.test.ts [pre-existing at baseRef] — err A");
+    expect(prioritizedPrompt).toContain("- [error] test/unit/b.test.ts [introduced by your changes] — err B");
+    expect(prioritizedPrompt).not.toContain(":undefined");
   });
 });

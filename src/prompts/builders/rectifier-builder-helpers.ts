@@ -383,11 +383,9 @@ Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${es
 }
 
 /**
- * Bracketed attribution tags for a finding's baseline disposition (US-003),
- * rendered so the rectifier can tell a failure it caused from one that predates
- * the story. The disposition is stamped upstream by `applyBaselineDispositions`
- * (src/verification/test-baseline.ts); wording per the approved design
- * (docs/superpowers/specs/2026-09-19-preflight-test-baseline-design.md §5.1).
+ * Bracketed attribution tags for a finding's baseline disposition (US-003).
+ * Wording follows the approved design spec §5.1 — see
+ * docs/superpowers/specs/2026-09-19-preflight-test-baseline-design.md.
  */
 const BASELINE_DISPOSITION_TAGS: Record<BaselineDisposition, string> = {
   introduced: "[introduced by your changes]",
@@ -396,14 +394,19 @@ const BASELINE_DISPOSITION_TAGS: Record<BaselineDisposition, string> = {
   unattributed: "[unattributed — no baseline available]",
 };
 
-/**
- * `" <tag>"` for a finding that carries a `baselineDisposition`, and `""`
- * otherwise — the empty string is what keeps findings from producers that do
- * not classify against a baseline byte-identical to their pre-US-003 output.
- */
+/** `" <tag>"` for a finding carrying a `baselineDisposition`, `""` otherwise —
+ *  the empty string keeps unclassified findings byte-identical (US-003 AC3). */
 export function formatBaselineDispositionTag(finding: Finding): string {
   const disposition = finding.baselineDisposition;
   return disposition ? ` ${BASELINE_DISPOSITION_TAGS[disposition]}` : "";
+}
+
+/** One structured-finding bullet for a check block: severity, `file:line` — or
+ *  `file` alone when no line is known (gate findings carry none) — the baseline
+ *  disposition tag when attached, then the message. */
+export function formatCheckFinding(finding: Finding): string {
+  const location = typeof finding.line === "number" ? `${finding.file}:${finding.line}` : finding.file;
+  return `- [${finding.severity}] ${location}${formatBaselineDispositionTag(finding)} — ${finding.message}`;
 }
 
 /**
