@@ -1,4 +1,5 @@
 {
+  "name": "nax",
   "version": 1,
   "precheck": {
     "storySizeGate": {
