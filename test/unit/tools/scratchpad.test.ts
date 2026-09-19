@@ -438,6 +438,33 @@ describe("AC12: ScratchpadRead on a file larger than maxBytes returns at most ma
     expect(result.isError).toBeFalsy();
     expect(Buffer.byteLength(result.content, "utf8")).toBeLessThanOrEqual(maxBytes);
   });
+
+  // Discriminating boundary: the spec AC-11 wording is "Calling ScratchpadRead
+  // THROUGH callTool ...". The per-tool tests above exercise the unit; this
+  // one drives the runtime's callTool path, which constructs the
+  // ToolRunContext and forwards to the tool's run. A regression that broke
+  // the runtime's ctx plumbing (e.g. dropped maxBytes) would surface here
+  // but be invisible to the unit-level tests.
+  test("runtime.callTool('ScratchpadRead', ...) returns content byte-length <= maxBytes when the file is larger", async () => {
+    const maxBytes = 32;
+    const fileBytes = "z".repeat(maxBytes * 4);
+    mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
+    writeFileSync(join(root, ".nax", "scratchpad", "big.md"), fileBytes);
+
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy(
+        ["ScratchpadWrite", "ScratchpadRead", "ScratchpadList"].map((tool) => ({ tool, patterns: ["*"] })),
+        root,
+      ),
+      maxBytes,
+    });
+
+    const outcome = await rt.callTool("ScratchpadRead", { path: "big.md" });
+    expect(outcome.kind).toBe("ok");
+    if (outcome.kind === "ok") {
+      expect(Buffer.byteLength(outcome.content, "utf8")).toBeLessThanOrEqual(maxBytes);
+    }
+  });
 });
 
 /**
