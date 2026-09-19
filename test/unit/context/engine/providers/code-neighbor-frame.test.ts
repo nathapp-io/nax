@@ -257,8 +257,17 @@ describe("CodeNeighborProvider — execRoot thread-through (nax#2134)", () => {
         "/repo/.nax-wt/US-001/packages/app/src/index.test.ts": "",
       },
       {
-        // The package-scoped glob runs at execRoot (the worktree) and lists
-        // every file the worktree story has, including the sibling test.
+        // US-001: scanRoot derives from execRoot. The glob mock returns the
+        // worktree's package dir contents regardless of whether the worktree
+        // root or the package dir is the scan cwd (both resolve to the same
+        // file set for the reverse-dep probe). The sibling-test probe also
+        // runs fileExists against execRoot.
+        "/repo/.nax-wt/US-001": [
+          "packages/app/src/index.ts",
+          "packages/app/src/worktree-dep.ts",
+          "packages/app/src/user.ts",
+          "packages/app/src/index.test.ts",
+        ],
         "/repo/.nax-wt/US-001/packages/app": [
           "src/index.ts",
           "src/worktree-dep.ts",
@@ -383,14 +392,13 @@ describe("CodeNeighborProvider — execRoot thread-through (nax#2134)", () => {
 });
 
 describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () => {
-  // parseImportSpecifiers keeps only "."-prefixed specifiers, so a real
-  // cross-package import is never collected and the sibling scan could only
-  // ever produce false matches. It must not run, and must not be paid for.
-  test("package scope globs only the story's own package, never a sibling", async () => {
+  // US-001: scanRoot derives from execRoot (which falls back to repoRoot when
+  // unset). The reverse-dep glob runs once at that single root — a partition
+  // by neighbour-scope option was the pre-US-001 shape that left
+  // worktree-only neighbours out of scope (nax#2134).
+  test("reverse-dep glob runs once at execRoot — single scan root, not partitioned by neighbour-scope", async () => {
     const globbedRoots: string[] = [];
     const globByCwd: Record<string, string[]> = {
-      "/repo/packages/app": ["src/index.ts"],
-      "/repo/packages/lib": ["src/helper.ts"],
       "/repo": ["packages/app/src/index.ts", "packages/lib/src/helper.ts"],
     };
     setupDeps({ "/repo/packages/app/src/index.ts": "export const app = 1;" }, globByCwd);
@@ -404,6 +412,6 @@ describe("CodeNeighborProvider — cross-package scan removal (nax#2074)", () =>
 
     await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["packages/app/src/index.ts"] }));
 
-    expect(globbedRoots).toEqual(["/repo/packages/app"]);
+    expect(globbedRoots).toEqual(["/repo"]);
   });
 });

@@ -213,9 +213,9 @@ describe("contextStage — producer pins execRoot (US-001)", () => {
     });
     const capture = captureContextRequest();
 
-    // The local `makeCtx` factory (defined above) does not set `runtime` —
-    // it returns the pull-tool-handler shape (no story, no runtime, no
-    // packageView), so execRoot stays unset.
+    // Pull-tool handlers carry no story and no packageView — their
+    // ContextRequest must NOT carry execRoot, so consumers fall back to
+    // repoRoot (today's behaviour).
     const ctx = makeCtx(story, "/repo");
     ctx.packageView = undefined;
 

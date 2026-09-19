@@ -357,15 +357,14 @@ export class CodeNeighborProvider implements IContextProvider {
     // worktree root, not the main checkout. Producers that do not have a
     // story (pull-tool handlers) omit execRoot and fall back to repoRoot —
     // today's behaviour. The scanRoot for the reverse-dep glob derives from
-    // the SAME root so a worktree-only neighbour is findable.
+    // the SAME root (the spec's literal "scanRoot is derived from the same
+    // root"), so a worktree-only neighbour is always in scope regardless of
+    // the neighbour-scope option.
     const execRoot = request.execRoot ?? request.repoRoot;
-    // The scan root: where the reverse-dep glob runs. Under "package" scope
-    // we use `packageDir`, which under worktree isolation is the worktree's
-    // package directory (iteration-runner.ts/parallel-worker.ts resolve
-    // `ctx.workdir` to the story's package dir inside the worktree), so a
-    // worktree-only reverse-dependent file is in scope by construction. Under
-    // "repo" scope we use execRoot so the wider scan reaches the same tree.
-    const scanRoot = this.neighborScope === "package" ? request.packageDir : execRoot;
+    // The scan root: where the reverse-dep glob runs. Per spec US-001 the
+    // scanRoot derives from execRoot; the neighborScope option becomes a
+    // filter applied after the scan rather than a partition of the scan root.
+    const scanRoot = execRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }

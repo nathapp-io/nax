@@ -411,13 +411,16 @@ describe("CodeNeighborProvider — AC-56 neighborScope", () => {
     return captured;
   }
 
-  test("neighborScope selects the single scan root: package (default) vs repo", async () => {
-    // default: package scope → the story's own packageDir only
+  test("neighborScope: scanRoot always derives from execRoot (US-001)", async () => {
+    // US-001: scanRoot is derived from execRoot, not partitioned by
+    // neighborScope. Under shared isolation execRoot falls back to repoRoot,
+    // so both scopes scan the same tree (the legacy partition was a
+    // packageDir-rooted scan that missed worktree-only neighbours when the
+    // request was built without an execRoot field).
     const cwds1 = captureGlobCwds();
     await new CodeNeighborProvider().fetch(MONOREPO_REQUEST);
-    expect(cwds1).toEqual(["/repo/packages/api"]);
+    expect(cwds1).toEqual(["/repo"]);
 
-    // repo scope → repoRoot only
     const cwds2 = captureGlobCwds();
     await new CodeNeighborProvider({ neighborScope: "repo" }).fetch(MONOREPO_REQUEST);
     expect(cwds2).toEqual(["/repo"]);

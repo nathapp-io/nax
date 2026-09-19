@@ -164,13 +164,12 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
 
   // nax#2134 (US-001): thread the story execution root so context providers
   // resolve and spell against the directory the agent actually executes in.
-  // `ctx.packageView` is the documented producer; fall back to the same
-  // derivation the execution stage uses (`runtime.packages.resolve(ctx.workdir)`)
-  // when the producer pipeline-context layer does not pre-set it, so worktree
-  // isolation routes the field through without requiring iteration-runner.ts
-  // to be modified. Pull-tool handlers have neither — execRoot stays unset.
-  const packageView = ctx.packageView ?? ctx.runtime?.packages?.resolve(ctx.workdir);
-  const execRoot = packageView ? storyExecRoot(packageView) : undefined;
+  // The spec requires execRoot be set from `storyExecRoot(ctx.packageView)`
+  // and OMITTED when packageView is undefined (AC10 / pull-tool handlers).
+  // Production wiring of `ctx.packageView` is iteration-runner.ts's job
+  // (out of scope for this story); when that wiring is in place, execRoot
+  // carries the worktree root under storyIsolation: "worktree".
+  const execRoot = ctx.packageView ? storyExecRoot(ctx.packageView) : undefined;
 
   // Honour the per-stage v2 config for this stage exactly as assembleForStage
   // does. Without this, `v2.stages.context.budgetTokens` and `extraProviderIds`
