@@ -384,17 +384,19 @@ describe("makeParseRetryStrategy", () => {
   });
 
   // AC-12: Documentation example correctness
-  // Bug found by adversarial review: retry-strategy.md:118 uses `parser:` (wrong),
-  // `nextPrompt:` (wrong), and omits required `validate:` and `reviewerKind:` fields.
+  // Bug found by adversarial review: the example used `parser:` (wrong),
+  // `nextPrompt:` (wrong), and omitted required `validate:` and `reviewerKind:` fields.
   // These tests assert the spec-correct API surface in the documentation example.
-  describe("AC-12: retry-strategy.md example uses correct makeParseRetryStrategy API", () => {
-    const ruleFilePath = join(__dirname, "../../../../.claude/rules/retry-strategy.md");
+  // The example moved out of .nax/rules/retry-strategy.md into the guide when the rule
+  // was trimmed to prohibitions; the guard follows the artifact it guards.
+  describe("AC-12: retry-strategy guide example uses correct makeParseRetryStrategy API", () => {
+    const ruleFilePath = join(__dirname, "../../../../docs/guides/retry-strategy.md");
 
     async function extractMakeParseRetryExample(): Promise<string> {
       const content = await Bun.file(ruleFilePath).text();
       const startMarker = "makeParseRetryStrategy({";
       const start = content.indexOf(startMarker);
-      if (start === -1) throw new Error("makeParseRetryStrategy example not found in retry-strategy.md");
+      if (start === -1) throw new Error("makeParseRetryStrategy example not found in docs/guides/retry-strategy.md");
       // Find closing }) that ends the outer call
       const end = content.indexOf("}),", start);
       if (end === -1) throw new Error("Could not find end of makeParseRetryStrategy example");

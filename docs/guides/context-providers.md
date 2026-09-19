@@ -56,3 +56,19 @@ A monorepo with a large Go backend package can narrow the scan and raise the cap
 ```
 
 If `sourceGlob` is omitted from the per-package config, the glob is still auto-derived from the package's detected language.
+
+## Provider scope — why there is no `cross-package` scope
+
+Moved out of `.nax/rules/monorepo-awareness.md` §7, which retains the rule itself.
+
+`CodeNeighborProvider`'s sibling scan was removed in nax#2074: it parsed only relative
+import specifiers, so it could not find a true cross-package dependent, and it compared
+paths across two roots. A provider that must see another package sets its scan root to
+`repoRoot` and re-spells every emitted path for the consumer (`src/utils/path-frame.ts`).
+
+`GitHistoryProvider` is repo-scoped even though it serves a package-contained story:
+`git log` runs at `repoRoot` against repo-rooted pathspecs (nax#2088), and its
+`historyScope` option is a **post-filter** over those entries — `"package"` drops entries
+outside the story's package, `"repo"` keeps them — not a workdir switch. A chunk heading is
+re-spelled package-relative because it is rendered into the agent's prompt; `scopePaths`
+stay repo-rooted to match the repo-framed diff.

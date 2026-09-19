@@ -66,25 +66,8 @@ An "orphan prompt" is any function or template string outside `src/prompts/build
 - Contains `You are`, `## Instructions`, `Fix `, `Your task`, `IMPORTANT:`, or similar instructional text  <!-- nax-rules-allow: important-shouting -->
 - Is named `build*Prompt`, `create*Prompt`, `make*Prompt`, or similar
 
-### Wrong — prompt assembled in a pipeline stage
-
-```typescript
-// src/pipeline/stages/autofix.ts
-function buildFixPrompt(checks: ReviewCheckResult[]): string {
-  return `You are fixing lint errors.\n\n${checks.map(...).join("\n")}`;
-}
-```
-
-### Correct — static method on the relevant builder
-
-```typescript
-// src/prompts/builders/rectifier-builder.ts
-export class RectifierPromptBuilder {
-  static continuation(checks: ReviewCheckResult[], ...): string {
-    // prompt assembly lives here
-  }
-}
-```
+A `buildFixPrompt()` assembling a template string inside `src/pipeline/stages/autofix.ts`
+is the shape to avoid; the same assembly belongs on `RectifierPromptBuilder`.
 
 ### Builder registry
 
@@ -101,14 +84,5 @@ If no existing builder fits, create `src/prompts/builders/<domain>-builder.ts` a
 
 ### Wrapper functions are also banned
 
-Thin wrappers that do nothing but delegate to a builder add indirection without value:
-
-```typescript
-// Wrong — pointless wrapper in src/acceptance/fix-executor.ts
-function buildSourceFixPrompt(...): string {
-  return new AcceptancePromptBuilder().buildSourceFixPrompt(...);
-}
-
-// Correct — call the builder directly at the use site
-const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt(...);
-```
+A thin local function that does nothing but delegate to a builder adds indirection without
+value. Call the builder directly at the use site.
