@@ -18,7 +18,13 @@ import { getSafeLogger } from "@/logger";
 import { resolveQualityTestCommands } from "@/quality";
 import { parseTestOutput, type TestSummary } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import { executeWithTimeout, type TestBaseline, writeRunBaseline, writeStoryBaseline } from "@/verification";
+import {
+  clearStoryBaselines,
+  executeWithTimeout,
+  type TestBaseline,
+  writeRunBaseline,
+  writeStoryBaseline,
+} from "@/verification";
 import { captureRunStartRef } from "../deferred-review";
 
 /** Subset of TestExecutionResult the capture step actually reads. */
@@ -58,11 +64,12 @@ export interface TestBaselineCaptureDeps {
    *     unaffected: `string` is a subtype of `string | readonly string[]`.
    */
   resolveTestCommands: (config: NaxConfig, workdir: string) => Promise<string | readonly string[] | undefined>;
-  runCommand: (command: string, timeoutSeconds: number) => Promise<CaptureRunnerResult>;
+  runCommand: (command: string, timeoutSeconds: number, workdir: string) => Promise<CaptureRunnerResult>;
   captureGitRef: (workdir: string) => Promise<string>;
   parseTestOutput: (output: string) => CaptureParsedSummary;
   writeRunBaseline: (root: string, featureId: string, baseline: TestBaseline) => Promise<void>;
   writeStoryBaseline: (root: string, featureId: string, storyId: string, baseline: TestBaseline) => Promise<void>;
+  clearStoryBaselines: (root: string, featureId: string) => Promise<void>;
   now: () => string;
   /** Resolve the gate timeout: regressionGate.timeoutSeconds ?? rectification.fullSuiteTimeoutSeconds ?? schema default. */
   resolveGateTimeoutSeconds: (config: NaxConfig) => number;
@@ -71,16 +78,6 @@ export interface TestBaselineCaptureDeps {
 
 /** Schema default for the gate timeout (matches `regressionGate.timeoutSeconds` schema floor). */
 const DEFAULT_GATE_TIMEOUT_SECONDS = 300;
-
-/**
- * The capture step's `runCommand` dep only takes `(command, timeoutSeconds)` so
- * tests can override with the two-arg form (see AC2). The workdir the spawned
- * shell should run from is captured in this module-level slot before the dep
- * is invoked — read by the production wiring's `runCommand` closure and by
- * nothing else. Tests do not read it (their `runCommand` overrides don't need
- * a cwd). Single-threaded JS, no race with concurrent capture calls.
- */
-let currentCaptureWorkdir = "";
 
 /**
  * Production wiring: production code reads from this object; tests override
@@ -99,15 +96,13 @@ export const _captureDeps: TestBaselineCaptureDeps = {
     // string-form callers see the same `string | string[] | undefined` shape.
     return testCommand;
   },
-  runCommand: async (command, timeoutSeconds) => {
+  runCommand: async (command, timeoutSeconds, workdir) => {
     // Forward `workdir` so the spawned command runs from the resolved package
     // dir — `executeWithTimeout` defaults `cwd` to `process.cwd()`, which
     // breaks when nax is launched from a parent shell / editor / CI with a
-    // different cwd than the target repo (monorepo-awareness §1). The closure
-    // binds the current capture's workdir without widening the dep signature
-    // (tests override `runCommand` with the two-arg form, see AC2).
+    // different cwd than the target repo (monorepo-awareness §1).
     const result = await executeWithTimeout(command, timeoutSeconds, undefined, {
-      cwd: currentCaptureWorkdir,
+      cwd: workdir,
     });
     return {
       success: result.success,
@@ -120,6 +115,7 @@ export const _captureDeps: TestBaselineCaptureDeps = {
   parseTestOutput: (output) => adaptTestSummary(parseTestOutput(output)),
   writeRunBaseline,
   writeStoryBaseline,
+  clearStoryBaselines,
   now: () => new Date().toISOString(),
   resolveGateTimeoutSeconds: (config) =>
     config.execution?.regressionGate?.timeoutSeconds ??
@@ -262,7 +258,35 @@ async function writeNoBaseline(
  * first failing command and hide later failures).
  */
 export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promise<void> {
+  try {
+    await captureRunBaselineInner(opts);
+  } catch (err) {
+    try {
+      await writeNoBaseline("run", opts.root, opts.featureId, undefined, "error");
+    } catch (writeErr) {
+      getSafeLogger()?.warn("execution", "Run baseline error marker write failed — continuing", {
+        featureId: opts.featureId,
+        error: errorMessage(writeErr),
+      });
+    }
+    getSafeLogger()?.warn("execution", "Run-start baseline capture failed — continuing", {
+      featureId: opts.featureId,
+      error: errorMessage(err),
+    });
+  }
+}
+
+async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise<void> {
   const { root, featureId, config, workdir } = opts;
+
+  try {
+    await _captureDeps.clearStoryBaselines(root, featureId);
+  } catch (err) {
+    getSafeLogger()?.warn("execution", "Story baseline cleanup failed — continuing", {
+      featureId,
+      error: errorMessage(err),
+    });
+  }
 
   // AC6 — gate disabled, no spawn.
   if (!_captureDeps.regressionGateEnabled(config)) {
@@ -281,10 +305,6 @@ export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promi
   const timeoutSeconds = _captureDeps.resolveGateTimeoutSeconds(config);
   const capturedAt = _captureDeps.now();
 
-  // Publish the workdir to the module-level slot the production `runCommand`
-  // closure reads (Finding 4: forward `workdir` to `executeWithTimeout`).
-  currentCaptureWorkdir = workdir;
-
   // Run each command independently; aggregate outputs and parsed summaries.
   // A single timed-out result short-circuits the whole loop to `timeout` —
   // matches the gate's `TIMEOUT` semantics: don't pollute the baseline with
@@ -297,7 +317,7 @@ export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promi
   for (const command of commands) {
     let result: CaptureRunnerResult;
     try {
-      result = await _captureDeps.runCommand(command, timeoutSeconds);
+      result = await _captureDeps.runCommand(command, timeoutSeconds, workdir);
     } catch {
       // AC10 — runner throws; record so we write a `no-baseline: error`
       // marker after the loop and don't claim the suite ran.

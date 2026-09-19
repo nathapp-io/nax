@@ -22,7 +22,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { featureDir } from "@/config";
 import type { Finding } from "@/findings/types";
@@ -134,6 +134,20 @@ export async function readStoryBaseline(
   storyId: string,
 ): Promise<TestBaseline | undefined> {
   return (await loadJsonFile<TestBaseline>(storyBaselinePath(root, featureId, storyId), "test-baseline")) ?? undefined;
+}
+
+/** Remove retained per-story snapshots before a new run establishes its baseline. */
+export async function clearStoryBaselines(root: string, featureId: string): Promise<void> {
+  const storiesDir = join(featureDir(root, featureId), "stories");
+  const entries = await readdir(storiesDir, { withFileTypes: true }).catch((err: unknown) => {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  });
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => rm(join(storiesDir, entry.name, STORY_BASELINE_FILENAME), { force: true })),
+  );
 }
 
 /**

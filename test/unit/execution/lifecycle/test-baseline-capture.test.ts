@@ -63,11 +63,13 @@ function makeOptions(config: NaxConfig = makeBaselineConfig()): CaptureRunBaseli
  * production logic. AC3/AC4/AC6 run against these originals.
  */
 const shippedResolvers = {
+  clearStoryBaselines: _captureDeps.clearStoryBaselines,
   resolveGateTimeoutSeconds: _captureDeps.resolveGateTimeoutSeconds,
   regressionGateEnabled: _captureDeps.regressionGateEnabled,
 };
 
 function resetCaptureDeps(): void {
+  _captureDeps.clearStoryBaselines = shippedResolvers.clearStoryBaselines;
   _captureDeps.resolveTestCommands = async (_config: NaxConfig, _workdir: string) => undefined;
   _captureDeps.runCommand = async (_command: string, _timeoutSeconds: number) => ({
     success: false,
@@ -103,6 +105,101 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("captureRunBaseline — AC1 (preflight + baseRef + parsed entries)", () => {
+  test("replaces a prior run baseline with an error marker when command resolution throws", async () => {
+    const writes: TestBaseline[] = [];
+    _captureDeps.resolveTestCommands = async () => {
+      throw new Error("resolver unavailable");
+    };
+    _captureDeps.writeRunBaseline = async (_root, _featureId, baseline) => {
+      writes.push(baseline);
+    };
+    _captureDeps.now = () => "2026-01-15T00:00:00.000Z";
+
+    await captureRunBaseline(makeOptions());
+
+    expect(writes).toEqual([{ kind: "no-baseline", reason: "error", capturedAt: "2026-01-15T00:00:00.000Z" }]);
+  });
+
+  test.each([
+    [
+      "parsing",
+      () => {
+        _captureDeps.parseTestOutput = () => {
+          throw new Error("parser unavailable");
+        };
+      },
+    ],
+    [
+      "Git-ref capture",
+      () => {
+        _captureDeps.captureGitRef = async () => {
+          throw new Error("git unavailable");
+        };
+      },
+    ],
+  ])("replaces the run baseline with an error marker when %s fails", async (_label, arrangeFailure) => {
+    const markers: TestBaseline[] = [];
+    _captureDeps.resolveTestCommands = async () => "bun test";
+    _captureDeps.runCommand = async () => ({ success: true, output: "", timedOut: false });
+    _captureDeps.parseTestOutput = () => ({ passed: 1, failed: 0, failures: [] });
+    _captureDeps.captureGitRef = async () => "base-ref";
+    _captureDeps.now = () => "2026-01-15T00:00:00.000Z";
+    _captureDeps.writeRunBaseline = async (_root, _featureId, baseline) => {
+      markers.push(baseline);
+    };
+    arrangeFailure();
+
+    await captureRunBaseline(makeOptions());
+
+    expect(markers).toEqual([{ kind: "no-baseline", reason: "error", capturedAt: "2026-01-15T00:00:00.000Z" }]);
+  });
+
+  test("replaces the run baseline with an error marker when its initial write fails", async () => {
+    const markers: TestBaseline[] = [];
+    let writes = 0;
+    _captureDeps.resolveTestCommands = async () => "bun test";
+    _captureDeps.runCommand = async () => ({ success: true, output: "", timedOut: false });
+    _captureDeps.parseTestOutput = () => ({ passed: 1, failed: 0, failures: [] });
+    _captureDeps.captureGitRef = async () => "base-ref";
+    _captureDeps.now = () => "2026-01-15T00:00:00.000Z";
+    _captureDeps.writeRunBaseline = async (_root, _featureId, baseline) => {
+      writes += 1;
+      if (writes === 1) throw new Error("disk unavailable");
+      markers.push(baseline);
+    };
+
+    await captureRunBaseline(makeOptions());
+
+    expect(markers).toEqual([{ kind: "no-baseline", reason: "error", capturedAt: "2026-01-15T00:00:00.000Z" }]);
+  });
+
+  test("forwards the capture workdir to the command runner", async () => {
+    let receivedWorkdir: string | undefined;
+    _captureDeps.runCommand = async (_command, _timeoutSeconds, workdir) => {
+      receivedWorkdir = workdir;
+      return { success: true, output: "", timedOut: false };
+    };
+    _captureDeps.resolveTestCommands = async () => "bun test";
+
+    await captureRunBaseline(makeOptions());
+
+    expect(receivedWorkdir).toBe("/tmp/repo");
+  });
+
+  test("clears retained story baselines before recording a new run baseline", async () => {
+    let cleared = 0;
+    _captureDeps.clearStoryBaselines = async (root, featureId) => {
+      expect(root).toBe("/tmp/repo");
+      expect(featureId).toBe("feat-x");
+      cleared += 1;
+    };
+    _captureDeps.resolveTestCommands = async () => undefined;
+
+    await captureRunBaseline(makeOptions());
+
+    expect(cleared).toBe(1);
+  });
+
   test("AC1: persists a captured baseline with source=preflight, the captured baseRef, and one entry per parsed failure", async () => {
     const writes: Array<[string, string, TestBaseline]> = [];
     _captureDeps.writeRunBaseline = async (root, featureId, baseline) => {

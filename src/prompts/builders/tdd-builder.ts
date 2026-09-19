@@ -30,7 +30,7 @@ import type { UserStory } from "@/prd";
 import { commandSpecIncludes, renderCommandSpec } from "@/quality/command-spec";
 import type { SelfVerificationPromptInput } from "@/quality/self-verification";
 import { errorMessage } from "@/utils/errors";
-import { resolveStoryBaseline, type TestBaseline } from "@/verification";
+import { resolveStoryBaseline, type StoryExecutionMode, type TestBaseline } from "@/verification";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";
 import type { AcceptanceEntry, GuardrailRole } from "../sections";
@@ -348,9 +348,11 @@ export class TddPromptBuilder {
       root?: string;
       /** Feature id segmenting the baseline artifact tree (US-004). */
       featureId?: string;
+      /** Story execution mode selects the correct persisted baseline. */
+      executionMode?: StoryExecutionMode;
     },
   ): Promise<string> {
-    const testBaseline = await resolveTestBaselineForPrompt(opts.root, opts.featureId, story.id);
+    const testBaseline = await resolveTestBaselineForPrompt(opts.root, opts.featureId, story.id, opts.executionMode);
     const variant: "standard" | "lite" | undefined =
       role === "implementer" ? (opts.lite ? "lite" : "standard") : undefined;
     const isolation: "strict" | "lite" | undefined =
@@ -468,10 +470,11 @@ async function resolveTestBaselineForPrompt(
   root: string | undefined,
   featureId: string | undefined,
   storyId: string,
+  executionMode: StoryExecutionMode | undefined,
 ): Promise<TestBaseline | undefined> {
   if (!root || !featureId) return undefined;
   try {
-    const baseline = await resolveStoryBaseline(root, featureId, storyId, "sequential");
+    const baseline = await resolveStoryBaseline(root, featureId, storyId, executionMode ?? "sequential");
     return isRenderableBaseline(baseline) ? baseline : undefined;
   } catch (err) {
     // A malformed feature id or an unreadable file must not stop a prompt from

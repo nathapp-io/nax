@@ -3,7 +3,7 @@ import { cleanupTempDir, makeNaxConfig, makeStory, makeTempDir } from "@test/hel
 import { featureDir } from "@/config";
 import { TddPromptBuilder } from "@/prompts/builders/tdd-builder";
 import type { BaselineEntry, TestBaseline } from "@/verification";
-import { writeStoryBaseline } from "@/verification";
+import { writeRunBaseline, writeStoryBaseline } from "@/verification";
 
 describe("TddPromptBuilder.buildForRole", () => {
   test("builds a non-empty prompt for test-writer", async () => {
@@ -536,6 +536,33 @@ describe("US-004 — buildForRole resolves the story baseline artifact", () => {
     );
 
     expect(prompt).not.toContain("# Test Baseline");
+  });
+
+  test("parallel prompt rendering reads the run-start baseline when a story artifact remains", async () => {
+    await writeStoryBaseline(
+      tempRoot,
+      BASELINE_FEATURE,
+      BASELINE_STORY,
+      capturedBaseline([{ file: "test/unit/story-artifact.test.ts" }]),
+    );
+    await writeRunBaseline(tempRoot, BASELINE_FEATURE, {
+      kind: "captured",
+      source: "preflight",
+      baseRef: "parallel-run-base",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      entries: [{ file: "test/unit/run-baseline.test.ts" }],
+    });
+
+    const prompt = await TddPromptBuilder.buildForRole(
+      "implementer",
+      tempRoot,
+      makeNaxConfig({}),
+      makeStory({ id: BASELINE_STORY }),
+      { root: tempRoot, featureId: BASELINE_FEATURE, executionMode: "parallel" },
+    );
+
+    expect(prompt).toContain("test/unit/run-baseline.test.ts");
+    expect(prompt).not.toContain("test/unit/story-artifact.test.ts");
   });
 
   test("a persisted no-baseline marker renders the section with its reason", async () => {

@@ -30,6 +30,7 @@ import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "../re
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { packageDirRelative } from "../utils/paths";
+import type { StoryExecutionMode } from "../verification";
 import type { RectificationPhaseOptions } from "./story-orchestrator";
 
 /**
@@ -203,6 +204,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   // Using projectDir as root (with packageDirRel for monorepos) is the SSOT per ADR-009.
   const packageDirRel = packageDirRelative(ctx.projectDir, ctx.workdir);
   const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.projectDir, packageDirRel);
+  const executionMode: StoryExecutionMode = ctx.skipPrdPersistence === true ? "parallel" : "sequential";
   const tddOpts = {
     lite: isLite,
     contextMarkdown: ctx.contextMarkdown,
@@ -216,6 +218,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     // mode and would look for the artifact in the wrong tree.
     root: ctx.projectDir,
     featureId: ctx.prd.feature,
+    executionMode,
   };
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
     ? await Promise.all([
@@ -273,6 +276,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           workdir: ctx.workdir,
           featureName: ctx.prd.feature,
           projectDir: ctx.projectDir,
+          executionMode,
           resolvedTestPatterns,
         }
       : undefined;

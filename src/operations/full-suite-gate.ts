@@ -31,7 +31,12 @@ import { renderCommandSpec } from "../quality/command-spec";
 import type { TestSummary } from "../test-runners";
 import { errorMessage } from "../utils/errors";
 import { storyPackageDir } from "../utils/path-frame";
-import { applyBaselineDispositions, readRunBaseline, resolveStoryBaseline } from "../verification";
+import {
+  applyBaselineDispositions,
+  readRunBaseline,
+  resolveStoryBaseline,
+  type StoryExecutionMode,
+} from "../verification";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -57,6 +62,8 @@ export interface FullSuiteGateInput {
   readonly workdir: string;
   readonly featureName?: string;
   readonly projectDir?: string;
+  /** Whether this story runs in an ordered pipeline or a parallel worktree batch. */
+  readonly executionMode?: StoryExecutionMode;
   readonly lite?: boolean;
   /** Optional pre-resolved test patterns to skip re-resolution inside the gate. */
   readonly resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
@@ -215,9 +222,8 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
  * else the run-start capture (which is the parallel-mode baseline, and the
  * baseline of a story whose artifact was never written; design:
  * docs/superpowers/specs/2026-09-19-preflight-test-baseline-design.md §3.2–§3.3).
- * The gate has no execution-mode signal of its own and needs none: parallel runs
- * never write a per-story artifact, so both branches resolve to the same
- * artifact there. A `no-baseline` marker — and an artifact that exists but does
+ * Parallel worktrees must explicitly select the run-start baseline because a
+ * retained story artifact can otherwise be present. A `no-baseline` marker — and an artifact that exists but does
  * not parse — returns as-is, so those findings read `unattributed` rather than
  * being measured against the older run-start snapshot.
  *
@@ -231,7 +237,7 @@ async function labelFindingsWithBaseline(input: FullSuiteGateInput, findings: Fi
   if (!root || !featureId) return findings;
   try {
     const [storyBaseline, runBaseline] = await Promise.all([
-      resolveStoryBaseline(root, featureId, input.story.id, "sequential"),
+      resolveStoryBaseline(root, featureId, input.story.id, input.executionMode ?? "sequential"),
       readRunBaseline(root, featureId),
     ]);
     return applyBaselineDispositions(findings, storyBaseline, runBaseline);

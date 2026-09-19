@@ -454,6 +454,13 @@ describe("fullSuiteGateOp — baseline disposition labeling (US-003)", () => {
     return makeInput({}, "/tmp", { projectDir: tempRoot, featureName: FEATURE_ID });
   }
 
+  function parallelContextfulInput(): FullSuiteGateInput {
+    return {
+      ...contextfulInput(),
+      executionMode: "parallel",
+    };
+  }
+
   test("AC1 — classifies structured failures against the seeded story baseline", async () => {
     await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
 
@@ -476,6 +483,20 @@ describe("fullSuiteGateOp — baseline disposition labeling (US-003)", () => {
     expect(out.findings.map((f) => f.file)).toEqual(beforeLabeling.map((f) => f.file));
     // The pre-existing finding survives the labeling pass — labels never filter.
     expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["pre-existing", "introduced"]);
+  });
+
+  test("parallel execution labels against the run-start baseline when a story artifact remains", async () => {
+    await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
+    await writeRunBaseline(tempRoot, FEATURE_ID, {
+      kind: "captured",
+      source: "preflight",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      entries: [{ file: "test/b.test.ts", testName: "test B" }],
+    });
+
+    const out = await fullSuiteGateOp.execute(parallelContextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["introduced", "pre-existing"]);
   });
 
   test("US-003 — with no per-story artifact the run-start baseline is inherited", async () => {
