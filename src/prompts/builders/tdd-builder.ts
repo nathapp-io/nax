@@ -471,7 +471,8 @@ async function resolveTestBaselineForPrompt(
 ): Promise<TestBaseline | undefined> {
   if (!root || !featureId) return undefined;
   try {
-    return await resolveStoryBaseline(root, featureId, storyId, "sequential");
+    const baseline = await resolveStoryBaseline(root, featureId, storyId, "sequential");
+    return isRenderableBaseline(baseline) ? baseline : undefined;
   } catch (err) {
     // A malformed feature id or an unreadable file must not stop a prompt from
     // being built — but the reason is logged so a missing baseline section is
@@ -482,4 +483,29 @@ async function resolveTestBaselineForPrompt(
     });
     return undefined;
   }
+}
+
+/**
+ * Is this parsed blob a baseline the renderer can actually state?
+ *
+ * `loadJsonFile` hands the file back as `content as T` with no schema check
+ * (`src/utils/json-file.ts`), so a well-formed-JSON artifact of the wrong shape
+ * — `entries: null`, a missing array, an unknown `kind`, an entry whose `file`
+ * is not a string — arrives here typed as a `TestBaseline`. Every one of those
+ * is *unreadable* in the sense the caller cares about, and the rule for
+ * unreadable is the same as for absent: render no section.
+ *
+ * The check has to happen here rather than at the render, because the render
+ * runs inside `build()` — outside this function's try/catch — so a property
+ * access on a null `entries` would escape `buildForRole` and take the plan down
+ * with it.
+ */
+function isRenderableBaseline(value: TestBaseline | undefined): value is TestBaseline {
+  if (value === undefined) return false;
+  if (value.kind === "no-baseline") return typeof value.reason === "string";
+  if (value.kind !== "captured") return false;
+  return (
+    Array.isArray(value.entries) &&
+    value.entries.every((entry: { file?: unknown } | null) => typeof entry?.file === "string")
+  );
 }

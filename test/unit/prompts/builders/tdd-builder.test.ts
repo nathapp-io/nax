@@ -588,4 +588,34 @@ describe("US-004 — buildForRole resolves the story baseline artifact", () => {
 
     expect(prompt).not.toContain("# Test Baseline");
   });
+
+  test("a well-formed JSON artifact of the wrong shape renders no section instead of failing the build", async () => {
+    // `loadJsonFile` hands the parsed JSON back with no schema check (an
+    // unchecked cast to the caller's type parameter), so every one of these
+    // reaches the builder typed as a `TestBaseline`.
+    const artifact = `${featureDir(tempRoot, BASELINE_FEATURE)}/stories/${BASELINE_STORY}/test-baseline.json`;
+    await writeStoryBaseline(tempRoot, BASELINE_FEATURE, BASELINE_STORY, capturedBaseline([]));
+
+    const wrongShapes = [
+      `{"kind":"captured","entries":null}`,
+      `{"kind":"captured"}`,
+      `{"kind":"not-a-baseline","entries":[]}`,
+      `{"kind":"captured","entries":[null]}`,
+      `{"kind":"captured","entries":[{"file":42}]}`,
+    ];
+
+    for (const payload of wrongShapes) {
+      await Bun.write(artifact, payload);
+
+      const prompt = await TddPromptBuilder.buildForRole(
+        "implementer",
+        tempRoot,
+        makeNaxConfig({}),
+        makeStory({ id: BASELINE_STORY }),
+        { root: tempRoot, featureId: BASELINE_FEATURE },
+      );
+
+      expect(prompt).not.toContain("# Test Baseline");
+    }
+  });
 });
