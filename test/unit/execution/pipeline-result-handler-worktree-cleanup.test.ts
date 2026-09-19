@@ -11,7 +11,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeAgentResult, makeMockRuntime, makePRD, makeSpawn, makeStory, makeTestContext } from "@test/helpers";
+import {
+  makeAgentResult,
+  makeMockRuntime,
+  makePRD,
+  makeSpawn,
+  makeStory,
+  makeTestContext,
+  withWarnSpy,
+} from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
   _resultHandlerDeps,
@@ -169,3 +177,135 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
     expect(worktreeRemoveCalls.length).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-002 — handlePipelineFailure records nax ownership of the surviving
+// `nax/<storyId>` branch when the worktree directory is removed. The ref name
+// is built once by `naxOrphanRefName` (see test/unit/worktree/nax-orphan-ref.test.ts).
+// AC-6: when the ownership-record `git update-ref` fails, the handler must
+// return without throwing and emit a warn log on stage `worktree` carrying
+// the story id.
+// ---------------------------------------------------------------------------
+
+describe("US-002 handlePipelineFailure — record nax ownership of orphan branch", () => {
+  test("AC-6: when the ownership-record git call fails, handlePipelineFailure returns and logs a warn on stage 'worktree' carrying story id 'US-001'", async () => {
+    const story = makeStory({
+      id: "US-001",
+      status: "pending",
+      passes: false,
+      attempts: 2,
+    });
+    const ctx = makeCtx(story, {
+      config: {
+        ...WORKTREE_CONFIG,
+        execution: {
+          ...WORKTREE_CONFIG.execution,
+          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+        },
+      },
+    });
+    _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
+
+    // The ownership-record `git update-ref` call is the one that fails.
+    // All other spawns succeed (worktree remove, etc).
+    const spawnCalls: string[][] = [];
+    _resultHandlerDeps.spawn = makeSpawn((call) => {
+      spawnCalls.push(call.cmd);
+      if (call.cmd[0] === "git" && call.cmd[1] === "update-ref") {
+        return { exitCode: 1, stdout: "", stderr: "fatal: could not lock ref" };
+      }
+      return {};
+    }).spawn;
+
+    await withWarnSpy(async (warnSpy) => {
+      // Must NOT throw — best-effort per the spec.
+      await expect(handlePipelineFailure(ctx, failResultFor("US-001"))).resolves.toBeDefined();
+
+      // The warn log must carry stage 'worktree' and story id 'US-001'.
+      const ownershipRecordWarn = warnSpy.mock.calls.find((c) => {
+        if (c[0] !== "worktree") return false;
+        const data = JSON.stringify(c[2] ?? {});
+        return data.includes("US-001") && /update-ref|ownership|orphan/i.test(data);
+      });
+      expect(ownershipRecordWarn).toBeDefined();
+    });
+
+    // Verify the ownership-record git call was attempted.
+    const updateRefCalls = spawnCalls.filter((a) => a[0] === "git" && a[1] === "update-ref");
+    expect(updateRefCalls.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002 — AC-4: the surviving branch is preserved for diagnostics.
+//
+// Given `.nax-wt/US-001` exists and handlePipelineFailure has run with
+// finalAction 'fail' and tiers exhausted, the `nax/US-001` branch must
+// still resolve to a commit — verified end-to-end by the integration test
+// (AC-1) which observes a real git repo. The unit-level guarantee that
+// `removeWorktreeDirectory` itself never deletes the branch is asserted
+// below: when no live worktree exists to remove, removeWorktreeDirectory
+// makes zero git calls (it short-circuits via hasWorktree), and the
+// `fail` branch never invokes `git branch -D` for the story's branch.
+// ---------------------------------------------------------------------------
+
+describe("US-002 handlePipelineFailure — preserves the surviving branch", () => {
+  test("AC-4 (unit): handlePipelineFailure never invokes git branch -D in the fail+worktree path", async () => {
+    const story = makeStory({
+      id: "US-001",
+      status: "pending",
+      passes: false,
+      attempts: 2,
+    });
+    const ctx = makeCtx(story, {
+      config: {
+        ...WORKTREE_CONFIG,
+        execution: {
+          ...WORKTREE_CONFIG.execution,
+          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+        },
+      },
+    });
+    // hasWorktree() returns true so removeWorktreeDirectory runs, but the
+    // mocked spawn for `git worktree remove` returns WORKTREE_NOT_FOUND
+    // ("is not a working tree"), so remove() short-circuits — its
+    // internal `branch -D` is never reached. The branch must survive.
+    _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
+
+    const spawnCalls: string[][] = [];
+    _resultHandlerDeps.spawn = makeSpawn(({ cmd }) => {
+      spawnCalls.push(cmd);
+      if (cmd[0] === "git" && cmd[1] === "worktree" && cmd[2] === "remove") {
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: "fatal: '.nax-wt/US-001' is not a working tree",
+        };
+      }
+      return {};
+    }).spawn;
+
+    const failResult: PipelineRunResult = {
+      success: false,
+      finalAction: "fail",
+      reason: "Tests failed",
+      context: makeTestContext({ agentResult: makeAgentResult() }),
+    };
+
+    await handlePipelineFailure(ctx, failResult);
+
+    // With no live worktree to remove, neither removeWorktreeDirectory
+    // nor remove() invokes `git branch -D`. The branch survives.
+    const branchDeleteCalls = spawnCalls.filter((a) => a[0] === "git" && a[1] === "branch" && a[2] === "-D");
+    expect(branchDeleteCalls.length).toBe(0);
+  });
+});
+
+function failResultFor(_storyId: string): PipelineRunResult {
+  return {
+    success: false,
+    finalAction: "fail",
+    reason: "Tests failed",
+    context: makeTestContext({ agentResult: makeAgentResult() }),
+  };
+}

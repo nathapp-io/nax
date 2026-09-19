@@ -26,6 +26,7 @@ import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
 import { storyPackageDir } from "../utils/path-frame";
 import { MergeEngine, WorktreeManager } from "../worktree";
+import { naxOrphanRefName } from "../worktree/nax-orphan-ref";
 import { handleTierEscalation, verifyEscalationQuotes } from "./escalation";
 import { appendProgress } from "./progress";
 
@@ -52,6 +53,16 @@ function hasWorktree(projectRoot: string, storyId: string): boolean {
  * EXEC-002: Remove a worktree directory from git's worktree tracking without deleting
  * the branch. This preserves `nax/<storyId>` in git for diagnostics and re-run cleanup
  * while reclaiming disk space. Best-effort — errors are logged but not thrown.
+ *
+ * US-002: On a successful removal, additionally record nax ownership of the
+ * surviving branch by writing `refs/nax/orphan/<storyId>` to point at the
+ * branch tip. The retry path consumes this ref as Step-3 evidence so the
+ * next `WorktreeManager.create()` can force-delete the branch. The record
+ * lives in the same git store as the thing it describes and is removed with
+ * `git update-ref -d` in the same step that deletes the branch — so it
+ * cannot outlive what it records. A user branch named `nax/<storyId>` that
+ * nax never created never acquires one, so BUG-28's user-branch guard is
+ * unchanged.
  */
 async function removeWorktreeDirectory(projectRoot: string, storyId: string): Promise<void> {
   const logger = getSafeLogger();
@@ -86,6 +97,54 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
     logger?.warn("worktree", "Failed to remove worktree directory (non-fatal)", {
       storyId,
       worktreePath,
+      error: String(error),
+    });
+  }
+
+  // US-002: Record nax ownership of the surviving branch. Best-effort —
+  // a failed update-ref logs at warn and continues; the retry then behaves
+  // exactly as it does today (fails at `worktree add`), which is the pre-fix
+  // status quo, not a new failure. The ref name is built once by
+  // naxOrphanRefName, which validates the story id so it cannot be a ref
+  // name built from untrusted input.
+  await recordNaxOrphanOwnership(projectRoot, storyId);
+}
+
+/**
+ * US-002: Write `refs/nax/orphan/<storyId>` to point at the surviving
+ * `nax/<storyId>` branch tip. Best-effort: a non-zero exit logs at warn on
+ * stage `worktree` (carrying `storyId`) and returns — matches the existing
+ * contract of `removeWorktreeDirectory` above.
+ */
+async function recordNaxOrphanOwnership(projectRoot: string, storyId: string): Promise<void> {
+  const logger = getSafeLogger();
+  const orphanRef = naxOrphanRefName(storyId);
+  const sourceBranch = `refs/heads/nax/${storyId}`;
+  try {
+    const proc = _resultHandlerDeps.spawn(["git", "update-ref", orphanRef, sourceBranch], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, _stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text().catch(() => ""),
+      new Response(proc.stderr).text().catch(() => ""),
+    ] as const);
+    if (exitCode !== 0) {
+      logger?.warn("worktree", "Failed to record nax orphan ownership ref (non-fatal)", {
+        storyId,
+        orphanRef,
+        sourceBranch,
+        exitCode,
+        stderr: stderr.slice(0, 500),
+      });
+    }
+  } catch (error) {
+    logger?.warn("worktree", "Failed to record nax orphan ownership ref (non-fatal)", {
+      storyId,
+      orphanRef,
+      sourceBranch,
       error: String(error),
     });
   }
