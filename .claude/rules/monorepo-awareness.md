@@ -34,18 +34,9 @@ This document is the SSOT for "how do I handle paths / languages / packages?" ru
 
 Reason: a run may be launched from any cwd (parent shell, editor, CI worker); the only authoritative anchor is the workdir passed into the pipeline.
 
-Correct pattern:
-
-```typescript
-// Parameter, defaulted only at the CLI boundary
-export async function stageFn(ctx: PipelineContext): Promise<StageResult> {
-  const target = ctx.packageDir ?? ctx.workdir;
-  // ...
-}
-
-// CLI entry point — single bootstrap line, documented
-const workdir = options.dir ?? process.cwd();
-```
+Correct pattern: take the anchor as a parameter (`ctx.packageDir ?? ctx.workdir`) and
+default it only at the CLI boundary, in a single documented bootstrap line
+(`options.dir ?? process.cwd()`).
 
 ### 2. No hardcoded test-file patterns
 
@@ -81,7 +72,7 @@ Every file that needs to know "what package is this file in?" or "what packages 
 | "Which packages exist in the repo?" | `discoverWorkspacePackages(repoRoot)` — `src/test-runners/detect/workspace.ts` |
 | "Which package does this file belong to?" | `findPackageDir(filePath, repoRoot)` — `src/test-runners/resolver.ts` |
 | "What language is this package?" | `detectLanguage(packageDir)` — `src/project/detector.ts` |
-| "What test framework?" | `detectTestFramework(packageDir)` — `src/test-runners/detect/framework.ts` |
+| "What test framework?" | `detectTestFramework(packageDir)` — `src/project/detector.ts` |
 
 Do not duplicate package-boundary marker lookups (`package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`) in new code. Extend the existing detectors.
 
@@ -94,20 +85,8 @@ Do not duplicate package-boundary marker lookups (`package.json`, `go.mod`, `pyp
 
 Glob without cwd defaults to `process.cwd()`, which re-introduces the cwd-contamination bug.
 
-When scanning may exceed many files, cap it:
-
-```typescript
-const MAX_GLOB_FILES = 200;
-let count = 0;
-for (const file of g.scanSync({ cwd, absolute: false })) {
-  if (count >= MAX_GLOB_FILES) {
-    logger.debug("subsystem", "Glob cap reached — results truncated", { storyId, cap: MAX_GLOB_FILES });
-    break;
-  }
-  // ...
-  count++;
-}
-```
+When a scan may exceed many files, cap it with a `MAX_GLOB_FILES` constant and log a
+`debug` line naming the cap when the results are truncated.
 
 ### 7. Provider scope must be declared
 
@@ -118,9 +97,10 @@ Every context provider and verification strategy must declare which anchor it us
 | `repo-scoped` | `repoRoot` | `StaticRulesProvider`, `FeatureContextProvider`, `GitHistoryProvider` |
 | `package-scoped` | `packageDir` | `CodeNeighborProvider`, `SessionScratchProvider` |
 
-There is no `cross-package` scope. `CodeNeighborProvider`'s sibling scan was removed in nax#2074: it parsed only relative import specifiers, so it could not find a true cross-package dependent, and it compared paths across two roots. A provider that must see another package sets its scan root to `repoRoot` and re-spells every emitted path for the consumer (`src/utils/path-frame.ts`).
-
-`GitHistoryProvider` is repo-scoped even though it serves a package-contained story: `git log` runs at `repoRoot` against repo-rooted pathspecs (nax#2088), and its `historyScope` option is a **post-filter** over those entries — `"package"` drops entries outside the story's package, `"repo"` keeps them — not a workdir switch. A chunk heading is re-spelled package-relative because it is rendered into the agent's prompt; `scopePaths` stay repo-rooted to match the repo-framed diff.
+**There is no `cross-package` scope.** A provider that must see another package sets its
+scan root to `repoRoot` and re-spells every emitted path for the consumer
+(`src/utils/path-frame.ts`). Why, and the `GitHistoryProvider` post-filter subtlety:
+`docs/guides/context-providers.md` § *Provider scope*.
 
 Declare scope in the file header comment. A provider that reaches beyond its own package must say so in that header and re-spell every emitted path for the consumer.
 
@@ -136,16 +116,8 @@ New JSON schemas under `.nax/` require path-handling review. See [#530](https://
 
 When a subsystem handles multiple packages, every `logger.*` call must include both `storyId` and `packageDir` so parallel runs can be correlated:
 
-```typescript
-// Correct — parallel-mode correlation works
-logger.debug("provider", "Scanning reverse deps", {
-  storyId: ctx.story.id,
-  packageDir,
-});
-
-// Wrong — cannot attribute across concurrent stories in the same JSONL file
-logger.debug("provider", "Scanning", { packageDir });
-```
+Omitting `storyId` makes entries unattributable across concurrent stories sharing one
+JSONL file.
 
 ## Design Rules
 

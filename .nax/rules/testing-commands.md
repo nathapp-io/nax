@@ -10,8 +10,6 @@ stages:
   - "tdd-verifier"
   - "verify"
   - "rectify"
-  - "review-semantic"
-  - "review-adversarial"
   - "autofix"
   - "single-session"
   - "tdd-simple"

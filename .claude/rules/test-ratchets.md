@@ -10,174 +10,72 @@ paths:
 # Test Debt Ratchets
 
 **`test/` must typecheck clean.** `bun run typecheck` compiles `tsconfig.test.json`
-alongside `tsconfig.json`; any error fails CI. There is no
-allowance and no baseline to raise — fix the fixture.
+alongside `tsconfig.json`; any error fails CI. There is no allowance and no baseline to
+raise — fix the fixture.
 
-This is a hard gate, not a ratchet, since #1514 §47 drained the last 9 errors (2009 → 0).
-The `check:test-typecheck` ratchet that counted them is **gone**, along with
-`check:test-typecheck:update` and `scripts/baselines/test-typecheck-baseline.json`. A
-counting ratchet at zero can only be breached upward; `tsc` says the same thing sooner and
-names the line.
+It is a hard gate, not a ratchet. **That makes the counters below more necessary, not
+less**: with no error budget left, a cast is the only way to buy a green typecheck.
 
-Two ratchets remain, guarding the side doors a clean typecheck can be bought with:
+## The two counted hatches
 
-- `check:test-as-unknown-as` — counts `as unknown as` casts in `test/`; fails if grown.
-  **Baselined at 0 since the drain closed.** It no longer tracks a backlog: any nonzero
-  reading is a regression to fix at the site, never a number to work down or re-baseline.
-  The routes that replaced the last casts are constructing the real class and
-  `Object.assign`-ing mocks over it (`Object.assign` returns `T & U`), element access
-  (`p["_x"]`) for a `private` reach, and an overload whose implementation signature is
-  loose where the public one cannot be satisfied by any concrete value.
-- `check:test-escape-hatches` — counts the **three** other ways to silence a type error
-  that no parser sees; fails if any of them grows. It counted eight until 2026-08-27,
-  when five retired to biome — see *What biome gates instead* below.
-
-Both behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
-
-`noTsIgnore` was promoted `warn` -> `error` on 2026-08-27; there were zero TypeScript
-directives anywhere in `src/`, `bin/` and `test/`, so it cost nothing.
-
-`test/` is also linted by Biome (`bun run lint`), with one rule deferred for
-`test/**` in `biome.json` (plus one narrower override: `complexity/useLiteralKeys` is off
-for `test/helpers/*-internals.ts`, where element access is what makes a `private` member
-reachable and the rule's "fix" would not compile). The deferred rule is `performance/noDelete`.
-The two former deferrals are closed: after their drains reached zero on biome's count,
-`noExplicitAny` and `noNonNullAssertion` were promoted to `"error"` in the same override
-block, explicitly — promote, never delete, because under Biome v2 a deleted override lands
-the rule at warning and `biome check` exits 0.
-
-## Why the ratchets still exist
-
-A strict `tsconfig.test.json` gate dropped onto 2140+ errors would have invited the path of least resistance: more casts. The cast ratchet prevented that during the drain, and it is exactly why the gate can be strict now. **The hard gate makes them more necessary, not less** — with no error budget left, a cast is the only way to buy a green typecheck, so the counters below are what stops that:
-
-| Escape hatch | Counted by | Notes |
+| Escape hatch | Counted by | Baseline |
 |:--|:--|:--|
-| `as unknown as T` | `check:test-as-unknown-as` | per match, not per line |
-| `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` | `check:test-escape-hatches` (`tsSuppress`) | a comment shape, and comments are **trivia** in biome's CST — `comment()` / `js_comment()` do not compile as GritQL patterns, so no plugin can replace this. **Baselined at 0**: the pattern is anchored to the comment opener, where TypeScript requires a real directive to sit, so prose *about* a directive no longer counts. Any nonzero reading is a regression to fix at the site |
-| `test-ratchet-allow: as-unknown-as` | `check:test-escape-hatches` (`ratchetAllow`) | the cast ratchet's own hatch, so it is ratcheted too. Also a comment shape. At its floor of **25, and that floor is not zero**: each site builds a deliberately-illegal value for a function whose job is surviving contract violations (a string where the type says number), so the cast *is* the test. Draining it deletes the coverage |
-| single `as T` casts | `check:test-escape-hatches` (`looseCast`) | **not a drain target.** `TS2352` says *"convert the expression to `unknown` first"*, so a typecheck gate pushes debt toward casts; this counter makes that visible. The `as unknown as` tail is stripped before counting so the cast ratchet does not double-count it |
+| `as unknown as T` | `check:test-as-unknown-as` (per match, not per line) | **0.** Any nonzero reading is a regression to fix at the site, never a number to work down or re-baseline |
+| `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` | `check:test-escape-hatches` (`tsSuppress`) | **0.** Anchored to the comment opener, so prose *about* a directive does not count |
+| `test-ratchet-allow: as-unknown-as` | `check:test-escape-hatches` (`ratchetAllow`) | **25, and that floor is not zero** — each site builds a deliberately-illegal value for a function whose job is surviving contract violations, so the cast *is* the test. Draining it deletes the coverage |
+| single `as T` casts | `check:test-escape-hatches` (`looseCast`) | **Not a drain target.** `TS2352` pushes debt toward casts; this counter makes that visible. The `as unknown as` tail is stripped first, so no double-count |
 
-Together they enforce "tests are valid instances of the types they claim to be", and that improvement is monotonic.
+Routes that replaced the last `as unknown as` casts: construct the real class and
+`Object.assign` mocks over it (`Object.assign` returns `T & U`); element access (`p["_x"]`)
+for a `private` reach; an overload whose implementation signature is loose where the public
+one cannot be satisfied by any concrete value.
+
+Both ratchets have `--update-baseline` to lower the threshold and `--list` to surface
+offenders, like `check:nax-error` / `check:import-cycles`.
 
 **The counters are a closed system: no change may trade one against another.** Clearing a
-typecheck error by raising `looseCast` is a failed change, not partial progress — and now
-that typecheck is a hard gate, it is the only trade still available, so it is the one to
-watch.
+typecheck error by raising `looseCast` is a failed change, not partial progress.
 
 ## What biome gates instead
 
-Five counters retired from `check:test-escape-hatches` on 2026-08-27. Each shape now has a
-parser behind it at `error` severity, and **the parser is the measure** — a text regex kept
-as a "secondary guard" behind a working rule guards only prose, because prose is all its
-residue ever was.
+These shapes have a parser behind them at `error` severity, and **the parser is the
+measure**. Do not reintroduce a counter for any of them — fix the rule instead.
 
-| Escape hatch | Gated by | Notes |
+| Shape | Gated by | Sanctioned replacement |
 |:--|:--|:--|
-| `as any`, and `any` in type position (`: any`, `<any>`, `Record<string, any>`) | biome `suspicious/noExplicitAny`, `error` for `test/**` | drained 1529 → 0. Annotating a parameter `: any` is still the cheapest non-fix for a `TS7006`; give the real type |
-| postfix `!` (non-null assertion) | biome `style/noNonNullAssertion`, `error` for `test/**` | drained 1064 → 0. Clears `TS18047`/`TS18048` with no runtime check. Use `assertDefined()` from `test/helpers/assert-defined.ts` — it narrows *and* throws |
-| `@ts-ignore` (that one directive only) | biome `suspicious/noTsIgnore`, `error` repo-wide | promoted from its shipped **warn** on 2026-08-27, where `biome check` exits 0 and the directive was reported but let through. `tsSuppress` still counts it: that counter is the only gate for the other two directives, so splitting it buys nothing. Note the rule fires on the phrase in **prose** too — a comment cannot discuss `@ts-ignore` |
-| `as never` | `biome-plugins/no-as-never.grit` (GritQL plugin) | the bottom type is assignable to **everything**, so one word silences any assignment error. Drained 603 → 0 in `test/` and 2 → 0 in `src/`, so the plugin is wired at biome.json's **root** and covers `src/`, `bin/` and `test/` alike. There is no sanctioned `as never` |
-| `absentValue<T>()` / `nullValue<T>()` | `biome-plugins/no-absent-value.grit` (GritQL plugin) | the idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`) — see *Deliberately-absent values* below |
-| undocumented `} catch {}` | `biome-plugins/no-empty-catch.grit` (GritQL plugin) | the STATUS §6 inert-swallow shape. **A comment in the body satisfies it** — that is biome's own allowance, and 204 of the repo's 214 empty catches already carry a reason. See *Empty catches* below |
+| `as any`, `any` in type position | `suspicious/noExplicitAny` | Give the real type. Annotating `: any` to clear a `TS7006` is the cheapest non-fix |
+| postfix `!` (non-null assertion) | `style/noNonNullAssertion` | `assertDefined()` from `test/helpers/assert-defined.ts` — it narrows *and* throws |
+| `@ts-ignore` | `suspicious/noTsIgnore`, repo-wide | Fires on the phrase in **prose** too — a comment cannot discuss it |
+| `as never` | `biome-plugins/no-as-never.grit` | There is no sanctioned `as never` |
+| `absentValue<T>()` / `nullValue<T>()` | `biome-plugins/no-absent-value.grit` | See *Deliberately-absent values* |
+| undocumented `} catch {}` | `biome-plugins/no-empty-catch.grit` | See *Empty catches* |
 
+`test/**` defers exactly one biome rule (`performance/noDelete`), plus a narrower override:
+`complexity/useLiteralKeys` is off for `test/helpers/*-internals.ts`, where element access
+is what makes a `private` member reachable and the rule's "fix" would not compile.
 
-### Tier 1 promotions (2026-08-28)
+Do not weaken a rule to make room. The severities and all three plugins are pinned behind
+their own tests (`test/unit/scripts/biome-test-severity.test.ts`,
+`biome-no-as-never-plugin.test.ts`, `biome-no-absent-value-plugin.test.ts`,
+`biome-no-empty-catch-plugin.test.ts`), which assert the diagnostic *and* biome's exit code.
 
-Seven further off-by-default rules, all at `error`, from
-`docs/plans/biome-v2-rule-gaps.md`. None was in `recommended`, so each was dark until now.
-They gate shapes no counter ever covered:
+## Empty catches
 
-| Rule | Gates | Notes |
-|:--|:--|:--|
-| `nursery/noFloatingPromises` | un-awaited promise with no rejection handler | type-aware; **needs `linter.domains.types`** as well as the rule entry |
-| `nursery/noMisusedPromises` | a promise where a non-promise is expected | same; the 7 sites at adoption were all *nullable-promise presence checks*, not defects — fixed to explicit `!== null` / `!== undefined` |
-| `suspicious/noEvolvingTypes` | `let`/`const` with no annotation whose type evolves | the implicit-`any` cousin `noExplicitAny` cannot see |
-| `style/useThrowOnlyError` | `throw` of a non-`Error` | breaks NaxError cause chaining. Both sites at adoption were deliberate non-Error-throw fixtures and carry a `biome-ignore` with a reason |
-| `suspicious/useErrorMessage` | `new Error()` with no message | |
-| `suspicious/noSkippedTests` | `.skip` on a test | the parser-backed version of the no-`.skip` rule |
-| `suspicious/noDuplicateTestHooks` | duplicated `beforeEach`/`afterEach` | zero sites at adoption; pure regression guard |
-
-### Tier 2 promotions (2026-08-28)
-
-Three more, same day, same contract — `error`, pinned behaviourally:
-
-| Rule | Gates | Notes |
-|:--|:--|:--|
-| `nursery/useAwaitThenable` | `await` on a non-promise | type-aware. 49 of the 51 sites were genuinely redundant — mostly `await` on a synchronous test helper (`makeTempDir`, `cleanupTempDir`, `makeTestRuntime`). The other 2 were **false positives**: Biome 2.5.10 cannot infer through `<function-type alias> \| undefined`, which is exactly the `_deps` slot shape — see below |
-| `nursery/useExhaustiveSwitchCases` | a `switch` over a union missing an arm | type-aware. Its one site turned up a union member (`finalAction: "decomposed"`) that no code produces |
-| `suspicious/useArraySortCompare` | `.sort()` with no comparator | stable. Zero defects found: 58 of 60 sites sort a `string[]`, where the default order is the intended one. Use `byCodePoint` / `byNumber` from `src/utils/sort.ts` |
-
-**The `useAwaitThenable` false positive to expect.** With
-`type F = (a: string) => Promise<number>`, a `private _a: F | undefined` flags at
-`await this._a(...)`; the same property written with the function type *inline*, or declared
-non-optional, does not. `private _d?: F` flags too — it is the alias inside the union, not
-the optionality syntax. Binding to an un-annotated local does not help. The fix that does,
-and the one to reach for first, is a **post-guard local with a non-optional annotation**:
-`const f: F = this._a;`. Suppress only when that is not available
-(`test/helpers/mock-agent-manager.ts` is the sole such site), and put the repro in the comment.
-
-**A `useArraySortCompare` fixture must annotate the element type.** `[3, 1, 2].sort()`
-reports nothing; `function f(xs: string[]) { return xs.sort(); }` reports. Write the probe
-the obvious way and it pins nothing while passing.
-
-### Tier 3 outcomes (2026-08-28)
-
-| Rule | Outcome |
-|:--|:--|
-| `suspicious/noConsole` | **adopted at `error`**, with an override turning it `off` for the layers whose job is terminal output — `bin/**`, `scripts/**`, `src/cli/**`, `src/commands/**`, `src/precheck/index.ts`, `src/execution/lifecycle/headless-formatter.ts`, `src/logger/logger.ts`, and `test/**`. Zero code changes: measured, **not one** of the 753 src-side hits was a stray debug log, and 74 of the 80 test-side hits are `originalLog = console.log` spies |
-| `complexity/noExcessiveCognitiveComplexity` | **adopted as a ratchet** at `maxAllowedComplexity: 176` — the current ceiling, so nothing fails today and anything worse than today's worst does. The number *is* the ratchet; lower it as functions get refactored (findings: 84 at 30, 31 at 50, 10 at 80) |
-| `suspicious/noEmptyBlockStatements` | **rejected.** 1075 of its 1087 sites are the no-op mock stubs `test-helpers.md` mandates; only 10 were empty catches. Replaced by `biome-plugins/no-empty-catch.grit` |
-
-**`noConsole`'s override list is the whole rule.** It gates nothing that exists and
-everything written tomorrow, so a glob that drifts one directory wide gives the gate up
-with no test going red. `biome-test-severity.test.ts` pins both halves: a `console.log` in
-an ordinary `src/` module must fail, and every listed layer must stay silent. Widen that
-list only with a measurement showing the new path is genuinely an output layer.
-
-### Empty catches
-
-`} catch {}` with **no comment and no statement** is a lint error
-(`biome-plugins/no-empty-catch.grit`). The error disappears with no trace and the block can
-never fail — STATUS §6's inert-swallow shape. One of the 10 sites at adoption was live
-coverage loss: an `expect(true).toBe(false)` sat *inside* the `try`, so the catch swallowed
-that assertion's own failure and the "it must throw" half could never fail.
-
-Ways out, in order of preference:
+`} catch {}` with **no comment and no statement** is a lint error. The error disappears with
+no trace and the block can never fail. Ways out, in order of preference:
 
 1. **Give the catch a reason** — a comment saying why nothing can be done, or a real log.
    A comment is enough; this is the intended route and what 204 of the repo's 214 empty
    catches already do.
 2. **`await p.catch(() => {})`** when you simply do not care whether a promise rejected.
-   Not a catch clause, so the plugin does not see it — and it says the same thing in a line.
+   Not a catch clause, so the plugin does not see it.
 3. `// biome-ignore lint/plugin: <reason>` on the line **above the `try`** (not above the
    `catch` — the diagnostic spans the whole try statement).
 
-**If you edit that .grit file, keep every regex group non-capturing.** GritQL reads a
-capture group as a variable binding and the plugin then fails as `p1 errored: regex pattern
-matched N variables` — reported at **info** severity with **exit 0**, indistinguishable from
-a clean run. `biome-no-empty-catch-plugin.test.ts` asserts the plugin emits no `errored`
-diagnostic for exactly this reason.
-
-**`linter.domains.types` is load-bearing and invisible to a behavioural probe.** Deleting it
-while leaving the two `nursery` entries in place drops both rules to **zero findings
-repo-wide**, silently, with the config still reading as enabled. The single-file temp-dir
-harness in `biome-test-severity.test.ts` fires either way, so it cannot see the regression —
-which is why that file also asserts the domain's presence by reading `biome.json`. Keep it at
-`"recommended"`: `"all"` enables every types-domain rule, adding ~489 findings from
-`noUnnecessaryConditions`, which is not adopted. (`useArraySortCompare` accounted for the
-rest of the original 549 and *is* adopted now — as an explicit entry, not via the domain.)
-
-**Do not reintroduce a counter here for a shape biome already parses.** Fix the rule. And do
-not weaken the rules to make room: the severities and all three plugins are pinned behind their
-own tests (`test/unit/scripts/biome-test-severity.test.ts`,
-`biome-no-as-never-plugin.test.ts`, `biome-no-absent-value-plugin.test.ts`,
-`biome-no-empty-catch-plugin.test.ts`), which assert the
-diagnostic *and* biome's exit code. Those tests are the backstop the retired counters used to
-be — a rule that has never been seen to fail is not known to be wired.
-
 ## When to lower the baseline
 
-Only when a commit reduces the count deliberately. Do NOT lower to hide regression — the ratchet will then do nothing.
+Only when a commit reduces the count deliberately. Do NOT lower to hide a regression — the
+ratchet will then do nothing.
 
 ```bash
 bun run check:test-as-unknown-as:update    # after replacing M casts with factories
@@ -192,15 +90,10 @@ The update writes whatever it finds, a regression included.
 When the absence *is* the assertion — "what happens when this required argument is
 missing?" — use `absentValue<T>()` / `nullValue<T>()` from `test/helpers/absent.ts`
 rather than `undefined as unknown as T`. That file holds the project's only sanctioned
-generic type-lie, contained in one place and flagged at every call site.
+generic type-lie, contained in one place and flagged at every call site. It needs no
+exemption from its own gate: the file *declares* the two functions rather than calling them.
 
-The gate is `biome-plugins/no-absent-value.grit`, not a counter. `test/helpers/absent.ts`
-needs no exemption from it: the file *declares* the two functions rather than calling them,
-so it does not match the pattern. The retired `absentValue` counter did need a path
-exemption — a text regex cannot tell a declaration from a call — and that asymmetry is the
-clearest single argument for the parser.
-
-Exemptions in `EXEMPT_BY_KIND` are still per-kind, never per-file (GitHub #1682).
+Exemptions in `EXEMPT_BY_KIND` are per-kind, never per-file (GitHub #1682).
 
 ## Allow-list escape hatch
 
@@ -219,9 +112,7 @@ moves trailing comments, so all three positions count. The cast ratchet skips it
   a line away from its allow marker. All the scanners count per match for this reason.
 - Don't annotate a parameter `: any` to clear a `TS7006` implicit-any error. That is the
   cheapest possible non-fix; `noExplicitAny` catches exactly it. Give the real type.
-- Don't reach for `as never` or a postfix `!`. Both were uncounted through phases 1–2 and
-  are the cheapest fixes for the two error families left in the residue — a `Mock<() => X>`
-  in a typed dep slot, and `TS18047`/`TS18048`. Both are lint errors now. For `!`, the
+- Don't reach for `as never` or a postfix `!`. Both are lint errors now. For `!`, the
   sanctioned replacement is `assertDefined(value, label)`; there is no sanctioned `as never`.
 - Don't exclude files from a check, or add them to `EXEMPT_BY_KIND`. That map is only for
   the ratchets' own test files, whose fixtures contain the literal patterns.
@@ -231,5 +122,13 @@ moves trailing comments, so all three positions count. The cast ratchet skips it
   absent from a side's `byFile` means **zero**, not unknown), then prove the tree meets
   it. See `docs/plans/archive/HANDOFF-1514-phase2-delegable.md` § *Baseline conflicts*.
 - Don't `--update-baseline` on a count that grew. That's a regression; revert instead.
-  The one exception is a deliberate, reviewed *recount* of the same tree (as when the
-  cast ratchet moved from per-line to per-match counting) — say so in the commit.
+  The one exception is a deliberate, reviewed *recount* of the same tree — say so in the commit.
+
+## Rationale, adoption logs and biome-config maintenance
+
+Out of scope for authoring a test; all of it is recorded elsewhere. Tier 1/2/3 rule
+promotions and their drain numbers, the `useAwaitThenable` / `useArraySortCompare` false
+positives, `linter.domains.types`, and the GritQL capture-group trap:
+`docs/plans/biome-v2-rule-gaps.md`. Retired counters and what replaced them:
+`docs/findings/2026-08-28-check-gate-retirement-sweep.md`. Drain history:
+`docs/plans/STATUS-test-debt-drain.md`.

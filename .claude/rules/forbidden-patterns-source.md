@@ -21,7 +21,6 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | `console.log` / `console.error` in src/ | Project logger (`src/logger`) | Unstructured output breaks test capture and log parsing |
 | `fs.readFileSync` / `fs.writeFileSync` | `Bun.file()` / `Bun.write()` | Bun-native project — no Node.js file APIs |
 | `child_process.spawn` / `child_process.exec` | `Bun.spawn()` / `Bun.spawnSync()` | Bun-native project — no Node.js process APIs. **Inverted under `flows/`** — see below |
-| `Bun.spawn` / `Bun.file` / `Bun.write` **inside `flows/`** | `node:child_process` / `node:fs/promises` | `flows/` is loaded by `acpx flow run`, in acpx's own process, and the published `acpx` binary is a Node program. `Bun` is undefined there, so any `Bun.*` call throws `ReferenceError: Bun is not defined` at runtime. Invisible to the test suite (which runs under Bun), so it is enforced statically by `scripts/check-flows-no-bun.ts` in `bun run lint`. |
 | `setTimeout` / `setInterval` for delays | `Bun.sleep()` | Bun-native equivalent for `src/` code. **Exception:** `setTimeout` is permitted (not `setInterval`) when the timer handle must be cancelled mid-flight via `clearTimeout` (e.g. kill/drain races). Document this at the call-site. Tests follow `docs/guides/testing-rules.md` and must not use `Bun.sleep()`. |
 | Hardcoded timeouts in logic | Config values from schema | Hardcoded values can't be tuned per-environment |
 | `import from "src/module/internal-file"` (in `src/`, `bin/`, `scripts/`) | `import from "src/module"` (barrel) | Keeps each module's public API meaningful. Exempt in `test/` — a unit test may reach its unit (#1647). Not a singleton concern: alias and relative resolve to the same module. |
@@ -54,25 +53,8 @@ An "orphan prompt" is any function or template string outside `src/prompts/build
 - Contains `You are`, `## Instructions`, `Fix `, `Your task`, `IMPORTANT:`, or similar instructional text  <!-- nax-rules-allow: important-shouting -->
 - Is named `build*Prompt`, `create*Prompt`, `make*Prompt`, or similar
 
-### Wrong — prompt assembled in a pipeline stage
-
-```typescript
-// src/pipeline/stages/autofix.ts
-function buildFixPrompt(checks: ReviewCheckResult[]): string {
-  return `You are fixing lint errors.\n\n${checks.map(...).join("\n")}`;
-}
-```
-
-### Correct — static method on the relevant builder
-
-```typescript
-// src/prompts/builders/rectifier-builder.ts
-export class RectifierPromptBuilder {
-  static continuation(checks: ReviewCheckResult[], ...): string {
-    // prompt assembly lives here
-  }
-}
-```
+A `buildFixPrompt()` assembling a template string inside a pipeline stage is the shape to
+avoid; the same assembly belongs on `RectifierPromptBuilder`.
 
 ### Builder registry
 
@@ -89,14 +71,5 @@ If no existing builder fits, create `src/prompts/builders/<domain>-builder.ts` a
 
 ### Wrapper functions are also banned
 
-Thin wrappers that do nothing but delegate to a builder add indirection without value:
-
-```typescript
-// Wrong — pointless wrapper in src/acceptance/fix-executor.ts
-function buildSourceFixPrompt(...): string {
-  return new AcceptancePromptBuilder().buildSourceFixPrompt(...);
-}
-
-// Correct — call the builder directly at the use site
-const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt(...);
-```
+A thin local function that does nothing but delegate to a builder adds indirection without
+value. Call the builder directly at the use site.
