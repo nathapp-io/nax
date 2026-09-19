@@ -23,6 +23,7 @@ import type {
   Usage as PiUsage,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { AuthResolver } from "../auth/resolver.ts";
@@ -42,8 +43,10 @@ import type {
   ProtocolEvent,
   ProtocolRequest,
   ThinkingBlock,
+  ThinkingLevel,
   Transport,
 } from "./types.ts";
+import { THINKING_LEVELS } from "./types.ts";
 
 export interface PiResponse {
   readonly status: number;
@@ -439,21 +442,69 @@ function toPiCost(pricing: Pricing): Model<Api>["cost"] {
 /**
  * The bundled sibling an override model is templated from.
  *
- * The rule is deliberate rather than positional. Taking the first model on the
- * api meant the choice was an artefact of the snapshot's array order: a pi-ai
- * bump that reordered or inserted models silently changed which `input`,
- * `compat` and `thinkingLevelMap` an existing override inherited. Largest
- * `contextWindow` is the closest data-driven proxy for "the model this
- * override is a sibling of"; larger `maxTokens` breaks a context tie, and id is
- * the final key so the pick is a total order that cannot move when the catalog
- * is merely reordered. The id key is a stability measure, not a quality
- * ranking.
+ * The size rule (contextWindow, then maxTokens, then id) is deliberate rather
+ * than positional. Taking the first model on the api meant the choice was an
+ * artefact of the snapshot's array order: a pi-ai bump that reordered or
+ * inserted models silently changed which `input`, `compat` and
+ * `thinkingLevelMap` an existing override inherited. Largest `contextWindow`
+ * is the closest data-driven proxy for "the model this override is a sibling
+ * of"; larger `maxTokens` breaks a context tie, and id is the final key so the
+ * pick is a total order that cannot move when the catalog is merely
+ * reordered. The id key is a stability measure, not a quality ranking.
+ *
+ * Issue #47: sizing alone can pick a sibling whose thinking support does not
+ * cover the override's declared levels — a smaller-context sibling that
+ * supports "high" is a better template for an override declaring "high" than
+ * a larger one that maps it to `null`, because `synthesiseModel` inherits
+ * `thinkingLevelMap` (and `compat.thinkingFormat`) from whichever template is
+ * picked. So when `thinkingLevels` is given, candidates are first restricted
+ * to those pi's own `getSupportedThinkingLevels` says cover every declared
+ * level ("off" is excluded from the coverage check: every model accepts not
+ * thinking, so it says nothing about which sibling to prefer). The size rule
+ * remains the tie-break among compatible candidates, and the whole rule when
+ * no candidate is compatible — so the pick stays a total order that cannot
+ * move when the catalog is merely reordered, compatible or not.
+ *
+ * This can change which sibling an *existing* override inherits its other
+ * unstated fields from, not just `thinkingLevelMap` — `synthesiseModel`
+ * spreads the whole template, `input` (text/image support) included. On
+ * `opencode-go`, for example, `kimi-k3` (the size winner) accepts images
+ * while `deepseek-v4-flash` (a thinking-compatible but smaller winner) does
+ * not, so an override whose declared levels flip the pick this way loses
+ * vision support it previously inherited incidentally. That is accepted:
+ * getting the declared thinking levels translated correctly is the override's
+ * one explicit contract, while `input` was always an inherited accident of
+ * whichever sibling sizing happened to prefer — never something an override
+ * declares or can rely on. A consumer that needs a specific `input` should
+ * not depend on template inheritance for it.
  */
-export function pickTemplate(models: readonly Model<Api>[], protocol: string): Model<Api> | undefined {
-  let best: Model<Api> | undefined;
-  for (const candidate of models) {
-    if (candidate.api !== protocol) continue;
-    if (best === undefined || isBetterTemplate(candidate, best)) best = candidate;
+export function pickTemplate(
+  models: readonly Model<Api>[],
+  protocol: string,
+  thinkingLevels?: readonly ThinkingLevel[],
+): Model<Api> | undefined {
+  const candidates = models.filter((candidate) => candidate.api === protocol);
+  if (candidates.length === 0) return undefined;
+
+  const required = (thinkingLevels ?? []).filter((level) => level !== "off");
+  if (required.length > 0) {
+    const compatible = candidates.filter((candidate) => isThinkingCompatible(candidate, required));
+    if (compatible.length > 0) return bestBySize(compatible);
+  }
+
+  return bestBySize(candidates);
+}
+
+/** Whether every one of `required` (already stripped of "off") is pi-supported on `candidate`. */
+function isThinkingCompatible(candidate: Model<Api>, required: readonly ThinkingLevel[]): boolean {
+  const supported = new Set(getSupportedThinkingLevels(candidate));
+  return required.every((level) => supported.has(level));
+}
+
+function bestBySize(candidates: readonly Model<Api>[]): Model<Api> {
+  let best = candidates[0] as Model<Api>;
+  for (const candidate of candidates.slice(1)) {
+    if (isBetterTemplate(candidate, best)) best = candidate;
   }
   return best;
 }
@@ -477,20 +528,34 @@ function isBetterTemplate(candidate: Model<Api>, best: Model<Api>): boolean {
  * it sent (`model.maxTokens ?? template.maxTokens`) rather than clamped to the
  * template's.
  *
- * `thinkingLevelMap` is inherited for the same reason, with a caveat worth
- * knowing: `thinkingLevels` is authoritative client-side — `clampThinkingLevel`
- * runs in the client, before the protocol is reached — while the map only
- * translates an already-chosen level into the provider's own value. An
- * override that supports a level the template's map marks unsupported will
- * therefore reach the wire, and be translated by the template's rules.
+ * `thinkingLevelMap` (and the `compat.thinkingFormat` bundled inside
+ * `compat`) is inherited from the template `pickTemplate` selects, which is
+ * now itself thinking-aware (issue #47) — so an inherited map is expected to
+ * cover the override's declared levels whenever a compatible sibling exists.
+ * Three cases, in priority order:
+ *
+ * 1. `model.thinkingLevelMap` is explicit: it always wins, over both the
+ *    template's map and anything this function would derive.
+ * 2. Otherwise, when the picked template covers every declared level
+ *    (excluding "off"), its map is inherited as-is via `...template` below —
+ *    it already translates each declared level correctly.
+ * 3. Otherwise (no compatible sibling exists on this provider/api, so the
+ *    template is the best available by size alone), a map is derived from
+ *    the override's own `thinkingLevels` rather than a size-picked stranger's
+ *    — see `deriveThinkingLevelMap`.
  */
 function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
-  const template = pickTemplate(base.getModels(), model.protocol);
+  const template = pickTemplate(base.getModels(), model.protocol, model.thinkingLevels);
   if (template === undefined) {
     throw new Error(
       `Provider "${base.id}" has no model on api "${model.protocol}" to template override model "${model.id}" from.`,
     );
   }
+
+  const requiredLevels = model.thinkingLevels.filter((level) => level !== "off");
+  const thinkingLevelMap =
+    model.thinkingLevelMap ??
+    (isThinkingCompatible(template, requiredLevels) ? undefined : deriveThinkingLevelMap(model, template));
 
   return {
     ...template,
@@ -511,7 +576,66 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     // pi's `reasoning` is the boolean form of our level list. "off" alone is
     // no thinking support, which is exactly what `false` means here.
     reasoning: model.thinkingLevels.some((level) => level !== "off"),
+    ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
   };
+}
+
+/**
+ * Builds a `thinkingLevelMap` from the override's own declared levels,
+ * instead of inheriting a size-picked template's — used only when no
+ * level-compatible template exists and the override states no map of its
+ * own (case 3 above).
+ *
+ * A declared level maps to the template's value when that value is a string
+ * (keeps the provider's own wire vocabulary for a level the template does
+ * happen to translate), otherwise to the level's own name — identity, which
+ * is what pi's `?? effort` fallback already does on an absent mapping, and is
+ * required for "xhigh"/"max" to count as pi-supported at all (a `undefined`
+ * entry there is read as unsupported). An undeclared level maps to `null`.
+ *
+ * "off" is never derived this way — an invented identity value ("off") would
+ * reach the wire as a real `reasoning_effort`/`reasoning`/`thinking` string on
+ * every non-thinking request, which several of pi's `thinkingFormat` branches
+ * (`deepseek`, `openrouter`, `string-thinking`) would send as-is. Instead
+ * `off` preserves the template's own three states exactly, because those same
+ * branches distinguish two of them: a missing key (`undefined`) sends the
+ * disable-thinking signal (`model.thinkingLevelMap?.off !== null` reads true),
+ * an explicit `null` suppresses it (the check reads false), and a string
+ * overrides it with that value. Collapsing "missing" and `null` into one
+ * `null` — as an earlier version of this function did — silently stopped
+ * sending the disable signal for every template that simply never stated an
+ * "off" entry, which is the same silent-extra-reasoning-cost defect issue #47
+ * exists to close, just relocated to the "off" side. So: template value is a
+ * string → that string; `null` → `null`; key absent → leave the key unset on
+ * the derived map too (`Model.thinkingLevelMap.off` stays `undefined`),
+ * matching what case 2's `...template` inherit-as-is already does correctly.
+ */
+function deriveThinkingLevelMap(
+  model: ResolvedModel,
+  template: Model<Api>,
+): Readonly<Partial<Record<ThinkingLevel, string | null>>> {
+  const templateMap = template.thinkingLevelMap;
+  const map: Partial<Record<ThinkingLevel, string | null>> = {};
+
+  const templateOff = templateMap?.off;
+  if (templateOff === null) {
+    map.off = null;
+  } else if (typeof templateOff === "string") {
+    map.off = templateOff;
+  }
+  // else: the template has no "off" key at all — leave it unset rather than
+  // inventing either a string or a `null`.
+
+  for (const level of THINKING_LEVELS) {
+    if (level === "off") continue;
+    if (!model.thinkingLevels.includes(level)) {
+      map[level] = null;
+      continue;
+    }
+    const templateValue = templateMap?.[level];
+    map[level] = typeof templateValue === "string" ? templateValue : level;
+  }
+  return map;
 }
 
 /**

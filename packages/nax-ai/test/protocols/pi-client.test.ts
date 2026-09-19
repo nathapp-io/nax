@@ -201,6 +201,58 @@ describe("pickTemplate", () => {
     const candidates = [sibling("b", 1000, 100), sibling("a", 1000, 100)];
     expect(pickTemplate(candidates, "openai-completions")?.id).toBe("a");
   });
+
+  it("falls back to the size order when no thinkingLevels are given (pre-#47 behaviour)", () => {
+    const candidates = [sibling("small", 8192, 8192), sibling("large", 128000, 32000)];
+    expect(pickTemplate(candidates, "openai-completions")?.id).toBe("large");
+  });
+
+  // Regression for issue #47: sizing alone picked "kimi-k3", a bigger sibling
+  // whose thinkingLevelMap maps every level except "max" to null, so an
+  // override declaring "high" was silently reduced to pi's "max" wire value.
+  it("prefers a level-compatible sibling over a larger-context incompatible one", () => {
+    const incompatibleButBigger: Model<Api> = {
+      ...sibling("kimi-like", 256_000, 32_000),
+      reasoning: true,
+      thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null, max: "max" },
+    };
+    const compatibleButSmaller: Model<Api> = {
+      ...sibling("deepseek-like", 64_000, 8_000),
+      reasoning: true,
+      thinkingLevelMap: { off: "off", low: "low", high: "high" },
+    };
+
+    const picked = pickTemplate([incompatibleButBigger, compatibleButSmaller], "openai-completions", [
+      "off",
+      "low",
+      "high",
+    ]);
+
+    expect(picked?.id).toBe("deepseek-like");
+  });
+
+  it("still falls back to the size order when no candidate is thinking-compatible", () => {
+    const smallIncompatible: Model<Api> = {
+      ...sibling("small", 8192, 8192),
+      reasoning: true,
+      thinkingLevelMap: { off: null, high: null },
+    };
+    const largeIncompatible: Model<Api> = {
+      ...sibling("large", 128_000, 32_000),
+      reasoning: true,
+      thinkingLevelMap: { off: null, high: null },
+    };
+
+    const picked = pickTemplate([smallIncompatible, largeIncompatible], "openai-completions", ["off", "high"]);
+
+    expect(picked?.id).toBe("large");
+  });
+
+  it("ignores 'off' when checking coverage, since every model accepts not thinking", () => {
+    const onlyOffCapable: Model<Api> = { ...sibling("bare", 1000, 100), reasoning: false };
+    const picked = pickTemplate([onlyOffCapable], "openai-completions", ["off"]);
+    expect(picked?.id).toBe("bare");
+  });
 });
 
 describe("toPiOptions", () => {

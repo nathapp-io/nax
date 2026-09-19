@@ -10,6 +10,12 @@
  */
 
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+// Only this test file reaches past pi-ai's top-level export to exercise the
+// real openai-completions wire-body builder via its `onPayload` hook — the
+// one way to prove issue #47's fix at the actual wire, not merely at the
+// synthesised Model. `check-pi-ai-imports` scans `src/`, not `test/`, so this
+// does not weaken the adapter boundary the gate protects.
+import { streamSimple as openaiCompletionsStreamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { describe, expect, it } from "vitest";
 import { createClient } from "../../src/client.ts";
 import { createPiDeps, createPiProtocol } from "../../src/protocols/pi-client.ts";
@@ -271,5 +277,196 @@ describe("provider overrides at the protocol seam", () => {
     for (const bundled of openai?.models ?? []) {
       await expect(deps.resolveModel(bundled.id, "openai")).resolves.toMatchObject({ id: bundled.id });
     }
+  });
+});
+
+/**
+ * `ResolvedModel.thinkingLevelMap` and the thinking-aware `pickTemplate`
+ * (issue #47).
+ *
+ * `opencode-go`'s real "openai-completions" siblings reproduce the reported
+ * bug exactly: `kimi-k3` is the largest-context sibling on that api and its
+ * map marks every level but "max" unsupported, while `deepseek-v4-flash` (a
+ * touch smaller) maps "low"/"high"/"max" to themselves and carries
+ * `compat.thinkingFormat: "deepseek"`. Pinning to those real ids is
+ * deliberate, matching this file's existing style (`gpt-4`/`openai`) — a
+ * synthetic fixture would not prove the fix against the catalog that
+ * actually produced the bug report.
+ */
+describe("thinkingLevelMap synthesis (issue #47)", () => {
+  /**
+   * Drives an override model's synthesised pi Model through pi-ai's REAL
+   * openai-completions wire-body builder, capturing the payload via its
+   * `onPayload` hook before any network call is attempted (`fetch` is
+   * stubbed to throw, so the request never actually leaves the process).
+   * This is the only way to prove a `reasoning_effort`/`thinking` value
+   * reaches the wire correctly, short of hitting a real provider.
+   */
+  async function wirePayload(
+    model: Model<Api>,
+    reasoning: "off" | "low" | "high" | "max" | "xhigh",
+  ): Promise<Record<string, unknown> | undefined> {
+    let captured: Record<string, unknown> | undefined;
+    const events = openaiCompletionsStreamSimple(
+      model as Parameters<typeof openaiCompletionsStreamSimple>[0],
+      { messages: [] } as Context,
+      {
+        reasoning,
+        apiKey: "test-key",
+        fetch: async () => {
+          throw new Error("stubbed — no network call should be needed to capture the payload");
+        },
+        onPayload: (params: unknown) => {
+          captured = params as Record<string, unknown>;
+          return params;
+        },
+      } as SimpleStreamOptions,
+    );
+    for await (const _ of events) {
+      // Draining is what runs buildParams/onPayload; the eventual "error"
+      // event (from the stubbed fetch) is expected and ignored.
+    }
+    return captured;
+  }
+
+  const OVERRIDE: ResolvedModel = {
+    id: "deepseek-v4.1-flash",
+    provider: "opencode-go",
+    protocol: "openai-completions",
+    pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 500_000,
+    supportsTools: true,
+    // The reported case: "off" plus three thinking levels, none of them the
+    // lone "max" that kimi-k3's map would have left standing pre-fix.
+    thinkingLevels: ["off", "low", "high", "max"],
+  };
+
+  it("templates the override off a level-compatible sibling, not the larger incompatible kimi-k3", async () => {
+    const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [OVERRIDE] }] });
+    const model = await deps.resolveModel(OVERRIDE.id, "opencode-go");
+
+    expect(model.thinkingLevelMap).toMatchObject({ low: "low", high: "high", max: "max" });
+    expect(model.compat).toMatchObject({ thinkingFormat: "deepseek" });
+  });
+
+  it("round-trips each declared level to the wire correctly, without collapsing to 'max'", async () => {
+    const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [OVERRIDE] }] });
+    const model = await deps.resolveModel(OVERRIDE.id, "opencode-go");
+
+    // The exact regression: pre-fix, every one of these collapsed to
+    // reasoning_effort "max" because the synthesised model's inherited map
+    // only recognised "max".
+    await expect(wirePayload(model, "low")).resolves.toMatchObject({ reasoning_effort: "low" });
+    await expect(wirePayload(model, "high")).resolves.toMatchObject({ reasoning_effort: "high" });
+    await expect(wirePayload(model, "max")).resolves.toMatchObject({ reasoning_effort: "max" });
+  });
+
+  it("never invents an 'off' value on the wire", async () => {
+    const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [OVERRIDE] }] });
+    const model = await deps.resolveModel(OVERRIDE.id, "opencode-go");
+
+    const payload = await wirePayload(model, "off");
+    expect(payload).not.toHaveProperty("reasoning_effort");
+    expect(payload).toMatchObject({ thinking: { type: "disabled" } });
+  });
+
+  it("prefers a level-compatible sibling over the larger-context incompatible one, falling back to size order otherwise", async () => {
+    const compatible: ResolvedModel = { ...OVERRIDE, thinkingLevels: ["off", "low", "high", "max"] };
+    // No single "opencode-go" sibling supports both "high" and "xhigh"
+    // together in the real catalog (verified against the bundled snapshot),
+    // so this forces the size-order fallback even under the new rule.
+    const noCompatibleSibling: ResolvedModel = {
+      ...OVERRIDE,
+      id: "phantom-no-combo",
+      thinkingLevels: ["off", "high", "xhigh"],
+    };
+
+    const deps = createPiDeps({
+      providerOverrides: [{ provider: "opencode-go", models: [compatible, noCompatibleSibling] }],
+    });
+
+    const compatModel = await deps.resolveModel(compatible.id, "opencode-go");
+    expect(compatModel.thinkingLevelMap).toMatchObject({ low: "low", high: "high", max: "max" });
+
+    const fallbackModel = await deps.resolveModel(noCompatibleSibling.id, "opencode-go");
+    // kimi-k3 (contextWindow 1,048,576) is the size-order winner among
+    // opencode-go's openai-completions siblings; its map has no "xhigh" key,
+    // so an incompatible fallback derives one via identity rather than
+    // inheriting kimi-k3's stranger map wholesale.
+    expect(fallbackModel.thinkingLevelMap).toMatchObject({ high: "high", xhigh: "xhigh" });
+  });
+
+  it("derives a map from the override's own levels when no compatible sibling exists, without inventing 'off'", async () => {
+    const noCompatibleSibling: ResolvedModel = {
+      ...OVERRIDE,
+      id: "phantom-no-combo-2",
+      thinkingLevels: ["off", "high", "xhigh"],
+    };
+    const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [noCompatibleSibling] }] });
+    const model = await deps.resolveModel(noCompatibleSibling.id, "opencode-go");
+
+    expect(model.thinkingLevelMap).toMatchObject({
+      off: null, // kimi-k3's own "off" is null, so none is invented
+      minimal: null, // undeclared levels map to null
+      low: null,
+      medium: null,
+      high: "high", // declared, template maps it to null, so identity
+      xhigh: "xhigh", // declared, template has no key at all, so identity
+      max: null,
+    });
+  });
+
+  it("still sends the wire's disable-thinking signal when the derived map's off is undefined, not null", async () => {
+    // Regression: an earlier version of deriveThinkingLevelMap collapsed
+    // "template has no 'off' key" (undefined) and "template marks off
+    // unsupported" (null) into a single explicit null. pi's deepseek,
+    // openrouter and string-thinking thinkingFormat branches distinguish
+    // them via `model.thinkingLevelMap?.off !== null` — undefined reads true
+    // (send the disable signal), null reads false (suppress it) — so writing
+    // null where the template had no key silently dropped
+    // `thinking: { type: "disabled" }` on every non-thinking request.
+    //
+    // No real "deepseek" provider sibling on openai-completions declares an
+    // "off" key at all (verified against the bundled catalog), and none
+    // supports "xhigh", so this override falls into Case 3 (derive) with a
+    // deepseek-format template whose off is genuinely absent, not null.
+    const noXhighSupport: ResolvedModel = {
+      id: "deepseek-v4.2-flash",
+      provider: "deepseek",
+      protocol: "openai-completions",
+      pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 500_000,
+      supportsTools: true,
+      thinkingLevels: ["off", "high", "xhigh"],
+    };
+    const deps = createPiDeps({ providerOverrides: [{ provider: "deepseek", models: [noXhighSupport] }] });
+    const model = await deps.resolveModel(noXhighSupport.id, "deepseek");
+
+    // The derived map itself must leave "off" unset, not null.
+    expect(model.thinkingLevelMap?.off).toBeUndefined();
+    expect("off" in (model.thinkingLevelMap ?? {})).toBe(false);
+
+    const payload = await wirePayload(model, "off");
+    expect(payload).toMatchObject({ thinking: { type: "disabled" } });
+    expect(payload).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("lets an explicit ResolvedModel.thinkingLevelMap win over both the template's and the derived map", async () => {
+    const explicit: ResolvedModel = {
+      ...OVERRIDE,
+      id: "phantom-explicit-map",
+      // Deliberately incompatible with any real sibling, so the derive path
+      // would otherwise run — proving the explicit map wins over it too, not
+      // just over a compatible template's.
+      thinkingLevels: ["off", "high", "xhigh"],
+      thinkingLevelMap: { off: null, high: "custom-high", xhigh: "custom-xhigh" },
+    };
+    const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [explicit] }] });
+    const model = await deps.resolveModel(explicit.id, "opencode-go");
+
+    expect(model.thinkingLevelMap).toEqual({ off: null, high: "custom-high", xhigh: "custom-xhigh" });
+
+    const payload = await wirePayload(model, "high");
+    expect(payload).toMatchObject({ reasoning_effort: "custom-high" });
   });
 });

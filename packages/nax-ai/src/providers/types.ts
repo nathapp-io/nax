@@ -71,6 +71,18 @@ export interface ResolvedModel {
   readonly supportsTools: boolean;
   /** Empty means the model has no thinking support. */
   readonly thinkingLevels: readonly ThinkingLevel[];
+  /**
+   * Maps this model's own thinking levels to the provider's wire values, when
+   * known. Absent for a hand-built catalog that does not state it; every
+   * model from `defaultProviders()` carries pi-ai's map. Analogous to
+   * `maxTokens` (issue #39): an override that declares this is no longer
+   * synthesised against a templated sibling's translation, which — for a
+   * sibling picked only by context/output size — can silently mark a
+   * declared level unsupported or misroute it on the wire (issue #47). A
+   * `null` value marks a level unsupported; a missing key defers to whatever
+   * `synthesiseModel` derives.
+   */
+  readonly thinkingLevelMap?: Readonly<Partial<Record<ThinkingLevel, string | null>>>;
 }
 
 /**
