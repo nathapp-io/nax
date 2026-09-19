@@ -1,0 +1,229 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "preflight-test-baseline",
+  "branchName": "feat/preflight-test-baseline",
+  "createdAt": "2026-09-19T00:00:00.000Z",
+  "updatedAt": "2026-09-19T07:06:29.591Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Persist and classify deterministic test baselines",
+      "description": "**Goal** \u2014 Add the immutable baseline data model, feature-tree persistence, and pure finding classification used by downstream lifecycle and prompt consumers.\n\n**Motivation** \u2014 When `full-suite-gate` fails, the implementer cannot tell whether a failing test was already red before the story started or was introduced by its own changes.\n\n**Approach** \u2014 A story's baseline is the set of failing tests at the story's base ref.\n\n- **Immutable within a story.** Anything that changes after story start \u2014 including mechanical lint/format fixes the harness runs on the story's behalf \u2014 is attributable to the story. No mid-story re-capture.\n- **Keyed by story and base ref**, never by tier or agent: escalation and fallback swaps inherit the baseline because each new session's prompt is rebuilt from the persisted artifact.\n- **Distinct concept from `resolveFlakeBaselineDiff`** (`src/verification/flake-baseline-diff.ts`), which is a git-diff of changed test files. This artifact is a red/green snapshot; the two must not share a name.\n\nArtifact paths are built with the `featureDir()` helpers from `@/config` (`scripts/check-feature-dir-ssot.ts` forbids open-coding them): the run-start baseline at the feature root, per-story roll-forward baselines under the feature's `stories/` tree. `readStoryBaseline`/`readRunBaseline` return `undefined` for a missing or unparseable artifact; classification treats `undefined` like a `no-baseline` marker.\n\nClassification rules for `applyBaselineDispositions` (returns new `Finding` objects with `baselineDisposition` set; never mutates input, never drops a finding):\n\n- Story baseline entry matches on `(file, testName)` when the entry has a `testName`; an entry without `testName` matches any finding in that file (file-level fallback).\n- Match against the story baseline \u2192 `pre-existing`.\n- A finding matched by a captured `source: \"roll-forward\"` story baseline while absent from a captured run baseline \u2192 `earlier-story`; a run-baseline match remains `pre-existing`.\n- No match at all against a captured story baseline \u2192 `introduced`.\n- Story baseline is a `no-baseline` marker or `undefined` \u2192 `unattributed`.\n\n**Scope** \u2014 In: `src/verification/test-baseline.ts`, barrel export, feature-tree JSON IO, optional `Finding.baselineDisposition`, baseline resolution by execution mode, and non-mutating classification. Out: run-start suite execution and roll-forward persistence (US-002); gate attachment and label rendering (US-003); baseline prompt rendering/plumbing (US-004); Mid-story baseline re-capture \u2014 the baseline is immutable within a story by design.\n\n**Interface**\n```ts\nexport type BaselineDisposition = \"introduced\" | \"pre-existing\" | \"earlier-story\" | \"unattributed\";\n\nexport type TestBaseline =\n  | {\n      kind: \"captured\";\n      baseRef?: string;            // git HEAD at capture; absent when not a git repo\n      capturedAt: string;          // ISO timestamp\n      source: \"preflight\" | \"roll-forward\";\n      entries: BaselineEntry[];    // empty array = baseline green\n    }\n  | {\n      kind: \"no-baseline\";\n      reason: \"gate-disabled\" | \"no-test-command\" | \"timeout\" | \"unparseable\" | \"error\" | \"no-gate-parse\";\n      capturedAt: string;\n    };\n\nexport interface BaselineEntry {\n  file: string;\n  testName?: string;               // absent = file-level fallback entry\n}\n```\n\nFunctions (all exported): `writeRunBaseline`, `readRunBaseline`, `writeStoryBaseline`, `readStoryBaseline`, `resolveStoryBaseline(root, featureId, storyId, executionMode)` \u2014 the one read path consumers use: returns the story artifact in sequential modes and the run-start baseline in parallel mode \u2014 and `applyBaselineDispositions(findings, storyBaseline, runBaseline)`.",
+      "acceptanceCriteria": [
+        "Given a captured source `preflight` baseline with two entries written by `writeRunBaseline`, when `readRunBaseline` reads the same root and feature id, then it returns an equal value.",
+        "Given a source `roll-forward` baseline written by `writeStoryBaseline` for a story id, when `readStoryBaseline` reads that story id, then it returns the written value.",
+        "Given a source `roll-forward` story baseline written for one story id, when `readStoryBaseline` reads a different story id, then it returns `undefined`.",
+        "When no run-baseline artifact exists, then `readRunBaseline` returns `undefined` without throwing.",
+        "When a run-baseline artifact contains invalid JSON, then `readRunBaseline` returns `undefined` without throwing.",
+        "When no story-baseline artifact exists, then `readStoryBaseline` returns `undefined` without throwing.",
+        "When a story-baseline artifact contains invalid JSON, then `readStoryBaseline` returns `undefined` without throwing.",
+        "Given a story baseline entry whose `file` and `testName` equal a finding's `file` and `rule`, when `applyBaselineDispositions` classifies the finding, then its `baselineDisposition` is `pre-existing`.",
+        "Given a captured story baseline with no matching entry, when `applyBaselineDispositions` classifies a finding, then its `baselineDisposition` is `introduced`.",
+        "Given a captured story baseline entry with a `file` and no `testName`, when `applyBaselineDispositions` classifies any finding in that file, then its `baselineDisposition` is `pre-existing`.",
+        "Given a captured story baseline entry with a `testName`, when `applyBaselineDispositions` classifies a finding in the same file with a different `rule`, then its `baselineDisposition` is `introduced`.",
+        "Given a captured source `roll-forward` story baseline matching a finding and a captured run baseline not matching it, when `applyBaselineDispositions` classifies the finding, then its `baselineDisposition` is `earlier-story`.",
+        "Given a captured source `roll-forward` story baseline and a captured run baseline that both match a finding, when `applyBaselineDispositions` classifies the finding, then its `baselineDisposition` is `pre-existing`.",
+        "Given a `no-baseline` story marker, when `applyBaselineDispositions` classifies findings, then every finding has `baselineDisposition` `unattributed`.",
+        "Given an undefined story baseline, when `applyBaselineDispositions` classifies findings, then every finding has `baselineDisposition` `unattributed`.",
+        "Given a captured story baseline with zero entries, when `applyBaselineDispositions` classifies findings, then every finding has `baselineDisposition` `introduced`.",
+        "When `applyBaselineDispositions` classifies findings, then it returns a new array of new finding objects with every original field preserved, leaves the input array and elements unmutated, and returns exactly one output finding per input finding.",
+        "When `TestBaseline`, `BaselineEntry`, `BaselineDisposition`, `writeRunBaseline`, `readRunBaseline`, `writeStoryBaseline`, `readStoryBaseline`, `resolveStoryBaseline`, and `applyBaselineDispositions` are imported from the `src/verification` barrel, then every named function is callable."
+      ],
+      "tags": [
+        "feature",
+        "verification",
+        "artifacts",
+        "findings"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a bounded new persistence module plus one optional Finding field and deterministic matching rules; it uses existing feature-path and test-failure conventions without lifecycle integration."
+      },
+      "contextFiles": [
+        "src/findings/types.ts",
+        "src/config/paths.ts",
+        "src/verification/flake-baseline-diff.ts",
+        "src/verification/index.ts",
+        "src/test-runners/types.ts"
+      ],
+      "expectedFiles": [
+        "src/verification/test-baseline.ts",
+        "test/unit/verification/test-baseline.test.ts"
+      ],
+      "outOfScope": [
+        "Mid-story baseline re-capture \u2014 the baseline is immutable within a story by design."
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Capture run baselines and roll them forward",
+      "description": "**Goal** \u2014 Capture the full-suite result once before story execution and persist each sequential story's final gate parse as the next story's immutable baseline.\n\n**Motivation** \u2014 A deterministic harness-side capture is also cheaper: agent-run capture puts raw suite output into the transcript where it is re-carried every turn, and the knowledge dies at the session boundary, so every escalation or fallback swap would re-run the suite.\n\n**Approach** \u2014 Run start: a capture step at the top of `runExecutionPhase`, before the first story. It resolves the suite command via `resolveQualityTestCommands`, runs it once with the gate's timeout (`execution.regressionGate.timeoutSeconds`, falling back to `execution.rectification.fullSuiteTimeoutSeconds`, else the schema default), parses with `parseTestOutput`, records `captureGitRef` as `baseRef`, and persists the run-start baseline. The capture never blocks or fails the run.\n\nRoll-forward: on story completion, the story's final full-suite-gate parse is persisted as the next story's baseline. Roll-forward applies only to sequential execution (shared isolation and sequential worktree isolation, where each story branches after the previous merge). In parallel execution (`src/execution/parallel.ts` \u2014 concurrent worktrees, no total order) roll-forward is skipped and every story's baseline resolves to the run-start baseline; the `earlier-story` disposition therefore never fires in parallel mode. The run-start artifact is retained for the whole run and never overwritten by roll-forward writes.\n\n| Condition | Behaviour |\n|:---|:---|\n| `execution.regressionGate.enabled: false` | No suite spawn; persist `no-baseline` reason `gate-disabled`. |\n| No test command resolvable | No spawn; `no-baseline` reason `no-test-command`. |\n| Suite run exceeds the resolved timeout | `no-baseline` reason `timeout`. |\n| Non-zero exit with zero structured failures parsed | `no-baseline` reason `unparseable`. |\n| Runner throws | Caught; `no-baseline` reason `error`; capture resolves normally. |\n| Story ends with no usable gate parse (sequential) | Next story gets `no-baseline` reason `no-gate-parse`. |\n| Parallel execution mode | Roll-forward skipped; story baseline = run-start baseline. |\n\n**Scope** \u2014 In: the run-start hook, injectable capture/roll-forward dependencies with defaults, the necessary full-suite phase-output propagation of `parsedSummary`, suite command/timeout parsing, degradation markers, and sequential-only next-story persistence. Out: baseline types and IO/classification (US-001); attaching dispositions to gate findings (US-003); prompt section/plumbing (US-004); US-002 only: a post-merge re-capture for parallel dependency groups \u2014 parallel-mode stories use the run-start baseline even when their dependencies merged first.\n\n**Interface** \u2014 `src/execution/lifecycle/test-baseline-capture.ts` owns the delegated capture and roll-forward persistence; it consumes `writeRunBaseline` / `writeStoryBaseline` and persists `TestBaseline` records with `source: \"preflight\"` or `source: \"roll-forward\"`.\n\nFile-size constraint (600-line gate): `src/execution/post-run.ts` is at 596/600 lines. The roll-forward hook must be a single delegated call into `test-baseline-capture.ts`; if that still breaches the cap, first extract an existing self-contained block from `post-run.ts` into a sibling module.",
+      "acceptanceCriteria": [
+        "Given a command runner that returns failing suite output and `captureGitRef` that returns a ref, when the capture step runs, then it persists a captured run baseline with source `preflight`, that `baseRef`, and one entry per parsed failure carrying its `file` and `testName`.",
+        "Given a quality command resolver that returns a command string, when the capture step runs, then its command runner receives that exact command.",
+        "Given `execution.regressionGate.timeoutSeconds`, when the capture step runs, then its command runner receives that timeout.",
+        "Given no `execution.regressionGate.timeoutSeconds` and `execution.rectification.fullSuiteTimeoutSeconds`, when the capture step runs, then its command runner receives the rectification timeout fallback.",
+        "Given a green suite with exit code 0 and zero parsed failures, when the capture step runs, then it persists a captured baseline with an empty `entries` array rather than a `no-baseline` marker.",
+        "Given `execution.regressionGate.enabled` is false, when the capture step runs, then it does not invoke the runner and persists a `no-baseline` marker with reason `gate-disabled`.",
+        "Given no resolvable test command, when the capture step runs, then it does not invoke the runner and persists a `no-baseline` marker with reason `no-test-command`.",
+        "Given a runner result flagged as timed out, when the capture step runs, then it persists a `no-baseline` marker with reason `timeout`.",
+        "Given a nonzero runner result whose output parses to zero structured failures, when the capture step runs, then it persists a `no-baseline` marker with reason `unparseable`.",
+        "Given a runner that throws, when the capture step runs, then it resolves without rejecting and persists a `no-baseline` marker with reason `error`.",
+        "Given `runExecutionPhase` receives a minimal single-story PRD and a stubbed capture module, when it begins execution, then it invokes capture exactly once before the first story pipeline dispatch with the run config and workdir.",
+        "Given the post-run story-completion path receives a pipeline result whose full-suite-gate phase output carries a parsed summary, when the story completes sequentially, then it invokes the injected roll-forward writer for the next story id with that summary's failures and source `roll-forward`.",
+        "Given a sequential story completes with no usable gate parse, when post-run persists the next baseline, then it writes a `no-baseline` marker with reason `no-gate-parse`.",
+        "Given parallel execution mode, when a story completes, then the roll-forward writer is not invoked.",
+        "Given parallel execution mode and both a run-start and story artifact, when `resolveStoryBaseline` resolves a story baseline, then it returns the run-start baseline instead of the story artifact.",
+        "Given two successive roll-forward story writes after a preflight capture, when `readRunBaseline` reads the run artifact, then it still returns the original source `preflight` value.",
+        "Given each degraded capture outcome `gate-disabled`, `no-test-command`, `timeout`, `unparseable`, or `error`, when the capture step handles it, then the capture step resolves normally without rejecting."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "verification",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "It coordinates non-blocking subprocess capture, timeout precedence, phase-output data propagation, sequential ordering, parallel exclusion, and a constrained post-run injection seam."
+      },
+      "contextFiles": [
+        "src/execution/runner-execution.ts",
+        "src/execution/post-run.ts",
+        "src/quality/command-resolver.ts",
+        "src/test-runners/parser.ts",
+        "src/verification/test-baseline.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/lifecycle/test-baseline-capture.ts",
+        "test/unit/execution/lifecycle/test-baseline-capture.test.ts"
+      ],
+      "outOfScope": [
+        "US-002 only: a post-merge re-capture for parallel dependency groups \u2014 parallel-mode stories use the run-start baseline even when their dependencies merged first.",
+        "Per-package baseline partitioning for monorepo target repos \u2014 v1 captures one baseline via the workdir-resolved suite command only."
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Label full-suite findings with baseline dispositions",
+      "description": "**Goal** \u2014 Classify structured full-suite gate failures from persisted artifacts and show their attribution labels in both existing rectification prompt surfaces.\n\n**Motivation** \u2014 It wastes rectification iterations chasing failures it did not cause, or \"fixes\" them by editing unrelated code.\n\n**Approach** \u2014 `fullSuiteGateOp` failure path \u2014 `src/operations/full-suite-gate.ts:306`.\n  - Baseline: `const findings = testSummaryToFindings(testResult.parsedSummary)`.\n  - Target: after adapting, passes findings through `applyBaselineDispositions` with the story and run baselines resolved for the current story.\n\n`formatFailingTestsList(findings: Finding[]): string` \u2014 `src/prompts/builders/rectifier-builder-helpers.ts:389`.\n  - Baseline: renders `- <file> / Test: <rule> / Error: <message>` bullets.\n  - Target: same signature; when a finding carries `baselineDisposition`, its bullet additionally renders a bracketed disposition tag; findings without the field render byte-identically to today.\n\n`renderPrioritizedFailures(failedChecks, opts?)` \u2014 `src/prompts/builders/rectifier-builder.ts:158` (internal to the builder).\n  - Baseline: renders check findings without disposition awareness.\n  - Target: renders the same bracketed tag for findings carrying the field.\n\nLabels never filter findings. Put tag-formatting helper in `rectifier-builder-helpers.ts` (566/600) or the new baseline module, and keep the edit inside `rectifier-builder.ts` to same-line changes.\n\n**Scope** \u2014 In: resolving the current story/run baselines at the full-suite gate structured-failure path, applying dispositions after adaptation, and rendering tags in failing-test and prioritized-check views. Out: defining/persisting/capturing baseline artifacts (US-001 and US-002); TDD upfront baseline section (US-004); Gating the `repo-scoped-test-fix` escape hatch on membership in the pre-existing set \u2014 deferred until run artifacts show the role being invoked for story-introduced failures.\n\n**Interface**\n```ts\napplyBaselineDispositions(findings, storyBaseline, runBaseline)\nformatFailingTestsList(findings: Finding[]): string\nrenderPrioritizedFailures(failedChecks, opts?)\n```",
+      "acceptanceCriteria": [
+        "Given a seeded story baseline artifact and a full-suite-gate test run with one baseline-matched and one unmatched parsed failure, when the gate executes its structured failure path, then its findings have `baselineDisposition` values `pre-existing` and `introduced` respectively.",
+        "Given findings carrying each of `introduced`, `pre-existing`, `earlier-story`, and `unattributed`, when `formatFailingTestsList` renders them, then each corresponding bullet includes a bracketed disposition tag with distinct wording.",
+        "Given findings without `baselineDisposition`, when `formatFailingTestsList` renders them, then its output is byte-identical to the output before this change using the existing fixture.",
+        "Given check findings carrying baseline dispositions, when a rectifier prompt renders `renderPrioritizedFailures`, then it includes the same bracketed disposition tags.",
+        "Given five findings with mixed dispositions, when `formatFailingTestsList` renders them, then it renders five bullets and its count line says five.",
+        "Given a full-suite gate failure before and after disposition labeling, when the gate emits its output, then the labeled output contains the same number of findings as before labeling and does not drop `pre-existing` findings."
+      ],
+      "tags": [
+        "feature",
+        "verification",
+        "prompts",
+        "rectification"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "It attaches an existing pure classifier and a shared tag renderer at three bounded integration points while preserving two established output formats."
+      },
+      "contextFiles": [
+        "src/operations/full-suite-gate.ts",
+        "src/prompts/builders/rectifier-builder-helpers.ts",
+        "src/prompts/builders/rectifier-builder.ts",
+        "src/verification/test-baseline.ts",
+        "src/findings/adapters/test-failure.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/prompts/builders/rectifier-baseline-labels.test.ts"
+      ],
+      "outOfScope": [
+        "Gating the `repo-scoped-test-fix` escape hatch on membership in the pre-existing set \u2014 deferred until run artifacts show the role being invoked for story-introduced failures."
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Render bounded upfront test-baseline prompts",
+      "description": "**Goal** \u2014 Give TDD implementation roles one bounded, authoritative upfront baseline section sourced from the persisted story artifact.\n\n**Motivation** \u2014 The agent is never asked to establish or report the baseline itself.\n\n**Approach** \u2014 `TddPromptBuilder` \u2014 `src/prompts/builders/tdd-builder.ts`.\n  - Baseline: no baseline-aware section; `.selfVerification(input)` is the precedent for an optional chainable section input.\n  - Target: gains `.testBaseline(baseline: TestBaseline | undefined)`; `build()` renders one bounded baseline section when set. Callers that assemble implementer/test-writer prompts resolve the story's baseline artifact and pass it through.\n\nOne bounded section rendered by `TddPromptBuilder.build()` when `.testBaseline()` was given a value. Content, one of:\n\n- captured, failing: base ref, failure count, the failing files (test names omitted);\n- captured, green: \"baseline green at `<ref>`\" plus the statement that any full-suite failure is introduced by this story;\n- `no-baseline` marker: \"no baseline available\" with the reason.\n\nAlways followed by one directive line: the baseline is authoritative; do not re-run the full suite to re-derive it. The section is truncated at a character cap (module constant, ADR-022 `MAX_BLOCK_CHARS` precedent): past the cap it renders the count, the first files that fit, and \"and N more\". The existing implementer prose in `role-task.ts` telling the agent to run its scoped test files stays untouched \u2014 scoped red/green iteration is a different job from full-suite attribution.\n\nBaseline artifact missing or unreadable at classification/prompt time is treated as no baseline: dispositions `unattributed`; no upfront section is rendered (a persisted `no-baseline` marker, by contrast, renders the section with its reason).\n\n**Scope** \u2014 In: a test-baseline prompt section and barrel export, optional chainable builder input, cap-aware rendering, and production artifact-to-TDD builder plumbing. Out: baseline capture and roll-forward (US-002); gate disposition labels (US-003); Size-adaptive lazy artifact read \u2014 naming the artifact path in the prompt so the agent can read the full snapshot past the character cap on demand; Surfacing the baseline through the session-scratch context channel in addition to the fixed prompt section.\n\n**Interface**\n```ts\n.testBaseline(baseline: TestBaseline | undefined)\n```",
+      "acceptanceCriteria": [
+        "Given `TddPromptBuilder.for(\"implementer\").testBaseline` receives a captured baseline with two entries, when `build()` runs, then the prompt contains a baseline section with the base ref, failure count, and each failing file.",
+        "Given `TddPromptBuilder` receives a captured baseline with zero entries, when `build()` runs, then the baseline section states the baseline is green at the ref and that any full-suite failure is introduced by this story.",
+        "Given `TddPromptBuilder` receives a `no-baseline` marker, when `build()` runs, then the baseline section states no baseline is available and includes the marker reason.",
+        "Given `build()` is called without `.testBaseline()` or with `undefined`, when it renders a prompt, then it contains no baseline section and is identical to today's output.",
+        "Given any baseline section rendered by `build()`, when its content is inspected, then it contains the directive that the baseline is authoritative and the full suite must not be re-run to re-derive it.",
+        "Given a captured baseline with enough failing files to exceed the section character cap, when `build()` renders it, then the baseline section remains within the cap and includes the count, leading files that fit, and an `and N more` tail.",
+        "Given a seeded story baseline artifact, when the production `buildForRole` path assembles an implementer-phase prompt, then the prompt contains the baseline section."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "tdd",
+        "verification"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "It adds one optional builder input, a bounded section renderer, and established plan-input plumbing while explicitly preserving no-input prompt output."
+      },
+      "contextFiles": [
+        "src/prompts/builders/tdd-builder.ts",
+        "src/prompts/sections/index.ts",
+        "src/execution/plan-inputs.ts",
+        "src/verification/test-baseline.ts",
+        "src/prompts/sections/self-verification.ts"
+      ],
+      "expectedFiles": [
+        "src/prompts/sections/test-baseline.ts",
+        "test/unit/prompts/sections/test-baseline.test.ts"
+      ],
+      "outOfScope": [
+        "Size-adaptive lazy artifact read \u2014 naming the artifact path in the prompt so the agent can read the full snapshot past the character cap on demand.",
+        "Surfacing the baseline through the session-scratch context channel in addition to the fixed prompt section."
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "This is an additive TypeScript enhancement to existing verification, execution, findings, and prompt systems. The verification barrel exports the distinct flake-baseline functionality but no test-baseline module (src/verification/index.ts:8-17); resolveFlakeBaselineDiff is a changed-test-file git diff and must not be conflated with a red/green snapshot (src/verification/flake-baseline-diff.ts:1-16). TestFailure already supplies file and testName for durable entries and parseTestOutput is the SSOT parser (src/test-runners/types.ts:9-38; src/test-runners/parser.ts:32-49). Finding has optional file and rule fields and can carry an optional disposition without affecting existing producers (src/findings/types.ts:88-139). Artifact paths must be built from featureDir(root, featureId), the documented SSOT for feature-tree artifacts (src/config/paths.ts:103-117), never open-coded.\n\nRun-start capture belongs in runExecutionPhase before executeUnified, not opt-in precheck: runner-execution performs startup and creates the unified context at src/execution/runner-execution.ts:95-201. options.parallel is passed as parallelCount (src/execution/runner-execution.ts:45-46,197), and unified execution dispatches parallel work when it is positive (src/execution/unified-executor.ts:219-224); there is no current executionMode identifier, so baseline consumers need one explicit, consistently derived mode contract. resolveQualityTestCommands supplies the effective testCommand after command priority and monorepo promotion (src/quality/command-resolver.ts:65-97), while captureGitRef safely returns undefined when no git ref is available (src/utils/git.ts:143-150).\n\nPost-run has injectable side effects in _postRunDeps (src/execution/post-run.ts:71-77) and already accesses fullSuiteGateOutput before snapshotting failing files (src/execution/post-run.ts:163-178). Its current public gate output does not expose parsedSummary even though the gate's internal run result has it (src/operations/full-suite-gate.ts:88-125,182-187); US-002 must safely carry the final parsed summary through that phase boundary so post-run can persist exactly parser-derived entries. Keep post-run to a delegated call because it is 596/600 lines, retain default deps for current construction sites, and never overwrite the run artifact.\n\nThe full-suite gate adapts parsed failures after timeout handling (src/operations/full-suite-gate.ts:279-347); disposition attachment belongs only on the structured-failure path and must preserve the synthetic execution-failure path and finding count. It must resolve the feature and mode through its existing input/context boundary (FullSuiteGateInput is at src/operations/full-suite-gate.ts:49-58). Formatting has two surfaces: formatFailingTestsList at src/prompts/builders/rectifier-builder-helpers.ts:389-405 and prioritized check rendering at src/prompts/builders/rectifier-builder.ts:158-184. rectifier-builder.ts is 903 lines and may not grow; use a helper and keep its edit net-zero. The helper is 566/600, so extract/add conservatively.\n\nTddPromptBuilder already uses optional chainable state and conditional sections (src/prompts/builders/tdd-builder.ts:70-75,164-168,290-294). The new bounded renderer belongs in a section exported from src/prompts/sections/index.ts:6-37. Production TDD prompt construction is assemblePlanInputsFromCtx (src/execution/plan-inputs.ts:174-227), which has the feature/context needed to resolve an artifact before supplying the builder; callers without a baseline must remain byte-identical. Compatibility is additive: missing or invalid artifacts classify unattributed and produce no prompt section; persisted no-baseline markers do render. Key risks are sequential/parallel ordering, treating nonzero unparseable output as green, mutable findings, feature-path inconsistency, ESM cycles, and the two file-size gates. Implement model/IO/classification first, then lifecycle capture/roll-forward, then labels, then prompt plumbing.",
+  "outOfScope": [
+    "Gating the `repo-scoped-test-fix` escape hatch on membership in the pre-existing set \u2014 deferred until run artifacts show the role being invoked for story-introduced failures.",
+    "Retiring or validating the self-verification `PRE_EXISTING_FAILURES` lint/typecheck self-report against a captured baseline \u2014 a different tool axis; separate cleanup.",
+    "Size-adaptive lazy artifact read \u2014 naming the artifact path in the prompt so the agent can read the full snapshot past the character cap on demand.",
+    "Surfacing the baseline through the session-scratch context channel in addition to the fixed prompt section.",
+    "Per-package baseline partitioning for monorepo target repos \u2014 v1 captures one baseline via the workdir-resolved suite command only.",
+    "Locking or reconciling baseline artifacts across concurrent nax runs sharing one feature directory \u2014 a feature directory is owned by one run.",
+    "Mid-story baseline re-capture \u2014 the baseline is immutable within a story by design.",
+    "US-002 only: a post-merge re-capture for parallel dependency groups \u2014 parallel-mode stories use the run-start baseline even when their dependencies merged first."
+  ],
+  "routingProfile": "native"
+}
