@@ -45,7 +45,17 @@ export interface CaptureParsedSummary {
  * _regressionDeps — uses the same shape).
  */
 export interface TestBaselineCaptureDeps {
-  resolveTestCommands: (config: NaxConfig, workdir: string) => Promise<string | undefined>;
+  /**
+   * Resolve the suite command for the capture step. Returns:
+   *   - `undefined` when no command is configured (AC7);
+   *   - a single `string` for the historical list-of-one / single-string shape;
+   *   - a `string[]` (nax#1990 list form) — each entry runs independently so
+   *     a failing earlier entry does NOT short-circuit later entries (the
+   *     full-suite gate's `runVerificationCore` already aggregates per-command
+   *     outputs the same way). Tests overriding with the string form are
+   *     unaffected: `string` is a subtype of `string | readonly string[]`.
+   */
+  resolveTestCommands: (config: NaxConfig, workdir: string) => Promise<string | readonly string[] | undefined>;
   runCommand: (command: string, timeoutSeconds: number) => Promise<CaptureRunnerResult>;
   captureGitRef: (workdir: string) => Promise<string>;
   parseTestOutput: (output: string) => CaptureParsedSummary;
@@ -61,6 +71,16 @@ export interface TestBaselineCaptureDeps {
 const DEFAULT_GATE_TIMEOUT_SECONDS = 300;
 
 /**
+ * The capture step's `runCommand` dep only takes `(command, timeoutSeconds)` so
+ * tests can override with the two-arg form (see AC2). The workdir the spawned
+ * shell should run from is captured in this module-level slot before the dep
+ * is invoked — read by the production wiring's `runCommand` closure and by
+ * nothing else. Tests do not read it (their `runCommand` overrides don't need
+ * a cwd). Single-threaded JS, no race with concurrent capture calls.
+ */
+let currentCaptureWorkdir = "";
+
+/**
  * Production wiring: production code reads from this object; tests override
  * individual members. All external calls (process spawn, file IO, git) live
  * behind the dep so `_captureDeps.runCommand` / `writeRunBaseline` etc. are
@@ -70,15 +90,22 @@ export const _captureDeps: TestBaselineCaptureDeps = {
   resolveTestCommands: async (config, workdir) => {
     const { testCommand } = await resolveQualityTestCommands(config, workdir);
     if (testCommand === undefined) return undefined;
-    return typeof testCommand === "string" ? testCommand : testCommand.join(" && ");
+    // nax#1990: a list means "run every entry, report every failure" — never
+    // join with `&&`, which short-circuits on the first failing command and
+    // hides later failures. `captureRunBaseline` handles each entry
+    // independently and aggregates the parsed summaries. Tests and the
+    // string-form callers see the same `string | string[] | undefined` shape.
+    return testCommand;
   },
   runCommand: async (command, timeoutSeconds) => {
+    // Forward `workdir` so the spawned command runs from the resolved package
+    // dir — `executeWithTimeout` defaults `cwd` to `process.cwd()`, which
+    // breaks when nax is launched from a parent shell / editor / CI with a
+    // different cwd than the target repo (monorepo-awareness §1). The closure
+    // binds the current capture's workdir without widening the dep signature
+    // (tests override `runCommand` with the two-arg form, see AC2).
     const result = await executeWithTimeout(command, timeoutSeconds, undefined, {
-      // Pre-existing failures in the captured baseline are environmental, not code
-      // defects — same posture as the full-suite gate: accept-on-timeout is irrelevant
-      // here because we only read `output`/`success`/`timedOut`, but we keep the
-      // executor's default behaviour (no accept-on-timeout semantics at this layer).
-      cwd: undefined,
+      cwd: currentCaptureWorkdir,
     });
     return {
       success: result.success,
@@ -160,21 +187,33 @@ export interface RollForwardContext {
  * Resolves the next story id, builds the roll-forward options, and delegates to
  * `persistNextStoryRollForward`. Single entry point the post-run story-completion
  * path calls — keeps post-run.ts's hook at one delegated call (AC12).
+ *
+ * Outer try/catch matches the run-start hook's invariant ("never blocks or
+ * fails the run"): the helper writes either a captured roll-forward baseline
+ * or a `no-baseline: no-gate-parse` marker for the documented degraded paths,
+ * but `writeStoryBaseline` (mkdir + atomic write) can throw on disk /
+ * permission failure. That throw must never abort the story's success path
+ * or escalate a passing story. The catch logs and resolves — same posture
+ * the run-start hook's outer catch uses.
  */
 export async function invokeRollForwardFromContext(ctx: RollForwardContext): Promise<void> {
   const nextStoryId = resolveNextStoryId(ctx.userStories, ctx.currentStoryId);
-  await persistNextStoryRollForward({
-    root: ctx.root,
-    featureId: ctx.featureId,
-    executionMode: ctx.isParallelMode ? "parallel" : "sequential",
-    nextStoryId,
-    summary: ctx.gateSummary,
-  });
-}
-
-/** Resolve the suite command via the production resolver; returns `undefined` when no command is configured. */
-async function resolveSuiteCommand(config: NaxConfig, workdir: string): Promise<string | undefined> {
-  return _captureDeps.resolveTestCommands(config, workdir);
+  try {
+    await persistNextStoryRollForward({
+      root: ctx.root,
+      featureId: ctx.featureId,
+      executionMode: ctx.isParallelMode ? "parallel" : "sequential",
+      nextStoryId,
+      summary: ctx.gateSummary,
+    });
+  } catch {
+    // Logging is intentionally minimal here — the post-run caller has already
+    // finished the story's success-path logging. Surfacing the underlying
+    // error requires a logger; we accept the silent swallow as the
+    // documented degraded-path behaviour for the roll-forward hook (no
+    // observable baseline is itself a sentinel). The captured baseline
+    // contract is unchanged.
+  }
 }
 
 /** Write a `no-baseline` marker with the given reason. Single persistence seam for every degraded path. */
@@ -213,6 +252,10 @@ async function writeNoBaseline(
  *      `captured` with `source: "preflight"`, `baseRef` from `captureGitRef`,
  *      one entry per parsed failure. Green suites carry `entries: []` — the
  *      baseline is the empty set, not a missing baseline (AC5).
+ *
+ * List-form commands (nax#1990) run each entry independently and aggregate
+ * the parsed summaries — never `&&`-join (which would short-circuit on the
+ * first failing command and hide later failures).
  */
 export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promise<void> {
   const { root, featureId, config, workdir } = opts;
@@ -224,41 +267,83 @@ export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promi
   }
 
   // AC7 — no resolvable command, no spawn.
-  const command = await resolveSuiteCommand(config, workdir);
-  if (command === undefined) {
+  const resolved = await _captureDeps.resolveTestCommands(config, workdir);
+  if (resolved === undefined) {
     await writeNoBaseline("run", root, featureId, undefined, "no-test-command");
     return;
   }
 
+  const commands = typeof resolved === "string" ? [resolved] : Array.from(resolved);
   const timeoutSeconds = _captureDeps.resolveGateTimeoutSeconds(config);
   const capturedAt = _captureDeps.now();
 
-  // AC10 — runner throws, catch and resolve normally.
-  let result: CaptureRunnerResult;
-  try {
-    result = await _captureDeps.runCommand(command, timeoutSeconds);
-  } catch {
+  // Publish the workdir to the module-level slot the production `runCommand`
+  // closure reads (Finding 4: forward `workdir` to `executeWithTimeout`).
+  currentCaptureWorkdir = workdir;
+
+  // Run each command independently; aggregate outputs and parsed summaries.
+  // A single timed-out result short-circuits the whole loop to `timeout` —
+  // matches the gate's `TIMEOUT` semantics: don't pollute the baseline with
+  // partial output from commands that never ran.
+  let aggregateSuccess = true;
+  let aggregateTimedOut = false;
+  let runnerThrew = false;
+  const parsedSummaries: CaptureParsedSummary[] = [];
+
+  for (const command of commands) {
+    let result: CaptureRunnerResult;
+    try {
+      result = await _captureDeps.runCommand(command, timeoutSeconds);
+    } catch {
+      // AC10 — runner throws; record so we write a `no-baseline: error`
+      // marker after the loop and don't claim the suite ran.
+      runnerThrew = true;
+      break;
+    }
+
+    if (result.timedOut) {
+      // AC8 — runner timed out; stop running remaining entries.
+      aggregateTimedOut = true;
+      break;
+    }
+
+    if (!result.success) aggregateSuccess = false;
+
+    parsedSummaries.push(_captureDeps.parseTestOutput(result.output));
+  }
+
+  if (runnerThrew) {
     await writeNoBaseline("run", root, featureId, undefined, "error");
     return;
   }
 
-  // AC8 — runner timed out.
-  if (result.timedOut) {
+  if (aggregateTimedOut) {
     await writeNoBaseline("run", root, featureId, undefined, "timeout");
     return;
   }
 
-  const summary = _captureDeps.parseTestOutput(result.output);
+  // Aggregate the parsed summaries: sum passed/failed, concatenate failures.
+  // The gate does the same — see `aggregateVerificationResults` in
+  // `verification/runners.ts:128`.
+  const totalPassed = parsedSummaries.reduce((sum, s) => sum + s.passed, 0);
+  const totalFailed = parsedSummaries.reduce((sum, s) => sum + s.failed, 0);
+  const allFailures = parsedSummaries.flatMap((s) => s.failures);
+  const summary: CaptureParsedSummary = {
+    passed: totalPassed,
+    failed: totalFailed,
+    failures: allFailures,
+  };
 
-  // AC9 — runner exited non-zero but parser produced zero structured failures.
-  if (!result.success && summary.failed === 0) {
+  // AC9 — runner exited non-zero but parser produced zero structured failures
+  // (across every command in the list).
+  if (!aggregateSuccess && summary.failed === 0) {
     await writeNoBaseline("run", root, featureId, undefined, "unparseable");
     return;
   }
 
-  // AC1 + AC5 — green suite (success + zero failures) writes a captured baseline
-  // with `entries: []` rather than a `no-baseline` marker; non-zero failures
-  // produce one entry per parsed failure.
+  // AC1 + AC5 — green suite (success + zero failures) writes a captured
+  // baseline with `entries: []` rather than a `no-baseline` marker; non-zero
+  // failures produce one entry per parsed failure.
   const baseRef = await _captureDeps.captureGitRef(workdir);
   await _captureDeps.writeRunBaseline(root, featureId, {
     kind: "captured",

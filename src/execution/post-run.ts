@@ -15,16 +15,16 @@ import type { AgentResult } from "../agents/types";
 import type { Finding } from "../findings/types";
 import { checkMergeConflict, isTriggerEnabled } from "../interaction/triggers";
 import { getLogger } from "../logger";
-import { fullSuiteGateOp, implementerOp, testWriterOp, verifierOp } from "../operations";
+import { fullSuiteGateOp, implementerOp } from "../operations";
 import { routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
 // Leaf import, not the barrel — the barrel pulls formatter.ts, causing a circular ESM init crash (BUG v0.71.0).
 import { isBlockingSeverity } from "../review/severity";
-import { appendScratchEntry } from "../session/scratch-writer";
 import { rollbackToRef } from "../tdd/rollback";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
+import { writePostRunScratchEntries } from "./lifecycle/post-run-scratch-entries";
 import { cleanupSessionOnFailure as cleanupSessionOnFailureImpl } from "./lifecycle/post-run-session-cleanup";
 import { type CaptureParsedSummary, invokeRollForwardFromContext } from "./lifecycle/test-baseline-capture";
 import { inspectOscillationBreaker } from "./oscillation-breaker";
@@ -174,80 +174,11 @@ export async function applyPostRunInspection(
   ctx.selfVerification = parseSelfVerificationMarker(agentResult.output ?? "", ctx.workdir);
   const selfVerificationFailed = ctx.selfVerification.lint === "fail" || ctx.selfVerification.typecheck === "fail";
 
-  // Write self-verification scratch entry
-  if (ctx.config.context?.v2?.enabled && ctx.sessionScratchDir) {
-    try {
-      await appendScratchEntry(ctx.sessionScratchDir, {
-        kind: "self-verification",
-        timestamp: new Date().toISOString(),
-        storyId: ctx.story.id,
-        stage: "execution",
-        role: "implementer",
-        selfVerification: ctx.selfVerification,
-        writtenByAgent: ctx.routing?.agent ?? ctx.agentManager?.getDefault() ?? "claude",
-      });
-    } catch (scratchErr) {
-      logger.warn("execution", "Failed to write self-verification scratch entry — continuing", {
-        storyId: ctx.story.id,
-        error: errorMessage(scratchErr),
-      });
-    }
-  }
-
-  // Write per-role tdd-session scratch entries for test-writer and verifier.
-  // The implementer's self-verification entry was written above; these restore
-  // the per-role context coverage that the three-session strategy previously provided.
-  if (isTdd && ctx.config.context?.v2?.enabled && ctx.sessionScratchDir) {
-    const writtenByAgent =
-      (ctx.routing as { agent?: string } | undefined)?.agent ?? ctx.agentManager?.getDefault() ?? "claude";
-    const writerOut = planResult.phaseOutputs[testWriterOp.name] as
-      | { success?: boolean; filesChanged?: string[]; output?: string }
-      | undefined;
-    if (writerOut) {
-      try {
-        await appendScratchEntry(ctx.sessionScratchDir, {
-          kind: "tdd-session",
-          timestamp: new Date().toISOString(),
-          storyId: ctx.story.id,
-          stage: "execution",
-          role: "test-writer",
-          success: writerOut.success === true,
-          filesChanged: writerOut.filesChanged ?? [],
-          outputTail: (writerOut.output ?? "").slice(-500),
-          writtenByAgent,
-        });
-      } catch (err) {
-        logger.warn("execution", "Failed to write test-writer scratch entry", {
-          storyId: ctx.story.id,
-          error: errorMessage(err),
-        });
-      }
-    }
-
-    const verifierOut = planResult.phaseOutputs[verifierOp.name] as
-      | { success?: boolean; filesChanged?: string[]; output?: string }
-      | undefined;
-    if (verifierOut) {
-      try {
-        await appendScratchEntry(ctx.sessionScratchDir, {
-          kind: "tdd-session",
-          timestamp: new Date().toISOString(),
-          storyId: ctx.story.id,
-          stage: "execution",
-          role: "verifier",
-          success: verifierOut.success === true,
-          filesChanged: verifierOut.filesChanged ?? [],
-          outputTail: (verifierOut.output ?? "").slice(-500),
-          writtenByAgent,
-        });
-      } catch (err) {
-        logger.warn("execution", "Failed to write verifier scratch entry", {
-          storyId: ctx.story.id,
-          error: errorMessage(err),
-        });
-      }
-    }
-  }
+  // US-002 — write the self-verification + per-role tdd-session scratch entries.
+  // Extracted to `./lifecycle/post-run-scratch-entries` to keep this file
+  // within the 600-line gate. Same try/catch-everything posture: scratch-write
+  // failures never fail the story.
+  await writePostRunScratchEntries(ctx, planResult, opts);
 
   const pauseReason = extractPauseReason(planResult.phaseOutputs);
   // Non-TDD stories get no failureCategory and rely on the generic escalate path
@@ -582,6 +513,8 @@ export async function decideStageAction(
 
   // US-002 — sequential story completion persists the next story's roll-forward baseline.
   // Single delegated call (600-line gate); the helper resolves next-story-id and gate summary.
+  // The helper swallows disk / permission throws internally so a passing
+  // story's success path is never aborted by a baseline write failure.
   await invokeRollForwardFromContext({
     root: ctx.projectDir,
     featureId: ctx.featureDir ? (ctx.featureDir.split("/").pop() ?? ctx.prd.feature) : ctx.prd.feature,

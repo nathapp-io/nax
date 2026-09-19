@@ -154,12 +154,32 @@ export async function runExecutionPhase(
   // US-002 — harness-side capture of the run-start baseline. Runs once before
   // the first story pipeline dispatch; never blocks or fails the run. Feature
   // dir is rooted at `workdir`; the capture step is feature-scoped.
-  await captureRunBaseline({
-    root: options.workdir,
-    featureId: options.feature,
-    config: options.config,
-    workdir: options.workdir,
-  });
+  //
+  // Two guards:
+  //   1. `!options.dryRun` — dry runs plan without mutating the tree; spawning
+  //      the test suite and writing `.nax/features/<fid>/test-baseline.json`
+  //      would mutate the user's repo (matches `ensureStoryPackageDirs` above).
+  //   2. try/catch — `captureRunBaseline`'s docstring invariant ("never blocks
+  //      or fails the run") must hold even if `resolveQualityTestCommands`,
+  //      `parseTestOutput`, `captureRunStartRef`, or `writeRunBaseline` throw
+  //      on a disk / permission / parse failure. `runCommand` throws are
+  //      already caught inside the helper and surfaced as a `no-baseline:
+  //      error` marker; the outer catch is the safety net for everything
+  //      outside that one branch.
+  if (!options.dryRun) {
+    try {
+      await captureRunBaseline({
+        root: options.workdir,
+        featureId: options.feature,
+        config: options.config,
+        workdir: options.workdir,
+      });
+    } catch (err) {
+      logger?.warn("execution", "Run-start baseline capture threw — continuing", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // PERF-1: Precompute batch plan once from ready stories
   const readyStories = getAllReadyStories(prd);
