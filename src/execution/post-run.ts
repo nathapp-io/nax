@@ -25,6 +25,8 @@ import { appendScratchEntry } from "../session/scratch-writer";
 import { rollbackToRef } from "../tdd/rollback";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
+import { cleanupSessionOnFailure as cleanupSessionOnFailureImpl } from "./lifecycle/post-run-session-cleanup";
+import { type CaptureParsedSummary, invokeRollForwardFromContext } from "./lifecycle/test-baseline-capture";
 import { inspectOscillationBreaker } from "./oscillation-breaker";
 import { sendPostRunNotification } from "./post-run-notifications";
 import { applyReviewsFailedOpen } from "./post-run-review-summary";
@@ -99,21 +101,11 @@ export function extractPauseReason(phaseOutputs: Record<string, unknown>): strin
 
 export { deriveTddFailureCategory };
 
-/**
- * Wrapper-level session teardown on failure.
- *
- * Complements rollback (spec §3 wrapper side-effect): when the wrapper decides
- * to fail or escalate a story, any legacy ctx.sessionId tied to upstream
- * resources must be closed. Per-phase sessions opened inside the plan are
- * closed by their own SessionKeeper.finally — this is for the wrapper-owned
- * session handle only.
- *
- * Consolidated into one site (was two — see US-005 review H2) so the
- * sessionManager reach is contained.
- */
+// `cleanupSessionOnFailure` body lives in `./lifecycle/post-run-session-cleanup`
+// (US-002 — kept post-run.ts within the 600-line gate while avoiding a
+// runtime import cycle). The shim binds `_postRunDeps.failAndClose` here.
 async function cleanupSessionOnFailure(ctx: PipelineContext): Promise<void> {
-  if (!ctx.sessionManager || !ctx.sessionId) return;
-  await _postRunDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
+  await cleanupSessionOnFailureImpl(ctx, _postRunDeps.failAndClose);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -587,6 +579,18 @@ export async function decideStageAction(
     const { workdir, story, runtime } = ctx;
     await _postRunDeps.autoCommitIfDirty(workdir, "execution", "single-session", story.id, runtime?.dirtyWorktrees);
   }
+
+  // US-002 — sequential story completion persists the next story's roll-forward baseline.
+  // Single delegated call (600-line gate); the helper resolves next-story-id and gate summary.
+  await invokeRollForwardFromContext({
+    root: ctx.projectDir,
+    featureId: ctx.featureDir ? (ctx.featureDir.split("/").pop() ?? ctx.prd.feature) : ctx.prd.feature,
+    userStories: ctx.prd.userStories,
+    currentStoryId: ctx.story.id,
+    isParallelMode: ctx.skipPrdPersistence === true,
+    gateSummary: (planResult.phaseOutputs[fullSuiteGateOp.name] as { parsedSummary?: CaptureParsedSummary } | undefined)
+      ?.parsedSummary,
+  });
 
   logger.info("execution", "Agent session complete", {
     storyId: ctx.story.id,

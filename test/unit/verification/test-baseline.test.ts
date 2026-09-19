@@ -533,3 +533,120 @@ describe("resolveStoryBaseline — execution mode", () => {
     expect(result).toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC16 (US-002) — successive roll-forward story writes do NOT overwrite the
+// run artifact. The run-start baseline carries source=preflight forever; each
+// subsequent story write is a per-story artifact under stories/<id>/.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("readRunBaseline — AC16 (roll-forward does not overwrite run artifact)", () => {
+  test("AC16: two successive roll-forward story writes leave the run artifact's source=preflight intact", async () => {
+    // 1. Capture the run-start baseline (source=preflight).
+    const preflight: TestBaseline = {
+      kind: "captured",
+      baseRef: "run-start-ref",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      source: "preflight",
+      entries: [{ file: "test/unit/run.test.ts", testName: "should pass at run start" }],
+    };
+    await writeRunBaseline(tempRoot, "feature-ac16", preflight);
+
+    // 2. Two successive roll-forward writes — different stories, different sources.
+    for (const storyId of ["US-001", "US-002"]) {
+      const rollForward: TestBaseline = {
+        kind: "captured",
+        baseRef: `post-${storyId}`,
+        capturedAt: "2026-01-15T01:00:00.000Z",
+        source: "roll-forward",
+        entries: [{ file: `test/unit/${storyId}.test.ts`, testName: "story-specific" }],
+      };
+      await writeStoryBaseline(tempRoot, "feature-ac16", storyId, rollForward);
+    }
+
+    // 3. readRunBaseline still returns the original preflight artifact, not the
+    //    last-written story artifact, and not a hybrid.
+    const read = await readRunBaseline(tempRoot, "feature-ac16");
+    expect(read).toEqual(preflight);
+    expect(read?.kind).toBe("captured");
+    if (read?.kind === "captured") {
+      expect(read.source).toBe("preflight");
+      expect(read.baseRef).toBe("run-start-ref");
+    }
+  });
+
+  test("AC16 boundary: even a roll-forward write for the first story id does not clobber the run artifact", async () => {
+    const preflight: TestBaseline = {
+      kind: "captured",
+      baseRef: "ref",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      source: "preflight",
+      entries: [],
+    };
+    await writeRunBaseline(tempRoot, "feature-ac16b", preflight);
+
+    // Story with a `source: "roll-forward"` baseline — must land under
+    // .nax/features/<fid>/stories/<sid>/test-baseline.json, NOT the run artifact.
+    const rollForward: TestBaseline = {
+      kind: "captured",
+      baseRef: "story-ref",
+      capturedAt: "2026-01-15T01:00:00.000Z",
+      source: "roll-forward",
+      entries: [{ file: "x", testName: "y" }],
+    };
+    await writeStoryBaseline(tempRoot, "feature-ac16b", "US-001", rollForward);
+
+    const read = await readRunBaseline(tempRoot, "feature-ac16b");
+    expect(read?.kind).toBe("captured");
+    if (read?.kind === "captured") {
+      expect(read.source).toBe("preflight");
+    }
+    expect(read).not.toEqual(rollForward);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC15 (US-002) — resolveStoryBaseline returns the run-start baseline in
+// parallel mode even when both artifacts exist. (The existing parallel-mode
+// test above covers the same shape; this is the explicit AC15 entry.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveStoryBaseline — AC15 (parallel mode returns run-start)", () => {
+  test("AC15: parallel mode returns the run-start baseline, ignoring the story artifact", async () => {
+    const storyBaseline: TestBaseline = {
+      kind: "captured",
+      baseRef: "story-ref",
+      capturedAt: "2026-01-15T01:00:00.000Z",
+      source: "roll-forward",
+      entries: [{ file: "test/unit/story.test.ts", testName: "story" }],
+    };
+    const runBaseline: TestBaseline = {
+      kind: "captured",
+      baseRef: "run-ref",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      source: "preflight",
+      entries: [{ file: "test/unit/run.test.ts", testName: "run" }],
+    };
+    await writeStoryBaseline(tempRoot, "feature-ac15", "US-001", storyBaseline);
+    await writeRunBaseline(tempRoot, "feature-ac15", runBaseline);
+
+    const result = await resolveStoryBaseline(tempRoot, "feature-ac15", "US-001", "parallel");
+    expect(result).toEqual(runBaseline);
+    expect(result).not.toEqual(storyBaseline);
+  });
+
+  test("AC15 boundary: when only the story artifact exists, parallel mode falls back to it", async () => {
+    const storyBaseline: TestBaseline = {
+      kind: "captured",
+      baseRef: "story-ref",
+      capturedAt: "2026-01-15T01:00:00.000Z",
+      source: "roll-forward",
+      entries: [],
+    };
+    await writeStoryBaseline(tempRoot, "feature-ac15b", "US-001", storyBaseline);
+
+    const result = await resolveStoryBaseline(tempRoot, "feature-ac15b", "US-001", "parallel");
+    // No run artifact present — undefined is the documented fallback.
+    expect(result).toBeUndefined();
+  });
+});

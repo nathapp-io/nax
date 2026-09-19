@@ -22,6 +22,7 @@ import type { DeferredReviewResult } from "./deferred-review";
 import { ensureStoryPackageDirs } from "./ensure-package-dirs";
 import type { ExitReason } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
+import { captureRunBaseline } from "./lifecycle/test-baseline-capture";
 import { markNewPackageDirs } from "./new-package-setup";
 
 /**
@@ -149,6 +150,16 @@ export async function runExecutionPhase(
       });
     }
   }
+
+  // US-002 — harness-side capture of the run-start baseline. Runs once before
+  // the first story pipeline dispatch; never blocks or fails the run. Feature
+  // dir is rooted at `workdir`; the capture step is feature-scoped.
+  await captureRunBaseline({
+    root: options.workdir,
+    featureId: options.feature,
+    config: options.config,
+    workdir: options.workdir,
+  });
 
   // PERF-1: Precompute batch plan once from ready stories
   const readyStories = getAllReadyStories(prd);
