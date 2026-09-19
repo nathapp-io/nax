@@ -13,7 +13,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { findTrackedNaxArtifacts, formatTrackedNaxArtifactsReport } from "@scripts/check-nax-artifacts-untracked";
+import {
+  findTrackedNaxArtifacts,
+  formatTrackedNaxArtifactsReport,
+  isIgnoredByRepo,
+} from "@scripts/check-nax-artifacts-untracked";
 
 const tempDirs: string[] = [];
 
@@ -101,5 +105,80 @@ describe("formatTrackedNaxArtifactsReport", () => {
     expect(report).toContain("status.json: 2");
     expect(report).toContain("progress.txt: 1");
     expect(report).toContain("git rm --cached");
+  });
+
+  // Fix 1(b): the old fixed text ("The ignore rule is in place") stated a fact
+  // it never checked, and both halves could be false at once — the observed
+  // real-run failure was exactly that: no rule in place, and the file was
+  // never committed, only staged. The message must say which case actually
+  // holds, per violating path.
+  test("when the ignore rule is missing, says so and points at nax's reconcile / nax init — not git rm --cached alone", () => {
+    const report = formatTrackedNaxArtifactsReport([".nax/scratchpad/notes.md"], () => false);
+
+    expect(report).toContain("have no ignore rule yet");
+    expect(report).toContain("nax init");
+    expect(report).not.toContain("The ignore rule is\nin place");
+  });
+
+  test("when the ignore rule is already in place, says the file is merely still in the index", () => {
+    const report = formatTrackedNaxArtifactsReport([".nax/features/demo/status.json"], () => true);
+
+    expect(report).toContain("already have an ignore rule in place");
+    expect(report).toContain("does not");
+    expect(report).toContain("untrack a file already in the index");
+    expect(report).toContain("git rm --cached");
+  });
+
+  test("a mixed set reports both cases, each with its own count", () => {
+    const report = formatTrackedNaxArtifactsReport(
+      [".nax/features/demo/status.json", ".nax/scratchpad/notes.md"],
+      (path) => path === ".nax/features/demo/status.json",
+    );
+
+    expect(report).toContain("1 already have an ignore rule in place");
+    expect(report).toContain("1 have no ignore rule yet");
+  });
+
+  test("defaults to treating every violation as rule-missing when no checker is supplied", () => {
+    // main() always supplies a real checker; the default only matters for a
+    // caller that doesn't (e.g. an older test) — and it must not silently
+    // claim a rule is in place that was never checked.
+    const report = formatTrackedNaxArtifactsReport([".nax/scratchpad/notes.md"]);
+
+    expect(report).toContain("have no ignore rule yet");
+    expect(report).not.toContain("already have an ignore rule in place");
+  });
+});
+
+describe("isIgnoredByRepo", () => {
+  test("is true for a path an active .gitignore rule covers", () => {
+    const root = makeRepo({});
+    writeFileSync(join(root, ".gitignore"), "**/.nax/scratchpad/\n", "utf8");
+
+    expect(isIgnoredByRepo(root, ".nax/scratchpad/notes.md")).toBe(true);
+  });
+
+  test("is false for a path no ignore rule covers", () => {
+    const root = makeRepo({});
+
+    expect(isIgnoredByRepo(root, ".nax/scratchpad/notes.md")).toBe(false);
+  });
+
+  test("does not false-positive on a path that merely looks similar to an ignored one", () => {
+    // Guards the exact substring-matching bug src/worktree/manager.ts already
+    // documents: a naive check must not treat "packages/app/.nax/scratchpad-backup/x"
+    // as matched by "**/.nax/scratchpad/".
+    const root = makeRepo({});
+    writeFileSync(join(root, ".gitignore"), "**/.nax/scratchpad/\n", "utf8");
+
+    expect(isIgnoredByRepo(root, "packages/app/.nax/scratchpad-backup/x")).toBe(false);
+  });
+
+  test("is true for a path covered only by .git/info/exclude (worktree reconcile)", () => {
+    const root = makeRepo({});
+    mkdirSync(join(root, ".git", "info"), { recursive: true });
+    writeFileSync(join(root, ".git", "info", "exclude"), "**/.nax/scratchpad/\n", "utf8");
+
+    expect(isIgnoredByRepo(root, ".nax/scratchpad/notes.md")).toBe(true);
   });
 });

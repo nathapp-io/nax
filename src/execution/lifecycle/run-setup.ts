@@ -458,6 +458,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       // tolerated inside wipeScratchpad() — a busy handle or a permission error
       // must never wedge a run.
       await wipeScratchpad(workdir, { dryRun: options.dryRun });
+      await (await import("./gitignore-reconcile")).reconcileMainGitignore(workdir, { dryRun: options.dryRun });
 
       // ── Detect project profile (US-003) and log explicit vs auto-detected values ──
       const existingProjectConfig = config.project ?? {};

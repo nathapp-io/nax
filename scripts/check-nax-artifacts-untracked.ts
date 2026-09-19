@@ -67,37 +67,78 @@ function countByBasename(violations: readonly string[]): Array<[string, number]>
   return [...counts.entries()].sort(([a], [b]) => byCodePoint(a, b));
 }
 
-export function formatTrackedNaxArtifactsReport(violations: readonly string[]): string {
+/**
+ * Whether `path` is ignored by the repo's REAL ignore rule stack — `.gitignore`
+ * plus `.git/info/exclude`, evaluated by git itself — as opposed to the
+ * synthetic `--exclude-from` list `findTrackedNaxArtifacts` uses only to find
+ * violations.
+ *
+ * This is what tells the two failure causes apart, which the old fixed report
+ * text conflated ("the ignore rule is in place" — stated unconditionally, even
+ * when it was not): a violation can be a file an ignore rule already covers
+ * (only `git rm --cached` fixes it), or a file no ignore rule covers yet
+ * (the rule itself is the gap; nax's own run-start reconcile or `nax init`
+ * closes it, and only then does `git rm --cached` apply).
+ */
+export function isIgnoredByRepo(repoRoot: string, path: string): boolean {
+  const proc = Bun.spawnSync(["git", "check-ignore", "-q", "--", path], { cwd: repoRoot });
+  return proc.exitCode === 0;
+}
+
+export function formatTrackedNaxArtifactsReport(
+  violations: readonly string[],
+  isRuleInPlace: (path: string) => boolean = () => false,
+): string {
   if (violations.length === 0) {
     return "[OK] No tracked file matches a nax gitignore entry";
   }
 
+  const ruleAlreadyInPlace = violations.filter((path) => isRuleInPlace(path));
+  const ruleMissing = violations.filter((path) => !isRuleInPlace(path));
+
   const lines = [
     `[FAIL] ${violations.length} tracked file(s) match a nax gitignore entry`,
     "",
-    "nax owns these run artifacts; they must not be committed. The ignore rule is",
-    "in place, but an ignore rule does not untrack a file already in the index.",
-    "",
-    "Per-basename breakdown:",
+    "nax owns these run artifacts; they must not be committed.",
   ];
+
+  if (ruleAlreadyInPlace.length > 0) {
+    lines.push(
+      "",
+      `${ruleAlreadyInPlace.length} already have an ignore rule in place — an ignore rule does not`,
+      "untrack a file already in the index. Remedy:",
+      "  git rm --cached -- <paths>",
+    );
+  }
+  if (ruleMissing.length > 0) {
+    lines.push(
+      "",
+      `${ruleMissing.length} have no ignore rule yet — nax adds it automatically at the start of the`,
+      "next run (or run `nax init` now to add it immediately). Once the rule is in place,",
+      "untrack these too:",
+      "  git rm --cached -- <paths>",
+    );
+  }
+
+  lines.push("", "Per-basename breakdown:");
   for (const [name, count] of countByBasename(violations)) {
     lines.push(`  ${name}: ${count}`);
   }
-  lines.push("", "Remedy:", "  git rm --cached -- <paths>");
   return lines.join("\n");
 }
 
 export async function main(): Promise<void> {
+  const repoRoot = process.cwd();
   let violations: string[];
   try {
-    violations = findTrackedNaxArtifacts(process.cwd());
+    violations = findTrackedNaxArtifacts(repoRoot);
   } catch (err) {
     // A git failure is a gate failure, not an unhandled rejection: surface it
     // in the same [FAIL] form and exit non-zero so CI reports it as this gate.
     console.error(`[FAIL] ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
-  const report = formatTrackedNaxArtifactsReport(violations);
+  const report = formatTrackedNaxArtifactsReport(violations, (path) => isIgnoredByRepo(repoRoot, path));
   if (violations.length > 0) {
     console.error(report);
     process.exit(1);
