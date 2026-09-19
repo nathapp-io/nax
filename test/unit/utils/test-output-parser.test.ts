@@ -28,11 +28,10 @@ bun test v1.0.0
 test/example.test.ts:
 ✓ passing test [0.5ms]
 ✗ failing test [1.2ms]
-
-(fail) failing test [1.2ms]
 Error: Expected 1 to equal 2
   at /path/to/file.ts:10:15
   at Object.test (/path/to/file.ts:8:3)
+(fail) failing test [1.2ms]
 
 1 passed, 1 failed [1.7ms]
     `.trim();
@@ -44,7 +43,7 @@ Error: Expected 1 to equal 2
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].file).toBe("test/example.test.ts");
     expect(result.failures[0].testName).toBe("failing test");
-    expect(result.failures[0].error).toBe("Error: Expected 1 to equal 2");
+    expect(result.failures[0].error).toBe("Expected 1 to equal 2");
     expect(result.failures[0].stackTrace).toHaveLength(2);
   });
 
@@ -55,10 +54,9 @@ bun test v1.0.0
 test/nested.test.ts:
 ✓ outer test [0.2ms]
 ✗ inner test [0.8ms]
-
-(fail) describe block > nested block > inner test [0.8ms]
 Error: Assertion failed
   at /path/to/nested.ts:20:10
+(fail) describe block > nested block > inner test [0.8ms]
 
 1 passed, 1 failed [1.0ms]
     `.trim();
@@ -76,8 +74,6 @@ bun test v1.0.0
 
 test/stack.test.ts:
 ✗ test with long stack [2.0ms]
-
-(fail) test with long stack [2.0ms]
 Error: Stack overflow
   at line1 (/path/to/file.ts:1:1)
   at line2 (/path/to/file.ts:2:2)
@@ -87,6 +83,7 @@ Error: Stack overflow
   at line6 (/path/to/file.ts:6:6)
   at line7 (/path/to/file.ts:7:7)
   at line8 (/path/to/file.ts:8:8)
+(fail) test with long stack [2.0ms]
 
 0 passed, 1 failed [2.0ms]
     `.trim();
@@ -150,18 +147,16 @@ bun test v1.0.0
 test/file1.test.ts:
 ✓ test 1 [0.5ms]
 ✗ test 2 [1.2ms]
-
-(fail) test 2 [1.2ms]
 Error: File 1 error
   at /path/to/file1.ts:10:15
+(fail) test 2 [1.2ms]
 
 test/file2.test.ts:
 ✓ test 3 [0.3ms]
 ✗ test 4 [0.8ms]
-
-(fail) test 4 [0.8ms]
 Error: File 2 error
   at /path/to/file2.ts:20:25
+(fail) test 4 [0.8ms]
 
 2 passed, 2 failed [2.8ms]
     `.trim();
@@ -172,9 +167,9 @@ Error: File 2 error
     expect(result.failed).toBe(2);
     expect(result.failures).toHaveLength(2);
     expect(result.failures[0].file).toBe("test/file1.test.ts");
-    expect(result.failures[0].error).toBe("Error: File 1 error");
+    expect(result.failures[0].error).toBe("File 1 error");
     expect(result.failures[1].file).toBe("test/file2.test.ts");
-    expect(result.failures[1].error).toBe("Error: File 2 error");
+    expect(result.failures[1].error).toBe("File 2 error");
   });
 
   test("handles test files with .js extension", () => {
@@ -183,10 +178,9 @@ bun test v1.0.0
 
 test/example.test.js:
 ✗ failing test [1.0ms]
-
-(fail) failing test [1.0ms]
 Error: JS test error
   at /path/to/file.js:5:10
+(fail) failing test [1.0ms]
 
 0 passed, 1 failed [1.0ms]
     `.trim();
@@ -199,7 +193,7 @@ Error: JS test error
 
   test("handles failures without file context; failures with no error message", () => {
     const noFile = parseTestOutput(
-      "bun test v1.0.0\n\n✗ orphan test [1.0ms]\n\n(fail) orphan test [1.0ms]\nError: No file context\n  at /path/to/unknown.ts:1:1\n\n0 passed, 1 failed [1.0ms]",
+      "bun test v1.0.0\n\n✗ orphan test [1.0ms]\nError: No file context\n  at /path/to/unknown.ts:1:1\n(fail) orphan test [1.0ms]\n\n0 passed, 1 failed [1.0ms]",
     );
     expect(noFile.failures).toHaveLength(1);
     expect(noFile.failures[0].file).toBe("unknown");
@@ -208,7 +202,7 @@ Error: JS test error
       "bun test v1.0.0\n\ntest/minimal.test.ts:\n✗ minimal fail [0.5ms]\n\n(fail) minimal fail [0.5ms]\n\n0 passed, 1 failed [0.5ms]",
     );
     expect(noMsg.failures).toHaveLength(1);
-    expect(noMsg.failures[0].error).toBe("Unknown error");
+    expect(noMsg.failures[0].error).toBe("no assertion message captured");
     expect(noMsg.failures[0].stackTrace).toHaveLength(0);
   });
 
@@ -284,9 +278,8 @@ bun test v1.0.0
 test/marks.test.ts:
 ✔ pass with heavy check [0.2ms]
 ✘ fail with heavy X [0.5ms]
-
-(fail) fail with heavy X [0.5ms]
 Error: Alternative marks error
+(fail) fail with heavy X [0.5ms]
 
 1 passed, 1 failed [0.7ms]
     `.trim();
