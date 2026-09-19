@@ -224,4 +224,49 @@ describe("US-002 WorktreeManager — retryable failed worktrees retain ownership
     const updateRefDeleteCalls = calls.filter((c) => c[0] === "update-ref" && c[1] === "-d" && c[2] === orphanRef);
     expect(updateRefDeleteCalls.length).toBe(1);
   });
+
+  test("AC-5 (Step-2 path): clears refs/nax/orphan/US-001 when Step 2 removes a live worktree", async () => {
+    // The orphan ref exists AND the worktree directory still exists. Step 2's
+    // `remove()` succeeds — it removes the worktree AND its branch, setting
+    // removedLiveWorktree = true and skipping Step 3 entirely. The orphan
+    // ref would otherwise survive, dangling at a now-unreachable commit.
+    //
+    // A subsequent retry could see a user branch named `nax/US-001` and the
+    // dangling orphan ref, which Step 3 would interpret as nax-created and
+    // force-delete — exactly the BUG-28 hole this story closes.
+    //
+    // `git worktree remove` succeeds (Step 2 path), so the worktree and
+    // branch are both deleted. `hasWorktreeRecord` returns false (admin refs
+    // are gone after `worktree prune`).
+    const calls: string[][] = [];
+    _worktreeManagerDeps.gitWithTimeout = (async (args: string[]) => {
+      calls.push(args);
+      if (args[0] === "worktree" && args[1] === "list") {
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }
+      if (args[0] === "cat-file" && args[1] === "-e") {
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }
+      if (args[0] === "worktree" && args[1] === "remove") {
+        // Succeeds — Step 2 takes the "removed a live worktree" branch.
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }) as typeof _worktreeManagerDeps.gitWithTimeout;
+
+    const manager = new WorktreeManager();
+    await manager.create("/fake/project", "US-001");
+
+    const orphanRef = naxOrphanRefName("US-001");
+    const updateRefDeleteCalls = calls.filter((c) => c[0] === "update-ref" && c[1] === "-d" && c[2] === orphanRef);
+    expect(updateRefDeleteCalls.length).toBe(1);
+
+    // Step 3's own `branch -D` must NOT have fired — Step 2 succeeded, so
+    // Step 3 was skipped. (`remove()` itself issues a `branch -D` as part of
+    // its cleanup, but that's Step 2's branch deletion, not Step 3's.)
+    // We assert that the ONLY `branch -D` call is from `remove()` — i.e.,
+    // exactly one. If Step 3 had also fired, we'd see two.
+    const branchDeleteCalls = calls.filter((c) => c[0] === "branch" && c[1] === "-D");
+    expect(branchDeleteCalls.length).toBe(1);
+  });
 });

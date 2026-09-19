@@ -207,14 +207,22 @@ export class WorktreeManager {
       // this branch/worktree pair was created by a prior nax run — safe
       // to force-delete the orphan. BUG-5: route through gitWithTimeout
       // so a wedged git can't stall create().
-      //
-      // The orphan ref is cleared regardless of whether `branch -D`
-      // succeeds — a stale record must not survive into a third attempt.
       try {
         await _worktreeManagerDeps.gitWithTimeout(["branch", "-D", branchName], projectRoot);
       } catch {
         // branch may not exist — that's fine; the orphan ref still gets cleared below
       }
+    }
+
+    // US-002: Always clear the orphan ref at the end of cleanup, regardless
+    // of which step fired. The record cannot outlive what it records — and
+    // if Step 2 succeeded, `remove()` already deleted the branch, so the ref
+    // would be dangling at a now-unreachable commit. If neither step fired
+    // (no evidence), `update-ref -d` is a no-op (the ref doesn't exist).
+    // Best-effort: a stale ref that survives one more run is acceptable;
+    // a dangling ref that misleads Step-3 evidence on a *later* run is
+    // not — that is the BUG-28 hole this record was designed to close.
+    if (hadNaxOwnershipRecord) {
       try {
         await _worktreeManagerDeps.gitWithTimeout(["update-ref", "-d", orphanRef], projectRoot);
       } catch {
