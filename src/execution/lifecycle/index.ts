@@ -39,4 +39,18 @@ export {
   runDeferredRegression,
   type StorySnapshot,
 } from "./run-regression";
-export { type RunSetupOptions, type RunSetupResult, setupRun } from "./run-setup";
+// Warnings re-exported here so consumers can reach them through the lifecycle
+// barrel without reaching into run-setup.ts (or the leaf warnings module).
+export {
+  type RunSetupOptions,
+  type RunSetupResult,
+  setupRun,
+  warnFallbackMisconfiguration,
+  warnProfileMismatch,
+} from "./run-setup";
+export {
+  type InitializeAfterLockDeps,
+  type InitializeAfterLockOptions,
+  type InitializeAfterLockResult,
+  initializeAfterLock,
+} from "./run-setup-init";
