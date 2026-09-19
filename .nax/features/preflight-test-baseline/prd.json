@@ -3,7 +3,7 @@
   "feature": "preflight-test-baseline",
   "branchName": "feat/preflight-test-baseline",
   "createdAt": "2026-09-19T00:00:00.000Z",
-  "updatedAt": "2026-09-19T08:47:03.723Z",
+  "updatedAt": "2026-09-19T09:29:25.723Z",
   "userStories": [
     {
       "id": "US-001",
@@ -148,8 +148,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -205,7 +205,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "It adds one optional builder input, a bounded section renderer, and established plan-input plumbing while explicitly preserving no-input prompt output."
+        "reasoning": "It adds one optional builder input, a bounded section renderer, and established plan-input plumbing while explicitly preserving no-input prompt output.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/prompts/builders/tdd-builder.ts",
@@ -221,7 +224,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "08ba682b05b6072e8cab593e90379f64c967c3eb"
     }
   ],
   "analysis": "This is an additive TypeScript enhancement to existing verification, execution, findings, and prompt systems. The verification barrel exports the distinct flake-baseline functionality but no test-baseline module (src/verification/index.ts:8-17); resolveFlakeBaselineDiff is a changed-test-file git diff and must not be conflated with a red/green snapshot (src/verification/flake-baseline-diff.ts:1-16). TestFailure already supplies file and testName for durable entries and parseTestOutput is the SSOT parser (src/test-runners/types.ts:9-38; src/test-runners/parser.ts:32-49). Finding has optional file and rule fields and can carry an optional disposition without affecting existing producers (src/findings/types.ts:88-139). Artifact paths must be built from featureDir(root, featureId), the documented SSOT for feature-tree artifacts (src/config/paths.ts:103-117), never open-coded.\n\nRun-start capture belongs in runExecutionPhase before executeUnified, not opt-in precheck: runner-execution performs startup and creates the unified context at src/execution/runner-execution.ts:95-201. options.parallel is passed as parallelCount (src/execution/runner-execution.ts:45-46,197), and unified execution dispatches parallel work when it is positive (src/execution/unified-executor.ts:219-224); there is no current executionMode identifier, so baseline consumers need one explicit, consistently derived mode contract. resolveQualityTestCommands supplies the effective testCommand after command priority and monorepo promotion (src/quality/command-resolver.ts:65-97), while captureGitRef safely returns undefined when no git ref is available (src/utils/git.ts:143-150).\n\nPost-run has injectable side effects in _postRunDeps (src/execution/post-run.ts:71-77) and already accesses fullSuiteGateOutput before snapshotting failing files (src/execution/post-run.ts:163-178). Its current public gate output does not expose parsedSummary even though the gate's internal run result has it (src/operations/full-suite-gate.ts:88-125,182-187); US-002 must safely carry the final parsed summary through that phase boundary so post-run can persist exactly parser-derived entries. Keep post-run to a delegated call because it is 596/600 lines, retain default deps for current construction sites, and never overwrite the run artifact.\n\nThe full-suite gate adapts parsed failures after timeout handling (src/operations/full-suite-gate.ts:279-347); disposition attachment belongs only on the structured-failure path and must preserve the synthetic execution-failure path and finding count. It must resolve the feature and mode through its existing input/context boundary (FullSuiteGateInput is at src/operations/full-suite-gate.ts:49-58). Formatting has two surfaces: formatFailingTestsList at src/prompts/builders/rectifier-builder-helpers.ts:389-405 and prioritized check rendering at src/prompts/builders/rectifier-builder.ts:158-184. rectifier-builder.ts is 903 lines and may not grow; use a helper and keep its edit net-zero. The helper is 566/600, so extract/add conservatively.\n\nTddPromptBuilder already uses optional chainable state and conditional sections (src/prompts/builders/tdd-builder.ts:70-75,164-168,290-294). The new bounded renderer belongs in a section exported from src/prompts/sections/index.ts:6-37. Production TDD prompt construction is assemblePlanInputsFromCtx (src/execution/plan-inputs.ts:174-227), which has the feature/context needed to resolve an artifact before supplying the builder; callers without a baseline must remain byte-identical. Compatibility is additive: missing or invalid artifacts classify unattributed and produce no prompt section; persisted no-baseline markers do render. Key risks are sequential/parallel ordering, treating nonzero unparseable output as green, mutable findings, feature-path inconsistency, ESM cycles, and the two file-size gates. Implement model/IO/classification first, then lifecycle capture/roll-forward, then labels, then prompt plumbing.",
