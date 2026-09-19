@@ -14,6 +14,7 @@ import {
   buildEscapeHatch,
   escapeHatchFor,
   exceptionCountWord,
+  formatBaselineDispositionTag,
   formatFailingTestsList,
   implementerOwnsTests,
   testEditHeadline,
@@ -473,5 +474,108 @@ describe("formatFailingTestsList", () => {
     // No frame should sit at column 0 — every frame rendered should carry the two-space indent.
     const linesStartingAtColumnZero = out.split("\n").filter((line) => /^at /.test(line));
     expect(linesStartingAtColumnZero).toEqual([]);
+  });
+});
+
+// ─── formatFailingTestsList — baseline disposition tags (US-003) ──────────────
+//
+// `applyBaselineDispositions` (src/verification/test-baseline.ts) stamps a
+// `baselineDisposition` onto full-suite gate findings. The listing must surface
+// that attribution as a bracketed tag on the finding's own bullet — and must
+// leave findings that carry no disposition byte-identical to the pre-US-003
+// rendering, since every other producer (verifier, TDD, review) still emits
+// unclassified findings.
+
+describe("formatFailingTestsList — baseline disposition tags (US-003)", () => {
+  const DISPOSITIONS = ["introduced", "pre-existing", "earlier-story", "unattributed"] as const;
+
+  type Disposition = (typeof DISPOSITIONS)[number];
+
+  function taggedFinding(disposition: Disposition, index: number): Finding {
+    return {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: `test ${index}`,
+      file: `test/unit/disposition-${index}.test.ts`,
+      message: `AssertionError: failing ${index}`,
+      baselineDisposition: disposition,
+    };
+  }
+
+  /** The bracketed tag carried by the bullet for `file`, or undefined when the bullet has none. */
+  function tagOf(rendered: string, file: string): string | undefined {
+    const bullet = rendered.split("\n").find((line) => line.startsWith(`- ${file}`));
+    return bullet?.match(/\[[^\]]+\]/)?.[0];
+  }
+
+  test("formatBaselineDispositionTag — empty for an unclassified finding, bracketed tag otherwise", () => {
+    const unclassified: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      file: "test/unit/plain.test.ts",
+      message: "AssertionError: plain",
+    };
+
+    // The empty string is what keeps unclassified findings byte-identical (AC3).
+    expect(formatBaselineDispositionTag(unclassified)).toBe("");
+    expect(formatBaselineDispositionTag({ ...unclassified, baselineDisposition: "earlier-story" })).toBe(
+      " [caused by an earlier story in this run]",
+    );
+  });
+
+  test("AC2 — each disposition renders a distinct bracketed tag inside its own bullet", () => {
+    const findings = DISPOSITIONS.map((disposition, i) => taggedFinding(disposition, i));
+    const rendered = formatFailingTestsList(findings);
+
+    const files = DISPOSITIONS.map((_disposition, i) => `test/unit/disposition-${i}.test.ts`);
+    const tags = files.map((file) => tagOf(rendered, file));
+
+    // Every bullet carries a bracketed tag...
+    for (const tag of tags) {
+      expect(tag).toBeDefined();
+      expect(tag?.startsWith("[")).toBe(true);
+      expect(tag?.endsWith("]")).toBe(true);
+    }
+    // ...the four dispositions render four distinct tags (design §5.1 wording)...
+    expect(tags).toEqual([
+      "[introduced by your changes]",
+      "[pre-existing at baseRef]",
+      "[caused by an earlier story in this run]",
+      "[unattributed — no baseline available]",
+    ]);
+  });
+
+  test("AC3 — findings without a disposition render byte-identically to the pre-change output", () => {
+    const f: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: "computes the median",
+      file: "test/unit/stats.test.ts",
+      message: "AssertionError: expected 3 to be 4",
+    };
+
+    expect(formatFailingTestsList([f])).toBe(
+      "Fix the following 1 failing test:\n\n" +
+        "- test/unit/stats.test.ts\n" +
+        "  Test: computes the median\n" +
+        "  Error: AssertionError: expected 3 to be 4\n",
+    );
+  });
+
+  test("AC5 — five findings with mixed dispositions render five bullets and a count line of five", () => {
+    const dispositions: Disposition[] = ["introduced", "pre-existing", "earlier-story", "unattributed", "introduced"];
+    const findings = dispositions.map((disposition, i) => taggedFinding(disposition, i));
+
+    const rendered = formatFailingTestsList(findings);
+
+    expect(rendered).toContain("Fix the following 5 failing tests:");
+    const bullets = rendered.split("\n").filter((line) => line.startsWith("- "));
+    expect(bullets).toHaveLength(5);
+    for (const [i] of dispositions.entries()) {
+      expect(bullets[i]?.startsWith(`- test/unit/disposition-${i}.test.ts`)).toBe(true);
+    }
   });
 });

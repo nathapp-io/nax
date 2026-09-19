@@ -10,6 +10,7 @@ import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckResult } from "@/review/types";
+import type { BaselineDisposition } from "@/verification";
 import { buildIsolationSection, buildNaxArtifactsSection, buildScratchpadSection, wrapAffordance } from "../sections";
 
 interface CheckErrorFormatOptions {
@@ -382,6 +383,30 @@ Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${es
 }
 
 /**
+ * Bracketed attribution tags for a finding's baseline disposition (US-003),
+ * rendered so the rectifier can tell a failure it caused from one that predates
+ * the story. The disposition is stamped upstream by `applyBaselineDispositions`
+ * (src/verification/test-baseline.ts); wording per the approved design
+ * (docs/superpowers/specs/2026-09-19-preflight-test-baseline-design.md §5.1).
+ */
+const BASELINE_DISPOSITION_TAGS: Record<BaselineDisposition, string> = {
+  introduced: "[introduced by your changes]",
+  "pre-existing": "[pre-existing at baseRef]",
+  "earlier-story": "[caused by an earlier story in this run]",
+  unattributed: "[unattributed — no baseline available]",
+};
+
+/**
+ * `" <tag>"` for a finding that carries a `baselineDisposition`, and `""`
+ * otherwise — the empty string is what keeps findings from producers that do
+ * not classify against a baseline byte-identical to their pre-US-003 output.
+ */
+export function formatBaselineDispositionTag(finding: Finding): string {
+  const disposition = finding.baselineDisposition;
+  return disposition ? ` ${BASELINE_DISPOSITION_TAGS[disposition]}` : "";
+}
+
+/**
  * Formats the failing-test bullet list shared by failingTestContext and
  * failingTestRectification. Returns only the listing lines; callers append
  * the closing directive and any escape-hatch sections.
@@ -403,7 +428,7 @@ export function formatFailingTestsList(findings: Finding[]): string {
       .split("\n")
       .map((part, i) => (i === 0 ? part : `  ${part}`))
       .join("\n");
-    lines.push(`- ${location}\n${rule}  Error: ${indentedMessage}\n`);
+    lines.push(`- ${location}${formatBaselineDispositionTag(f)}\n${rule}  Error: ${indentedMessage}\n`);
   }
   return lines.join("\n");
 }

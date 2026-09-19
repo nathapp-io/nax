@@ -29,7 +29,9 @@ import type { UserStory } from "../prd";
 import type { QualityCommandSpec } from "../quality/command-spec";
 import { renderCommandSpec } from "../quality/command-spec";
 import type { TestSummary } from "../test-runners";
+import { errorMessage } from "../utils/errors";
 import { storyPackageDir } from "../utils/path-frame";
+import { applyBaselineDispositions, readRunBaseline, readStoryBaseline } from "../verification";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -202,6 +204,44 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Baseline disposition labeling (US-003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Label every structured full-suite failure with its baseline disposition.
+ *
+ * The story's baseline is its own `roll-forward` artifact when one was written
+ * (sequential stories ≥ 2). Otherwise the run-start (`preflight`) capture is
+ * inherited — that capture is the parallel-mode story baseline and the baseline
+ * of the first story in a run, since roll-forward is sequential-only (design:
+ * docs/superpowers/specs/2026-09-19-preflight-test-baseline-design.md §3.3). A
+ * `no-baseline` marker is honoured as-is (every finding reads `unattributed`)
+ * rather than replaced by the run-start snapshot: that snapshot predates the
+ * stories in between, so substituting it would label their failures as this
+ * story's.
+ *
+ * Labels never filter: the result holds exactly one finding per input finding.
+ * Absent feature context — or any read failure — degrades to the unlabeled
+ * findings: attribution is an enhancement and must never fail the gate.
+ */
+async function labelFindingsWithBaseline(input: FullSuiteGateInput, findings: Finding[]): Promise<Finding[]> {
+  const root = input.projectDir;
+  const featureId = input.featureName;
+  if (!root || !featureId) return findings;
+  try {
+    const runBaseline = await readRunBaseline(root, featureId);
+    const storyBaseline = (await readStoryBaseline(root, featureId, input.story.id)) ?? runBaseline;
+    return applyBaselineDispositions(findings, storyBaseline, runBaseline);
+  } catch (err) {
+    getLogger().warn("verify[regression]", "Baseline labeling failed — findings left unlabeled", {
+      storyId: input.story.id,
+      error: errorMessage(err),
+    });
+    return findings;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Operation
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -321,8 +361,8 @@ export const fullSuiteGateOp: DeterministicOperation<
       };
     }
 
-    const findings = testSummaryToFindings(testResult.parsedSummary);
-    if (findings.length === 0) {
+    const rawFindings = testSummaryToFindings(testResult.parsedSummary);
+    if (rawFindings.length === 0) {
       // Runner exited non-zero but parser found 0 structured failures — environmental
       // failure (e.g. config crash, missing dep, wrong cwd). Emit a single synth
       // finding so rectification dispatches the implementer with concrete repair
@@ -355,6 +395,12 @@ export const fullSuiteGateOp: DeterministicOperation<
         // `parsedSummary` missing as `no-gate-parse`.
       };
     }
+
+    // US-003 — classify each structured failure against the story and run
+    // baselines before the caller (rectification) consumes it. Labels never
+    // filter: the finding set is unchanged, each element only gains an
+    // attribution.
+    const findings = await labelFindingsWithBaseline(input, rawFindings);
 
     return {
       success: false,

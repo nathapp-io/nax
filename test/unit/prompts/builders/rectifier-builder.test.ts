@@ -724,3 +724,40 @@ describe("RectifierPromptBuilder — scope-constraint frame post-root-move", () 
     expect(root).not.toContain("Only modify files within");
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-003 — baseline disposition tags in the prioritized-failure render
+// ---------------------------------------------------------------------------
+
+describe("RectifierPromptBuilder.firstAttemptDelta — baseline disposition tags (US-003)", () => {
+  test("AC4 — prioritized check findings render the same bracketed disposition tags", () => {
+    const check: ReviewCheckResult = {
+      ...makeCheck("semantic", "Semantic review failed"),
+      findings: [
+        makeFinding({
+          source: "semantic-review",
+          rule: "semantic",
+          severity: "error",
+          file: "src/foo.ts",
+          line: 42,
+          message: "Missing implementation for AC-1",
+          baselineDisposition: "pre-existing",
+        }),
+        makeFinding({
+          source: "semantic-review",
+          rule: "semantic",
+          severity: "error",
+          file: "src/bar.ts",
+          line: 7,
+          message: "Missing guard for AC-2",
+          baselineDisposition: "introduced",
+        }),
+      ],
+    };
+
+    const prompt = RectifierPromptBuilder.firstAttemptDelta([check], 2);
+
+    expect(prompt).toContain("- [error] src/foo.ts:42 [pre-existing at baseRef] — Missing implementation for AC-1");
+    expect(prompt).toContain("- [error] src/bar.ts:7 [introduced by your changes] — Missing guard for AC-2");
+  });
+});

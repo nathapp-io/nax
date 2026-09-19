@@ -38,6 +38,7 @@ import {
   exceptionCountWord,
   type FailingTestRectificationOptions,
   failingTestRectification,
+  formatBaselineDispositionTag,
   formatCheckErrors,
   formatFailingTestsList,
   mechanicalRectification,
@@ -134,12 +135,11 @@ function assertNever(value: never): never {
 
 function renderCheckBlock(check: ReviewCheckResult, opts?: RectifierRenderOpts): string {
   const parts: string[] = [];
-  parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
   const truncated = check.output.length > 4000;
   const output = truncated
     ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
     : check.output;
-  parts.push(`\`\`\`\n${output}\n\`\`\`\n`);
+  parts.push(`### ${check.check} (exit ${check.exitCode})\n`, `\`\`\`\n${output}\n\`\`\`\n`);
 
   // Defensive filter — only blocking-severity findings drive the fix prompt,
   // even if the caller populated `findings` with mixed severities.
@@ -148,7 +148,7 @@ function renderCheckBlock(check: ReviewCheckResult, opts?: RectifierRenderOpts):
   if (blocking.length > 0) {
     parts.push("Structured findings:\n");
     for (const f of blocking) {
-      parts.push(`- [${f.severity}] ${f.file}:${f.line} — ${f.message}\n`);
+      parts.push(`- [${f.severity}] ${f.file}:${f.line}${formatBaselineDispositionTag(f)} — ${f.message}\n`);
     }
   }
 
