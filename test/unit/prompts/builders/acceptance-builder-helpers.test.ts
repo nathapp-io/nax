@@ -4,11 +4,16 @@ import { fenceLangFor, formatTestOutputForFix } from "@/prompts";
 // ─── formatTestOutputForFix ───────────────────────────────────────────────────
 
 describe("formatTestOutputForFix", () => {
-  test("bun test output: structured failures extracted, (pass) lines excluded", () => {
+  test("bun test output: structured failures extracted, passing lines excluded", () => {
     const raw = [
-      "(pass) AC-1: should return empty array [1ms]",
+      "✓ AC-1: should return empty array [1ms]",
+      "error: expect(received).toBe(expected)",
+      "",
+      "Expected: 0",
+      "Received: 1",
+      "",
+      "      at <anonymous> (/tmp/acceptance.test.ts:3:39)",
       "(fail) AC-2: should handle edge case [2ms]",
-      "  Error: Expected 0 but got 1",
       "",
       " 1 pass",
       " 1 fail",
@@ -16,19 +21,20 @@ describe("formatTestOutputForFix", () => {
 
     const out = formatTestOutputForFix(raw);
     expect(out).toContain("AC-2");
-    expect(out).toContain("Expected 0 but got 1");
-    expect(out).not.toContain("(pass) AC-1");
+    expect(out).toContain("Expected: 0");
+    expect(out).not.toContain("AC-1");
   });
 
   test("result is significantly smaller than raw output with passing tests", () => {
-    const passLines = Array.from({ length: 36 }, (_, i) => `(pass) AC-${i + 1}: test [1ms]`).join("\n");
-    const failLine = "(fail) AC-37: broken test [2ms]\n  Error: nope";
+    const passLines = Array.from({ length: 36 }, (_, i) => `✓ AC-${i + 1}: test [1ms]`).join("\n");
+    const failLine =
+      "error: nope\n\n      at <anonymous> (/tmp/acceptance.test.ts:1:1)\n(fail) AC-37: broken test [2ms]";
     const raw = `${passLines}\n${failLine}\n\n 36 pass\n 1 fail`;
 
     const out = formatTestOutputForFix(raw);
     expect(out.length).toBeLessThan(raw.length);
     expect(out).toContain("AC-37");
-    expect(out).not.toContain("(pass) AC-1");
+    expect(out).not.toContain("AC-1");
   });
 
   test("unknown framework with failures falls back to tail lines", () => {
@@ -55,7 +61,7 @@ describe("formatTestOutputForFix", () => {
   });
 
   test("all tests passed (unexpected call to fix path) returns only header", () => {
-    const raw = "(pass) AC-1: ok [1ms]\n(pass) AC-2: ok [1ms]\n\n 2 pass\n 0 fail";
+    const raw = "✓ AC-1: ok [1ms]\n✓ AC-2: ok [1ms]\n\n 2 pass\n 0 fail";
     const out = formatTestOutputForFix(raw);
     expect(out).toContain("2 passed");
     expect(out).toContain("0 failed");

@@ -188,7 +188,7 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
 
 describe("builder.buildSourceFixPrompt()", () => {
   const base = {
-    testOutput: "(fail) AC-1: null pointer [2ms]\n  Error: Cannot read property\n\n 0 pass\n 1 fail",
+    testOutput: "  Error: Cannot read property\n(fail) AC-1: null pointer [2ms]\n\n 0 pass\n 1 fail",
     diagnosisReasoning: "Source file has uninitialized field",
     acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
   };
@@ -309,8 +309,7 @@ describe("builder.buildSourceFixPrompt()", () => {
 
 describe("builder.buildTestFixPrompt()", () => {
   const base = {
-    testOutput:
-      "(pass) AC-1: ok [1ms]\n(fail) AC-2: assertion failed [2ms]\n  Error: Expected 1 got 0\n\n 1 pass\n 1 fail",
+    testOutput: "  Error: Expected 1 got 0\n(fail) AC-2: assertion failed [2ms]\n\n 1 pass\n 1 fail",
     diagnosisReasoning: "Test uses wrong assertion type",
     failedACs: ["AC-2"],
     acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
@@ -320,7 +319,7 @@ describe("builder.buildTestFixPrompt()", () => {
     const result = builder.buildTestFixPrompt(base);
     expect(result).toContain("AC-2");
     expect(result).not.toContain("```typescript");
-    expect(result).not.toContain("(pass) AC-1");
+    expect(result).not.toContain("AC-1");
     expect(result).toContain("Expected 1 got 0");
   });
 
