@@ -38,7 +38,10 @@ export type CodingToolName =
   | "RunCommand"
   | "RequestCapability"
   | "Exec"
-  | "Bash";
+  | "Bash"
+  | "ScratchpadWrite"
+  | "ScratchpadRead"
+  | "ScratchpadList";
 
 /**
  * One declarative permission grant, as produced by resolvePermissions.
@@ -76,6 +79,16 @@ export interface ToolScope {
    * properties (for example `values.files` in RunCommand).
    */
   readonly pathFields: readonly string[];
+  /**
+   * Root-relative subdirectory the tool's path fields are confined to.
+   * Containment runs against `<root>/<confineTo>` instead of `<root>`, so a
+   * path-bearing tool can never reach the rest of the repository even under
+   * an unconditional grant. Grant globs, deny rules and `naxOwnedWriteRefusal`
+   * keep seeing the canonical repo-root-relative spelling: containment is the
+   * single seam, only its ROOT shifts. Tool-declared, never config-declared --
+   * a mis-set `pathFields` grant must not be able to widen the tool's reach.
+   */
+  readonly confineTo?: string;
   /** Array-valued fields whose every element is a path. */
   readonly arrayPathFields?: readonly string[];
   /**

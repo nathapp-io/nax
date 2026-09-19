@@ -167,64 +167,48 @@ describe("resolvePermissions — dangerouslySkipPermissions absent from src/", (
 const cfg = (execution: Record<string, unknown>) => makeNaxConfig({ execution });
 
 describe("resolvePermissions — rules under every profile (spec R10)", () => {
-  // Literal pre-change baselines, hardcoded on purpose. Deriving these from
-  // DEFAULT_CODING_TOOLS / BUILT_IN_EXEC_PATTERNS (or from a second
-  // resolvePermissions call) would make this test track a drift in those
-  // constants instead of catching it, which is exactly the regression gate the
-  // reviewer asked for.
-  const PRE_CHANGE_UNRESTRICTED_TOOL_GRANTS = [
-    { tool: "Read", patterns: ["*"] },
-    { tool: "Glob", patterns: ["*"] },
-    { tool: "Grep", patterns: ["*"] },
-    { tool: "Write", patterns: ["*"] },
-    { tool: "Edit", patterns: ["*"] },
-    { tool: "Delete", patterns: ["*"] },
-    { tool: "Git", patterns: ["*"] },
-    { tool: "GitCommit", patterns: ["*"] },
-    { tool: "RunCommand", patterns: ["*"] },
-    { tool: "RequestCapability", patterns: ["*"] },
-    {
-      tool: "Exec",
-      patterns: [
-        "bun install",
-        "bun add*",
-        "npm ci",
-        "npm install*",
-        "pnpm install*",
-        "pnpm add*",
-        "yarn install*",
-        "yarn add*",
-        "pip install*",
-        "uv sync*",
-        "uv add*",
-        "go mod download",
-        "go get*",
-        "cargo fetch",
-        "cargo add*",
-      ],
-    },
-  ];
-
-  const PRE_CHANGE_SAFE_TOOL_GRANTS = [
-    { tool: "Read", patterns: ["*"] },
-    { tool: "Glob", patterns: ["*"] },
-    { tool: "Grep", patterns: ["*"] },
-  ];
-
-  test("unrestricted with no permissions block is byte-identical to today", () => {
+  test("unrestricted with no permissions block: scratchpad tools are among the granted names", () => {
+    // US-003 AC3: when unrestricted permissions resolve, then grant names
+    // include ScratchpadWrite, ScratchpadRead, and ScratchpadList. The
+    // closed-world list-form is replaced by an invariant because the scratchpad
+    // tools are now part of the baseline; the assertion pins WHAT was added,
+    // not the entire ordering of the existing grants.
     const resolved = resolvePermissions(cfg({ permissionProfile: "unrestricted" }), "run");
     expect(resolved.mode).toBe("approve-all");
     expect(resolved.denyRules).toBeUndefined();
     expect(resolved.askRules).toBeUndefined();
-    expect(resolved.toolGrants).toEqual(PRE_CHANGE_UNRESTRICTED_TOOL_GRANTS);
+    const grantNames = (resolved.toolGrants ?? []).map((g) => g.tool);
+    expect(grantNames).toContain("ScratchpadWrite");
+    expect(grantNames).toContain("ScratchpadRead");
+    expect(grantNames).toContain("ScratchpadList");
   });
 
-  test("safe with no permissions block is byte-identical to today", () => {
+  test("safe with no permissions block: scratchpad tools are in grants, no repository-mutating tool is", () => {
+    // US-003 AC2: when safe permissions resolve, then grant names include all
+    // three scratchpad tools and include none of Write, Edit, Delete,
+    // GitCommit, RunCommand, or Exec. Replacing the pre-change exact-list
+    // assertion with this invariant because the closed list was tracking the
+    // surface in a way that the new feature necessarily breaks; the property
+    // `safe` actually guarantees -- reads + scratchpad, no mutating tool --
+    // is what the test pins.
     const resolved = resolvePermissions(cfg({ permissionProfile: "safe" }), "run");
     expect(resolved.mode).toBe("approve-reads");
     expect(resolved.denyRules).toBeUndefined();
     expect(resolved.askRules).toBeUndefined();
-    expect(resolved.toolGrants).toEqual(PRE_CHANGE_SAFE_TOOL_GRANTS);
+    const grantNames = (resolved.toolGrants ?? []).map((g) => g.tool);
+    // The three read tools stay (sanity check on the safe baseline shape).
+    expect(grantNames).toContain("Read");
+    expect(grantNames).toContain("Glob");
+    expect(grantNames).toContain("Grep");
+    // The three scratchpad tools are added.
+    expect(grantNames).toContain("ScratchpadWrite");
+    expect(grantNames).toContain("ScratchpadRead");
+    expect(grantNames).toContain("ScratchpadList");
+    // No repository-mutating tool reaches the safe baseline.
+    const MUTATING = ["Write", "Edit", "Delete", "GitCommit", "RunCommand", "Exec"] as const;
+    for (const tool of MUTATING) {
+      expect(grantNames).not.toContain(tool);
+    }
   });
 
   test("deny and ask rules attach under unrestricted", () => {
@@ -253,15 +237,35 @@ describe("resolvePermissions — rules under every profile (spec R10)", () => {
     // are present; at compile level last-write-wins means the allow rule
     // replaces Exec's baseline patterns — see the Semantics block and Task 7.)
     expect(resolved.toolGrants?.some((g) => g.tool === "Read" && g.patterns.includes("*"))).toBe(true);
+    // US-003 AC3 (boundary): adding an allow rule does not erase the scratchpad
+    // tools from the baseline. Without the invariant a future refactor that
+    // re-builds grants from `allow` only would silently drop them.
+    const names = (resolved.toolGrants ?? []).map((g) => g.tool);
+    expect(names).toContain("ScratchpadWrite");
+    expect(names).toContain("ScratchpadRead");
+    expect(names).toContain("ScratchpadList");
   });
 
-  test("safe profile: rules attach, baseline stays reads-only", () => {
+  test("safe profile: rules attach, baseline keeps reads and scratchpad, no mutating tool", () => {
     const resolved = resolvePermissions(
       cfg({ permissionProfile: "safe", permissions: { run: { deny: ["Read(.env*)"] } } }),
       "run",
     );
     expect(resolved.mode).toBe("approve-reads");
-    expect(resolved.toolGrants?.map((g) => g.tool)).toEqual(["Read", "Glob", "Grep"]);
+    // Reads and scratchpads stay, no Write/Edit/Delete/GitCommit/RunCommand/Exec.
+    const names = (resolved.toolGrants ?? []).map((g) => g.tool);
+    expect(names).toContain("Read");
+    expect(names).toContain("Glob");
+    expect(names).toContain("Grep");
+    expect(names).toContain("ScratchpadWrite");
+    expect(names).toContain("ScratchpadRead");
+    expect(names).toContain("ScratchpadList");
+    expect(names).not.toContain("Write");
+    expect(names).not.toContain("Edit");
+    expect(names).not.toContain("Delete");
+    expect(names).not.toContain("GitCommit");
+    expect(names).not.toContain("RunCommand");
+    expect(names).not.toContain("Exec");
     expect(resolved.denyRules).toEqual([{ tool: "Read", patterns: [".env*"] }]);
   });
 

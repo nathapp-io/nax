@@ -222,6 +222,28 @@ describe("AC-7/AC-8: TddPromptBuilder includes .nax/ immutability text", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// US-005: the implementer prompt introduces the scratchpad, so the standing
+// .nax/ immutability rule does not read as a blanket prohibition.
+// ---------------------------------------------------------------------------
+
+describe("US-005: TddPromptBuilder composes the scratchpad section", () => {
+  // AC-4
+  test("implementer prompt names .nax/scratchpad/ and carries the wipe/never-committed contract", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({});
+    const prompt = await TddPromptBuilder.for("implementer", { variant: "standard" })
+      .story(story)
+      .withLoader("/tmp", config)
+      .build();
+
+    expect(prompt).toContain(".nax/scratchpad/");
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("wiped at the start of each run");
+    expect(lower).toContain("never committed");
+  });
+});
+
 describe("TddPromptBuilder.verdictRetry", () => {
   test("returns a re-emit instruction with explicit start/end markers", () => {
     const out = TddPromptBuilder.verdictRetry();

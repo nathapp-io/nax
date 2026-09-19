@@ -93,6 +93,34 @@ describe("buildNaxArtifactsSection", () => {
     });
   });
 
+  // ─── US-005 — the scratchpad is the one carve-out from .nax/ immutability ───
+
+  describe("US-005 — scratchpad exception", () => {
+    // AC-1: names `.nax/scratchpad/` as an exception
+    test("implementer: names .nax/scratchpad/ as an exception", () => {
+      const result = buildNaxArtifactsSection("implementer") as string;
+      expect(result).toContain(".nax/scratchpad/");
+      expect(result.toLowerCase()).toContain("exception");
+    });
+
+    // AC-1: still states files under `.nax/` must never be moved, renamed, or deleted
+    test("implementer: still states files under .nax/ must never be moved, renamed, or deleted", () => {
+      const result = buildNaxArtifactsSection("implementer") as string;
+      expect(result.toLowerCase()).toContain("must never be moved, renamed, or deleted");
+    });
+
+    // AC-2: standard and lite variants return identical text
+    test("standard and lite variants return identical text for every role", () => {
+      const roles: GuardrailRole[] = ["test-writer", "implementer", "verifier"];
+      for (const role of roles) {
+        expect(buildNaxArtifactsSection(role, "lite", "lite")).toEqual(
+          buildNaxArtifactsSection(role, "standard", "strict"),
+        );
+        expect(buildNaxArtifactsSection(role, "standard")).toEqual(buildNaxArtifactsSection(role, "lite"));
+      }
+    });
+  });
+
   describe("purity", () => {
     test("returns same output for same inputs (test-writer)", () => {
       const a = buildNaxArtifactsSection("test-writer");

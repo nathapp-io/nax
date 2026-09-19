@@ -25,6 +25,7 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import type { AgentRunOptions, HopKind, RunAsSessionOpts, SessionHandle, TurnResult } from "@/agents";
+import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
 import type { ContextBundle } from "@/context/engine";
 import type { BuildHopCallbackContext } from "@/operations";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
@@ -103,10 +104,10 @@ function only(dispatch: Dispatch[]): Dispatch {
   return first;
 }
 
-async function dispatchOnce(): Promise<Dispatch> {
+async function dispatchOnce(overrides: Partial<AgentRunOptions> = {}): Promise<Dispatch> {
   const dispatch: Dispatch[] = [];
   const ctx = makeCtx(dispatch);
-  const options = makeOptions(ctx.config);
+  const options: AgentRunOptions = { ...makeOptions(ctx.config), ...overrides };
   const cb = buildHopCallback(ctx, SESSION_ID, options);
   await cb("claude", emptyBundle(), { kind: "primary" } satisfies HopKind, options);
   return only(dispatch);
@@ -147,7 +148,49 @@ describe("buildHopCallback — declared coding tools reach the agent", () => {
   test("advertises the operation's declared tools to the dispatched session", async () => {
     const { opts } = await dispatchOnce();
 
-    expect(opts.codingTools?.map((t) => t.name).sort()).toEqual(["Git", "Glob", "Grep", "Read"]);
+    // US-003 invariant: the operation's declaration is the ceiling on
+    // REPOSITORY tools, but the scratchpad tools are the universal layer
+    // appended on every op, so the advertised set contains the declared
+    // read/repo tools AND the three scratchpad tools, with no other
+    // repository tool. Closed-list form is replaced because the append at
+    // declaredWithProviders necessarily grows the set.
+    const advertised = opts.codingTools?.map((t) => t.name) ?? [];
+    // Declared repository tools reach the advertised set.
+    expect(advertised).toContain("Read");
+    expect(advertised).toContain("Glob");
+    expect(advertised).toContain("Grep");
+    expect(advertised).toContain("Git");
+    // Universal scratchpad layer.
+    expect(advertised).toContain("ScratchpadWrite");
+    expect(advertised).toContain("ScratchpadRead");
+    expect(advertised).toContain("ScratchpadList");
+    // No repository-mutating tool the op did not declare.
+    expect(advertised).not.toContain("Write");
+    expect(advertised).not.toContain("Edit");
+    expect(advertised).not.toContain("Delete");
+    expect(advertised).not.toContain("GitCommit");
+    expect(advertised).not.toContain("RunCommand");
+    expect(advertised).not.toContain("Exec");
+    // Distinctness: the same tool must not appear twice -- a duplicate ships
+    // two ToolDefinitions for it to the provider. `toContain` cannot see that;
+    // the set-size check can. The branch that dedupes a declaration already
+    // carrying a scratchpad name is exercised in the test below.
+    expect(new Set(advertised).size).toBe(advertised.length);
+  });
+
+  test("dedupes the universal scratchpad layer against a declaration that already carries it", async () => {
+    // The `omit tools` production shape: resolveDeclaredTools hands the run
+    // DEFAULT_CODING_TOOLS, which already holds all three scratchpad names.
+    // Appending the universal layer without filtering them puts each name into
+    // the union twice, and runtime.advertised() copies the list verbatim --
+    // duplicate ToolDefinitions in the provider request. Asserted on what
+    // reaches the dispatched session, not on the seam in isolation.
+    const { opts } = await dispatchOnce({ declaredTools: DEFAULT_CODING_TOOLS });
+    const advertised = opts.codingTools?.map((t) => t.name) ?? [];
+    expect(new Set(advertised).size).toBe(advertised.length);
+    expect(advertised.filter((name) => name === "ScratchpadWrite")).toHaveLength(1);
+    expect(advertised.filter((name) => name === "ScratchpadRead")).toHaveLength(1);
+    expect(advertised.filter((name) => name === "ScratchpadList")).toHaveLength(1);
   });
 
   test("installs an interaction handler with no bridge and no context pull tools", async () => {

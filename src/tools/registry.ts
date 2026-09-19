@@ -97,6 +97,9 @@ export const RESERVED_TOOL_NAMES: readonly CodingToolName[] = [
   "RequestCapability",
   "Exec",
   "Bash",
+  "ScratchpadWrite",
+  "ScratchpadRead",
+  "ScratchpadList",
 ];
 
 const registry = new Map<string, CodingTool>();

@@ -89,6 +89,13 @@ export const NAX_GITIGNORE_ENTRIES = [
   // main checkout and committed inside the story worktree, so the merge back
   // aborts on an untracked overwrite and strands the story branch.
   "**/.nax/cache/",
+  // Agent-owned throwaway directory, written by the scratchpad tools and wiped
+  // at run start (src/execution/lifecycle/scratchpad-wipe.ts). Same `**/` prefix
+  // and same worktree hazard as the cache above: a scratchpad file left in the
+  // main checkout is untracked, one written inside the story worktree is
+  // committed, and the merge back then aborts on the untracked overwrite
+  // (nax#2136/#2137).
+  "**/.nax/scratchpad/",
 ];
 
 /**

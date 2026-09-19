@@ -21,10 +21,27 @@ Files under \`.nax/\` are nax's own artifacts (acceptance scaffolds, plan state,
 tests). They must NEVER be moved, renamed, or deleted — \`.nax/\` is a tool-managed directory and
 modifying it breaks the orchestrator.
 
+The one exception is \`.nax/scratchpad/\` — a throwaway directory you may write to and overwrite
+freely. Every other path under \`.nax/\` stays off limits.
+
 - A test under \`.nax/\` is NOT a reason to skip writing source-tree tests. \`.nax/\` is generated
   scaffolding, not real coverage of the package's code.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
+
+# Scratchpad
+
+You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
+command output you want to re-read, and intermediate lists. Write to it with \`ScratchpadWrite\`,
+read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
+to the scratchpad.
+
+Its contents are wiped at the start of each run and are never committed. Nothing there survives the
+run, reaches the repository, or is read by another step — treat every file as disposable, and
+overwrite freely.
+
+\`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
+must still never be moved, renamed, or deleted.
 
 ## Test-file edit exceptions
 
@@ -131,10 +148,27 @@ Files under \`.nax/\` are nax's own artifacts (acceptance scaffolds, plan state,
 tests). They must NEVER be moved, renamed, or deleted — \`.nax/\` is a tool-managed directory and
 modifying it breaks the orchestrator.
 
+The one exception is \`.nax/scratchpad/\` — a throwaway directory you may write to and overwrite
+freely. Every other path under \`.nax/\` stays off limits.
+
 - A test under \`.nax/\` is NOT a reason to skip writing source-tree tests. \`.nax/\` is generated
   scaffolding, not real coverage of the package's code.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
+
+# Scratchpad
+
+You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
+command output you want to re-read, and intermediate lists. Write to it with \`ScratchpadWrite\`,
+read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
+to the scratchpad.
+
+Its contents are wiped at the start of each run and are never committed. Nothing there survives the
+run, reaches the repository, or is read by another step — treat every file as disposable, and
+overwrite freely.
+
+\`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
+must still never be moved, renamed, or deleted.
 
 ## Test-file edit exceptions
 

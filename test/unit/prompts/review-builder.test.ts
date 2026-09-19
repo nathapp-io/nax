@@ -313,6 +313,33 @@ describe("semantic review prompt", () => {
   });
 });
 
+// ─── US-005 — scratchpad awareness ───────────────────────────────────────────
+// The review builders do not compose buildNaxArtifactsSection, so without an
+// explicit section the reviewer never learns the scratchpad exists.
+
+describe("US-005: buildSemanticReviewPrompt introduces the scratchpad", () => {
+  // AC-5
+  test("prompt names .nax/scratchpad/ and carries the wipe/never-committed contract", () => {
+    const result = new ReviewPromptBuilder().buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, {
+      mode: "embedded",
+      diff: DIFF,
+    });
+    expect(result).toContain(".nax/scratchpad/");
+    const lower = result.toLowerCase();
+    expect(lower).toContain("wiped at the start of each run");
+    expect(lower).toContain("never committed");
+  });
+
+  test("ref mode carries it too", () => {
+    const result = new ReviewPromptBuilder().buildSemanticReviewPrompt(
+      STORY,
+      makeSemanticReviewConfig({ model: "balanced", diffMode: "ref", rules: [] }),
+      { mode: "ref", storyGitRef: "abc123", stat: " src/a.ts | 2 +-" },
+    );
+    expect(result).toContain(".nax/scratchpad/");
+  });
+});
+
 // ─── ref-mode git frame (repo-rooted cwd) ─────────────────────────────────────
 
 function refPrompt(story: SemanticStory): string {

@@ -10,7 +10,7 @@ import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckResult } from "@/review/types";
-import { buildIsolationSection, buildNaxArtifactsSection, wrapAffordance } from "../sections";
+import { buildIsolationSection, buildNaxArtifactsSection, buildScratchpadSection, wrapAffordance } from "../sections";
 
 interface CheckErrorFormatOptions {
   blockingThreshold?: "error" | "warning" | "info";
@@ -143,6 +143,8 @@ The only valid response to a missing-test finding is to
 author a real test under the package's resolved test path.
 
 ${buildNaxArtifactsSection("implementer")}
+
+${buildScratchpadSection()}
 
 ## Test-file edit exceptions
 

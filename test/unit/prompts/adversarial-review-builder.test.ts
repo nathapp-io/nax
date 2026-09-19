@@ -568,3 +568,30 @@ describe("AdversarialReviewPromptBuilder — diff-access region", () => {
     expect(embedded).not.toContain("nax:diff-access");
   });
 });
+
+// ─── US-005 — scratchpad awareness ───────────────────────────────────────────
+// The adversarial builder does not compose buildNaxArtifactsSection either, so
+// the scratchpad section is the only path by which the reviewer learns it exists.
+
+describe("US-005: buildAdversarialReviewPrompt introduces the scratchpad", () => {
+  // AC-6
+  test("prompt names .nax/scratchpad/ and carries the wipe/never-committed contract", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+    });
+    expect(result).toContain(".nax/scratchpad/");
+    const lower = result.toLowerCase();
+    expect(lower).toContain("wiped at the start of each run");
+    expect(lower).toContain("never committed");
+  });
+
+  test("embedded mode carries it too", () => {
+    const result = builder.buildAdversarialReviewPrompt(
+      STORY,
+      { ...CONFIG, diffMode: "embedded" },
+      { mode: "embedded", diff: DIFF },
+    );
+    expect(result).toContain(".nax/scratchpad/");
+  });
+});

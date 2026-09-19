@@ -47,6 +47,16 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
     expect(produced).toBe(join("/repo", expanded));
   });
 
+  test("covers the scratchpad directory with a nested-worktree pattern (US-004)", () => {
+    // The scratchpad tools write throwaway files there (src/tools/scratchpad.ts).
+    // US-004 AC4 pins the entry exactly as written: the `**/` prefix is what
+    // keeps a monorepo package's own scratchpad out of the story worktree
+    // commit, and dropping it lands the story branch in the merge-back abort
+    // described on `**/.nax/cache/` (nax#2136/#2137).
+    expect(NAX_GITIGNORE_ENTRIES).toContain("**/.nax/scratchpad/");
+    expect(NAX_GITIGNORE_ENTRIES).not.toContain(".nax/scratchpad/");
+  });
+
   test("entries are relative patterns — an absolute path would never match", () => {
     for (const entry of NAX_GITIGNORE_ENTRIES) {
       expect(entry.startsWith("/")).toBe(false);
@@ -88,11 +98,17 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
       // untracked overwrite and strands nax/<storyId> (nax#2136).
       expectIgnored(".nax/cache/test-patterns.json", true);
 
+      // The scratchpad (US-004): throwaway files the agent writes during a
+      // session. Same worktree hazard as the cache above, and the same reason
+      // the rule carries a `**/` prefix.
+      expectIgnored(".nax/scratchpad/notes.md", true);
+
       // Same rules must hold for a monorepo package's own .nax/, which is where
       // nax writes when a story carries a workdir — and is the case that breaks.
       expectIgnored(`packages/api/${feature}/spec.md`, false);
       expectIgnored(`packages/api/${feature}/status.json`, true);
       expectIgnored("packages/lib/.nax/cache/test-patterns.json", true);
+      expectIgnored("packages/lib/.nax/scratchpad/notes.md", true);
     });
   });
 });

@@ -29,6 +29,7 @@ export {
   wrapAffordance,
 } from "./protocol-region";
 export { buildRoleTaskSection } from "./role-task";
+export { buildScratchpadSection } from "./scratchpad";
 export { buildSelfVerificationSection } from "./self-verification";
 export { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "./story";
 export { buildTddLanguageSection } from "./tdd-conventions";

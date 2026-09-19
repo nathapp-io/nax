@@ -22,6 +22,7 @@ import { grepTool } from "./grep";
 import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
+import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
 import { EXEC_TOOL_NAME, type ToolPolicy, type ToolScope } from "./types";
 import { writeTool } from "./write";
@@ -75,6 +76,9 @@ export function registerBuiltinCodingTools(): void {
     gitTool,
     gitCommitTool,
     requestCapabilityTool,
+    scratchpadWriteTool,
+    scratchpadReadTool,
+    scratchpadListTool,
   ]) {
     if (getCodingTool(tool.name) === undefined) registerBuiltinTool(tool);
   }
