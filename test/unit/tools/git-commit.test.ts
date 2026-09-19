@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
@@ -77,6 +77,105 @@ describe("buildCommitArgvs", () => {
 
   test("is NOT in the default grant -- mutation is always explicit", () => {
     expect(DEFAULT_CODING_TOOLS).not.toContain("GitCommit");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fix 3: GitCommit must not stage nax-owned run artifacts (NAX_GITIGNORE_ENTRIES)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function git(cwd: string, ...args: string[]): { stdout: string; stderr: string; exitCode: number } {
+  const proc = Bun.spawnSync(["git", ...args], { cwd });
+  return { stdout: proc.stdout.toString(), stderr: proc.stderr.toString(), exitCode: proc.exitCode ?? -1 };
+}
+
+/** True when `relPath` is tracked in the repo's index. */
+function isTracked(repo: string, relPath: string): boolean {
+  return git(repo, "ls-files", "--error-unmatch", relPath).exitCode === 0;
+}
+
+describe("gitCommitTool — nax-owned artifact filtering (Fix 3)", () => {
+  test("a normal source path is untouched — pass-through unchanged", async () => {
+    const repo = await makeRepo();
+
+    const result = await gitCommitTool.run({ message: "feat: plain commit", paths: ["a.ts"] }, toolContext(repo));
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toContain("commit");
+    expect(result.content).not.toContain("Skipped");
+    expect(isTracked(repo, "a.ts")).toBe(true);
+  });
+
+  test("filters a nax-owned path out of the add argv and never stages it", async () => {
+    const repo = await makeRepo();
+    const scratchDir = join(repo, ".nax", "scratchpad");
+    mkdirSync(scratchDir, { recursive: true });
+    writeFileSync(join(scratchDir, "notes.md"), "scratch note\n");
+
+    const result = await gitCommitTool.run(
+      { message: "feat: commit with a nax artifact mixed in", paths: ["a.ts", ".nax/scratchpad/notes.md"] },
+      toolContext(repo),
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toContain("commit");
+    expect(isTracked(repo, "a.ts")).toBe(true);
+    expect(isTracked(repo, ".nax/scratchpad/notes.md")).toBe(false);
+  });
+
+  test("the partial case reports which paths were skipped, plainly, in the result", async () => {
+    const repo = await makeRepo();
+    const scratchDir = join(repo, ".nax", "scratchpad");
+    mkdirSync(scratchDir, { recursive: true });
+    writeFileSync(join(scratchDir, "notes.md"), "scratch note\n");
+
+    const result = await gitCommitTool.run(
+      { message: "feat: partial", paths: ["a.ts", ".nax/scratchpad/notes.md"] },
+      toolContext(repo),
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toContain(".nax/scratchpad/notes.md");
+    expect(result.content.toLowerCase()).toContain("skip");
+  });
+
+  test("the total case (every path nax-owned) runs no git command and stages nothing", async () => {
+    const repo = await makeRepo();
+    const scratchDir = join(repo, ".nax", "scratchpad");
+    mkdirSync(scratchDir, { recursive: true });
+    writeFileSync(join(scratchDir, "notes.md"), "scratch note\n");
+
+    const result = await gitCommitTool.run(
+      { message: "feat: only nax artifacts", paths: [".nax/scratchpad/notes.md"] },
+      toolContext(repo),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content.toLowerCase()).toContain("nax-owned");
+    // No commit happened at all.
+    expect(git(repo, "log", "--oneline").stdout.trim()).toBe("");
+    // The file was never staged — still untracked, not in the index.
+    expect(isTracked(repo, ".nax/scratchpad/notes.md")).toBe(false);
+    expect(git(repo, "status", "--porcelain").stdout).toContain("?? .nax/");
+  });
+
+  test("does not false-positive on a path that merely looks similar to a nax-owned one", async () => {
+    // Guards the substring-matching bug src/worktree/manager.ts already warns
+    // about: "packages/app/.nax/scratchpad-backup/x" must not be treated as
+    // matched by the "**/.nax/scratchpad/" entry.
+    const repo = await makeRepo();
+    const lookalikeDir = join(repo, "packages", "app", ".nax", "scratchpad-backup");
+    mkdirSync(lookalikeDir, { recursive: true });
+    writeFileSync(join(lookalikeDir, "x"), "not actually nax-owned\n");
+
+    const result = await gitCommitTool.run(
+      { message: "feat: lookalike path", paths: ["packages/app/.nax/scratchpad-backup/x"] },
+      toolContext(repo),
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content).not.toContain("Skipped");
+    expect(isTracked(repo, "packages/app/.nax/scratchpad-backup/x")).toBe(true);
   });
 });
 
