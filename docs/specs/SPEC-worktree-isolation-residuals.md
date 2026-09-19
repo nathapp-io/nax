@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-19
 **Closes:** nax#2134, nax#2136
-**Related:** nax#2093 (worktree escape), nax#2069 (prefix-derivation trap), PR #2133 (PR4 deletion pass), BUG-28 (`manager.ts:122-133`)
+**Related:** nax#2093 (worktree escape), nax#2069 (prefix-derivation trap), PR #2133 (PR4 deletion pass), BUG-28 (`manager.ts:125-133`)
 
 ## Summary
 
@@ -112,8 +112,18 @@ no worktree record and no upstream as an orphan.
 inference BUG-28 was written to stop — a user branch matching `nax/<storyId>` with no upstream is
 indistinguishable from an orphan under (b), so it re-opens the hole the guard closed.
 
-The ownership record is a **git ref**, `refs/nax/orphan/<storyId>`, written with `git update-ref`
-pointing at the branch tip. Chosen over a marker file because it is durable across processes and
+The ownership record is a **git ref**, `refs/nax/orphan/<storyId>`, written with
+`git update-ref refs/nax/orphan/<storyId> refs/heads/nax/<storyId>` — the source-ref form, so git
+resolves the branch tip itself. The `<sha>` form would need a second `git rev-parse` call and
+stdout parsing, which `_worktreeManagerDeps` (it exposes only `gitWithTimeout`) makes awkward for
+the read side to mirror.
+
+**The ref name is built in one place.** The record is *written* in `pipeline-result-handler.ts` and
+*read* in `worktree/manager.ts` — two modules with two different `_deps` seams. If the two spellings
+drift, the record is written and never found, and the mechanism silently never fires: the exact
+"declared mechanism that cannot execute" class this spec exists to close. So a single exported
+helper, `naxOrphanRefName(storyId)`, owns the spelling and applies `validateStoryId` to its input;
+both modules call it rather than interpolating the name themselves. Chosen over a marker file because it is durable across processes and
 machines, lives in the same store as the thing it describes, is invisible to `git branch` and
 `git log`, and is removed with `git update-ref -d` in the same step that deletes the branch — so
 the record cannot outlive what it records. A user branch never acquires one.
@@ -215,8 +225,15 @@ constructs — so no closed-world assertion in `test/unit/execution/worktree-man
   (`CodeNeighborProvider`, `GitHistoryProvider`) are in the same story, so the seam is verified
   inside US-001 by AC-1.7 (producer sets the field) and AC-1.1/AC-1.6 (consumers act on it), not
   across stories.
-- US-002 introduces no externally-visible symbol; the ownership record is verified end-to-end by
-  AC-2.1, which exercises removal and re-creation together.
+- US-002 introduces one externally-visible symbol, `naxOrphanRefName`. AC-2.6 exercises it
+  directly; its seam is AC-2.1 and AC-2.4, which assert the production path — entered at
+  `handlePipelineFailure`, the module's exported entry point — writes and then consumes a ref at
+  exactly that name. Both modules that build the name are inside US-002, so the seam does not
+  cross a story boundary.
+- Every US-002 AC triggers at `handlePipelineFailure` rather than at `removeWorktreeDirectory`,
+  which is module-private (`pipeline-result-handler.ts:56`, no `export`) and unreachable from a
+  test. The existing `pipeline-result-handler-worktree-cleanup.test.ts:102` uses the same entry
+  point.
 
 ## Acceptance Criteria
 
@@ -247,21 +264,23 @@ constructs — so no closed-world assertion in `test/unit/execution/worktree-man
 
 ### US-002
 
-1. `[integration]` After `removeWorktreeDirectory` completes for story `US-001` on a repository
-   where the worktree was created by `WorktreeManager.create`, calling
+1. `[integration]` After `handlePipelineFailure` runs in worktree mode for story `US-001` on a
+   repository where the worktree was created by `WorktreeManager.create`, calling
    `WorktreeManager.create(projectRoot, "US-001")` a second time completes without throwing, and a
    worktree directory exists at `.nax-wt/US-001`.
 2. `[unit]` Given a branch `nax/US-001` that exists with no worktree record and no nax ownership
    record — the user-branch shape BUG-28 guards — `WorktreeManager.create(projectRoot, "US-001")`
    does not invoke `git branch -D`, and the branch still resolves to its original commit after the
    call returns.
-3. `[unit]` After `removeWorktreeDirectory` completes successfully for story `US-001`, the branch
+3. `[unit]` After `handlePipelineFailure` runs in worktree mode for story `US-001`, the branch
    `nax/US-001` still resolves to a commit — the branch is retained for diagnostics, not deleted.
 4. `[unit]` When the ownership record is consumed by `WorktreeManager.create`, the record is
    removed: after the call, resolving `refs/nax/orphan/US-001` fails.
-5. `[unit]` When recording ownership fails, `removeWorktreeDirectory` returns without throwing and
-   emits a `warn` log on stage `worktree` carrying the story id.
-6. `[unit]` Given an ownership record for `US-001` but no branch `nax/US-001`,
+5. `[unit]` When the ownership-record git call fails, `handlePipelineFailure` returns without
+   throwing and a `warn` log is emitted on stage `worktree` carrying the story id.
+6. `[unit]` `naxOrphanRefName("US-001")` returns `refs/nax/orphan/US-001`, and throws for a story
+   id `validateStoryId` rejects.
+7. `[unit]` Given an ownership record for `US-001` but no branch `nax/US-001`,
    `WorktreeManager.create(projectRoot, "US-001")` completes without throwing, and resolving
    `refs/nax/orphan/US-001` fails after the call — the stale record does not survive into a third
    attempt.
