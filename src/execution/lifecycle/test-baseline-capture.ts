@@ -14,8 +14,10 @@
  */
 
 import type { NaxConfig } from "@/config";
+import { getSafeLogger } from "@/logger";
 import { resolveQualityTestCommands } from "@/quality";
 import { parseTestOutput, type TestSummary } from "@/test-runners";
+import { errorMessage } from "@/utils/errors";
 import { executeWithTimeout, type TestBaseline, writeRunBaseline, writeStoryBaseline } from "@/verification";
 import { captureRunStartRef } from "../deferred-review";
 
@@ -206,13 +208,15 @@ export async function invokeRollForwardFromContext(ctx: RollForwardContext): Pro
       nextStoryId,
       summary: ctx.gateSummary,
     });
-  } catch {
-    // Logging is intentionally minimal here — the post-run caller has already
-    // finished the story's success-path logging. Surfacing the underlying
-    // error requires a logger; we accept the silent swallow as the
-    // documented degraded-path behaviour for the roll-forward hook (no
-    // observable baseline is itself a sentinel). The captured baseline
-    // contract is unchanged.
+  } catch (err) {
+    // The write (mkdir + atomic write) can fail on a full / read-only volume.
+    // A baseline write must never abort a passing story's success path, but the
+    // failure is still surfaced so a missing roll-forward artifact is traceable
+    // rather than invisible — same posture as the run-start hook's outer catch.
+    getSafeLogger()?.warn("execution", "Roll-forward baseline write failed — continuing", {
+      storyId: ctx.currentStoryId,
+      error: errorMessage(err),
+    });
   }
 }
 
@@ -366,6 +370,16 @@ export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promi
  *   3. `summary` provided → `captured` with `source: "roll-forward"`, one
  *      entry per failure.
  *   4. `summary` undefined → `no-baseline: no-gate-parse`.
+ *
+ * Note on branch 4: `execution.regressionGate.mode` defaults to `"deferred"`, and
+ * non-TDD plans add the per-story full-suite gate only when the mode is
+ * `"per-story"` (`build-plan-for-strategy.ts`, issue #1116) — so for an ordinary
+ * non-TDD sequential run branch 4 is the steady state, not an anomaly. That is
+ * designed (spec §3.2: record that no roll-forward was available rather than
+ * guess a baseline); do NOT "fix" it by substituting the run-start `preflight`
+ * artifact here — it predates the stories in between, so their failures would be
+ * re-attributed to this story as introduced rather than left unattributed.
+ * TDD plans always carry the gate and do exercise branch 3.
  */
 export async function persistNextStoryRollForward(opts: RollForwardOptions): Promise<void> {
   // AC14 — parallel mode skips entirely.
