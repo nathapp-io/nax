@@ -8,11 +8,13 @@
 
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
+import type { Finding } from "@/findings";
 import { RectifierPromptBuilder } from "@/prompts";
 import {
   buildEscapeHatch,
   escapeHatchFor,
   exceptionCountWord,
+  formatFailingTestsList,
   implementerOwnsTests,
   testEditHeadline,
 } from "@/prompts/builders/rectifier-builder-helpers";
@@ -409,5 +411,67 @@ describe("AC-9: RectifierPromptBuilder includes .nax/ immutability text", () => 
     expect(lower).toContain("moved");
     expect(lower).toContain("renamed");
     expect(lower).toContain("deleted");
+  });
+});
+
+// ─── formatFailingTestsList ───────────────────────────────────────────────────
+//
+// `testFailureToFinding` folds up to two stack frames onto subsequent lines of
+// the Finding message (`Message: line\n  at frame 1\n  at frame 2` shape from
+// the prompt's perspective). Without re-indenting those lines, the frames
+// appear at column 0 in the rendered prompt, breaking the indentation contract
+// the rectifier-builder expects (`  Error:` alignment).
+
+describe("formatFailingTestsList", () => {
+  test("returns the unmapped header when no findings are present", () => {
+    expect(formatFailingTestsList([])).toBe(
+      "The full test suite has failing tests. Fix the implementation to make all tests pass.",
+    );
+  });
+
+  test("a single-line message renders with the `Error:` prefix and no extra padding", () => {
+    const f: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: "computes the median",
+      file: "test/unit/stats.test.ts",
+      message: "AssertionError: expected 3 to be 4",
+    };
+    const out = formatFailingTestsList([f]);
+    expect(out).toContain("  Error: AssertionError: expected 3 to be 4");
+    // No stray lines from a multi-line re-indent pass.
+    expect(out).not.toMatch(/^at </m);
+  });
+
+  test("each follow-on line of a multi-line message stays indented under `  Error:`", () => {
+    // Mirrors the shape produced by testFailureToFinding: error + up to two frames.
+    const f: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: "computes the median",
+      file: "test/unit/stats.test.ts",
+      message:
+        "expect(received).toBe(expected) Expected: 3 Received: 4\nat <anonymous> (test/unit/stats.test.ts:42:9)\nat run (bun:test:1:1)",
+    };
+    const out = formatFailingTestsList([f]);
+    const indentedFrames = out.split("\n").filter((line) => line.startsWith("  at "));
+    expect(indentedFrames).toEqual(["  at <anonymous> (test/unit/stats.test.ts:42:9)", "  at run (bun:test:1:1)"]);
+  });
+
+  test("frames do not leak at column 0 (the off-by-one rendering the regression guards against)", () => {
+    const f: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: "preserves handle",
+      file: "test/unit/runtime/session-run-hop.test.ts",
+      message: "AssertionError: got X\nat <anonymous> (test/unit/runtime/session-run-hop.test.ts:84:20)",
+    };
+    const out = formatFailingTestsList([f]);
+    // No frame should sit at column 0 — every frame rendered should carry the two-space indent.
+    const linesStartingAtColumnZero = out.split("\n").filter((line) => /^at /.test(line));
+    expect(linesStartingAtColumnZero).toEqual([]);
   });
 });

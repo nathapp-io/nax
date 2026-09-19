@@ -8,6 +8,12 @@ import type { Finding } from "../types";
  * it carries no stack field and gaining one is a wider change than this seam
  * needs. Two frames is enough to name the assertion and its caller without
  * turning a 46-failure list into a wall of frames.
+ *
+ * The parser collects up to `MAX_STACK_LINES` (5) per failure in
+ * `src/test-runners/parse-bun.ts`; the adapter folds only the first
+ * `MAX_FRAMES_IN_MESSAGE` (2) of those into the prompt. The two caps differ
+ * on purpose — full collection lives in the parser (for any future consumer),
+ * the prompt carries just enough location to be actionable.
  */
 const MAX_FRAMES_IN_MESSAGE = 2;
 

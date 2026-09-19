@@ -385,6 +385,11 @@ Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${es
  * Formats the failing-test bullet list shared by failingTestContext and
  * failingTestRectification. Returns only the listing lines; callers append
  * the closing directive and any escape-hatch sections.
+ *
+ * `testFailureToFinding` may put up to two stack frames onto subsequent lines
+ * of `f.message` (separated by `\n`). Each follow-on line is re-indented to
+ * match the leading `  Error:` prefix so a multi-line message renders
+ * aligned in the prompt instead of at column 0.
  */
 export function formatFailingTestsList(findings: Finding[]): string {
   if (findings.length === 0) {
@@ -394,7 +399,11 @@ export function formatFailingTestsList(findings: Finding[]): string {
   for (const f of findings) {
     const location = f.file ? `${f.file}` : "(unknown file)";
     const rule = f.rule ? `  Test: ${f.rule}\n` : "";
-    lines.push(`- ${location}\n${rule}  Error: ${f.message}\n`);
+    const indentedMessage = f.message
+      .split("\n")
+      .map((part, i) => (i === 0 ? part : `  ${part}`))
+      .join("\n");
+    lines.push(`- ${location}\n${rule}  Error: ${indentedMessage}\n`);
   }
   return lines.join("\n");
 }

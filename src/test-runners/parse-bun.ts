@@ -64,11 +64,13 @@ function isBlockBoundary(trimmed: string): boolean {
  * the summary. Hence the backward walk.
  */
 function extractBunFailureDetail(lines: string[], failIndex: number): { error: string; stackTrace: string[] } {
-  const block: string[] = [];
+  const reversed: string[] = [];
   for (let j = failIndex - 1; j >= 0; j--) {
     if (isBlockBoundary(lines[j].trim())) break;
-    block.unshift(lines[j]);
+    reversed.push(lines[j]);
   }
+  // Walk backward yields bottom-up order; the extraction loop reads top-down.
+  const block = reversed.reverse();
 
   let errorLine = "";
   const expectation: string[] = [];
@@ -77,6 +79,8 @@ function extractBunFailureDetail(lines: string[], failIndex: number): { error: s
   for (const raw of block) {
     const trimmed = raw.trim();
     if (!trimmed) continue;
+    // CODE_FRAME_RE needs `raw` (not `trimmed`) so the leading whitespace of
+    // a Bun code-frame line — "  12 | const x = 1;" — still matches.
     if (CODE_FRAME_RE.test(raw)) continue;
     if (CARET_RE.test(trimmed)) continue;
     if (NODE_STDERR_RE.test(trimmed)) continue;
