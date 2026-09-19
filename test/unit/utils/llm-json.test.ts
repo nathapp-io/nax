@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  escapeRawControlChars,
   extractJsonFromMarkdown,
   extractJsonObject,
   parseLLMJson,
@@ -254,5 +255,75 @@ describe("wrapJsonPrompt", () => {
     const mustStartIdx = result.indexOf("YOUR RESPONSE MUST START WITH");
     expect(importantIdx).toBeLessThan(coreIdx);
     expect(coreIdx).toBeLessThan(mustStartIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// escapeRawControlChars (#2124)
+// ---------------------------------------------------------------------------
+
+describe("escapeRawControlChars", () => {
+  test("returns valid JSON unchanged", () => {
+    const valid = '{"a":"one","b":[1,2]}';
+    expect(escapeRawControlChars(valid)).toBe(valid);
+  });
+
+  test("leaves pretty-printing whitespace outside strings alone", () => {
+    // The newlines and tabs here are structural JSON whitespace, not string content.
+    const pretty = '{\n\t"a": "one"\n}';
+    expect(escapeRawControlChars(pretty)).toBe(pretty);
+  });
+
+  test("escapes a raw newline inside a string", () => {
+    // The \n in this template literal is a REAL newline byte inside the JSON
+    // string — exactly what the planner emitted in #2124.
+    const raw = '{"analysis":"line one\nline two"}';
+    expect(escapeRawControlChars(raw)).toBe('{"analysis":"line one\\nline two"}');
+  });
+
+  test("escapes raw tab and carriage return inside a string", () => {
+    expect(escapeRawControlChars('{"a":"x\ty"}')).toBe('{"a":"x\\ty"}');
+    expect(escapeRawControlChars('{"a":"x\ry"}')).toBe('{"a":"x\\ry"}');
+  });
+
+  test("escapes an exotic control char as \\uXXXX", () => {
+    expect(escapeRawControlChars('{"a":"x\u0007y"}')).toBe('{"a":"x\\u0007y"}');
+  });
+
+  test("does not misread an escaped quote as the end of the string", () => {
+    const raw = '{"a":"he said \\"hi\\"\nthen left"}';
+    expect(escapeRawControlChars(raw)).toBe('{"a":"he said \\"hi\\"\\nthen left"}');
+  });
+
+  test("does not misread a trailing escaped backslash as escaping the closing quote", () => {
+    // Value is a single backslash; the newline that follows is structural.
+    const raw = '{"a":"c:\\\\",\n"b":"x\ny"}';
+    expect(escapeRawControlChars(raw)).toBe('{"a":"c:\\\\",\n"b":"x\\ny"}');
+  });
+
+  test("is idempotent", () => {
+    const once = escapeRawControlChars('{"a":"x\ny"}');
+    expect(escapeRawControlChars(once)).toBe(once);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseLLMJson — raw control-character repair tier (#2124)
+// ---------------------------------------------------------------------------
+
+describe("parseLLMJson raw control-char repair", () => {
+  test("parses an object whose string value holds a raw newline", () => {
+    const parsed = parseLLMJson<{ analysis: string; ok: boolean }>('{"analysis":"line one\nline two","ok":true}');
+    expect(parsed.analysis).toBe("line one\nline two");
+    expect(parsed.ok).toBe(true);
+  });
+
+  test("parses through a markdown fence after repair", () => {
+    const fenced = '```json\n{"analysis":"a\nb"}\n```';
+    expect(parseLLMJson<{ analysis: string }>(fenced).analysis).toBe("a\nb");
+  });
+
+  test("still throws when the payload is broken for another reason", () => {
+    expect(() => parseLLMJson('{"analysis":"a\nb"')).toThrow(SyntaxError);
   });
 });
