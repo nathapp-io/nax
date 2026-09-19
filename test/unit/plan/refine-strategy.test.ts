@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
   firstCall,
+  makeCallOp,
   makeDebateRunner,
   makeLogger,
   makeMockAgentManager,
@@ -159,6 +160,45 @@ describe("RefinePlanStrategy", () => {
     try {
       await strategy.execute(ctx);
       expect(closeSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      _refinePlanDeps.callOp = originalCallOp;
+    }
+  });
+
+  test("routes a non-PRD callOp return to the disk recovery instead of the err-undefined invariant", async () => {
+    // callOp signals retry exhaustion by RETURNING a raw TurnResult rather than
+    // throwing (call.ts envelope passthrough). Before #2124 this reached
+    // writeOrRecoverPrd with no error and tripped PLAN_WRITE_PRD_MISSING_ERR.
+    const strategy = new RefinePlanStrategy();
+    const closeSpy = mock(async () => {});
+    const ctx = makeCtx({ deps: makeDeps(true), runtime: makeRuntime(closeSpy) });
+    const originalCallOp = _refinePlanDeps.callOp;
+    _refinePlanDeps.callOp = makeCallOp({
+      fallback: { output: "PRD written to disk.", estimatedCostUsd: 0.42 },
+    });
+
+    try {
+      const result = await strategy.execute(ctx);
+      expect(result.outputPath).toBe(ctx.outputPath);
+      expect(result.degraded?.reason).toContain("exhausted");
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      _refinePlanDeps.callOp = originalCallOp;
+    }
+  });
+
+  test("a TurnResult whose output carries real PRD JSON is still persisted undegraded", async () => {
+    // The envelope-extraction path in writeOrRecoverPrd must keep winning over
+    // the new error arm — recovering the real PRD beats reporting exhaustion.
+    const strategy = new RefinePlanStrategy();
+    const ctx = makeCtx({ deps: makeDeps(false) });
+    const originalCallOp = _refinePlanDeps.callOp;
+    _refinePlanDeps.callOp = makeCallOp({ fallback: { output: VALID_PRD_JSON, estimatedCostUsd: 0.1 } });
+
+    try {
+      const result = await strategy.execute(ctx);
+      expect(result.outputPath).toBe(ctx.outputPath);
+      expect(result.degraded).toBeUndefined();
     } finally {
       _refinePlanDeps.callOp = originalCallOp;
     }
