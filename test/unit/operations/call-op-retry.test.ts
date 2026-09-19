@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { assertDefined, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeSessionManager, makeTestRuntime, withWarnSpy } from "@test/helpers";
 import type { RetryPreset, RetryStrategy } from "@/agents/retry";
 import type { CompleteResult } from "@/agents/types";
 import type { DEFAULT_CONFIG } from "@/config";
@@ -463,5 +463,89 @@ describe("callOp retry loop (kind:run) — op.recover on parse exhaustion (#993)
 
     expect(result).toBe(recovered);
     expect(result.userStories[0]?.id).toBe("US-001");
+  });
+
+  /** A runtime whose hop actually executes, so sendWithParseRetry runs and sets lastRetryTurn. */
+  function makeExhaustingRuntime(): NaxRuntime {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "PRD written to disk.",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 1,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+    return runtime;
+  }
+
+  /** Parse always throws, the strategy self-terminates at attempt 2 → envelope passthrough. */
+  function makeExhaustingOp(
+    name: string,
+    recover?: () => Promise<{ analysis: string } | null>,
+  ): RunOperation<string, { analysis: string }, Pick<typeof DEFAULT_CONFIG, "routing">> {
+    return {
+      kind: "run",
+      name,
+      stage: "plan",
+      config: testSel,
+      session: { role: "plan", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      retry: {
+        shouldRetry: (_failure, attempt) =>
+          attempt < 2 ? { retry: true, delayMs: 0, nextPrompt: "retry" } : { retry: false },
+      },
+      hopBody: async (initialPrompt, ctx) => ctx.sendWithParseRetry(initialPrompt),
+      parse: (_output) => {
+        throw new Error("cannot parse chat ack");
+      },
+      ...(recover ? { recover } : {}),
+    };
+  }
+
+  test("exhaustion warn reports that a declared recover returned null", async () => {
+    _callOpDeps.sleep = async () => {};
+    const runtime = makeExhaustingRuntime();
+
+    await withWarnSpy(async (warnSpy) => {
+      await callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+        makeExhaustingOp("recover-returns-null-op", async () => null),
+        "feature-x",
+      );
+
+      const warn = warnSpy.mock.calls.find((c) => c[0] === "callop" && String(c[1]).includes("raw TurnResult"));
+      expect(warn).toBeDefined();
+      // The old message claimed "no recover" even when one ran and returned null,
+      // which cost attribution time in #2124.
+      expect(warn?.[1]).not.toContain("no recover");
+      expect(warn?.[2]?.recover).toBe("returned-null");
+    });
+  });
+
+  test("exhaustion warn reports when no recover was declared", async () => {
+    _callOpDeps.sleep = async () => {};
+    const runtime = makeExhaustingRuntime();
+
+    await withWarnSpy(async (warnSpy) => {
+      await callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
+        makeExhaustingOp("no-recover-op"),
+        "feature-x",
+      );
+
+      const warn = warnSpy.mock.calls.find((c) => c[0] === "callop" && String(c[1]).includes("raw TurnResult"));
+      expect(warn?.[2]?.recover).toBe("not-declared");
+    });
   });
 });
