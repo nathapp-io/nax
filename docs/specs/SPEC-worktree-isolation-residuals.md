@@ -183,6 +183,16 @@ Record nax ownership of the surviving `nax/<storyId>` branch when the worktree d
 removed, and accept that record as Step-3 evidence in `WorktreeManager.create`. No dependency;
 independent of US-001.
 
+### Dependencies
+
+- **US-001** — no dependencies.
+- **US-002** — no dependencies.
+
+The two stories are independent: they share no file, no symbol and no test. US-001 is confined to
+the context engine (`src/context/engine/**`, `src/pipeline/stages/context.ts`); US-002 to the
+worktree/execution path (`src/worktree/manager.ts`, `src/execution/pipeline-result-handler.ts`).
+Either may run first, or both in parallel.
+
 ### Context Files
 
 **US-001**
