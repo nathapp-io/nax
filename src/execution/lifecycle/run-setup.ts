@@ -1,19 +1,29 @@
 /**
- * Run Setup — Initial Setup Logic
+ * Run Setup — Orchestrator
  *
- * Handles the initial setup phase before the main execution loop:
- * - Status writer initialization
- * - PID registry cleanup
- * - Crash handler installation
- * - Lock acquisition
- * - Plugin loading
- * - PRD loading
- * - Precheck validation
- * - Run initialization
+ * Phase 1 of runner.run(). Wires the run-scoped state (status writer, runtime,
+ * crash handlers, lock, plugins, PRD) before the execution phase begins.
+ *
+ * Structure:
+ *   - setupRun() body: pre-lock wiring → acquireLock → delegate to
+ *     initializeAfterLock → assemble RunSetupResult.
+ *   - MEM-1 outer try/catch: uninstalls crash handlers and closes the runtime
+ *     if anything in setup throws (loadPRD failure, lock acquisition failure,
+ *     etc.). See the rationale comment above the catch for the full story.
+ *   - The inner try/catch that owns releaseLock (FIX-H16) lives in
+ *     initializeAfterLock — anything inside the held lock is the helper's
+ *     concern, including its own lock release on failure.
+ *   - Pre-flight warnings (warnFallbackMisconfiguration, warnProfileMismatch)
+ *     live in run-setup-warnings.ts and are re-exported here for back-compat
+ *     with existing imports of `@/execution/lifecycle/run-setup`.
+ *
+ * Split out of a single 600-line file (the project's hard limit) into:
+ *   - run-setup-warnings.ts — pure-function warnings
+ *   - run-setup-init.ts    — post-lock initialization
  */
 
 import path from "node:path";
-import { globalConfigDir, type NaxConfig } from "@/config";
+import type { NaxConfig } from "@/config";
 import { LockAcquisitionError, NaxError } from "@/errors";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -22,115 +32,39 @@ import { initInteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { AgentGetFn } from "@/pipeline/types";
-import { loadPlugins } from "@/plugins";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD } from "@/prd";
-import { countStories, loadPRD, savePRD } from "@/prd";
+import { loadPRD } from "@/prd";
 import { detectProjectProfile } from "@/project";
 import { createRuntime, type NaxRuntime } from "@/runtime";
 import { SessionManager, sweepFeatureTranscripts } from "@/session";
-import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
+import { discoverWorkspacePackages } from "@/test-runners";
 import { _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
-import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
 import { installCrashHandlers } from "../crash-recovery";
-import { acquireLock, releaseLock } from "../helpers";
+import { acquireLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
-import { wipeScratchpad } from "./scratchpad-wipe";
+import { initializeAfterLock } from "./run-setup-init";
+import { warnFallbackMisconfiguration } from "./run-setup-warnings";
 
-/** Injectable deps for run-setup (enables testing without heavy side-effects) */
+// Re-export warnings for back-compat with tests and other callers that import
+// from `@/execution/lifecycle/run-setup` directly.
+export { warnFallbackMisconfiguration, warnProfileMismatch } from "./run-setup-warnings";
+
+/**
+ * Injectable deps for run-setup (enables testing without heavy side-effects).
+ *
+ * `detectProjectProfile` and `sweepFeatureTranscripts` are read at call time
+ * inside `initializeAfterLock` — passed through the `deps` parameter so the
+ * init helper doesn't need to import this module (which would cycle).
+ */
 export const _runSetupDeps = {
   detectProjectProfile,
   createRuntime,
   installCrashHandlers,
   sweepFeatureTranscripts,
 };
-
-/**
- * Emit a warning for each story whose agentProfileId no longer exists in
- * config.routing.agents.profiles (Task 10 Part B — profile-mismatch check).
- *
- * This handles the case where a user runs an old PRD after removing a profile
- * from config. The existing routing.agent assignment is retained — warn only,
- * no throw.
- */
-export function warnProfileMismatch(
-  prd: import("@/prd").PRD,
-  config: NaxConfig,
-  logger: ReturnType<typeof getSafeLogger>,
-): void {
-  const profiles = config.routing?.agents?.profiles ?? [];
-  const profileIds = new Set(profiles.map((p) => p.id));
-
-  // PRD-level check (Delta C4): warn when the run resolves a different config
-  // profile than the one the PRD was planned with — the escalation ladder and
-  // agent-profile registry may differ from what plan assumed.
-  if (prd.routingProfile !== undefined) {
-    const current = config.profile ?? "default";
-    if (prd.routingProfile !== current) {
-      logger?.warn(
-        "prd",
-        `PRD was planned with config profile "${prd.routingProfile}" but this run resolved profile "${current}" — the escalation ladder and agent profiles may differ from what plan assumed. Re-run with --profile ${prd.routingProfile} to match.`,
-        { storyId: "prd", plannedProfile: prd.routingProfile, currentProfile: current },
-      );
-    }
-  }
-
-  const knownAgents = new Set(Object.keys(config.models ?? {}));
-
-  for (const story of prd.userStories) {
-    const profileId = story.routing?.agentProfileId;
-    if (profileId && !profileIds.has(profileId)) {
-      logger?.warn(
-        "setup",
-        `Story ${story.id} was planned with profile ${profileId} which no longer exists in config — routing.agent assignment retained`,
-        { storyId: story.id, agentProfileId: profileId },
-      );
-    }
-    const storyAgent = story.routing?.agent;
-    if (storyAgent && !knownAgents.has(storyAgent)) {
-      logger?.warn(
-        "setup",
-        `Story ${story.id} routes to agent "${storyAgent}" which is not defined in config.models — execution will degrade to the default agent`,
-        { storyId: story.id, agent: storyAgent },
-      );
-    }
-  }
-}
-
-/**
- * Emit a warning for each fallback candidate in config.agent.fallback.map
- * that cannot be resolved by agentGetFn (AC-35 pre-flight check).
- *
- * Deduplicates warnings so each unconfigured candidate is reported once even
- * if it appears under multiple primary agents.
- */
-export function warnFallbackMisconfiguration(
-  config: NaxConfig,
-  agentGetFn: ((name: string) => unknown) | undefined,
-  logger: ReturnType<typeof getSafeLogger>,
-): void {
-  if (!agentGetFn) return;
-  const fallback = config.agent?.fallback;
-  if (!fallback?.enabled || !fallback.map) return;
-
-  const warned = new Set<string>();
-  for (const [primaryAgent, candidates] of Object.entries(fallback.map)) {
-    for (const candidate of candidates) {
-      const candidateName = typeof candidate === "string" ? candidate : candidate.agent;
-      if (warned.has(candidateName)) continue;
-      if (!agentGetFn(candidateName)) {
-        logger?.warn("fallback", "Fallback candidate not available — will be skipped if triggered", {
-          storyId: "_setup",
-          primaryAgent,
-          candidate: candidateName,
-        });
-        warned.add(candidateName);
-      }
-    }
-  }
-}
 
 export interface RunSetupOptions {
   prdPath: string;
@@ -186,7 +120,12 @@ export interface RunSetupResult {
 }
 
 /**
- * Execute initial setup phase
+ * Execute initial setup phase.
+ *
+ * Layout: pre-lock wiring → acquireLock → delegate post-lock init to
+ * `initializeAfterLock` → assemble and return RunSetupResult. The MEM-1
+ * outer try/catch below ensures crash handlers are uninstalled and the
+ * runtime is closed on any setup failure, even before the lock was acquired.
  */
 export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult> {
   const logger = getSafeLogger();
@@ -343,7 +282,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     });
 
     // Load PRD (before try block so it's accessible in finally for onRunEnd)
-    let prd = await loadPRD(prdPath);
+    const prd = await loadPRD(prdPath);
 
     // Initialize interaction chain (US-008) — do this BEFORE precheck so story size prompts can use it
     const interactionChain = await initInteractionChain(config, headless);
@@ -433,153 +372,38 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       throw new LockAcquisitionError(workdir);
     }
 
-    // Everything after lock acquisition is wrapped in try-catch to ensure
-    // the lock is released if any setup step fails (FIX-H16)
-    try {
-      // US-002 AC10/AC11: prune retained transcripts only after the run lock
-      // prevents concurrent setup from racing over the same files.
-      const sweptTranscripts = await _runSetupDeps.sweepFeatureTranscripts({
-        featureName: options.feature,
-        transcriptRoot: runtime.outputDir,
-        dryRun: options.dryRun,
-      });
-      if (sweptTranscripts > 0) {
-        logger?.info("session", "Swept retained transcripts at run setup", { sweptTranscripts });
-      }
+    // Delegate post-lock initialization. `initializeAfterLock` owns its own
+    // try/catch that calls `releaseLock` on failure (FIX-H16), so the lock is
+    // released before any error escapes this scope.
+    const initResult = await initializeAfterLock({
+      config,
+      workdir,
+      feature,
+      dryRun,
+      runtime,
+      prdPath,
+      prd,
+      interactionChain,
+      runId,
+      agentGetFn: options.agentGetFn,
+      statusWriter,
+      deps: {
+        detectProjectProfile: _runSetupDeps.detectProjectProfile,
+        sweepFeatureTranscripts: _runSetupDeps.sweepFeatureTranscripts,
+      },
+    });
 
-      // ── Scratchpad wipe (US-004) ────────────────────────────────────────────
-      // The scratchpad tools (US-002) advertise throwaway storage wiped at the
-      // start of each run, so anything an agent parked last run is cleared
-      // before this one writes. Behind the same lock as the sweep above: the
-      // wipe is destructive run state, and a second nax process that loses the
-      // lock race must not clear the running run's scratchpad on its way out.
-      // Unlike the sweep it is also gated on dryRun, for the same reason the
-      // sweep is: a preview must not mutate the tree. Absence and failure are
-      // tolerated inside wipeScratchpad() — a busy handle or a permission error
-      // must never wedge a run.
-      await wipeScratchpad(workdir, { dryRun: options.dryRun });
-
-      // ── Detect project profile (US-003) and log explicit vs auto-detected values ──
-      const existingProjectConfig = config.project ?? {};
-      const detectedProfile = await _runSetupDeps.detectProjectProfile(workdir, existingProjectConfig);
-      config.project = detectedProfile;
-
-      // Distinguish explicit config from auto-detected values (AC-4)
-      const explicitFields = Object.keys(existingProjectConfig) as Array<keyof typeof existingProjectConfig>;
-      const autodetectedFields = Object.keys(detectedProfile).filter(
-        (key) => !explicitFields.includes(key as keyof typeof existingProjectConfig),
-      ) as Array<keyof typeof detectedProfile>;
-
-      let projectLogMessage = "";
-      if (explicitFields.length > 0) {
-        const explicitValues = explicitFields.map((field) => `${field}=${existingProjectConfig[field]}`).join(", ");
-        const detectedValues =
-          autodetectedFields.length > 0
-            ? `detected: ${autodetectedFields.map((field) => `${field}=${detectedProfile[field]}`).join(", ")}`
-            : "";
-        projectLogMessage = `Using explicit config: ${explicitValues}${detectedValues ? `; ${detectedValues}` : ""}`;
-      } else {
-        projectLogMessage = `Detected: ${detectedProfile.language ?? "unknown"}/${detectedProfile.type ?? "unknown"} (${detectedProfile.testFramework ?? "none"}, ${detectedProfile.lintTool ?? "none"})`;
-      }
-      logger?.info("project", projectLogMessage, {
-        explicit: Object.fromEntries(explicitFields.map((f) => [f, existingProjectConfig[f]])),
-        detected: Object.fromEntries(autodetectedFields.map((f) => [f, detectedProfile[f]])),
-      });
-
-      // Load plugins (before try block so it's accessible in finally)
-      const globalPluginsDir = path.join(globalConfigDir(), "plugins");
-      const projectPluginsDir = path.join(workdir, ".nax", "plugins");
-      const configPlugins = config.plugins || [];
-      // Build a test-file classifier from resolved patterns so the plugin loader
-      // honours custom testFilePatterns (ADR-009) instead of hardcoded TS suffixes.
-      const resolvedPatterns = await resolveTestFilePatterns(config, workdir);
-      const isTestFileFn = (filename: string): boolean => resolvedPatterns.regex.some((re) => re.test(filename));
-      const pluginRegistry = await loadPlugins(
-        globalPluginsDir,
-        projectPluginsDir,
-        configPlugins,
-        workdir,
-        config.disabledPlugins,
-        isTestFileFn,
-        config.reporters,
-      );
-
-      // The LLM routing cache is run-scoped (runtime.routingCache, BUG-19) and
-      // already starts empty for this run — no explicit clear needed here.
-
-      // Log plugins loaded
-      logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
-        plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
-      });
-
-      // Log run start
-      const routingMode = config.routing.llm?.mode ?? "hybrid";
-      logger?.info("run.start", `Starting feature: ${feature} [nax ${NAX_BUILD_INFO}]`, {
-        runId,
-        feature,
-        workdir,
-        dryRun,
-        routingMode,
-        naxVersion: NAX_VERSION,
-        naxCommit: NAX_COMMIT,
-      });
-
-      // on-start hook is now fired by the hooks.ts subscriber via the run:started event
-      // emitted inside executeUnified/executeSequential after bus wiring.
-
-      // Initialize run: check agent, reconcile state, validate limits
-      // Fall back to runtime.agentManager.getAgent when no explicit agentGetFn is
-      // provided (runner.ts derives agentGetFn from runtime only after setupRun returns).
-      const effectiveAgentGetFn = options.agentGetFn ?? runtime.agentManager.getAgent.bind(runtime.agentManager);
-      const { initializeRun } = await import("./run-initialization");
-      const initResult = await initializeRun({
-        config,
-        prdPath,
-        workdir,
-        dryRun,
-        agentGetFn: effectiveAgentGetFn,
-      });
-      prd = initResult.prd;
-      // initializeRun calls loadPRD() internally, producing a new object.
-      // Re-prime statusWriter so crash handlers during the prompt window see current state (#356).
-      statusWriter.setPrd(prd);
-
-      // Warn when any story was planned with an agent profile that has since been removed.
-      warnProfileMismatch(prd, config, logger);
-
-      let counts = initResult.storyCounts;
-
-      // Prompt user for each paused story — skip in headless mode
-      if (counts.paused > 0 && interactionChain !== null) {
-        const { promptForPausedStories } = await import("./paused-story-prompts");
-        const pausedSummary = await promptForPausedStories(
-          prd,
-          interactionChain,
-          feature,
-          config.execution.storyIsolation,
-        );
-        if (pausedSummary.resumed.length > 0 || pausedSummary.skipped.length > 0) {
-          await savePRD(prd, prdPath);
-          counts = countStories(prd);
-        }
-      }
-
-      return {
-        statusWriter,
-        sessionManager,
-        cleanupCrashHandlers,
-        pluginRegistry,
-        prd,
-        storyCounts: counts,
-        interactionChain,
-        shutdownController,
-        runtime,
-      };
-    } catch (error) {
-      // Release lock before re-throwing so the directory isn't permanently locked
-      await releaseLock(workdir);
-      throw error;
-    }
+    return {
+      statusWriter,
+      sessionManager,
+      cleanupCrashHandlers,
+      pluginRegistry: initResult.pluginRegistry,
+      prd: initResult.prd,
+      storyCounts: initResult.storyCounts,
+      interactionChain: initResult.interactionChain,
+      shutdownController,
+      runtime,
+    };
   } catch (error) {
     // MEM-1 (nax review 20260829): uninstall crash handlers and close the runtime before
     // propagating — see the rationale comment above the outer try. runtime.close() may

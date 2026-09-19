@@ -66,6 +66,15 @@ export async function getGitRoot(workdir: string): Promise<string | null> {
  * Kills the process with SIGKILL after GIT_TIMEOUT_MS if it hasn't exited.
  * Returns empty stdout and exit code 1 on timeout.
  *
+ * `timedOut` is ADDITIVE and OMITTED on every non-timeout return -- every
+ * existing caller that destructures `{ stdout, stderr, exitCode }` or asserts
+ * on that exact shape is unaffected. It exists because `exitCode === 1` is
+ * ambiguous on its own: a timeout collapses to exit code 1 (see below), which
+ * is indistinguishable from a real "git said no" exit 1 unless a caller can
+ * also see `timedOut`. A caller that treats "not exit 0" as a real, trustworthy
+ * answer (e.g. `git check-ignore`'s "not ignored") must check `timedOut` first
+ * -- see `partitionNaxOwnedPaths` in `src/tools/git-commit.ts`.
+ *
  * @internal
  */
 export async function gitWithTimeout(
@@ -76,7 +85,7 @@ export async function gitWithTimeout(
   /** Full argv INCLUDING argv[0]. Callers that must control argv[0] pass this;
    *  everyone else gets ["git", ...args] as before. */
   argvOverride?: readonly string[],
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut?: boolean }> {
   const proc = _gitDeps.spawn([...(argvOverride ?? ["git", ...args])], {
     cwd: workdir,
     stdout: "pipe",
@@ -116,7 +125,7 @@ export async function gitWithTimeout(
     // never close in test mocks (and are irrelevant either way since the
     // output is discarded), so awaiting them could re-introduce a hang on
     // the very path this timeout exists to bound.
-    return { stdout: "", stderr: "", exitCode: 1 };
+    return { stdout: "", stderr: "", exitCode: 1, timedOut: true };
   }
 
   const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);

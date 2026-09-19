@@ -14,7 +14,7 @@ import { join, relative } from "node:path";
 const SCAN_ROOTS = ["src", "test"] as const;
 
 const ALLOWED_FILES = new Set([
-  "src/config/paths.ts",
+  "src/config/paths/index.ts",
   "test/integration/config/paths.test.ts",
   "test/unit/scripts/check-no-real-global-nax.test.ts",
 ]);
