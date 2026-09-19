@@ -3,7 +3,7 @@
   "feature": "worktree-isolation-residuals",
   "branchName": "feat/worktree-isolation-residuals",
   "createdAt": "2026-09-19T00:00:00.000Z",
-  "updatedAt": "2026-09-19T14:31:02.710Z",
+  "updatedAt": "2026-09-19T15:56:37.468Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,8 +28,8 @@
         "bugfix"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -112,7 +112,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two existing modules and their injected git seams gain one validated ref helper and a bounded cleanup branch; the main risk is a well-defined BUG-28 regression rather than a new architectural subsystem."
+        "reasoning": "Two existing modules and their injected git seams gain one validated ref helper and a bounded cleanup branch; the main risk is a well-defined BUG-28 regression rather than a new architectural subsystem.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/pipeline-result-handler.ts",
@@ -124,6 +127,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "4228215bb9a0e24afebcb6563ee15e8071f9ca78",
       "outOfScope": [
         "US-001's ContextRequest execution-root threading and provider resolution."
       ]
