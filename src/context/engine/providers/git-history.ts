@@ -209,15 +209,11 @@ export class GitHistoryProvider implements IContextProvider {
     // historyScope is a post-filter, not a workdir switch: under "package" only
     // entries beneath request.packageDir are kept.
     //
-    // RESIDUAL (nax#2134): workdir stays request.repoRoot,
-    // the MAIN checkout, even under storyIsolation: "worktree". ContextRequest
-    // carries no separate "worktree repo root" distinct from packageDir (which
-    // already includes the package suffix), so there is nowhere safe to derive
-    // it from without guessing. Any history that DOES survive under worktree
-    // isolation is therefore read from the main checkout's HEAD, not the
-    // worktree's. See the follow-up report for this residual; do not "fix" it
-    // by joining packageDir segments without a real worktree-root field.
-    const workdir = request.repoRoot;
+    // nax#2134 (US-001): workdir is request.execRoot ?? request.repoRoot so a
+    // worktree-isolated story runs git inside the worktree the agent is rooted
+    // at. Producers without a story (pull-tool handlers) omit execRoot and
+    // transparently fall back to repoRoot — today's behaviour.
+    const workdir = request.execRoot ?? request.repoRoot;
     // request.storyWorkdir is the PRD-declared story workdir (repo-relative),
     // threaded onto the request by the callers that build it from a story
     // (pipeline/stages/context.ts, stage-assembler.ts). It must NOT be derived

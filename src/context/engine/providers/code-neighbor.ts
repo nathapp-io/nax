@@ -211,21 +211,19 @@ function scanDirectory(
  *
  * Single-frame (nax#2125): every path is repo-rooted. `filePath` is
  * repo-rooted (types.ts), `scannedDirs` files are relative to the glob root
- * (`scanRoot`, either the package dir or repoRoot), and the caller's
- * `repoRoot` is the one root every relative path is resolved against — true
- * only under `storyIsolation: "shared"`; under `"worktree"` see the parked
- * residual at the call site below. Every
- * comparison is made on absolute paths, and the result is spelled
- * repo-rooted, relative to `repoRoot`, exactly once on return — the agent's
- * file tools are rooted at the story execution root, so no package frame or
- * unreadable marker is needed.
+ * (`scanRoot`, either the package dir or repoRoot), and `execRoot` is the
+ * directory the story's agent actually executes in — `request.execRoot ?? request.repoRoot`
+ * at the call site. Every comparison is made on absolute paths, and the
+ * result is spelled relative to `execRoot`, exactly once on return — the
+ * agent's file tools are rooted at the story execution root, so no package
+ * frame or unreadable marker is needed.
  *
  * Accepts pre-scanned directory results and a shared content cache so that the
  * glob and file reads are not repeated across touched files in one fetch().
  */
 async function collectNeighbors(
   filePath: string,
-  repoRoot: string,
+  execRoot: string,
   scannedDirs: ScannedDir[],
   contentCacheState: ContentCacheState,
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
@@ -235,14 +233,14 @@ async function collectNeighbors(
   const forwardNeighbors = new Set<string>();
   let anyTruncated = false;
 
-  const ownAbsPath = join(repoRoot, filePath);
+  const ownAbsPath = join(execRoot, filePath);
   if (await _codeNeighborDeps.fileExists(ownAbsPath)) {
     const ownContent = await readCached(ownAbsPath, contentCacheState, _codeNeighborDeps);
     if (ownContent !== null && ownContent.length > 0) {
       for (const spec of parseImportSpecifiers(ownContent)) {
-        const resolved = resolveImport(spec, filePath, repoRoot);
+        const resolved = resolveImport(spec, filePath, execRoot);
         if (resolved === null) continue;
-        const resolvedAbs = join(repoRoot, resolved);
+        const resolvedAbs = join(execRoot, resolved);
         if (resolvedAbs !== ownAbsPath) forwardNeighbors.add(resolvedAbs);
       }
     }
@@ -308,7 +306,7 @@ async function collectNeighbors(
     const candidates = deriveSiblingTestCandidates(filePath, siblingTestContext.globs);
     let chosen: string | null = null;
     for (const candidate of candidates) {
-      if (await _codeNeighborDeps.fileExists(join(repoRoot, candidate))) {
+      if (await _codeNeighborDeps.fileExists(join(execRoot, candidate))) {
         chosen = candidate;
         break;
       }
@@ -321,11 +319,11 @@ async function collectNeighbors(
       const mirrored = candidates.find((c, i) => i > 0 && c !== colocated);
       if (mirrored) chosen = mirrored;
     }
-    if (chosen !== null && chosen !== filePath) neighbors.add(join(repoRoot, chosen));
+    if (chosen !== null && chosen !== filePath) neighbors.add(join(execRoot, chosen));
   }
 
   return {
-    neighbors: [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE).map((abs) => relative(repoRoot, abs)),
+    neighbors: [...neighbors].slice(0, MAX_NEIGHBORS_PER_FILE).map((abs) => relative(execRoot, abs)),
     truncated: anyTruncated,
   };
 }
@@ -354,8 +352,15 @@ export class CodeNeighborProvider implements IContextProvider {
 
   async fetch(request: ContextRequest, signal?: AbortSignal): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
+    // nax#2134 (US-001): the story execution root drives every disk
+    // resolution. Under `execution.storyIsolation: "worktree"` this is the
+    // worktree root, not the main checkout. Producers that do not have a
+    // story (pull-tool handlers) omit execRoot and fall back to repoRoot —
+    // today's behaviour. The scanRoot for the reverse-dep glob derives from
+    // the SAME root so a worktree-only neighbour is findable.
+    const execRoot = request.execRoot ?? request.repoRoot;
     // The scan root: where the reverse-dep glob runs.
-    const scanRoot = this.neighborScope === "package" ? request.packageDir : request.repoRoot;
+    const scanRoot = this.neighborScope === "package" ? request.packageDir : execRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };
     }
@@ -363,9 +368,7 @@ export class CodeNeighborProvider implements IContextProvider {
     // Single-frame (nax#2125): touchedFiles is REPO-ROOTED (types.ts) and the
     // agent's file tools can address any repo-rooted path, so every touched
     // file is reachable. No package-frame partition or unreadable-marker
-    // bookkeeping is needed — the paths pass through as stored. (Under
-    // storyIsolation: "worktree" the agent's exec root is BELOW request.repoRoot;
-    // see the parked residual at the collectNeighbors call site below.)
+    // bookkeeping is needed — the paths pass through as stored.
     const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
     // ADR-009: sibling-test derivation requires resolver output on the request.
@@ -398,25 +401,11 @@ export class CodeNeighborProvider implements IContextProvider {
       // PERF-2: cooperative cancellation — a timed-out fetch must stop doing
       // work instead of scanning/reading files the orchestrator no longer wants.
       if (signal?.aborted) break;
-      // PARKED residual (controller ruling, PR4 review): resolution uses
-      // `request.repoRoot`, which under storyIsolation: "worktree" is the MAIN
-      // checkout, not the worktree the story executes in (`packageDir` =
-      // `<root>/.nax-wt/<storyId>/<pkg>`). So disk reads/forward-dep resolution
-      // can hit the main checkout instead of the worktree.
-      //
-      // FOLLOW-UP (nax#2134 — the same follow-up git-history.ts's RESIDUAL
-      // names): thread a worktree-aware exec root
-      // (`storyExecRoot`) onto `ContextRequest` and resolve against it. This is
-      // a request-type field both providers lack, not something to derive per
-      // provider; it is the same missing "worktree repo root" git-history.ts
-      // documents. Spec §6's live run asserts only EXEC/WRITE containment ("a
-      // worktree-isolated story writing only inside its worktree") — it does
-      // NOT exercise context resolution — so it will not catch this. See the
-      // characterization test "worktree isolation residual (PARKED, nax#2134,
-      // nax#2093 class)". Do not fix by deriving the root here (nax#2069).
+      // nax#2134 (US-001): resolve against the story execution root so a
+      // worktree-isolated story reads the worktree, not the main checkout.
       const { neighbors, truncated } = await collectNeighbors(
         file,
-        request.repoRoot,
+        execRoot,
         scannedDirs,
         contentCacheState,
         siblingTestContext,

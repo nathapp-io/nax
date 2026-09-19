@@ -58,7 +58,7 @@ export {
 } from "./middleware";
 export type { MutationOutcomeSummary, MutationStorySummary } from "./mutation-summary";
 export type { PackageRegistry, PackageView } from "./packages";
-export { createPackageRegistry } from "./packages";
+export { createPackageRegistry, storyExecRoot } from "./packages";
 export type { ProjectIdentity } from "./paths";
 export {
   claimProjectIdentity,

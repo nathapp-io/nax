@@ -40,6 +40,7 @@ import { NaxError } from "@/errors";
 import { buildStoryContextFullFromCtx } from "@/execution/helpers";
 import { getLogger } from "@/logger";
 import { getContextFiles } from "@/prd";
+import { storyExecRoot } from "@/runtime";
 import { readDigestFile, writeDigestFile } from "@/session";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
@@ -161,6 +162,12 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // or repeating the I/O.
   if (resolvedTestPatterns) ctx.resolvedTestPatterns = resolvedTestPatterns;
 
+  // nax#2134 (US-001): thread the story execution root so context providers
+  // resolve and spell against the directory the agent actually executes in.
+  // Only set when a packageView is available — pull-tool handlers have no
+  // story, omit it, and providers fall back to repoRoot.
+  const execRoot = ctx.packageView ? storyExecRoot(ctx.packageView) : undefined;
+
   // Honour the per-stage v2 config for this stage exactly as assembleForStage
   // does. Without this, `v2.stages.context.budgetTokens` and `extraProviderIds`
   // were inert on the first — and largest — assembly of every story.
@@ -173,6 +180,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     featureId: ctx.featureDir?.replace(/\/$/, "").split("/").pop(),
     repoRoot: ctx.projectDir,
     packageDir: ctx.workdir,
+    ...(execRoot !== undefined && { execRoot }),
     storyWorkdir: storyWorkdir(ctx.story),
     contextFilesCanonical: ctx.story.workdirSource !== undefined,
     stage: "context", // initial assembly; promptStage overrides to the strategy stage (single-session / tdd-simple / no-test / batch)
