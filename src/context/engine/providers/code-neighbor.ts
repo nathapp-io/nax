@@ -359,7 +359,12 @@ export class CodeNeighborProvider implements IContextProvider {
     // today's behaviour. The scanRoot for the reverse-dep glob derives from
     // the SAME root so a worktree-only neighbour is findable.
     const execRoot = request.execRoot ?? request.repoRoot;
-    // The scan root: where the reverse-dep glob runs.
+    // The scan root: where the reverse-dep glob runs. Under "package" scope
+    // we use `packageDir`, which under worktree isolation is the worktree's
+    // package directory (iteration-runner.ts/parallel-worker.ts resolve
+    // `ctx.workdir` to the story's package dir inside the worktree), so a
+    // worktree-only reverse-dependent file is in scope by construction. Under
+    // "repo" scope we use execRoot so the wider scan reaches the same tree.
     const scanRoot = this.neighborScope === "package" ? request.packageDir : execRoot;
     if (!touchedFiles || touchedFiles.length === 0) {
       return { chunks: [], pullTools: [] };

@@ -216,9 +216,14 @@ export async function assembleForStage(
 
     // nax#2134 (US-001): thread the story execution root so context providers
     // resolve and spell against the directory the agent actually executes in.
-    // Only set when a packageView is available — pull-tool handlers have no
-    // story, omit it, and providers fall back to repoRoot.
-    const execRoot = ctx.packageView ? storyExecRoot(ctx.packageView) : undefined;
+    // `ctx.packageView` is the documented producer (set by iteration-runner.ts);
+    // when absent in tests or unbuilt callers, fall back to the same derivation
+    // the execution stage uses (`runtime.packages.resolve(ctx.workdir)`) so the
+    // path is correct under worktree isolation without depending on a single
+    // upstream assignment. Pull-tool handlers have neither — execRoot stays
+    // unset, providers fall back to repoRoot.
+    const packageView = ctx.packageView ?? ctx.runtime?.packages?.resolve(ctx.workdir);
+    const execRoot = packageView ? storyExecRoot(packageView) : undefined;
 
     const stageOverrides = ctx.config.context?.v2?.stages?.[stage];
     const request: ContextRequest = {
