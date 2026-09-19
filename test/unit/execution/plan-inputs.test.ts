@@ -11,25 +11,29 @@
  * - AC6: Validation behavior is covered by targeted unit tests
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { basename } from "node:path";
 import {
   assertDefined,
   assertNaxError,
+  cleanupTempDir,
   DEFAULT_TEST_ROUTING,
   type DeepPartial,
   makeNaxConfig,
   makePRD,
   makeSpawn,
   makeStory,
+  makeTempDir,
   makeTestContext,
 } from "@test/helpers";
-import { DEFAULT_CONFIG, type NaxConfig } from "@/config";
+import { DEFAULT_CONFIG, featureDir, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "@/execution";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
 import { _diffUtilsDeps } from "@/review";
 import type { ResolvedTestPatterns } from "@/test-runners";
+import { writeStoryBaseline } from "@/verification";
 
 // Helper: stub git-diff spawn so review-input prep can resolve stat. The orchestrator
 // path calls collectDiffStat before constructing review inputs; tests that assert
@@ -298,9 +302,115 @@ describe("assemblePlanInputs - edge cases", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// US-005 AC1: PlanInputs new slots (verifyScoped, lintCheck, typecheckCheck)
+// US-003 — the fullSuiteGate slot must carry the same coordinates the baseline
+// artifact writers use. If any of the three spellings diverges, every gate
+// finding silently degrades to `unattributed` while the suite stays green.
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe("assemblePlanInputsFromCtx — fullSuiteGate baseline coordinates (US-003)", () => {
+  function makeTddCtx(): PipelineContext {
+    const config = makeNaxConfig();
+    const prd = makePRD({ feature: "feat-labels" });
+    return makeTestContext({
+      story: makeStory({ id: "US-001", title: "Test" }),
+      prd,
+      config,
+      rootConfig: config,
+      routing: { ...DEFAULT_TEST_ROUTING, testStrategy: "three-session-tdd", agent: "claude" },
+      projectDir: "/tmp/proj",
+      workdir: "/tmp/repo",
+      featureDir: featureDir("/tmp/proj", prd.feature),
+      prompt: "do the thing",
+      featureContextMarkdown: "feat",
+      constitution: { content: "", tokens: 0, truncated: false },
+    });
+  }
+
+  test("carries the root and feature id the run-start capture and roll-forward write use", async () => {
+    const ctx = makeTddCtx();
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+
+    const gateInput = inputs.fullSuiteGate;
+    assertDefined(gateInput, "inputs.fullSuiteGate");
+    assertDefined(ctx.featureDir, "ctx.featureDir");
+
+    // Run-start capture (runner-execution): root = the run's workdir, featureId = the
+    // CLI feature. Roll-forward write (post-run): root = ctx.projectDir, featureId =
+    // basename(ctx.featureDir) ?? ctx.prd.feature. All three must agree with the
+    // gate's read coordinates — `projectDir` + the feature id.
+    expect(gateInput.projectDir).toBe(ctx.projectDir);
+    expect(gateInput.featureName).toBe(basename(ctx.featureDir));
+    expect(gateInput.featureName).toBe(ctx.prd.feature);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 — an implementer-phase prompt the plan bakes must carry the story's
+// persisted test baseline, resolved from the root the capture writes to.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assemblePlanInputsFromCtx — test baseline prompt section (US-004)", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = makeTempDir("nax-test-us004-plan-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempRoot);
+  });
+
+  function makeBaselineCtx(prd: ReturnType<typeof makePRD>): PipelineContext {
+    const config = makeNaxConfig();
+    return makeTestContext({
+      story: makeStory({ id: "US-001", title: "Test" }),
+      prd,
+      config,
+      rootConfig: config,
+      routing: { ...DEFAULT_TEST_ROUTING, testStrategy: "three-session-tdd", agent: "claude" },
+      projectDir: tempRoot,
+      workdir: tempRoot,
+      featureDir: featureDir(tempRoot, prd.feature),
+      prompt: "do the thing",
+      constitution: { content: "", tokens: 0, truncated: false },
+    });
+  }
+
+  test("AC7: a seeded story baseline artifact reaches the implementer prompt", async () => {
+    const prd = makePRD({ feature: "feat-baseline" });
+    await writeStoryBaseline(tempRoot, prd.feature, "US-001", {
+      kind: "captured",
+      source: "roll-forward",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      baseRef: "base-0001",
+      entries: [
+        { file: "test/unit/alpha.test.ts", testName: "alpha fails" },
+        { file: "test/unit/beta.test.ts", testName: "beta fails" },
+      ],
+    });
+
+    const inputs = await assemblePlanInputsFromCtx(makeBaselineCtx(prd));
+    const implementer = inputs.implementer;
+    assertDefined(implementer, "inputs.implementer");
+
+    expect(implementer.promptMarkdown).toContain("# Test Baseline");
+    expect(implementer.promptMarkdown).toContain("base-0001");
+    expect(implementer.promptMarkdown).toContain("test/unit/alpha.test.ts");
+    expect(implementer.promptMarkdown).toContain("test/unit/beta.test.ts");
+  });
+
+  test("a story with no baseline artifact prompts exactly as it did before", async () => {
+    const inputs = await assemblePlanInputsFromCtx(makeBaselineCtx(makePRD({ feature: "feat-baseline" })));
+    const implementer = inputs.implementer;
+    assertDefined(implementer, "inputs.implementer");
+
+    expect(implementer.promptMarkdown).not.toContain("# Test Baseline");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005 AC1: PlanInputs new slots (verifyScoped, lintCheck, typecheckCheck)
+// ─────────────────────────────────────────────────────────────────────────────
 function makeNonTddCtx(configOverride: DeepPartial<NaxConfig> = {}): PipelineContext {
   const config = makeNaxConfig(configOverride);
   return makeTestContext({

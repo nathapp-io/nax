@@ -15,4 +15,5 @@ export * from "./rectification";
 export * from "./runners";
 export * from "./shell-quote";
 export { clearGitRootCache } from "./smart-runner";
+export * from "./test-baseline";
 export * from "./types";

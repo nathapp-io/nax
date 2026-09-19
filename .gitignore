@@ -98,3 +98,7 @@ skills/
 **/_nax_acceptance_test.py
 **/_nax_suggested_test.py
 **/.nax/status.json
+
+# nax - generated files
+**/.nax/cache/
+**/.nax/scratchpad/

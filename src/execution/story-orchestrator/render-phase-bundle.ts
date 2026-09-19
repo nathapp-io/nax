@@ -107,6 +107,11 @@ async function renderTddPromptMarkdown(
       contextMarkdown: i.contextMarkdown,
       contextBundle: phaseBundle,
       constitution: i.constitution,
+      // US-004 — the rebuild must carry the same baseline section the plan-time
+      // prompt had; without these the dispatch-time prompt silently drops it.
+      // `packageView.repoRoot` is the run workdir where `.nax/` lives.
+      root: ctx.packageView.repoRoot,
+      featureId: ctx.featureName,
     },
   );
 

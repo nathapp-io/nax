@@ -13,10 +13,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeCallOp, makeContextBundle, makeMockCallContext, makeStory } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeCallOp,
+  makeContextBundle,
+  makeMockCallContext,
+  makeStory,
+  makeTempDir,
+} from "@test/helpers";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
 import type { AnySlot } from "@/execution/story-orchestrator";
-import type { RunOperation } from "@/operations";
+import type { CallContext, RunOperation } from "@/operations";
+import { writeStoryBaseline } from "@/verification";
 
 function makeSlot(opName: string, input: unknown): AnySlot {
   const op = {
@@ -158,5 +166,49 @@ describe("runPhase — phase-bundle prompt rendering (nax#1773)", () => {
     await runPhase(ctx, makeSlot("lint-check", planTimeInput), {}, {}, true);
 
     expect(dispatchedInput).toBe(planTimeInput);
+  });
+
+  // US-004 — the dispatch-time rebuild re-runs `buildForRole`, so the rebuild
+  // must resolve the same baseline artifact the plan-time prompt did. Without
+  // the coordinates, the baseline section disappears from the prompt the agent
+  // actually receives.
+  test("a TDD implementer rebuild carries the story's test-baseline section (US-004)", async () => {
+    const root = makeTempDir("nax-test-us004-rebuild-");
+    try {
+      await writeStoryBaseline(root, "feat-rebuild", "US-782", {
+        kind: "captured",
+        source: "roll-forward",
+        capturedAt: "2026-01-15T00:00:00.000Z",
+        baseRef: "base-0001",
+        entries: [{ file: "test/unit/alpha.test.ts", testName: "alpha fails" }],
+      });
+
+      const story = makeStory({ id: "US-782" });
+      const base = makeMockCallContext({
+        story,
+        phaseTelemetry: { testStrategy: "three-session-tdd", sessionModel: "three-session", tier: "balanced" },
+        assembleStageBundle: async (stage: string) =>
+          stage === "tdd-implementer" ? makeContextBundle({ pushMarkdown: "## STAGE-BUNDLE-CONTENT" }) : undefined,
+      });
+      const ctx: CallContext = {
+        ...base,
+        featureName: "feat-rebuild",
+        packageView: { ...base.packageView, repoRoot: root },
+      };
+
+      await runPhase(
+        ctx,
+        makeSlot("implementer", { story, promptMarkdown: "## PLAN-TIME-CONTENT\n\nTask body." }),
+        {},
+        {},
+        true,
+      );
+
+      const sent = dispatchedInput as { promptMarkdown?: string };
+      expect(sent.promptMarkdown).toContain("# Test Baseline");
+      expect(sent.promptMarkdown).toContain("test/unit/alpha.test.ts");
+    } finally {
+      cleanupTempDir(root);
+    }
   });
 });

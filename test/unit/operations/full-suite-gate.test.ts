@@ -1,13 +1,27 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import type { DeepPartial } from "@test/helpers";
-import { assertDefined, makeNaxConfig, makeSpawn, makeStory, makeTestRuntime } from "@test/helpers";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeNaxConfig,
+  makeSpawn,
+  makeStory,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { ConfigSelector, NaxConfig } from "@/config";
+import { featureDir } from "@/config";
 import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
+import { testSummaryToFindings } from "@/findings";
 import type { CallContext, FullSuiteGateDeps, FullSuiteGateInput } from "@/operations";
 import { _fullSuiteGateDeps, fullSuiteGateOp } from "@/operations";
 import type { FullSuiteGateContext } from "@/operations/full-suite-gate";
 import type { UserStory } from "@/prd";
 import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
+import type { TestSummary } from "@/test-runners";
+import type { TestBaseline } from "@/verification";
+import { writeRunBaseline, writeStoryBaseline } from "@/verification";
 
 function ctxWithConfig(
   config: DeepPartial<NaxConfig> = {},
@@ -32,8 +46,12 @@ function ctxWithConfig(
 }
 const mockCtx = ctxWithConfig({});
 
-function makeInput(story: Partial<UserStory> = {}, workdir = "/tmp"): FullSuiteGateInput {
-  return { story: makeStory({ id: "US-001", ...story }), workdir };
+function makeInput(
+  story: Partial<UserStory> = {},
+  workdir = "/tmp",
+  extra: Partial<FullSuiteGateInput> = {},
+): FullSuiteGateInput {
+  return { story: makeStory({ id: "US-001", ...story }), workdir, ...extra };
 }
 
 function makeDeps(overrides: Partial<FullSuiteGateDeps> = {}): FullSuiteGateDeps {
@@ -379,5 +397,175 @@ describe("fullSuiteGateOp — new-package setup wiring (C1 regression)", () => {
 
     expect(capture.count).toBe(1);
     expect(capture.cwd).toBe("/repo/packages/portfolio");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 — baseline disposition labeling on the structured failure path
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("fullSuiteGateOp — baseline disposition labeling (US-003)", () => {
+  const FEATURE_ID = "feature-us-003";
+  const STORY_ID = "US-001";
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = makeTempDir("nax-test-gate-baseline-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempRoot);
+  });
+
+  /** The parsed summary the stubbed runner returns: `test A` is seedable, `test B` stays unmatched. */
+  const FAILING_SUMMARY: TestSummary = {
+    passed: 0,
+    failed: 2,
+    failures: [
+      { file: "test/a.test.ts", testName: "test A", error: "err A", stackTrace: [] },
+      { file: "test/b.test.ts", testName: "test B", error: "err B", stackTrace: [] },
+    ],
+  };
+
+  function failingRunDeps(): Partial<FullSuiteGateDeps> {
+    return {
+      runTests: async () => ({
+        passed: false,
+        failed: 2,
+        output: "2 tests failed",
+        parsedSummary: FAILING_SUMMARY,
+        timedOut: false,
+      }),
+    };
+  }
+
+  /** AC1 fixture: a captured roll-forward baseline matching `test A` only. */
+  function storyBaselineWithTestA(): TestBaseline {
+    return {
+      kind: "captured",
+      source: "roll-forward",
+      capturedAt: "2026-01-15T01:00:00.000Z",
+      entries: [{ file: "test/a.test.ts", testName: "test A" }],
+    };
+  }
+
+  /** Feature context that lets the gate find the seeded artifacts under `tempRoot`. */
+  function contextfulInput(): FullSuiteGateInput {
+    return makeInput({}, "/tmp", { projectDir: tempRoot, featureName: FEATURE_ID });
+  }
+
+  function parallelContextfulInput(): FullSuiteGateInput {
+    return {
+      ...contextfulInput(),
+      executionMode: "parallel",
+    };
+  }
+
+  test("AC1 — classifies structured failures against the seeded story baseline", async () => {
+    await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
+
+    const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    expect(out.status).toBe("failed");
+    expect(out.findings.map((f) => f.file)).toEqual(["test/a.test.ts", "test/b.test.ts"]);
+    expect(out.findings.find((f) => f.file === "test/a.test.ts")?.baselineDisposition).toBe("pre-existing");
+    expect(out.findings.find((f) => f.file === "test/b.test.ts")?.baselineDisposition).toBe("introduced");
+  });
+
+  test("AC6 — labeling keeps every finding, including the pre-existing one", async () => {
+    await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
+
+    const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+    // The pre-labeling finding set: the raw adapter output for the same parsed summary.
+    const beforeLabeling = testSummaryToFindings(FAILING_SUMMARY);
+
+    expect(out.findings).toHaveLength(beforeLabeling.length);
+    expect(out.findings.map((f) => f.file)).toEqual(beforeLabeling.map((f) => f.file));
+    // The pre-existing finding survives the labeling pass — labels never filter.
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["pre-existing", "introduced"]);
+  });
+
+  test("parallel execution labels against the run-start baseline when a story artifact remains", async () => {
+    await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
+    await writeRunBaseline(tempRoot, FEATURE_ID, {
+      kind: "captured",
+      source: "preflight",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      entries: [{ file: "test/b.test.ts", testName: "test B" }],
+    });
+
+    const out = await fullSuiteGateOp.execute(parallelContextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["introduced", "pre-existing"]);
+  });
+
+  test("US-003 — with no per-story artifact the run-start baseline is inherited", async () => {
+    await writeRunBaseline(tempRoot, FEATURE_ID, {
+      kind: "captured",
+      source: "preflight",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      entries: [{ file: "test/a.test.ts", testName: "test A" }],
+    });
+
+    const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    expect(out.findings.find((f) => f.file === "test/a.test.ts")?.baselineDisposition).toBe("pre-existing");
+    expect(out.findings.find((f) => f.file === "test/b.test.ts")?.baselineDisposition).toBe("introduced");
+  });
+
+  test("US-003 — with no baseline artifacts at all the findings read unattributed", async () => {
+    const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    expect(out.status).toBe("failed");
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["unattributed", "unattributed"]);
+  });
+
+  test("US-003 — a roll-forward entry missing from the run start reads earlier-story", async () => {
+    // Both artifacts present: this combination is what the `earlier-story` vs
+    // `pre-existing` refinement is resolved from.
+    await writeRunBaseline(tempRoot, FEATURE_ID, {
+      kind: "captured",
+      source: "preflight",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      entries: [],
+    });
+    await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
+
+    const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    // `test A` was already failing when this story started but was not failing at
+    // the run's base ref — an earlier story broke it, not this one.
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["earlier-story", "introduced"]);
+  });
+
+  test("US-003 — a corrupt per-story artifact reads unattributed rather than the stale run snapshot", async () => {
+    // The run-start capture holds `test A`, so substituting it would label the
+    // finding `pre-existing`; a capture fault must not fabricate attribution.
+    await writeRunBaseline(tempRoot, FEATURE_ID, {
+      kind: "captured",
+      source: "preflight",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      entries: [{ file: "test/a.test.ts", testName: "test A" }],
+    });
+    await writeStoryBaseline(tempRoot, FEATURE_ID, STORY_ID, storyBaselineWithTestA());
+    await Bun.write(join(featureDir(tempRoot, FEATURE_ID), "stories", STORY_ID, "test-baseline.json"), "{ not json");
+
+    const out = await fullSuiteGateOp.execute(contextfulInput(), mockCtx, makeDeps(failingRunDeps()));
+
+    expect(out.status).toBe("failed");
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["unattributed", "unattributed"]);
+  });
+
+  test("US-003 — a labeling failure leaves the findings unlabeled rather than failing the gate", async () => {
+    // A feature id that `featureDir()` rejects makes the labeling pass throw.
+    const out = await fullSuiteGateOp.execute(
+      makeInput({}, "/tmp", { projectDir: tempRoot, featureName: ".." }),
+      mockCtx,
+      makeDeps(failingRunDeps()),
+    );
+
+    expect(out.status).toBe("failed");
+    expect(out.findings).toHaveLength(2);
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual([undefined, undefined]);
   });
 });

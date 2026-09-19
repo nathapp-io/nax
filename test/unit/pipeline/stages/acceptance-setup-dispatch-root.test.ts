@@ -162,6 +162,6 @@ describe("acceptance-setup: main-checkout dispatch root survives the containment
     expect(testPath).not.toContain(".nax-wt");
     // Explicit reachability for a package acceptance session: the file lives
     // under the package, which lives under the main-checkout exec root.
-    expect(relativeToExecRoot.startsWith("packages/core" + path.sep)).toBe(true);
+    expect(relativeToExecRoot.startsWith(`packages/core${path.sep}`)).toBe(true);
   });
 });

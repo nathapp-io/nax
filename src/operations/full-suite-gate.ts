@@ -29,7 +29,14 @@ import type { UserStory } from "../prd";
 import type { QualityCommandSpec } from "../quality/command-spec";
 import { renderCommandSpec } from "../quality/command-spec";
 import type { TestSummary } from "../test-runners";
+import { errorMessage } from "../utils/errors";
 import { storyPackageDir } from "../utils/path-frame";
+import {
+  applyBaselineDispositions,
+  readRunBaseline,
+  resolveStoryBaseline,
+  type StoryExecutionMode,
+} from "../verification";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -55,6 +62,8 @@ export interface FullSuiteGateInput {
   readonly workdir: string;
   readonly featureName?: string;
   readonly projectDir?: string;
+  /** Whether this story runs in an ordered pipeline or a parallel worktree batch. */
+  readonly executionMode?: StoryExecutionMode;
   readonly lite?: boolean;
   /** Optional pre-resolved test patterns to skip re-resolution inside the gate. */
   readonly resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
@@ -82,6 +91,15 @@ export interface FullSuiteGateOutput {
    * (flake triage) can run `detectFramework()` without re-running the suite.
    */
   readonly rawOutput: string;
+  /**
+   * Parsed test-runner summary — every failing test with `file` + `testName`. US-002
+   * reads this on the post-run roll-forward hook to persist the next story's
+   * `roll-forward` baseline. Absent on the skipped path (gate disabled) and on the
+   * synthetic `execution-failed` / `passed-on-timeout` paths where the parser did
+   * not run or did not produce structured failures — the post-run hook then writes
+   * a `no-gate-parse` marker instead.
+   */
+  readonly parsedSummary?: TestSummary;
 }
 
 const fullSuiteGateConfigSelector = rectificationGateConfigSelector;
@@ -193,6 +211,47 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Baseline disposition labeling (US-003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Label every structured full-suite failure with its baseline disposition.
+ *
+ * `resolveStoryBaseline` is the single authority for "which baseline does this
+ * story see?" — the story's own `roll-forward` artifact when one was written,
+ * else the run-start capture (which is the parallel-mode baseline, and the
+ * baseline of a story whose artifact was never written; design:
+ * docs/superpowers/specs/2026-09-19-preflight-test-baseline-design.md §3.2–§3.3).
+ * Parallel worktrees must explicitly select the run-start baseline because a
+ * retained story artifact can otherwise be present. A `no-baseline` marker — and an artifact that exists but does
+ * not parse — returns as-is, so those findings read `unattributed` rather than
+ * being measured against the older run-start snapshot.
+ *
+ * Labels never filter: the result holds exactly one finding per input finding.
+ * Absent feature context — or any read failure — degrades to the unlabeled
+ * findings: attribution is an enhancement and must never fail the gate.
+ */
+async function labelFindingsWithBaseline(input: FullSuiteGateInput, findings: Finding[]): Promise<Finding[]> {
+  const root = input.projectDir;
+  const featureId = input.featureName;
+  if (!root || !featureId) return findings;
+  try {
+    const [storyBaseline, runBaseline] = await Promise.all([
+      resolveStoryBaseline(root, featureId, input.story.id, input.executionMode ?? "sequential"),
+      readRunBaseline(root, featureId),
+    ]);
+    return applyBaselineDispositions(findings, storyBaseline, runBaseline);
+  } catch (err) {
+    getLogger().warn("verify[regression]", "Baseline labeling failed — findings left unlabeled", {
+      storyId: input.story.id,
+      packageDir: storyPackageDir(input.story),
+      error: errorMessage(err),
+    });
+    return findings;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Operation
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -238,6 +297,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [],
         rawOutput: "",
+        // parsedSummary intentionally omitted — no suite ran, so no summary.
       };
     }
 
@@ -269,6 +329,12 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [],
         rawOutput: testResult.output,
+        // US-002 — post-run roll-forward needs `parsedSummary` even on a clean
+        // pass (the next-story baseline is a captured snapshot, not a no-baseline
+        // marker, when the suite is green). The parser ran and parsed zero
+        // failures — surface the empty summary so callers can build a captured
+        // baseline with `entries: []`.
+        parsedSummary: testResult.parsedSummary,
       };
     }
 
@@ -287,6 +353,7 @@ export const fullSuiteGateOp: DeterministicOperation<
           attempts: 0,
           findings: [],
           rawOutput: testResult.output,
+          // No parsedSummary on timeout — the runner bailed before the parser ran.
         };
       }
       logger.warn("verify[regression]", "Full-suite timed out (failing)", {
@@ -300,11 +367,12 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [],
         rawOutput: testResult.output,
+        // No parsedSummary on timeout — same reason.
       };
     }
 
-    const findings = testSummaryToFindings(testResult.parsedSummary);
-    if (findings.length === 0) {
+    const rawFindings = testSummaryToFindings(testResult.parsedSummary);
+    if (rawFindings.length === 0) {
       // Runner exited non-zero but parser found 0 structured failures — environmental
       // failure (e.g. config crash, missing dep, wrong cwd). Emit a single synth
       // finding so rectification dispatches the implementer with concrete repair
@@ -332,8 +400,17 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [synth],
         rawOutput: testResult.output,
+        // No parsedSummary — the parser ran but produced zero structured failures
+        // (environmental failure shape). The post-run roll-forward hook treats
+        // `parsedSummary` missing as `no-gate-parse`.
       };
     }
+
+    // US-003 — classify each structured failure against the story and run
+    // baselines before the caller (rectification) consumes it. Labels never
+    // filter: the finding set is unchanged, each element only gains an
+    // attribution.
+    const findings = await labelFindingsWithBaseline(input, rawFindings);
 
     return {
       success: false,
@@ -343,6 +420,7 @@ export const fullSuiteGateOp: DeterministicOperation<
       attempts: 0,
       findings,
       rawOutput: testResult.output,
+      parsedSummary: testResult.parsedSummary,
     };
   },
 };
