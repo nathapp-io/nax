@@ -100,6 +100,21 @@ export async function pruneRollup(input: PruneRollupInput): Promise<PruneResult>
   return withPathFileLock(rollupPath, () => pruneRollupUnlocked(input));
 }
 
+/**
+ * Injectable dependency object for the auto-prune size gate (US-004).
+ *
+ * The implementer routes `pruneRollup` and `scanProjectRunIds` through this
+ * object so tests can intercept the underlying file-system work without
+ * monkey-patching globals.
+ */
+export const _curatorPruneDeps = {
+  pruneRollup: ((input: PruneRollupInput) => pruneRollup(input)) as (input: PruneRollupInput) => Promise<PruneResult>,
+  scanProjectRunIds: ((rollupPath: string, projectKey: string) => scanProjectRunIds(rollupPath, projectKey)) as (
+    rollupPath: string,
+    projectKey: string,
+  ) => Promise<string[]>,
+};
+
 async function pruneRollupUnlocked(input: PruneRollupInput): Promise<PruneResult> {
   const { rollupPath, projectKey, keepRunIds, dropUnattributed = false } = input;
   const tmpPath = `${rollupPath}.gc-tmp`;

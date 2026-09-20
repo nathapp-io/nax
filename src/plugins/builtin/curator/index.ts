@@ -180,11 +180,16 @@ export const curatorPlugin: NaxPlugin = {
   },
 };
 
+// US-004 — auto-prune stubs. Re-exported so tests reach them through the barrel.
+export type { CuratorRetentionConfig } from "./auto-prune";
+export { DEFAULT_RETENTION, getCuratorRetention, maybePruneRollup } from "./auto-prune";
 // Both rollup readers depend on this reassembling rows across chunk boundaries;
 // exported so it is reachable through the barrel rather than only its callers.
 export { streamJsonlLines } from "./jsonl-stream";
 export type { HeuristicWindow, HeuristicWindowOptions } from "./rollup";
 export { readHeuristicWindow } from "./rollup";
+// Re-export so callers that prune via the curator barrel reach the type.
+export type { PruneResult } from "./rollup-prune";
 // Re-export types for use in tests and other modules
 export type {
   AcceptanceVerdictObservation,
