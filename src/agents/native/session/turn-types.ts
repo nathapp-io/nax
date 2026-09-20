@@ -19,6 +19,7 @@ import type { ResolvedRates, TokenUsage } from "@/agents/cost";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import type { SpinBreaker } from "@/runtime/spin-breaker";
 import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction";
+import type { LoopEventRegistry } from "./loop-events";
 import type { toToolDefinitions } from "./tool-mapping";
 import type { TurnRetryConfig } from "./turn-retry";
 
@@ -98,6 +99,17 @@ export interface TurnDeps {
    * Live repetition-breaker instance (nax#2013, session-lifetime since #2047). Absent disables the breaker.
    */
   spinBreaker?: SpinBreaker;
+  /**
+   * The in-process `before_tool` / `after_tool` seam (nax#2151, US-002).
+   * Absent is the normal case for a real session: the loop then builds its own
+   * registry, so the built-in handlers (invalid-call repair, spin breaker) run
+   * regardless. Supplying one is how a caller adds handlers — or observes the
+   * genuine-result dispatch sites — without the loop owning them.
+   *
+   * Per-turn, like the rest of `TurnDeps`: the loop registers its built-ins on
+   * the registry it is given, because both of them reset with the turn.
+   */
+  loopEvents?: LoopEventRegistry;
 }
 
 /**
