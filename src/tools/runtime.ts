@@ -126,6 +126,8 @@ export function createCodingToolRuntime(opts: {
    */
   readCeiling?: number;
   storyId?: string;
+  callId?: string;
+  scopeId?: string;
   sink?: ToolAuditSink;
   extraTools?: readonly CodingTool[];
   /**
@@ -238,6 +240,8 @@ export function createCodingToolRuntime(opts: {
       ...(audit?.target !== undefined ? { target: audit.target } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
+      ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
+      ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
     });
   }
 

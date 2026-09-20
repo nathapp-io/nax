@@ -727,3 +727,35 @@ describe("resolveCodingToolSupport — run-scoped header", () => {
     }
   });
 });
+
+describe("resolveCodingToolSupport — run correlation ids", () => {
+  test("correlation ids reach the ledger from the run options", async () => {
+    const root = makeTempDir("nax-cts-ids-");
+    try {
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["Read"],
+        codingToolRoot: root,
+        outputDir: root,
+        pipelineStage: "review",
+        featureName: "auth-system",
+        storyId: "US-007",
+        callId: "call-wired",
+        scopeId: "scope-wired",
+        config: makeNaxConfig(),
+      });
+
+      await support?.runtime.callTool("Read", { path: "nope.ts" });
+      await support?.auditSink.flush();
+
+      const written = [...new Bun.Glob("**/*.json").scanSync(join(root, "tool-audit"))];
+      expect(written).toHaveLength(1);
+      const parsed = JSON.parse(await readFile(join(root, "tool-audit", written[0] as string), "utf8"));
+      expect(parsed.calls).toHaveLength(1);
+      expect(parsed.calls[0].outcome).toBe("error");
+      expect(parsed.calls[0].callId).toBe("call-wired");
+      expect(parsed.calls[0].scopeId).toBe("scope-wired");
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
+});

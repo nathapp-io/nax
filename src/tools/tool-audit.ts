@@ -50,6 +50,20 @@ export interface ToolCallRecord {
    * ledger as 40000.
    */
   readonly resultBytesPreTruncation?: number;
+  /**
+   * The `callOp` invocation this tool call happened under.
+   *
+   * NOT unique: one callId spans every retry, agent-swap hop and turn of the
+   * invocation, so it is 1:N over cost rows (10.0% of groups hold more than
+   * one). It is a foreign key. Use `turnId` to select a single cost row.
+   *
+   * This is the OPERATION-layer callId (`DispatchEventBase.callId`), not the
+   * stream-layer field of the same name in `agent-stream-events.ts` — joining
+   * on that one produced nax#2045's 0-of-1,940 match rate.
+   */
+  readonly callId?: string;
+  /** Caller-defined region spanning many callOp invocations. */
+  readonly scopeId?: string;
 }
 
 export interface ToolAuditSink {

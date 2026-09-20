@@ -195,6 +195,8 @@ export function buildCodingToolSupport(args: {
     declaredCommands: new Set(declaredCommands.keys()),
     ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
+    ...(args.callId !== undefined ? { callId: args.callId } : {}),
+    ...(args.scopeId !== undefined ? { scopeId: args.scopeId } : {}),
     ...(args.denyPaths !== undefined ? { denyPaths: args.denyPaths } : {}),
     sink,
     extraTools: [
