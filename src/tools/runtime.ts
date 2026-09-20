@@ -24,6 +24,7 @@ import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry"
 import { requestCapabilityTool } from "./request-capability";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
+import { READ_CEILING } from "./truncate";
 import { EXEC_TOOL_NAME, type ToolPolicy, type ToolScope } from "./types";
 import { writeTool } from "./write";
 
@@ -115,6 +116,13 @@ export function createCodingToolRuntime(opts: {
   policy: ToolPolicy;
   maxBytes?: number;
   maxFileBytes?: number;
+  /**
+   * Tool-layer I/O bound. Defaults to `READ_CEILING` when absent — tools
+   * bound their reads to this ceiling before any model-facing truncation
+   * policy runs. Distinct from `maxBytes` (model-facing) and `maxFileBytes`
+   * (whole-file Edit/Write cap).
+   */
+  readCeiling?: number;
   storyId?: string;
   sink?: ToolAuditSink;
   extraTools?: readonly CodingTool[];
@@ -154,6 +162,7 @@ export function createCodingToolRuntime(opts: {
   const sink = opts.sink ?? createNoOpToolAuditSink();
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
   const maxFileBytes = opts.maxFileBytes ?? DEFAULT_TOOL_MAX_FILE_BYTES;
+  const readCeiling = opts.readCeiling ?? READ_CEILING;
   const askResolver = opts.askResolver ?? headlessAskResolver();
   const granted = new Set(opts.policy.grantedTools());
 
@@ -279,6 +288,7 @@ export function createCodingToolRuntime(opts: {
             resolvedPaths,
             maxBytes,
             maxFileBytes,
+            readCeiling,
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
           });
           const kind = result.isError === true ? "error" : "ok";
