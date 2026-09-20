@@ -61,7 +61,52 @@ export function createNoOpToolAuditSink(): ToolAuditSink {
   return { record() {}, async flush() {} };
 }
 
-export function createToolAuditSink(opts: { dir: string; sessionName: string }): ToolAuditSink {
+/**
+ * tool-audit file schema version.
+ *
+ * 1 — first versioned generation. Adds a file header (`runId`, `featureName`,
+ *     `storyId`, `sessionRole`) and per-call correlation ids (`callId`,
+ *     `scopeId`, `turnId`, `roundTrips`, `toolCallId`).
+ *
+ *     Files written before this field existed carry none of the above and
+ *     cannot be backfilled: `runId` in particular was never in scope at the
+ *     sink's construction path, so an unversioned file's only identity is its
+ *     filename.
+ *
+ *     `sessionName` is a HUMAN LABEL from this version on, never a join key.
+ *     It is constant-prefixed and stable across re-runs by construction, so it
+ *     collides: 7.5% of review-audit sessionNames span more than one runId.
+ *     Join on `runId` plus `callId`/`turnId` instead.
+ *
+ *     NOTE ON `resultBytes`: it is measured AFTER the shared model-truncation
+ *     policy (applyModelTruncationPolicy, src/tools/spill.ts) and so counts what
+ *     the model actually received — the spill marker is composed inside the
+ *     measured content, so its bytes count. That boundary moved at the
+ *     `native-loop-events` merge (f4b3bbc7a): files written before it measured
+ *     each tool's own post-truncation `result.content.length` at `ctx.maxBytes`
+ *     instead. The policy additionally applies `MODEL_MAX_LINES` (1_000),
+ *     `MODEL_MAX_LINE_CHARS` (2_000) and a `MODEL_MAX_BYTES` (40_000) ceiling,
+ *     so the two generations are not comparable call for call. The unit was
+ *     never bytes: it is `String#length`, i.e. UTF-16 code units, so a
+ *     multi-byte result under-reports against the field name.
+ *     `resultBytesPreTruncation` is the pre-policy size and, where a tool sets
+ *     it, is UTF-8 bytes (`Buffer.byteLength` / `Bun.file().size`).
+ */
+export const TOOL_AUDIT_SCHEMA_VERSION = 1;
+
+/** Run-scoped identity stamped once per tool-audit file. */
+export interface ToolAuditHeader {
+  readonly runId?: string;
+  readonly featureName?: string;
+  readonly storyId?: string;
+  readonly sessionRole?: string;
+}
+
+export function createToolAuditSink(opts: {
+  dir: string;
+  sessionName: string;
+  header?: ToolAuditHeader;
+}): ToolAuditSink {
   const calls: ToolCallRecord[] = [];
   return {
     record(entry) {
@@ -70,7 +115,16 @@ export function createToolAuditSink(opts: { dir: string; sessionName: string }):
     async flush() {
       if (calls.length === 0) return;
       await mkdir(opts.dir, { recursive: true });
-      const body = JSON.stringify({ sessionName: opts.sessionName, calls }, null, 2);
+      const body = JSON.stringify(
+        {
+          schemaVersion: TOOL_AUDIT_SCHEMA_VERSION,
+          ...(opts.header ?? {}),
+          sessionName: opts.sessionName,
+          calls,
+        },
+        null,
+        2,
+      );
       await writeFile(join(opts.dir, `${Date.now()}-${opts.sessionName}.json`), body);
     },
   };

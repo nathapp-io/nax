@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { compileToolPolicy } from "@/tools/policy";
 import type { CodingTool } from "@/tools/registry";
 import { createCodingToolRuntime } from "@/tools/runtime";
-import { createToolAuditSink } from "@/tools/tool-audit";
+import { createToolAuditSink, TOOL_AUDIT_SCHEMA_VERSION } from "@/tools/tool-audit";
 
 describe("createToolAuditSink", () => {
   test("writes one file holding every recorded call", async () => {
@@ -138,4 +138,48 @@ test("the runtime records a denial through the sink, not only the logger", async
   expect(recorded).toHaveLength(1);
   expect((recorded[0] as { outcome: string }).outcome).toBe("denied");
   expect((recorded[0] as { tool: string }).tool).toBe("GitCommit");
+});
+
+test("writes schemaVersion and the header fields", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const sink = createToolAuditSink({
+    dir,
+    sessionName: "US-001-implementer",
+    header: {
+      runId: "run-abc",
+      featureName: "telemetry-keys",
+      storyId: "US-001",
+      sessionRole: "implementer",
+    },
+  });
+  sink.record({
+    tool: "Read",
+    outcome: "ok",
+    input: { path: "a.ts" },
+    resultBytes: 10,
+    at: "2026-09-20T00:00:00.000Z",
+  });
+  await sink.flush();
+
+  const files = await readdir(dir);
+  const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+  expect(parsed.schemaVersion).toBe(TOOL_AUDIT_SCHEMA_VERSION);
+  expect(parsed.runId).toBe("run-abc");
+  expect(parsed.featureName).toBe("telemetry-keys");
+  expect(parsed.storyId).toBe("US-001");
+  expect(parsed.sessionRole).toBe("implementer");
+  expect(parsed.sessionName).toBe("US-001-implementer");
+});
+
+test("omits header keys that were not supplied", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const sink = createToolAuditSink({ dir, sessionName: "s1" });
+  sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
+  await sink.flush();
+
+  const files = await readdir(dir);
+  const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+  expect(parsed.schemaVersion).toBe(TOOL_AUDIT_SCHEMA_VERSION);
+  expect("runId" in parsed).toBe(false);
+  expect("featureName" in parsed).toBe(false);
 });
