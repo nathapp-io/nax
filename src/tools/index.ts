@@ -24,6 +24,7 @@ export * from "./provider-grants";
 export * from "./provider-sanitize";
 export * from "./provider-types";
 export { readTool } from "./read";
+export { type ReadFileSliceOptions, type ReadFileSliceResult, readFileSlice } from "./read-file";
 export type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 export {
   _resetRegistryForTest,
@@ -47,6 +48,17 @@ export {
 export { SCRATCHPAD_DIR, scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad";
 export type { ToolAuditSink, ToolCallRecord } from "./tool-audit";
 export { createNoOpToolAuditSink, createToolAuditSink } from "./tool-audit";
+export {
+  MODEL_MAX_BYTES,
+  MODEL_MAX_LINE_CHARS,
+  MODEL_MAX_LINES,
+  READ_CEILING,
+  type TruncateForModelOptions,
+  type TruncationDirection,
+  type TruncationResult,
+  truncateForModel,
+  truncationDirectionFor,
+} from "./truncate";
 export type { CodingToolName, PolicyVerdict, ToolGrant, ToolPolicy, ToolScope } from "./types";
 export { BASH_TOOL_NAME, EXEC_TOOL_NAME } from "./types";
 export { writeTool } from "./write";
