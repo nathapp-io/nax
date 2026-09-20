@@ -213,6 +213,26 @@ test("writes schemaVersion and the header fields", async () => {
   expect(parsed.sessionName).toBe("US-001-implementer");
 });
 
+test("the filename carries the runId when one is known", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const sink = createToolAuditSink({ dir, sessionName: "s1", header: { runId: "run-fn" } });
+  sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
+  await sink.flush();
+
+  const [name] = await readdir(dir);
+  expect(name).toMatch(/^run-fn-\d+-s1\.json$/);
+});
+
+test("falls back to the unprefixed name when no runId is known", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const sink = createToolAuditSink({ dir, sessionName: "s2" });
+  sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
+  await sink.flush();
+
+  const [name] = await readdir(dir);
+  expect(name).toMatch(/^\d+-s2\.json$/);
+});
+
 test("omits header keys that were not supplied", async () => {
   const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
   const sink = createToolAuditSink({ dir, sessionName: "s1" });

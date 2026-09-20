@@ -11,7 +11,8 @@
  * logger keeps its calls for operator visibility; neither replaces the other.
  *
  * File shape mirrors src/review/review-audit.ts: one JSON file per session,
- * named <epochMs>-<sessionName>.json.
+ * named <runId>-<epochMs>-<sessionName>.json when the runId is known, and
+ * <epochMs>-<sessionName>.json otherwise.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -160,7 +161,8 @@ export function createToolAuditSink(opts: {
         null,
         2,
       );
-      await writeFile(join(opts.dir, `${Date.now()}-${opts.sessionName}.json`), body);
+      const prefix = opts.header?.runId !== undefined ? `${opts.header.runId}-` : "";
+      await writeFile(join(opts.dir, `${prefix}${Date.now()}-${opts.sessionName}.json`), body);
     },
   };
 }
