@@ -111,13 +111,14 @@ describe("review diff frame — nax-exclusion SSOT (Part A)", () => {
 });
 
 describe("review diff frame — native/ACP exclusion parity (Part E)", () => {
-  test.each([
-    ["semantic", semanticPrompt],
-  ])("%s: native and ACP full diffs carry the same nax exclusions", (_label, build) => {
-    const prompt = build();
-    expect(acpFullExclude(prompt)).toEqual([...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS]);
-    expect(nativeFullExclude(prompt)).toEqual([...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS]);
-  });
+  test.each([["semantic", semanticPrompt]])(
+    "%s: native and ACP full diffs carry the same nax exclusions",
+    (_label, build) => {
+      const prompt = build();
+      expect(acpFullExclude(prompt)).toEqual([...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS]);
+      expect(nativeFullExclude(prompt)).toEqual([...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS]);
+    },
+  );
 });
 
 describe("review diff frame — out-of-package omission is stated (Part F)", () => {

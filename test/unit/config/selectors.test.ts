@@ -102,14 +102,7 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       expect(slice).toHaveProperty("project");
       expect(slice).toHaveProperty("quality");
       expect(slice).toHaveProperty("agent");
-      expect(Object.keys(slice).sort()).toEqual([
-        "agent",
-        "execution",
-        "models",
-        "project",
-        "quality",
-        "review",
-      ]);
+      expect(Object.keys(slice).sort()).toEqual(["agent", "execution", "models", "project", "quality", "review"]);
     });
 
     test("tddConfigSelector now includes quality, agent, models, prompts, context, project, precheck", () => {

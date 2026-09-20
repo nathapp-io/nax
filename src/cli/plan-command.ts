@@ -124,8 +124,6 @@ export async function planCommand(
   }
 }
 
-
-
 // Re-exports for backward compatibility — planDecomposeCommand and runReplanLoop
 // were extracted to plan-decompose.ts to keep plan.ts under the 600-line limit.
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";

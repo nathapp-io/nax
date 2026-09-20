@@ -381,7 +381,12 @@ describe("attachCostSubscriber", () => {
     attachCostSubscriber(bus, agg, "r-001");
 
     bus.emitDispatch(
-      makeCompleteEvent({ model: "sonnet", modelTier: "balanced", sessionRole: "reviewer-adversarial", exactCostUsd: 0.02 }),
+      makeCompleteEvent({
+        model: "sonnet",
+        modelTier: "balanced",
+        sessionRole: "reviewer-adversarial",
+        exactCostUsd: 0.02,
+      }),
     );
 
     expect(recorded[0].model).toBe("sonnet");

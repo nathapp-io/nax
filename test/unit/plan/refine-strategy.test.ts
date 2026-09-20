@@ -1,12 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import {
-  firstCall,
-  makeCallOp,
-  makeLogger,
-  makeMockAgentManager,
-  makeMockRuntime,
-  makeNaxConfig,
-} from "@test/helpers";
+import { firstCall, makeCallOp, makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
 import { _refinePlanDeps, RefinePlanStrategy } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";

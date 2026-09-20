@@ -40,8 +40,8 @@ export const tddConfigSelector = pickSelector(
   "prompts",
   "context",
   "project",
-"precheck",
-  );
+  "precheck",
+);
 export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
 
 export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => ({
