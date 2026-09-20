@@ -79,10 +79,14 @@ they are never the interface to implement.
 **`ToolRunContext`** — `src/tools/registry.ts:47` (US-001, consumed US-003)
 - Baseline: `{ root, resolvedPaths, maxBytes, maxFileBytes, denyPaths? }`, where `maxBytes`
   is documented as "Output ceiling in bytes; the tool truncates rather than the caller."
-- Target: the same, plus a required `readCeiling: number` — the tool's I/O bound. `maxBytes`
-  is retained and keeps its value, but is no longer consumed by any tool for truncation;
-  the session's `after_tool` policy owns the model-facing ceiling. `maxFileBytes` is
-  unchanged and remains the whole-file bound for `Edit`/`Write`.
+- Target: the same, plus an **optional** `readCeiling?: number` — the tool's I/O bound,
+  resolving to `READ_CEILING` when absent. Optional is load-bearing, not a style choice:
+  21 test files construct a `ToolRunContext` literal, and a required field would fail
+  typecheck in all of them while test-authorship isolation bars US-001's implementer from
+  editing 20 of them. It mirrors the existing optional `denyPaths?`. `maxBytes` is retained
+  and keeps its value, but is no longer consumed by any tool for truncation; the session's
+  `after_tool` policy owns the model-facing ceiling. `maxFileBytes` is unchanged and remains
+  the whole-file bound for `Edit`/`Write`.
 
 **`scratchpadReadTool.inputSchema`** — `src/tools/scratchpad.ts:119` (US-003)
 - Baseline: `{ type: "object", properties: { path }, required: ["path"] }`.
@@ -103,6 +107,9 @@ Symbols this feature reads but does **not** change:
   failure at warn level.
 - `cleanupRun(options: RunCleanupOptions): Promise<void>` —
   `src/execution/lifecycle/run-cleanup.ts:206`, invoked from the runner's `finally` block.
+  It does **not** invoke any scratchpad removal today — `wipeScratchpad` has exactly one
+  call site, `run-setup-init.ts:120`, at run start. US-004's seam AC therefore describes
+  wiring the story creates, not a path that already exists.
 - `SCRATCHPAD_DIR = ".nax/scratchpad"` — `src/tools/scratchpad.ts:24`.
 - `readPrefix` / `drainBounded` — `src/utils/bounded-io.ts`, the existing bounded-read
   helpers.
@@ -165,6 +172,12 @@ whose own trailing line records that the spill is itself incomplete.
 No policy or gitignore change is required: `spill/` sits under `SCRATCHPAD_DIR`, already
 covered by the scratchpad tools' `confineTo` and by the existing gitignore entry at
 `src/utils/gitignore.ts:93`.
+
+The spill writer exposes its filesystem calls through an injectable `_spillDeps` object,
+following `_scratchpadWipeDeps` in `src/execution/lifecycle/scratchpad-wipe.ts:28`. This is
+required rather than stylistic: the spill-failure behaviour below has to be driven by a
+rejecting dependency, and `mock.module()` is a forbidden pattern in this project. File
+writes use Bun-native APIs, not the Node synchronous file APIs.
 
 ### Scratchpad lifecycle
 
@@ -426,6 +439,8 @@ does this at `src/tools/read.ts:70-76`, but adding it here is not required by th
   truncated, and its marker names no spill path.
 - `[unit]` a body larger than `READ_CEILING` produces a spill file whose final line records
   that the spill is itself incomplete.
+- `[unit]` a tool invoked with a `ToolRunContext` whose `readCeiling` is absent bounds its
+  read at `READ_CEILING` rather than at `maxBytes`.
 - `[unit]` `ScratchpadRead` invoked with `offset` 3 and `limit` 2 returns the third and
   fourth lines of the named scratchpad file.
 - `[unit]` `ScratchpadRead` returns content beginning with a `[N lines]` header reporting the
@@ -470,4 +485,4 @@ helpers in `src/tools/read.ts`, `src/tools/grep.ts`, `src/tools/git.ts`,
 - `[integration]` after the deletions, a `Git` result larger than `MODEL_MAX_BYTES` still
   enters the message array with a marker naming its original byte count.
 
-<!-- spec-writing: completed-through-phase-5 -->
+<!-- spec-writing: completed-through-phase-6 -->
