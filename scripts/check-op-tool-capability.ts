@@ -70,7 +70,6 @@ export const REQUIRED_TOOLS_BY_ROLE: Record<string, readonly string[]> = {
    */
   plan: ["Write"],
   "plan-refine": ["Write"],
-  "debate-plan": ["Write"],
   "acceptance-gen": ["Write"],
 };
 
