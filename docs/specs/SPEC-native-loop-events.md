@@ -207,12 +207,19 @@ line carries the exit code, so the policy preserves that line and then tails.
 ### Spill file format
 
 On truncation only, the full body — up to `READ_CEILING` — is written under the scratchpad
-at `spill/<toolName>-<callId>.txt`, and the marker appended to the model-facing content
-names the path and both byte counts:
+at `spill/<toolName>-<callId>.txt`, and the marker added to the model-facing content names
+the path and both byte counts:
 
 ```
 ... [truncated: showing 40,000 of 512,433 bytes; full output at spill/Grep-a1b2c3d4.txt]
 ```
+
+The marker's POSITION follows the direction, because the two cannot both be last. Under
+`head` it is appended, so the content ends with it. Under `tail-with-first-line` the whole
+point of the direction is that the body's final lines survive, so the marker sits between
+the retained first line and the retained tail instead — the exit line, then the marker, then
+the tail. When the budget leaves no room for a tail at all, the marker is simply last. Either
+way it is inside the `MODEL_MAX_BYTES` budget, never added after the cut.
 
 The path in the marker is relative to the scratchpad directory, because `ScratchpadRead`
 resolves paths relative to it. A body larger than `READ_CEILING` produces a spill file
@@ -369,11 +376,18 @@ so the end wipe covers shared mode.
 - `test/unit/tools/scratchpad.test.ts` — its AC12/AC13 assertions pin `ScratchpadRead` truncating to `ctx.maxBytes` and returning a full-size `resultBytesPreTruncation`, and pin a two-field input schema. Replacing invariant: the schema gains `offset`/`limit`, the tool returns a `[N lines]` header, and the model-facing cap comes from the policy while `resultBytesPreTruncation` still reports the full size.
 - `test/unit/tools/result-bytes-pre-truncation.test.ts` — pins `resultBytesPreTruncation` against tool-side truncation. Replacing invariant: the field still reports the full pre-truncation byte length, now measured before the session's policy runs.
 - `test/unit/tools/read-line-total.test.ts` — pins `readTool`'s line-total and bounded/`+` behaviour against its inline implementation. Replacing invariant: identical behaviour, produced by `readFileSlice`.
+- `test/unit/tools/scratchpad-read-paging.test.ts` — its "no synthesised terminator" case asserts `result.content` equals `"L3\nL4"` exactly, which the `[N lines]` header on a paged read necessarily breaks. Replacing invariant: the same no-synthesised-terminator guarantee, asserted against the header-led content.
 
 **US-004**
 
 - `test/unit/execution/lifecycle/scratchpad-wipe.test.ts` — pins the wipe as a run-start-only operation. Replacing invariant: the start wipe is unchanged and an end-of-run wipe additionally fires from `cleanupRun` when `runCompleted` is true and `dryRun` is false.
 - `test/unit/prompts/sections/scratchpad.test.ts` — asserts the section's promise that nothing survives the run. Replacing invariant: the section states the scratchpad is wiped when a run finishes, retained after a failed run, and cleared at the next run's start.
+- `test/unit/prompts/builders/tdd-builder.test.ts` — asserts the built TDD prompt contains "wiped at the start of each run", the exact sentence US-004 rewrites. Replacing invariant: the prompt contains the new end-of-run wording instead.
+- `test/unit/prompts/adversarial-review-builder.test.ts` — same literal assertion on the adversarial-review prompt. Replacing invariant: as above.
+- `test/unit/prompts/review-builder.test.ts` — same literal assertion on the semantic-review prompt. Replacing invariant: as above.
+- `test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap` — 8 inline snapshots embed the old scratchpad sentence verbatim. Replacing invariant: the same snapshots carrying the new wording.
+- `test/unit/prompts/__snapshots__/review-builder.test.ts.snap` — 2 snapshots embed the same sentence. Replacing invariant: as above.
+- `test/unit/prompts/builders/__snapshots__/rectifier-builder-helpers.test.ts.snap` — 2 snapshots embed the same sentence. Replacing invariant: as above.
 
 **US-005**
 
@@ -504,8 +518,12 @@ does this at `src/tools/read.ts:70-76`, but adding it here is not required by th
   `READ_CEILING` returns that whole output from the tool, before any session policy runs.
 - `[integration]` a truncated tool result writes a file under the scratchpad at
   `spill/<toolName>-<callId>.txt` whose contents are the untruncated body.
-- `[integration]` the content of a truncated tool result ends with a marker naming the spill
-  path, the delivered byte count, and the original byte count.
+- `[integration]` the content of a truncated `head`-directed tool result ends with a marker
+  naming the spill path, the delivered byte count, and the original byte count.
+- `[integration]` the content of a truncated `tail-with-first-line` tool result carries that
+  same marker immediately after the retained first line, with any retained tail following it
+  — so the content ends with the body's final lines whenever the byte budget leaves room for
+  a tail, and ends with the marker when it does not.
 - `[integration]` a tool result within every cap leaves the scratchpad's `spill` directory
   empty.
 - `[integration]` when the spill write fails, the tool result still enters the message array
@@ -515,9 +533,10 @@ does this at `src/tools/read.ts:70-76`, but adding it here is not required by th
 - `[unit]` a tool invoked with a `ToolRunContext` whose `readCeiling` is absent bounds its
   read at `READ_CEILING` rather than at `maxBytes`.
 - `[unit]` `ScratchpadRead` invoked with `offset` 3 and `limit` 2 returns the third and
-  fourth lines of the named scratchpad file.
+  fourth lines of the named scratchpad file and no other file lines.
 - `[unit]` `ScratchpadRead` returns content beginning with a `[N lines]` header reporting the
-  file's line count.
+  file's line count, including when `offset` or `limit` is supplied. The header is not a file
+  line, so it satisfies the preceding criterion rather than contradicting it.
 - `[unit]` `ScratchpadRead` invoked with an `offset` past the file's last line returns a
   message naming the file's total line count.
 - `[integration]` a spilled body larger than `MODEL_MAX_BYTES` is fully recoverable by
