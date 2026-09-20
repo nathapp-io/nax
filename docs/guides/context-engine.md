@@ -284,7 +284,7 @@ Three patterns work today:
 |:-----|:-----------------------|
 | `implementer` | `execution`, `context`, `tdd-implementer`, `verify`, `rectify`, `autofix`, `acceptance`, `plan`, `single-session`, `tdd-simple`, `no-test`, `batch`, `route` |
 | `tdd` | `tdd-test-writer`, `tdd-verifier` |
-| `reviewer` | `review`, `review-semantic`, `review-adversarial`, `review-dialogue`, `debate` |
+| `reviewer` | `review`, `review-semantic`, `review-adversarial` |
 | `all` | matches every stage |
 
 ```typescript

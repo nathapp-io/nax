@@ -8,7 +8,6 @@ appliesTo:
   - "src/tdd/**/*.ts"
   - "src/acceptance/**/*.ts"
   - "src/review/**/*.ts"
-  - "src/debate/**/*.ts"
   - "src/routing/**/*.ts"
   - "src/cli/**/*.ts"
   - "src/verification/**/*.ts"
@@ -54,8 +53,8 @@ The agent adapter exposes exactly 4 primitives: `openSession`, `sendTurn`, `clos
 
 | Role | Dispatch |
 |:---|:---|
-| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `repo-scoped-test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `acceptance-gen`, `plan`, `plan-draft`, `plan-revise`, `plan-critic`, `plan-refine`, `setup`, `debate-stateful`, `debate-hybrid`, `debate-plan`, `finish-review-spec`, `finish-review-quality`, `finish-fix`, `finish-narrative` | `callOp` run-kind |
-| `decompose`, `refine`, `fix-gen`, `auto`, `synthesis`, `judge` | `callOp` complete-kind |
+| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `repo-scoped-test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `acceptance-gen`, `plan`, `plan-refine`, `setup`, `finish-review-spec`, `finish-review-quality`, `finish-fix`, `finish-narrative` | `callOp` run-kind |
+| `decompose`, `refine`, `fix-gen`, `auto` | `callOp` complete-kind |
 
 ## Rule 3: Adapter primitives stay inside the wiring layer
 
@@ -66,7 +65,6 @@ Everywhere else: go through `IAgentManager` / `ISessionManager`. Enforced by `te
 
 **Layer 3 (Manager API) is the intentional escape hatch for parallel fan-out and plugin contracts** — not a generic "behavior outside an Operation." Reach for it only when the dispatch shape cannot be expressed as a single `callOp` call. The only sanctioned `agentManager.completeAs` consumers are:
 
-- Debate fan-out (`src/debate/`) — parallel multi-agent debater invocations with dynamic agent names that preclude a static op config. (#855 Phase 1 + Phase 2 have landed: resolver selectors — `synthesis` and `judge` — dispatch via `callOp` complete-kind; debater session roles — `debate-stateful`, `debate-hybrid`, `debate-plan` — dispatch via `callOp` run-kind. The `` debate-${string} `` template-literal carve-out is retired; all debate roles now flow through `callOp`.)
 - `AgentManager`'s own internal dispatch (`src/agents/manager.ts`).
 
 New code goes through `callOp`. If you think you need Layer 3, check with the team first.
@@ -95,10 +93,9 @@ If you need to thread result data backwards to a caller, the result is already i
 
 ## Rule 7: Leaf code must stay cost-blind
 
-Selectors, debater closures, and helper functions that influence routing or execution decisions **must not** read cost data or make decisions based on cost. Cost is an orchestration concern, not a local decision concern.
+Selectors and helper functions that influence routing or execution decisions **must not** read cost data or make decisions based on cost. Cost is an orchestration concern, not a local decision concern.
 
-- Selectors (`synthesisOp`, `judgeOp` resolvers) cannot reference cost aggregators or turn results.
-- Debater closures (`debate/debater-selector.ts`) cannot introspect `CostAggregator` or `TurnResult.estimatedCostUsd`.
+- Selectors cannot reference cost aggregators or turn results.
 - Leaf helpers (e.g. quality thresholds, routing heuristics) must declare their inputs explicitly — no implicit dependency-injection of cost.
 
 Cost attribution belongs to **orchestration layers** that wire `costAggregator.openScope()` and pass `scopeId` downward through `CallContext`. Leaf code sees neither `CostAggregator` nor `DispatchEvent` — it receives only structured input and returns structured output.

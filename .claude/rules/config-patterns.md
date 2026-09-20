@@ -56,7 +56,7 @@ Each subsystem declares its config dependency through a named selector in [src/c
 
 ```typescript
 // src/config/selectors.ts
-export const planConfigSelector = pickSelector("plan", "plan", "debate");
+export const planConfigSelector = pickSelector("plan", "plan", "agent", "models", "project", "routing");
 export type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 ```
 
@@ -71,7 +71,7 @@ import type { PlanConfig } from "../config/selectors";
 type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 ```
 
-Slice types are imported from the **leaf path** (`../config/selectors`), not the barrel — names like `DebateConfig` / `TddConfig` / `QualityConfig` collide with full-schema types of the same name. Type-only imports are erased at compile time and don't fragment singletons.
+Slice types are imported from the **leaf path** (`../config/selectors`), not the barrel — names like `ReviewConfig` / `TddConfig` / `QualityConfig` collide with full-schema types of the same name. Type-only imports are erased at compile time and don't fragment singletons.
 
 ## Imports & Access
 

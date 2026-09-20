@@ -18,7 +18,6 @@ agent/session surfaces is built here.
 | Builder | Domains |
 |---|---|
 | `TddPromptBuilder` | implementer, test-writer, verifier, no-test, single-session, tdd-simple, batch |
-| `DebatePromptBuilder` | propose, critique, rebut, synthesize |
 | `ReviewPromptBuilder` | dialogue, semantic |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor |
 | `RectifierPromptBuilder` | tdd-test-failure, tdd-suite-failure, verify-failure, review-findings |
@@ -41,8 +40,8 @@ These are enforced by code review and convention. Violations should be caught in
 
 Add a new builder when the prompt's domain has:
 - ≥3 unique sections that no other builder uses
-- A distinct vocabulary (`persona`, `proposals` belong to debate; `findings` belongs to review)
-- Independent evolution (additions to debate must not risk breaking TDD)
+- A distinct vocabulary (e.g. `findings`, `severity` belong to review)
+- Independent evolution (additions to one builder must not risk breaking another)
 
 Use `OneShotPromptBuilder` when the prompt is:
 - A short instruction + minimal input + (optionally) JSON schema
