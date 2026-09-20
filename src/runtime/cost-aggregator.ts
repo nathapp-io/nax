@@ -47,6 +47,7 @@ export interface CostEvent {
   readonly packageDir?: string;
   readonly callId?: string;
   readonly scopeId?: string;
+  /** Per-turn identity copied from `protocolIds.turnId`; selects a single row within a `callId`. */
   readonly turnId?: string;
   /**
    * Token usage for this dispatch. Omitted on a `usageMissing` row (AC8-10) —
@@ -158,6 +159,7 @@ export interface CostErrorEvent {
   readonly storyId?: string;
   readonly callId?: string;
   readonly scopeId?: string;
+  /** Per-turn identity copied from `protocolIds.turnId`; selects a single row within a `callId`. */
   readonly turnId?: string;
   readonly errorCode: string;
   readonly durationMs: number;

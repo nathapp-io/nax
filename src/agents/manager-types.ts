@@ -196,9 +196,10 @@ export interface RunAsSessionOpts {
   /** Caller-supplied region id forwarded to dispatch events. */
   readonly scopeId?: string;
   /**
-   * Per-turn identity minted by `runAsSession` before the turn runs and carried
-   * out to the dispatch event and the transport, so a recorded tool call can be
-   * traced to the cost row that paid for it.
+   * IGNORED when supplied: `runAsSession` always mints a fresh turnId and
+   * overwrites this field on its way to the dispatch event and transport. The
+   * field exists only so the options object type-checks against the hop's
+   * spread — a caller cannot inject its own per-turn identity.
    */
   readonly turnId?: string;
 }

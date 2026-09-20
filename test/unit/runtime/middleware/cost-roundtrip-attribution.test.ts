@@ -242,10 +242,10 @@ describe("attachCostSubscriber — session-turn with token usage omits usageMiss
   });
 });
 
-// ─── AC12-13: schemaVersion 5 for both event kinds ──────────────────────────
+// ─── AC12-13: schemaVersion 6 for both event kinds ──────────────────────────
 
-describe("attachCostSubscriber — schemaVersion 5 for session-turn and error rows (AC12-13)", () => {
-  test("AC12: a session-turn event records a cost row with schemaVersion 5", () => {
+describe("attachCostSubscriber — schemaVersion 6 for session-turn and error rows (AC12-13)", () => {
+  test("AC12: a session-turn event records a cost row with schemaVersion 6", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -258,7 +258,7 @@ describe("attachCostSubscriber — schemaVersion 5 for session-turn and error ro
     expect(COST_ROW_SCHEMA_VERSION).toBe(6);
   });
 
-  test("AC13: a dispatch error event records an error row with schemaVersion 5", () => {
+  test("AC13: a dispatch error event records an error row with schemaVersion 6", () => {
     const errors: CostErrorEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
     const bus = new DispatchEventBus();

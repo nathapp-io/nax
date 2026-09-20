@@ -572,7 +572,7 @@ describe("attachCostSubscriber", () => {
     expect("effort" in recorded[0]).toBe(false);
   });
 
-  test("#1464 → US-003: rows carry schemaVersion 5 (bumped for rates / catalogVersion on successful rows)", () => {
+  test("#1464 → US-003: rows carry schemaVersion 6 (bumped for rates / catalogVersion on successful rows)", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();

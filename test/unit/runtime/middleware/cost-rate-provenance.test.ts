@@ -5,7 +5,7 @@
  *
  * Covers acceptance criteria 1-8, 10-12:
  *
- *   - AC1: every successful dispatch records `schemaVersion: 5` (bumped from 4).
+ *   - AC1: every successful dispatch records `schemaVersion: 6` (bumped from 4).
  *   - AC2: a session-turn event carrying `rates` copies them onto the row.
  *   - AC3: a session-turn event carrying BOTH `rates` and a wire-exact cost
  *     records `pricingSource: "wire"` and still carries `rates` — the wire
@@ -117,10 +117,10 @@ function makeRecordingAggregator(): ICostAggregator & {
   };
 }
 
-// ─── AC1: schemaVersion bumps from 4 to 5 ──────────────────────────────────
+// ─── AC1: schemaVersion bumps from 4 to 6 ──────────────────────────────────
 
 describe("attachCostSubscriber — schemaVersion 6 (US-003 AC1)", () => {
-  test("AC1: a successful dispatch records schemaVersion 5", () => {
+  test("AC1: a successful dispatch records schemaVersion 6", () => {
     const agg = makeRecordingAggregator();
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");
@@ -132,7 +132,7 @@ describe("attachCostSubscriber — schemaVersion 6 (US-003 AC1)", () => {
     expect(COST_ROW_SCHEMA_VERSION).toBe(6);
   });
 
-  test("AC1: complete events also record schemaVersion 5", () => {
+  test("AC1: complete events also record schemaVersion 6", () => {
     const agg = makeRecordingAggregator();
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");

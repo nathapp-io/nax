@@ -14,9 +14,15 @@
  * That is the shape the other `scripts/check-*` gates take, it runs in CI, and
  * it fires on every historical pass of this defect.
  *
+ * SCOPE — this guard covers ONLY the two dispatch event builders in
+ * `src/agents/manager-dispatch.ts`:
  * - `buildSessionTurnEvent` must forward `turnId` inside `protocolIds`, plus
  *   `callId` and `scopeId` on the event.
  * - `buildDispatchErrorEvent` must forward the flat `turnId`.
+ *
+ * It does NOT cover the hop forwarders (e.g. `src/runtime/session-run-hop.ts`)
+ * or any other emitter. A correlation id dropped at one of those seams passes
+ * this guard untouched, so this is not a whole-pipeline canary.
  *
  * Usage: bun run scripts/check-dispatch-field-forwarding.ts
  */
