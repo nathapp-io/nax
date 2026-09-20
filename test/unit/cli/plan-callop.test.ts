@@ -7,10 +7,9 @@
  * - options.auto branch
  *
  * Specifically tests the new behavior:
- * AC-4: Non-debate path calls callOp(ctx, planInteractiveOp, input)
+ * AC-4: plan path calls callOp(ctx, planInteractiveOp, input)
  * AC-5: interactionBridge set from chain or createInteractionBridge() fallback
  * AC-6: maxInteractionTurns set from config
- * AC-7: Debate fallback uses callOp instead of runInteractivePlan
  * AC-8: Returns outputPath on success
  * AC-9: Propagates error when outputPath doesn't exist
  */
@@ -146,10 +145,10 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // AC-4: Non-debate path calls callOp(ctx, planInteractiveOp, input)
+  // AC-4: plan path calls callOp(ctx, planInteractiveOp, input)
   // ────────────────────────────────────────────────────────────────────────────
 
-  test("AC-4: calls callOp with planInteractiveOp for non-debate path", async () => {
+  test("AC-4: calls callOp with planInteractiveOp for plan path", async () => {
     // Mock the callOp at the operations level
     // Since we're testing the CLI layer, we need to verify callOp is called
     // This test will fail initially because callOp is not yet called
@@ -258,40 +257,6 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
 
     // After migration, maxInteractionTurns from config should be threaded to callOp
     // This is verified through the CallContext passed to planInteractiveOp
-    expect(true).toBe(true); // Placeholder
-  });
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // AC-7: Debate fallback uses callOp instead of runInteractivePlan
-  // ────────────────────────────────────────────────────────────────────────────
-
-  test("AC-7: debate fallback calls callOp when all debaters fail", async () => {
-    const specPath = join(tmpDir, "spec.md");
-    _planDeps.readFile = mock(async (path: string) => {
-      if (path === specPath) return SAMPLE_SPEC;
-      if (path.endsWith("prd.json")) return JSON.stringify(SAMPLE_PRD);
-      return SAMPLE_SPEC;
-    });
-
-    const configWithDebate = makeNaxConfig({
-      debate: {
-        enabled: true,
-        stages: {
-          plan: {
-            debaters: [{ agent: "claude", model: "balanced" }],
-            rounds: 1,
-          },
-        },
-      },
-    });
-
-    await planCommand(tmpDir, configWithDebate, {
-      from: specPath,
-      feature: "url-shortener",
-    });
-
-    // After migration, when debate fails, the fallback should use callOp
-    // not the old runInteractivePlan() function
     expect(true).toBe(true); // Placeholder
   });
 
@@ -498,7 +463,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Bug[line-259]: silent catch block in non-debate recovery path swallows
+  // Bug[line-259]: silent catch block in the recovery path swallows
   // validatePlanOutput errors — error must propagate, not be silently discarded
   // ────────────────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { makeDebateRunner, makeInteractionChain, makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeInteractionChain, makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { SourceRoot } from "@/analyze";
 import { _planDeps, detectProjectName } from "@/cli";
 import type { NaxConfig } from "@/config";
@@ -95,7 +95,6 @@ function makeDeps(overrides: Partial<PlanDeps> = {}): PlanDeps {
       detectQuestion: async () => false,
       onQuestionDetected: async () => "",
     })),
-    createDebateRunner: mock(() => makeDebateRunner()),
     getLogger: makeLogger,
     ...overrides,
   };
@@ -134,8 +133,7 @@ describe("buildPlanModeContext", () => {
 
   test("assembles the shared context from the spec, workspace scan, and config slices", async () => {
     const fullConfig = makeNaxConfig({
-      plan: { ...DEFAULT_CONFIG.plan, timeoutSeconds: 42, citationThreshold: 0.9 },
-      debate: { ...DEFAULT_CONFIG.debate },
+      plan: { ...DEFAULT_CONFIG.plan, timeoutSeconds: 42 },
     });
     const deps = makeDeps();
     // createPlanRuntime returns the dep's runtime as-is, so this must be a full NaxRuntime

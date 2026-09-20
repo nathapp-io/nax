@@ -90,7 +90,6 @@ function makeCtx(overrides: {
       spawnSync: () => ({ stdout: Buffer.from(""), exitCode: 0 }),
       initInteractionChain: async () => null,
       createInteractionBridge: () => ({}) as PlanModeContext["interactionBridge"],
-      createDebateRunner: () => ({}) as ReturnType<PlanModeContext["deps"]["createDebateRunner"]>,
       getLogger: () => makeLogger(),
     },
   };

@@ -6,12 +6,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeMockCallContext, makeNaxConfig, makeTempDir, withTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, withTempDir } from "@test/helpers";
 import { _planDeps, detectProjectName } from "@/cli";
 import { resolvePlanModelSelection } from "@/cli/plan-runtime";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import type { DebateStageConfig } from "@/debate/types";
 
 describe("resolvePlanModelSelection", () => {
   test("resolves the configured tier for a real agent+config", () => {
@@ -120,26 +119,6 @@ describe("_planDeps — real implementations", () => {
   test("initInteractionChain returns null in headless mode with no interaction config", async () => {
     const result = await _planDeps.initInteractionChain(makeNaxConfig(), true);
     expect(result).toBeNull();
-  });
-
-  test("createDebateRunner constructs a real DebateRunner instance", () => {
-    const stageConfig: DebateStageConfig = {
-      enabled: true,
-      resolver: { type: "majority-fail-closed" },
-      sessionMode: "one-shot",
-      rounds: 1,
-      debaters: [{ agent: "claude", model: "claude-3-5-haiku-20241022" }],
-    };
-    const runner = _planDeps.createDebateRunner({
-      ctx: makeMockCallContext({ packageDir: "/tmp/work", storyId: "US-001", featureName: "f" }),
-      stage: "plan",
-      stageConfig,
-      config: makeNaxConfig(),
-      workdir: "/tmp",
-      featureName: "f",
-    });
-    expect(runner).toBeDefined();
-    expect(typeof runner.run).toBe("function");
   });
 
   test("getLogger returns the process logger", () => {

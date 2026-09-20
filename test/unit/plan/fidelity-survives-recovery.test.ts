@@ -9,9 +9,8 @@
  * `### Modifies` authority still reaches disk.
  */
 import { describe, expect, test } from "bun:test";
-import { makeDebateRunner, makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
-import { planConfigSelector } from "@/config";
-import { _refinePlanDeps, _singlePlanDeps, DebatePlanStrategy, RefinePlanStrategy, SinglePlanStrategy } from "@/plan";
+import { makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { _refinePlanDeps, _singlePlanDeps, RefinePlanStrategy, SinglePlanStrategy } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
 
 const SPEC = `# SPEC-x
@@ -66,12 +65,6 @@ function makeCtx(written: { value: string | null }): PlanModeContext {
     spawnSync: () => ({ stdout: Buffer.from(""), exitCode: 0 }),
     initInteractionChain: async () => null,
     createInteractionBridge: () => ({ detectQuestion: async () => false, onQuestionDetected: async () => "" }),
-    createDebateRunner: () =>
-      makeDebateRunner({
-        runPlan: async () => {
-          throw new Error("debate stage failed");
-        },
-      }),
     getLogger: () => makeLogger(),
   };
 
@@ -156,24 +149,6 @@ describe("#1494 — fidelity repairs survive the disk-recovery path", () => {
     } finally {
       _singlePlanDeps.callOp = original;
     }
-    expectModifiedFilesSurvived(written);
-  });
-
-  test("debate: a throw still persists the spec's Modifies authority", async () => {
-    const written = { value: null as string | null };
-    const ctx = makeCtx(written);
-    // The debate runner throws inside execute's try — the same recovery branch
-    // refine takes, reached through writeOrRecoverPrd.
-    const ctxWithStage: PlanModeContext = {
-      ...ctx,
-      config: planConfigSelector.select(
-        makeNaxConfig({ plan: { specGuard: false }, debate: { stages: { plan: { enabled: true } } } }),
-      ),
-    };
-
-    const result = await new DebatePlanStrategy().execute(ctxWithStage);
-    expect(result.outputPath).toBe(ctx.outputPath);
-    expect(result.degraded?.reason).toBe("debate stage failed");
     expectModifiedFilesSurvived(written);
   });
 

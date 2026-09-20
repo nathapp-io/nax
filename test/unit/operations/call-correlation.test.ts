@@ -161,7 +161,7 @@ describe("callOp kind:complete — callId/scopeId forwarding (ACs 7, 8)", () => 
         packageView: runtime.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
-        scopeId: "debate-round-1",
+        scopeId: "review-round-1",
       },
       echoCompleteOp,
       { text: "hi" },
@@ -170,7 +170,7 @@ describe("callOp kind:complete — callId/scopeId forwarding (ACs 7, 8)", () => 
     const opts = (agentManager.completeAs as ReturnType<typeof mock>).mock.calls[0]?.[2] as
       | { scopeId?: string }
       | undefined;
-    expect(opts?.scopeId).toBe("debate-round-1");
+    expect(opts?.scopeId).toBe("review-round-1");
   });
 
   test("two calls without ctx.callId get distinct callIds", async () => {

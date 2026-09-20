@@ -330,7 +330,7 @@ describe("AgentManager.completeAsWithFallback dispatch-error path", () => {
       storyId: "US-001",
       callId: "call-42",
       scopeId: "scope-eu",
-      sessionRole: "synthesis",
+      sessionRole: "reviewer-adversarial",
       pipelineStage: "complete",
     };
 
@@ -361,7 +361,7 @@ describe("AgentManager.completeAsWithFallback dispatch-error path", () => {
     expect(event?.storyId).toBe("US-001");
     expect(event?.callId).toBe("call-42");
     expect(event?.scopeId).toBe("scope-eu");
-    expect(event?.sessionRole).toBe("synthesis");
+    expect(event?.sessionRole).toBe("reviewer-adversarial");
   });
 
   test("attributes a missing fallback dispatch error to the fallback agent and its resolved model", async () => {

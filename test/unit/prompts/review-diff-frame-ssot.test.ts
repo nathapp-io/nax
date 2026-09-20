@@ -9,7 +9,7 @@
  *    invariant is agreement with the SSOT.
  *
  * E. Native (`Git` tool) and ACP (shell) renderings of the same builder must
- *    carry the same exclusions. Before this change the semantic/debate arms'
+ *    carry the same exclusions. Before this change the semantic arm's
  *    native full diff had no `fullExclude`, so a single-package repo on the
  *    native arm saw `.nax/` artifacts the ACP arm did not (#2096 territory — the
  *    delivered prompt is assembled at dispatch, so this asserts builder output).
@@ -21,8 +21,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { makeAdversarialReviewConfig, makeSemanticReviewConfig } from "@test/helpers";
-import type { DebateResolverContext } from "@/debate/types";
-import { DebatePromptBuilder, ReviewPromptBuilder } from "@/prompts";
+import { ReviewPromptBuilder } from "@/prompts";
 import { AdversarialReviewPromptBuilder } from "@/prompts/builders/adversarial-review-builder";
 import { applyDiffAccess, DIFF_SCOPE_OMISSION_NOTICE } from "@/prompts/sections/diff-access";
 import type { SemanticStory } from "@/review/types";
@@ -38,26 +37,11 @@ const STORY: SemanticStory = {
   acceptanceCriteria: ["LLM is called with story diff"],
 };
 
-const DEBATE_CTX: DebateResolverContext = { resolverType: "synthesis" };
-
 function semanticPrompt(): string {
   return new ReviewPromptBuilder().buildSemanticReviewPrompt(
     STORY,
     makeSemanticReviewConfig({ model: "balanced", diffMode: "ref", rules: [] }),
     { mode: "ref", storyGitRef: REF, stat: STAT, excludePatterns: [":!*.test.ts"] },
-  );
-}
-
-function debatePrompt(): string {
-  return new DebatePromptBuilder(
-    { taskContext: "task", outputFormat: "format", stage: "review" },
-    { debaters: [], sessionMode: "stateful" },
-  ).buildResolverPrompt(
-    [],
-    [],
-    { mode: "ref", storyGitRef: REF, stat: STAT, productionExcludePatterns: [":!*.test.ts"], pathspec: "." },
-    { id: "US-001", title: "Story", acceptanceCriteria: ["AC"] },
-    DEBATE_CTX,
   );
 }
 
@@ -77,7 +61,6 @@ function adversarialPrompt(): string {
 
 const BUILDERS: ReadonlyArray<[string, () => string]> = [
   ["semantic", semanticPrompt],
-  ["debate", debatePrompt],
   ["adversarial", adversarialPrompt],
 ];
 
@@ -130,7 +113,6 @@ describe("review diff frame — nax-exclusion SSOT (Part A)", () => {
 describe("review diff frame — native/ACP exclusion parity (Part E)", () => {
   test.each([
     ["semantic", semanticPrompt],
-    ["debate", debatePrompt],
   ])("%s: native and ACP full diffs carry the same nax exclusions", (_label, build) => {
     const prompt = build();
     expect(acpFullExclude(prompt)).toEqual([...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS]);

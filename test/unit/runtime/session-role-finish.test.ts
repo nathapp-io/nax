@@ -8,7 +8,7 @@ import { isSessionRole, KNOWN_SESSION_ROLES } from "@/runtime";
  * Verifies "finish-review-spec", "finish-review-quality", "finish-fix", and
  * "finish-narrative" are registered as CanonicalSessionRole members and can be
  * used with the session role type guards. Follows the shape established by
- * session-role-plan-critic.test.ts.
+ * session-role.test.ts.
  */
 
 const FINISH_ROLES = ["finish-review-spec", "finish-review-quality", "finish-fix", "finish-narrative"] as const;

@@ -141,7 +141,6 @@ describe("UsageAuditor", () => {
     ["US-001-repo-scoped-test-fix", "repo-scoped-test-fix"],
     ["US-001-reviewer-semantic", "reviewer-semantic"],
     ["US-001-reviewer-adversarial", "reviewer-adversarial"],
-    ["US-001-plan-draft", "plan-draft"],
     ["US-001-finish-review-quality", "finish-review-quality"],
     ["main", "main"],
   ] as const)("derives sessionRole from %s as longest trailing match %s", async (sessionName, expected) => {
@@ -154,7 +153,7 @@ describe("UsageAuditor", () => {
     });
   });
 
-  test.each([["US-001-frobnicate"], ["US-001-debate-round-1"], ["debate-xyz"]])(
+  test.each([["US-001-frobnicate"], ["US-001-unrecognised-role"]])(
     "leaves sessionRole absent for unrecognised suffix %s",
     async (sessionName) => {
       await withTempDir(async (dir) => {

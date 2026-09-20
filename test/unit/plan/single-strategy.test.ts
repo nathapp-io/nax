@@ -1,7 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
   firstCall,
-  makeDebateRunner,
   makeLogger,
   makeMockAgentManager,
   makeMockRuntime,
@@ -47,7 +46,6 @@ function makeDeps(exists = false): PlanDeps {
       detectQuestion: async () => false,
       onQuestionDetected: async () => "",
     }),
-    createDebateRunner: () => makeDebateRunner(),
     getLogger: makeLogger,
   };
 }

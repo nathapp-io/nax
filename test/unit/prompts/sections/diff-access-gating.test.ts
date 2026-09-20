@@ -61,8 +61,8 @@ describe("AC1 — wrapDiffAccess + acp protocol yields the ACP body byte-for-byt
   });
 
   test("a wrapDiffAccess call with its existing two-argument signature still produces a region applyDiffAccess can read under acp", () => {
-    // The two-arg shape is the live producer signature for three builders
-    // (review-builder.ts:356, debate-builder.ts:464, adversarial-review-builder.ts:303).
+    // The two-arg shape is the live producer signature for two builders
+    // (review-builder.ts:356, adversarial-review-builder.ts:303).
     // Verify the legacy entry path is preserved byte-for-byte under acp.
     const region = wrapDiffAccess({ ref: "r1", fullExclude: ["."] }, "ONE LINE\n");
     const out = applyDiffAccess(`head\n${region}tail\n`, "acp");
