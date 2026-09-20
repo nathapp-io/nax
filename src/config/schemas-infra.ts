@@ -448,6 +448,22 @@ export const CuratorThresholdsSchema = z.object({
   unchangedOutcome: z.number().int().nonnegative().default(2),
 });
 
+/**
+ * Curator auto-prune retention — US-004.
+ *
+ * `pruneThresholdBytes` is the rollup byte size above which the post-run hook
+ * invokes `pruneRollup`. Below it, the hook is a no-op (reading the file's size
+ * is effectively free; full-scanning it before every run is not). `keepRuns`
+ * caps the run-id set passed to `pruneRollup` as `keepRunIds`. 64 MiB and 50
+ * runs match the description: a measured 219 MB rollup was already mostly
+ * beyond the heuristic window, so anything below ~64 MiB is below the live
+ * working set and not worth rewriting.
+ */
+export const CuratorRetentionConfigSchema = z.object({
+  pruneThresholdBytes: z.number().int().nonnegative().default(67108864),
+  keepRuns: z.number().int().nonnegative().default(50),
+});
+
 export const CuratorConfigSchema = z.object({
   enabled: z.boolean().default(true),
   rollupPath: z
@@ -463,6 +479,10 @@ export const CuratorConfigSchema = z.object({
     escalationChain: 2,
     staleChunkRuns: 2,
     unchangedOutcome: 2,
+  }),
+  retention: CuratorRetentionConfigSchema.default({
+    pruneThresholdBytes: 67108864,
+    keepRuns: 50,
   }),
 });
 

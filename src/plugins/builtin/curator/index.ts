@@ -8,6 +8,7 @@
 import { mkdir } from "node:fs/promises";
 import * as path from "node:path";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
+import { getCuratorRetention, maybePruneRollup } from "./auto-prune";
 import { collectObservations } from "./collect";
 import type { CuratorThresholds } from "./heuristics";
 import { runHeuristics } from "./heuristics";
@@ -103,6 +104,24 @@ const curatorAction: IPostRunAction = {
         // run-scoped collection is what keeps each finding in it exactly once.
         await appendToRollup(observations, rollupPath);
 
+        // Size-gated auto-prune (US-004). The gate reads the rollup byte size
+        // and only invokes pruneRollup above `retention.pruneThresholdBytes`;
+        // below it, this is a free no-op. Rejections are caught inside
+        // `maybePruneRollup` — this hook stays an observer, so a prune miss
+        // must never fail the run that triggered it.
+        const retention = getCuratorRetention(context);
+        const pruneOutcome = await maybePruneRollup({
+          rollupPath,
+          projectKey: curatorContext.projectKey,
+          retention,
+        });
+        if (pruneOutcome.error) {
+          context.logger.warn("Curator auto-prune failed", {
+            error: pruneOutcome.error,
+            rollupPath,
+          });
+        }
+
         const thresholds = getCuratorThresholds(context);
         const window = await readHeuristicWindow(rollupPath, HEURISTIC_WINDOW_RUNS, {
           projectKey: curatorContext.projectKey,
@@ -180,7 +199,8 @@ export const curatorPlugin: NaxPlugin = {
   },
 };
 
-// US-004 — auto-prune stubs. Re-exported so tests reach them through the barrel.
+// US-004 — auto-prune retention gate. Re-exported so tests reach them through
+// the barrel rather than only its callers.
 export type { CuratorRetentionConfig } from "./auto-prune";
 export { DEFAULT_RETENTION, getCuratorRetention, maybePruneRollup } from "./auto-prune";
 // Both rollup readers depend on this reassembling rows across chunk boundaries;
