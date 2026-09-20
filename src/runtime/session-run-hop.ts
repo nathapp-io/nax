@@ -26,8 +26,11 @@ export type SessionRunHopFn = (agentName: string, options: AgentRunOptions) => P
 export function createSessionRunHop(
   sessionManager: ISessionManager,
   getAgentManager?: () => IAgentManager | undefined,
+  runId?: string,
 ): SessionRunHopFn {
-  return async (agentName: string, options: AgentRunOptions): Promise<SessionRunHopResult> => {
+  return async (agentName: string, incoming: AgentRunOptions): Promise<SessionRunHopResult> => {
+    const effectiveRunId = incoming.runId ?? runId;
+    const options: AgentRunOptions = effectiveRunId !== undefined ? { ...incoming, runId: effectiveRunId } : incoming;
     const startMs = Date.now();
     const sessionName =
       options.sessionHandle ??

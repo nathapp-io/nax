@@ -399,7 +399,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     middleware,
     runId,
     sendPrompt: (handle, prompt, sendOpts) => sessionManager.sendPrompt(handle, prompt, sendOpts),
-    runHop: createSessionRunHop(sessionManager, () => agentManager),
+    runHop: createSessionRunHop(sessionManager, () => agentManager, runId),
     dispatchEvents,
     // Fallback swap identity resolution (fallback-model-identity.ts) needs `models`,
     // which agentManagerConfigSelector deliberately excludes from AgentManagerConfig

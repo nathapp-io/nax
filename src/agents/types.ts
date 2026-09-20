@@ -274,6 +274,12 @@ export interface AgentRunOptions {
   /** Caller-supplied region id forwarded from CallContext.scopeId; forwarded to dispatch events. */
   readonly scopeId?: string;
   /**
+   * Run-level id, from `NaxRuntime.runId`. Forwarded so run-scoped sinks built
+   * on the dispatch path (tool-audit) can stamp it; the cost and review-audit
+   * sinks capture the same value as a constructor parameter instead.
+   */
+  readonly runId?: string;
+  /**
    * Fires once the agent has established its physical session and the
    * adapter has captured its protocol identifiers — before any prompt has
    * been sent (#591).
