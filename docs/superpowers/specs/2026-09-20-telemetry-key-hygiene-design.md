@@ -429,12 +429,85 @@ The corresponding risk is that a schema with no reader drifts unnoticed. The
   neither sink carries the other's. Either works; both surviving is what
   forces every reader to learn two. Renaming one is cheaper than that, and this
   spec does not decide which.
-- **Whether `turnId` should be minted or derived.** A random id is simplest. A
-  derivation from `(recordId, ordinal)` would additionally make cost rows
-  joinable to prompt-audit's existing `turn` ordinal
-  (`src/runtime/prompt-auditor.ts:236-241`), which is keyed on `recordId` and is
-  today joinable to nothing — cost rows do not copy `protocolIds` at all.
+- ~~**Whether `turnId` should be minted or derived.**~~ **RESOLVED 2026-09-20:
+  minted.** See §8.
 - **Whether `session-run-hop` and `build-hop-callback` should stop being two
   implementations.** They carry three separate "the two must not drift" comments
   (`session-run-hop.ts:44`, `:100`; `build-hop-callback.ts:506`) and have
   drifted anyway (#2156). Out of scope here; worth its own decision.
+
+## 8. Resolution — `turnId` is minted, and prompt-audit copies it
+
+§7 asked whether `turnId` should be a random id or a derivation from
+`(recordId, ordinal)`, the latter being attractive because it would also make
+cost rows joinable to prompt-audit's existing `turn` ordinal.
+
+**The derivation is not available, for three independent reasons. Measured
+2026-09-20 against the live store (2,960 run-type prompt-audit rows).**
+
+**1. `(recordId, turn)` is not unique — it is the strongest argument and it is
+empirical.**
+
+| key | distinct | collisions |
+|---|---:|---|
+| `recordId` | 1,927 | 37 span more than one `runId` (1.9%), worst 4 |
+| `(recordId, turn)` | 2,169 | **404 occur more than once (18.6%), worst 9** |
+
+`turnId` exists to satisfy §5 criterion 2 — every `turnId` matches **exactly
+one** cost row. A key that repeats on 18.6% of the corpus does not do that. The
+repeats are re-runs: `recordId` is reused and the ordinal restarts at 1, so the
+pair recurs. Qualifying it as `(runId, recordId, turn)` restores uniqueness, but
+at that point the id is unique only in composite while a minted id is unique on
+its own — the derivation has bought nothing and costs the two problems below.
+
+**2. On native, `recordId` is the value §1.4 already disqualified.**
+`src/agents/native/session/session.ts:162` sets
+`protocolIds: { recordId: nativeSessionId(name), sessionId: nativeSessionId(name) }`
+— both are `sha256(sessionName).slice(0,32)`. §1.4 rejected `sessionId` as a key
+precisely because it is a pure function of a label that is stable across re-runs.
+Deriving `turnId` from `recordId` re-admits that defect through the other name.
+
+**3. The ordinal is unreachable, and copying it re-creates this spec's own
+defect class.** The counter is `PromptAuditor._turnOrdinals`
+(`src/runtime/prompt-auditor.ts:227`, `_nextTurn` at `:236-241`) — a **private,
+in-memory** `Map` on a per-run instance, keyed `recordId ?? sessionName ?? ""`,
+incremented inside `record()`. `runAsSession`, where §2.1 requires the id to be
+minted (before `sendPrompt`), cannot see it. Reproducing it means a second
+counter that must match the first exactly, including its three-way key fallback
+and its behaviour when a turn fails before it is recorded. That is a
+"the two must not drift" surface — the very shape §1.1 documents six passes of,
+and §7 already names three existing instances of.
+
+### 8.1 The derivation's benefit is obtainable without the derivation
+
+The only thing the derivation bought was a cost ↔ prompt-audit join. That is
+available directly, because **both sinks are built from the same event**:
+`attachCostSubscriber` and `attachAuditSubscriber`
+(`src/runtime/middleware/cost.ts`, `src/runtime/middleware/audit.ts:5-30`) are
+two subscribers on one `IDispatchEventBus`, and the audit entry **already**
+copies `event.protocolIds.recordId` and `.sessionId` inside its
+`event.kind === "session-turn" && { … }` block.
+
+So once Task 5 stamps `protocolIds.turnId` on the event, prompt-audit copies it
+in that same block:
+
+```ts
+      ...(event.kind === "session-turn" && {
+        sessionId: event.protocolIds.sessionId ?? null,
+        recordId: event.protocolIds.recordId ?? null,
+        turnId: event.protocolIds.turnId ?? null,   // ← added
+        …
+      }),
+```
+
+**Decision: mint via `newCorrelationId()`, and copy the minted `turnId` onto the
+prompt-audit entry.** One value, now four consumers — the cost row, the
+`tool-audit` record, the dispatch event, and the prompt-audit row — joining
+exactly rather than by a reconstructed ordinal. This is strictly better than the
+derivation on every count: it is 1:1 rather than ordinal-matched, it does not
+inherit `recordId`'s collisions, it needs no second counter, and it works on ACP,
+where `recordId` is the provider's volatile session id.
+
+The existing prompt-audit `turn` ordinal is **not** removed. It remains a useful
+within-session position, and it keeps working for the pre-`turnId` history that
+will never carry the new field.

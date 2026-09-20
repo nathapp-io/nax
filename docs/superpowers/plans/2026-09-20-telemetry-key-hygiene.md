@@ -42,6 +42,12 @@
 > | M3 | Task 2 Step 1 | the `ctx` cast crashed instead of failing; `runId` cannot be supplied to `makeTestRuntime`. Rewritten against the file's real pattern. |
 > | m2 | Task 5 | "Four assertions" was five, and is eight once B4's file is counted. |
 >
+> **Spec §7's `turnId` open question is resolved: MINTED** (spec §8). The
+> `(recordId, ordinal)` derivation was measured and rejected — that pair repeats
+> on 18.6% of the live corpus. Task 5 gains a Step 5b copying the minted id onto
+> the prompt-audit entry, which delivers the derivation's only benefit as an
+> exact 1:1 join.
+>
 > Task 0's Step 3 contingency is also pre-resolved: `afterTool` carries no turn
 > context, so **follow Task 6 as written**.
 >
@@ -704,6 +710,8 @@ git commit -m "feat(tool-audit): emit callId and scopeId on every recorded tool 
 - Modify: `src/agents/manager-dispatch.ts` (`buildSessionTurnEvent` **and** `buildDispatchErrorEvent`)
 - Modify: `src/runtime/dispatch-events.ts` (`DispatchErrorEvent` gains `turnId?: string` — see Step 4)
 - Modify: `src/runtime/middleware/cost.ts`
+- Modify: `src/runtime/middleware/audit.ts` (prompt-audit copies `turnId` — see Step 5b)
+- Modify: `src/runtime/prompt-auditor.ts` (`PromptAuditEntry` gains `turnId?: string | null`)
 - Test: `test/unit/agents/manager-dispatch-emission.test.ts`, `test/unit/runtime/middleware/cost.test.ts`, `test/unit/runtime/middleware/cost-roundtrip-attribution.test.ts`, `test/unit/runtime/middleware/cost-rate-provenance.test.ts`
 
 > There is no `manager-dispatch.test.ts`. The suite is split:
@@ -712,7 +720,7 @@ git commit -m "feat(tool-audit): emit callId and scopeId on every recorded tool 
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `SendTurnOpts.turnId?: string` (read by Task 6), `protocolIds.turnId` populated on every `SessionTurnDispatchEvent`, and `turnId` on every cost row.
+- Produces: `SendTurnOpts.turnId?: string` (read by Task 6), `protocolIds.turnId` populated on every `SessionTurnDispatchEvent`, `DispatchErrorEvent.turnId?`, `turnId` on every cost row, and `turnId` on every prompt-audit run entry (§8.1).
 
 > **Design correction — read this before implementing.** The spec says to
 > populate `protocolIds.turnId` "at `manager-dispatch.ts:128`". That location
@@ -768,7 +776,15 @@ In `src/agents/manager.ts`, inside `runAsSession`, above the `sendPrompt` call:
     const turnId = newCorrelationId();
 ```
 
-importing `newCorrelationId` from `src/operations/call-resolvers`. Pass it into the turn:
+importing `newCorrelationId` from `src/operations/call-resolvers`.
+
+> **Minted, not derived — spec §7 is resolved in spec §8.** Do not "improve"
+> this into a derivation from `(recordId, ordinal)`. Measured on the live store:
+> that pair repeats on **18.6%** of rows (404 of 2,169, worst 9), so it cannot
+> satisfy §5 criterion 2 ("matches exactly one cost row"). On native `recordId`
+> is `sha256(sessionName)` — the value §1.4 already rejected — and the ordinal
+> lives in `PromptAuditor._turnOrdinals`, a private in-memory Map unreachable
+> from here. A random id is correct AND simpler; §8 has the full argument. Pass it into the turn:
 
 ```ts
     const rawResult = await sendPrompt(handle, prompt, { ...opts, turnId });
@@ -849,6 +865,42 @@ Bump `COST_ROW_SCHEMA_VERSION` to `6` and add a changelog entry in the comment b
  *     is per-callOp-invocation and is 1:N over rows. Absent on v5 and earlier,
  *     and not backfillable.
 ```
+
+- [ ] **Step 5b: Copy it onto the prompt-audit entry (spec §8.1)**
+
+This is what the minted id buys over the derivation, and it is three lines. The
+cost row and the prompt-audit entry are built by two subscribers on the **same**
+bus from the **same** event, and the audit entry already copies its siblings.
+
+In `src/runtime/middleware/audit.ts`, inside the existing
+`...(event.kind === "session-turn" && { … })` block (`:21-27`), beside
+`recordId`:
+
+```ts
+        turnId: event.protocolIds.turnId ?? null,
+```
+
+and declare it on `PromptAuditEntry` in `src/runtime/prompt-auditor.ts`, beside
+the existing `recordId`:
+
+```ts
+  /**
+   * The turn this entry belongs to — the same minted id the cost row carries,
+   * so the two sinks join 1:1. Distinct from `turn`, which is a within-session
+   * ORDINAL (`_nextTurn`) and is not unique across runs: `(recordId, turn)`
+   * repeats on 18.6% of the historical corpus. Absent on pre-turnId history.
+   */
+  readonly turnId?: string | null;
+```
+
+Leave `turn` and `_nextTurn` exactly as they are — the ordinal stays useful as a
+within-session position and is the only thing the old rows have.
+
+Assert it in the same test that covers Step 5, or alongside it: emit one
+`session-turn` event carrying `protocolIds.turnId` and assert the recorded
+prompt-audit entry and the recorded cost row carry the **same** value. That
+single assertion is the join this whole tier exists to create — make it explicit
+rather than checking the two fields separately.
 
 - [ ] **Step 6: Write the cost-row test**
 
