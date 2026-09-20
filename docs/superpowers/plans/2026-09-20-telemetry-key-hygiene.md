@@ -269,7 +269,7 @@ git commit -m "feat(tool-audit): add schemaVersion and an optional run-scoped he
 - Modify: `src/operations/call-run-options.ts`
 - Modify: `src/runtime/index.ts` (at the `createSessionRunHop(...)` wiring)
 - Modify: `src/runtime/session-run-hop.ts`
-- Test: `test/unit/operations/call-run-options.test.ts` (create if absent)
+- Test: `test/unit/operations/call-run-options.test.ts` (exists — append, do not recreate)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -277,7 +277,7 @@ git commit -m "feat(tool-audit): add schemaVersion and an optional run-scoped he
 
 - [ ] **Step 1: Write the failing test**
 
-Create or append to `test/unit/operations/call-run-options.test.ts`:
+Append to the existing `test/unit/operations/call-run-options.test.ts` (it already has a `describe` block and imports — add the test inside it rather than duplicating the scaffolding):
 
 ```ts
 import { describe, expect, test } from "bun:test";
@@ -414,11 +414,9 @@ test("the tool-audit file carries the run-scoped header", async () => {
   });
   await support?.auditSink.flush();
 
-  const files = await Array.fromAsync(
-    new Bun.Glob("**/*.json").scan({ cwd: join(root, "tool-audit"), absolute: true }),
-  );
-  expect(files).toHaveLength(1);
-  const parsed = JSON.parse(await readFile(files[0] as string, "utf8"));
+  const written = [...new Bun.Glob("**/*.json").scanSync(join(root, "tool-audit"))];
+  expect(written).toHaveLength(1);
+  const parsed = JSON.parse(await readFile(join(root, "tool-audit", written[0] as string), "utf8"));
   expect(parsed.runId).toBe("run-header-1");
   expect(parsed.featureName).toBe("auth-system");
   expect(parsed.storyId).toBe("US-007");
@@ -605,10 +603,8 @@ test("correlation ids reach the ledger from the run options", async () => {
   await support?.runtime.callTool("Read", { path: "nope.ts" });
   await support?.auditSink.flush();
 
-  const files = await Array.fromAsync(
-    new Bun.Glob("**/*.json").scan({ cwd: join(root, "tool-audit"), absolute: true }),
-  );
-  const parsed = JSON.parse(await readFile(files[0] as string, "utf8"));
+  const written = [...new Bun.Glob("**/*.json").scanSync(join(root, "tool-audit"))];
+  const parsed = JSON.parse(await readFile(join(root, "tool-audit", written[0] as string), "utf8"));
   expect(parsed.calls[0].callId).toBe("call-wired");
   expect(parsed.calls[0].scopeId).toBe("scope-wired");
 });
@@ -640,7 +636,11 @@ git commit -m "feat(tool-audit): emit callId and scopeId on every recorded tool 
 - Modify: `src/agents/session-types.ts` (`SendTurnOpts`)
 - Modify: `src/agents/manager-dispatch.ts` (`buildSessionTurnEvent`)
 - Modify: `src/runtime/middleware/cost.ts`
-- Test: `test/unit/agents/manager-dispatch.test.ts`, `test/unit/runtime/middleware/cost.test.ts` (match the real paths found in Task 0)
+- Test: `test/unit/agents/manager-dispatch-emission.test.ts`, `test/unit/runtime/middleware/cost.test.ts`
+
+> There is no `manager-dispatch.test.ts`. The suite is split:
+> `manager-dispatch-emission.test.ts`, `-complete`, `-error-event`,
+> `-error-event-model`, `-rates`. Emission is the right home for this.
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -674,7 +674,7 @@ describe("buildSessionTurnEvent", () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `bun test test/unit/agents/manager-dispatch.test.ts --timeout=30000`
+Run: `bun test test/unit/agents/manager-dispatch-emission.test.ts --timeout=30000`
 Expected: FAIL — `protocolIds.turnId` is `undefined`.
 
 - [ ] **Step 3: Accept and stamp the turnId**
@@ -685,11 +685,12 @@ Expected: FAIL — `protocolIds.turnId` is `undefined`.
     protocolIds: {
       sessionId: handle.protocolIds?.sessionId ?? null,
       recordId: handle.protocolIds?.recordId ?? null,
-      ...(args.turnId !== undefined ? { turnId: args.turnId } : {}),
+      ...(input.turnId !== undefined ? { turnId: input.turnId } : {}),
     },
 ```
 
-and add `turnId?: string` to that function's argument type.
+and add `turnId?: string` to that function's argument type. The parameter is
+named `input` (`buildSessionTurnEvent(input: { … })`), not `args`.
 
 - [ ] **Step 4: Mint it in `runAsSession`, before the turn runs**
 
@@ -765,7 +766,18 @@ test("a cost row carries the turnId from the dispatch event", () => {
 - [ ] **Step 7: Run the tests, typecheck, lint**
 
 Run: `bun run test && bun run typecheck && bun run lint`
-Expected: all clean. Expect to update any existing test that pins `COST_ROW_SCHEMA_VERSION` to 5.
+Expected: all clean.
+
+Four assertions hard-pin the old version and MUST be updated to 6 — they will
+not fail informatively if missed, they will simply fail:
+
+- `test/unit/runtime/middleware/cost-roundtrip-attribution.test.ts:257` (`schemaVersion).toBe(5)`)
+- `test/unit/runtime/middleware/cost-roundtrip-attribution.test.ts:258` (`COST_ROW_SCHEMA_VERSION).toBe(5)`)
+- `test/unit/runtime/middleware/cost-roundtrip-attribution.test.ts:270` (error row)
+- `test/unit/runtime/middleware/cost.test.ts:581-582`
+
+`cost.test.ts:400,415` compare against the constant rather than a literal and
+need no change.
 
 - [ ] **Step 8: Commit**
 
@@ -784,7 +796,11 @@ git commit -m "feat(telemetry): mint a turnId per turn and stamp it on the cost 
 - Modify: `src/agents/run-interaction-handler.ts`
 - Modify: `src/tools/runtime.ts` (`callTool`)
 - Modify: `src/tools/tool-audit.ts` (`ToolCallRecord`)
-- Test: `test/unit/tools/tool-audit.test.ts`, `test/unit/agents/native/session/` (a turn-loop test)
+- Test: `test/unit/tools/tool-audit.test.ts`, `test/unit/agents/native/turn-loop.test.ts`
+
+> Note the directory: the main turn-loop suite is at
+> `test/unit/agents/native/turn-loop.test.ts`. Only the invalid-input tests
+> live under `native/session/`.
 
 **Interfaces:**
 - Consumes: `SendTurnOpts.turnId` (Task 5).
@@ -1036,8 +1052,11 @@ git commit -m "feat(tool-audit): prefix the ledger filename with the runId"
 ### Task 8: Extend the #1907 canary guard
 
 **Files:**
-- Modify: the canary guard — locate it first (see Step 1)
-- Test: the guard's own test file
+- Create: `scripts/check-dispatch-field-forwarding.ts`
+- Modify: `package.json` (`check:*` scripts and `check:all`)
+
+> The spec calls this "extending #1907's canary guard". Verification found no
+> such guard in the tree, so this task writes one. See Step 1.
 
 **Interfaces:**
 - Consumes: everything above.
@@ -1048,40 +1067,78 @@ git commit -m "feat(tool-audit): prefix the ledger filename with the runId"
 > impossible and did not catch it. Adding fields without extending the guard
 > leaves pass seven exactly as likely.
 
-- [ ] **Step 1: Locate the guard**
+- [ ] **Step 1: Locate the guard — expect NOT to find one**
+
+> **Verified 2026-09-20 against `main` @ `13d6bfcb1`: the "#1907 canary guard"
+> is not locatable in this tree.** `grep -rn "1907" src/ test/ scripts/
+> --include="*.ts"` returns one unrelated hit (a string-length fixture). Every
+> `canary` match in `src/` is a release-version string (`0.80.0-canary.3`).
+> None of the 28 `scripts/check-*` guards is a dispatch-field-forwarding check
+> — `check-dispatch-context.sh` is an ADR-020 nullable-manager guard, which is
+> a different thing.
+>
+> The 2026-09-08 spec's work itself DID ship (`modelPassed` forwarding is live
+> at `src/runtime/middleware/review-audit.ts:70`), so what is missing is the
+> guard, not the fix. Treat "extend the guard" as **"write the guard"**.
+
+Confirm the finding still holds before choosing a branch:
 
 ```bash
-grep -rn "1907\|canary" src/ scripts/ test/ | grep -iv "node_modules" | head -20
-cat docs/superpowers/specs/2026-09-08-ledger-and-audit-field-truth-design.md | sed -n '160,210p'
+grep -rn "1907" src/ test/ scripts/ --include="*.ts" | head
+grep -rln "canary" scripts/ | head
 ```
 
-The prior spec's §3 and §8 describe the guard and its intended reach. Read both before editing.
+- **If a real field-forwarding guard turns up**, extend it and skip to Step 4.
+- **If it does not** (expected), create one — Steps 2–4 below.
 
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 2: Write the guard**
 
-Add a case asserting the guard rejects an emitter that drops `callId`, `scopeId` or `protocolIds.turnId`:
+Create `scripts/check-dispatch-field-forwarding.ts`, following the house
+pattern of the existing `scripts/check-*.ts` guards (read
+`scripts/check-logger-storyid.ts` first for the idiom — plain script, prints
+`OK:` on success, `ERROR:` plus offending lines and `exit 1` on failure).
 
-```ts
-test("the canary rejects a session-turn emitter that drops turnId", () => {
-  const event = buildSessionTurnEvent({ /* …no turnId */ } as never);
-  expect(() => assertCanaryFields(event)).toThrow(/turnId/);
-});
+It must fail when a dispatch event builder drops a correlation id. The minimum
+viable check, which is what the four prior passes of this defect class would
+each have been caught by: assert that `buildSessionTurnEvent` forwards every
+field the plan added, by reading the source of `src/agents/manager-dispatch.ts`
+and requiring the literal identifiers `callId`, `scopeId` and `turnId` inside
+its `protocolIds`/event construction.
+
+A source-text check is weak but it is the shape the other 28 guards take, it
+runs in CI, and it would have fired on all four historical passes. Do not
+gold-plate it into a type-level analysis.
+
+- [ ] **Step 3: Wire it into CI**
+
+```bash
+grep -n "check:" package.json | head -40
 ```
 
-> Use the guard's real entry point and error shape, which Step 1 establishes.
-> If the guard is a build-time script rather than a runtime assertion, add the
-> case to the script's fixture set instead and run it via its npm script.
+Add a `check:dispatch-field-forwarding` script and include it in `check:all`.
 
-- [ ] **Step 3: Run it to verify it fails**
+> **This is mandatory, not optional.** The repo enforces that every check
+> script is reachable from CI — the pre-commit output ends with
+> `OK: all 28 check scripts are reachable from CI`. A new script that is not
+> wired in will FAIL that gate, so adding the script and wiring it are one
+> commit, not two.
 
-Run the guard's own test or script.
-Expected: FAIL — the guard is silent about the new fields.
+- [ ] **Step 4: Prove the guard actually fails**
 
-- [ ] **Step 4: Extend the guard**
+A guard that cannot fail is worse than none — it reports green forever. Prove
+it by reintroducing the defect:
 
-Add `callId`, `scopeId` and `protocolIds.turnId` to the field set the guard checks on session-turn dispatch events.
+```bash
+# temporarily delete the turnId forwarding added in Task 5
+bun run check:dispatch-field-forwarding   # expect: ERROR, exit 1
+git checkout src/agents/manager-dispatch.ts
+bun run check:dispatch-field-forwarding   # expect: OK
+```
 
-- [ ] **Step 5: Run it, plus the full gates**
+Do not proceed until you have seen it fail. Record both outputs in the commit
+message.
+
+- [ ] **Step 5: Run the full gates**
 
 Run: `bun run test && bun run typecheck && bun run lint && bun run check:all`
 Expected: all clean.
@@ -1176,6 +1233,13 @@ Report the measured numbers. Do not claim success without the output.
 **Spec coverage.** §2.1 tier 1 → Tasks 3, 4. Tier 2 → Task 6. Tier 3 → Tasks 5, 6. `schemaVersion` → Task 1. Header → Tasks 1, 3. `sessionName` demotion → Task 1 (schema comment). §3.1 filename → Task 7. §3.2 `runId` plumbing → Task 2. §3.4 caveats → encoded as doc comments in Tasks 4 and 6. §5 verification criteria 1–4 → Task 9; criterion 5 (canary) → Task 8; criterion 6 (`resultBytes` comment) → Task 1 Step 3 with its input from Task 0 Step 4.
 
 **No deviation from the spec.** An earlier draft of §2.1 placed `turnId` minting at `manager-dispatch.ts:128`, which is after `sendPrompt` returns and therefore too late to label tool calls. That was found while reviewing the design ahead of this plan, and the spec has been corrected — §2.1 tier 3 now specifies minting in `runAsSession` before the turn. Task 5's callout repeats the reasoning so an executor who reads only the plan still understands why the obvious site is wrong.
+
+**One verified correction to the spec**, applied in Task 8: §5 criterion 5 says
+#1907's canary guard "is extended". No such guard exists in the tree — the
+2026-09-08 spec's *fix* shipped (`review-audit.ts:70`) but its guard did not.
+Task 8 therefore creates one and wires it into `check:all`, which the repo's
+own "all N check scripts are reachable from CI" gate requires in the same
+commit.
 
 **One deliberate placeholder**, in Task 1 Step 3: the `resultBytes` sentence in the schema comment cannot be written before reading the merged truncation policy. Task 0 Step 4 produces that input and Task 1 Step 3 marks it explicitly rather than leaving a silent gap.
 

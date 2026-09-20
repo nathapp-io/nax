@@ -44,9 +44,17 @@ Pass six is not a copy failure but its degenerate case: the field was declared
 on the event type and no producer ever populated it. `manager-dispatch.ts:128`
 builds `protocolIds` with `sessionId` and `recordId` only.
 
-**An acceptance criterion of this spec is an answer to why #1907's canary guard
-sees neither.** Fixing the two fields without extending the guard leaves pass
-seven exactly as likely.
+**Why did #1907's guard not catch these? Because it is not there.** Verified
+2026-09-20: `grep -rn "1907" src/ test/ scripts/ --include="*.ts"` returns one
+unrelated hit, every `canary` match in `src/` is a release-version string, and
+none of the 28 `scripts/check-*` guards checks dispatch-field forwarding.
+#1907's *fix* shipped — `modelPassed` forwarding is live at
+`src/runtime/middleware/review-audit.ts:70` — but the guard the 2026-09-08 spec
+describes does not exist in the tree.
+
+So the guard is an acceptance criterion of this spec (§5.5), and building it is
+work, not a one-line extension. Fixing these two fields without it leaves pass
+seven exactly as likely as pass six was.
 
 ### 1.2 Measured evidence
 
@@ -355,8 +363,14 @@ this spec must state the boundary.
 3. Every `callId` in a run's `tool-audit` files appears on at least one cost row
    of the same `runId`. (At least, not exactly: `callId` is 1:N.)
 4. `protocolIds.turnId` is non-null on every emitted `SessionTurnDispatchEvent`.
-5. #1907's canary guard is extended to cover correlation-id and `protocolIds`
-   forwarding, and fails against an emitter that drops either.
+5. A guard covers correlation-id and `protocolIds` forwarding and fails against
+   an emitter that drops either.
+
+   Note: #1907's "canary guard" could not be found in the tree on 2026-09-20 —
+   that issue's *fix* shipped (`src/runtime/middleware/review-audit.ts:70`) but
+   no field-forwarding guard exists, and none of the 28 `scripts/check-*`
+   guards is one. So this criterion means write the guard, not extend it, and
+   wire it into `check:all`.
 6. The `tool-audit` schema comment documents v1 and names the `resultBytes`
    denominator change at the `native-loop-events` boundary.
 
