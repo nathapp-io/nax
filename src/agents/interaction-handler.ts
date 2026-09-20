@@ -14,10 +14,14 @@ export type AdapterInteraction =
       turnId?: string;
       roundTrips?: number;
       toolCallId?: string;
+      /** Native shapes the final post-handler result at its loop chokepoint. */
+      deferModelTruncation?: boolean;
     };
 
 export interface AdapterInteractionResponse {
   answer: string;
+  /** Completes deferred coding-tool audit with the final model-facing content. */
+  finalizeAudit?: (content: string) => void;
   /**
    * Present only when the permission policy refused the call.
    *

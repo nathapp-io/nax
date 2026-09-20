@@ -467,6 +467,7 @@ export async function runNativeTurn(
                   ...(opts.turnId !== undefined ? { turnId: opts.turnId } : {}),
                   roundTrips,
                   toolCallId: call.id,
+                  deferModelTruncation: true,
                 }
               : { kind, name: call.name, input },
           );
@@ -477,11 +478,8 @@ export async function runNativeTurn(
           // through untouched — a refused Write is not a crashed Write
           // (ADR-029 s5) — and `nudge` prefixes the surviving content.
           const patch = loopEvents.afterTool(call, { content: answerText, denied: answer?.denied });
-          // US-003: the model-facing truncation runs at the same chokepoint —
-          // after the handlers have had their say, before the message is built
-          // — so nothing this policy produces can be rewritten into history
-          // either. See ./truncation-handler for why it is not itself a
-          // registered handler.
+          // US-003: model-facing truncation runs after handlers and before the
+          // message is built. See ./truncation-handler for the async rationale.
           const shaped = await truncateNativeToolResult(handle.id, patch.content ?? answerText, {
             toolName: call.name,
             callId: call.id,
@@ -489,10 +487,12 @@ export async function runNativeTurn(
             // result's budget -- not added after the ceiling was enforced.
             ...(nudgeText !== undefined ? { reserveBytes: nudgeOverheadBytes(nudgeText) } : {}),
           });
+          const finalContent = withNudge(nudgeText, shaped);
+          answer?.finalizeAudit?.(finalContent);
           messages.push(
             buildToolResult({
               toolCallId: call.id,
-              content: withNudge(nudgeText, shaped),
+              content: finalContent,
               isError: patch.isError,
               denied: answer?.denied,
             }),

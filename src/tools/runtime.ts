@@ -51,18 +51,24 @@ const MAX_ASK_SUMMARY_CHARS = 200;
 export const DEFAULT_TOOL_MAX_FILE_BYTES = 2_000_000;
 
 export type CodingToolOutcome =
-  | { readonly kind: "ok"; readonly content: string }
-  | { readonly kind: "error"; readonly content: string }
+  | {
+      readonly kind: "ok" | "error";
+      readonly content: string;
+      /** Records the final model-facing content when shaping was deferred. */
+      readonly finalizeAudit?: (content: string) => void;
+    }
   | { readonly kind: "denied"; readonly reason: string; readonly breach: boolean };
 
 /** Injectable logger seam, mirroring _pullToolsDeps.getLogger. */
 export const _codingToolDeps = { getLogger: getSafeLogger };
 
-/** Per-call turn context, recorded on the audit ledger. */
+/** Per-call context. Identity fields are recorded on the audit ledger. */
 export interface ToolCallContext {
   readonly turnId?: string;
   readonly roundTrips?: number;
   readonly toolCallId?: string;
+  /** Return the full result so a downstream model-facing chokepoint can shape it. */
+  readonly deferModelTruncation?: boolean;
 }
 
 export interface CodingToolRuntime {
@@ -250,7 +256,23 @@ export function createCodingToolRuntime(opts: {
       ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
       ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
       ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
-      ...(context ?? {}),
+      ...(context?.turnId !== undefined ? { turnId: context.turnId } : {}),
+      ...(context?.roundTrips !== undefined ? { roundTrips: context.roundTrips } : {}),
+      ...(context?.toolCallId !== undefined ? { toolCallId: context.toolCallId } : {}),
+    });
+  }
+
+  async function shapeToolResult(
+    body: string,
+    toolName: string,
+    context: ToolCallContext | undefined,
+  ): Promise<string> {
+    if (context?.deferModelTruncation === true) return body;
+    return applyModelTruncationPolicy(body, {
+      toolName,
+      callId: context?.toolCallId ?? randomUUID(),
+      root: opts.policy.root,
+      maxBytes,
     });
   }
 
@@ -315,34 +337,41 @@ export function createCodingToolRuntime(opts: {
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
           });
           const kind = result.isError === true ? "error" : "ok";
-          const content = await applyModelTruncationPolicy(result.content, {
-            toolName: policyIdentity,
-            callId: randomUUID(),
-            root: opts.policy.root,
-            maxBytes,
-          });
-          log(
-            policyIdentity,
-            kind,
-            content.length,
-            callInput,
-            context,
-            false,
-            kind === "error" ? result.content : undefined,
-            target.routineErrors,
-            result.audit,
-            result.resultBytesPreTruncation,
-          );
+          const content = await shapeToolResult(result.content, policyIdentity, context);
+          const record = (finalContent: string) =>
+            log(
+              policyIdentity,
+              kind,
+              finalContent.length,
+              callInput,
+              context,
+              false,
+              kind === "error" ? result.content : undefined,
+              target.routineErrors,
+              result.audit,
+              result.resultBytesPreTruncation,
+            );
+          if (context?.deferModelTruncation === true) return { kind, content, finalizeAudit: record };
+          record(content);
           return { kind, content };
         } catch (err) {
           const rawContent = err instanceof Error ? err.message : String(err);
-          const content = await applyModelTruncationPolicy(rawContent, {
-            toolName: policyIdentity,
-            callId: randomUUID(),
-            root: opts.policy.root,
-            maxBytes,
-          });
-          log(policyIdentity, "error", content.length, callInput, context, false, rawContent, target.routineErrors);
+          const content = await shapeToolResult(rawContent, policyIdentity, context);
+          const record = (finalContent: string) =>
+            log(
+              policyIdentity,
+              "error",
+              finalContent.length,
+              callInput,
+              context,
+              false,
+              rawContent,
+              target.routineErrors,
+            );
+          if (context?.deferModelTruncation === true) {
+            return { kind: "error", content, finalizeAudit: record };
+          }
+          record(content);
           return { kind: "error", content };
         }
       }
