@@ -207,28 +207,55 @@ describe("AC10: tail-with-first-line on a trailing-newline body exceeding MODEL_
 });
 
 describe("AC11: head direction returns the body's first lines and omits the last line", () => {
-  test("middle line is retained, the trailing line is dropped", () => {
-    const body = "alpha\nbeta\ngamma\ndelta\nepsilon";
+  test("a body over MODEL_MAX_LINES with head direction drops the trailing lines and keeps the first MODEL_MAX_LINES", () => {
+    // Build a body strictly over MODEL_MAX_LINES so the line-count cap
+    // fires. head keeps the first N lines and drops everything else —
+    // the last line of the input (and every line after) must be gone.
+    const total = MODEL_MAX_LINES + 5;
+    const lines = Array.from({ length: total }, (_, i) => `line-${i + 1}`);
+    const body = lines.join("\n");
+    // Sanity: the body is within the byte and per-line ceilings so the
+    // line-count cap is the only stage that fires.
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThan(MODEL_MAX_BYTES);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(MODEL_MAX_LINE_CHARS);
+
     const res = trunc(body, "head");
-    expect(res.content).toContain("alpha");
-    expect(res.content).toContain("beta");
-    expect(res.content).toContain("gamma");
-    expect(res.content).toContain("delta");
-    // The last line of the body is dropped by head direction.
-    expect(res.content).not.toContain("epsilon");
+    // Truncated is set because at least one stage changed the content.
+    expect(res.truncated).toBe(true);
+    const outLines = res.content.split("\n").filter((l) => l.length > 0);
+    // The body's first line is kept and the body's last line is dropped.
+    expect(outLines[0]).toBe("line-1");
+    expect(res.content).not.toContain(`line-${total}`);
   });
 });
 
 describe("AC12: tail-with-first-line direction returns first line + last lines, omits middle", () => {
-  test("first line is kept, middle lines are omitted, last lines are kept", () => {
-    const body = "first\nm1\nm2\nm3\nm4\nm5\nlast";
+  test("a body over MODEL_MAX_LINES with tail-with-first-line keeps the first line, drops the middle, retains the tail", () => {
+    // Build a body strictly over MODEL_MAX_LINES so the line-count cap
+    // fires. tail-with-first-line keeps the first line and the last
+    // (MODEL_MAX_LINES - 1) lines, dropping every line in between.
+    // Line names are zero-padded and distinct so substring checks cannot
+    // accidentally match a neighbouring number.
+    const total = MODEL_MAX_LINES + 5;
+    const lines = Array.from({ length: total }, (_, i) => `L${String(i).padStart(6, "0")}`);
+    const body = lines.join("\n");
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThan(MODEL_MAX_BYTES);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(MODEL_MAX_LINE_CHARS);
+
     const res = trunc(body, "tail-with-first-line");
-    expect(res.content).toContain("first");
-    expect(res.content).toContain("last");
-    // Middle lines MUST be omitted by tail-with-first-line.
-    for (const mid of ["m1", "m2", "m3", "m4", "m5"]) {
-      expect(res.content).not.toContain(mid);
-    }
+    expect(res.truncated).toBe(true);
+    // First line is kept.
+    expect(res.content).toContain("L000000");
+    // Last lines (at least the body's last line) are kept.
+    const lastName = `L${String(total - 1).padStart(6, "0")}`;
+    expect(res.content).toContain(lastName);
+    // The body's last line should be the last retained line.
+    const outLines = res.content.split("\n").filter((l) => l.length > 0);
+    expect(outLines[outLines.length - 1]).toBe(lastName);
+    // Middle lines must be omitted: a body of MODEL_MAX_LINES + 5 lines
+    // has a large middle band that must not survive the cap.
+    expect(res.content).not.toContain("L000001");
+    expect(res.content).not.toContain("L000002");
   });
 });
 
