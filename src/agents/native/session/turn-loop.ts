@@ -475,7 +475,11 @@ export async function runNativeTurn(
               denied: answer?.denied,
             }),
           );
-          spinBreaker?.noteResult(call.name, call.input, answerText);
+          // The breaker observed the call through the seam, i.e. with whatever
+          // input a handler rewrote in place — so the result has to be noted
+          // against that same input, or the key misses and result-based
+          // repetition detection silently stops for rewritten calls.
+          spinBreaker?.noteResult(call.name, input, answerText);
         } catch (err) {
           // A tool failure is data, not a turn failure: the existing pull-tool
           // contract already surfaces a handler throw as status "error". The
