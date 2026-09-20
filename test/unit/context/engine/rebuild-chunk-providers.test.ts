@@ -2,12 +2,10 @@
  * Rebuild — chunkProviders filtering
  *
  * Verifies that `ContextOrchestrator.rebuildForAgent()` filters
- * `manifest.chunkProviders` against the rebuilt chunk set. When repack drops
- * a chunk, the rebuilt manifest must NOT retain a dangling chunkProviders
- * entry keyed on the dropped chunk — the spread `...prior.manifest`
- * otherwise carries the mapping forward verbatim (mirrors the
- * chunkScopePaths / chunkEffectiveness fix — see
- * rebuild-chunk-scope-paths.test.ts).
+ * `manifest.chunkProviders` against the complete rebuilt manifest domain.
+ * Repack-dropped chunks retain attribution because they become exclusion
+ * entries; mappings for IDs represented by neither inclusion nor exclusion
+ * remain invalid.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -92,7 +90,7 @@ function makeBundleFromChunks(
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("rebuild — chunkProviders filtering", () => {
-  test("a chunk dropped by repack does not appear in rebuilt chunkProviders", async () => {
+  test("a chunk dropped by repack remains attributed as an excluded chunk", async () => {
     const prior = makeBundleFromChunks(
       [
         chunk({ id: "p1:feat-a", kind: "feature", tokens: 100 }),
@@ -121,10 +119,15 @@ describe("rebuild — chunkProviders filtering", () => {
     const rebuiltIds = new Set(rebuilt.chunks.map((c) => c.id));
     const rebuiltProviders = rebuilt.manifest.chunkProviders;
 
-    // Every key in the rebuilt chunkProviders must be in the rebuilt chunk set.
+    const manifestIds = new Set([
+      ...rebuilt.manifest.includedChunks,
+      ...rebuilt.manifest.excludedChunks.map((chunk) => chunk.id),
+    ]);
+
+    // Every provider key belongs to a chunk represented by the rebuilt manifest.
     expect(rebuiltProviders).toBeDefined();
     for (const id of Object.keys(rebuiltProviders ?? {})) {
-      expect(rebuiltIds.has(id)).toBe(true);
+      expect(manifestIds.has(id)).toBe(true);
     }
 
     // The prior's chunkProviders covered all four chunks; at least one
@@ -134,7 +137,8 @@ describe("rebuild — chunkProviders filtering", () => {
     const droppedIds = Object.keys(priorProviders).filter((id) => !rebuiltIds.has(id));
     expect(droppedIds.length).toBeGreaterThan(0);
     for (const droppedId of droppedIds) {
-      expect(rebuiltProviders?.[droppedId]).toBeUndefined();
+      expect(rebuilt.manifest.excludedChunks.some((chunk) => chunk.id === droppedId)).toBe(true);
+      expect(rebuiltProviders?.[droppedId]).toBe(priorProviders[droppedId]);
     }
   });
 
@@ -166,7 +170,7 @@ describe("rebuild — chunkProviders filtering", () => {
     });
   });
 
-  test("when the prior has chunkProviders but every keyed chunk is dropped, the rebuilt manifest omits the field entirely", async () => {
+  test("when attributed chunks are dropped, rebuilt chunkProviders covers their exclusion entries", async () => {
     const prior = makeBundleFromChunks(
       [
         chunk({ id: "p1:sess-a", kind: "session", tokens: 5_000 }),
@@ -195,15 +199,16 @@ describe("rebuild — chunkProviders filtering", () => {
       failure: AVAILABILITY_FAILURE,
     });
 
-    // The rebuilt field, if present, must only key surviving chunks. The
-    // invariant we actually care about is "no dangling entries" — the
-    // field may be present (filtered to survivors) or absent (empty).
-    const rebuiltProviders = rebuilt.manifest.chunkProviders;
-    if (rebuiltProviders) {
-      const rebuiltIds = new Set(rebuilt.chunks.map((c) => c.id));
-      for (const id of Object.keys(rebuiltProviders)) {
-        expect(rebuiltIds.has(id)).toBe(true);
-      }
+    const rebuiltProviders = rebuilt.manifest.chunkProviders ?? {};
+    const manifestIds = new Set([
+      ...rebuilt.manifest.includedChunks,
+      ...rebuilt.manifest.excludedChunks.map((chunk) => chunk.id),
+    ]);
+    for (const id of Object.keys(rebuiltProviders)) {
+      expect(manifestIds.has(id)).toBe(true);
+    }
+    for (const excluded of rebuilt.manifest.excludedChunks) {
+      expect(rebuiltProviders[excluded.id]).toBe("session-scratch");
     }
   });
 });

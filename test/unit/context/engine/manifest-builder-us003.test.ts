@@ -62,6 +62,7 @@ function makeInputs(overrides: Partial<ManifestInputs> = {}): ManifestInputs {
     dedupeDropped: [],
     budgetExcludedIds: [],
     chunkTokenLookup: new Map(),
+    chunkProviderLookup: new Map(),
     floorPackedIds: [],
     floorOverageIds: [],
     floorOverageTokens: 0,
@@ -187,6 +188,18 @@ describe("buildManifest — chunkProviders omits chunks without providerId (AC2)
     const inputs = makeInputs({ packed, usedTokens: 50 });
     const manifest = buildManifest(inputs);
 
+    expect(manifest.chunkProviders).toBeUndefined();
+  });
+
+  test("AC2 (excluded): a chunk absent from chunkProviderLookup leaves no provider key", () => {
+    const manifest = buildManifest(
+      makeInputs({
+        roleFiltered: [{ id: "legacy:excluded" }],
+        chunkProviderLookup: new Map(),
+      }),
+    );
+
+    expect(manifest.excludedChunks.map((chunk) => chunk.id)).toContain("legacy:excluded");
     expect(manifest.chunkProviders).toBeUndefined();
   });
 

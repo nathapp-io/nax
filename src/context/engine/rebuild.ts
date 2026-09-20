@@ -192,13 +192,12 @@ export function rebuild(
   const chunkScopePaths = prior.manifest.chunkScopePaths
     ? Object.fromEntries(Object.entries(prior.manifest.chunkScopePaths).filter(([id]) => includedChunkIds.has(id)))
     : undefined;
-  // Mirror the chunkScopePaths/chunkEffectiveness pattern: a chunk dropped
-  // during rebuild (e.g. budget repack) must not keep its provider-attribution
-  // entry forever — a future direct consumer of chunkProviders (rather than
-  // deriving it via chunkEffectiveness's keys) would otherwise double-count
-  // or misattribute chunks that are no longer part of the bundle.
+  // Provider attribution covers the complete rebuilt manifest domain. Unlike
+  // scope/effectiveness data, providers are also consumed for excluded-chunk
+  // observations, so budget exclusions must retain their prior mapping.
+  const manifestChunkIds = new Set([...includedChunkIds, ...packResult.budgetExcludedIds]);
   const chunkProviders = prior.manifest.chunkProviders
-    ? Object.fromEntries(Object.entries(prior.manifest.chunkProviders).filter(([id]) => includedChunkIds.has(id)))
+    ? Object.fromEntries(Object.entries(prior.manifest.chunkProviders).filter(([id]) => manifestChunkIds.has(id)))
     : undefined;
   // US-001: stamp `stale` onto every rebuilt budget-excluded entry. The flag
   // is stamped uniformly whether or not the chunk is stale; the mechanical

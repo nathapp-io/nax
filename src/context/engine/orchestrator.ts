@@ -442,6 +442,9 @@ export class ContextOrchestrator {
     // not only the packed ones. `scored` is a superset of every chunk that
     // reaches the exclusion lists.
     const chunkTokenLookup = new Map<string, number>(scored.map((c) => [c.id, c.tokens]));
+    const chunkProviderLookup = new Map<string, string>(
+      scored.flatMap((c) => (c.providerId === undefined ? [] : [[c.id, c.providerId]])),
+    );
 
     // US-001: derive staleIds from `scored`, which is a superset of every
     // chunk that reaches the exclusion lists (roleFiltered, belowMin,
@@ -464,6 +467,7 @@ export class ContextOrchestrator {
       dedupeDropped,
       budgetExcludedIds,
       chunkTokenLookup,
+      chunkProviderLookup,
       floorPackedIds,
       floorOverageIds,
       floorOverageTokens,
