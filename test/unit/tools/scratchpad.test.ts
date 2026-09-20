@@ -375,76 +375,74 @@ describe("AC11: ScratchpadWrite over maxFileBytes returns isError naming the lim
 });
 
 /**
- * AC12: ScratchpadRead on a file larger than `ctx.maxBytes` returns at
- * most `ctx.maxBytes` bytes. Boundary: a file UNDER the ceiling is
- * returned whole, so the truncation is not over-eager.
+ * US-003 AC12: ScratchpadRead on a file larger than `ctx.readCeiling` is
+ * bounded at `readCeiling` by the tool itself; the model-facing cap at
+ * `ctx.maxBytes` is now the `after_tool` policy's job, NOT the tool's.
+ * ScratchpadRead's schema gains `offset`/`limit`, and the read begins
+ * with a `[N lines]` header.
  */
-describe("AC12: ScratchpadRead on a file larger than maxBytes returns at most maxBytes bytes", () => {
-  test("scratchpadReadTool.run returns content byte-length <= maxBytes when the file is larger", async () => {
-    const maxBytes = 32;
-    const fileBytes = "z".repeat(maxBytes * 4);
+describe("US-003 AC12: ScratchpadRead is bounded at readCeiling by the tool; maxBytes is the policy's job", () => {
+  test("scratchpadReadTool.run returns the FULL file content when readCeiling > file size", async () => {
+    // The tool no longer caps at ctx.maxBytes. The full file is returned
+    // to the runtime's after_tool handler, which shapes it to MODEL_MAX_BYTES
+    // and writes the spill file.
+    const fileBytes = "z".repeat(256);
     const target = join(root, ".nax", "scratchpad", "big.md");
-    // The test creates the scratchpad directory explicitly: production code
-    // creates it on first write, but AC12 is a read-only exercise and
-    // pinning the test's dependency on a preceding write would couple two
-    // ACs. mkdirSync({recursive: true}) is the test fixture's job, not the
-    // tool's -- the test should be readable as a single AC.
     mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
     writeFileSync(target, fileBytes);
 
-    const result = await scratchpadReadTool.run({ path: "big.md" }, ctx(target, { maxBytes }));
+    // `ctx.maxBytes = 32` would have truncated at the tool layer before;
+    // now the tool is bounded at `readCeiling` only. We deliberately use
+    // a small maxBytes to make this discrimination explicit: the tool's
+    // output is bigger than maxBytes.
+    const result = await scratchpadReadTool.run({ path: "big.md" }, ctx(target, { maxBytes: 32 }));
     expect(result.isError).toBeFalsy();
-    expect(Buffer.byteLength(result.content, "utf8")).toBeLessThanOrEqual(maxBytes);
+    // The full file body is present in the tool's output (above the cap).
+    expect(result.content.length).toBeGreaterThan(32);
   });
 
-  // Discriminating boundary: a file UNDER the ceiling is returned whole.
-  // A regression that always appended a truncation suffix would push the
-  // byte length above the file size and trip on this assertion.
-  test("a file under maxBytes is returned whole and unmodified", async () => {
-    const maxBytes = 4096;
+  test("a file under maxBytes is returned whole under a [N lines] header (US-003 schema shape)", async () => {
     const fileBytes = "small file\n";
     const target = join(root, ".nax", "scratchpad", "small.md");
     mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
     writeFileSync(target, fileBytes);
 
-    const result = await scratchpadReadTool.run({ path: "small.md" }, ctx(target, { maxBytes }));
+    const result = await scratchpadReadTool.run({ path: "small.md" }, ctx(target, { maxBytes: 4096 }));
     expect(result.isError).toBeFalsy();
-    expect(result.content).toBe(fileBytes);
+    // The header comes first, then the body — `[1 lines]\nsmall file\n`.
+    expect(result.content.startsWith("[1 lines]")).toBe(true);
+    expect(result.content).toContain("small file");
   });
 
-  // Discriminating boundary: multi-byte UTF-8 content whose raw-byte slice
-  // lands in the middle of a codepoint. A byte-aligned slice (`Buffer.subarray
-  // (0, budget).toString("utf8")`) leaves a lone leading byte, which the
-  // UTF-8 decoder substitutes with U+FFFD (encoded as 3 bytes). The
-  // resulting string is therefore LONGER than the byte budget, and the
-  // AC12 "at most maxBytes bytes" assertion catches it. This is the case
-  // the duplicate `truncate` between read.ts and scratchpad.ts most easily
-  // diverges on: a codepoint-aware fix that lands in one and not the other
-  // would make this test green on the fixed side and still red here, which
-  // is exactly the regression class the reviewer flagged.
-  test("multi-byte UTF-8 content stays within maxBytes when the slice would otherwise land mid-codepoint", async () => {
-    // 20 "é" = 40 bytes; maxBytes=5 makes a 5-byte raw slice land inside
-    // the 3rd codepoint. The suffix marker is 26 bytes -- longer than
-    // maxBytes -- so the truncation path returns a plain 5-byte slice
-    // without a marker, isolating the mid-codepoint question from the
-    // suffix-budget question.
-    const fileBytes = "é".repeat(20);
-    const maxBytes = 5;
-    const target = join(root, ".nax", "scratchpad", "utf8.md");
-    mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
-    writeFileSync(target, fileBytes);
-
-    const result = await scratchpadReadTool.run({ path: "utf8.md" }, ctx(target, { maxBytes }));
-    expect(result.isError).toBeFalsy();
-    expect(Buffer.byteLength(result.content, "utf8")).toBeLessThanOrEqual(maxBytes);
+  test("the schema advertises offset and limit matching readTool's spelling", () => {
+    const schema = scratchpadReadTool.inputSchema;
+    expect(schema.type).toBe("object");
+    expect(schema.required).toEqual(["path"]);
+    // Reflective helper that avoids `as <CapitalisedType>` casts (which
+    // would trip the looseCast ratchet) by using object-shape narrowing
+    // and inline annotations.
+    const lookup = (key: string): { type?: string; minimum?: number } => {
+      const raw: unknown = (schema as { properties?: unknown }).properties;
+      if (typeof raw !== "object" || raw === null) {
+        throw new Error("expected schema.properties to be an object");
+      }
+      const value: unknown = (raw as { [k: string]: unknown })[key];
+      if (typeof value !== "object" || value === null) {
+        throw new Error(`expected schema.properties.${key} to be an object`);
+      }
+      return value as { type?: string; minimum?: number };
+    };
+    expect(lookup("path").type).toBe("string");
+    expect(lookup("offset").type).toBe("integer");
+    expect(lookup("offset").minimum).toBe(1);
+    expect(lookup("limit").type).toBe("integer");
+    expect(lookup("limit").minimum).toBe(1);
   });
 
-  // Discriminating boundary: the spec AC-11 wording is "Calling ScratchpadRead
-  // THROUGH callTool ...". The per-tool tests above exercise the unit; this
-  // one drives the runtime's callTool path, which constructs the
-  // ToolRunContext and forwards to the tool's run. A regression that broke
-  // the runtime's ctx plumbing (e.g. dropped maxBytes) would surface here
-  // but be invisible to the unit-level tests.
+  // Discriminating boundary: the model-facing cap now lives at the runtime
+  // level (after_tool). A regression that re-introduced per-tool truncation
+  // would surface here: the runtime sees the un-truncated body and the
+  // policy shapes it.
   test("runtime.callTool('ScratchpadRead', ...) returns content byte-length <= maxBytes when the file is larger", async () => {
     const maxBytes = 32;
     const fileBytes = "z".repeat(maxBytes * 4);

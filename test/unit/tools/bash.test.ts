@@ -84,10 +84,17 @@ describe("createBashTool", () => {
     expect(result.content).toContain("timed out after 5000ms");
   });
 
-  test("output is capped at ctx.maxBytes and the pre-truncation size is reported", async () => {
+  test("US-003: bash returns up to readCeiling; pre-truncation size reports the full stdout", async () => {
+    // US-003 replacement invariant: the tool bounds its I/O at
+    // `ctx.readCeiling` (2_000_000 by default), NOT at `ctx.maxBytes`.
+    // The model-facing cap and the exit-N preservation are the
+    // `after_tool` policy's job, not the tool's. The full stdout
+    // length is still surfaced via `resultBytesPreTruncation` so
+    // downstream code can size the spill.
     stubRunArgv({ stdout: "x".repeat(5_000) });
     const result = await createBashTool().run({ command: "cat big" }, ctx(100));
-    expect(result.content.length).toBe(100);
+    expect(result.content.length).toBeGreaterThan(100);
+    expect(result.content).toContain("x");
     expect(result.resultBytesPreTruncation).toBeGreaterThan(5_000);
   });
 
