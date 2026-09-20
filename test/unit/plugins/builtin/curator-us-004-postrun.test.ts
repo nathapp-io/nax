@@ -2,17 +2,21 @@
  * Curator post-run auto-prune — US-004 (Size-gate automatic rollup retention)
  *
  * AC8-AC11 exercise the post-run action's auto-prune wiring end-to-end:
- *   AC8  — outputDir set + over-threshold → pruneRollup invoked once.
- *   AC9  — outputDir set + under-threshold → pruneRollup NOT invoked.
- *   AC10 — outputDir set + pruneRollup rejects → PostRunActionResult.success
+ *   AC8  — outputDir set + over-threshold → the auto-prune dispatch fires
+ *          once (the scan-then-prune pair bundled under a single lock).
+ *   AC9  — outputDir set + under-threshold → auto-prune dispatch is NOT
+ *          invoked.
+ *   AC10 — outputDir set + the dispatch rejects → PostRunActionResult.success
  *          remains `true` (the curator is an observer; failures log + carry on).
  *   AC11 — outputDir set + an over-threshold rollup evicts runs → the evicted
  *          run directories still carry their `observations.jsonl` and
  *          `curator-proposals.md` (artifact deletion is manual-gc-only).
  *
- * The size gate and post-run wiring are NOT yet implemented in this story's
- * baseline — these tests fail at assertions until the implementer adds the
- * auto-prune call after `appendToRollup` and catches its rejections.
+ * Dispatch wiring: the post-run action calls `maybePruneRollup` after
+ * `appendToRollup`. `maybePruneRollup` internally invokes
+ * `_curatorPruneDeps.scanAndPruneNewest(rollupPath, projectKey, keepRuns)`
+ * — the tests intercept that single function so the call count, args,
+ * rejection path, and rewrite effect can all be observed end-to-end.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -114,32 +118,35 @@ async function seedRunsAndRollup(opts: {
   return Bun.file(opts.rollupPath).size;
 }
 
+/**
+ * Capture every `scanAndPruneNewest` invocation so tests can assert on call
+ * counts and arg shape. Mirrors the dispatch contract: `(rollupPath,
+ * projectKey, keepRuns)`.
+ */
+type ScanAndPruneCall = {
+  rollupPath: string;
+  projectKey: string;
+  keepRuns: number;
+};
+
 describe("curator post-run action — size-gated auto-prune (US-004)", () => {
-  let origPrune: typeof _curatorPruneDeps.pruneRollup;
-  let pruneCallLog: Array<{
-    rollupPath: string;
-    projectKey: string;
-    keepRunIds: ReadonlySet<string>;
-    dropUnattributed?: boolean;
-  }>;
+  let origScanAndPrune: typeof _curatorPruneDeps.scanAndPruneNewest;
+  let scanAndPruneCalls: ScanAndPruneCall[];
+  let scanAndPruneImpl: typeof _curatorPruneDeps.scanAndPruneNewest;
 
   beforeEach(() => {
-    pruneCallLog = [];
-    origPrune = _curatorPruneDeps.pruneRollup;
-    _curatorPruneDeps.pruneRollup = (async (input: {
-      rollupPath: string;
-      projectKey: string;
-      keepRunIds: ReadonlySet<string>;
-      dropUnattributed?: boolean;
-    }) => {
-      pruneCallLog.push({ ...input });
+    scanAndPruneCalls = [];
+    origScanAndPrune = _curatorPruneDeps.scanAndPruneNewest;
+    scanAndPruneImpl = (async (rollupPath: string, projectKey: string, keepRuns: number) => {
+      scanAndPruneCalls.push({ rollupPath, projectKey, keepRuns });
       const ok: PruneResult = { kept: 0, dropped: 0, keptOtherProjects: 0, keptUnattributed: 0 };
       return ok;
-    }) as typeof _curatorPruneDeps.pruneRollup;
+    }) as typeof _curatorPruneDeps.scanAndPruneNewest;
+    _curatorPruneDeps.scanAndPruneNewest = scanAndPruneImpl;
   });
 
   afterEach(() => {
-    _curatorPruneDeps.pruneRollup = origPrune;
+    _curatorPruneDeps.scanAndPruneNewest = origScanAndPrune;
   });
 
   test("AC8: outputDir set + over-threshold rollup → pruneRollup invoked once", async () => {
@@ -166,9 +173,9 @@ describe("curator post-run action — size-gated auto-prune (US-004)", () => {
       expect(action).toBeDefined();
       await action?.execute(ctx);
 
-      expect(pruneCallLog).toHaveLength(1);
-      expect(pruneCallLog[0]?.rollupPath).toBe(rollupPath);
-      expect(pruneCallLog[0]?.projectKey).toBe(projectKey);
+      expect(scanAndPruneCalls).toHaveLength(1);
+      expect(scanAndPruneCalls[0]?.rollupPath).toBe(rollupPath);
+      expect(scanAndPruneCalls[0]?.projectKey).toBe(projectKey);
     });
   });
 
@@ -195,7 +202,7 @@ describe("curator post-run action — size-gated auto-prune (US-004)", () => {
       const action = curatorPlugin.extensions.postRunAction;
       await action?.execute(ctx);
 
-      expect(pruneCallLog).toHaveLength(0);
+      expect(scanAndPruneCalls).toHaveLength(0);
     });
   });
 
@@ -207,12 +214,12 @@ describe("curator post-run action — size-gated auto-prune (US-004)", () => {
       const projectKey = "test-project";
       const size = await seedRunsAndRollup({ outputDir, globalDir, rollupPath, projectKey, nRuns: 3 });
 
-      // Force pruneRollup to reject. The post-run action must catch and
-      // continue, returning success:true (the curator is an observer) AND
-      // emit a logger.warn carrying the failure context.
-      _curatorPruneDeps.pruneRollup = (async () => {
+      // Force the scan-then-prune pair to reject. The post-run action must
+      // catch and continue, returning success:true (the curator is an
+      // observer) AND emit a logger.warn carrying the failure context.
+      _curatorPruneDeps.scanAndPruneNewest = (async () => {
         throw new Error("disk full");
-      }) as typeof _curatorPruneDeps.pruneRollup;
+      }) as typeof _curatorPruneDeps.scanAndPruneNewest;
 
       const { ctx, warnCalls } = makePostRunContext({
         outputDir,
@@ -248,31 +255,30 @@ describe("curator post-run action — size-gated auto-prune (US-004)", () => {
       const nRuns = 3;
       const size = await seedRunsAndRollup({ outputDir, globalDir, rollupPath, projectKey, nRuns });
 
-      // Force the gate open AND drive a real eviction. The mock returns a
-      // result that drops everything but the kept runIds, mirroring the
-      // real pruneRollup contract.
-      _curatorPruneDeps.pruneRollup = (async (input: {
-        rollupPath: string;
-        projectKey: string;
-        keepRunIds: ReadonlySet<string>;
-      }) => {
+      // Force the gate open AND drive a real eviction. The mock simulates
+      // `scanAndPruneNewest`'s internal slice — it reads the rollup to learn
+      // every runId, keeps the first `keepRuns`, rewrites the rollup with
+      // just those rows, and returns the resulting counts. The real
+      // function is replaced because the test owns eviction semantics.
+      _curatorPruneDeps.scanAndPruneNewest = (async (rollupPathArg: string, _projectKey: string, keepRuns: number) => {
         const allRunIds: string[] = [];
         for (let i = 0; i < nRuns; i += 1) allRunIds.push(`run-${String(i).padStart(4, "0")}`);
-        // Mark the un-kept runs as evicted.
-        const evicted = allRunIds.filter((id) => !input.keepRunIds.has(id));
+        // Slice to keepRuns, mirroring `scanAndPruneNewest`'s real behaviour.
+        const keepRunIds = new Set(allRunIds.slice(0, keepRuns));
+        const evicted = allRunIds.filter((id) => !keepRunIds.has(id));
         const dropped = evicted.length;
         // Strip evicted rows from the rollup so the eviction is observable
         // without depending on the real pruneRollup.
-        const remaining = allRunIds.filter((id) => input.keepRunIds.has(id));
+        const remaining = [...keepRunIds];
         const lines = remaining.map((runId) => JSON.stringify(makeObs(runId, projectKey)));
-        await writeFile(input.rollupPath, `${lines.join("\n")}\n`);
+        await writeFile(rollupPathArg, `${lines.join("\n")}\n`);
         return {
           kept: remaining.length,
           dropped,
           keptOtherProjects: 0,
           keptUnattributed: 0,
         } satisfies PruneResult;
-      }) as typeof _curatorPruneDeps.pruneRollup;
+      }) as typeof _curatorPruneDeps.scanAndPruneNewest;
 
       const { ctx } = makePostRunContext({
         outputDir,

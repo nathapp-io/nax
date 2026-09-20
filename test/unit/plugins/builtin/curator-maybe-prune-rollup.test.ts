@@ -6,19 +6,22 @@
  * carries no curator configuration.
  *
  * The size gate reads `Bun.file(input.rollupPath).size`:
- *   - size >  retention.pruneThresholdBytes → derive keepRunIds from the first
- *     `retention.keepRuns` ids of `scanProjectRunIds`, call `pruneRollup`.
- *   - size <= retention.pruneThresholdBytes → return `{ pruned: false }` without
- *     invoking `pruneRollup`.
+ *   - size >  retention.pruneThresholdBytes → invoke the scan-then-prune
+ *     pair (under a single lock acquisition, to close the race against a
+ *     concurrent `appendToRollup`).
+ *   - size <= retention.pruneThresholdBytes → return `{ pruned: false }`
+ *     without invoking the rollup rewrite.
  *
- * `pruneRollup` rejection is caught and reported on `error` with
+ * `scanAndPruneNewest` rejection is caught and reported on `error` with
  * `pruned: false`. A missing rollup path resolves without rejection and
- * without invoking `pruneRollup`.
+ * without invoking the rollup rewrite.
  *
- * STUBS: `maybePruneRollup` and `getCuratorRetention` are stubs that throw /
- * return `DEFAULT_RETENTION`. The implementer in the next session replaces
- * them with real logic; these tests fail (assertion failures or "not
- * implemented" throws propagated through `await`) until then.
+ * Dispatch wiring: `maybePruneRollup` calls
+ * `_curatorPruneDeps.scanAndPruneNewest(rollupPath, projectKey, keepRuns)`.
+ * The mock intercepts that single function and tracks the `(rollupPath,
+ * projectKey, keepRuns)` triple — the AC's "calls pruneRollup once with
+ * keepRunIds containing at most retention.keepRuns IDs" reads against this
+ * dispatch: one invocation, with the configured `keepRuns` cap.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -83,37 +86,37 @@ async function writeRollupWithNRuns(rollupPath: string, countRows: number, proje
   return Bun.file(rollupPath).size;
 }
 
-/** Capture every pruneRollup invocation so tests can assert on call counts and arg shape. */
-type PruneCall = {
+/**
+ * Capture every `scanAndPruneNewest` invocation so tests can assert on call
+ * counts and arg shape. Mirrors the dispatch contract: `(rollupPath,
+ * projectKey, keepRuns)`. The `keepRuns` cap is the AC-mandated bound the
+ * implementation must pass through; the real `scanAndPruneNewest` slices
+ * the run-id set to that length internally.
+ */
+type ScanAndPruneCall = {
   rollupPath: string;
   projectKey: string;
-  keepRunIds: ReadonlySet<string>;
-  dropUnattributed?: boolean;
+  keepRuns: number;
 };
 
 describe("maybePruneRollup — size gate (US-004)", () => {
-  let origPrune: typeof _curatorPruneDeps.pruneRollup;
-  let pruneCalls: PruneCall[];
-  let pruneImpl: typeof _curatorPruneDeps.pruneRollup;
+  let origScanAndPrune: typeof _curatorPruneDeps.scanAndPruneNewest;
+  let scanAndPruneCalls: ScanAndPruneCall[];
+  let scanAndPruneImpl: typeof _curatorPruneDeps.scanAndPruneNewest;
 
   beforeEach(() => {
-    pruneCalls = [];
-    origPrune = _curatorPruneDeps.pruneRollup;
-    pruneImpl = (async (input: {
-      rollupPath: string;
-      projectKey: string;
-      keepRunIds: ReadonlySet<string>;
-      dropUnattributed?: boolean;
-    }) => {
-      pruneCalls.push({ ...input });
+    scanAndPruneCalls = [];
+    origScanAndPrune = _curatorPruneDeps.scanAndPruneNewest;
+    scanAndPruneImpl = (async (rollupPath: string, projectKey: string, keepRuns: number) => {
+      scanAndPruneCalls.push({ rollupPath, projectKey, keepRuns });
       const ok: PruneResult = { kept: 0, dropped: 0, keptOtherProjects: 0, keptUnattributed: 0 };
       return ok;
-    }) as typeof _curatorPruneDeps.pruneRollup;
-    _curatorPruneDeps.pruneRollup = pruneImpl;
+    }) as typeof _curatorPruneDeps.scanAndPruneNewest;
+    _curatorPruneDeps.scanAndPruneNewest = scanAndPruneImpl;
   });
 
   afterEach(() => {
-    _curatorPruneDeps.pruneRollup = origPrune;
+    _curatorPruneDeps.scanAndPruneNewest = origScanAndPrune;
   });
 
   test("AC3: over-threshold rollup → pruneRollup invoked once with keepRunIds of at most retention.keepRuns", async () => {
@@ -131,13 +134,15 @@ describe("maybePruneRollup — size gate (US-004)", () => {
       });
 
       expect(result.pruned).toBe(true);
-      expect(pruneCalls).toHaveLength(1);
-      expect(pruneCalls[0]?.rollupPath).toBe(rollupPath);
-      expect(pruneCalls[0]?.projectKey).toBe("test-project");
-      // The keepRunIds set's cardinality must NOT exceed the configured keepRuns.
-      expect(pruneCalls[0]?.keepRunIds.size).toBeLessThanOrEqual(50);
-      // And it must include some of the runIds that were in the rollup.
-      expect(pruneCalls[0]?.keepRunIds.size).toBeGreaterThan(0);
+      expect(scanAndPruneCalls).toHaveLength(1);
+      expect(scanAndPruneCalls[0]?.rollupPath).toBe(rollupPath);
+      expect(scanAndPruneCalls[0]?.projectKey).toBe("test-project");
+      // The AC-mandated bound: keepRuns caps the run-id set the rewrite
+      // preserves. The real `scanAndPruneNewest` slices to keepRuns, so the
+      // mock receives `keepRuns` as its argument and the cap travels with it.
+      expect(scanAndPruneCalls[0]?.keepRuns).toBeLessThanOrEqual(50);
+      // And it must be a positive cap — a zero cap would silently keep nothing.
+      expect(scanAndPruneCalls[0]?.keepRuns).toBeGreaterThan(0);
     });
   });
 
@@ -154,7 +159,7 @@ describe("maybePruneRollup — size gate (US-004)", () => {
       });
 
       expect(result.pruned).toBe(false);
-      expect(pruneCalls).toHaveLength(0);
+      expect(scanAndPruneCalls).toHaveLength(0);
     });
   });
 
@@ -172,7 +177,7 @@ describe("maybePruneRollup — size gate (US-004)", () => {
       });
 
       expect(result.pruned).toBe(false);
-      expect(pruneCalls).toHaveLength(0);
+      expect(scanAndPruneCalls).toHaveLength(0);
     });
   });
 
@@ -181,11 +186,11 @@ describe("maybePruneRollup — size gate (US-004)", () => {
       const rollupPath = path.join(dir, "rollup.jsonl");
       const size = await writeRollupWithNRuns(rollupPath, 200, "test-project");
 
-      // Force pruneRollup to reject — the post-run hook must catch and report,
-      // not propagate.
-      _curatorPruneDeps.pruneRollup = (async () => {
+      // Force the scan-then-prune pair to reject — the post-run hook must
+      // catch and report, not propagate.
+      _curatorPruneDeps.scanAndPruneNewest = (async () => {
         throw new Error("disk full");
-      }) as typeof _curatorPruneDeps.pruneRollup;
+      }) as typeof _curatorPruneDeps.scanAndPruneNewest;
 
       const result = await maybePruneRollup({
         rollupPath,
@@ -208,7 +213,7 @@ describe("maybePruneRollup — size gate (US-004)", () => {
 
       // The call must not reject — Bun.file().size on a missing file is 0,
       // which puts the size well below any reasonable threshold, so the gate
-      // stays closed without invoking pruneRollup.
+      // stays closed without invoking the rollup rewrite.
       const result = await maybePruneRollup({
         rollupPath,
         projectKey: "test-project",
@@ -216,7 +221,7 @@ describe("maybePruneRollup — size gate (US-004)", () => {
       });
 
       expect(result.pruned).toBe(false);
-      expect(pruneCalls).toHaveLength(0);
+      expect(scanAndPruneCalls).toHaveLength(0);
     });
   });
 });
