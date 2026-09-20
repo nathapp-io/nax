@@ -19,7 +19,7 @@
 // we prefer the gentler mechanism. See the function's doc comment for the
 // rationale and the divergence from its `reject*` siblings.
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -152,9 +152,34 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
       warnings.push(msg),
     );
 
-    expect((stripped.debate as { stages: Record<string, unknown> }).stages).not.toHaveProperty("review");
+    // The whole `debate` block is gone — the retired subsystem is stripped as
+    // one key, subsuming the old per-key `debate.stages.review` strip.
+    expect(stripped).not.toHaveProperty("debate");
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("debate.stages.review");
+    expect(warnings[0]).toContain("debate");
+  });
+
+  it("strips a retired top-level debate block and warns once", () => {
+    const warnings: string[] = [];
+    const out = stripRemovedNoOpKeys({ debate: { enabled: true, agents: 3 }, plan: { outputPath: "prd.json" } }, (m) =>
+      warnings.push(m),
+    );
+    expect(out).not.toHaveProperty("debate");
+    expect(out).toHaveProperty("plan");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("debate");
+  });
+
+  it("strips the retired pipeline-only plan keys", () => {
+    const warnings: string[] = [];
+    const out = stripRemovedNoOpKeys(
+      { plan: { outputPath: "prd.json", citationThreshold: 0.7, criticModel: "fast" } },
+      (m) => warnings.push(m),
+    ) as { plan: Record<string, unknown> };
+    expect(out.plan).not.toHaveProperty("citationThreshold");
+    expect(out.plan).not.toHaveProperty("criticModel");
+    expect(out.plan).toHaveProperty("outputPath");
+    expect(warnings).toHaveLength(2);
   });
 });
 
