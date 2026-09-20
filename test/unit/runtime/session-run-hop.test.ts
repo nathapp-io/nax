@@ -225,6 +225,33 @@ describe("createSessionRunHop", () => {
 
     expect(capturedOpts?.contextPullTools).toBe(pullTools);
   });
+
+  test("forwards callId and scopeId to agentManager.runAsSession", async () => {
+    const handle: SessionHandle = { id: "nax-session", agentName: "claude" };
+    let capturedOpts: RunAsSessionOpts | undefined;
+    const sessionManager = makeSessionManager({
+      nameFor: mock(() => "nax-session"),
+      openSession: mock(async () => handle),
+      closeSession: mock(async () => {}),
+    });
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async (_agentName, _handle, _prompt, opts) => {
+        capturedOpts = opts;
+        return {
+          output: "done",
+          tokenUsage: { inputTokens: 1, outputTokens: 1 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+        } satisfies TurnResult;
+      },
+    });
+
+    const hop = createSessionRunHop(sessionManager, () => agentManager);
+    await hop("claude", { ...makeRunOptions(), callId: "call-2156", scopeId: "scope-2156" });
+
+    expect(capturedOpts?.callId).toBe("call-2156");
+    expect(capturedOpts?.scopeId).toBe("scope-2156");
+  });
 });
 
 /**

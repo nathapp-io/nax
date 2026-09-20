@@ -146,6 +146,8 @@ export function createSessionRunHop(
             // catalogue forwarded here too, or it silently gets none.
             contextPullTools: options.contextPullTools,
             codingTools: codingSupport?.tools,
+            ...(options.callId !== undefined ? { callId: options.callId } : {}),
+            ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
           })
         : await sessionManager.sendPrompt(handle, prompt, {
             interactionHandler,
