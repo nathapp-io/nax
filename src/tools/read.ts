@@ -19,19 +19,6 @@ import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 /** Range arguments models invent instead of offset/limit -- rejected by name, never silently dropped. */
 const UNSUPPORTED_RANGE_ALIASES = ["start_line", "end_line", "start", "end", "line", "lineEnd", "size"] as const;
 
-function truncate(body: string, maxBytes: number): string {
-  if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
-  const suffix = `\n... [truncated at ${maxBytes} bytes]`;
-  const suffixLen = Buffer.byteLength(suffix, "utf8");
-  // Ceiling too small to fit the marker -- return a plain slice with no suffix
-  // rather than exceeding maxBytes. The marker would be longer than the budget
-  // itself, so there is nothing to fit it after.
-  if (suffixLen >= maxBytes) return Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8");
-  // Reserve space for the suffix so head + suffix stays within maxBytes.
-  const budget = maxBytes - suffixLen;
-  return `${Buffer.from(body, "utf8").subarray(0, budget).toString("utf8")}${suffix}`;
-}
-
 /** A positive integer, or an error string naming which constraint failed. */
 function parsePositiveInt(value: unknown, field: string): number | string {
   if (typeof value !== "number" || !Number.isInteger(value)) return `${field} must be an integer`;
@@ -90,7 +77,11 @@ export const readTool: CodingTool = {
         const bounded = Buffer.byteLength(prefix, "utf8") > ctx.maxBytes;
         const lineCount = countLines(prefix);
         const header = `[${bounded ? `${lineCount}+` : `${lineCount}`} lines]`;
-        return { content: truncate(prefix === "" ? header : `${header}\n${prefix}`, ctx.maxBytes) };
+        // The model-facing cap and the marker that names the spill path are
+        // the after_tool policy's, NOT this tool's. The tool returns the
+        // header + the prefix (bounded by readCeiling's read, here ctx.maxBytes
+        // so the prefix-vs-full-file distinction stays observable via `bounded`).
+        return { content: prefix === "" ? header : `${header}\n${prefix}` };
       }
 
       let offset = 1;
@@ -131,7 +122,11 @@ export const readTool: CodingTool = {
       const endLine = limit === undefined ? totalLines : Math.min(startIndex + limit, totalLines);
       const selected = lines.slice(startIndex, endLine).join("\n");
       const header = `[lines ${offset}-${endLine} of ${totalLabel}]\n`;
-      return { content: truncate(`${header}${selected}`, ctx.maxBytes) };
+      // The model-facing cap and the marker that names the spill path are
+      // the after_tool policy's, NOT this tool's. The header and the
+      // requested range go back to the runtime whole; the chokepoint shapes
+      // them for the model.
+      return { content: `${header}${selected}` };
     } catch (err) {
       // An unreadable file is a tool ERROR the model can react to, never a
       // denial: the policy already said yes.

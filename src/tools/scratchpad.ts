@@ -28,49 +28,10 @@ export const SCRATCHPAD_DIR = ".nax/scratchpad";
  * Match cap for ScratchpadList. Mirrors `glob.ts`'s `MAX_MATCHES` -- a
  * long-running session accumulates throwaway files by design, so an
  * unbounded scan would feed an arbitrarily large listing back into model
- * context, bypassing the `ctx.maxBytes` ceiling every other content-
- * returning tool honours.
+ * context, bypassing the model-facing ceiling the after_tool policy
+ * applies to every other content-returning tool.
  */
 const MAX_MATCHES = 500;
-
-/**
- * Slice the first `maxBytes` bytes of a UTF-8 buffer, backing up to the last
- * codepoint boundary if the raw slice would land mid-codepoint.
- *
- * A byte-aligned slice that ends inside a multi-byte codepoint decodes with
- * a U+FFFD replacement character (3 bytes), which can push the resulting
- * string PAST the byte budget the slice was taken from -- exactly the
- * contract AC12 pins ("at most maxBytes bytes"). Backing up one byte at a
- * time lands on a clean codepoint boundary within four attempts (max UTF-8
- * codepoint length), keeping the decoded byte length under control.
- */
-function sliceByteBudget(buf: Buffer, maxBytes: number): string {
-  const end = Math.min(buf.length, maxBytes);
-  for (let cut = end; cut > 0; cut -= 1) {
-    const candidate = buf.subarray(0, cut).toString("utf8");
-    if (Buffer.byteLength(candidate, "utf8") <= maxBytes) return candidate;
-  }
-  return "";
-}
-
-/** Truncate content to `maxBytes` with a marker, preserving the byte ceiling. */
-function truncate(body: string, maxBytes: number): string {
-  if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
-  const buf = Buffer.from(body, "utf8");
-  const suffix = `\n... [truncated at ${maxBytes} bytes]`;
-  const suffixLen = Buffer.byteLength(suffix, "utf8");
-  // Ceiling too small to fit the marker -- return a plain slice with no suffix
-  // rather than exceeding maxBytes. sliceByteBudget backs up to the last
-  // codepoint boundary so a multi-byte UTF-8 source does not produce a
-  // U+FFFD-stuffed string that overshoots the budget.
-  if (suffixLen >= maxBytes) return sliceByteBudget(buf, maxBytes);
-  // Reserve space for the suffix so head + suffix stays within maxBytes.
-  // The same boundary discipline applies here: the head is byte-fitted to
-  // `budget` before the marker is appended, so the combined result never
-  // exceeds maxBytes even when `budget` lands mid-codepoint.
-  const budget = maxBytes - suffixLen;
-  return `${sliceByteBudget(buf, budget)}${suffix}`;
-}
 
 export const scratchpadWriteTool: CodingTool = {
   name: "ScratchpadWrite",
@@ -237,6 +198,6 @@ export const scratchpadListTool: CodingTool = {
     if (files.length === 0) return { content: "(no entries)" };
 
     const rendered = files.join("\n");
-    return { content: truncate(rendered, ctx.maxBytes) };
+    return { content: rendered };
   },
 };

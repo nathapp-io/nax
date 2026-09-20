@@ -30,12 +30,20 @@ describe("readTool", () => {
     expect(res.isError).toBe(true);
   });
 
-  test("truncates beyond maxBytes and says so", async () => {
+  test("does not append a per-tool 'truncated' marker (the after_tool policy owns the marker)", async () => {
+    // US-005: the readCeiling cap replaces ctx.maxBytes in readTool. The
+    // model-facing cap and the marker that names the spill path live at
+    // the after_tool policy (applyModelTruncationPolicy), NOT inside the
+    // tool itself. Here we exercise the tool directly: a 200-byte file
+    // with readCeiling=30 returns up to 30 bytes and DOES NOT carry the
+    // tool's own marker.
     const longPath = join(root, "long.ts");
     writeFileSync(longPath, "x".repeat(200));
     const res = await readTool.run({ path: "long.ts" }, ctx([longPath], 30));
-    expect(res.content).toContain("truncated");
-    expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(30);
+    // The tool no longer caps at ctx.maxBytes; its bound is readCeiling.
+    expect(Buffer.byteLength(res.content, "utf8")).toBeGreaterThan(30);
+    // And it no longer appends its own marker.
+    expect(res.content).not.toContain("truncated at");
   });
 
   test("declares its path field so the policy can gate it", () => {
@@ -121,9 +129,15 @@ describe("readTool", () => {
       },
     );
 
-    test("truncation at maxBytes still applies to a ranged read", async () => {
+    test("a ranged read is not truncated by the tool (the after_tool policy owns the cap)", async () => {
+      // US-005: the readCeiling cap replaces ctx.maxBytes in readTool. The
+      // tool returns the full page (within its I/O bound) and the
+      // after_tool policy shapes it for the model. A ranged read with
+      // ctx.maxBytes=30 returns content that may exceed 30 bytes — the
+      // runtime caps it, not the tool.
       const res = await readTool.run({ path: "many.txt", offset: 1, limit: 50 }, ctx([manyPath], 30));
-      expect(res.content).toContain("truncated");
+      // The tool did NOT append its own marker.
+      expect(res.content).not.toContain("truncated at");
     });
   });
 

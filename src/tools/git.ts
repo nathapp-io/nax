@@ -20,7 +20,7 @@ import { interceptArgv } from "@/execution/command-interceptor";
 import { gitWithTimeout } from "@/utils/git";
 import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
-import { READ_CEILING } from "./truncate";
+import { cutToByteCap, READ_CEILING } from "./truncate";
 
 /**
  * Interception seam for the Git TOOL only.
@@ -90,13 +90,13 @@ const GIT_MAX_COUNT_VERBS: readonly string[] = ["log"];
  *
  * Applied ONLY to a `log` that names no `refs`. A ref range is a scope the
  * caller already chose, and capping on top of it discards commits they asked
- * for with no marker -- `truncate()` appends "... [truncated at N bytes]", but
- * a commit cap appends nothing, so the model cannot tell 12 commits from
- * 200-capped-to-20. The reviewer prompt asks for a story's history as
- * `log <ref>..HEAD --oneline` (`src/prompts/sections/protocol-region.ts`), and
- * `--max-count` keeps the NEWEST n -- a default there would have silently
- * dropped the initial implementation commits. An unscoped `log` walks the whole
- * history of HEAD and is the shape with no bound at all.
+ * for with no marker. A commit cap appends nothing, so the model cannot tell
+ * 12 commits from 200-capped-to-20. The reviewer prompt asks for a story's
+ * history as `log <ref>..HEAD --oneline`
+ * (`src/prompts/sections/protocol-region.ts`), and `--max-count` keeps the
+ * NEWEST n -- a default there would have silently dropped the initial
+ * implementation commits. An unscoped `log` walks the whole history of HEAD
+ * and is the shape with no bound at all.
  */
 export const DEFAULT_LOG_MAX_COUNT = 20;
 
@@ -325,11 +325,6 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
   return argv;
 }
 
-function truncate(body: string, maxBytes: number): string {
-  if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
-  return `${Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8")}\n... [truncated at ${maxBytes} bytes]`;
-}
-
 export const gitTool: CodingTool = {
   name: "Git",
   description:
@@ -382,8 +377,8 @@ export const gitTool: CodingTool = {
 
     try {
       const intercepted = await interceptArgv(["git", ...built], ctx.root, _gitToolDeps.interceptor);
-      // The I/O ceiling, not the model-facing cap — see the `truncate` call
-      // below, which bounds the same body at the same value.
+      // The I/O ceiling, not the model-facing cap — see the `cutToByteCap`
+      // call below, which bounds the same body at the same value.
       const ioCeiling = ctx.readCeiling ?? READ_CEILING;
       const { stdout, stderr, exitCode } = await gitWithTimeout(
         built,
@@ -429,7 +424,7 @@ export const gitTool: CodingTool = {
       // returned here is bounded only by the tool-layer ceiling, so a result
       // the model cannot see whole still reaches the policy intact — and is
       // spilled rather than silently replaced by a per-tool marker.
-      const content = truncate(body.trimEnd(), ioCeiling) || "(no output)";
+      const content = cutToByteCap(body.trimEnd(), ioCeiling) || "(no output)";
       return { content, ...(audit !== undefined ? { audit } : {}) };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };

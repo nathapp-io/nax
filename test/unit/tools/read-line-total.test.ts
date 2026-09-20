@@ -81,13 +81,19 @@ describe("readTool — unranged line-total header", () => {
     expect(res.content).toMatch(/^\[\d+\+ lines\]/);
   });
 
-  test("AC6 — oversize unranged read contains 'truncated', so the floor header and truncation marker coexist", async () => {
+  test("AC6 — oversize unranged read returns the [N+ lines] floor header (no per-tool 'truncated' marker)", async () => {
+    // US-005: the readTool no longer appends its own `[truncated at N
+    // bytes]` marker. The floor header from this test pins the line count
+    // the model sees; the marker that names the spill path is the
+    // after_tool policy's, applied when the result reaches the message
+    // array. Exercising the tool directly therefore returns the prefix
+    // (bounded by readCeiling) WITHOUT the tool's old marker.
     const path = join(root, "oversize-trunc.txt");
     const line = "x".repeat(99);
     writeFileSync(path, `${line}\n`.repeat(30));
     const res = await readTool.run({ path: "oversize-trunc.txt" }, ctx([path], 500));
-    expect(res.content).toContain("truncated");
     expect(res.content).toMatch(/^\[\d+\+ lines\]/);
+    expect(res.content).not.toContain("truncated at");
   });
 
   test("AC7 — with maxBytes of 5 the content is no longer than 60 characters (header is inside the budget)", async () => {

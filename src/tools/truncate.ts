@@ -143,10 +143,9 @@ function isContinuationByte(byte: number | undefined): boolean {
  * Cut `body` to at most `maxBytes` bytes on a clean codepoint boundary.
  * Nothing is appended after the cut: the byte cap is unconditional.
  *
- * The one codepoint-boundary slicer in the tool layer (its original is
- * `sliceByteBudget` in scratchpad.ts). `readFileSlice` needs the same
- * guarantee for its own I/O bound, so it shares this rather than growing a
- * second copy.
+ * The one codepoint-boundary slicer in the tool layer — `readFileSlice`
+ * needs the same guarantee for its own I/O bound, so it shares this rather
+ * than growing a second copy.
  *
  * The boundary is found STRUCTURALLY, by walking back over continuation bytes,
  * not by measuring the decoded candidate's byte length. Measurement is unsound:

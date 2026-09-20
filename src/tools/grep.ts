@@ -14,7 +14,7 @@
 import { drainBounded } from "@/utils/bounded-io";
 import { spawn, which } from "@/utils/bun-deps";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
-import { READ_CEILING } from "./truncate";
+import { cutToByteCap, READ_CEILING } from "./truncate";
 
 const GREP_TIMEOUT_MS = 15_000;
 
@@ -59,11 +59,6 @@ export function buildGrepArgv(
   // with no backslash), not grep's default BRE.
   const modeFlag = patternType === "literal" ? "-F" : "-E";
   return ["grep", "-r", "-n", modeFlag, "--", pattern, target];
-}
-
-function truncate(body: string, maxBytes: number): string {
-  if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
-  return `${Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8")}\n... [truncated at ${maxBytes} bytes]`;
 }
 
 export const grepTool: CodingTool = {
@@ -182,6 +177,6 @@ export const grepTool: CodingTool = {
     // was the first thing lost on a result large enough to need the cue most.
     const matches = stdout.trimEnd();
     const body = caveat === "" ? matches : `${caveat}\n\n${matches}`;
-    return { content: truncate(body, ioCeiling) };
+    return { content: cutToByteCap(body, ioCeiling) };
   },
 };
