@@ -231,6 +231,7 @@ async function writeNoBaseline(
   };
   if (kind === "run") {
     await _captureDeps.writeRunBaseline(root, featureId, baseline);
+    getSafeLogger()?.info("execution", "No run-start test baseline", { reason });
   } else {
     if (storyId === undefined) return;
     await _captureDeps.writeStoryBaseline(root, featureId, storyId, baseline);
@@ -304,6 +305,9 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
   const commands = typeof resolved === "string" ? [resolved] : Array.from(resolved);
   const timeoutSeconds = _captureDeps.resolveGateTimeoutSeconds(config);
   const capturedAt = _captureDeps.now();
+  const captureStartedAt = Date.now();
+
+  getSafeLogger()?.info("execution", "Capturing run-start test baseline", { commands, timeoutSeconds });
 
   // Run each command independently; aggregate outputs and parsed summaries.
   // A single timed-out result short-circuits the whole loop to `timeout` —
@@ -375,6 +379,13 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
     capturedAt,
     baseRef,
     entries: summary.failures.map((f) => ({ file: f.file, testName: f.testName })),
+  });
+  getSafeLogger()?.info("execution", "Run-start test baseline captured", {
+    durationMs: Date.now() - captureStartedAt,
+    passed: summary.passed,
+    failed: summary.failed,
+    entries: summary.failures.length,
+    baseRef,
   });
 }
 
