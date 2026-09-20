@@ -126,9 +126,28 @@ describe("AC2: Git result > MODEL_MAX_BYTES -> marker names the original byte co
 
   test("a real gitTool output > MODEL_MAX_BYTES -> runtime marker names the original byte count", async () => {
     const repo = await makeRepoWithBigBody();
-    // The original byte count is what `applyModelTruncationPolicy` computed
-    // before shaping — a number larger than MODEL_MAX_BYTES. The marker's
-    // `of N bytes` substring must match that number.
+    // Drive gitTool directly first to capture the exact body the tool
+    // returns. The runtime's applyModelTruncationPolicy computes the
+    // marker's "of N bytes" from `Buffer.byteLength(result.content)`, so
+    // the marker's N must equal the byte length of THIS body — a fixed
+    // or fabricated count would not match.
+    const toolCtx = {
+      root: repo,
+      resolvedPaths: [],
+      maxBytes: MODEL_MAX_BYTES,
+      maxFileBytes: 2_000_000,
+      // Default readCeiling = READ_CEILING (2_000_000). The body the
+      // tool returns is bounded by that, well above MODEL_MAX_BYTES.
+    };
+    const toolResult = await gitTool.run({ subcommand: "show", refs: ["HEAD"] }, toolCtx);
+    expect(toolResult.isError).toBeFalsy();
+    const toolBody = toolResult.content;
+    const expectedOriginalBytes = Buffer.byteLength(toolBody, "utf8");
+    expect(expectedOriginalBytes).toBeGreaterThan(MODEL_MAX_BYTES);
+
+    // Now run the same call through the runtime. The marker's N must equal
+    // the byte length of the body the tool returned above — NOT a larger
+    // or fabricated number, NOT just "greater than MODEL_MAX_BYTES".
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
       maxBytes: MODEL_MAX_BYTES,
@@ -139,15 +158,9 @@ describe("AC2: Git result > MODEL_MAX_BYTES -> marker names the original byte co
     if (outcome.kind !== "ok") throw new Error("unreachable");
     // Runtime caps the body.
     expect(Buffer.byteLength(outcome.content, "utf8")).toBeLessThanOrEqual(MODEL_MAX_BYTES);
-    // The marker's "of N bytes" reports the original body size, which is
-    // strictly greater than MODEL_MAX_BYTES (otherwise there would be no
-    // truncation and no marker at all). The exact value depends on git's
-    // diff headers, so we only pin the invariant: the marker names a byte
-    // count strictly larger than MODEL_MAX_BYTES.
-    expect(outcome.content).toMatch(/of (\d+) bytes/);
-    const match = /of (\d+) bytes/.exec(outcome.content);
-    const originalBytes = Number(match?.[1]);
-    expect(originalBytes).toBeGreaterThan(MODEL_MAX_BYTES);
+    // The marker's "of N bytes" reports the original body size — exactly
+    // the byte length of the body the tool returned.
+    expect(outcome.content).toContain(`of ${expectedOriginalBytes} bytes`);
   });
 });
 
