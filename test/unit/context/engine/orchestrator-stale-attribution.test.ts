@@ -118,6 +118,7 @@ describe("ContextOrchestrator — stale attribution through dedupe (AC7)", () =>
     const entry = findExcluded(bundle.manifest, "chunk-lower-stale");
     expect(entry.reason).toBe("dedupe");
     expect(entry.stale).toBe(true);
+    expect(bundle.manifest.chunkProviders?.["chunk-lower-stale"]).toBe("p2");
   });
 
   test("AC7 (mechanical reason preserved): the dropped stale chunk keeps reason 'dedupe' rather than being re-labeled 'stale'", async () => {

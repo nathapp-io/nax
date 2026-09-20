@@ -31,6 +31,11 @@ export interface ManifestInputs {
    * requires. IDs absent from the lookup leave no key.
    */
   chunkTokenLookup: ReadonlyMap<string, number>;
+  /**
+   * Provider ID by chunk ID for every scored chunk, included or excluded.
+   * Optional for compatibility with legacy and synthetic callers.
+   */
+  chunkProviderLookup?: ReadonlyMap<string, string>;
   floorPackedIds: string[];
   floorOverageIds: string[];
   /** Sum of the `tokens` of the chunks in `floorOverageIds` (Ruling 11). */
@@ -72,6 +77,7 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     dedupeDropped,
     budgetExcludedIds,
     chunkTokenLookup,
+    chunkProviderLookup,
     floorPackedIds,
     floorOverageIds,
     floorOverageTokens,
@@ -135,6 +141,10 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     const tokens = chunkTokenLookup.get(id);
     if (tokens !== undefined && chunkTokens[id] === undefined) {
       chunkTokens[id] = tokens;
+    }
+    const providerId = chunkProviderLookup?.get(id);
+    if (providerId !== undefined && chunkProviders[id] === undefined) {
+      chunkProviders[id] = providerId;
     }
   }
 
