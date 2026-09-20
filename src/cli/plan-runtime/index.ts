@@ -12,8 +12,6 @@ import { scanSourceRoots } from "@/analyze";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG, isUnrecognizedLiteralModel, resolveConfiguredModel } from "@/config";
 import { discoverWorkspacePackages } from "@/context/generator";
-import type { DebateRunnerOptions } from "@/debate";
-import { DebateRunner } from "@/debate";
 import { initInteractionChain } from "@/interaction";
 import { getLogger } from "@/logger";
 import type { PRD } from "@/prd";
@@ -103,7 +101,6 @@ export const _planDeps = {
     onQuestionDetected: (text: string) => Promise<string>;
   } => createCliInteractionBridge(),
   initInteractionChain: (cfg: NaxConfig, headless: boolean) => initInteractionChain(cfg, headless),
-  createDebateRunner: (opts: DebateRunnerOptions): DebateRunner => new DebateRunner(opts),
   runPrecheck: async (
     config: NaxConfig,
     prd: PRD,

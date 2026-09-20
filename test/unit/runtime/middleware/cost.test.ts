@@ -381,12 +381,17 @@ describe("attachCostSubscriber", () => {
     attachCostSubscriber(bus, agg, "r-001");
 
     bus.emitDispatch(
-      makeCompleteEvent({ model: "sonnet", modelTier: "balanced", sessionRole: "judge", exactCostUsd: 0.02 }),
+      makeCompleteEvent({
+        model: "sonnet",
+        modelTier: "balanced",
+        sessionRole: "reviewer-adversarial",
+        exactCostUsd: 0.02,
+      }),
     );
 
     expect(recorded[0].model).toBe("sonnet");
     expect(recorded[0].modelTier).toBe("balanced");
-    expect(recorded[0].sessionRole).toBe("judge");
+    expect(recorded[0].sessionRole).toBe("reviewer-adversarial");
   });
 
   test("#1433: rows carry a schemaVersion so pre-fix rows stay distinguishable", () => {

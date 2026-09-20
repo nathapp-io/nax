@@ -16,14 +16,13 @@ import type { NaxConfig } from "./types";
 export const reviewConfigSelector = pickSelector(
   "review",
   "review",
-  "debate",
   "models",
   "execution",
   "project",
   "quality",
   "agent",
 );
-export const planConfigSelector = pickSelector("plan", "plan", "debate", "agent", "models", "project", "routing");
+export const planConfigSelector = pickSelector("plan", "plan", "agent", "models", "project", "routing");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent", "routing");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
 export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance");
@@ -43,7 +42,6 @@ export const tddConfigSelector = pickSelector(
   "project",
   "precheck",
 );
-export const debateConfigSelector = pickSelector("debate", "debate", "agent");
 export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
 
 export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => ({
@@ -162,7 +160,6 @@ export type AcceptanceConfig = ReturnType<typeof acceptanceConfigSelector.select
 export type AcceptanceFixConfig = ReturnType<typeof acceptanceFixConfigSelector.select>;
 export type AcceptanceGenConfig = ReturnType<typeof acceptanceGenConfigSelector.select>;
 export type TddConfig = ReturnType<typeof tddConfigSelector.select>;
-export type DebateConfig = ReturnType<typeof debateConfigSelector.select>;
 export type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
 export type VerifyConfig = ReturnType<typeof verifyConfigSelector.select>;
 export type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;

@@ -16,8 +16,6 @@ stages:
   - "tdd-simple"
   - "no-test"
   - "batch"
-  - "review-dialogue"
-  - "debate"
   - "queue-check"
   - "routing"
   - "constitution"

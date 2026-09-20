@@ -3,7 +3,7 @@
  * narrowed from "Write or Edit" in fix round 1 -- see the report). `Edit`
  * is the discriminator, not `Write`: an op only edits EXISTING source when
  * it declares `Edit`, and only that op can hit a missing dependency while
- * changing code. The fileOutput-shaped ops (plan, plan-refine, debate-plan,
+ * changing code. The fileOutput-shaped ops (plan, plan-refine,
  * acceptance-generate) declare `Write` because each writes ONE fresh
  * artifact (a PRD, an acceptance file) -- never source -- and have no
  * business installing packages, so they must NOT carry Exec. The verifier

@@ -1,8 +1,8 @@
 /**
  * Unit tests for planDecomposeCommand (US-002)
  *
- * Covers: debate session fallback to adapter.decompose() on failure,
- * and no-debate path (AC-13, AC-14).
+ * Covers: source-root scanning, prompt context rendering and decomposition
+ * dispatch (AC-13, AC-14).
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -11,7 +11,6 @@ import { join } from "node:path";
 import {
   assertDefined,
   cleanupTempDir,
-  makeDebateRunner,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -130,7 +129,6 @@ const origWriteFile = _planDeps.writeFile;
 const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
-const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -141,7 +139,7 @@ const origMkdirp = _planDeps.mkdirp;
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("planDecomposeCommand — debate fallback and no-debate path", () => {
+describe("planDecomposeCommand", () => {
   let tmpDir: string;
   let capturedWriteArgs: Array<[string, string]>;
 
@@ -188,131 +186,12 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;
     cleanupTempDir(tmpDir);
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-13: debate outcome === 'failed' falls back to adapter.decompose()
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-13: falls back to adapter.decompose() when debate outcome is 'failed'", async () => {
-    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
-    const prd = makePrd();
-    setupDeps(prd, stories);
-
-    _planDeps.createDebateRunner = mock(() =>
-      makeDebateRunner({
-        run: mock(async () => ({
-          storyId: "US-001",
-          stage: "decompose",
-          outcome: "failed" as const,
-          rounds: 0,
-          debaters: [],
-          resolverType: "synthesis" as const,
-          proposals: [],
-          totalCostUsd: 0,
-        })),
-      }),
-    );
-
-    const adapterDecomposeCalls: unknown[] = [];
-    _planDeps.createRuntime = mock(() =>
-      makeMockRuntime({
-        agentManager: makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-          adapterDecomposeCalls.push(opts);
-          return { stories: stories.map(toDecomposedStory) };
-        }),
-      }),
-    );
-
-    const debateConfig = {
-      enabled: true,
-      agents: 2,
-      stages: {
-        decompose: {
-          enabled: true,
-          resolver: { type: "synthesis" as const },
-          sessionMode: "one-shot" as const,
-          rounds: 1,
-        },
-      },
-    };
-
-    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig }), {
-      feature: FEATURE,
-      storyId: "US-001",
-    });
-
-    expect(adapterDecomposeCalls).toHaveLength(1);
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-14: no debate config → adapter.decompose() called directly
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-14: calls adapter.decompose() directly when debate.stages.decompose is not configured", async () => {
-    const prd = makePrd();
-    const adapterDecomposeCalls: unknown[] = [];
-
-    setupDeps(prd);
-    _planDeps.createRuntime = mock(() =>
-      makeMockRuntime({
-        agentManager: makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-          adapterDecomposeCalls.push(opts);
-          return { stories: [makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory) };
-        }),
-      }),
-    );
-
-    const createDebateCalled: boolean[] = [];
-    _planDeps.createDebateRunner = mock(() => {
-      createDebateCalled.push(true);
-      return makeDebateRunner();
-    });
-
-    await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
-
-    expect(adapterDecomposeCalls).toHaveLength(1);
-    expect(createDebateCalled).toHaveLength(0);
-  });
-
-  test("AC-14: does not create DebateSession when debate.enabled is false", async () => {
-    const prd = makePrd();
-    setupDeps(prd);
-
-    const createDebateCalled: boolean[] = [];
-    _planDeps.createDebateRunner = mock(() => {
-      createDebateCalled.push(true);
-      return makeDebateRunner();
-    });
-
-    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: { enabled: false } }), {
-      feature: FEATURE,
-      storyId: "US-001",
-    });
-
-    expect(createDebateCalled).toHaveLength(0);
-  });
-
-  test("AC-14: does not create DebateSession when debate config is absent", async () => {
-    const prd = makePrd();
-    setupDeps(prd);
-
-    const createDebateCalled: boolean[] = [];
-    _planDeps.createDebateRunner = mock(() => {
-      createDebateCalled.push(true);
-      return makeDebateRunner();
-    });
-
-    await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
-
-    expect(createDebateCalled).toHaveLength(0);
   });
 
   // ──────────────────────────────────────────────────────────────────────────

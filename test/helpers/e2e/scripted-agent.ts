@@ -6,7 +6,7 @@
  */
 import type { AgentAdapter, SessionHandle, TurnResult } from "@/agents/types";
 import type { SessionRole } from "@/runtime";
-import { isSessionRole, KNOWN_SESSION_ROLES } from "@/runtime";
+import { KNOWN_SESSION_ROLES } from "@/runtime";
 import { makeAgentAdapter } from "../mock-agent-adapter";
 
 export interface ScriptedTurn {
@@ -50,9 +50,6 @@ function roleFromSessionName(sessionName: string): SessionRole {
   for (const role of sorted) {
     if (sessionName.endsWith(`-${role}`)) return role;
   }
-  // Fallback: debate roles — check for "debate-" suffix pattern.
-  const debateMatch = sessionName.match(/-?(debate-[^-]+)$/);
-  if (debateMatch?.[1] && isSessionRole(debateMatch[1])) return debateMatch[1] as SessionRole;
   return "main";
 }
 

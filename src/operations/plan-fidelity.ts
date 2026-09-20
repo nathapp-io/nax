@@ -177,7 +177,7 @@ export function warnOnDroppedContextFiles(prd: PRD, specContent: string, feature
 /**
  * Every deterministic spec→PRD fidelity repair, in the order they must run.
  *
- * One entry point so the four plan strategies (single, refine, pipeline, debate)
+ * One entry point so the two plan strategies (single, refine)
  * cannot drift on which repairs they apply — the class of bug that let
  * `### Modifies` reach only some paths would otherwise recur per-field.
  *

@@ -8,7 +8,6 @@
 import { z } from "zod";
 import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
 import { ContextConfigSchema } from "./schemas-context";
-import { DebateConfigSchema } from "./schemas-debate";
 import {
   AutoModeConfigSchema,
   AutoRouteConfigSchema,
@@ -282,8 +281,6 @@ export const NaxConfigSchema = z
       model: "balanced",
       outputPath: "spec.md",
       timeoutSeconds: 600,
-      citationThreshold: 0.5,
-      criticModel: "fast",
       specGuard: false,
     }),
     acceptance: AcceptanceConfigSchema.default({
@@ -360,54 +357,6 @@ export const NaxConfigSchema = z
     prompts: PromptsConfigSchema.default({ behavioralGuardrails: "lite" }),
     generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
-    debate: DebateConfigSchema.optional().default(() => ({
-      enabled: false,
-      agents: 3,
-      maxConcurrentDebaters: 2,
-      grounder: { model: "fast" as const, timeoutSeconds: 1800 },
-      stages: {
-        plan: {
-          enabled: true,
-          resolver: { type: "synthesis" as const },
-          sessionMode: "stateful" as const,
-          rounds: 3,
-          mode: "panel" as const,
-          timeoutSeconds: 600,
-          autoPersona: false,
-          evidenceMode: "current" as const,
-        },
-        acceptance: {
-          enabled: false,
-          resolver: { type: "majority-fail-closed" as const },
-          sessionMode: "one-shot" as const,
-          rounds: 1,
-          mode: "panel" as const,
-          timeoutSeconds: 600,
-          autoPersona: false,
-          evidenceMode: undefined,
-        },
-        rectification: {
-          enabled: false,
-          resolver: { type: "synthesis" as const },
-          sessionMode: "one-shot" as const,
-          rounds: 1,
-          mode: "panel" as const,
-          timeoutSeconds: 600,
-          autoPersona: false,
-          evidenceMode: undefined,
-        },
-        escalation: {
-          enabled: false,
-          resolver: { type: "majority-fail-closed" as const },
-          sessionMode: "one-shot" as const,
-          rounds: 1,
-          mode: "panel" as const,
-          timeoutSeconds: 600,
-          autoPersona: false,
-          evidenceMode: undefined,
-        },
-      },
-    })),
     curator: CuratorConfigSchema.optional(),
     autoPr: z
       .object({

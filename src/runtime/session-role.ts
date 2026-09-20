@@ -17,26 +17,20 @@ export type CanonicalSessionRole =
   | "test-fix"
   | "reviewer-semantic"
   | "reviewer-adversarial"
-  | "grounder"
   | "plan"
-  | "plan-draft"
-  | "plan-revise"
-  | "plan-critic"
   | "plan-refine"
   | "decompose"
   | "acceptance-gen"
   | "refine"
   | "fix-gen"
   | "auto"
-  | "synthesis"
-  | "judge"
   | "setup"
   | "finish-review-spec"
   | "finish-review-quality"
   | "finish-fix"
   | "finish-narrative";
 
-export type SessionRole = CanonicalSessionRole | `debate-${string}`;
+export type SessionRole = CanonicalSessionRole;
 
 export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "main",
@@ -49,19 +43,13 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "test-fix",
   "reviewer-semantic",
   "reviewer-adversarial",
-  "grounder",
   "plan",
-  "plan-draft",
-  "plan-revise",
-  "plan-critic",
   "plan-refine",
   "decompose",
   "acceptance-gen",
   "refine",
   "fix-gen",
   "auto",
-  "synthesis",
-  "judge",
   "setup",
   "finish-review-spec",
   "finish-review-quality",
@@ -70,6 +58,5 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
 ] as const;
 
 export function isSessionRole(s: string): s is SessionRole {
-  if ((KNOWN_SESSION_ROLES as readonly string[]).includes(s)) return true;
-  return s.startsWith("debate-") && s.length > 7;
+  return (KNOWN_SESSION_ROLES as readonly string[]).includes(s);
 }

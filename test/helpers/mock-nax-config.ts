@@ -5,9 +5,9 @@ import type { AdversarialReviewConfig, SemanticReviewConfig } from "@/review/typ
 
 /**
  * `NonNullable` before the `extends object` test: for an OPTIONAL nested config
- * (`debate?: DebateConfig`), `T[K]` is `DebateConfig | undefined`, and a union
- * with `undefined` does not extend `object` — so the old form fell through to
- * `: T[K]` and demanded the FULL `DebateConfig` for a one-field override.
+ * (`precheck?: PrecheckConfig`), `T[K]` is `PrecheckConfig | undefined`, and a
+ * union with `undefined` does not extend `object` — so the old form fell through
+ * to `: T[K]` and demanded the FULL `PrecheckConfig` for a one-field override.
  * See #1514 §Patterns learned item 2.
  */
 export type DeepPartial<T> = {

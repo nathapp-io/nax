@@ -82,8 +82,8 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
   },
   parse(output, _input, _ctx): ImplementerOutput {
     if (!output) return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0, output: "" };
-    // buildHopCallback injects 'Agent "xxx" failed: ...' when all hops fail — same
-    // heuristic used by statefulDebaterOp to avoid masking agent failure as success.
+    // buildHopCallback injects 'Agent "xxx" failed: ...' when all hops fail —
+    // same heuristic used to avoid masking an agent failure as success.
     if (output.startsWith('Agent "')) {
       return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0, output };
     }

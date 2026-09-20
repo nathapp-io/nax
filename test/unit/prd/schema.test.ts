@@ -599,7 +599,7 @@ describe("suggestedCriteria", () => {
     [
       "{criterion, rationale} objects",
       [
-        { criterion: "edge case A", rationale: "debater suggested" },
+        { criterion: "edge case A", rationale: "critic suggested" },
         { criterion: "edge case B", rationale: "another reason" },
       ],
       ["edge case A", "edge case B"],

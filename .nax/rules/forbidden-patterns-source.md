@@ -16,7 +16,6 @@ stages:
   - "review"
   - "review-semantic"
   - "review-adversarial"
-  - "debate"
 ---
 
 # Forbidden Patterns

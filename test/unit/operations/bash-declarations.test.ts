@@ -15,7 +15,6 @@ import {
   fullSuiteRectifyOp,
   implementerOp,
   implementerRectifyOp,
-  planDebaterOp,
   planInteractiveOp,
   rectifyOp,
   semanticReviewOp,
@@ -47,7 +46,6 @@ describe("ops that must never hold Bash", () => {
   test.each([
     ["adversarial-review", adversarialReviewOp],
     ["semantic-review", semanticReviewOp],
-    ["debate-plan", planDebaterOp],
     ["plan", planInteractiveOp],
     // The verifier judges the implementer's work. It already cannot install
     // (no `Exec` — see test/unit/operations/op-tool-declarations.test.ts), and

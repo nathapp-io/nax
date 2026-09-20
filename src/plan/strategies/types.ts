@@ -1,7 +1,6 @@
 import type { SourceRoot } from "@/analyze";
 import type { NaxConfig } from "@/config";
 import type { PlanConfig } from "@/config/selectors";
-import type { DebateRunner, DebateRunnerOptions } from "@/debate";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
 import type { InteractionChain } from "@/interaction/chain";
 import type { PackageSummary } from "@/prompts";
@@ -27,7 +26,6 @@ export interface PlanDeps {
   spawnSync: (cmd: string[], opts?: { cwd?: string }) => { stdout: Buffer; exitCode: number | null };
   initInteractionChain: (cfg: NaxConfig, headless: boolean) => Promise<InteractionChain | null>;
   createInteractionBridge: () => InteractionBridge;
-  createDebateRunner: (opts: DebateRunnerOptions) => DebateRunner;
   getLogger: () => ReturnType<typeof import("@/logger").getLogger>;
 }
 
@@ -74,6 +72,6 @@ export interface PlanResult {
 }
 
 export interface IPlanStrategy {
-  readonly mode: "single" | "pipeline" | "debate" | "refine";
+  readonly mode: "single" | "refine";
   execute(ctx: PlanModeContext): Promise<PlanResult>;
 }

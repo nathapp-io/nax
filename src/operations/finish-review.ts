@@ -14,8 +14,7 @@
  * The static `session.role` below (`"finish-review-spec"`) is only ever the
  * *default* — the caller selects the real per-phase role by passing
  * `CallContext.sessionOverride.role: "finish-review-spec" | "finish-review-quality"`
- * into `callOp`, exactly as `src/plan/critic.ts` runs `planDraftOp` under a
- * `plan-revise` override. `callOp` honours the override at
+ * into `callOp`. `callOp` honours the override at
  * `ctx.sessionOverride?.role ?? runOp.session.role` (`src/operations/call.ts`).
  * Do not "fix" this into a resolver — the type does not allow it, and the
  * override is the sanctioned mechanism.

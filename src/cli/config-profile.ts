@@ -28,7 +28,7 @@ export const _profileCLIDeps = {
 // A false positive here masks a whole subtree of a legitimate config
 // section to a single "***" string, destroying real (non-secret) data — the
 // BUG-37 broadening (adding auth|session|url|...) matched non-secret
-// container keys like "tdd.sessionTiers" and "debate.*.sessionMode",
+// container keys like "tdd.sessionTiers" and "plan.mode",
 // breaking `nax config --explain` output. Keep this pattern narrow.
 const SENSITIVE_KEY_PATTERN = /key|token|secret|password|credential/i;
 const VAR_PATTERN = /\$[A-Za-z_][A-Za-z0-9_]*/;

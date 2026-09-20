@@ -15,7 +15,6 @@ import {
   assertDefined,
   assertNaxError,
   cleanupTempDir,
-  makeDebateRunner,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -104,7 +103,6 @@ const origWriteFile = _planDeps.writeFile;
 const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
-const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -129,7 +127,6 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ run: mock(async () => ({ outcome: "failed" })) }));
   }
 
   beforeEach(async () => {
@@ -144,7 +141,6 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;

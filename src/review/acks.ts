@@ -19,9 +19,7 @@ import type { ReviewAck } from "./types";
  * bloating every audit record.
  *
  * Bounds a single reviewer response here. Historically also exported for the
- * merged total in the deleted `semantic-debate.ts` (#1859), where N debaters'
- * responses were concatenated into one audit entry and would otherwise have
- * persisted N × this.
+ * merged total of concatenated review responses (#1859).
  */
 export const MAX_ACKS = 50;
 /** Ceiling on a single `note`, matching the clipping other reviewer text gets. */

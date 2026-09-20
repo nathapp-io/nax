@@ -45,7 +45,7 @@ export function assertDefined<T>(value: T, label = "value"): asserts value is No
  *
  * ```ts
  * const [taskContext, format, opts] = firstCall(runPlanMock);
- * expect(opts.feature).toBe("debate-plan");
+ * expect(opts.feature).toBe("implement");
  * ```
  */
 export function firstCall<Args extends unknown[]>(m: { mock: { calls: Args[] } }, label = "mock"): Args {

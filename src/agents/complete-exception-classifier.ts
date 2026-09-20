@@ -17,7 +17,7 @@ import { isTransportFailureMessage } from "./transport-failure-message";
  * policy table by outcome (nax#1883), and `fail-unknown` is quality-gated, so
  * it never swapped unless `fallback.onQualityFailure` is enabled — making one
  * transient failure terminal for complete-kind ops (routing, decompose,
- * debate, acceptance-refine) even when a fallback agent was configured and
+ * acceptance-refine) even when a fallback agent was configured and
  * available.
  *
  * `completeWithFallback` and `runWithFallback` share one exhaustion routine

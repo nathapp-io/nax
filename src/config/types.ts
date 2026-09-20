@@ -5,16 +5,6 @@
  * for the nax configuration system.
  */
 
-// Debate types
-export type {
-  DebateConfig,
-  DebateResult,
-  Debater,
-  DebateStageConfig,
-  ResolverConfig,
-  ResolverType,
-  SessionMode,
-} from "../debate/types";
 // Runtime types
 export type {
   AcceptanceConfig,

@@ -60,7 +60,7 @@ export interface LLMResponse {
 
 /**
  * The single parse boundary for every semantic reviewer turn — the op's
- * `parse`, both reprompt second-turns, and the debate path all land here.
+ * `parse` and both reprompt second-turns land here.
  *
  * Category normalization happens HERE, not only in `llmFindingToFinding`,
  * because most consumers read the accepted `LLMFinding[]` directly rather

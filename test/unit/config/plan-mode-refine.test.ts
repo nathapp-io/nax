@@ -25,21 +25,8 @@ describe("resolvePlanMode refine", () => {
     expect(resolvePlanMode({ plan: { mode: "refine" } } as NaxConfig)).toBe("refine");
   });
 
-  test("returns debate when debate auto-selection is enabled", () => {
-    expect(
-      resolvePlanMode({
-        debate: { enabled: true, stages: { plan: { enabled: true } } },
-      } as NaxConfig),
-    ).toBe("debate");
-  });
-
-  test("prefers explicit refine over debate auto-selection", () => {
-    expect(
-      resolvePlanMode({
-        plan: { mode: "refine" },
-        debate: { enabled: true, stages: { plan: { enabled: true } } },
-      } as NaxConfig),
-    ).toBe("refine");
+  test("returns single when no mode is set", () => {
+    expect(resolvePlanMode({} as NaxConfig)).toBe("single");
   });
 });
 

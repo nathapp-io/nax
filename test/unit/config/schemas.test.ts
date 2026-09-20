@@ -336,44 +336,6 @@ describe("profile field — US-001-A", () => {
   });
 });
 
-describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
-  type DebateStages = {
-    plan: { mode: string };
-    acceptance: { mode: string };
-    rectification: { mode: string };
-    escalation: { mode: string };
-  };
-
-  function getStages(): DebateStages {
-    const parsed = NaxConfigSchema.parse({});
-    return parsed.debate.stages;
-  }
-
-  test.each(["plan", "acceptance", "rectification", "escalation"] as const)(
-    "stages.%s.mode defaults to 'panel'",
-    (stage) => {
-      expect(getStages()[stage].mode).toBe("panel");
-    },
-  );
-
-  test("stages.plan.mode accepts 'hybrid'", () => {
-    const result = NaxConfigSchema.safeParse({
-      debate: { stages: { plan: { mode: "hybrid" } } },
-    });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    const stages = result.data.debate.stages;
-    expect(stages.plan.mode).toBe("hybrid");
-  });
-
-  test("stages.plan.mode rejects invalid value 'sequential'", () => {
-    const result = NaxConfigSchema.safeParse({
-      debate: { stages: { plan: { mode: "sequential" } } },
-    });
-    expect(result.success).toBe(false);
-  });
-});
-
 describe("QualityConfigSchema — scopeTestThreshold (US-001)", () => {
   test.each([
     [{}, 10],

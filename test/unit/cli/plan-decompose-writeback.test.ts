@@ -11,7 +11,6 @@ import { join } from "node:path";
 import {
   assertDefined,
   cleanupTempDir,
-  makeDebateRunner,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -54,15 +53,6 @@ function makeMockDecomposeManager(
 
 const FEATURE = "my-feature";
 
-function makeStageConfig() {
-  return {
-    enabled: false,
-    resolver: { type: "synthesis" as const },
-    sessionMode: "one-shot" as const,
-    rounds: 0,
-  };
-}
-
 function makeSiblingStory(id: string, title: string): UserStory {
   return makeStory({ id, title });
 }
@@ -103,10 +93,6 @@ function toDecomposedStory(story: UserStory): DecomposedStory {
   };
 }
 
-function makeDecomposeResponse(stories: UserStory[]): string {
-  return JSON.stringify(stories.map(toDecomposedStory));
-}
-
 function _makeFakeScan() {
   return {
     fileTree: "└── src/\n    └── index.ts",
@@ -125,7 +111,6 @@ const origWriteFile = _planDeps.writeFile;
 const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
-const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -183,7 +168,6 @@ describe("planDecomposeCommand — PRD write-back", () => {
     _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
@@ -261,118 +245,6 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const written = JSON.parse(content) as PRD;
     expect(Array.isArray(written.userStories)).toBe(true);
   });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-12: debate enabled — creates DebateSession with stage 'decompose'
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-12: creates DebateSession with stage 'decompose' when debate is enabled", async () => {
-    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
-    const prd = makePrd();
-    setupDeps(prd, stories);
-
-    const capturedDebateOpts: unknown[] = [];
-    _planDeps.createDebateRunner = mock((opts) => {
-      capturedDebateOpts.push(opts);
-      return makeDebateRunner({
-        run: mock(async () => ({
-          storyId: "US-001",
-          stage: "decompose",
-          outcome: "passed" as const,
-          rounds: 1,
-          debaters: ["claude"],
-          resolverType: "synthesis" as const,
-          proposals: [],
-          totalCostUsd: 0,
-          output: makeDecomposeResponse(stories),
-        })),
-      });
-    });
-
-    const debateConfig = {
-      enabled: true,
-      agents: 2,
-      stages: {
-        plan: makeStageConfig(),
-        review: makeStageConfig(),
-        acceptance: makeStageConfig(),
-        rectification: makeStageConfig(),
-        escalation: makeStageConfig(),
-        decompose: {
-          enabled: true,
-          resolver: { type: "synthesis" as const },
-          sessionMode: "one-shot" as const,
-          rounds: 1,
-        },
-      },
-    };
-
-    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig }), {
-      feature: FEATURE,
-      storyId: "US-001",
-    });
-
-    expect(_planDeps.createDebateRunner).toHaveBeenCalledTimes(1);
-    expect(capturedDebateOpts[0]).toMatchObject({ stage: "decompose" });
-  });
-
-  test("AC-12: uses debate output when outcome is not 'failed'", async () => {
-    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
-    const prd = makePrd();
-    setupDeps(prd, stories);
-
-    _planDeps.createDebateRunner = mock(() =>
-      makeDebateRunner({
-        run: mock(async () => ({
-          storyId: "US-001",
-          stage: "decompose",
-          outcome: "passed" as const,
-          rounds: 1,
-          debaters: ["claude"],
-          resolverType: "synthesis" as const,
-          proposals: [],
-          totalCostUsd: 0,
-          output: makeDecomposeResponse(stories),
-        })),
-      }),
-    );
-
-    const adapterDecomposeCalls: unknown[] = [];
-    _planDeps.createRuntime = mock(() =>
-      makeMockRuntime({
-        agentManager: makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-          adapterDecomposeCalls.push(opts);
-          return { stories: stories.map(toDecomposedStory) };
-        }),
-      }),
-    );
-
-    const debateConfig = {
-      enabled: true,
-      agents: 2,
-      stages: {
-        plan: makeStageConfig(),
-        review: makeStageConfig(),
-        acceptance: makeStageConfig(),
-        rectification: makeStageConfig(),
-        escalation: makeStageConfig(),
-        decompose: {
-          enabled: true,
-          resolver: { type: "synthesis" as const },
-          sessionMode: "one-shot" as const,
-          rounds: 1,
-        },
-      },
-    };
-
-    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig }), {
-      feature: FEATURE,
-      storyId: "US-001",
-    });
-
-    // When debate succeeds, adapter.decompose() should NOT be called
-    expect(adapterDecomposeCalls).toHaveLength(0);
-  });
 });
 
 describe("planDecomposeCommand — writes through the plan-write seam (nax#2080)", () => {
@@ -396,7 +268,6 @@ describe("planDecomposeCommand — writes through the plan-write seam (nax#2080)
     _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;

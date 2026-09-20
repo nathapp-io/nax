@@ -242,14 +242,14 @@ describe("completeAs — dispatch emission", () => {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
       storyId: "US-003",
-      sessionRole: "synthesis",
+      sessionRole: "reviewer-adversarial",
       pipelineStage: "complete",
       timeoutMs: 100,
     });
 
     expect(received).toHaveLength(1);
     expect(received[0]?.kind).toBe("complete");
-    expect(received[0]?.sessionRole).toBe("synthesis");
+    expect(received[0]?.sessionRole).toBe("reviewer-adversarial");
     expect(received[0]?.storyId).toBe("US-003");
   });
 });

@@ -16,8 +16,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeNaxConfig } from "@test/helpers";
 import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
-import type { DebatePlanInput, PlanInteractiveInput, PlanRefineInput } from "@/operations";
-import { planDebaterOp, planInteractiveOp, planRefineOp } from "@/operations";
+import type { PlanInteractiveInput, PlanRefineInput } from "@/operations";
+import { planInteractiveOp, planRefineOp } from "@/operations";
 import type { ToolScope } from "@/tools";
 import { compileToolPolicy } from "@/tools";
 
@@ -36,25 +36,8 @@ const planInput: PlanInteractiveInput = {
 
 const refineInput: PlanRefineInput = { ...planInput };
 
-const debateInput: DebatePlanInput = {
-  debater: { agent: "native" },
-  index: 0,
-  proposePrompt: "propose",
-  buildRebutPrompt: () => "rebut",
-  proposalBarriers: [Promise.withResolvers<string>()],
-  rebuttalBarrier: Promise.withResolvers<string>(),
-  selectionSignal: Promise.resolve({}),
-  signal: new AbortController().signal,
-  storyId: "US-001",
-  outputPath,
-};
-
 /**
- * The ops that actually name the guarded feature PRD. `planDebaterOp` does NOT:
- * its real outputPath is `<outputDir>/prd-debate-<i>.json` (src/debate/runner-plan.ts:124),
- * which the guard never refused -- the debate STRATEGY still writes the real PRD,
- * but through `planInteractiveOp` (src/plan/strategies/debate.ts:92). Asserted
- * separately below so the distinction cannot quietly rot.
+ * The ops that actually name the guarded feature PRD.
  */
 const PRD_WRITING_OPS = [
   ["plan-interactive", planInteractiveOp.tools ?? [], planInteractiveOp.fileOutput?.(planInput)],
@@ -80,19 +63,6 @@ describe("plan ops can write their own declared fileOutput (nax#2115)", () => {
       expect(policy.check("Write", PATH_SCOPE, { path: ".nax/features/other/prd.json" }).allowed).toBe(false);
     });
   }
-});
-
-describe("debate-plan writes a debate scratch file, not the guarded PRD (nax#2115)", () => {
-  test("its declared fileOutput is whatever the caller passed, and callers pass prd-debate-<i>.json", () => {
-    const debateScratch = join(root, ".nax", "features", "auth", "prd-debate-0.json");
-    expect(planDebaterOp.fileOutput?.({ ...debateInput, outputPath: debateScratch })).toBe(debateScratch);
-  });
-
-  test("a debate scratch filename is NOT refused, so the exemption is inert for it", () => {
-    const grants = [{ tool: "Write", patterns: ["**"] }];
-    const policy = compileToolPolicy(grants, root);
-    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/features/auth/prd-debate-0.json" }).allowed).toBe(true);
-  });
 });
 
 /**
