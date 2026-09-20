@@ -145,6 +145,7 @@ export function createSessionRunHop(
             // instead), but a future op on the default hop needs its pull-tool
             // catalogue forwarded here too, or it silently gets none.
             contextPullTools: options.contextPullTools,
+            contextToolRuntime: options.contextToolRuntime,
             codingTools: codingSupport?.tools,
             ...(options.callId !== undefined ? { callId: options.callId } : {}),
             ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
