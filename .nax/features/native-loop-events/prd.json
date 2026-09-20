@@ -3,7 +3,7 @@
   "feature": "native-loop-events",
   "branchName": "feat/native-loop-events",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-20T07:34:11.799Z",
+  "updatedAt": "2026-09-20T08:39:46.914Z",
   "userStories": [
     {
       "id": "US-001",
@@ -203,9 +203,9 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 3,
       "escalations": [],
       "routing": {
         "complexity": "expert",
@@ -277,6 +277,7 @@
           "findingsCleared": false
         }
       ],
+      "failureCategory": "full-suite-gate-exhausted",
       "outOfScope": [
         "rejecting invented range-argument aliases on `ScratchpadRead`, which `readTool` does at `src/tools/read.ts:70-76`, is deferred."
       ]
