@@ -13,7 +13,10 @@
  *      which lines to keep — over the WHOLE body, not over a byte window of it.
  *   3. Byte cap LAST: if the result still exceeds MODEL_MAX_BYTES, cut on a
  *      codepoint boundary. Running it last is what makes the byte ceiling
- *      unconditional — nothing is appended or prepended after the cut.
+ *      unconditional — nothing is appended or prepended after the cut. Under
+ *      `tail-with-first-line` the first line is retained INSIDE that budget,
+ *      with the trailing slice taken against what remains after the first line
+ *      and its newline; if the first line alone does not fit, it is itself cut.
  *
  * Line counting: a trailing newline TERMINATES the last line rather than
  * opening an empty one, and an empty body has no lines, matching
@@ -143,6 +146,48 @@ export function cutToByteCap(body: string, maxBytes: number): string {
 }
 
 /**
+ * Cut `body` down to its LAST `maxBytes` bytes, on a clean codepoint boundary.
+ * The mirror of `cutToByteCap`: where that one risks a U+FFFD at the tail, this
+ * one risks one at the head, and either way a replacement character is 3 bytes
+ * and pushes the decoded result past the budget it was taken against. Advancing
+ * the start by one byte at a time clears the partial codepoint within four
+ * attempts (the maximum UTF-8 codepoint length).
+ */
+function tailWithinBytes(body: string, maxBytes: number): string {
+  const buf = Buffer.from(body, "utf8");
+  if (buf.length <= maxBytes) return body;
+  for (let start = buf.length - maxBytes; start < buf.length; start += 1) {
+    const candidate = buf.subarray(start).toString("utf8");
+    if (Buffer.byteLength(candidate, "utf8") <= maxBytes) return candidate;
+  }
+  return "";
+}
+
+/**
+ * Cut a `tail-with-first-line` body to `maxBytes`: the body's first line, then
+ * its LAST bytes, dropping the middle. The byte stage's half of the same choice
+ * the line-count stage makes — a body cut for length should lose its middle,
+ * not its end, when the direction says the end is what matters.
+ *
+ * The first line is retained INSIDE the budget, not on top of it: the trailing
+ * slice is measured against what remains once the first line and its newline
+ * are paid for. If the first line alone does not fit, it is itself cut. Either
+ * way nothing is appended after the cut — the trailing slice is what fills the
+ * remaining budget, never an extra.
+ */
+function cutKeepingFirstLine(body: string, maxBytes: number): string {
+  const lineEnd = body.indexOf("\n");
+  // No newline: the body is one line, so there is no tail distinct from its head.
+  if (lineEnd === -1) return cutToByteCap(body, maxBytes);
+  const firstLine = body.slice(0, lineEnd);
+  const firstLineBytes = Buffer.byteLength(firstLine, "utf8");
+  // Paying for the first line and its newline leaves no room for a tail.
+  if (firstLineBytes + 1 >= maxBytes) return cutToByteCap(firstLine, maxBytes);
+  const tail = tailWithinBytes(body.slice(lineEnd + 1), maxBytes - firstLineBytes - 1);
+  return `${firstLine}\n${tail}`;
+}
+
+/**
  * Apply the model-facing truncation policy to a tool result body.
  *
  * Three stages, in order, each independently reachable: per-line cap,
@@ -150,11 +195,11 @@ export function cutToByteCap(body: string, maxBytes: number): string {
  * any stage changed the content. `originalBytes` always reports the
  * input's full UTF-8 byte length, regardless of which stages fired.
  *
- * Direction governs how the line-count cap drops excess lines when the
- * body is strictly over MODEL_MAX_LINES — head keeps the first N lines
- * and drops the rest, tail-with-first-line keeps the first line plus the
- * last N-1 lines. Within-cap bodies are returned unchanged regardless of
- * direction.
+ * Direction governs both stages that drop content: the line-count cap keeps
+ * the first N lines (`head`) or the first line plus the last N-1 lines
+ * (`tail-with-first-line`), and the byte cap keeps the leading bytes or the
+ * first line plus the trailing bytes the same way. Within-cap bodies are
+ * returned unchanged regardless of direction.
  */
 export function truncateForModel(body: string, opts: TruncateForModelOptions): TruncationResult {
   const originalBytes = Buffer.byteLength(body, "utf8");
@@ -196,9 +241,15 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
   const rebuilt = !changed && body.endsWith("\n") && working.length > 0 ? `${joined}\n` : joined;
 
   // Stage 3: byte cap. Runs last, so the byte ceiling is unconditional —
-  // nothing is appended after the cut.
+  // nothing is appended after the cut. The direction decides which bytes
+  // survive the cut, exactly as it decided which lines survived stage 2:
+  // `head` keeps the leading bytes, `tail-with-first-line` keeps the first
+  // line plus the trailing bytes and drops the middle.
   if (Buffer.byteLength(rebuilt, "utf8") > MODEL_MAX_BYTES) {
-    const cut = cutToByteCap(rebuilt, MODEL_MAX_BYTES);
+    const cut =
+      opts.direction === "tail-with-first-line"
+        ? cutKeepingFirstLine(rebuilt, MODEL_MAX_BYTES)
+        : cutToByteCap(rebuilt, MODEL_MAX_BYTES);
     return { content: cut, truncated: true, originalBytes };
   }
   return { content: rebuilt, truncated: changed, originalBytes };
