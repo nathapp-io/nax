@@ -1,5 +1,5 @@
 /**
- * Hardening Pass — test debater-suggested criteria after acceptance passes.
+ * Hardening Pass — test plan-suggested criteria after acceptance passes.
  *
  * Non-blocking: failures are informational, never block the pipeline.
  * Passing criteria are promoted from suggestedCriteria → acceptanceCriteria.

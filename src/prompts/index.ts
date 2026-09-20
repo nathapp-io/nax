@@ -19,11 +19,6 @@ export { fenceLangFor, formatTestOutputForFix } from "./builders/acceptance-buil
 export type { AdversarialReviewPromptOptions, TestInventory } from "./builders/adversarial-review-builder";
 // Adversarial review prompt builder — adversarial reviewer prompt construction.
 export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-builder";
-// Critic prompt builder — plan audit prompt construction for ac-testability and failure-mode coverage.
-export { CriticPromptBuilder } from "./builders/critic-builder";
-export type { PromptBuilderOptions, ReviewStoryContext, StageContext } from "./builders/debate-builder";
-// Debate prompt builder — centralises all debate and review-dialogue prompt construction.
-export { DebatePromptBuilder } from "./builders/debate-builder";
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
 export { buildDecomposePromptAsync, buildDecomposePromptSync } from "./builders/decompose-builder";

@@ -114,7 +114,7 @@ export function resolveOpRetry<I, O, C>(
 
 /**
  * Synthesize a minimal UserStory for callOp use cases that don't carry a real
- * one (CLI ad-hoc calls, debate runners, simple op invocations). Only the `id`
+ * one (CLI ad-hoc calls, simple op invocations). Only the `id`
  * field is read by buildHopCallback's active code paths when no context bundle
  * is provided — the other fields are zero-value placeholders.
  *

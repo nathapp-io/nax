@@ -5,7 +5,7 @@
  *
  * Owns the prompt sent to the LLM during `nax plan`. Returns a
  * PlanningPromptParts object so callers can split taskContext from
- * outputFormat when running debate/rebuttal rounds.
+ * outputFormat (the schema and format directive).
  *
  * Instance methods (not static) — required by Biome's noStaticOnlyClass rule.
  * Instantiation cost is negligible; builders are short-lived call-and-discard.
@@ -20,15 +20,13 @@ import {
   SPEC_ANCHOR_RULES,
   TEST_STRATEGY_GUIDE,
 } from "@/config";
-import type { ComposeInput } from "../compose";
 import { OneShotPromptBuilder } from "./one-shot-builder";
 
 // ─── Shared rule injection ────────────────────────────────────────────────────
 
 /**
- * Build the shared quality-rule block used by both `build()` (single mode)
- * and `buildDraft()` (pipeline mode). Centralizing prevents drift where one
- * prompt gets a new rule and the other doesn't.
+ * Build the shared quality-rule block used by `build()`. Centralizing the
+ * rules in one place keeps the single planning prompt free of drift.
  *
  * `specContent` controls whether SPEC_ANCHOR_RULES is injected — empty spec =
  * no anchor rules. `projectProfile` lets AC quality rules emit language- and
@@ -48,9 +46,8 @@ ${TEST_STRATEGY_GUIDE}`;
 }
 
 /**
- * Shared `contextFiles` (read) vs `expectedFiles` (create) rule. Both the main
- * `build()` and the cited `buildDraft()` prompts emit this so the read/create
- * split stays identical across plan modes. Created files route to
+ * Shared `contextFiles` (read) vs `expectedFiles` (create) rule, emitted by the
+ * plan prompt so the read/create split is explicit. Created files route to
  * `expectedFiles` (a post-run asset gate), never to `contextFiles`.
  */
 const CONTEXT_VS_EXPECTED_FILES_RULE = `**\`contextFiles\` rule — files readable when this story runs.** List paths that already exist in the repo today, PLUS any file an UPSTREAM dependency story creates (it does not exist now but will exist by the time this story runs, because dependencies execute first). The pipeline verifies every \`contextFiles\` entry against the filesystem; a path that exists neither on disk nor in an upstream dependency's outputs is treated as a missing-context warning.
@@ -76,33 +73,6 @@ const OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — verbatim from the 
 const STORY_OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — optional, exclusions specific to THIS story: any '**Out of scope:**' block under this story's acceptance criteria in the spec, plus anything else beyond the feature-level list. Omit if none."],`;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-/** Revision finding from a verifier — passed to buildDraft when revising a rejected draft. */
-export interface PlanDraftVerifierFinding {
-  readonly checklistItem: string;
-  readonly severity: string;
-  readonly message?: string;
-  [key: string]: unknown;
-}
-
-/** Input for PlanPromptBuilder.buildDraft(). */
-export interface PlanDraftBuildInput {
-  readonly manifestSection: string;
-  readonly specContent: string;
-  readonly codebaseContext: string;
-  readonly feature: string;
-  readonly branchName: string;
-  readonly citationThreshold: number;
-  readonly revisionFindings?: readonly PlanDraftVerifierFinding[];
-  /** Optional monorepo packages — when present, draft prompt injects monorepo hint + workdir field. */
-  readonly packages?: readonly string[];
-  /** Optional per-package tech-stack summaries (only used when packages is non-empty). */
-  readonly packageDetails?: readonly PackageSummary[];
-  /** Optional project profile for language- and project-type-aware AC examples. */
-  readonly projectProfile?: ProjectProfile;
-  /** Optional agent routing profiles — when present, injects capability cards and agentProfileId schema field. */
-  readonly profiles?: AgentRoutingProfile[];
-}
 
 /** Compact per-package summary for the planning prompt. */
 export interface PackageSummary {
@@ -165,21 +135,6 @@ Schema error: ${message}
 Required field names (do not rename): \`userStories\` (array), each story must have \`description\` (not "story"), \`acceptanceCriteria\` (string array, not "ac"), and \`routing.complexity\` ("simple" | "medium" | "complex" | "expert").
 
 Please re-write the complete PRD JSON from scratch conforming to the required schema. Output ONLY the JSON object. Do not include markdown fences or explanation.`;
-  }
-
-  /**
-   * Citation repair prompt — instructs the agent to add citations from the manifest.
-   */
-  static citationRepair(message: string): string {
-    return `Your previous response did not meet the citation requirement.
-
-Citation issue: ${message}
-
-Every concrete claim referencing existing code must cite a fact ID from the manifest using [F-NNN] or [S-NNN] notation. For example: "The authentication module [F-001] implements..." or "Users have email addresses [S-002]."
-
-Please re-write the complete PRD JSON, ensuring every factual claim is cited with the appropriate manifest fact ID. Uncited claims will cause rejection.
-
-Output ONLY the JSON object. Do not include markdown fences or explanation.`;
   }
 
   /**
@@ -418,115 +373,6 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
 ${outputDirective}`;
 
     return { taskContext, outputFormat };
-  }
-
-  /**
-   * Build the draft planning prompt for plan-draft op.
-   * Includes spec content, manifest section, citation requirements, and
-   * optional revision findings from a prior rejected draft.
-   */
-  buildDraft(input: PlanDraftBuildInput): ComposeInput {
-    const role: ComposeInput["role"] = {
-      id: "role",
-      content:
-        "You are a senior software architect generating a product requirements document (PRD) as JSON. Your intent is to produce a thorough, evidence-grounded plan.",
-      overridable: false,
-    };
-
-    const cards = OneShotPromptBuilder.agentCapabilityCards(input.profiles ?? []);
-    const agentProfilesSection =
-      cards.length > 0 ? `\n\n${cards}\n\n${OneShotPromptBuilder.agentProfileInstruction()}` : "";
-
-    const revisionSection =
-      input.revisionFindings && input.revisionFindings.length > 0
-        ? `\n\n## Previous draft rejected for the following issues\n\n${input.revisionFindings
-            .map((f) => `- [${f.severity.toUpperCase()}] ${f.checklistItem}: ${f.message ?? "(no detail)"}`)
-            .join("\n")}\n\nFix all issues above before submitting the revised PRD.`
-        : "";
-
-    // Monorepo handling — mirror build() so cheap-pipeline gets the same context single mode has.
-    const isMonorepo = input.packages && input.packages.length > 0;
-    const packageDetailsArr = input.packageDetails && input.packageDetails.length > 0 ? [...input.packageDetails] : [];
-    const packageDetailsSection = packageDetailsArr.length > 0 ? buildPackageDetailsSection(packageDetailsArr) : "";
-    const monorepoHint =
-      isMonorepo && input.packages
-        ? `\n## Monorepo Context\n\nThis is a monorepo. Detected packages:\n${input.packages
-            .map((p) => `- ${p}`)
-            .join(
-              "\n",
-            )}\n${packageDetailsSection}\nFor each user story, set the "workdir" field to the relevant package path (e.g. "packages/api"). Stories that span the root should omit "workdir".`
-        : "";
-
-    const workdirField = isMonorepo
-      ? `\n      "workdir": "string — the package this story is scoped to, relative to the REPO ROOT (e.g. \\"packages/api\\"). Set it whenever every file the story touches lives in one package; omit ONLY for a story that genuinely spans packages. Omitting it gives the story the whole repo's rules and the root build commands. Paths in contextFiles and expectedFiles are relative to the REPO ROOT, not to this workdir.",`
-      : "";
-
-    const suggestedCriteriaField = input.specContent.trim()
-      ? `\n      "suggestedCriteria": ["string — optional. Behavioral edge cases or negative paths you identified that are NOT in the spec. Plain assertions only — observable outputs, return values, state changes, or error conditions. No implementation details or vague descriptions. Omit this field if empty."],`
-      : "";
-
-    const task: ComposeInput["task"] = {
-      id: "task",
-      content: `You are drafting a PRD for the following feature: **${input.feature}** (branch: ${input.branchName}). Your intent is to produce a thorough, evidence-grounded implementation plan.
-
-## Spec
-
-${input.specContent}
-
-## Codebase Context
-
-${input.codebaseContext}${monorepoHint}
-
-## Manifest
-
-${input.manifestSection}
-
-## Citation Requirement
-
-Every concrete claim referencing existing code must cite [F-NNN] or [S-NNN] from the manifest. The required citation rate is ${input.citationThreshold}. Uncited factual claims will cause rejection.${revisionSection}
-
-## Story Generation Rules
-
-${buildSharedQualityRules(input.specContent, input.projectProfile)}
-
-For each story, set "contextFiles" to the key source files the implementer should read before starting (max 5 per story). Cite manifest factIds where relevant. Set "expectedFiles" to the NEW files the story creates.
-
-${CONTEXT_VS_EXPECTED_FILES_RULE}${agentProfilesSection}
-
-## Output Schema
-
-Produce a JSON object with this exact structure. Field names are mandatory — do not rename them.
-
-{
-  "project": "string — project name",
-  "feature": "string — feature name (copy from above)",
-  "branchName": "string — git branch name",
-  ${OUT_OF_SCOPE_SCHEMA_FIELD}
-  "userStories": [
-    {
-      "id": "string — e.g. US-001",
-      "title": "string — concise story title",
-      "description": "string — detailed description of what to implement",
-      "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item — but keep a trailing clause that qualifies that assertion (e.g. preserving/unchanged/existing behaviour), it is not a second assertion."],${suggestedCriteriaField}
-      "contextFiles": ["string — EXISTING repo-rooted relative paths the implementer should read (max 5)"],
-      ${EXPECTED_FILES_SCHEMA_FIELD}
-      ${STORY_OUT_OF_SCOPE_SCHEMA_FIELD}
-      "tags": ["string"],
-      "dependencies": ["string — story IDs this story depends on"],${workdirField}
-      "routing": {
-        "complexity": "simple | medium | complex | expert",
-        "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
-        "reasoning": "string — brief classification rationale"${cards.length > 0 ? `,\n        "agentProfileId": "string — optional, the id of the best-matching profile from the Agent Profiles table above; omit if none fits"` : ""}
-      }
-    }
-  ]
-}
-
-Output ONLY the JSON object. Do not include markdown fences or explanation.`,
-      overridable: false,
-    };
-
-    return { role, task };
   }
 }
 

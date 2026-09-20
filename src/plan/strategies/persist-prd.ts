@@ -2,8 +2,8 @@
  * The single pre-write invariant for every PRD `nax plan` persists.
  *
  * `applyPlanFidelity` used to be invoked per-strategy — inside `planOp.parse`
- * for single, `planRefineOp.verify` for refine, and in the strategy body for
- * pipeline and debate. Every one of those sites sits on the *happy* path, so a
+ * for single and `planRefineOp.verify` for refine. Every one of those sites
+ * sits on the *happy* path, so a
  * throw that diverted a strategy onto its disk-recovery branch persisted the
  * agent-written PRD raw, silently discarding the deterministic spec→PRD repairs
  * (#1494). `modifiedFiles` was the canary: unlike `outOfScope` it has no
@@ -69,8 +69,8 @@ export interface PersistPrdArgs {
 /**
  * Repair → canonicalize → finalize routing → write. Returns the path written.
  *
- * Context-free so `runPlanPipeline`, which never builds a `PlanModeContext`,
- * shares the same invariant as the four strategies.
+ * Context-free so callers that never build a `PlanModeContext`
+ * share the same invariant as the strategies.
  */
 export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string> {
   // Fidelity runs BEFORE canonicalization. `applyPlanFidelity` ends by calling

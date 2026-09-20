@@ -28,8 +28,7 @@ export interface ConfirmStdin {
 
 /**
  * `exit` is annotated `=> void`, not the `never` `process.exit` infers. The
- * inferred type over-stated the seam (same reasoning as `_hybridDeps` in
- * src/debate/runner-hybrid.ts): the point of an injectable exit is that a
+ * inferred type over-stated the seam: the point of an injectable exit is that a
  * substitute records the code and returns, which no `never`-returning stub can
  * do. Nothing depends on the unreachability — the sole call site in `onData`
  * already `return`s explicitly on the next line.

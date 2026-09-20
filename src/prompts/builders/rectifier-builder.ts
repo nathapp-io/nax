@@ -764,7 +764,7 @@ Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
    * @param opts.isolation — isolation mode ("strict" | "lite"), if any
    * @param opts.constitution — constitution text, if any
    * @param opts.context — context markdown, if any
-   * @param opts.promptPrefix — diagnostic prefix (e.g., from debate stage), if any
+   * @param opts.promptPrefix — diagnostic prefix, if any
    * @returns fully assembled prompt string
    */
   static regressionFailure(opts: {

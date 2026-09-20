@@ -169,7 +169,7 @@ export interface UserStory {
   description: string;
   /** Acceptance criteria */
   acceptanceCriteria: string[];
-  /** Debater-suggested criteria beyond the spec — tested in hardening pass, never blocks pipeline. */
+  /** Criteria the planner suggested beyond the spec — tested in hardening pass, never blocks pipeline. */
   suggestedCriteria?: string[];
   /**
    * Exclusions this story must not implement — the feature-level `PRD.outOfScope`

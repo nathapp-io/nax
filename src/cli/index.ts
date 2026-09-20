@@ -49,7 +49,7 @@ export { resolveFeatureSpec } from "./features-resolve";
 export { type GenerateCommandOptions, generateCommand } from "./generate";
 export { type InitOptions, initCommand } from "./init";
 export type { PlanCommandOptions } from "./plan";
-export { _planDeps, buildPlanComposition, planCommand, resolvePlanMode, runPlanPipeline } from "./plan";
+export { _planDeps, planCommand, resolvePlanMode } from "./plan";
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
 export { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
 export { createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, detectProjectName } from "./plan-runtime";

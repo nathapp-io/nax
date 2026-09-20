@@ -7,16 +7,6 @@
  * - defaults.ts: DEFAULT_CONFIG constant
  */
 
-// Debate types
-export type {
-  DebateConfig,
-  DebateResult,
-  Debater,
-  DebateStageConfig,
-  ResolverConfig,
-  ResolverType,
-  SessionMode,
-} from "../debate/types";
 // Default config
 export { DEFAULT_CONFIG } from "./defaults";
 // Zod schemas

@@ -7,13 +7,10 @@
 
 import { join } from "node:path";
 import { featureDir } from "@/config";
-import { buildDecomposePromptAsync } from "@/prompts";
 import { storyPackageDir } from "@/utils/path-frame";
 import { resolveDefaultAgent } from "../agents";
-import { parseDecomposeOutput } from "../agents/shared/decompose";
 import type { DecomposedStory } from "../agents/shared/types-extended";
 import type { NaxConfig } from "../config";
-import type { DebateStageConfig } from "../debate";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { callOp, decomposeOp } from "../operations";
@@ -21,7 +18,7 @@ import { finalizeAndWritePrd } from "../plan/strategies";
 import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import { buildSourceRootsSection } from "./plan-helpers";
-import { _planDeps, createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, resolvePlanModelSelection } from "./plan-runtime";
+import { _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
 
 function validateDecomposedStoryIds(stories: readonly DecomposedStory[], existingIds: ReadonlySet<string>): void {
   const generatedIds = new Set<string>();
@@ -98,57 +95,14 @@ export async function planDecomposeCommand(
     });
   }
 
-  const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
   const maxReplanAttempts = config?.precheck?.storySizeGate?.maxReplanAttempts ?? 3;
-
-  const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
-  const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
 
   let decompStories: DecomposedStory[] | undefined;
   let repairHint = "";
 
   try {
     for (let attempt = 0; attempt < maxReplanAttempts; attempt++) {
-      if (attempt === 0 && debateDecompEnabled) {
-        const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
-        // ADR-025: decompose inherits the parent's agent; it does not re-select.
-        const profilesForDebate: never[] = [];
-        const prompt = await buildDecomposePromptAsync({
-          specContent: "",
-          codebaseContext,
-          workdir,
-          targetStory,
-          siblings,
-          featureName: options.feature,
-          storyId: options.storyId,
-          maxAcCount: config?.precheck?.storySizeGate?.maxAcCount,
-          profiles: profilesForDebate,
-        });
-        const decompCallCtx = {
-          runtime: rt,
-          packageView: rt.packages.resolve(),
-          packageDir: workdir,
-          agentName: agentManager.getDefault(),
-          storyId: options.storyId,
-          featureName: options.feature,
-        } satisfies import("../operations/types").CallContext;
-        const debateRunner2 = _planDeps.createDebateRunner({
-          ctx: decompCallCtx,
-          stage: "decompose",
-          stageConfig: decomposeStageConfig,
-          config,
-          workdir,
-          featureName: options.feature,
-          timeoutSeconds,
-          sessionManager: rt.sessionManager,
-        });
-        const debateResult = await debateRunner2.run(prompt);
-        if (debateResult.outcome !== "failed" && debateResult.output) {
-          decompStories = parseDecomposeOutput(debateResult.output);
-        }
-      }
-
       if (!decompStories) {
         const effectiveContext = repairHint ? `${codebaseContext}\n\n${repairHint}` : codebaseContext;
         decompStories = await callOp(

@@ -186,7 +186,7 @@ export type RoutingStrategyName = "keyword" | "llm";
 
 export type LlmRoutingMode = "one-shot" | "per-story" | "hybrid";
 
-/** Common model shorthand aliases → tier mapping for config and debate convenience. */
+/** Common model shorthand aliases → tier mapping for config convenience. */
 export const MODEL_SHORTHAND_TIERS: Record<string, ModelTier> = {
   haiku: "fast",
   sonnet: "balanced",
