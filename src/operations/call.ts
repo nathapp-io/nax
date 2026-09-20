@@ -65,6 +65,19 @@ export function attachOutcomeAdapterFailure<O>(parsed: O, outcomeFailure: Adapte
 }
 
 export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> {
+  if (op.kind === "deterministic" || ctx.scopeId !== undefined) {
+    return callOpDispatch(ctx, op, input);
+  }
+
+  const scope = ctx.runtime.costAggregator.openScope();
+  try {
+    return await callOpDispatch({ ...ctx, scopeId: scope.scopeId }, op, input);
+  } finally {
+    scope.close();
+  }
+}
+
+async function callOpDispatch<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> {
   // Deterministic ops bypass all LLM dispatch, cost tracking, and session management.
   if (op.kind === "deterministic") {
     return (op as DeterministicOperation<I, O, C>).execute(input, ctx);
