@@ -16,9 +16,10 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
-import { readPrefix } from "@/utils/bounded-io";
 import { resolveWithin } from "./policy";
+import { readFileSlice } from "./read-file";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { READ_CEILING } from "./truncate";
 
 /** The canonical scratchpad path, written into the policy as `scope.confineTo`. */
 export const SCRATCHPAD_DIR = ".nax/scratchpad";
@@ -115,11 +116,13 @@ export const scratchpadWriteTool: CodingTool = {
 export const scratchpadReadTool: CodingTool = {
   name: "ScratchpadRead",
   description:
-    "Read a throwaway file from your scratchpad at .nax/scratchpad/. Paths are relative to the scratchpad. Use it to re-read notes, command output and intermediate lists you wrote with ScratchpadWrite.",
+    "Read a throwaway file from your scratchpad at .nax/scratchpad/. Paths are relative to the scratchpad. Use it to re-read notes, command output and intermediate lists you wrote with ScratchpadWrite -- including the output a truncated tool result spilled there. Optionally pass offset (1-based line number to start from) and/or limit (maximum number of lines to return) to page through a body too large to read at once.",
   inputSchema: {
     type: "object",
     properties: {
       path: { type: "string", description: "Path relative to the scratchpad directory" },
+      offset: { type: "integer", minimum: 1, description: "1-based line number to start reading from" },
+      limit: { type: "integer", minimum: 1, description: "Maximum number of lines to return" },
     },
     required: ["path"],
   },
@@ -129,22 +132,49 @@ export const scratchpadReadTool: CodingTool = {
     const [target] = ctx.resolvedPaths;
     if (target === undefined) return { content: "no path supplied", isError: true };
     const requestedPath = typeof input.path === "string" ? input.path : "<path>";
+    const rawOffset = input.offset;
+    if (rawOffset !== undefined && typeof rawOffset !== "number") {
+      return { content: "offset must be an integer", isError: true };
+    }
+    const rawLimit = input.limit;
+    if (rawLimit !== undefined && typeof rawLimit !== "number") {
+      return { content: "limit must be an integer", isError: true };
+    }
+    const offset = rawOffset;
+    const limit = rawLimit;
     try {
-      // Read up to ctx.maxBytes + 1 (readPrefix's overshoot contract): the
-      // extra byte is how we tell "this is the whole thing" from "there was
-      // more", without a second stat. The file's true size comes from
-      // `Bun.file(target).size` so resultBytesPreTruncation is the FULL byte
-      // length even when no truncation happened -- AC13 pins this for both
-      // the truncated and the untruncated case.
-      const file = Bun.file(target);
-      const fullBytes = file.size;
-      const body = await readPrefix(target, ctx.maxBytes);
-      const truncated = fullBytes > ctx.maxBytes;
-      const content = truncated ? truncate(body, ctx.maxBytes) : body;
-      return {
-        content,
-        resultBytesPreTruncation: fullBytes,
-      };
+      // The tool bounds its own I/O at `readCeiling`, NOT at `maxBytes`: the
+      // model-facing cap belongs to the session's after_tool policy, which
+      // also owns the spill of whatever it cuts. Reading up to the ceiling is
+      // what lets a body in (maxBytes, readCeiling) reach that policy whole.
+      //
+      // `resultBytesPreTruncation` reports the file's FULL byte length, before
+      // any of this, so the ledger can answer "how much did we discard" for a
+      // result that was shaped after it left here.
+      const slice = await readFileSlice(target, {
+        readCeiling: ctx.readCeiling ?? READ_CEILING,
+        ...(offset !== undefined ? { offset } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      const fullBytes = Bun.file(target).size;
+      const paged = offset !== undefined || limit !== undefined;
+      const { content, bounded, totalLines } = slice;
+      if (paged) {
+        // A range that selects nothing means the offset is past the last line;
+        // readTool answers that with the line count rather than an empty
+        // result, because "there is nothing here" is indistinguishable from
+        // "the file is empty" and the model can act on the number.
+        const message =
+          content === ""
+            ? `offset ${String(offset ?? 1)} is past the end of the file -- it has ${totalLines} lines`
+            : content;
+        return { content: message, resultBytesPreTruncation: fullBytes };
+      }
+      // Precedent from readTool: a leading line count, marked with `+` when the
+      // read stopped at the I/O ceiling and the count is therefore a floor
+      // rather than the file's true total.
+      const header = `[${bounded ? `${totalLines}+` : `${totalLines}`} lines]`;
+      return { content: content === "" ? header : `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
     } catch (err) {
       // A missing file is a tool ERROR the model can react to, never a
       // denial -- the policy already said yes. Naming the requested path is

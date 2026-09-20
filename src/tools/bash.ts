@@ -20,6 +20,7 @@
  */
 import { runArgv } from "../utils/argv-exec";
 import type { CodingTool } from "./registry";
+import { cutToByteCap, READ_CEILING } from "./truncate";
 import { BASH_TOOL_NAME } from "./types";
 
 /**
@@ -109,8 +110,13 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
         const body = result.timedOut
           ? `timed out after ${timeoutMs}ms`
           : `exit ${result.exitCode}\n${result.stdout}\n${result.stderr}`;
+        // The tool's own bound is the I/O ceiling, not the model-facing cap:
+        // `maxBytes` shapes what the model is told and belongs to the session's
+        // truncation policy (which also spills what it cuts), while this one
+        // only keeps a runaway command from being buffered without limit. The
+        // full size still rides out on `resultBytesPreTruncation`.
         return {
-          content: body.slice(0, ctx.maxBytes),
+          content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING),
           isError: result.timedOut || result.exitCode !== 0,
           // The ledger records what actually ran, not what was requested.
           audit: { executed: argv },

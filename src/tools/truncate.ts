@@ -56,8 +56,13 @@ export function truncationDirectionFor(toolName: string): TruncationDirection {
 /**
  * Split a body into lines honouring the trailing-newline convention:
  * "a\nb\n" is two lines, not three. An empty body yields zero lines.
+ *
+ * Exported because the spill-and-marker composition (src/tools/spill.ts) has
+ * to count the same lines this policy counts: a marker line occupies one of
+ * `MODEL_MAX_LINES`, and counting it with a raw `split("\n")` would let the
+ * delivered content exceed the cap by exactly the phantom empty line.
  */
-function splitLines(body: string): string[] {
+export function splitModelLines(body: string): string[] {
   if (body === "") return [];
   const trimmed = body.endsWith("\n") ? body.slice(0, -1) : body;
   return trimmed.split("\n");
@@ -68,8 +73,12 @@ function splitLines(body: string): string[] {
  * `maxCodeUnits`. Backs up one code unit if the cut would land on a high
  * surrogate (the lead of a surrogate pair), so the result never carries
  * a lone surrogate that would re-encode as U+FFFD in a downstream stage.
+ *
+ * Exported for the same reason `splitModelLines` is: the marker composition
+ * keeps lines that the policy has not yet shaped, and it must shorten them
+ * the one way the policy shortens them.
  */
-function capLine(line: string, maxCodeUnits: number): string {
+export function capModelLine(line: string, maxCodeUnits: number): string {
   if (line.length <= maxCodeUnits) return line;
   let cut = maxCodeUnits;
   // Avoid splitting a surrogate pair: if the last code unit kept is a
@@ -94,7 +103,7 @@ function applyLineCharCap(lines: string[], maxLineChars: number): { lines: strin
       continue;
     }
     changed = true;
-    out.push(capLine(line, maxLineChars));
+    out.push(capModelLine(line, maxLineChars));
   }
   return { lines: out, changed };
 }
@@ -216,7 +225,7 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
 
   // Split the body into lines once; every cap is checked against the
   // line-aware view, so we don't pay for `split("\n")` three times.
-  const lines = splitLines(body);
+  const lines = splitModelLines(body);
   // Per-line cap is measured in UTF-16 code units — the same metric
   // `String#length` reports — so a 2_000-character line of single-unit
   // codepoints is at the cap, not over it.
@@ -244,7 +253,7 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
   // Re-join with newlines. The trailing-newline convention: if the input
   // body ended in "\n" AND no line was dropped, preserve that so a
   // downstream parser doesn't see a line count that disagrees with
-  // `splitLines`'s view of the input. Re-emitting "\n" after dropping a
+  // `splitModelLines`'s view of the input. Re-emitting "\n" after dropping a
   // line would inflate `split("\n").length` past the cap — the test for
   // AC4 pins "at most MODEL_MAX_LINES" via the naive split.
   const joined = working.join("\n");

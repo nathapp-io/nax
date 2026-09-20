@@ -14,6 +14,7 @@
 import { drainBounded } from "@/utils/bounded-io";
 import { spawn, which } from "@/utils/bun-deps";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { READ_CEILING } from "./truncate";
 
 const GREP_TIMEOUT_MS = 15_000;
 
@@ -108,6 +109,13 @@ export const grepTool: CodingTool = {
     }
 
     const [target] = ctx.resolvedPaths;
+    // The I/O ceiling, not the model-facing cap: `maxBytes` shapes what the
+    // model is told and belongs to the session's truncation policy, while this
+    // bound only keeps a search whose result is enormous from being buffered
+    // without limit. Bounding both the drain and the returned body at the same
+    // value is what lets a result in (maxBytes, readCeiling) reach that policy
+    // whole, and it is why the ceiling is a tool-layer constant.
+    const ioCeiling = ctx.readCeiling ?? READ_CEILING;
     const proc = _grepDeps.spawn(buildGrepArgv(binary, pattern, target, mode), {
       cwd: ctx.root,
       stdout: "pipe",
@@ -126,8 +134,8 @@ export const grepTool: CodingTool = {
     // result is truncated to the same ceiling anyway -- a search matching a
     // generated file could otherwise buffer far more than is ever returned,
     // limited only by how much the binary emits before the timeout fires.
-    const stdoutText = drainBounded(proc.stdout, ctx.maxBytes).catch(() => "");
-    const stderrText = drainBounded(proc.stderr, ctx.maxBytes).catch(() => "");
+    const stdoutText = drainBounded(proc.stdout, ioCeiling).catch(() => "");
+    const stderrText = drainBounded(proc.stderr, ioCeiling).catch(() => "");
     const exitCode = await proc.exited;
     clearTimeout(timer);
 
@@ -169,11 +177,11 @@ export const grepTool: CodingTool = {
     if (exitCode !== 0 && stdout.trim() === "") {
       return { content: (await stderrText).trim() || `${binary} exited ${exitCode}`, isError: true };
     }
-    // The caveat leads rather than trails, and truncation is applied to the
-    // whole body: appended after truncate() it both overran ctx.maxBytes and was
-    // the first thing lost on a result large enough to need the cue most.
+    // The caveat leads rather than trails, and the tool's own bound is applied
+    // to the whole body: appended after the cap it both overran the ceiling and
+    // was the first thing lost on a result large enough to need the cue most.
     const matches = stdout.trimEnd();
     const body = caveat === "" ? matches : `${caveat}\n\n${matches}`;
-    return { content: truncate(body, ctx.maxBytes) };
+    return { content: truncate(body, ioCeiling) };
   },
 };

@@ -30,6 +30,17 @@ import type { TurnRetryConfig } from "./turn-retry";
 export const nativeTranscriptDirs = new Map<string, string>();
 
 /**
+ * Session name -> the root whose `.nax/scratchpad/` holds this session's
+ * spill files (US-003).
+ *
+ * Recorded from the session's `workdir` at open — the same root the coding
+ * tools are confined to — so a spilled body is reachable through
+ * `ScratchpadRead` with the relative path the truncation marker names. Same
+ * lifecycle as the maps above: set on open, cleared on close.
+ */
+export const nativeSessionScratchpadRoots = new Map<string, string>();
+
+/**
  * Session name -> timeoutSeconds, so sendTurn can bound each `complete()`
  * call with a deadline (whole-branch review finding 4). Same lifecycle as
  * `nativeTranscriptDirs` — populated on open, cleared on close only.
@@ -123,6 +134,7 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
   }
   nativeTranscriptDirs.set(name, opts.transcriptDir);
   nativeSessionTimeouts.set(name, opts.timeoutSeconds);
+  nativeSessionScratchpadRoots.set(name, opts.workdir);
   if (opts.transcriptOwner !== undefined) nativeSessionTranscriptOwners.set(name, opts.transcriptOwner);
   else nativeSessionTranscriptOwners.delete(name);
   // `resume` is SessionManager's "this name already has a descriptor in this
@@ -166,6 +178,7 @@ export async function openNativeSession(name: string, opts: OpenSessionOpts): Pr
 export function clearNativeSessionState(sessionName: string): void {
   nativeTranscriptDirs.delete(sessionName);
   nativeSessionTimeouts.delete(sessionName);
+  nativeSessionScratchpadRoots.delete(sessionName);
   nativeSessionTranscriptOwners.delete(sessionName);
   nativeSessionStreamHooks.delete(sessionName);
   nativeSessionFailed.delete(sessionName);

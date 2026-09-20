@@ -46,6 +46,15 @@ export {
   registerBuiltinCodingTools,
 } from "./runtime";
 export { SCRATCHPAD_DIR, scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad";
+export {
+  _spillDeps,
+  applyModelTruncationPolicy,
+  type ModelTruncationOptions,
+  SPILL_DIR,
+  type SpillRequest,
+  spillRelativePath,
+  writeSpill,
+} from "./spill";
 export type { ToolAuditSink, ToolCallRecord } from "./tool-audit";
 export { createNoOpToolAuditSink, createToolAuditSink } from "./tool-audit";
 export {

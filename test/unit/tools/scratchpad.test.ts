@@ -190,12 +190,15 @@ describe("AC5: ScratchpadWrite creates intermediate directories", () => {
  * rather than `Buffer.byteLength`.
  */
 describe("AC6: ScratchpadRead returns the content previously written", () => {
+  // US-003 changed the shape of the read: it is prefixed with a `[N lines]`
+  // header (AC12), so a round trip is the header plus the payload byte-exact
+  // underneath it rather than the payload alone.
   test("after a write, ScratchpadRead returns the same content", async () => {
     const rt = runtime();
     await rt.callTool("ScratchpadWrite", { path: "round.md", content: "roundtrip" });
     const out = await rt.callTool("ScratchpadRead", { path: "round.md" });
     expect(out.kind).toBe("ok");
-    if (out.kind === "ok") expect(out.content).toBe("roundtrip");
+    if (out.kind === "ok") expect(out.content).toBe("[1 lines]\nroundtrip");
   });
 
   // The boundary shape that ACs 12 / 13 pin on top of: a payload large
@@ -206,7 +209,7 @@ describe("AC6: ScratchpadRead returns the content previously written", () => {
     await rt.callTool("ScratchpadWrite", { path: "u.md", content: payload });
     const out = await rt.callTool("ScratchpadRead", { path: "u.md" });
     expect(out.kind).toBe("ok");
-    if (out.kind === "ok") expect(out.content).toBe(payload);
+    if (out.kind === "ok") expect(out.content).toBe(`[1 lines]\n${payload}`);
   });
 });
 

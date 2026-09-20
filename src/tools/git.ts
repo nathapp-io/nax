@@ -20,6 +20,7 @@ import { interceptArgv } from "@/execution/command-interceptor";
 import { gitWithTimeout } from "@/utils/git";
 import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { READ_CEILING } from "./truncate";
 
 /**
  * Interception seam for the Git TOOL only.
@@ -381,11 +382,14 @@ export const gitTool: CodingTool = {
 
     try {
       const intercepted = await interceptArgv(["git", ...built], ctx.root, _gitToolDeps.interceptor);
+      // The I/O ceiling, not the model-facing cap — see the `truncate` call
+      // below, which bounds the same body at the same value.
+      const ioCeiling = ctx.readCeiling ?? READ_CEILING;
       const { stdout, stderr, exitCode } = await gitWithTimeout(
         built,
         ctx.root,
         undefined,
-        ctx.maxBytes,
+        ioCeiling,
         intercepted.argv,
       );
       // Computed before the error branch so a REWRITTEN command that ran and
@@ -415,12 +419,17 @@ export const gitTool: CodingTool = {
           body = stdout;
         }
       }
-      // Known limitation: gitWithTimeout bounds stdout with ctx.maxBytes BEFORE
-      // postProcess sees it, so a trailing hint on a very large output can be
-      // truncated mid-string and escape stripping. Fixing it means moving the
-      // bound after post-processing, which changes the drain contract — its own
-      // change.
-      const content = truncate(body.trimEnd(), ctx.maxBytes) || "(no output)";
+      // Known limitation: gitWithTimeout bounds stdout with the I/O ceiling
+      // BEFORE postProcess sees it, so a trailing hint on a very large output
+      // can be truncated mid-string and escape stripping. Fixing it means
+      // moving the bound after post-processing, which changes the drain
+      // contract — its own change.
+      //
+      // The model-facing cap is the session policy's, not this one: what is
+      // returned here is bounded only by the tool-layer ceiling, so a result
+      // the model cannot see whole still reaches the policy intact — and is
+      // spilled rather than silently replaced by a per-tool marker.
+      const content = truncate(body.trimEnd(), ioCeiling) || "(no output)";
       return { content, ...(audit !== undefined ? { audit } : {}) };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };

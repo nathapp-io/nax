@@ -34,6 +34,7 @@ import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscript
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { buildToolResult } from "./tool-result";
 import { loadTranscript, saveTranscript } from "./transcript-store";
+import { truncateNativeToolResult } from "./truncation-handler";
 import { realSleep, retryTransportFault } from "./turn-retry";
 import { cacheUsageFields, type NativeTurnResponse, recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
@@ -467,10 +468,19 @@ export async function runNativeTurn(
           // through untouched — a refused Write is not a crashed Write
           // (ADR-029 s5) — and `nudge` prefixes the surviving content.
           const patch = loopEvents.afterTool(call, { content: answerText, denied: answer?.denied });
+          // US-003: the model-facing truncation runs at the same chokepoint —
+          // after the handlers have had their say, before the message is built
+          // — so nothing this policy produces can be rewritten into history
+          // either. See ./truncation-handler for why it is not itself a
+          // registered handler.
+          const shaped = await truncateNativeToolResult(handle.id, patch.content ?? answerText, {
+            toolName: call.name,
+            callId: call.id,
+          });
           messages.push(
             buildToolResult({
               toolCallId: call.id,
-              content: withNudge(nudgeText, patch.content ?? answerText),
+              content: withNudge(nudgeText, shaped),
               isError: patch.isError,
               denied: answer?.denied,
             }),
@@ -487,10 +497,14 @@ export async function runNativeTurn(
           // results that arrive as errors too.
           const errorText = err instanceof Error ? err.message : String(err);
           const patch = loopEvents.afterTool(call, { content: errorText, isError: true });
+          const shaped = await truncateNativeToolResult(handle.id, patch.content ?? errorText, {
+            toolName: call.name,
+            callId: call.id,
+          });
           messages.push(
             buildToolResult({
               toolCallId: call.id,
-              content: patch.content ?? errorText,
+              content: shaped,
               isError: patch.isError ?? true,
             }),
           );

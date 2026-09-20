@@ -28,6 +28,7 @@ import { normalizeExec } from "./package-managers";
 import type { ExecTarget } from "./package-managers-types";
 import type { ToolResult, ToolRunContext } from "./registry";
 import type { RunCommandToolOptions } from "./run-command";
+import { cutToByteCap, READ_CEILING } from "./truncate";
 
 /**
  * Deadline for the argv branch's spawn (`runExecBranch`).
@@ -88,7 +89,7 @@ export async function runExecBranch(
       : `exit ${result.exitCode}\n${result.stdout}\n${result.stderr}`;
 
     return {
-      content: body.slice(0, ctx.maxBytes),
+      content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING),
       isError: result.timedOut || result.exitCode !== 0,
       // Task 7 reads this to write `executed` and `target` onto the ledger
       // row. Returning it here, rather than re-deriving it in the runtime,
