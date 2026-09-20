@@ -27,6 +27,27 @@
 
 ## Preconditions
 
+> **Revised 2026-09-20 after spec-review against the merged tree.**
+> `feat/native-loop-events` (#2162) **has now merged** as `f4b3bbc7a`, and this
+> plan was re-audited against it. Seven corrections were applied — four of them
+> would have failed at compile time or silently regressed #2162:
+>
+> | # | Where | What |
+> |---|---|---|
+> | B1 | Task 6 Step 6 | snippet used `call.input`; the merged loop uses `input` (= the `before_tool` `allow` rewrite). Using `call.input` diverges execution from the transcript. |
+> | B2 | Task 5 Step 4 | `DispatchErrorEvent` has no `protocolIds`/`turnId` — "do the same for the error path" had no field to write to. The field is now created first. |
+> | B3 | Task 5 Step 5 | `event.protocolIds` is TS2339 on the `DispatchEvent` union (`CompleteDispatchEvent` lacks it, deliberately). Success and error rows now use different, compiling expressions. |
+> | B4 | Task 5 | `cost-rate-provenance.test.ts` pins `toBe(5)` in 3 places and was in no `Test:` list — an unauthorised collision that deadlocks the bump. Now listed. |
+> | M2 | Task 0 | new Step 2b: `turn-loop.ts` left the merge at **584 of a hard 600** lines, and Tasks 5–6 both add to it. |
+> | M3 | Task 2 Step 1 | the `ctx` cast crashed instead of failing; `runId` cannot be supplied to `makeTestRuntime`. Rewritten against the file's real pattern. |
+> | m2 | Task 5 | "Four assertions" was five, and is eight once B4's file is counted. |
+>
+> Task 0's Step 3 contingency is also pre-resolved: `afterTool` carries no turn
+> context, so **follow Task 6 as written**.
+>
+> Line numbers below that were not touched by the re-audit remain hints. Task 0
+> still runs first.
+
 This plan is written against `main` @ `13d6bfcb1` **but is intended to execute after `feat/native-loop-events` merges.** That feature restructures `src/agents/native/session/turn-loop.ts` (seven tool-result append sites collapse into one builder, plus `before_tool`/`after_tool` registrations) and `src/tools/runtime.ts`.
 
 **Every line number in this plan is therefore a hint, not an address.** Task 0 exists to re-anchor them. Do not skip it.
@@ -71,6 +92,26 @@ grep -n "export interface SendTurnOpts" src/agents/session-types.ts
 
 Write the actual line numbers down. Where a symbol has moved, trust the symbol.
 
+- [ ] **Step 2b: Check the `turn-loop.ts` line budget BEFORE editing it**
+
+```bash
+wc -l src/agents/native/session/turn-loop.ts   # 584 on f4b3bbc7a
+grep -n "const SRC_LIMIT" scripts/check-file-sizes.ts   # 600, a HARD gate
+```
+
+`src/agents/native/session/turn-loop.ts` came out of the `native-loop-events`
+merge at **584 of 600 lines**, leaving 16. Tasks 5 and 6 both add to it — Task 6
+Step 6 alone is roughly +8 once the guard comment is included. `check-file-sizes`
+runs in `check:all` and in the pre-commit hook, so a breach blocks the commit, not
+just CI, and the file is not on the grandfathered list (14 entries, none of them
+this one).
+
+If the budget will not hold, extract before you add — do **not** delete the
+explanatory comments to buy lines. The natural extraction is the coding-tool
+dispatch block into a helper beside `buildToolResult` in
+`src/agents/native/session/tool-result.ts`, which already owns the sibling
+concern. Land that as its own commit, before the stamping edit.
+
 - [ ] **Step 3: Check whether US-002 gave us a better seam**
 
 ```bash
@@ -78,6 +119,12 @@ grep -rn "before_tool\|after_tool" src/agents/native/ | head -20
 ```
 
 Task 6 threads turn context to the tool record by extending the interaction request. If `after_tool` handlers receive a context object that already carries the turn, prefer it and note the deviation in the commit message. If they do not, follow Task 6 as written.
+
+**Already resolved against `f4b3bbc7a`:** they do not. The dispatcher's signature
+is `afterTool(call: ToolCall, payload: AfterToolPayload): AfterToolPatch`
+(`src/agents/native/session/loop-events.ts:83-84`) and carries no turn context,
+so **follow Task 6 as written.** Re-run the grep to confirm nothing changed, but
+do not expect a better seam.
 
 - [ ] **Step 4: Confirm the `resultBytes` denominator change**
 
@@ -279,28 +326,48 @@ git commit -m "feat(tool-audit): add schemaVersion and an optional run-scoped he
 
 Append to the existing `test/unit/operations/call-run-options.test.ts` (it already has a `describe` block and imports — add the test inside it rather than duplicating the scaffolding):
 
+Build a real `CallContext` with the helpers the file already imports. **Do not
+cast a bare object** — verified on `f4b3bbc7a`, `buildRunDispatchOptions`
+dereferences `ctx.packageView` (`call-run-options.ts:57`, via `storyExecRoot`)
+and `ctx.runtime.toolProviders.length` (`:75`) *before* it ever reads `runId`,
+so a `{ runtime: { runId } }` stub makes the test **crash** with
+`Cannot read properties of undefined` rather than fail its assertion — which is
+not the informative red the TDD step needs.
+
+Note also that `runId` is minted inside `createRuntime`
+(`crypto.randomUUID()`, `src/runtime/index.ts:305`) and cannot be supplied, so
+assert against `runtime.runId` rather than a literal:
+
 ```ts
-import { describe, expect, test } from "bun:test";
-import { buildRunDispatchOptions } from "@/operations/call-run-options";
-
-describe("buildRunDispatchOptions", () => {
   test("forwards the runtime's runId onto the run options", () => {
-    const ctx = {
-      runtime: { runId: "run-xyz" },
-    } as unknown as Parameters<typeof buildRunDispatchOptions>[0];
+    const config = makeNaxConfig();
+    const runtime = makeTestRuntime({ config, workdir: "/repo" });
+    const packageView = runtime.packages.resolve("packages/api");
+    const ctx: CallContext = {
+      runtime,
+      packageView,
+      packageDir: "packages/api",
+      config,
+      agentName: "claude",
+    };
 
-    const opts = buildRunDispatchOptions(ctx, {} as never);
+    const opts = buildRunDispatchOptions(ctx, {
+      prompt: "hi",
+      effectiveTier: "balanced",
+      dispatchModelDef: { provider: "claude", model: "sonnet" },
+      // …mirror the sibling test's remaining params
+    });
 
-    expect(opts.runId).toBe("run-xyz");
+    expect(opts.runId).toBe(runtime.runId);
+    expect(opts.runId).toBeTruthy();
   });
-});
 ```
 
-> If `buildRunDispatchOptions`'s real second parameter is not trivially
-> constructible, build it from the existing helpers in
-> `test/helpers/` rather than casting — check `test/helpers/` first. A cast
-> that hides a required field will make this test pass against a broken
-> implementation.
+Add this **inside** the file's existing `describe` block, next to the sibling
+test that already builds this exact `ctx` shape — copy its parameter object
+rather than inventing one. `makeTestRuntime` self-registers its own `afterEach`
+teardown (`trackRuntime`, `test/helpers/runtime.ts:30`), so no manual cleanup is
+needed and `check:runtime-cleanup` stays green.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -634,9 +701,10 @@ git commit -m "feat(tool-audit): emit callId and scopeId on every recorded tool 
 **Files:**
 - Modify: `src/agents/manager.ts` (`runAsSession`)
 - Modify: `src/agents/session-types.ts` (`SendTurnOpts`)
-- Modify: `src/agents/manager-dispatch.ts` (`buildSessionTurnEvent`)
+- Modify: `src/agents/manager-dispatch.ts` (`buildSessionTurnEvent` **and** `buildDispatchErrorEvent`)
+- Modify: `src/runtime/dispatch-events.ts` (`DispatchErrorEvent` gains `turnId?: string` — see Step 4)
 - Modify: `src/runtime/middleware/cost.ts`
-- Test: `test/unit/agents/manager-dispatch-emission.test.ts`, `test/unit/runtime/middleware/cost.test.ts`
+- Test: `test/unit/agents/manager-dispatch-emission.test.ts`, `test/unit/runtime/middleware/cost.test.ts`, `test/unit/runtime/middleware/cost-roundtrip-attribution.test.ts`, `test/unit/runtime/middleware/cost-rate-provenance.test.ts`
 
 > There is no `manager-dispatch.test.ts`. The suite is split:
 > `manager-dispatch-emission.test.ts`, `-complete`, `-error-event`,
@@ -715,7 +783,25 @@ and into the event:
       });
 ```
 
-Do the same for the error path that builds a dispatch-error event, so a failed turn is still labelled.
+**The error path needs a field created first.** Verified on `f4b3bbc7a`:
+`DispatchErrorEvent` (`src/runtime/dispatch-events.ts:139-181`) carries flat
+`callId?` / `scopeId?` and has **no `protocolIds` object and no `turnId`** — so
+"do the same" has nothing to write to. `protocolIds` is deliberately absent:
+`CompleteDispatchEvent`'s own comment records that a one-shot has no record id
+and no turn id (US-002), and the error event follows the flat shape.
+
+Add a flat field, matching the `callId?`/`scopeId?` precedent rather than
+introducing a `protocolIds` object on this event:
+
+```ts
+  /** Identity of the turn that failed; mirrors `protocolIds.turnId` on a
+   *  successful `SessionTurnDispatchEvent`. Flat, because this event has no
+   *  `protocolIds` object — see `CompleteDispatchEvent`. */
+  readonly turnId?: string;
+```
+
+then stamp it in `buildDispatchErrorEvent` (`src/agents/manager-dispatch.ts:212-250`)
+so a failed turn is still labelled.
 
 Add to `SendTurnOpts` in `src/agents/session-types.ts`:
 
@@ -732,10 +818,27 @@ Add to `SendTurnOpts` in `src/agents/session-types.ts`:
 
 - [ ] **Step 5: Copy it onto the cost row**
 
-In `src/runtime/middleware/cost.ts`, in both the success row (near the existing `callId: event.callId`) and the error row:
+In `src/runtime/middleware/cost.ts`, in both the success row (near the existing
+`callId: event.callId`) and the error row. **The two rows need different
+expressions** — the obvious single snippet does not compile in either place:
+
+*Success row* (`cost.ts:101`, `event: DispatchEvent = SessionTurnDispatchEvent |
+CompleteDispatchEvent`). `CompleteDispatchEvent` declares no `protocolIds`, so
+`event.protocolIds` is **TS2339 on the union** — and `?.` does not rescue a
+property that is missing from a member rather than nullable. Narrow on `kind`
+first:
 
 ```ts
-      ...(event.protocolIds?.turnId !== undefined ? { turnId: event.protocolIds.turnId } : {}),
+      ...(event.kind === "session-turn" && event.protocolIds?.turnId !== undefined
+        ? { turnId: event.protocolIds.turnId }
+        : {}),
+```
+
+*Error row* (`cost.ts:223`, `event: DispatchErrorEvent`). This event has no
+`protocolIds` at all; read the flat field Step 4 adds:
+
+```ts
+      ...(event.turnId !== undefined ? { turnId: event.turnId } : {}),
 ```
 
 Bump `COST_ROW_SCHEMA_VERSION` to `6` and add a changelog entry in the comment block above it, matching the style of entries 1–5:
@@ -768,13 +871,24 @@ test("a cost row carries the turnId from the dispatch event", () => {
 Run: `bun run test && bun run typecheck && bun run lint`
 Expected: all clean.
 
-Four assertions hard-pin the old version and MUST be updated to 6 — they will
-not fail informatively if missed, they will simply fail:
+Eight assertions across three files hard-pin the old version and MUST be updated
+to 6 — they will not fail informatively if missed, they will simply fail:
 
 - `test/unit/runtime/middleware/cost-roundtrip-attribution.test.ts:257` (`schemaVersion).toBe(5)`)
 - `test/unit/runtime/middleware/cost-roundtrip-attribution.test.ts:258` (`COST_ROW_SCHEMA_VERSION).toBe(5)`)
 - `test/unit/runtime/middleware/cost-roundtrip-attribution.test.ts:270` (error row)
-- `test/unit/runtime/middleware/cost.test.ts:581-582`
+- `test/unit/runtime/middleware/cost.test.ts:581` (`schemaVersion).toBe(5)`)
+- `test/unit/runtime/middleware/cost.test.ts:582` (`COST_ROW_SCHEMA_VERSION).toBe(5)`)
+- `test/unit/runtime/middleware/cost-rate-provenance.test.ts:131` (`schemaVersion).toBe(5)`)
+- `test/unit/runtime/middleware/cost-rate-provenance.test.ts:132` (`COST_ROW_SCHEMA_VERSION).toBe(5)`)
+- `test/unit/runtime/middleware/cost-rate-provenance.test.ts:144` (`schemaVersion).toBe(5)`)
+
+`cost-rate-provenance.test.ts` was missed by this plan's first pass. Its describe
+block is titled `"attachCostSubscriber — schemaVersion 5 (US-003 AC1)"` and its
+file header records `schemaVersion: 5` as a prior story's acceptance criterion —
+so it is an exact-equality pin that the bump breaks, and test-authorship
+isolation gives an implementer no sanctioned route to it unless it is named here.
+It IS named here, and in this task's `Test:` list.
 
 `cost.test.ts:400,415` compare against the constant rather than a literal and
 need no change.
@@ -901,7 +1015,15 @@ In `src/agents/native/session/turn-loop.ts`, at the `onInteraction({ kind, name,
               ? {
                   kind,
                   name: call.name,
-                  input: call.input as Record<string, unknown>,
+                  // MUST be `input`, NOT `call.input`. #2162's US-002 added a
+                  // `before_tool` `allow` outcome that may REWRITE the input;
+                  // the merged line is `input: (input ?? {}) as Record<...>`
+                  // where `input = rewritten ?? call.input` (turn-loop.ts:448).
+                  // Using `call.input` here runs the tool on the model's
+                  // original arguments while `rewriteToolCallInput` has already
+                  // recorded the corrected ones — execution and transcript
+                  // diverge, silently, with no test in this plan covering it.
+                  input: (input ?? {}) as Record<string, unknown>,
                   ...(opts.turnId !== undefined ? { turnId: opts.turnId } : {}),
                   roundTrips,
                   toolCallId: call.id,
@@ -910,9 +1032,11 @@ In `src/agents/native/session/turn-loop.ts`, at the `onInteraction({ kind, name,
           );
 ```
 
-> Read the merged call site before editing. US-002 may have moved this into the
-> shared result builder; the three values must be attached wherever the
-> coding-tool interaction is now constructed.
+> **Re-anchored against the merged tree (`f4b3bbc7a`).** US-002 did NOT move this
+> call out of `turn-loop.ts` — `buildToolResult` is the result *builder*, but the
+> `onInteraction` dispatch is still inline, now at `turn-loop.ts:453-457`. Read it
+> before editing and preserve the `input` variable exactly as the comment in the
+> block above says.
 
 - [ ] **Step 7: Forward through the handler into `callTool`**
 

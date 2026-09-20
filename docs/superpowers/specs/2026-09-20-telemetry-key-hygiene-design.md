@@ -33,12 +33,22 @@ and the middleware in between never copies it across. That spec records that
 #1907 shipped a canary guard "intended to make a fourth pass impossible", and
 that it did not catch pass four.
 
-This spec adds passes five and six:
+This spec adds passes five and six (pass 5 has since been fixed — see the note below the table):
 
-| pass | field dropped | where |
-|---|---|---|
-| 5 | `callId`, `scopeId` | `src/runtime/session-run-hop.ts:131-148` — see #2156 |
-| 6 | `protocolIds.turnId` | declared `src/runtime/dispatch-events.ts:99`, set nowhere |
+| pass | field dropped | where | status |
+|---|---|---|---|
+| 5 | `callId`, `scopeId` | `src/runtime/session-run-hop.ts:131-148` — #2156 | **FIXED** by #2158, 2026-09-20 05:48Z |
+| 6 | `protocolIds.turnId` | declared `src/runtime/dispatch-events.ts:99`, set nowhere | open |
+
+> **Pass 5 closed between this spec's base and its merge.** The spec is based on
+> `13d6bfcb1` (11:41); #2158 landed at 13:48 and this document merged at 13:57.
+> `session-run-hop.ts` now forwards both ids. Pass 5 is retained above as
+> *evidence of the class*, not as outstanding work — §2.2 already placed fixing
+> #2156 out of scope, and that entry is now moot rather than deferred.
+>
+> This weakens the §5.5 guard argument by one instance but does not retire it:
+> pass 5 reached production and was caught by a human reading artifacts, not by
+> a gate. A guard that existed would have caught it at commit time.
 
 Pass six is not a copy failure but its degenerate case: the field was declared
 on the event type and no producer ever populated it. `manager-dispatch.ts:128`
@@ -230,7 +240,9 @@ Also in scope, independent of the tiers:
   viewer exists.
 - **Cost-row `featureName` coverage** (50.1%). Deliberately excluded.
 - **Fixing #2156.** The hop drift is real but independent; this spec cites it
-  and does not carry it.
+  and does not carry it. **Closed by #2158 on 2026-09-20**, after this spec's
+  base commit — the entry is moot, retained so the §1.1 pass table reads
+  consistently.
 
 ## 3. Design
 
@@ -347,11 +359,30 @@ outside that feature's scope and will not collide.
 **One consequence to handle explicitly.** US-003 moves truncation out of the
 individual tools and into an `after_tool` policy, so tools return up to
 `READ_CEILING` and the session truncates. `resultBytes` is measured *after*
-truncation today, which means the same field name changes denominator at that
-merge. `tool-audit` has no `schemaVersion` today, so this would land as an
-undeclared generation and would silently break any carry-cost series computed as
-`resultBytes x remaining round trips`. The v1 changelog comment introduced by
-this spec must state the boundary.
+truncation both before and after that merge, which means the same field name
+changes denominator at the boundary. `tool-audit` has no `schemaVersion` today,
+so this would land as an undeclared generation and would silently break any
+carry-cost series computed as `resultBytes x remaining round trips`. The v1
+changelog comment introduced by this spec must state the boundary.
+
+Verified post-merge on `f4b3bbc7a`, the change is **threefold**, not a single
+shift, and the v1 comment must name all three:
+
+1. **Different cap owner.** Pre-merge, `result.content.length` after each tool's
+   own truncation at `ctx.maxBytes`. Post-merge, `content.length` after the
+   shared policy (`src/tools/runtime.ts:228`).
+2. **Two additional caps.** The shared policy applies `MODEL_MAX_LINES` and
+   `MODEL_MAX_LINE_CHARS` as well as the byte ceiling, so a body can now be
+   shortened by a cap that did not exist before.
+3. **The marker is inside the measurement.** A truncated result carries the
+   spill marker within the returned content, so those bytes are counted in
+   `resultBytes` — the field measures delivered content, not surviving payload.
+
+**And the field has never measured bytes.** It is `String#length`, i.e. UTF-16
+code units, under both regimes — a multi-byte result under-reports against its
+own name. `resultBytesPreTruncation` (`src/tools/tool-audit.ts:52`) carries the
+pre-policy size and shares the unit. Renaming is out of scope here; the v1
+comment states the unit so a reader does not assume otherwise.
 
 ## 5. Verification
 
@@ -372,7 +403,8 @@ this spec must state the boundary.
    guards is one. So this criterion means write the guard, not extend it, and
    wire it into `check:all`.
 6. The `tool-audit` schema comment documents v1 and names the `resultBytes`
-   denominator change at the `native-loop-events` boundary.
+   denominator change at the `native-loop-events` boundary — all three shifts
+   listed in §4, and the UTF-16-code-unit measurement.
 
 Verification is against real run artifacts, not fixtures. The existing
 `tool-audit` tests write and read their own fixtures and would pass against a
