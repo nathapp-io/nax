@@ -7,7 +7,7 @@
  */
 
 import { open } from "node:fs/promises";
-import { READ_CEILING } from "./truncate";
+import { cutToByteCap, READ_CEILING } from "./truncate";
 
 export interface ReadFileSliceOptions {
   /** Tool-layer I/O bound. Omit to default to `READ_CEILING`. */
@@ -51,18 +51,23 @@ export async function readFileSlice(target: string, opts: ReadFileSliceOptions =
   const ceiling = opts.readCeiling ?? READ_CEILING;
 
   // Probe the file size with `Bun.file(target).size` so we know whether the
-  // file exceeds the ceiling without a second read. Reading more than the
-  // ceiling is a deliberate over-fetch (one extra byte), and that byte is
-  // what lets us tell "this is the whole thing" from "there was more"
-  // without a stat.
+  // file exceeds the ceiling without reading past it. That stat is also why
+  // this reads exactly `ceiling` bytes rather than `readPrefix`'s
+  // ceiling-plus-one: the overshoot exists to infer "there was more" from the
+  // read itself, and here the stat already answers that — so the extra byte
+  // would only carry the read past the bound it is meant to enforce.
   const fileSize = Bun.file(target).size;
   const readBudget = Math.min(ceiling, fileSize);
   const handle = await open(target, "r");
   let body = "";
   try {
-    const buffer = Buffer.alloc(readBudget + 1);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    body = buffer.subarray(0, bytesRead).toString("utf8");
+    const buffer = Buffer.alloc(readBudget);
+    const { bytesRead } = await handle.read(buffer, 0, readBudget, 0);
+    // The bound can land inside a codepoint, and a partial tail decodes to
+    // U+FFFD (3 bytes) — which would put the returned body back over the
+    // ceiling it was just capped at. Trim to a clean boundary so the byte
+    // budget holds for the caller.
+    body = cutToByteCap(buffer.subarray(0, bytesRead).toString("utf8"), ceiling);
   } finally {
     await handle.close();
   }
@@ -73,12 +78,11 @@ export async function readFileSlice(target: string, opts: ReadFileSliceOptions =
   // so "a\nb\n" yields two lines, not three.
   const trailingNewline = body.endsWith("\n");
   const lines = trailingNewline ? body.slice(0, -1).split("\n") : body === "" ? [] : body.split("\n");
-  // When bounded, we read at most `ceiling + 1` bytes — there are more
-  // lines past what we observed. The "lines.length + 1" floor captures
-  // that: a bounded file's last visible line either is truncated (a
-  // partial line that continues past the ceiling) or ends with the
-  // trailing "\n" we already stripped, so there is at least one more
-  // line living beyond what we read.
+  // When bounded, we read exactly `ceiling` bytes — there are more lines past
+  // what we observed. The "lines.length + 1" floor captures that: a bounded
+  // file's last visible line either is truncated (a partial line continuing
+  // past the ceiling) or ended with the trailing "\n" we already stripped, so
+  // at least one more line lives beyond what we read.
   const totalLines = bounded ? lines.length + 1 : lines.length;
 
   // Offset/limit slicing.
@@ -94,11 +98,10 @@ export async function readFileSlice(target: string, opts: ReadFileSliceOptions =
 
   const startIndex = (opts.offset ?? 1) - 1;
   const endLine = opts.limit === undefined ? lines.length : Math.min(startIndex + opts.limit, lines.length);
-  const selected = lines.slice(startIndex, endLine);
-  const joined = selected.join("\n");
-  // Preserve a trailing newline when the source body ended with one: the
-  // slice should read as "lines 3 and 4, just like the source", not as
-  // "lines 3 and 4 with the file terminator stripped off".
-  const content = trailingNewline && selected.length > 0 ? `${joined}\n` : joined;
+  // Joined with no synthesised terminator, mirroring `readTool`'s offset/limit
+  // path (src/tools/read.ts): a caller asking for lines 3-4 gets lines 3 and 4,
+  // not a newline it did not ask for. The whole-file path above stays verbatim,
+  // trailing newline included, because there the caller asked for the file.
+  const content = lines.slice(startIndex, endLine).join("\n");
   return { content, bounded, totalLines };
 }

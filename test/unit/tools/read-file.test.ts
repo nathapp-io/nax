@@ -95,6 +95,29 @@ describe("AC17: readFileSlice returns bounded true when file > supplied readCeil
     expect(res.bounded).toBe(true);
     expect(res.totalLines).toBeGreaterThan(0);
   });
+
+  test("the returned content is itself within the ceiling, not just flagged bounded", async () => {
+    // A bounded read that handed back ceiling + 1 bytes would mean the tool
+    // read past the bound it was given. The ceiling is the tool's I/O bound,
+    // so the body it returns has to sit inside it.
+    writeFileSync(path("over.txt"), "x".repeat(2_000));
+
+    const res = await readFileSlice(path("over.txt"), { readCeiling: 500 });
+    expect(res.bounded).toBe(true);
+    expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(500);
+  });
+
+  test("a ceiling landing mid-codepoint does not push the body past the ceiling", async () => {
+    // Every codepoint here is 3 bytes, so a ceiling of 500 lands inside one.
+    // A byte-aligned cut would decode that partial tail into a U+FFFD
+    // replacement character (3 bytes) and hand back more than the ceiling.
+    writeFileSync(path("cjk.txt"), "\u4e2d".repeat(400)); // 1,200 bytes
+
+    const res = await readFileSlice(path("cjk.txt"), { readCeiling: 500 });
+    expect(res.bounded).toBe(true);
+    expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(500);
+    expect(res.content).not.toContain("\ufffd");
+  });
 });
 
 describe("AC18: readFileSlice with offset 3 and limit 2 returns the third and fourth lines", () => {
@@ -107,6 +130,16 @@ describe("AC18: readFileSlice with offset 3 and limit 2 returns the third and fo
     expect(res.content).not.toContain("L1\n");
     expect(res.content).not.toContain("L2\n");
     expect(res.content).not.toContain("L5\n");
+  });
+
+  test("the slice is exactly the requested lines, with no synthesised terminator", async () => {
+    writeLines("five.txt", ["L1", "L2", "L3", "L4", "L5"]);
+
+    const res = await readFileSlice(path("five.txt"), { offset: 3, limit: 2 });
+    // readTool's offset/limit path (src/tools/read.ts) joins the selected
+    // lines with no trailing newline. readFileSlice follows that precedent
+    // rather than re-adding the file's terminator the caller never asked for.
+    expect(res.content).toBe("L3\nL4");
   });
 });
 

@@ -127,6 +127,23 @@ describe("AC5: line longer than MODEL_MAX_LINE_CHARS is shortened to that length
     }
     expect(res.truncated).toBe(true);
   });
+
+  test("a surrogate-pair line is cut on the cap, never between the halves of a pair", () => {
+    // 1001 emoji is 2002 UTF-16 code units — two past the cap, so a code-unit
+    // cut at 2000 lands between the halves of a pair. The cap must back up to
+    // the pair boundary: a lone surrogate re-encodes into a U+FFFD replacement
+    // character, which would make the "shortened to MODEL_MAX_LINE_CHARS" line
+    // longer in bytes than the UTF-16 length the cap was measured in.
+    const emoji = "\u{1f600}";
+    const body = `${emoji.repeat(1001)}\nshort\n`;
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThan(MODEL_MAX_BYTES);
+
+    const res = trunc(body);
+    const outLine = res.content.split("\n")[0];
+    expect(outLine?.length).toBeLessThanOrEqual(MODEL_MAX_LINE_CHARS);
+    expect(outLine).toBe(emoji.repeat(1000));
+    expect(res.truncated).toBe(true);
+  });
 });
 
 describe("AC6: both line-count and per-line caps apply to a body within MODEL_MAX_BYTES", () => {
@@ -174,6 +191,27 @@ describe("AC8: tail-with-first-line direction keeps the body's first line inside
     expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(MODEL_MAX_BYTES);
     const firstRetained = res.content.split("\n")[0];
     expect(firstRetained).toBe(firstLine);
+  });
+
+  test("the byte cap itself fires and the first line still fits inside it", () => {
+    // Every line here is well under the per-line cap and the body is under the
+    // line-count cap, so neither of the first two stages touches it: the byte
+    // cap is the ONLY stage that can fire. That is the case the criterion is
+    // about — the retained first line has to come out of the byte budget, not
+    // be prepended on top of a body that already filled it.
+    const firstLine = "HEADER";
+    const filler = Array.from({ length: 900 }, () => "y".repeat(50));
+    const body = `${firstLine}\n${filler.join("\n")}\n`;
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(MODEL_MAX_BYTES);
+
+    const res = trunc(body, "tail-with-first-line");
+    expect(res.truncated).toBe(true);
+    const contentBytes = Buffer.byteLength(res.content, "utf8");
+    expect(contentBytes).toBeLessThanOrEqual(MODEL_MAX_BYTES);
+    expect(res.content.split("\n")[0]).toBe(firstLine);
+    // Nothing was appended after the cut: were the first line added on top of
+    // a full budget's worth of tail, the result would exceed the ceiling.
+    expect(contentBytes).toBe(MODEL_MAX_BYTES);
   });
 });
 
