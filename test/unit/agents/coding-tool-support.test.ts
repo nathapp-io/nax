@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { realpath as realpathAsync } from "node:fs/promises";
+import { readFile, realpath as realpathAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
@@ -687,5 +687,43 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
       .filter((line) => line !== "");
     expect(cwdLines).toContain(await realpathAsync(packagePath));
     expect(cwdLines).not.toContain(await realpathAsync(tempDir));
+  });
+});
+
+describe("resolveCodingToolSupport — run-scoped header", () => {
+  test("the tool-audit file carries the run-scoped header", async () => {
+    const root = makeTempDir("nax-cts-header-");
+    try {
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["Read"],
+        codingToolRoot: root,
+        outputDir: root,
+        pipelineStage: "review",
+        runId: "run-header-1",
+        featureName: "auth-system",
+        storyId: "US-007",
+        sessionRole: "implementer",
+        config: makeNaxConfig(),
+      });
+
+      support?.auditSink.record({
+        tool: "Read",
+        outcome: "ok",
+        input: {},
+        resultBytes: 1,
+        at: "2026-09-20T00:00:00.000Z",
+      });
+      await support?.auditSink.flush();
+
+      const written = [...new Bun.Glob("**/*.json").scanSync(join(root, "tool-audit"))];
+      expect(written).toHaveLength(1);
+      const parsed = JSON.parse(await readFile(join(root, "tool-audit", written[0] as string), "utf8"));
+      expect(parsed.runId).toBe("run-header-1");
+      expect(parsed.featureName).toBe("auth-system");
+      expect(parsed.storyId).toBe("US-007");
+      expect(parsed.sessionRole).toBe("implementer");
+    } finally {
+      cleanupTempDir(root);
+    }
   });
 });
