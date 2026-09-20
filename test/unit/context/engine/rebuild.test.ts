@@ -367,7 +367,7 @@ describe("US-003 — rebuild manifest metadata follows the rebuilt chunk set", (
     });
 
     expect(rebuilt.manifest.includedChunks).toEqual(["keep"]);
-    expect(rebuilt.manifest.excludedChunks).toEqual([{ id: "drop", reason: "budget" }]);
+    expect(rebuilt.manifest.excludedChunks).toEqual([{ id: "drop", reason: "budget", stale: false }]);
     expect(rebuilt.manifest.chunkSummaries).toEqual({ keep: keep.content });
     expect(rebuilt.manifest.staleChunks).toEqual(["keep"]);
     expect(rebuilt.manifest.chunkEffectiveness).toEqual({ keep: { signal: "followed" } });

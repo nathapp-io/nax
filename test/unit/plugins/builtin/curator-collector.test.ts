@@ -324,7 +324,7 @@ describe("collectObservations", () => {
       JSON.stringify({
         stage: "review",
         includedChunks: ["feature-context:abc"],
-        excludedChunks: [{ id: "rules:def", reason: "stale" }],
+        excludedChunks: [{ id: "rules:def", reason: "budget", stale: true }],
         providerResults: [
           { providerId: "feature-context", status: "empty", chunkCount: 0, durationMs: 1, tokensProduced: 0 },
         ],
@@ -407,7 +407,7 @@ describe("collectObservations", () => {
     expect(observations.some((o) => o.kind === "verdict")).toBe(true);
     expect(observations.some((o) => o.kind === "review-finding" && o.payload.ruleId === "no-n-plus-one")).toBe(true);
     expect(observations.some((o) => o.kind === "chunk-included")).toBe(true);
-    expect(observations.some((o) => o.kind === "chunk-excluded" && o.payload.reason === "stale")).toBe(true);
+    expect(observations.some((o) => o.kind === "chunk-excluded" && o.payload.stale === true)).toBe(true);
     expect(observations.some((o) => o.kind === "provider-empty")).toBe(true);
     expect(observations.some((o) => o.kind === "pull-call" && o.payload.resultCount === 0)).toBe(true);
     expect(observations.some((o) => o.kind === "acceptance-verdict" && o.payload.failedACs?.includes("AC-2"))).toBe(

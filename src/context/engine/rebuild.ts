@@ -200,9 +200,15 @@ export function rebuild(
   const chunkProviders = prior.manifest.chunkProviders
     ? Object.fromEntries(Object.entries(prior.manifest.chunkProviders).filter(([id]) => includedChunkIds.has(id)))
     : undefined;
+  // US-001: stamp `stale` onto every rebuilt budget-excluded entry. The flag
+  // is stamped uniformly whether or not the chunk is stale; the mechanical
+  // `reason` is preserved unchanged. Derivation uses `packedChunks` (the
+  // input to the packer) since it carries `staleCandidate` for every chunk
+  // that the pack saw, regardless of whether the chunk survived packing.
+  const staleCandidateById = new Map<string, boolean>(packedChunks.map((c) => [c.id, c.staleCandidate === true]));
   const excludedChunks = packResult.budgetExcludedIds
     .filter((id) => !includedChunkIds.has(id))
-    .map((id) => ({ id, reason: "budget" as const }));
+    .map((id) => ({ id, reason: "budget" as const, stale: staleCandidateById.get(id) === true }));
 
   // #1421: `chunkTokens` must cover every chunk that reached packing, included
   // and excluded alike (manifest-types.ts). The excluded entries have no chunk

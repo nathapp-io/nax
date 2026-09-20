@@ -443,6 +443,14 @@ export class ContextOrchestrator {
     // reaches the exclusion lists.
     const chunkTokenLookup = new Map<string, number>(scored.map((c) => [c.id, c.tokens]));
 
+    // US-001: derive staleIds from `scored`, which is a superset of every
+    // chunk that reaches the exclusion lists (roleFiltered, belowMin,
+    // dedupeDropped, budgetExcludedIds). This guarantees the buildManifest
+    // attribution is correct on every exclusion path even though only
+    // `dedupe` and `role-filter` can carry a stale chunk in production
+    // (stale chunks are floor-kind and exempt from budget / below-min).
+    const staleIds = new Set<string>(scored.filter((c) => c.staleCandidate === true).map((c) => c.id));
+
     const manifest = buildManifest({
       requestId,
       request,
@@ -460,6 +468,7 @@ export class ContextOrchestrator {
       floorOverageIds,
       floorOverageTokens,
       effectiveBudget,
+      staleIds,
     });
 
     // #1776: floor items (static rules, feature/test-coverage floor chunks)

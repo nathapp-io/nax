@@ -288,9 +288,16 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
         // Manifests written before #1421 carry no token data — those chunks
         // report 0 rather than a fabricated estimate.
         const chunkTokens = asRecord(manifest.chunkTokens) ?? {};
+        // US-002: per-chunk provider attribution carrier. A missing entry
+        // omits `provider` from the emitted observation rather than
+        // substituting a placeholder — chunks whose provider is unknown stay
+        // unattributed, which is the truthful reading the heuristic can then
+        // group on.
+        const chunkProviders = asRecord(manifest.chunkProviders) ?? {};
 
         for (const chunkId of asArray(manifest.includedChunks)) {
           const id = String(chunkId);
+          const provider = optionalString(chunkProviders[id]);
           const obs: ChunkIncludedObservation = {
             schemaVersion: OBSERVATION_SCHEMA_VERSION,
             projectKey: context.projectKey,
@@ -304,6 +311,7 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
               chunkId: id,
               label: stringValue(chunkSummaries[id], id),
               tokens: numberValue(chunkTokens[id], 0),
+              ...(provider !== undefined ? { provider } : {}),
             },
           };
           observations.push(obs);
@@ -313,6 +321,12 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
           const excluded = asRecord(rawExcluded);
           if (!excluded) continue;
           const id = stringValue(excluded.id, "unknown");
+          const provider = optionalString(chunkProviders[id]);
+          // US-001/002: project the manifest entry's `stale` flag onto the
+          // chunk-excluded payload verbatim. The mechanical `reason` stays
+          // unchanged — staleness is an orthogonal axis layered on top, not
+          // an alternative cause. Absent flag → absent key.
+          const stale = typeof excluded.stale === "boolean" ? excluded.stale : undefined;
           const obs: ChunkExcludedObservation = {
             schemaVersion: OBSERVATION_SCHEMA_VERSION,
             projectKey: context.projectKey,
@@ -326,6 +340,8 @@ async function collectFromContextManifests(context: CuratorPostRunContext): Prom
               chunkId: id,
               label: stringValue(chunkSummaries[id], id),
               reason: optionalString(excluded.reason),
+              ...(provider !== undefined ? { provider } : {}),
+              ...(stale !== undefined ? { stale } : {}),
             },
           };
           observations.push(obs);

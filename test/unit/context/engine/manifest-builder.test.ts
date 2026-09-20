@@ -63,6 +63,7 @@ function makeInputs(overrides: Partial<ManifestInputs> = {}): ManifestInputs {
     floorOverageIds: [],
     floorOverageTokens: 0,
     effectiveBudget: 8_000,
+    staleIds: new Set(),
     ...overrides,
   };
 }

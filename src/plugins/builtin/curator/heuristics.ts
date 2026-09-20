@@ -317,10 +317,18 @@ function h4EscalationChain(observations: Observation[], threshold: number): Prop
   return proposals;
 }
 
-/** H5: Stale chunk excluded — same chunk excluded with reason=stale across runs */
+/** H5: Stale chunk excluded — same chunk excluded with payload.stale=true across runs */
 function h5StaleChunk(observations: Observation[], threshold: number): Proposal[] {
+  // US-002: H5 fires on `payload.stale === true`, not on the legacy
+  // `payload.reason === "stale"` heuristic. The mechanical `reason` carries
+  // the cause that excluded the chunk (budget / below-min-score / dedupe /
+  // role-filter) and is preserved untouched on the observation; staleness is
+  // an orthogonal axis attributed at assembly time and projected verbatim
+  // from the manifest entry's `stale` flag. Matching on `reason` would mix
+  // the two axes and re-fabricate the cross-provider duplication this change
+  // exists to remove.
   const excluded = observations.filter(
-    (o): o is ChunkExcludedObservation => o.kind === "chunk-excluded" && o.payload.reason === "stale",
+    (o): o is ChunkExcludedObservation => o.kind === "chunk-excluded" && o.payload.stale === true,
   );
 
   const byChunk = new Map<string, { runIds: Set<string>; storyIds: string[]; label: string }>();
@@ -374,6 +382,13 @@ function h6FixCycleUnchanged(observations: Observation[], threshold: number): Pr
   const proposals: Proposal[] = [];
   for (const storyIterations of byStory.values()) {
     const storyId = storyIterations[0].storyId;
+    const featureId = storyIterations[0].featureId;
+    // Composite site key — `storyId` is feature-scoped (every feature has its
+    // own "US-001"), so the bare story ID collides across features and the
+    // H6 group's grouping key is the only unambiguous site reference
+    // (US-003 / BUG-48). Other heuristics that render `storyId` bare (H3, H5)
+    // do not yet carry this fix — narrowly scoped to H6 here.
+    const site = `${featureId}/${storyId}`;
     const ordered = [...storyIterations].sort(
       (a, b) => (a.payload.iterationNum ?? a.payload.iteration) - (b.payload.iterationNum ?? b.payload.iteration),
     );
@@ -392,10 +407,10 @@ function h6FixCycleUnchanged(observations: Observation[], threshold: number): Pr
       id: "H6",
       severity: "LOW",
       target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "advisory" },
-      description: `Fix-cycle unchanged: story ${storyId} had ${maxStreak} consecutive unchanged outcomes`,
-      evidence: `Story ${storyId} had ${maxStreak} consecutive fix-cycle iterations with outcome=unchanged`,
+      description: `Fix-cycle unchanged: story ${site} had ${maxStreak} consecutive unchanged outcomes`,
+      evidence: `Story ${site} had ${maxStreak} consecutive fix-cycle iterations with outcome=unchanged`,
       sourceKinds: ["fix-cycle-iteration"],
-      storyIds: [storyId],
+      storyIds: [site],
     });
   }
   return proposals;
