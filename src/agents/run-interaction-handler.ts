@@ -87,6 +87,7 @@ export function buildRunInteractionHandler(options: RunInteractionOptions): Inte
           ...(req.turnId !== undefined ? { turnId: req.turnId } : {}),
           ...(req.roundTrips !== undefined ? { roundTrips: req.roundTrips } : {}),
           ...(req.toolCallId !== undefined ? { toolCallId: req.toolCallId } : {}),
+          ...(req.deferModelTruncation !== undefined ? { deferModelTruncation: req.deferModelTruncation } : {}),
         });
         if (outcome.kind === "denied") {
           return {
@@ -94,7 +95,10 @@ export function buildRunInteractionHandler(options: RunInteractionOptions): Inte
             denied: { reason: outcome.reason, breach: outcome.breach },
           };
         }
-        return { answer: outcome.content };
+        return {
+          answer: outcome.content,
+          ...(outcome.finalizeAudit !== undefined ? { finalizeAudit: outcome.finalizeAudit } : {}),
+        };
       }
       return null;
     },
