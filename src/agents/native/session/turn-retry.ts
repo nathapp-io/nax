@@ -40,8 +40,10 @@ export interface TurnRetryConfig {
 interface RetryableProtocolError {
   readonly protocolError: {
     readonly kind: string;
+    readonly message: string;
     /** Seconds, when the provider signals one (nax-ai types.ts ProtocolError.retryAfter). */
     readonly retryAfter?: number;
+    readonly status?: number;
   };
 }
 

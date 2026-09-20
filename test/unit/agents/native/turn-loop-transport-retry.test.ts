@@ -6,6 +6,8 @@ import { nativeTranscriptDirs } from "@/agents/native/session/session";
 import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
 import { createTurnDeadline } from "@/agents/turn-deadline";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import type { LogEntry } from "@/logger/types";
 
 let dir: string;
 const handle = { id: "sess-retry", agentName: "native" } as const;
@@ -31,7 +33,7 @@ const opts = (over: Partial<SendTurnOpts> = {}): SendTurnOpts => ({
 
 /** Mirrors the fixture used in turn-loop-compaction.test.ts. */
 class ProtocolStreamError extends Error {
-  constructor(readonly protocolError: { kind: string; message: string; retryAfter?: number }) {
+  constructor(readonly protocolError: { kind: string; message: string; retryAfter?: number; status?: number }) {
     super(protocolError.message);
     this.name = "ProtocolStreamError";
   }
@@ -138,6 +140,53 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     expect(calls).toBe(2);
     expect(delays).toEqual([4000]);
     expect(result.output).toBe("done");
+  });
+
+  describe("retry diagnostics", () => {
+    let logCalls: LogEntry[];
+
+    beforeEach(() => {
+      resetLogger();
+      logCalls = [];
+      initLogger({ level: "info", suppressConsole: true });
+      addSink((entry) => logCalls.push(entry));
+    });
+
+    afterEach(() => {
+      resetLogger();
+    });
+
+    test("logs the rate-limit kind and provider diagnostics before retrying", async () => {
+      let calls = 0;
+      await runNativeTurn(handle, "hi", opts(), {
+        transportRetry: retryConfig,
+        sleep: noopSleep,
+        complete: async () => {
+          calls += 1;
+          if (calls === 1) {
+            throw new ProtocolStreamError({
+              kind: "rate-limit",
+              message: "account quota exceeded",
+              status: 429,
+              retryAfter: 4,
+            });
+          }
+          return reply();
+        },
+      });
+
+      const warning = logCalls.find((entry) => entry.level === "warn" && entry.stage === "native-adapter");
+      expect(warning?.message).toBe("retrying after a rate-limit fault");
+      expect(warning?.data).toMatchObject({
+        sessionName: "sess-retry",
+        retryNumber: 1,
+        delayMs: 4_000,
+        kind: "rate-limit",
+        message: "account quota exceeded",
+        status: 429,
+        retryAfter: 4,
+      });
+    });
   });
 
   test("leaves context-overflow on its own existing path, unaffected by transportRetry being set", async () => {
