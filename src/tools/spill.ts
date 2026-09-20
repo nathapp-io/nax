@@ -236,9 +236,16 @@ function selectTail(lines: readonly string[], budget: number): string {
   // first line plus the marker occupy one line each of the line budget.
   for (let i = lines.length - 1; i >= 1 && kept.length < MODEL_MAX_LINES - 1; i -= 1) {
     const line = lines[i] ?? "";
-    const cost = Buffer.byteLength(line, "utf8") + (kept.length === 0 ? 0 : 1);
+    // Measure the line in the form actually KEPT, not as it arrived: the per-line
+    // cap shortens every line over MODEL_MAX_LINE_CHARS, so charging the raw
+    // length charged a capped line up to its full original size. The walk runs
+    // upwards from the end, so the line that lost that comparison was the body's
+    // LAST one — precisely the stderr text the direction exists to keep — and a
+    // >budget final line was dropped whole even though its capped form fit.
+    const capped = capModelLine(line, MODEL_MAX_LINE_CHARS);
+    const cost = Buffer.byteLength(capped, "utf8") + (kept.length === 0 ? 0 : 1);
     if (cost > remaining) continue;
-    kept.unshift(capModelLine(line, MODEL_MAX_LINE_CHARS));
+    kept.unshift(capped);
     remaining -= cost;
   }
   return kept.join("\n");
