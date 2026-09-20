@@ -133,6 +133,9 @@ describe("runHeuristics", () => {
 
   describe("H5 — Stale Chunk Excluded", () => {
     test("triggers for stale exclusions persisting across runs; does not trigger for non-stale", () => {
+      // US-002: H5 fires on `payload.stale === true`. `reason` carries the
+      // mechanical cause that excluded the chunk; staleness is an orthogonal
+      // axis attributed by the manifest.
       const staleObs: Observation[] = [
         {
           schemaVersion: 1,
@@ -143,7 +146,7 @@ describe("runHeuristics", () => {
           stage: "context",
           ts: "2026-05-04T00:00:00Z",
           kind: "chunk-excluded",
-          payload: { chunkId: "c1", label: "stale chunk", reason: "stale" },
+          payload: { chunkId: "c1", label: "stale chunk", reason: "budget", stale: true },
         },
         {
           schemaVersion: 1,
@@ -154,7 +157,7 @@ describe("runHeuristics", () => {
           stage: "context",
           ts: "2026-05-05T00:00:00Z",
           kind: "chunk-excluded",
-          payload: { chunkId: "c1", label: "stale chunk", reason: "stale" },
+          payload: { chunkId: "c1", label: "stale chunk", reason: "budget", stale: true },
         },
       ];
       const h5 = runHeuristics(staleObs, { ...defaultThresholds, staleChunkRuns: 2 }).find((p) => p.id === "H5");

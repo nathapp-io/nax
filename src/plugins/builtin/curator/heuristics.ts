@@ -317,10 +317,18 @@ function h4EscalationChain(observations: Observation[], threshold: number): Prop
   return proposals;
 }
 
-/** H5: Stale chunk excluded — same chunk excluded with reason=stale across runs */
+/** H5: Stale chunk excluded — same chunk excluded with payload.stale=true across runs */
 function h5StaleChunk(observations: Observation[], threshold: number): Proposal[] {
+  // US-002: H5 fires on `payload.stale === true`, not on the legacy
+  // `payload.reason === "stale"` heuristic. The mechanical `reason` carries
+  // the cause that excluded the chunk (budget / below-min-score / dedupe /
+  // role-filter) and is preserved untouched on the observation; staleness is
+  // an orthogonal axis attributed at assembly time and projected verbatim
+  // from the manifest entry's `stale` flag. Matching on `reason` would mix
+  // the two axes and re-fabricate the cross-provider duplication this change
+  // exists to remove.
   const excluded = observations.filter(
-    (o): o is ChunkExcludedObservation => o.kind === "chunk-excluded" && o.payload.reason === "stale",
+    (o): o is ChunkExcludedObservation => o.kind === "chunk-excluded" && o.payload.stale === true,
   );
 
   const byChunk = new Map<string, { runIds: Set<string>; storyIds: string[]; label: string }>();
