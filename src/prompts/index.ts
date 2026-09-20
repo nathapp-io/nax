@@ -22,14 +22,10 @@ export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-bu
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
 export { buildDecomposePromptAsync, buildDecomposePromptSync } from "./builders/decompose-builder";
-// Grounder prompt builder — facts manifest grounding prompt construction.
-export { GrounderPromptBuilder } from "./builders/grounder-builder";
 export type { OneShotRole } from "./builders/one-shot-builder";
 // One-shot prompt builder — escape hatch for structurally trivial prompts.
 // Used by router and decomposer.
 export { OneShotPromptBuilder } from "./builders/one-shot-builder";
-// Patch prompt builder — patch step prompt construction for verifier-pick selector.
-export { PatchPromptBuilder } from "./builders/patch-builder";
 export type { PackageSummary, PlanningPromptParts } from "./builders/plan-builder";
 // Plan prompt builder — centralises planning prompt construction.
 export { PlanPromptBuilder } from "./builders/plan-builder";
