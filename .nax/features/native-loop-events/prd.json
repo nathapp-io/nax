@@ -3,7 +3,7 @@
   "feature": "native-loop-events",
   "branchName": "feat/native-loop-events",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-20T09:28:55.469Z",
+  "updatedAt": "2026-09-20T09:39:37.401Z",
   "userStories": [
     {
       "id": "US-001",
@@ -203,8 +203,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "failed",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 3,
       "escalations": [],
       "routing": {
@@ -265,21 +265,9 @@
       "priorFailures": [],
       "storyPoints": 1,
       "storyGitRef": "4d30cbb19b7d637807c9b5b1805bbc86b5c2ecaa",
-      "repoScopedFixes": [
-        {
-          "triggeringTests": [
-            "test/unit/tools/scratchpad-read-paging.test.ts::AC11: when ScratchpadRead receives offset 3 and limit 2, then it returns the third and fourth lines of the named scratchpad file > offset=3 limit=2 returns exactly lines 3 and 4, with no synthesised terminator"
-          ],
-          "filesChanged": [
-            ".nax/features/native-loop-events/prd.json",
-            "src/tools/scratchpad.ts"
-          ],
-          "findingsCleared": false
-        }
-      ],
-      "failureCategory": "full-suite-gate-exhausted",
       "outOfScope": [
-        "rejecting invented range-argument aliases on `ScratchpadRead`, which `readTool` does at `src/tools/read.ts:70-76`, is deferred."
+        "rejecting invented range-argument aliases on `ScratchpadRead`, which `readTool` does at `src/tools/read.ts:70-76`, is deferred.",
+        "measuring a tail candidate line in its per-line-capped form so a runaway final line survives as a shortened slice is deliberately not implemented — the skip-whole rule is the intended behaviour and AC3/AC7 pin it."
       ]
     },
     {

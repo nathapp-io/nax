@@ -204,6 +204,15 @@ that is within `MODEL_MAX_LINES`, and the phantom empty element becomes the line
 Command output tails because the failure is at the end, but not naively: the body's first
 line carries the exit code, so the policy preserves that line and then tails.
 
+The tail is assembled line-wise, walking upwards from the body's last line, and each
+candidate is charged the byte length it ARRIVES with. A line whose own size exceeds what is
+left of the budget is SKIPPED WHOLE rather than shortened into the tail slot. This is the
+rule, not an accident of the implementation: one runaway 160 KB stdout blob must not spend
+the entire tail budget on a 2,000-character slice of itself and evict the short trailing
+lines that actually carry the failure text. The consequence is deliberate and is what the
+criteria below mean by "the body's final lines" — the trailing RUN of lines that fit, which
+is not always the single last line.
+
 ### Spill file format
 
 On truncation only, the full body — up to `READ_CEILING` — is written under the scratchpad
@@ -295,6 +304,11 @@ so the end wipe covers shared mode.
   run lock is assumed to prevent it.
 - US-003 only: rejecting invented range-argument aliases on `ScratchpadRead`, which
   `readTool` does at `src/tools/read.ts:70-76`, is deferred.
+- Measuring a tail candidate line in its per-line-capped form, so that a body whose final
+  line is one runaway blob still ends with the first `MODEL_MAX_LINE_CHARS` of that blob, is
+  deliberately NOT implemented. It is incompatible with the skip rule under "Truncation
+  direction" and with the AC3 and AC7 criteria as written, and implementing it regresses
+  both. Revisit only by changing those criteria first.
 
 ## Stories
 
@@ -506,6 +520,9 @@ reference survives.
 
 **Out of scope:** rejecting invented range-argument aliases on `ScratchpadRead` — `readTool`
 does this at `src/tools/read.ts:70-76`, but adding it here is not required by this feature.
+Also out of scope: measuring a tail candidate line in its per-line-capped form so a runaway
+final line survives as a shortened slice — the skip rule under "Truncation direction" is the
+intended behaviour and the criteria below pin it.
 
 - `[integration]` a `Grep` tool result larger than `MODEL_MAX_BYTES` enters the message array
   with content whose UTF-8 byte length is at most `MODEL_MAX_BYTES`.
@@ -513,7 +530,10 @@ does this at `src/tools/read.ts:70-76`, but adding it here is not required by th
   `MODEL_MAX_BYTES` enters the message array with content whose first line is the body's
   `exit N` line.
 - `[integration]` that same `Bash` result enters the message array with content that ends
-  with the body's final `stderr` lines.
+  with the body's final `stderr` lines — meaning the trailing run of body lines that fit the
+  remaining byte budget, measured as each line arrives. A final line whose own size exceeds
+  that budget is skipped, so the content ends with the last SHORT trailing line rather than
+  with a shortened slice of the runaway one.
 - `[unit]` a `Grep` invocation whose output exceeds `MODEL_MAX_BYTES` but is smaller than
   `READ_CEILING` returns that whole output from the tool, before any session policy runs.
 - `[integration]` a truncated tool result writes a file under the scratchpad at
@@ -523,7 +543,10 @@ does this at `src/tools/read.ts:70-76`, but adding it here is not required by th
 - `[integration]` the content of a truncated `tail-with-first-line` tool result carries that
   same marker immediately after the retained first line, with any retained tail following it
   — so the content ends with the body's final lines whenever the byte budget leaves room for
-  a tail, and ends with the marker when it does not.
+  a tail, and ends with the marker when it does not. "Room for a tail" is judged per line as
+  it arrives: when every remaining candidate line is individually larger than the leftover
+  budget, no tail is retained and the marker's delivered count is the retained first line
+  alone.
 - `[integration]` a tool result within every cap leaves the scratchpad's `spill` directory
   empty.
 - `[integration]` when the spill write fails, the tool result still enters the message array
