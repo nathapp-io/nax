@@ -241,11 +241,14 @@ export async function runNativeTurn(
             signal: opts.signal,
             sleep: deps.sleep ?? realSleep,
             onRetry: (retryNumber, delayMs, fault) => {
-              getSafeLogger()?.warn("native-adapter", "retrying after a transport fault", {
+              getSafeLogger()?.warn("native-adapter", `retrying after a ${fault.protocolError.kind} fault`, {
                 sessionName: handle.id,
                 retryNumber,
                 delayMs,
                 kind: fault.protocolError.kind,
+                message: fault.protocolError.message,
+                ...(fault.protocolError.status !== undefined ? { status: fault.protocolError.status } : {}),
+                ...(fault.protocolError.retryAfter !== undefined ? { retryAfter: fault.protocolError.retryAfter } : {}),
               });
               // Resets the watchdog's lastActivityAt so a call being retried
               // is not mistaken for an idle one — same mechanism the
