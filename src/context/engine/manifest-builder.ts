@@ -37,6 +37,22 @@ export interface ManifestInputs {
   floorOverageTokens: number;
   /** Effective ceiling actually used by `packChunks` (US-003). */
   effectiveBudget: number;
+  /**
+   * Set of chunk IDs that the orchestrator classified as stale at assembly
+   * time (Amendment A AC-46/47). US-001 attribute: `buildManifest` stamps
+   * `stale: true` onto every `excludedChunks` entry whose ID is in this set,
+   * preserving the mechanical `reason` alongside the staleness signal.
+   *
+   * Derived in the orchestrator from `scored`, which is documented as a
+   * superset of every chunk that reaches the exclusion lists — so a chunk
+   * in any of `roleFiltered`, `belowMin`, `dedupeDropped`, `budgetExcludedIds`
+   * is reachable from the set even if it never reached `packed`.
+   *
+   * Declared optional in this stub so the production call site can be
+   * updated without breaking compilation mid-story. The implementer makes
+   * it required and threads the derivation in orchestrator.ts.
+   */
+  staleIds?: ReadonlySet<string>;
 }
 
 /**

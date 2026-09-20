@@ -144,10 +144,15 @@ export interface ContextManifest {
   usedTokens: number;
   /** IDs of chunks that were packed into the push markdown */
   includedChunks: string[];
-  /** Chunks that were excluded, with reason */
+  /** Chunks that were excluded, with reason. US-001: an orthogonal `stale` flag
+   *  attributes staleness on every exclusion mapping without overwriting the
+   *  mechanical `reason` (the original cause stays intact alongside the
+   *  staleness signal). The five exclusion-stamping sites stamp `stale`
+   *  uniformly on every path whether or not the chunk is stale. */
   excludedChunks: Array<{
     id: string;
-    reason: "below-min-score" | "budget" | "dedupe" | "role-filter" | "stale";
+    reason: "below-min-score" | "budget" | "dedupe" | "role-filter";
+    stale?: boolean;
   }>;
   /**
    * All chunk IDs that were floor-packed (static + feature kinds).
