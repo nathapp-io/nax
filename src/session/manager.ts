@@ -593,11 +593,8 @@ export class SessionManager implements ISessionManager {
 
     try {
       const result = await adapter.sendTurn(handle, prompt, {
+        ...opts,
         interactionHandler: opts?.interactionHandler ?? NO_OP_INTERACTION_HANDLER,
-        signal: opts?.signal,
-        maxInteractions: opts?.maxInteractions,
-        contextPullTools: opts?.contextPullTools,
-        codingTools: opts?.codingTools,
       });
       return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {
@@ -657,9 +654,9 @@ export class SessionManager implements ISessionManager {
     try {
       if (typeof promptOrFn === "string") {
         // Forwarded whole: every SendPromptOpts member is optional and present
-        // on RunInSessionOpts, and sendPrompt re-picks fields explicitly — so
-        // new SendPromptOpts fields (e.g. codingTools) cannot be silently
-        // dropped here. manager.ts is past its file-size baseline; do not grow.
+        // on RunInSessionOpts, and sendPrompt spreads ...opts — so new
+        // SendPromptOpts fields (e.g. codingTools) cannot be silently dropped
+        // here. manager.ts is past its file-size baseline; do not grow.
         return await this.sendPrompt(handle, promptOrFn, opts);
       }
       return await promptOrFn(handle);

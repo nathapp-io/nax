@@ -51,6 +51,13 @@ export interface PromptAuditEntry {
   readonly sessionName?: string;
   readonly recordId?: string | null;
   readonly sessionId?: string | null;
+  /**
+   * The turn this entry belongs to — the same minted id the cost row carries,
+   * so the two sinks join 1:1. Distinct from `turn`, which is a within-session
+   * ORDINAL (`_nextTurn`) and is not unique across runs: `(recordId, turn)`
+   * repeats on 18.6% of the historical corpus. Absent on pre-turnId history.
+   */
+  readonly turnId?: string | null;
   readonly roundTrips?: number;
   readonly roundTripUnit?: "model-call" | "agent-run";
   /**

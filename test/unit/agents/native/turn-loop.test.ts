@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AdapterInteraction } from "@/agents/interaction-handler";
 import { nativeTranscriptDirs } from "@/agents/native/session/session";
 import { loadTranscript } from "@/agents/native/session/transcript-store";
 import { runNativeTurn } from "@/agents/native/session/turn-loop";
@@ -314,6 +315,36 @@ describe("native turn loop", () => {
       },
     );
     expect(seen).toEqual(["Read"]);
+  });
+
+  test("a coding-tool interaction carries turnId, roundTrips and the tool_use id", async () => {
+    const seen: AdapterInteraction[] = [];
+    let round = 0;
+    await runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        codingTools: [fakeRead],
+        turnId: "turn-42",
+        interactionHandler: {
+          onInteraction: async (r) => {
+            seen.push(r);
+            return { answer: "ok" };
+          },
+        },
+      }),
+      {
+        complete: async () => {
+          round += 1;
+          return round === 1
+            ? reply({ toolCalls: [{ id: "toolu_abc", name: "Read", input: { path: "a.ts" } }] })
+            : reply();
+        },
+      },
+    );
+
+    const codingCall = seen.find((r) => r.kind === "coding-tool");
+    expect(codingCall).toMatchObject({ turnId: "turn-42", roundTrips: 1, toolCallId: "toolu_abc" });
   });
 
   test("flags an incomplete turn when the budget cuts the loop off mid-work", async () => {

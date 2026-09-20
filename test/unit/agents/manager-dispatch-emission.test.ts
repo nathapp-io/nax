@@ -16,12 +16,16 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeContextBundle } from "@test/helpers";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { AgentManager } from "@/agents/manager";
+import { buildSessionTurnEvent } from "@/agents/manager-dispatch";
+import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
+import { resolvePermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";
 import type { NaxConfig } from "@/config/types";
 import type {
   CompleteDispatchEvent,
+  DispatchErrorEvent,
   OperationCompletedEvent,
   SessionTurnDispatchEvent,
 } from "@/runtime/dispatch-events";
@@ -119,6 +123,47 @@ describe("runAsSession — dispatch emission", () => {
     expect(received).toHaveLength(1);
     expect(received[0]?.protocolIds.sessionId).toBe("sess-abc");
     expect(received[0]?.protocolIds.recordId).toBe("rec-xyz");
+  });
+
+  test("mints a turnId before sendPrompt and stamps the same value on the event", async () => {
+    const bus = new DispatchEventBus();
+    const sendPrompt = mock(async (_handle: SessionHandle, _prompt: string, _opts: RunAsSessionOpts) =>
+      makeTurnResult("hello"),
+    );
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, { sendPrompt, dispatchEvents: bus });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    await manager.runAsSession("claude", makeHandle(), "test-prompt", {
+      pipelineStage: "run",
+      storyId: "US-turn",
+    });
+
+    const passedOpts = sendPrompt.mock.calls[0]?.[2];
+    expect(passedOpts?.turnId).toBeTruthy();
+    expect(received[0]?.protocolIds.turnId).toBe(passedOpts?.turnId);
+  });
+
+  test("stamps the minted turnId on the DispatchErrorEvent when the turn throws", async () => {
+    const bus = new DispatchEventBus();
+    const sendPrompt = mock(async (_handle: SessionHandle, _prompt: string, _opts: RunAsSessionOpts) => {
+      throw new Error("network failure");
+    });
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, { sendPrompt, dispatchEvents: bus });
+
+    const errors: DispatchErrorEvent[] = [];
+    bus.onDispatchError((e) => errors.push(e));
+
+    await expect(manager.runAsSession("claude", makeHandle(), "prompt", { pipelineStage: "run" })).rejects.toThrow(
+      "network failure",
+    );
+
+    const passedOpts = sendPrompt.mock.calls[0]?.[2];
+    expect(passedOpts?.turnId).toBeTruthy();
+    expect(errors[0]?.turnId).toBe(passedOpts?.turnId);
   });
 
   test("forwards estimatedCostUsd on session-turn events when exactCostUsd is absent", async () => {
@@ -495,5 +540,48 @@ describe("dispatch events decompose the effort suffix (#1464)", () => {
 
     expect(received[0]?.model).toBe("haiku");
     expect("effort" in (received[0] ?? {})).toBe(false);
+  });
+});
+
+// ─── tier 3: per-turn identity ───────────────────────────────────────────────
+
+describe("buildSessionTurnEvent — turnId (tier 3)", () => {
+  test("carries a supplied turnId on protocolIds", () => {
+    const handle: SessionHandle = { id: "nax-test-handle", agentName: "claude" };
+    const result: TurnResult = makeTurnResult("ok");
+
+    const event = buildSessionTurnEvent({
+      handle,
+      sessionRole: "main",
+      prompt: "do the thing",
+      result,
+      agentName: "claude",
+      stage: "run",
+      opts: { pipelineStage: "run", storyId: "US-turn" },
+      resolvedPermissions: resolvePermissions(DEFAULT_CONFIG, "run"),
+      startedAt: 1_000,
+      turnId: "turn-1",
+    });
+
+    expect(event.protocolIds.turnId).toBe("turn-1");
+  });
+
+  test("omits turnId on protocolIds when none is supplied", () => {
+    const handle: SessionHandle = { id: "nax-test-handle", agentName: "claude" };
+    const result: TurnResult = makeTurnResult("ok");
+
+    const event = buildSessionTurnEvent({
+      handle,
+      sessionRole: "main",
+      prompt: "do the thing",
+      result,
+      agentName: "claude",
+      stage: "run",
+      opts: { pipelineStage: "run" },
+      resolvedPermissions: resolvePermissions(DEFAULT_CONFIG, "run"),
+      startedAt: 1_000,
+    });
+
+    expect("turnId" in event.protocolIds).toBe(false);
   });
 });

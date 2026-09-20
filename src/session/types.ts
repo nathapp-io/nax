@@ -203,6 +203,8 @@ export interface SendPromptOpts {
   contextPullTools?: readonly ToolDescriptor[];
   /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
   codingTools?: readonly import("@/tools").CodingTool[];
+  /** Per-turn identity, forwarded to the adapter's `SendTurnOpts.turnId`. */
+  turnId?: string;
 }
 
 /**

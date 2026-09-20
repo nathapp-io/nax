@@ -58,10 +58,17 @@ export type CodingToolOutcome =
 /** Injectable logger seam, mirroring _pullToolsDeps.getLogger. */
 export const _codingToolDeps = { getLogger: getSafeLogger };
 
+/** Per-call turn context, recorded on the audit ledger. */
+export interface ToolCallContext {
+  readonly turnId?: string;
+  readonly roundTrips?: number;
+  readonly toolCallId?: string;
+}
+
 export interface CodingToolRuntime {
   /** Op declaration intersected with policy grants. Both can only narrow. */
   advertised(declared: readonly string[]): readonly CodingTool[];
-  callTool(name: string, input: Record<string, unknown>): Promise<CodingToolOutcome>;
+  callTool(name: string, input: Record<string, unknown>, context?: ToolCallContext): Promise<CodingToolOutcome>;
 }
 
 let builtinsRegistered = false;
@@ -126,6 +133,8 @@ export function createCodingToolRuntime(opts: {
    */
   readCeiling?: number;
   storyId?: string;
+  callId?: string;
+  scopeId?: string;
   sink?: ToolAuditSink;
   extraTools?: readonly CodingTool[];
   /**
@@ -188,6 +197,7 @@ export function createCodingToolRuntime(opts: {
     outcome: CodingToolOutcome["kind"] | "denied:ask",
     resultBytes: number,
     input: Record<string, unknown>,
+    context: ToolCallContext | undefined,
     breach?: boolean,
     reason?: string,
     routineErrors?: boolean,
@@ -238,6 +248,9 @@ export function createCodingToolRuntime(opts: {
       ...(audit?.target !== undefined ? { target: audit.target } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
+      ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
+      ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
+      ...(context ?? {}),
     });
   }
 
@@ -253,11 +266,11 @@ export function createCodingToolRuntime(opts: {
       return out;
     },
 
-    async callTool(name, input) {
+    async callTool(name, input, context) {
       const tool = lookup(name);
       if (tool === undefined) {
         const reason = `unknown tool "${name}"`;
-        log(name, "denied", 0, input, false, reason);
+        log(name, "denied", 0, input, context, false, reason);
         return { kind: "denied", reason, breach: false };
       }
 
@@ -313,6 +326,7 @@ export function createCodingToolRuntime(opts: {
             kind,
             content.length,
             callInput,
+            context,
             false,
             kind === "error" ? result.content : undefined,
             target.routineErrors,
@@ -328,7 +342,7 @@ export function createCodingToolRuntime(opts: {
             root: opts.policy.root,
             maxBytes,
           });
-          log(policyIdentity, "error", content.length, callInput, false, rawContent, target.routineErrors);
+          log(policyIdentity, "error", content.length, callInput, context, false, rawContent, target.routineErrors);
           return { kind: "error", content };
         }
       }
@@ -344,7 +358,7 @@ export function createCodingToolRuntime(opts: {
           });
         } catch (err) {
           const content = errorMessage(err);
-          log(policyIdentity, "error", content.length, input, false, content);
+          log(policyIdentity, "error", content.length, input, context, false, content);
           return { kind: "error", content };
         }
         if (decision === "allow") {
@@ -352,7 +366,7 @@ export function createCodingToolRuntime(opts: {
           return runTool(tool, input, verdict.resolvedPaths ?? []);
         }
         const reason = `${verdict.reason} -- ${ASK_UNAVAILABLE_REASON}`;
-        log(policyIdentity, "denied:ask", reason.length, input, false, reason);
+        log(policyIdentity, "denied:ask", reason.length, input, context, false, reason);
         return { kind: "denied", reason, breach: false };
       }
 
@@ -383,7 +397,7 @@ export function createCodingToolRuntime(opts: {
                 ? redirectForVerb(name, rawVerb, advertisedNames, declared)
                 : undefined;
         const reason = extra === undefined ? verdict.reason : `${verdict.reason} -- ${extra}`;
-        log(policyIdentity, "denied", reason.length, input, verdict.breach, reason);
+        log(policyIdentity, "denied", reason.length, input, context, verdict.breach, reason);
         return { kind: "denied", reason, breach: verdict.breach };
       }
 

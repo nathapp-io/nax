@@ -387,6 +387,71 @@ describe("createSessionRunHop — declared coding tools", () => {
 });
 
 /**
+ * The hop merges `incoming.runId ?? runId`, so a caller-supplied runId (threaded
+ * per dispatch) wins over the run-scoped one captured at construction. The
+ * effective id reaches the tool-audit ledger's filename and header; this asserts
+ * that precedence rather than the merge's absence.
+ */
+describe("createSessionRunHop — runId precedence", () => {
+  async function ledgerFor(
+    capturedRunId: string | undefined,
+    callerRunId: string | undefined,
+  ): Promise<{ filename: string; headerRunId: string | undefined }> {
+    const root = makeTempDir("nax-hop-runid-");
+    try {
+      await Bun.write(`${root}/calc.ts`, "export const divide = (d: number, n: number) => n / d;\n");
+      const handle: SessionHandle = { id: "nax-session", agentName: "claude" };
+      const sessionManager = makeSessionManager({
+        nameFor: mock(() => "nax-session"),
+        openSession: mock(async () => handle),
+        sendPrompt: mock(async (_handle: SessionHandle, _prompt: string, opts: SendPromptOpts) => {
+          await opts.interactionHandler?.onInteraction({
+            kind: "coding-tool",
+            name: "Read",
+            input: { path: "calc.ts" },
+          });
+          return {
+            output: "done",
+            tokenUsage: { inputTokens: 1, outputTokens: 1 },
+            estimatedCostUsd: 0,
+            internalRoundTrips: 1,
+          } satisfies TurnResult;
+        }),
+        closeSession: mock(async () => {}),
+      });
+
+      const hop = createSessionRunHop(sessionManager, undefined, capturedRunId);
+      await hop("claude", {
+        ...makeRunOptions(),
+        pipelineStage: "review",
+        declaredTools: ["Read"],
+        codingToolRoot: root,
+        outputDir: root,
+        ...(callerRunId !== undefined ? { runId: callerRunId } : {}),
+      });
+
+      const files = [...new Bun.Glob("**/*.json").scanSync({ cwd: root })];
+      expect(files).toHaveLength(1);
+      const filename = files[0] as string;
+      const parsed = (await Bun.file(`${root}/${filename}`).json()) as { runId?: string };
+      return { filename, headerRunId: parsed.runId };
+    } finally {
+      cleanupTempDir(root);
+    }
+  }
+
+  test("a caller-supplied runId wins, and the captured one fills in when absent", async () => {
+    const callerWins = await ledgerFor("captured-run", "caller-run");
+    expect(callerWins.filename).toContain("caller-run-");
+    expect(callerWins.headerRunId).toBe("caller-run");
+
+    const capturedFillsIn = await ledgerFor("captured-run", undefined);
+    expect(capturedFillsIn.filename).toContain("captured-run-");
+    expect(capturedFillsIn.headerRunId).toBe("captured-run");
+  });
+});
+
+/**
  * The hop's `?? 1` fallback looks like removable noise. It is not: dropping it
  * sends `undefined` to the adapter, where ACP's own `?? 10` silently turns
  * every deliberate single-interaction call into a ten-iteration one. Issue

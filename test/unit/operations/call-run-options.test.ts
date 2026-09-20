@@ -44,6 +44,34 @@ describe("buildRunDispatchOptions — PR1 fields (single-frame redesign)", () =>
     expect(result.codingToolRoot).not.toBe(result.codingToolPackageDir);
   });
 
+  test("forwards the runtime's runId onto the run options", () => {
+    const config = makeNaxConfig();
+    const runtime = makeTestRuntime({ config, workdir: "/repo" });
+    createdRuntimes.push(runtime);
+    const packageView = runtime.packages.resolve("packages/api");
+    const ctx: CallContext = {
+      runtime,
+      packageView,
+      packageDir: "packages/api",
+      config,
+      agentName: "claude",
+    };
+
+    const result = buildRunDispatchOptions(ctx, {
+      prompt: "hi",
+      effectiveTier: "balanced",
+      dispatchModelDef: { provider: "claude", model: "sonnet" },
+      config,
+      callId: "call-1",
+      pipelineStage: "run",
+      declaredTools: ["Read"],
+      keepOpen: false,
+    });
+
+    expect(result.runId).toBe(runtime.runId);
+    expect(result.runId).toBeTruthy();
+  });
+
   test("the root package (packageDir '') threads an empty codingToolPackageDir, not undefined", () => {
     const config = makeNaxConfig();
     const runtime = makeTestRuntime({ config, workdir: "/repo" });

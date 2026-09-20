@@ -83,7 +83,11 @@ export function buildRunInteractionHandler(options: RunInteractionOptions): Inte
       if (req.kind === "coding-tool") {
         const runtime = options.codingToolRuntime;
         if (!runtime) return null;
-        const outcome = await runtime.callTool(req.name, req.input ?? {});
+        const outcome = await runtime.callTool(req.name, req.input ?? {}, {
+          ...(req.turnId !== undefined ? { turnId: req.turnId } : {}),
+          ...(req.roundTrips !== undefined ? { roundTrips: req.roundTrips } : {}),
+          ...(req.toolCallId !== undefined ? { toolCallId: req.toolCallId } : {}),
+        });
         if (outcome.kind === "denied") {
           return {
             answer: `Denied: ${outcome.reason}`,

@@ -100,6 +100,9 @@ export function buildCodingToolSupport(args: {
   shell?: string;
   auditDir?: string;
   sessionName?: string;
+  header?: import("../tools/tool-audit").ToolAuditHeader;
+  callId?: string;
+  scopeId?: string;
   /**
    * Manifest name of the workspace member at the story's package dir
    * (`packageWorkdir`/`commandCwd`), NOT at `root` — post-PR2 `root` is the
@@ -177,7 +180,11 @@ export function buildCodingToolSupport(args: {
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
   const sink =
     args.auditDir !== undefined
-      ? createToolAuditSink({ dir: args.auditDir, sessionName: args.sessionName ?? "unattached" })
+      ? createToolAuditSink({
+          dir: args.auditDir,
+          sessionName: args.sessionName ?? "unattached",
+          ...(args.header ? { header: args.header } : {}),
+        })
       : createNoOpToolAuditSink();
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(narrowedGrants, args.root, {
@@ -188,6 +195,8 @@ export function buildCodingToolSupport(args: {
     declaredCommands: new Set(declaredCommands.keys()),
     ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
+    ...(args.callId !== undefined ? { callId: args.callId } : {}),
+    ...(args.scopeId !== undefined ? { scopeId: args.scopeId } : {}),
     ...(args.denyPaths !== undefined ? { denyPaths: args.denyPaths } : {}),
     sink,
     extraTools: [
@@ -314,6 +323,9 @@ export async function resolveCodingToolSupport(
     | "config"
     | "projectDir"
     | "codingToolPackageDir"
+    | "runId"
+    | "callId"
+    | "scopeId"
   >,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
@@ -426,6 +438,12 @@ export async function resolveCodingToolSupport(
     ...(options.sessionRole !== undefined ? { sessionRole: options.sessionRole } : {}),
     ...(options.featureName !== undefined ? { featureName: options.featureName } : {}),
   });
+  const header = {
+    ...(options.runId !== undefined ? { runId: options.runId } : {}),
+    ...(options.featureName !== undefined ? { featureName: options.featureName } : {}),
+    ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
+    ...(options.sessionRole !== undefined ? { sessionRole: options.sessionRole } : {}),
+  };
   // Resolved here, ahead of the sync tool seam (buildCodingToolSupport):
   // both dispatch hops call that seam on a hot path, so it stays synchronous
   // and never touches the filesystem itself. Skipped unless the op declared
@@ -553,6 +571,9 @@ export async function resolveCodingToolSupport(
     ...(shell !== undefined ? { shell } : {}),
     ...(auditDir !== undefined ? { auditDir } : {}),
     sessionName,
+    header,
+    ...(options.callId !== undefined ? { callId: options.callId } : {}),
+    ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
     ...(packageName !== undefined ? { packageName } : {}),
     allowScripts,
     ...(denyPaths !== undefined ? { denyPaths } : {}),
