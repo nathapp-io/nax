@@ -14,7 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
@@ -22,6 +22,7 @@ import {
   createCodingToolRuntime,
   DEFAULT_TOOL_MAX_BYTES,
   DEFAULT_TOOL_MAX_FILE_BYTES,
+  MODEL_MAX_BYTES,
   scratchpadReadTool,
 } from "@/tools";
 
@@ -196,32 +197,60 @@ describe("AC14: when successive ScratchpadRead offsets read a spilled body large
     // mechanism to recover content that didn't fit through the truncation
     // chokepoint.
     //
-    // We bypass the size test by using a stub that pretends to be the spill
-    // file's content, then page through it. The body just needs to be larger
-    // than the page size to exercise paging — and we pin the FIRST and LAST
-    // line as recoverable as concrete discriminators.
+    // The fixture is a body the session really spilled: a Grep result larger
+    // than MODEL_MAX_BYTES driven through the runtime, whose truncation
+    // chokepoint writes the untruncated body under the scratchpad's spill
+    // directory and names it in the marker. Paging that spill file is the
+    // recovery path the model takes, and the FIRST and LAST lines are its
+    // concrete discriminators.
     const totalLines = 250;
     const firstLine = "FIRST-PAGE-CHECK-MARKER-LINE";
     const lastLine = "LAST-PAGE-CHECK-MARKER-LINE";
-    const middle = "mid-payload";
+    // Wide enough that 250 of them clear MODEL_MAX_BYTES, which is what makes
+    // the body a spilled one rather than an incidental file.
+    const middle = "mid-payload".repeat(20);
     const lines = [firstLine, ...Array.from({ length: totalLines - 2 }, () => middle), lastLine];
     const body = `${lines.join("\n")}\n`;
-    // The body is much larger than what a single offset/limit page would
-    // return — paging is required to recover everything. (The exact
-    // threshold doesn't matter; we're exercising the paging path, not
-    // hitting the model-facing cap.)
+    // The body is past the model-facing byte cap, so the seed call below
+    // truncates it and spills the whole of it; paging is what recovers it.
     expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(1024);
 
-    const filePath = join(root, ".nax", "scratchpad", "spill-recovery.md");
-    mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
-    writeFileSync(filePath, body);
+    // Seed the spill through the dispatch path the session uses: a Grep call
+    // whose body exceeds MODEL_MAX_BYTES, so the chokepoint spills the whole
+    // body and the marker names where it went.
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Grep", patterns: ["*"] }], root),
+      maxBytes: MODEL_MAX_BYTES,
+      extraTools: [
+        {
+          name: "Grep",
+          description: "stub",
+          inputSchema: { type: "object" },
+          scope: { pathFields: [] },
+          async run() {
+            return { content: body };
+          },
+        },
+      ],
+    });
+    rt.advertised(["Grep"]);
+    await rt.callTool("Grep", { pattern: "x" });
 
-    // Page through it 30 lines at a time — three pages will be needed for
-    // 250 lines.
+    // The spilled body, named the way ScratchpadRead takes it: relative to the
+    // scratchpad directory.
+    const spillDir = join(root, ".nax", "scratchpad", "spill");
+    if (!existsSync(spillDir)) throw new Error("the truncated Grep result wrote no spill directory");
+    const spillFile = readdirSync(spillDir).find((name) => name.startsWith("Grep-") && name.endsWith(".txt"));
+    if (spillFile === undefined) throw new Error("the truncated Grep result wrote no spill file");
+    const filePath = join(spillDir, spillFile);
+    const relativePath = `spill/${spillFile}`;
+
+    // Page through it 30 lines at a time — nine pages are needed for 250
+    // lines.
     const pageLimit = 30;
     const pages: string[] = [];
     for (let offset = 1; offset <= totalLines; offset += pageLimit) {
-      const r = await scratchpadReadTool.run({ path: "spill-recovery.md", offset, limit: pageLimit }, ctx(filePath));
+      const r = await scratchpadReadTool.run({ path: relativePath, offset, limit: pageLimit }, ctx(filePath));
       expect(r.isError).toBeFalsy();
       pages.push(r.content);
     }
