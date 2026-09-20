@@ -185,7 +185,7 @@ Four commits. Each task's verification is cumulative; `bun run typecheck` is not
 **Files — delete outright (34 + 16 files):**
 
 ```
-src/debate/                                   (whole directory, 34 files)
+src/debate/                                   (whole directory, 33 files)
 src/operations/debate-hybrid.ts
 src/operations/debate-judge.ts
 src/operations/debate-plan.ts
@@ -258,7 +258,23 @@ export function resolvePlanMode(config: NaxConfig): "single" | "refine" {
 }
 ```
 
-Then delete everything from the `// Pipeline mode — US-005` banner comment (around line 135) through the end of `runPlanPipeline` (around line 285). Delete the now-unused imports at the top of the file: `renderManifestSection` from `../debate` (line 13), `PlanDraftInput` from `../operations` (line 15), `callOp, groundOp, planDraftOp` from `../operations` (line 16), and the `buildPlanComposition` re-export (line 21). Keep `assertIsValidPrd`.
+Then delete the `// Pipeline mode — US-005` banner comment at **line 136** through the closing brace of `runPlanPipeline` at **line 281**.
+
+⚠️ **Do not delete to end of file.** `plan-command.ts` is 281 lines of body plus a live re-export at **283-285**:
+
+```ts
+// Re-exports for backward compatibility — planDecomposeCommand and runReplanLoop
+// were extracted to plan-decompose.ts to keep plan.ts under the 600-line limit.
+export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
+```
+
+That re-export **must survive** — `src/cli/plan.ts` and `src/cli/index.ts` both depend on it. Confirm after the edit:
+
+```bash
+grep -n 'planDecomposeCommand' src/cli/plan-command.ts   # expect the re-export, still present
+```
+
+Delete the now-unused imports at the top of the file: `renderManifestSection` from `../debate` (line 13), `PlanDraftInput` from `../operations` (line 15), `callOp, groundOp, planDraftOp` from `../operations` (line 16), and the `buildPlanComposition` re-export (line 21). Keep `assertIsValidPrd`.
 
 - [ ] **Step 2: Fix the CLI barrels**
 
@@ -272,7 +288,25 @@ export { _planDeps, planCommand, resolvePlanMode } from "./plan";
 
 `src/cli/plan-runtime/index.ts` — delete the `DebateRunner` / `DebateRunnerOptions` import (lines 15-16) and the `createDebateRunner` dep (line 106).
 
-`src/cli/plan-decompose.ts` — delete the `DebateStageConfig` import (line 16) and the entire `debateDecompEnabled` branch (lines 105-148), leaving the non-debate decompose path intact. Read the surrounding loop carefully: the branch sits inside an `attempt === 0` guard, so removing it must not change the retry accounting for the surviving path.
+`src/cli/plan-decompose.ts` — three separate edits, **not one contiguous range**:
+
+1. Line 16 — delete the `DebateStageConfig` import.
+2. Lines **105-106** — delete the two `const` declarations:
+   ```ts
+   const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
+   const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
+   ```
+3. Lines **113-150** — delete the whole `if (attempt === 0 && debateDecompEnabled) { ... }` block, from the `if` on line 113 through its closing `}` on line 150.
+
+⚠️ Do **not** delete 105-150 as one range: lines 108-112 in between hold `let decompStories`, `let repairHint`, the `try {` and the `for` loop header, all of which the surviving path needs.
+
+After the edit, `if (!decompStories) {` (was line 152) becomes the first statement in the loop body. That is correct — `decompStories` can still be set by a previous attempt, so the guard stays meaningful and the retry accounting is unchanged. Do not "simplify" it away.
+
+Verify the block boundaries yourself before cutting, since line numbers drift:
+
+```bash
+grep -n 'debateDecompEnabled\|let decompStories\|if (!decompStories)' src/cli/plan-decompose.ts
+```
 
 - [ ] **Step 3: Rewrite `src/plan/index.ts`**
 
@@ -332,18 +366,36 @@ export function createPlanStrategy(mode: IPlanStrategy["mode"]): IPlanStrategy {
 
 - [ ] **Step 6: Trim `PlanPromptBuilder`, do not delete it**
 
-In `src/prompts/builders/plan-builder.ts` delete **only**:
-- the `PlanDraftBuildInput` interface (the block at lines 88-96 carrying `manifestSection`, `specContent`, `codebaseContext`, `feature`, `branchName`, `citationThreshold`) and the checklist-item interface at lines 81-84 if nothing else references it,
-- `static citationRepair` (lines 171-190),
-- `buildDraft` (lines 428 to the end of that method).
+In `src/prompts/builders/plan-builder.ts` (561 lines) delete **exactly these four spans**, verified against the tree on 2026-09-20:
+
+| Span | Symbol |
+|---|---|
+| 80-86 | doc comment + `export interface PlanDraftVerifierFinding` |
+| 88-105 | doc comment + `export interface PlanDraftBuildInput` — it runs to line 105, **not 96**: past `citationThreshold` it also carries `revisionFindings`, `packages`, `packageDetails`, `projectProfile` and `profiles` |
+| 170-183 | doc comment + `static citationRepair` |
+| 423-530 | doc comment + the whole `buildDraft` method |
+
+⚠️ Three adjacency traps in this file:
+
+1. **Line 531 is the class's closing `}`** — `buildDraft` ends at 530. Take 531 and the class never closes.
+2. **`PackageSummary` starts at line 107**, immediately after `PlanDraftBuildInput`. It is exported from `src/prompts/index.ts` and used by `plan-command.ts` and `plan-helpers.ts`. It **stays**.
+3. **`buildFileReadInstruction` (line 540) and `buildPackageDetailsSection` (line 552)** are module-level helpers below the class. They look like `buildDraft`'s private helpers but `build()` also calls them, at lines 357 and 320. They **stay**.
+
+`PlanDraftVerifierFinding` is safe to remove: its only reference is `PlanDraftBuildInput:96`, which dies with it.
 
 Keep `build`, `jsonRepair`, `schemaRepair`, `buildRefineContinuation`, `buildSpecDriftRepair`, `buildOutOfScopeRepair` — `operations/plan.ts` and `operations/plan-refine.ts` call them. Verify before deleting each member:
 
 ```bash
-grep -rn 'citationRepair\|buildDraft\|PlanDraftBuildInput' src --include='*.ts'
+grep -rn 'citationRepair\|buildDraft\|PlanDraftBuildInput\|PlanDraftVerifierFinding' src --include='*.ts'
 ```
 
-Expected after the trim: zero hits outside the deleted files.
+Expected after the trim: zero hits. Then confirm the survivors are intact:
+
+```bash
+grep -n 'PackageSummary\|buildFileReadInstruction\|buildPackageDetailsSection' src/prompts/builders/plan-builder.ts
+```
+
+Expected: the `PackageSummary` interface and both helpers still present, with `build()` still calling them.
 
 `src/prompts/index.ts` — delete the `DebatePromptBuilder` export and the `PromptBuilderOptions` / `ReviewStoryContext` / `StageContext` type re-exports (lines 24-26). These three types are declared in the deleted `debate-builder.ts` and have no other consumer; confirm with `grep -rn 'ReviewStoryContext\|PromptBuilderOptions' src --include='*.ts'` (expect zero). Note `StageContext` is **not** the same as `StageContextConfig` in `src/context/engine/stage-config.ts`, which stays.
 
@@ -360,12 +412,64 @@ Expected after the trim: zero hits outside the deleted files.
 | `src/config/schema.ts:10-19` | Delete the `debate/types` re-export block |
 | `src/config/runtime-types.ts:280,489-498,561-562` | Narrow `mode` to `"single" \| "refine"`; delete the `debate/types` re-export block; delete the `debate?:` field |
 | `src/config/selectors.ts:19,26,46,165` | Remove `"debate"` from the key list and from `planConfigSelector`'s picks; delete `debateConfigSelector` and the `DebateConfig` type |
-| `src/context/engine/stage-config.ts:318-330` | Delete both the `"review-dialogue"` and the `debate` stage entries. Leave the `satisfies` clause and the `StageKey` derivation intact |
-| `src/runtime/session-role.ts:39,74` | Delete the `` `debate-${string}` `` arm of `SessionRole` and the `startsWith("debate-")` predicate. Check what `SessionRole` narrows to afterwards — if it collapses to `CanonicalSessionRole`, simplify the alias rather than leaving a one-arm union |
+| `src/context/engine/stage-config.ts:312-331` | Delete both stage entries **and their doc comments**: from `// Review dialogue — reviewer role.` (line 312) through the `},` closing the `debate` entry (line 331). Deleting only 318-331 would strand lines 312-317 as an orphaned comment about a stage that no longer exists. Leave the `satisfies` clause and the `StageKey` derivation intact |
+| `src/runtime/session-role.ts` | **Larger than it looks — see "Six orphaned session roles" below.** Delete the `` `debate-${string}` `` arm (line 39) and the `startsWith("debate-")` predicate (line 74), **and** six now-dead roles from both `CanonicalSessionRole` and `KNOWN_SESSION_ROLES` |
 
 - [ ] **Step 1: Work the config and context edits until typecheck is clean**
 
 Apply the table. Re-run `bun run typecheck` after every two or three files — do not batch blind.
+
+- [ ] **Step 1b: Remove the six orphaned session roles**
+
+`tsc` will **not** catch these. An unused member of a string-literal union
+compiles cleanly, so the only thing standing between this deletion and six
+permanently dead roles is this step.
+
+`src/runtime/session-role.ts` declares every role twice — in the
+`CanonicalSessionRole` union and again in the `KNOWN_SESSION_ROLES` array. Six of
+them have their **only** producers inside files Task 1 deleted:
+
+| Role | Sole producer, now deleted |
+|---|---|
+| `grounder` | `src/operations/ground.ts:157` (`session: { role: "grounder" }`) |
+| `plan-draft` | `src/operations/plan-draft.ts:178` |
+| `plan-revise` | `src/plan/critic.ts:109` (`sessionOverride: { role: "plan-revise" }`) |
+| `plan-critic` | `src/operations/plan-critic-llm.ts:81` |
+| `synthesis` | `src/debate/session-helpers.ts:172`, `selectors/registry.ts:27` |
+| `judge` | `src/debate/session-helpers.ts:172`, `selectors/registry.ts:30` |
+
+Delete each from **both** places, plus the `` `debate-${string}` `` arm and the
+`startsWith("debate-")` predicate. `SessionRole` then collapses to
+`CanonicalSessionRole` — replace the alias rather than leaving a one-arm union:
+
+```ts
+export type SessionRole = CanonicalSessionRole;
+
+export function isSessionRole(s: string): s is SessionRole {
+  return (KNOWN_SESSION_ROLES as readonly string[]).includes(s);
+}
+```
+
+Prove each role is orphaned before removing it — do not take the table on trust:
+
+```bash
+for r in grounder plan-draft plan-revise plan-critic synthesis judge; do
+  echo "== $r"; grep -rn "\"$r\"" src --include='*.ts' | grep -v session-role.ts
+done
+```
+
+Expected: no hits for any of the six. A hit means a producer survived — **stop
+and report** rather than removing a live role.
+
+**Blast radius, checked:** `KNOWN_SESSION_ROLES` feeds `deriveSessionRole` in
+`src/runtime/usage-auditor.ts:69-86`, which labels telemetry rows by matching a
+*live* session name at write time. It does not parse historical artifacts, so
+shrinking the list cannot make old run data unreadable. `isSessionRole` is
+re-exported from `src/runtime/index.ts:81` and `src/session/types.ts:14`; both
+are pass-throughs and need no edit.
+
+Roles that stay because their producers survive: `plan` (`operations/plan.ts`)
+and `plan-refine` (`operations/plan-refine.ts`). Do not remove those.
 
 - [ ] **Step 2: Fix the comments that now point at nothing**
 
@@ -451,8 +555,15 @@ test/unit/cli/plan-decompose-debate.test.ts
 test/unit/config/debate-schema.test.ts
 test/unit/prompts/builders/debate-builder.test.ts
 test/unit/prompts/builders/critic-builder.test.ts
+test/unit/runtime/session-role-plan-critic.test.ts
 test/helpers/debate-runner.ts
 ```
+
+`test/unit/runtime/session-role-plan-critic.test.ts` is a **deletion, not a
+repair**: it exists solely to assert that `"plan-critic"` is registered in
+`KNOWN_SESSION_ROLES`, which Step 1b of Task 3 removes. Five of its seven tests
+assert exactly that, and one asserts `debate-*` roles pass `isSessionRole`. There
+is nothing left to keep.
 
 - [ ] **Step 1: Delete**
 
@@ -470,6 +581,7 @@ RTK_DISABLED=1 git rm test/unit/cli/plan-debate.test.ts test/unit/cli/plan-decom
 RTK_DISABLED=1 git rm test/unit/config/debate-schema.test.ts
 RTK_DISABLED=1 git rm test/unit/prompts/builders/debate-builder.test.ts \
   test/unit/prompts/builders/critic-builder.test.ts
+RTK_DISABLED=1 git rm test/unit/runtime/session-role-plan-critic.test.ts
 RTK_DISABLED=1 git rm test/helpers/debate-runner.ts
 ```
 
@@ -497,10 +609,10 @@ The substantive ones:
 - `test/unit/context/engine/stage-config.test.ts`, `test/unit/context/engine/stage-reachability.test.ts` — drop the `debate` and `review-dialogue` stage expectations.
 - `test/unit/cli/plan-mode.test.ts`, `test/unit/plan/strategies.test.ts`, `test/unit/config/plan-mode-refine.test.ts` — drop the retired modes.
 - `test/unit/config/{schemas,selectors,defaults-ssot,plan-schema}.test.ts` — drop `debate`, `plan.citationThreshold` and `plan.criticModel` expectations.
-- `test/unit/runtime/session-role.test.ts`, `test/unit/runtime/usage-auditor.test.ts` — drop `debate-*` role cases.
+- `test/unit/runtime/session-role.test.ts`, `test/unit/runtime/session-role-finish.test.ts`, `test/unit/runtime/usage-auditor.test.ts` — drop `debate-*` role cases and any assertion naming one of the six roles removed in Task 3 Step 1b. `session-role-finish.test.ts` covers the four `finish-*` roles, which all survive — check it rather than assuming it is clean.
 - `test/unit/operations/{op-tool-declarations,bash-declarations,call-correlation,plan-fileoutput-writable}.test.ts`, `test/unit/scripts/check-op-tool-capability.test.ts` — drop the debate, ground, plan-draft and plan-critic-llm ops from the expected op lists.
 - `test/unit/cli/plan-callop*.test.ts`, `test/integration/plan/plan-callop.test.ts`, `test/unit/cli/plan-decompose-*.test.ts` — drop the debate-decompose and pipeline branch coverage.
-- `test/unit/plan/fidelity-survives-recovery.test.ts`, `test/unit/prd/schema.test.ts`, `test/unit/prompts/sections/{diff-access-gating,protocol-region}.test.ts`, `test/unit/context/rules/rules-frontmatter.test.ts`, `test/unit/execution/iteration-runner-worktree.test.ts`, `test/unit/runtime/session-role-plan-critic.test.ts` — mostly incidental mentions; check each and drop only what the deletion invalidated.
+- `test/unit/plan/fidelity-survives-recovery.test.ts`, `test/unit/prd/schema.test.ts`, `test/unit/prompts/sections/{diff-access-gating,protocol-region}.test.ts`, `test/unit/context/rules/rules-frontmatter.test.ts`, `test/unit/execution/iteration-runner-worktree.test.ts` — mostly incidental mentions; check each and drop only what the deletion invalidated.
 
 - [ ] **Step 4: Verify**
 
@@ -545,10 +657,20 @@ bun run test
 bun run test:e2e
 ```
 
-All five must pass. `test:coverage` and the baselines are PR 2's job — if
-`check:file-sizes` or a coverage gate fails here purely because a deleted file
-is still named in a baseline, note it and let PR 2 fix it rather than editing
-baselines in this PR.
+All five must pass. **PR 1 has to be green to merge into the integration
+branch**, so "leave it for PR 2" is not available here.
+
+`check:all` runs `check:file-sizes` and `check:test-escape-hatches`, and both
+read baselines that still name files Task 1 deleted (`file-sizes-baseline.json`
+line 11; 20 entries in `test-escape-hatches-baseline.json`). If either gate goes
+red purely because of a stale entry for a **deleted** file, remove just those
+entries here and note it — Task 7 then finds that work already done and only has
+to handle whatever is left.
+
+What must **not** happen here is a blanket `--update-baseline` on any gate. That
+would silently absorb drift on files this branch never touched, which Task 7
+Step 3 is specifically there to catch. Hand-remove the dead entries; leave every
+threshold for a surviving file exactly as it is.
 
 - [ ] **Step 2: Code review before push**
 
