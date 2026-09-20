@@ -87,7 +87,8 @@ describe("readTool — unranged line-total header", () => {
     // the model sees; the marker that names the spill path is the
     // after_tool policy's, applied when the result reaches the message
     // array. Exercising the tool directly therefore returns the prefix
-    // (bounded by readCeiling) WITHOUT the tool's old marker.
+    // (bounded by the model's ceiling, ctx.maxBytes) WITHOUT the tool's
+    // old marker.
     const path = join(root, "oversize-trunc.txt");
     const line = "x".repeat(99);
     writeFileSync(path, `${line}\n`.repeat(30));
