@@ -386,7 +386,8 @@ function h6FixCycleUnchanged(observations: Observation[], threshold: number): Pr
     // Composite site key — `storyId` is feature-scoped (every feature has its
     // own "US-001"), so the bare story ID collides across features and the
     // H6 group's grouping key is the only unambiguous site reference
-    // (US-003 / BUG-48 — same fix as H1/H2/H3/H4 already carry).
+    // (US-003 / BUG-48). Other heuristics that render `storyId` bare (H3, H5)
+    // do not yet carry this fix — narrowly scoped to H6 here.
     const site = `${featureId}/${storyId}`;
     const ordered = [...storyIterations].sort(
       (a, b) => (a.payload.iterationNum ?? a.payload.iteration) - (b.payload.iterationNum ?? b.payload.iteration),

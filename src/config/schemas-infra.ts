@@ -461,7 +461,11 @@ export const CuratorThresholdsSchema = z.object({
  */
 export const CuratorRetentionConfigSchema = z.object({
   pruneThresholdBytes: z.number().int().nonnegative().default(67108864),
-  keepRuns: z.number().int().nonnegative().default(50),
+  // Positive, not merely non-negative: `keepRuns: 0` would make the automatic,
+  // unattended prune empty this project's entire rollup history on the very
+  // next over-threshold run — unlike `nax curator gc --keep 0`, which is a
+  // deliberate human invocation.
+  keepRuns: z.number().int().positive().default(50),
 });
 
 export const CuratorConfigSchema = z.object({

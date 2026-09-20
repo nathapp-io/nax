@@ -120,6 +120,11 @@ const curatorAction: IPostRunAction = {
             error: pruneOutcome.error,
             rollupPath,
           });
+        } else if (pruneOutcome.pruned) {
+          context.logger.info("Curator auto-prune completed", {
+            rollupPath,
+            ...pruneOutcome.result,
+          });
         }
 
         const thresholds = getCuratorThresholds(context);

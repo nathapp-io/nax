@@ -277,8 +277,11 @@ describe("renderProposals — heuristic-window provenance (US-003)", () => {
 
     // The window run count and the window observation count must both appear
     // in the header — that is the whole point of carrying provenance here.
-    expect(markdown).toContain("20");
-    expect(markdown).toContain("4000");
+    // Assert the rendered token, not a bare digit: the header's own
+    // timestamp always contains "20" (from its "2026-…" year), so a naive
+    // `toContain("20")` would pass even if the run-count segment were deleted.
+    expect(markdown).toContain("20 run(s)");
+    expect(markdown).toContain("4000 window observation(s)");
   });
 
   test("AC1 (boundary): zero-window provenance still surfaces the zero in the header", () => {
@@ -286,7 +289,7 @@ describe("renderProposals — heuristic-window provenance (US-003)", () => {
       runCount: 0,
       observationCount: 0,
     });
-    expect(markdown).toContain("0");
+    expect(markdown).toContain("0 run(s) · 0 window observation(s)");
   });
 
   test("AC2: header separately states the run's own observation count of 1294", () => {
@@ -304,11 +307,15 @@ describe("renderProposals — heuristic-window provenance (US-003)", () => {
   test("AC2 (boundary): identical window and run counts both still surface", () => {
     // When window == run == 5, the header still distinguishes "5 in the window"
     // from "5 in this run" — the wording must not collapse two counts into one.
+    // Capture the rendered values rather than counting "5" occurrences: the
+    // header's own timestamp can itself contain digit "5"s, which would let
+    // a naive occurrence count pass even with both fields deleted.
     const markdown = renderProposals([provenanceBaseProposal], "run-x", 5, {
       runCount: 1,
       observationCount: 5,
     });
-    expect(markdown.match(/5/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(markdown.match(/(\d+)\s+window observation/)?.[1]).toBe("5");
+    expect(markdown.match(/(\d+)\s+run observation/)?.[1]).toBe("5");
   });
 
   test("AC3: provenance with runCount=1 produces a header that says 'one run', not '20 runs'", () => {
@@ -361,8 +368,13 @@ describe("renderProposals — heuristic-window provenance (US-003)", () => {
   test("AC7 (boundary): 3-arg form with zero observations still says one run and zero window observations", () => {
     const markdown = renderProposals([], "run-x", 0);
 
+    // Assert the rendered tokens, not a bare "0" — the header's own
+    // "2026-…" timestamp always contains a "0" digit, so a naive
+    // `toContain("0")` would pass even with the whole provenance segment
+    // deleted from render.ts.
     expect(markdown).toMatch(/1\s+run/);
-    expect(markdown).toContain("0");
+    expect(markdown).toContain("0 window observation(s)");
+    expect(markdown).toContain("0 run observation(s)");
   });
 
   test("AC9: empty-proposal line attributes its observation count to the heuristic window, not to this run", () => {

@@ -110,14 +110,22 @@ export async function pruneRollup(input: PruneRollupInput): Promise<PruneResult>
  * silently drops them. Holding the lock across both calls closes that
  * window — the same lock `pruneRollup` and `appendToRollup` already share
  * (`rollup-prune.ts:100` / `rollup.ts:108`).
+ *
+ * Returns `null` — never rewrites — when this project already has at most
+ * `keepRuns` of its own runs: the rollup is shared across every project on
+ * the machine (#1429), so a project-scoped prune cannot reduce it any
+ * further in that case, and a full rewrite would run for no effect. This
+ * short-circuit lives here rather than in the caller's own pre-scan so the
+ * run-id count is computed exactly once per call, under the lock.
  */
 export async function scanAndPruneNewest(
   rollupPath: string,
   projectKey: string,
   keepRuns: number,
-): Promise<PruneResult> {
+): Promise<PruneResult | null> {
   return withPathFileLock(rollupPath, async () => {
     const runIds = await scanProjectRunIds(rollupPath, projectKey);
+    if (runIds.length <= keepRuns) return null;
     const keepRunIds = new Set(runIds.slice(0, keepRuns));
     return pruneRollupUnlocked({ rollupPath, projectKey, keepRunIds });
   });
@@ -139,14 +147,16 @@ export const _curatorPruneDeps = {
   /**
    * Scan + prune under a single lock acquisition — closes the
    * scan-then-prune race that a separate `scanProjectRunIds` / `pruneRollup`
-   * pair leaves open. Used by the auto-prune size gate (US-004).
+   * pair leaves open. Returns `null` when this project's own run count is
+   * already at or below `keepRuns` (nothing to prune). Used by the
+   * auto-prune size gate (US-004).
    */
   scanAndPruneNewest: ((rollupPath: string, projectKey: string, keepRuns: number) =>
     scanAndPruneNewest(rollupPath, projectKey, keepRuns)) as (
     rollupPath: string,
     projectKey: string,
     keepRuns: number,
-  ) => Promise<PruneResult>,
+  ) => Promise<PruneResult | null>,
 };
 
 async function pruneRollupUnlocked(input: PruneRollupInput): Promise<PruneResult> {

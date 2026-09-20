@@ -4,42 +4,45 @@
  * The post-run hook reads `Bun.file(rollupPath).size` after each run. Below
  * `retention.pruneThresholdBytes` it does nothing — the file's size is
  * effectively free, but a full pass + rewrite is not. Above the threshold it
- * derives `keepRunIds` from the first `retention.keepRuns` ids of
- * `scanProjectRunIds` and calls the existing path-locked `pruneRollup`.
+ * calls `scanAndPruneNewest`, which itself scans this project's run ids
+ * under the shared path lock and either rewrites (keeping the newest
+ * `retention.keepRuns`) or returns `null` when this project's own run count
+ * is already at or below `keepRuns` — nothing this prune could shrink.
  *
  * Reading size and pruning failures are caught and reported on `error` with
  * `pruned: false` so the curator stays an observer: a prune miss must never
  * fail the run that triggered it.
  */
 
+import { CuratorRetentionConfigSchema } from "@/config";
+import type { CuratorRetentionConfig } from "@/config/runtime-types-curator";
 import type { PostRunContext } from "@/plugins";
 import { _curatorPruneDeps, type PruneResult } from "./rollup-prune";
 
-/** Curator retention config — threshold + keep count for the auto-prune size gate. */
-export interface CuratorRetentionConfig {
-  /** Rollup size in bytes above which the post-run hook invokes pruneRollup. */
-  pruneThresholdBytes: number;
-  /** Run-id cap passed to pruneRollup as keepRunIds when the gate opens. */
-  keepRuns: number;
-}
-
-/** Schema-aligned defaults. The schema declares these as `.default(...)` values. */
-export const DEFAULT_RETENTION: CuratorRetentionConfig = {
-  pruneThresholdBytes: 67108864,
-  keepRuns: 50,
-};
+export type { CuratorRetentionConfig };
 
 /**
- * Read a retention field defensively — non-finite, negative, or non-integer
- * values fall back to the schema default.
+ * Schema-derived defaults — parsing `{}` through `CuratorRetentionConfigSchema`
+ * applies its own `.default(...)` values, so this can never drift from the
+ * schema the way a hand-copied literal could.
+ */
+export const DEFAULT_RETENTION: CuratorRetentionConfig = CuratorRetentionConfigSchema.parse({});
+
+/**
+ * Read a retention field defensively — non-finite, non-integer, or
+ * out-of-range values fall back to the schema default.
  *
  * `PostRunContext.config` is `unknown`; a malformed retention object that
  * has slipped past the schema (e.g. an out-of-band mutation in a fixture,
  * or `keepRuns: -1` whose slice(0, -1) keeps more than `keepRuns` rows)
- * must not silently change behaviour.
+ * must not silently change behaviour. `minimum` defaults to `0`
+ * (`pruneThresholdBytes` may legitimately be zero — an always-open gate) but
+ * `keepRuns` passes `1`: `0` is schema-valid range-wise yet would make the
+ * unattended auto-prune empty this project's entire rollup history on the
+ * very next over-threshold run, mirroring the schema's `.positive()`.
  */
-function readRetentionField(value: unknown, fallback: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+function readRetentionField(value: unknown, fallback: number, minimum = 0): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < minimum) {
     return fallback;
   }
   return value;
@@ -60,7 +63,7 @@ export function getCuratorRetention(context: PostRunContext): CuratorRetentionCo
   const raw = curator?.retention as Partial<CuratorRetentionConfig> | undefined;
   return {
     pruneThresholdBytes: readRetentionField(raw?.pruneThresholdBytes, DEFAULT_RETENTION.pruneThresholdBytes),
-    keepRuns: readRetentionField(raw?.keepRuns, DEFAULT_RETENTION.keepRuns),
+    keepRuns: readRetentionField(raw?.keepRuns, DEFAULT_RETENTION.keepRuns, 1),
   };
 }
 
@@ -69,10 +72,14 @@ export function getCuratorRetention(context: PostRunContext): CuratorRetentionCo
  *
  * Reads `Bun.file(input.rollupPath).size`, returns `{ pruned: false }` when
  * the size is at or below `retention.pruneThresholdBytes`, and otherwise
- * runs `scanAndPruneNewest` — the scan-then-prune pair under a single lock
+ * calls `scanAndPruneNewest` — the scan-then-prune pair under a single lock
  * acquisition, so a concurrent `appendToRollup` cannot land between them
- * and have its observations dropped. A rejection from the call is caught
- * and reported on `error` with `pruned: false`; the error string is
+ * and have its observations dropped. `scanAndPruneNewest` itself returns
+ * `null` (mapped to `{ pruned: false }` here) when this project's own run
+ * count is already at or below `retention.keepRuns` — the rollup is shared
+ * across every project on the machine (#1429), and a project-scoped rewrite
+ * cannot shrink it further in that case. A rejection from the call is
+ * caught and reported on `error` with `pruned: false`; the error string is
  * normalised so it is never empty (the post-run hook suppresses an empty
  * string and the AC10 contract guarantees a prune-failure warning fires).
  *
@@ -94,7 +101,16 @@ export async function maybePruneRollup(input: {
       return { pruned: false };
     }
 
+    // The rollup is a single global file shared by every project on the
+    // machine (#1429), but a prune can only drop THIS project's rows.
+    // `scanAndPruneNewest` returns `null` — without rewriting — when this
+    // project already has at most `keepRuns` of its own runs: another
+    // project's bytes (or this project's own already-minimal history) hold
+    // the file above threshold, and a rewrite could not reduce it further.
     const result = await _curatorPruneDeps.scanAndPruneNewest(rollupPath, projectKey, retention.keepRuns);
+    if (result === null) {
+      return { pruned: false };
+    }
     return { pruned: true, result };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
