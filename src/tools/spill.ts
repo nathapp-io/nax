@@ -140,7 +140,7 @@ type MarkerRenderer = (deliveredBytes: number) => string;
 function markerShapes(originalBytes: number, spillPath: string | undefined): MarkerRenderer[] {
   const shapes: MarkerRenderer[] = [];
   if (spillPath !== undefined) {
-    shapes.push((d) => `... [truncated: showing ${d} of ${originalBytes} bytes; full output at ${spillPath}]`);
+    shapes.push((d) => `... [truncated: full output at ${spillPath}; showing ${d} of ${originalBytes} bytes]`);
   }
   shapes.push((d) => `... [truncated: showing ${d} of ${originalBytes} bytes]`);
   shapes.push(() => "... [truncated]");

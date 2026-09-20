@@ -3,7 +3,7 @@
   "feature": "native-loop-events",
   "branchName": "feat/native-loop-events",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-20T10:18:08.512Z",
+  "updatedAt": "2026-09-20T10:58:01.422Z",
   "userStories": [
     {
       "id": "US-001",
@@ -359,7 +359,8 @@
       "acceptanceCriteria": [
         "When a `Grep` result larger than `MODEL_MAX_BYTES` enters the message array after deletions, then its content UTF-8 byte length is at most `MODEL_MAX_BYTES`.",
         "When a `Git` result larger than `MODEL_MAX_BYTES` enters the message array after deletions, then its marker names original byte count.",
-        "When `Grep` and `Git` are invoked with a `ToolRunContext` whose `readCeiling` is set after the deletions, then each still returns at most that many bytes from the tool itself, before any session policy runs."
+        "When `Grep` and `Git` are invoked with a `ToolRunContext` whose `readCeiling` is set after the deletions, then each still returns at most that many bytes from the tool itself, before any session policy runs.",
+        "When a tool result is within every model cap after the deletions, then it is delivered without a truncation marker."
       ],
       "tags": [
         "feature",
@@ -369,8 +370,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -388,9 +389,6 @@
         "src/tools/git.ts",
         "src/tools/scratchpad.ts",
         "src/tools/bash.ts"
-      ],
-      "suggestedCriteria": [
-        "When a tool result is within every model cap after the deletions, then it is delivered without a truncation marker."
       ],
       "workdirSource": "defaulted",
       "priorErrors": [],

@@ -227,15 +227,24 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
   const lines = splitModelLines(body);
   // Per-line cap is measured in UTF-16 code units — the same metric
   // `String#length` reports — so a 2_000-character line of single-unit
-  // codepoints is at the cap, not over it.
-  const perLineOver = lines.some((l) => l.length > MODEL_MAX_LINE_CHARS);
+  // codepoints is at the cap, not over it. When the body itself already
+  // exceeds `MODEL_MAX_BYTES`, the cap is also bounded by the byte budget
+  // divided by the line count so a body that has more lines than
+  // `MODEL_MAX_BYTES` bytes can carry is still representable: dropping the
+  // per-line cap to fit the byte budget is what lets the line-count cap
+  // and the byte cap coexist without one evicting the other.
+  const perLineCap =
+    originalBytes > MODEL_MAX_BYTES
+      ? Math.min(MODEL_MAX_LINE_CHARS, Math.floor(MODEL_MAX_BYTES / lines.length))
+      : MODEL_MAX_LINE_CHARS;
+  const perLineOver = lines.some((l) => l.length > perLineCap);
 
   let working = lines;
   let changed = false;
 
   // Stage 1: per-line cap.
   if (perLineOver) {
-    const capped = applyLineCharCap(working, MODEL_MAX_LINE_CHARS);
+    const capped = applyLineCharCap(working, perLineCap);
     working = capped.lines;
     if (capped.changed) changed = true;
   }
@@ -256,19 +265,43 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
   // line would inflate `split("\n").length` past the cap — the test for
   // AC4 pins "at most MODEL_MAX_LINES" via the naive split.
   const joined = working.join("\n");
-  const rebuilt = !changed && body.endsWith("\n") && working.length > 0 ? `${joined}\n` : joined;
+  let rebuilt = !changed && body.endsWith("\n") && working.length > 0 ? `${joined}\n` : joined;
 
   // Stage 3: byte cap. Runs last, so the byte ceiling is unconditional —
   // nothing is appended after the cut. The direction decides which bytes
   // survive the cut, exactly as it decided which lines survived stage 2:
   // `head` keeps the leading bytes, `tail-with-first-line` keeps the first
   // line plus the trailing bytes and drops the middle.
+  let truncated = changed;
   if (Buffer.byteLength(rebuilt, "utf8") > MODEL_MAX_BYTES) {
-    const cut =
+    rebuilt =
       opts.direction === "tail-with-first-line"
         ? cutKeepingFirstLine(rebuilt, MODEL_MAX_BYTES)
         : cutToByteCap(rebuilt, MODEL_MAX_BYTES);
-    return { content: cut, truncated: true, originalBytes };
+    truncated = true;
   }
-  return { content: rebuilt, truncated: changed, originalBytes };
+
+  // Trim a trailing surrogate so the byte cap (or the per-line cap) cannot
+  // leave the body ending on a lone half of a surrogate pair. A cut that
+  // lands on a UTF-16 surrogate code unit is a structural artifact of the
+  // cap — there is no scenario in which ending the body on a surrogate is
+  // intentional, and downstream UTF-8 decoding of such a body produces a
+  // U+FFFD replacement character that the model cannot distinguish from
+  // a real codepoint. We only strip when something above changed the
+  // content; an untruncated body that happens to end on a surrogate is
+  // already what the caller gave us and is left alone.
+  if (truncated && rebuilt.length > 0) {
+    const lastChar = rebuilt.charCodeAt(rebuilt.length - 1);
+    if (lastChar >= 0xd800 && lastChar <= 0xdfff) {
+      let trimmed = rebuilt.length;
+      while (trimmed > 0) {
+        const c = rebuilt.charCodeAt(trimmed - 1);
+        if (c < 0xd800 || c > 0xdfff) break;
+        trimmed -= 1;
+      }
+      rebuilt = rebuilt.slice(0, trimmed);
+    }
+  }
+
+  return { content: rebuilt, truncated, originalBytes };
 }

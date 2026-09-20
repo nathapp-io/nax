@@ -109,10 +109,10 @@ command output you want to re-read, and intermediate lists. Write to it with \`S
 read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
 to the scratchpad.
 
-Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is
-retained for inspection — files an agent wrote before failing survive that run and are cleared at
-the next run's start. Nothing there survives the run, reaches the repository, or is read by another
-step — treat every file as disposable, and overwrite freely.
+Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is retained
+for inspection — files an agent wrote before failing survive that run and are cleared at the next run's
+start. Nothing there survives the run, reaches the repository, or is read by another step — treat every
+file as disposable, and overwrite freely.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -310,10 +310,10 @@ command output you want to re-read, and intermediate lists. Write to it with \`S
 read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
 to the scratchpad.
 
-Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is
-retained for inspection — files an agent wrote before failing survive that run and are cleared at
-the next run's start. Nothing there survives the run, reaches the repository, or is read by another
-step — treat every file as disposable, and overwrite freely.
+Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is retained
+for inspection — files an agent wrote before failing survive that run and are cleared at the next run's
+start. Nothing there survives the run, reaches the repository, or is read by another step — treat every
+file as disposable, and overwrite freely.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -424,10 +424,10 @@ command output you want to re-read, and intermediate lists. Write to it with \`S
 read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
 to the scratchpad.
 
-Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is
-retained for inspection — files an agent wrote before failing survive that run and are cleared at
-the next run's start. Nothing there survives the run, reaches the repository, or is read by another
-step — treat every file as disposable, and overwrite freely.
+Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is retained
+for inspection — files an agent wrote before failing survive that run and are cleared at the next run's
+start. Nothing there survives the run, reaches the repository, or is read by another step — treat every
+file as disposable, and overwrite freely.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -557,10 +557,10 @@ command output you want to re-read, and intermediate lists. Write to it with \`S
 read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
 to the scratchpad.
 
-Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is
-retained for inspection — files an agent wrote before failing survive that run and are cleared at
-the next run's start. Nothing there survives the run, reaches the repository, or is read by another
-step — treat every file as disposable, and overwrite freely.
+Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is retained
+for inspection — files an agent wrote before failing survive that run and are cleared at the next run's
+start. Nothing there survives the run, reaches the repository, or is read by another step — treat every
+file as disposable, and overwrite freely.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -730,10 +730,10 @@ command output you want to re-read, and intermediate lists. Write to it with \`S
 read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
 to the scratchpad.
 
-Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is
-retained for inspection — files an agent wrote before failing survive that run and are cleared at
-the next run's start. Nothing there survives the run, reaches the repository, or is read by another
-step — treat every file as disposable, and overwrite freely.
+Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is retained
+for inspection — files an agent wrote before failing survive that run and are cleared at the next run's
+start. Nothing there survives the run, reaches the repository, or is read by another step — treat every
+file as disposable, and overwrite freely.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -851,10 +851,10 @@ command output you want to re-read, and intermediate lists. Write to it with \`S
 read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
 to the scratchpad.
 
-Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is
-retained for inspection — files an agent wrote before failing survive that run and are cleared at
-the next run's start. Nothing there survives the run, reaches the repository, or is read by another
-step — treat every file as disposable, and overwrite freely.
+Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is retained
+for inspection — files an agent wrote before failing survive that run and are cleared at the next run's
+start. Nothing there survives the run, reaches the repository, or is read by another step — treat every
+file as disposable, and overwrite freely.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -982,10 +982,10 @@ command output you want to re-read, and intermediate lists. Write to it with \`S
 read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
 to the scratchpad.
 
-Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is
-retained for inspection — files an agent wrote before failing survive that run and are cleared at
-the next run's start. Nothing there survives the run, reaches the repository, or is read by another
-step — treat every file as disposable, and overwrite freely.
+Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is retained
+for inspection — files an agent wrote before failing survive that run and are cleared at the next run's
+start. Nothing there survives the run, reaches the repository, or is read by another step — treat every
+file as disposable, and overwrite freely.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -1159,10 +1159,10 @@ command output you want to re-read, and intermediate lists. Write to it with \`S
 read back with \`ScratchpadRead\`, and list what is there with \`ScratchpadList\`. Paths are relative
 to the scratchpad.
 
-Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is
-retained for inspection — files an agent wrote before failing survive that run and are cleared at
-the next run's start. Nothing there survives the run, reaches the repository, or is read by another
-step — treat every file as disposable, and overwrite freely.
+Its contents are wiped when a run finishes and are never committed. A failed run's scratchpad is retained
+for inspection — files an agent wrote before failing survive that run and are cleared at the next run's
+start. Nothing there survives the run, reaches the repository, or is read by another step — treat every
+file as disposable, and overwrite freely.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
