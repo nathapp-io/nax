@@ -235,7 +235,7 @@ function selectTail(lines: readonly string[], budget: number): string {
   let remaining = budget;
   // The first line is retained separately, so the walk starts below it, and the
   // first line plus the marker occupy one line each of the line budget.
-  for (let i = lines.length - 1; i >= 1 && kept.length < MODEL_MAX_LINES - 1; i -= 1) {
+  for (let i = lines.length - 1; i >= 1 && kept.length < MODEL_MAX_LINES - 2; i -= 1) {
     const line = lines[i] ?? "";
     const cost = Buffer.byteLength(line, "utf8") + (kept.length === 0 ? 0 : 1);
     if (cost > remaining) continue;

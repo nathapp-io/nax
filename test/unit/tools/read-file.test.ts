@@ -118,6 +118,16 @@ describe("AC17: readFileSlice returns bounded true when file > supplied readCeil
     expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(500);
     expect(res.content).not.toContain("\ufffd");
   });
+
+  test("a four-byte codepoint cut after three bytes is omitted before decoding", async () => {
+    writeFileSync(path("emoji.txt"), "\u{1f600}tail");
+
+    const res = await readFileSlice(path("emoji.txt"), { readCeiling: 3 });
+
+    expect(res.bounded).toBe(true);
+    expect(res.content).toBe("");
+    expect(res.content).not.toContain("\ufffd");
+  });
 });
 
 describe("AC18: readFileSlice with offset 3 and limit 2 returns the third and fourth lines", () => {

@@ -7,7 +7,7 @@
  */
 
 import { open } from "node:fs/promises";
-import { cutToByteCap, READ_CEILING } from "./truncate";
+import { cutBufferToByteCap, READ_CEILING } from "./truncate";
 
 export interface ReadFileSliceOptions {
   /** Tool-layer I/O bound. Omit to default to `READ_CEILING`. */
@@ -67,7 +67,7 @@ export async function readFileSlice(target: string, opts: ReadFileSliceOptions =
     // U+FFFD (3 bytes) — which would put the returned body back over the
     // ceiling it was just capped at. Trim to a clean boundary so the byte
     // budget holds for the caller.
-    body = cutToByteCap(buffer.subarray(0, bytesRead).toString("utf8"), ceiling);
+    body = cutBufferToByteCap(buffer.subarray(0, bytesRead), ceiling).toString("utf8");
   } finally {
     await handle.close();
   }

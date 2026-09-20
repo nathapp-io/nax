@@ -58,6 +58,7 @@ export {
 export type { ToolAuditSink, ToolCallRecord } from "./tool-audit";
 export { createNoOpToolAuditSink, createToolAuditSink } from "./tool-audit";
 export {
+  cutBufferToByteCap,
   MODEL_MAX_BYTES,
   MODEL_MAX_LINE_CHARS,
   MODEL_MAX_LINES,

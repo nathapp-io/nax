@@ -14,8 +14,14 @@ beforeAll(() => {
   writeFileSync(join(root, "notes.md"), "hello\n");
 });
 
-function ctx(paths: string[], maxBytes = 10_000) {
-  return { root, resolvedPaths: paths, maxBytes, maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES };
+function ctx(paths: string[], maxBytes = 10_000, readCeiling?: number) {
+  return {
+    root,
+    resolvedPaths: paths,
+    maxBytes,
+    maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES,
+    ...(readCeiling === undefined ? {} : { readCeiling }),
+  };
 }
 
 describe("readTool", () => {
@@ -34,14 +40,13 @@ describe("readTool", () => {
     // US-005: the model-facing cap and the marker that names the spill path
     // live at the after_tool policy (applyModelTruncationPolicy), NOT inside
     // the tool itself. The unranged readTool branch still reads at
-    // ctx.maxBytes (the model-facing cap is also the prefix ceiling used to
-    // compute the [N lines] / [N+ lines] floor header), but the OLD marker
+    // ctx.readCeiling, while ctx.maxBytes remains model-facing. The OLD marker
     // — `[truncated at N bytes]` — is gone. The runtime's marker (naming the
     // spill path and both byte counts) takes its place when the body reaches
     // the message array.
     const longPath = join(root, "long.ts");
     writeFileSync(longPath, "x".repeat(200));
-    const res = await readTool.run({ path: "long.ts" }, ctx([longPath], 30));
+    const res = await readTool.run({ path: "long.ts" }, ctx([longPath], 30, 30));
     // The tool's old [truncated at N bytes] marker is gone.
     expect(res.content).not.toContain("truncated at");
     // The floor header is still emitted when the prefix hits the cap.

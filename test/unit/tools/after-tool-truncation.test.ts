@@ -377,4 +377,28 @@ describe("after_tool truncation — supplementary invariants (cross-AC boundarie
     const outLines = outcome.content.split("\n").filter((l) => l.length > 0);
     expect(outLines.length).toBeLessThanOrEqual(MODEL_MAX_LINES);
   });
+
+  test("a tail-directed spilled result includes its first line and marker within MODEL_MAX_LINES", async () => {
+    const body = Array.from({ length: MODEL_MAX_LINES + 1 }, (_, i) => `L${i}`).join("\n");
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Bash", patterns: ["*"] }], root),
+      maxBytes: MODEL_MAX_BYTES,
+      extraTools: [
+        {
+          name: "Bash",
+          description: "stub",
+          inputSchema: { type: "object" },
+          scope: { pathFields: [] },
+          async run() {
+            return { content: body };
+          },
+        },
+      ],
+    });
+    rt.advertised(["Bash"]);
+    const outcome = await rt.callTool("Bash", { command: "false" });
+    expect(outcome.kind).toBe("ok");
+    if (outcome.kind !== "ok") throw new Error("unreachable");
+    expect(outcome.content.split("\n").length).toBeLessThanOrEqual(MODEL_MAX_LINES);
+  });
 });

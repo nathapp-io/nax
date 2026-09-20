@@ -321,8 +321,14 @@ export function createCodingToolRuntime(opts: {
           );
           return { kind, content };
         } catch (err) {
-          const content = err instanceof Error ? err.message : String(err);
-          log(policyIdentity, "error", content.length, callInput, false, content, target.routineErrors);
+          const rawContent = err instanceof Error ? err.message : String(err);
+          const content = await applyModelTruncationPolicy(rawContent, {
+            toolName: policyIdentity,
+            callId: randomUUID(),
+            root: opts.policy.root,
+            maxBytes,
+          });
+          log(policyIdentity, "error", content.length, callInput, false, rawContent, target.routineErrors);
           return { kind: "error", content };
         }
       }

@@ -139,6 +139,14 @@ function isContinuationByte(byte: number | undefined): boolean {
   return byte !== undefined && (byte & 0xc0) === 0x80;
 }
 
+function utf8SequenceLength(byte: number | undefined): number {
+  if (byte === undefined || byte < 0x80) return 1;
+  if ((byte & 0xe0) === 0xc0) return 2;
+  if ((byte & 0xf0) === 0xe0) return 3;
+  if ((byte & 0xf8) === 0xf0) return 4;
+  return 1;
+}
+
 /**
  * Cut `body` to at most `maxBytes` bytes on a clean codepoint boundary.
  * Nothing is appended after the cut: the byte cap is unconditional.
@@ -156,12 +164,20 @@ function isContinuationByte(byte: number | undefined): boolean {
  * boundary exists to prevent. Walking back stops where a codepoint starts, so
  * the slice is always whole codepoints and re-encodes to exactly `cut` bytes.
  */
+export function cutBufferToByteCap(buffer: Buffer, maxBytes: number): Buffer {
+  let cut = Math.min(buffer.length, maxBytes);
+  while (cut > 0 && isContinuationByte(buffer[cut])) cut -= 1;
+  let sequenceStart = cut - 1;
+  while (sequenceStart >= 0 && isContinuationByte(buffer[sequenceStart])) sequenceStart -= 1;
+  if (sequenceStart >= 0 && sequenceStart + utf8SequenceLength(buffer[sequenceStart]) > cut) {
+    cut = sequenceStart;
+  }
+  return buffer.subarray(0, cut);
+}
+
 export function cutToByteCap(body: string, maxBytes: number): string {
-  const buf = Buffer.from(body, "utf8");
-  if (buf.length <= maxBytes) return body;
-  let cut = maxBytes;
-  while (cut > 0 && isContinuationByte(buf[cut])) cut -= 1;
-  return buf.subarray(0, cut).toString("utf8");
+  const buffer = Buffer.from(body, "utf8");
+  return cutBufferToByteCap(buffer, maxBytes).toString("utf8");
 }
 
 /**
@@ -227,24 +243,16 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
   const lines = splitModelLines(body);
   // Per-line cap is measured in UTF-16 code units — the same metric
   // `String#length` reports — so a 2_000-character line of single-unit
-  // codepoints is at the cap, not over it. When the body itself already
-  // exceeds `MODEL_MAX_BYTES`, the cap is also bounded by the byte budget
-  // divided by the line count so a body that has more lines than
-  // `MODEL_MAX_BYTES` bytes can carry is still representable: dropping the
-  // per-line cap to fit the byte budget is what lets the line-count cap
-  // and the byte cap coexist without one evicting the other.
-  const perLineCap =
-    originalBytes > MODEL_MAX_BYTES
-      ? Math.min(MODEL_MAX_LINE_CHARS, Math.floor(MODEL_MAX_BYTES / lines.length))
-      : MODEL_MAX_LINE_CHARS;
-  const perLineOver = lines.some((l) => l.length > perLineCap);
+  // codepoints is at the cap, not over it. It is independent of the byte
+  // ceiling: stage 3 alone decides which otherwise-valid bytes are retained.
+  const perLineOver = lines.some((l) => l.length > MODEL_MAX_LINE_CHARS);
 
   let working = lines;
   let changed = false;
 
   // Stage 1: per-line cap.
   if (perLineOver) {
-    const capped = applyLineCharCap(working, perLineCap);
+    const capped = applyLineCharCap(working, MODEL_MAX_LINE_CHARS);
     working = capped.lines;
     if (capped.changed) changed = true;
   }

@@ -195,6 +195,14 @@ describe("AC7: body exceeding MODEL_MAX_BYTES with an over-long line keeps bytes
       expect(line.length).toBeLessThanOrEqual(MODEL_MAX_LINE_CHARS);
     }
   });
+
+  test("byte overflow does not lower the fixed per-line cap before later stages", () => {
+    const lines = Array.from({ length: MODEL_MAX_LINES + 1 }, () => "x".repeat(100));
+    const res = trunc(lines.join("\n"));
+
+    expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(MODEL_MAX_BYTES);
+    expect(res.content.split("\n")[0]).toBe("x".repeat(100));
+  });
 });
 
 describe("AC8: tail-with-first-line direction keeps the body's first line inside the byte budget", () => {

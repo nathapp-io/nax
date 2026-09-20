@@ -15,6 +15,7 @@
 
 import { readPrefix } from "@/utils/bounded-io";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { READ_CEILING } from "./truncate";
 
 /** Range arguments models invent instead of offset/limit -- rejected by name, never silently dropped. */
 const UNSUPPORTED_RANGE_ALIASES = ["start_line", "end_line", "start", "end", "line", "lineEnd", "size"] as const;
@@ -73,14 +74,14 @@ export const readTool: CodingTool = {
         // is what tells us the prefix hit the ceiling -- in that case the count
         // is a floor and we mark it with '+'. The ranged branch reads with
         // maxFileBytes and compares against maxFileBytes for the same reason.
-        const prefix = await readPrefix(target, ctx.maxBytes);
-        const bounded = Buffer.byteLength(prefix, "utf8") > ctx.maxBytes;
+        const readCeiling = ctx.readCeiling ?? READ_CEILING;
+        const prefix = await readPrefix(target, readCeiling);
+        const bounded = Buffer.byteLength(prefix, "utf8") > readCeiling;
         const lineCount = countLines(prefix);
         const header = `[${bounded ? `${lineCount}+` : `${lineCount}`} lines]`;
         // The model-facing cap and the marker that names the spill path are
         // the after_tool policy's, NOT this tool's. The tool returns the
-        // header + the prefix (bounded by readCeiling's read, here ctx.maxBytes
-        // so the prefix-vs-full-file distinction stays observable via `bounded`).
+        // header + the prefix, bounded by the tool-layer read ceiling.
         return { content: prefix === "" ? header : `${header}\n${prefix}` };
       }
 
