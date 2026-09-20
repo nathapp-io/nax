@@ -47,12 +47,8 @@ export interface ManifestInputs {
    * superset of every chunk that reaches the exclusion lists — so a chunk
    * in any of `roleFiltered`, `belowMin`, `dedupeDropped`, `budgetExcludedIds`
    * is reachable from the set even if it never reached `packed`.
-   *
-   * Declared optional in this stub so the production call site can be
-   * updated without breaking compilation mid-story. The implementer makes
-   * it required and threads the derivation in orchestrator.ts.
    */
-  staleIds?: ReadonlySet<string>;
+  staleIds: ReadonlySet<string>;
 }
 
 /**
@@ -80,6 +76,7 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     floorOverageIds,
     floorOverageTokens,
     effectiveBudget,
+    staleIds,
   } = inputs;
 
   // Amendment A: stale chunk IDs and content summaries for post-story
@@ -119,11 +116,16 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     }
   }
 
+  // US-001: stamp `stale` onto every excludedChunks entry uniformly on all
+  // four exclusion paths. The mechanical `reason` is preserved unchanged —
+  // staleness is an orthogonal axis, not an alternative cause. The flag is
+  // stamped on every mapping whether or not the chunk is stale (uniform
+  // stamping: production reachability is narrower than the contract).
   const excludedChunks: ContextManifest["excludedChunks"] = [
-    ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const })),
-    ...belowMin.map((c) => ({ id: c.id, reason: "below-min-score" as const })),
-    ...dedupeDropped.map((id) => ({ id, reason: "dedupe" as const })),
-    ...budgetExcludedIds.map((id) => ({ id, reason: "budget" as const })),
+    ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const, stale: staleIds.has(c.id) })),
+    ...belowMin.map((c) => ({ id: c.id, reason: "below-min-score" as const, stale: staleIds.has(c.id) })),
+    ...dedupeDropped.map((id) => ({ id, reason: "dedupe" as const, stale: staleIds.has(id) })),
+    ...budgetExcludedIds.map((id) => ({ id, reason: "budget" as const, stale: staleIds.has(id) })),
   ];
 
   // Finding 5 (#2061): record excluded chunks' token costs too, so the manifest
